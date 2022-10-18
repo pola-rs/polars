@@ -305,18 +305,14 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         let mut global_to_local = PlHashMap::with_capacity(local_to_global.len());
 
         let compute_cats = || {
-            if local_to_global.is_empty() {
-                Default::default()
-            } else {
-                keys.into_iter()
-                    .map(|opt_k| {
-                        opt_k.map(|cat| {
-                            debug_assert!((*cat as usize) < local_to_global.len());
-                            *unsafe { local_to_global.get_unchecked(*cat as usize) }
-                        })
+            keys.into_iter()
+                .map(|opt_k| {
+                    opt_k.map(|cat| {
+                        debug_assert!((*cat as usize) < local_to_global.len());
+                        *unsafe { local_to_global.get_unchecked(*cat as usize) }
                     })
-                    .collect::<UInt32Vec>()
-            }
+                })
+                .collect::<UInt32Vec>()
         };
 
         let (_, cats) = POOL.join(

@@ -11,7 +11,7 @@ pub(crate) fn merge_categorical_map(
     match (&**left, &**right) {
         (RevMapping::Global(l_map, l_slots, l_id), RevMapping::Global(r_map, r_slots, r_id)) => {
             if l_id != r_id {
-                return Err(PolarsError::ComputeError("The two categorical arrays are not created under the same global string cache. They cannot be merged".into()));
+                return Err(PolarsError::ComputeError("The two categorical arrays are not created under the same global string cache. They cannot be merged. Hint: set a global StringCache.".into()));
             }
             let mut new_map = (*l_map).clone();
 
