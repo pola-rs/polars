@@ -12,9 +12,11 @@ use polars_lazy::frame::ScanArgsParquet;
 use polars_sql::SQLContext;
 use rustyline::error::ReadlineError;
 use rustyline::{Editor, Result};
+use rustyline::completion::FilenameCompleter;
 use sqlparser::ast::{Select, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
+
 
 // Command: /dd | dataframes
 fn print_dataframes(dataframes: &Vec<(String, String)>) {
@@ -53,6 +55,7 @@ fn register_dataframe(
 
 // Command: /? | help
 fn print_help() {
+    println!("List of all client commands:");
     for (name, short, desc) in vec![
         ("dataframes", "dd", "Show registered frames."),
         ("help", "?", "Display this help."),
@@ -75,8 +78,11 @@ fn create_dataframe_from_filename(filename: &str) -> PolarsResult<LazyFrame> {
         Some("csv") => LazyCsvReader::new(filename).finish(),
         #[cfg(feature = "parquet")]
         Some("parquet") => LazyFrame::scan_parquet(filename, ScanArgsParquet::default()),
-        None | Some(_) => Err(PolarsError::ComputeError(
-            format!("Unsupported file: {}", filename).into(),
+        None => Err(PolarsError::ComputeError(
+            format!("Unknown dataframe \"{}\". Either specify a dataframe name registered with \\rd or an absolute path to a file.", filename).into(),
+        )),
+        Some(_) => Err(PolarsError::ComputeError(
+            format!("Unsupported file \"{}\"", filename).into(),
         )),
     };
 }
@@ -190,8 +196,9 @@ pub fn run_tty() -> std::io::Result<()> {
         let command: Vec<&str> = input.trim().split(" ").collect();
         if command[0].is_empty() {
             continue;
-        }
-
+        }      
+        
+        // Otherwise, execute command
         match command[0] {
             "\\dd" | "dataframes" => print_dataframes(&dataframes),
             "\\rd" | "register" => register_dataframe(&mut context, &mut dataframes, command),
@@ -201,8 +208,13 @@ pub fn run_tty() -> std::io::Result<()> {
                 return Ok(());
             }
             _ => {
+                if command[0].starts_with("\\") {
+                    print!("Unknown command: {}\n\n", command[0]); 
+                    print_help();
+                    continue;
+                }
+    
                 let start = Instant::now();
-
                 match execute_query(&mut context, input.trim()) {
                     Ok(lf) => {
                         println!("{}", lf);
@@ -213,7 +225,7 @@ pub fn run_tty() -> std::io::Result<()> {
                         )
                     }
                     Err(e) => println!("{}", e),
-                }
+                }              
             }
         }
 
