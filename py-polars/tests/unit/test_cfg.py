@@ -8,41 +8,37 @@ import pytest
 import polars as pl
 
 
-@pytest.fixture()
+@pytest.fixture(autouse=True)
 def environ() -> Iterator[None]:
-    """Fixture to restore the environment variables after the test."""
-    old_environ = dict(os.environ)
-    yield
-    os.environ.clear()
-    os.environ.update(old_environ)
+    """Fixture to restore the environment variables/state after the test."""
+    with pl.StringCache(), pl.Config():
+        yield
 
 
-def test_tables(environ: None) -> None:
+def test_ascii_tables() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
-    pl.Config.set_ascii_tables()
-    df_asci = str(df)
+    # note: expect to render ascii only within the given scope
+    with pl.Config() as cfg:
+        cfg.set_ascii_tables(True)
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "+-----+-----+-----+\n"
+            "| a   | b   | c   |\n"
+            "| --- | --- | --- |\n"
+            "| i64 | i64 | i64 |\n"
+            "+=================+\n"
+            "| 1   | 4   | 7   |\n"
+            "|-----+-----+-----|\n"
+            "| 2   | 5   | 8   |\n"
+            "|-----+-----+-----|\n"
+            "| 3   | 6   | 9   |\n"
+            "+-----+-----+-----+"
+        )
 
+    # confirm back to utf8 default after scope-exit
     assert (
-        df_asci == "shape: (3, 3)\n"
-        "+-----+-----+-----+\n"
-        "| a   | b   | c   |\n"
-        "| --- | --- | --- |\n"
-        "| i64 | i64 | i64 |\n"
-        "+=================+\n"
-        "| 1   | 4   | 7   |\n"
-        "|-----+-----+-----|\n"
-        "| 2   | 5   | 8   |\n"
-        "|-----+-----+-----|\n"
-        "| 3   | 6   | 9   |\n"
-        "+-----+-----+-----+"
-    )
-
-    pl.Config.set_utf8_tables()
-    df_utf8 = str(df)
-
-    assert (
-        df_utf8 == "shape: (3, 3)\n"
+        str(df) == "shape: (3, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -57,29 +53,39 @@ def test_tables(environ: None) -> None:
     )
 
 
-def test_tbl_width_chars(environ: None) -> None:
-    df = pl.DataFrame(
-        {
-            "a really long col": [1, 2, 3],
-            "b": ["", "this is a string value that will be truncated", None],
-            "this is 10": [4, 5, 6],
-        }
+def test_hide_header_elements() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+
+    pl.Config.set_tbl_hide_column_data_types(True)
+    assert (
+        str(df) == "shape: (3, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 4   ┆ 7   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 2   ┆ 5   ┆ 8   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 3   ┆ 6   ┆ 9   │\n"
+        "└─────┴─────┴─────┘"
     )
 
-    assert max(len(line) for line in str(df).split("\n")) == 72
+    pl.Config.set_tbl_hide_column_data_types(False).set_tbl_hide_column_names(True)
+    assert (
+        str(df) == "shape: (3, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 4   ┆ 7   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 2   ┆ 5   ┆ 8   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 3   ┆ 6   ┆ 9   │\n"
+        "└─────┴─────┴─────┘"
+    )
 
-    pl.Config.set_tbl_width_chars(60)
-    assert max(len(line) for line in str(df).split("\n")) == 60
 
-    # formula for determining min width is
-    # sum(max(min(header.len, 12), 5)) + header.len + 1
-    # so we end up with 12+5+10+4 = 31
-
-    pl.Config.set_tbl_width_chars(0)
-    assert max(len(line) for line in str(df).split("\n")) == 31
-
-
-def test_set_tbl_cols(environ: None) -> None:
+def test_set_tbl_cols() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
     pl.Config.set_tbl_cols(1)
@@ -100,7 +106,7 @@ def test_set_tbl_cols(environ: None) -> None:
     assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ c   ┆ d   │"
 
 
-def test_set_tbl_rows(environ: None) -> None:
+def test_set_tbl_rows() -> None:
 
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8], "c": [9, 10, 11, 12]})
     ser = pl.Series("ser", [1, 2, 3, 4, 5])
@@ -249,11 +255,12 @@ def test_set_tbl_rows(environ: None) -> None:
         "\t5\n"
         "]"
     )
+
+    pl.Config.set_tbl_hide_dtype_separator(True)
     assert (
         str(df) == "shape: (5, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
-        "│ --- ┆ --- ┆ --- │\n"
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 6   ┆ 11  │\n"
@@ -269,24 +276,130 @@ def test_set_tbl_rows(environ: None) -> None:
     )
 
 
-def test_shape_below_table(environ: None) -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
-    pl.Config.set_tbl_dataframe_shape_below(True)
-    assert (
-        str(df) == "┌─────┬─────┬─────┐\n"
-        "│ a   ┆ b   ┆ c   │\n"
-        "│ --- ┆ --- ┆ --- │\n"
-        "│ i64 ┆ i64 ┆ i64 │\n"
-        "╞═════╪═════╪═════╡\n"
-        "│ 1   ┆ 3   ┆ 5   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
-        "│ 2   ┆ 4   ┆ 6   │\n"
-        "└─────┴─────┴─────┘\n"
-        "shape: (2, 3)"
+def test_set_tbl_formats() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    pl.Config().set_tbl_formatting("ASCII_MARKDOWN")
+    assert str(df) == (
+        "shape: (3, 3)\n"
+        "| foo | bar | ham |\n"
+        "| --- | --- | --- |\n"
+        "| i64 | f64 | str |\n"
+        "|-----|-----|-----|\n"
+        "| 1   | 6.0 | a   |\n"
+        "| 2   | 7.0 | b   |\n"
+        "| 3   | 8.0 | c   |"
+    )
+
+    pl.Config().set_tbl_formatting("ASCII_BORDERS_ONLY_CONDENSED")
+    with pl.Config() as cfg:
+        cfg.set_tbl_hide_dtype_separator(True)
+        assert str(df) == (
+            "shape: (3, 3)\n"
+            "+-----------------+\n"
+            "| foo   bar   ham |\n"
+            "| i64   f64   str |\n"
+            "+=================+\n"
+            "| 1     6.0   a   |\n"
+            "| 2     7.0   b   |\n"
+            "| 3     8.0   c   |\n"
+            "+-----------------+"
+        )
+
+    # temporarily scope "nothing" style, with no data types
+    with pl.Config() as cfg:
+        cfg.set_tbl_formatting("NOTHING").set_tbl_hide_column_data_types(True)
+        assert str(df) == (
+            "shape: (3, 3)\n"
+            " foo  bar  ham \n"
+            " 1    6.0  a   \n"
+            " 2    7.0  b   \n"
+            " 3    8.0  c   "
+        )
+
+    assert str(df) == (
+        "shape: (3, 3)\n"
+        "+-----------------+\n"
+        "| foo   bar   ham |\n"
+        "| ---   ---   --- |\n"
+        "| i64   f64   str |\n"
+        "+=================+\n"
+        "| 1     6.0   a   |\n"
+        "| 2     7.0   b   |\n"
+        "| 3     8.0   c   |\n"
+        "+-----------------+"
     )
 
 
-def test_string_cache(environ: None) -> None:
+def test_set_tbl_width_chars() -> None:
+    df = pl.DataFrame(
+        {
+            "a really long col": [1, 2, 3],
+            "b": ["", "this is a string value that will be truncated", None],
+            "this is 10": [4, 5, 6],
+        }
+    )
+    assert max(len(line) for line in str(df).split("\n")) == 72
+
+    pl.Config.set_tbl_width_chars(60)
+    assert max(len(line) for line in str(df).split("\n")) == 60
+
+    # formula for determining min width is
+    # sum(max(min(header.len, 12), 5)) + header.len + 1
+    # so we end up with 12+5+10+4 = 31
+
+    pl.Config.set_tbl_width_chars(0)
+    assert max(len(line) for line in str(df).split("\n")) == 31
+
+
+def test_shape_below_table_and_inlined_dtype() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
+    pl.Config.set_tbl_dataframe_shape_below(True).set_tbl_column_data_type_inline(True)
+    assert (
+        str(df) == ""
+        "┌─────────┬─────────┬─────────┐\n"
+        "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
+        "╞═════════╪═════════╪═════════╡\n"
+        "│ 1       ┆ 3       ┆ 5       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 4       ┆ 6       │\n"
+        "└─────────┴─────────┴─────────┘\n"
+        "shape: (2, 3)"
+    )
+
+    pl.Config.set_tbl_dataframe_shape_below(False)
+    assert (
+        str(df) == "shape: (2, 3)\n"
+        "┌─────────┬─────────┬─────────┐\n"
+        "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
+        "╞═════════╪═════════╪═════════╡\n"
+        "│ 1       ┆ 3       ┆ 5       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 4       ┆ 6       │\n"
+        "└─────────┴─────────┴─────────┘"
+    )
+
+    pl.Config.set_tbl_column_data_type_inline(False).set_tbl_cell_alignment("RIGHT")
+    assert (
+        str(df) == "shape: (2, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│   a ┆   b ┆   c │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│   1 ┆   3 ┆   5 │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│   2 ┆   4 ┆   6 │\n"
+        "└─────┴─────┴─────┘"
+    )
+
+
+def test_string_cache() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
 
@@ -308,13 +421,8 @@ def test_string_cache(environ: None) -> None:
     out = df1b.join(df2b, on="a", how="inner")
     assert out.frame_equal(pl.DataFrame({"a": ["foo"], "b": [1], "c": [3]}))
 
-    # turn off again so we do not break other tests
-    # (TODO: environ fixture does not roll this back?)
-    pl.toggle_string_cache(False)
-    assert pl.using_string_cache() is False
 
-
-def test_config_load_save(environ: None) -> None:
+def test_config_load_save() -> None:
     # set some config options
     pl.Config.with_columns_kwargs = True
     pl.Config.set_verbose(True)
@@ -344,14 +452,14 @@ def test_config_load_save(environ: None) -> None:
     assert pl.Config.with_columns_kwargs is False
 
 
-def test_config_context(environ: None) -> None:
+def test_config_scope() -> None:
     pl.Config.set_verbose(False)
     pl.Config.set_tbl_cols(8)
 
     initial_state = pl.Config.state()
 
     with pl.Config() as cfg:
-        cfg.set_verbose(True).set_tbl_hide_column_separator(True).set_ascii_tables()
+        cfg.set_verbose(True).set_tbl_hide_dtype_separator(True).set_ascii_tables()
 
         new_state_entries = set(
             {

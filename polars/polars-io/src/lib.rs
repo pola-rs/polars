@@ -138,7 +138,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .iter()
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
-                if std::env::var("POLARS_VERBOSE").is_ok() {
+                if std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1" {
                     eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height() - n)
                 }
                 parsed_dfs.push(df.slice(0, len));
