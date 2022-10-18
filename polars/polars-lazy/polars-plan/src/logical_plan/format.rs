@@ -176,7 +176,7 @@ impl LogicalPlan {
                 input, keys, aggs, ..
             } => write!(
                 f,
-                "Aggregate\n\t{:?} BY {:?} FROM\n {:?}",
+                "Aggregate\n\t{:?} BY {:?} FROM\n\t{:?}",
                 aggs, keys, input
             ),
             Join {
