@@ -17,7 +17,11 @@ use crate::prelude::PlHashMap;
 pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
 
 /// RAII for the string cache
-pub struct IUseStringCache {}
+pub struct IUseStringCache {
+    // only added so that it will never be constructed directly
+    #[allow(dead_code)]
+    private_zst: (),
+}
 
 impl Default for IUseStringCache {
     fn default() -> Self {
@@ -29,7 +33,7 @@ impl IUseStringCache {
     /// Hold the StringCache
     pub fn new() -> IUseStringCache {
         toggle_string_cache(true);
-        IUseStringCache {}
+        IUseStringCache { private_zst: () }
     }
 }
 

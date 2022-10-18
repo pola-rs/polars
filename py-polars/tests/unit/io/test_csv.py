@@ -872,3 +872,23 @@ def test_batched_csv_reader(foods_csv: str) -> None:
         "fats_g": [10.0],
         "sugars_g": [1],
     }
+
+
+def test_csv_single_categorical_null() -> None:
+    f = io.BytesIO()
+    pl.DataFrame(
+        {
+            "x": ["A"],
+            "y": [None],
+            "z": ["A"],
+        }
+    ).write_csv(f)
+    f.seek(0)
+
+    df = pl.read_csv(
+        f,
+        dtypes={"y": pl.Categorical},
+    )
+
+    assert df.dtypes == [pl.Utf8, pl.Categorical, pl.Utf8]
+    assert df.to_dict(False) == {"x": ["A"], "y": [None], "z": ["A"]}
