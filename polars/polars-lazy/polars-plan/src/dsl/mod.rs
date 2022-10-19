@@ -2386,7 +2386,9 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            auto_explode: true,
+            // don't set this to true
+            // this is for the caller to decide
+            auto_explode: false,
             fmt_str: "",
             ..Default::default()
         },
