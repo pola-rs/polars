@@ -12,7 +12,7 @@ use crate::frame::groupby::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
 
-impl IntoSeries for DurationChunked {
+unsafe impl IntoSeries for DurationChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }

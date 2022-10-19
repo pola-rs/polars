@@ -4,7 +4,7 @@ use super::*;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
-impl IntoSeries for StructChunked {
+unsafe impl IntoSeries for StructChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }

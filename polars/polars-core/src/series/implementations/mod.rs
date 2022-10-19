@@ -61,7 +61,7 @@ impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
     }
 }
 
-impl<T: PolarsDataType + 'static> IntoSeries for ChunkedArray<T>
+unsafe impl<T: PolarsDataType + 'static> IntoSeries for ChunkedArray<T>
 where
     SeriesWrap<ChunkedArray<T>>: SeriesTrait,
 {

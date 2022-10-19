@@ -11,7 +11,7 @@ use crate::frame::groupby::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
 
-impl IntoSeries for DatetimeChunked {
+unsafe impl IntoSeries for DatetimeChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }

@@ -479,7 +479,14 @@ impl TryFrom<(&str, ArrayRef)> for Series {
     }
 }
 
-pub trait IntoSeries {
+/// Used to convert a [`ChunkedArray`], `&dyn SeriesTrait` and [`Series`]
+/// into a [`Series`].
+/// # Safety
+///
+/// This trait is marked `unsafe` as the `is_series` return is used
+/// to transmute to `Series`. This must always return `false` except
+/// for `Series` structs.
+pub unsafe trait IntoSeries {
     fn is_series() -> bool {
         false
     }
@@ -527,13 +534,13 @@ impl From<TimeChunked> for Series {
     }
 }
 
-impl IntoSeries for Arc<dyn SeriesTrait> {
+unsafe impl IntoSeries for Arc<dyn SeriesTrait> {
     fn into_series(self) -> Series {
         Series(self)
     }
 }
 
-impl IntoSeries for Series {
+unsafe impl IntoSeries for Series {
     fn is_series() -> bool {
         true
     }
