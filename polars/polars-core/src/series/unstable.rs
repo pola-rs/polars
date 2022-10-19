@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 use crate::prelude::*;
 
 /// A wrapper type that should make it a bit more clear that we should not clone Series
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 #[cfg(feature = "private")]
 pub struct UnstableSeries<'a> {
     lifetime: PhantomData<&'a Series>,

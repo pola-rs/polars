@@ -236,3 +236,19 @@ def test_is_nan_on_non_boolean() -> None:
         pl.Series([1, 2, 3]).fill_nan(0)
     with pytest.raises(pl.InvalidOperationError):
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
+
+
+def test_window_expression_different_group_length() -> None:
+    try:
+        pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
+            [pl.col("groups").apply(lambda _: pl.Series([1, 2])).over("groups")]
+        )
+    except pl.ComputeError as e:
+        msg = str(e)
+        assert (
+            "The length of the window expression did not match that of the group."
+            in msg
+        )
+        assert "Group:" in msg
+        assert "Group length:" in msg
+        assert "Output: 'shape:" in msg
