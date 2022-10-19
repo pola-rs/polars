@@ -7,6 +7,7 @@ use polars_core::POOL;
 use rayon::prelude::*;
 use AnyValue::Null;
 
+use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -17,50 +18,56 @@ pub struct SliceExpr {
     pub(crate) expr: Expr,
 }
 
-fn extract_offset(offset: &Series) -> PolarsResult<i64> {
+fn extract_offset(offset: &Series, expr: &Expr) -> PolarsResult<i64> {
     if offset.len() > 1 {
-        return Err(PolarsError::ComputeError(format!("Invalid argument to slice; expected an offset literal but got a Series of length {}", offset.len()).into()));
+        let msg = format!(
+            "Invalid argument to slice; expected an offset literal but got a Series of length {}.",
+            offset.len()
+        );
+        return Err(expression_err!(msg, expr, ComputeError));
     }
     offset.get(0).extract::<i64>().ok_or_else(|| {
         PolarsError::ComputeError(format!("could not get an offset from {:?}", offset).into())
     })
 }
 
-fn extract_length(length: &Series) -> PolarsResult<usize> {
+fn extract_length(length: &Series, expr: &Expr) -> PolarsResult<usize> {
     if length.len() > 1 {
-        return Err(PolarsError::ComputeError(format!("Invalid argument to slice; expected a length literal but got a Series of length {}", length.len()).into()));
+        let msg = format!(
+            "Invalid argument to slice; expected a length literal but got a Series of length {}.",
+            length.len()
+        );
+        return Err(expression_err!(msg, expr, ComputeError));
     }
     match length.get(0) {
         Null => Ok(usize::MAX),
         v => v.extract::<usize>().ok_or_else(|| {
-            PolarsError::ComputeError(format!("could not get a length from {:?}", length).into())
+            let msg = format!("Could not get a length from {:?}.", length);
+            expression_err!(msg, expr, ComputeError)
         }),
     }
 }
 
-fn extract_args(offset: &Series, length: &Series) -> PolarsResult<(i64, usize)> {
-    Ok((extract_offset(offset)?, extract_length(length)?))
+fn extract_args(offset: &Series, length: &Series, expr: &Expr) -> PolarsResult<(i64, usize)> {
+    Ok((extract_offset(offset, expr)?, extract_length(length, expr)?))
 }
 
-fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str) -> PolarsResult<()> {
+fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str, expr: &Expr) -> PolarsResult<()> {
     if let DataType::List(_) = arg.dtype() {
-        Err(PolarsError::ComputeError(
-            format!(
-                "Invalid slice argument: cannot use an array as {} argument",
-                name
-            )
-            .into(),
-        ))
+        let msg = format!(
+            "Invalid slice argument: cannot use an array as {} argument.",
+            name
+        );
+        Err(expression_err!(msg, expr, ComputeError))
     } else if arg.len() != groups.len() {
-        Err(PolarsError::ComputeError(format!("Invalid slice argument: the evaluated length expression was of different {} than the number of groups", name).into()))
+        let msg = format!("Invalid slice argument: the evaluated length expression was of different {} than the number of groups.", name);
+        Err(expression_err!(msg, expr, ComputeError))
     } else if arg.null_count() > 0 {
-        Err(PolarsError::ComputeError(
-            format!(
-                "Invalid slice argument: the {} expression should not have null values",
-                name
-            )
-            .into(),
-        ))
+        let msg = format!(
+            "Invalid slice argument: the {} expression should not have null values.",
+            name
+        );
+        Err(expression_err!(msg, expr, ComputeError))
     } else {
         Ok(())
     }
@@ -94,7 +101,7 @@ impl PhysicalExpr for SliceExpr {
         let offset = &results[0];
         let length = &results[1];
         let series = &results[2];
-        let (offset, length) = extract_args(offset, length)?;
+        let (offset, length) = extract_args(offset, length, &self.expr)?;
 
         Ok(series.slice(offset, length))
     }
@@ -120,7 +127,7 @@ impl PhysicalExpr for SliceExpr {
         use AggState::*;
         let groups = match (&ac_offset.state, &ac_length.state) {
             (Literal(offset), Literal(length)) => {
-                let (offset, length) = extract_args(offset, length)?;
+                let (offset, length) = extract_args(offset, length, &self.expr)?;
 
                 match groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
@@ -143,9 +150,9 @@ impl PhysicalExpr for SliceExpr {
                 }
             }
             (Literal(offset), _) => {
-                let offset = extract_offset(offset)?;
+                let offset = extract_offset(offset, &self.expr)?;
                 let length = ac_length.aggregated();
-                check_argument(&length, groups, "length")?;
+                check_argument(&length, groups, "length", &self.expr)?;
 
                 let length = length.cast(&IDX_DTYPE)?;
                 let length = length.idx().unwrap();
@@ -177,9 +184,9 @@ impl PhysicalExpr for SliceExpr {
                 }
             }
             (_, Literal(length)) => {
-                let length = extract_length(length)?;
+                let length = extract_length(length, &self.expr)?;
                 let offset = ac_offset.aggregated();
-                check_argument(&offset, groups, "offset")?;
+                check_argument(&offset, groups, "offset", &self.expr)?;
 
                 let offset = offset.cast(&DataType::Int64)?;
                 let offset = offset.i64().unwrap();
@@ -213,8 +220,8 @@ impl PhysicalExpr for SliceExpr {
             _ => {
                 let length = ac_length.aggregated();
                 let offset = ac_offset.aggregated();
-                check_argument(&length, groups, "length")?;
-                check_argument(&offset, groups, "offset")?;
+                check_argument(&length, groups, "length", &self.expr)?;
+                check_argument(&offset, groups, "offset", &self.expr)?;
 
                 let offset = offset.cast(&DataType::Int64)?;
                 let offset = offset.i64().unwrap();

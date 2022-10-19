@@ -5,6 +5,7 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
+use crate::physical_plan::expression_err;
 use crate::physical_plan::state::{ExecutionState, StateFlags};
 use crate::prelude::*;
 
@@ -182,7 +183,8 @@ impl PhysicalExpr for TernaryExpr {
                 let mask = mask_s.bool()?;
                 let check_length = |ca: &ListChunked, mask: &BooleanChunked| {
                     if ca.len() != mask.len() {
-                        Err(PolarsError::ComputeError(format!("the predicates length: '{}' does not match the length of the groups: {}", mask.len(), ca.len()).into()))
+                        let msg = format!("The predicates length: '{}' does not match the length of the groups: {}.", mask.len(), ca.len());
+                        Err(expression_err!(msg, self.expr, ComputeError))
                     } else {
                         Ok(())
                     }

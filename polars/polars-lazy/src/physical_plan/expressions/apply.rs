@@ -12,6 +12,7 @@ use polars_io::predicates::StatsEvaluator;
 use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
 
+use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -80,9 +81,10 @@ fn all_unit_length(ca: &ListChunked) -> bool {
     (offset[offset.len() - 1] as usize) == list_arr.len() as usize
 }
 
-fn check_map_output_len(input_len: usize, output_len: usize) -> PolarsResult<()> {
+fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
     if input_len != output_len {
-        Err(PolarsError::ComputeError("A 'map' functions output length must be equal to that of the input length. Consider using 'apply' in favor of 'map'.".into()))
+        let msg = "A 'map' functions output length must be equal to that of the input length. Consider using 'apply' in favor of 'map'.";
+        Err(expression_err!(msg, expr, ComputeError))
     } else {
         Ok(())
     }
@@ -131,13 +133,11 @@ impl PhysicalExpr for ApplyExpr {
                     let s = ac.series();
 
                     if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
-                        return Err(PolarsError::ComputeError(
-                            format!(
-                                "Cannot aggregate {:?}. The column is already aggregated.",
-                                self.expr
-                            )
-                            .into(),
-                        ));
+                        let msg = format!(
+                            "Cannot aggregate {:?}. The column is already aggregated.",
+                            self.expr
+                        );
+                        return Err(expression_err!(msg, self.expr, ComputeError));
                     }
 
                     // collection of empty list leads to a null dtype
@@ -194,7 +194,7 @@ impl PhysicalExpr for ApplyExpr {
                     let input_len = input.len();
                     let s = self.function.call_udf(&mut [input])?;
 
-                    check_map_output_len(input_len, s.len())?;
+                    check_map_output_len(input_len, s.len(), &self.expr)?;
                     ac.with_series(s, false);
 
                     if set_update_groups {
@@ -236,7 +236,7 @@ impl PhysicalExpr for ApplyExpr {
                         self.collect_groups,
                         acs[0].agg_state(),
                     ) {
-                        apply_multiple_flat(acs, self.function.as_ref())
+                        apply_multiple_flat(acs, self.function.as_ref(), &self.expr)
                     } else {
                         let mut container = vec![Default::default(); acs.len()];
                         let name = acs[0].series().name().to_string();
@@ -272,7 +272,9 @@ impl PhysicalExpr for ApplyExpr {
                         Ok(ac)
                     }
                 }
-                (_, ApplyOptions::ApplyFlat) => apply_multiple_flat(acs, self.function.as_ref()),
+                (_, ApplyOptions::ApplyFlat) => {
+                    apply_multiple_flat(acs, self.function.as_ref(), &self.expr)
+                }
             }
         }
     }
@@ -308,6 +310,7 @@ impl PhysicalExpr for ApplyExpr {
 fn apply_multiple_flat<'a>(
     mut acs: Vec<AggregationContext<'a>>,
     function: &dyn SeriesUdf,
+    expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
     let mut s = acs
         .iter_mut()
@@ -324,7 +327,7 @@ fn apply_multiple_flat<'a>(
 
     let input_len = s[0].len();
     let s = function.call_udf(&mut s)?;
-    check_map_output_len(input_len, s.len())?;
+    check_map_output_len(input_len, s.len(), expr)?;
 
     // take the first aggregation context that as that is the input series
     let mut ac = acs.swap_remove(0);
