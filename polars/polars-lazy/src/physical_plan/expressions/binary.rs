@@ -7,6 +7,7 @@ use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
 use rayon::prelude::*;
 
+use crate::physical_plan::expression_err;
 use crate::physical_plan::state::{ExecutionState, StateFlags};
 use crate::prelude::*;
 
@@ -124,11 +125,8 @@ impl PhysicalExpr for BinaryExpr {
         let mut ac_r = result_b?;
 
         if !ac_l.can_combine(&ac_r) {
-            return Err(PolarsError::InvalidOperation(
-                "\
-            cannot combine this binary expression, the groups do not match"
-                    .into(),
-            ));
+            let msg = "Cannot combine this binary expression, the groups do not match.";
+            return Err(expression_err!(msg, self.expr, InvalidOperation));
         }
 
         match (

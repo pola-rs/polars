@@ -1,3 +1,4 @@
+mod errors;
 pub mod executors;
 #[cfg(any(feature = "list_eval", feature = "pivot"))]
 pub(crate) mod exotic;
@@ -9,6 +10,7 @@ pub mod planner;
 pub(crate) mod state;
 pub(crate) mod streaming;
 
+use errors::expression_err;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 

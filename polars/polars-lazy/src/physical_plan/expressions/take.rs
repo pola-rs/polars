@@ -5,6 +5,7 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 
+use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -47,6 +48,11 @@ impl PhysicalExpr for TakeExpr {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
 
+        let oob_err = || {
+            let msg = "Out of bounds.";
+            Err(expression_err!(msg, self.expr, ComputeError))
+        };
+
         let idx =
             match idx.state {
                 AggState::AggregatedFlat(s) => {
@@ -74,7 +80,7 @@ impl PhysicalExpr for TakeExpr {
                                         Some(idx) => idx >= g.len() as IdxSize,
                                     },
                                 ) {
-                                    return Err(PolarsError::ComputeError("out of bounds".into()));
+                                    return oob_err();
                                 }
 
                                 idx.into_iter()
@@ -91,7 +97,7 @@ impl PhysicalExpr for TakeExpr {
                                         Some(idx) => idx >= g[1],
                                     })
                                 {
-                                    return Err(PolarsError::ComputeError("out of bounds".into()));
+                                    return oob_err();
                                 }
 
                                 idx.into_iter()
@@ -130,18 +136,14 @@ impl PhysicalExpr for TakeExpr {
                                 let idx: NoNull<IdxCa> = match groups.as_ref() {
                                     GroupsProxy::Idx(groups) => {
                                         if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
-                                            return Err(PolarsError::ComputeError(
-                                                "out of bounds".into(),
-                                            ));
+                                            return oob_err();
                                         }
 
                                         groups.first().iter().map(|f| *f + idx).collect_trusted()
                                     }
                                     GroupsProxy::Slice { groups, .. } => {
                                         if groups.iter().any(|g| idx >= g[1]) {
-                                            return Err(PolarsError::ComputeError(
-                                                "out of bounds".into(),
-                                            ));
+                                            return oob_err();
                                         }
 
                                         groups.iter().map(|g| g[0] + idx).collect_trusted()
