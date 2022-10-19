@@ -185,7 +185,7 @@ def date_range(
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
-    lazy: bool = False,
+    lazy: Literal[False] = False,
 ) -> pli.Expr:
     ...
 
@@ -199,8 +199,22 @@ def date_range(
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
-    lazy: bool = False,
+    lazy: Literal[False] = False,
 ) -> pli.Expr:
+    ...
+
+
+@overload
+def date_range(
+    low: date | datetime | str,
+    high: date | datetime | str,
+    interval: str | timedelta,
+    closed: ClosedWindow = "both",
+    name: str | None = None,
+    time_unit: TimeUnit | None = None,
+    time_zone: str | None = None,
+    lazy: Literal[False] = False,
+) -> pli.Series:
     ...
 
 
@@ -213,7 +227,7 @@ def date_range(
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
-    lazy: Literal[True] = ...,
+    lazy: Literal[True] = True,
 ) -> pli.Expr:
     ...
 
