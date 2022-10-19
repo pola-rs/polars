@@ -21,6 +21,8 @@ pub enum TemporalFunction {
     Microsecond,
     Nanosecond,
     TimeStamp(TimeUnit),
+    Truncate(String, String),
+    Round(String, String),
     #[cfg(feature = "timezones")]
     CastTimezone(TimeZone),
 }
@@ -44,6 +46,8 @@ impl Display for TemporalFunction {
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({})", tu),
+            Truncate(..) => "truncate",
+            Round(..) => "round",
             #[cfg(feature = "timezones")]
             CastTimezone(_) => "cast_timezone",
         };
@@ -95,6 +99,28 @@ pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
 }
 pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
+}
+pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
+    let every = Duration::parse(every);
+    let offset = Duration::parse(offset);
+    match s.dtype() {
+        DataType::Datetime(_, _) => Ok(s.datetime().unwrap().truncate(every, offset).into_series()),
+        DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
+        dt => Err(PolarsError::ComputeError(
+            format!("expected date/datetime got {:?}", dt).into(),
+        )),
+    }
+}
+pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
+    let every = Duration::parse(every);
+    let offset = Duration::parse(offset);
+    match s.dtype() {
+        DataType::Datetime(_, _) => Ok(s.datetime().unwrap().round(every, offset).into_series()),
+        DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
+        dt => Err(PolarsError::ComputeError(
+            format!("expected date/datetime got {:?}", dt).into(),
+        )),
+    }
 }
 #[cfg(feature = "timezones")]
 pub(super) fn cast_timezone(s: &Series, tz: &str) -> PolarsResult<Series> {
