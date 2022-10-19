@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import sys
 import typing
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Literal, Sequence, overload
+from typing import TYPE_CHECKING, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64, PolarsDataType
 from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+
+if sys.version_info >= (3, 10):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
+
 
 try:
     from polars.polars import concat_df as _concat_df
@@ -314,7 +321,6 @@ def date_range(
     ]
 
     """
-
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
     elif " " in interval:
