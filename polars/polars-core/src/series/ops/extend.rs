@@ -17,7 +17,7 @@ impl Series {
             dt => panic!("{:?} not supported", dt),
         };
         let s = s.cast(self.dtype())?;
-        let to_append = s.expand_at_index(0, n);
+        let to_append = s.new_from_index(0, n);
 
         let mut out = self.clone();
         out.append(&to_append)?;

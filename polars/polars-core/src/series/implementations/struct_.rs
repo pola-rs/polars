@@ -235,9 +235,9 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         out.into_series()
     }
 
-    fn expand_at_index(&self, index: usize, length: usize) -> Series {
+    fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
-            .apply_fields(|s| s.expand_at_index(index, length))
+            .apply_fields(|s| s.new_from_index(index, length))
             .into_series()
     }
 

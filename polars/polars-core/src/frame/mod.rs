@@ -1115,7 +1115,7 @@ impl DataFrame {
         fn inner(df: &mut DataFrame, mut series: Series) -> PolarsResult<&mut DataFrame> {
             let height = df.height();
             if series.len() == 1 && height > 1 {
-                series = series.expand_at_index(0, height);
+                series = series.new_from_index(0, height);
             }
 
             if series.len() == height || df.is_empty() {
@@ -1169,7 +1169,7 @@ impl DataFrame {
 
         let height = self.height();
         if series.len() == 1 && height > 1 {
-            series = series.expand_at_index(0, height);
+            series = series.new_from_index(0, height);
         }
 
         if series.len() == height || self.is_empty() {
@@ -2042,7 +2042,7 @@ impl DataFrame {
         let new_col = f(col).into_series();
         match new_col.len() {
             1 => {
-                let new_col = new_col.expand_at_index(0, df_height);
+                let new_col = new_col.new_from_index(0, df_height);
                 let _ = mem::replace(col, new_col);
             }
             len if (len == df_height) => {

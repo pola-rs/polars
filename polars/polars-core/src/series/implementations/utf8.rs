@@ -227,8 +227,8 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         self.0.rechunk().into_series()
     }
 
-    fn expand_at_index(&self, index: usize, length: usize) -> Series {
-        ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
+    fn new_from_index(&self, index: usize, length: usize) -> Series {
+        ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
