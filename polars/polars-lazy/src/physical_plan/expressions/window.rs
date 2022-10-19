@@ -356,10 +356,42 @@ impl PhysicalExpr for WindowExpr {
                 let out_column = ac.aggregated();
                 let flattened = out_column.explode()?;
                 if flattened.len() != df.height() {
-                    return Err(PolarsError::ComputeError(
-                        "the length of the window expression did not match that of the group"
-                            .into(),
-                    ));
+                    let ca = out_column.list().unwrap();
+                    let non_matching_group =
+                        ca.into_iter()
+                            .zip(ac.groups().iter())
+                            .find(|(output, group)| {
+                                if let Some(output) = output {
+                                    output.as_ref().len() != group.len()
+                                } else {
+                                    false
+                                }
+                            });
+
+                    return if let Some((output, group)) = non_matching_group {
+                        let first = group.first();
+                        let group = groupby_columns
+                            .iter()
+                            .map(|s| format!("{}", s.get(first as usize)))
+                            .collect::<Vec<_>>();
+                        let err_msg = format!(
+                            "{}\n> Group: ",
+                            "The length of the window expression did not match that of the group."
+                        );
+                        let err_msg = column_delimited(err_msg, &group);
+                        let err_msg = format!(
+                            "{}\n> Group length: {}\n> Output: '{:?}'",
+                            err_msg,
+                            group.len(),
+                            output.unwrap()
+                        );
+                        Err(PolarsError::ComputeError(err_msg.into()))
+                    } else {
+                        Err(PolarsError::ComputeError(
+                            "The length of the window expression did not match that of the group."
+                                .into(),
+                        ))
+                    };
                 }
 
                 // idx (new-idx, original-idx)
