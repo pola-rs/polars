@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from typing import Any, Sequence
 
 try:
@@ -65,6 +66,11 @@ class WhenThenThen:
         expr = pli.expr_to_lit_or_expr(expr)
         return pli.wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
 
+    @typing.no_type_check
+    def __getattr__(self, item) -> pli.Expr:
+        expr = self.otherwise(None)  # noqa: F841
+        return eval(f"expr.{item}")
+
 
 class WhenThen:
     """Utility class. See the `when` function."""
@@ -89,6 +95,11 @@ class WhenThen:
         """
         expr = pli.expr_to_lit_or_expr(expr)
         return pli.wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
+
+    @typing.no_type_check
+    def __getattr__(self, item) -> pli.Expr:
+        expr = self.otherwise(None)  # noqa: F841
+        return eval(f"expr.{item}")
 
 
 class When:

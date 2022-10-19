@@ -1113,7 +1113,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def select(
         self: LDF,
-        exprs: str | pli.Expr | pli.Series | Sequence[str | pli.Expr | pli.Series],
+        exprs: str
+        | pli.Expr
+        | pli.Series
+        | Sequence[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen],
     ) -> LDF:
         """
         Select columns from this DataFrame.
