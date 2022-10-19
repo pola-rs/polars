@@ -24,7 +24,7 @@ use crate::prelude::*;
 
 macro_rules! impl_dyn_series {
     ($ca: ident, $into_logical: ident) => {
-        impl IntoSeries for $ca {
+        unsafe impl IntoSeries for $ca {
             fn into_series(self) -> Series {
                 Series(Arc::new(SeriesWrap(self)))
             }

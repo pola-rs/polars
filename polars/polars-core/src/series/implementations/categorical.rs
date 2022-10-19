@@ -16,7 +16,7 @@ use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
-impl IntoSeries for CategoricalChunked {
+unsafe impl IntoSeries for CategoricalChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
