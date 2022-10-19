@@ -5214,7 +5214,10 @@ class DataFrame:
 
     def select(
         self: DF,
-        exprs: str | pli.Expr | pli.Series | Sequence[str | pli.Expr | pli.Series],
+        exprs: str
+        | pli.Expr
+        | pli.Series
+        | Sequence[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen],
     ) -> DF:
         """
         Select columns from this DataFrame.

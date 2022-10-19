@@ -43,7 +43,7 @@ from polars.internals.lazy_functions import (
 )
 from polars.internals.lazyframe import LazyFrame, wrap_ldf
 from polars.internals.series import Series, wrap_s
-from polars.internals.whenthen import when  # used in expr.clip()
+from polars.internals.whenthen import WhenThen, WhenThenThen, when
 
 __all__ = [
     "DataFrame",
@@ -74,6 +74,8 @@ __all__ = [
     "wrap_expr",
     "wrap_ldf",
     "wrap_s",
+    "WhenThen",
+    "WhenThenThen",
     "_deser_and_exec",
     "_is_local_file",
     "_prepare_file_arg",

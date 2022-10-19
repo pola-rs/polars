@@ -52,7 +52,18 @@ def selection_to_pyexpr_list(
     exprs: str
     | Expr
     | pli.Series
-    | Sequence[str | Expr | pli.Series | timedelta | date | datetime | int | float],
+    | Sequence[
+        str
+        | Expr
+        | pli.Series
+        | timedelta
+        | date
+        | datetime
+        | int
+        | float
+        | pli.WhenThen
+        | pli.WhenThenThen
+    ],
 ) -> list[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
@@ -73,6 +84,8 @@ def expr_to_lit_or_expr(
         | datetime
         | time
         | timedelta
+        | pli.WhenThen
+        | pli.WhenThenThen
         | Sequence[(int | float | str | None)]
     ),
     str_to_lit: bool = True,
@@ -104,6 +117,9 @@ def expr_to_lit_or_expr(
         return expr
     elif isinstance(expr, list):
         return pli.lit(pli.Series("", [expr]))
+    elif isinstance(expr, (pli.WhenThen, pli.WhenThenThen)):
+        # implicitly add the null branch.
+        return expr.otherwise(None)
     else:
         raise ValueError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
