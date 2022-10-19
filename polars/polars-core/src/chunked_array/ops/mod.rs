@@ -601,7 +601,7 @@ pub trait ChunkFilter<T: PolarsDataType> {
 /// Create a new ChunkedArray filled with values at that index.
 pub trait ChunkExpandAtIndex<T: PolarsDataType> {
     /// Create a new ChunkedArray filled with values at that index.
-    fn expand_at_index(&self, length: usize, index: usize) -> ChunkedArray<T>;
+    fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<T>;
 }
 
 macro_rules! impl_chunk_expand {
@@ -622,32 +622,32 @@ where
     ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
     T: PolarsNumericType,
 {
-    fn expand_at_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
+    fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
         impl_chunk_expand!(self, length, index)
     }
 }
 
 impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> BooleanChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> BooleanChunked {
         impl_chunk_expand!(self, length, index)
     }
 }
 
 impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> Utf8Chunked {
+    fn new_from_index(&self, index: usize, length: usize) -> Utf8Chunked {
         impl_chunk_expand!(self, length, index)
     }
 }
 
 #[cfg(feature = "dtype-binary")]
 impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> BinaryChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> BinaryChunked {
         impl_chunk_expand!(self, length, index)
     }
 }
 
 impl ChunkExpandAtIndex<ListType> for ListChunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> ListChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> ListChunked {
         let opt_val = self.get(index);
         match opt_val {
             Some(val) => ListChunked::full(self.name(), &val, length),
@@ -658,7 +658,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
-    fn expand_at_index(&self, index: usize, length: usize) -> ObjectChunked<T> {
+    fn new_from_index(&self, index: usize, length: usize) -> ObjectChunked<T> {
         let opt_val = self.get(index);
         match opt_val {
             Some(val) => ObjectChunked::<T>::full(self.name(), val.clone(), length),

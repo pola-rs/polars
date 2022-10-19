@@ -42,7 +42,7 @@ fn cast_rhs(
             if s.len() == 1 {
                 if allow_broadcast {
                     // broadcast JIT
-                    *s = s.expand_at_index(0, length)
+                    *s = s.new_from_index(0, length)
                 }
                 // else do nothing
             } else {

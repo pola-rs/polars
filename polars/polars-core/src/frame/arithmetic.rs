@@ -150,7 +150,7 @@ impl DataFrame {
                 // trick to fill a series with nulls
                 let vals: &[Option<i32>] = &[None];
                 let s = Series::new(name, vals).cast(dtype)?;
-                cols.push(s.expand_at_index(0, max_len))
+                cols.push(s.new_from_index(0, max_len))
             }
         }
         DataFrame::new(cols)

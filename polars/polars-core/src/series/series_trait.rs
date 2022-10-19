@@ -381,17 +381,17 @@ pub trait SeriesTrait:
         None
     }
 
-    /// Create a new Series filled with values at that index.
+    /// Create a new Series filled with values from the given index.
     ///
     /// # Example
     ///
     /// ```rust
     /// use polars_core::prelude::*;
     /// let s = Series::new("a", [0i32, 1, 8]);
-    /// let expanded = s.expand_at_index(2, 4);
-    /// assert_eq!(Vec::from(expanded.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
+    /// let s2 = s.new_from_index(2, 4);
+    /// assert_eq!(Vec::from(s2.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
     /// ```
-    fn expand_at_index(&self, _index: usize, _length: usize) -> Series {
+    fn new_from_index(&self, _index: usize, _length: usize) -> Series {
         invalid_operation_panic!(self)
     }
 

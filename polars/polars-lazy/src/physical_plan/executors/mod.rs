@@ -206,7 +206,7 @@ fn check_expand_literals(
             .into_iter()
             .map(|series| {
                 if series.len() == 1 && df_height > 1 {
-                    Ok(series.expand_at_index(0, df_height))
+                    Ok(series.new_from_index(0, df_height))
                 } else if series.len() == df_height || series.len() == 0 {
                     Ok(series)
                 } else {

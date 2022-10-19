@@ -352,9 +352,9 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn expand_at_index(&self, index: usize, length: usize) -> Series {
+    fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
-            .expand_at_index(index, length)
+            .new_from_index(index, length)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }

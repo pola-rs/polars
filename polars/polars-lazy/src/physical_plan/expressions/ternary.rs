@@ -35,13 +35,13 @@ fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChu
     let len = std::cmp::max(std::cmp::max(truthy.len(), falsy.len()), mask.len());
     if len > 1 {
         if falsy.len() == 1 {
-            *falsy = falsy.expand_at_index(0, len);
+            *falsy = falsy.new_from_index(0, len);
         }
         if truthy.len() == 1 {
-            *truthy = truthy.expand_at_index(0, len);
+            *truthy = truthy.new_from_index(0, len);
         }
         if mask.len() == 1 {
-            *mask = mask.expand_at_index(0, len);
+            *mask = mask.new_from_index(0, len);
         }
     }
 }

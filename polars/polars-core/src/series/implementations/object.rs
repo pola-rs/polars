@@ -173,8 +173,8 @@ where
         self.0.take_every(n).into_series()
     }
 
-    fn expand_at_index(&self, index: usize, length: usize) -> Series {
-        ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
+    fn new_from_index(&self, index: usize, length: usize) -> Series {
+        ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
     fn cast(&self, _data_type: &DataType) -> PolarsResult<Series> {

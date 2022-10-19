@@ -422,40 +422,40 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         let max_len = s.iter().map(|s| s.len()).max().unwrap();
         let mut year = s[0].cast(&DataType::Int32)?;
         if year.len() < max_len {
-            year = year.expand_at_index(0, max_len)
+            year = year.new_from_index(0, max_len)
         }
         let year = year.i32()?;
         let mut month = s[1].cast(&DataType::UInt32)?;
         if month.len() < max_len {
-            month = month.expand_at_index(0, max_len);
+            month = month.new_from_index(0, max_len);
         }
         let month = month.u32()?;
         let mut day = s[2].cast(&DataType::UInt32)?;
         if day.len() < max_len {
-            day = day.expand_at_index(0, max_len);
+            day = day.new_from_index(0, max_len);
         }
         let day = day.u32()?;
         let mut hour = s[3].cast(&DataType::UInt32)?;
         if hour.len() < max_len {
-            hour = hour.expand_at_index(0, max_len);
+            hour = hour.new_from_index(0, max_len);
         }
         let hour = hour.u32()?;
 
         let mut minute = s[4].cast(&DataType::UInt32)?;
         if minute.len() < max_len {
-            minute = minute.expand_at_index(0, max_len);
+            minute = minute.new_from_index(0, max_len);
         }
         let minute = minute.u32()?;
 
         let mut second = s[5].cast(&DataType::UInt32)?;
         if second.len() < max_len {
-            second = second.expand_at_index(0, max_len);
+            second = second.new_from_index(0, max_len);
         }
         let second = second.u32()?;
 
         let mut microsecond = s[6].cast(&DataType::UInt32)?;
         if microsecond.len() < max_len {
-            microsecond = microsecond.expand_at_index(0, max_len);
+            microsecond = microsecond.new_from_index(0, max_len);
         }
         let microsecond = microsecond.u32()?;
 
@@ -540,7 +540,7 @@ pub fn duration(args: DurationArgs) -> Expr {
         };
 
         if nanoseconds.len() != max_len {
-            nanoseconds = nanoseconds.expand_at_index(0, max_len);
+            nanoseconds = nanoseconds.new_from_index(0, max_len);
         }
         if condition(&microseconds) {
             nanoseconds = nanoseconds + (microseconds * 1_000);
@@ -947,7 +947,7 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
         let n = n.get(0).extract::<usize>().ok_or_else(|| {
             PolarsError::ComputeError(format!("could not extract a size from {:?}", n).into())
         })?;
-        Ok(s.expand_at_index(0, n))
+        Ok(s.new_from_index(0, n))
     };
     apply_binary(lit(value), n_times, function, GetOutput::same_type())
 }

@@ -117,14 +117,14 @@ impl BitOr for &BooleanChunked {
                         rhs.rename(self.name());
                         rhs
                     }
-                    None => &self.expand_at_index(0, rhs.len()) | rhs,
+                    None => &self.new_from_index(0, rhs.len()) | rhs,
                 };
             }
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => BooleanChunked::full(self.name(), true, self.len()),
                     Some(false) => self.clone(),
-                    None => &rhs.expand_at_index(0, self.len()) | self,
+                    None => &rhs.new_from_index(0, self.len()) | self,
                 };
             }
             _ => {}
@@ -168,14 +168,14 @@ impl BitXor for &BooleanChunked {
                         rhs.rename(self.name());
                         rhs
                     }
-                    None => &self.expand_at_index(0, rhs.len()) | rhs,
+                    None => &self.new_from_index(0, rhs.len()) | rhs,
                 };
             }
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => self.not(),
                     Some(false) => self.clone(),
-                    None => &rhs.expand_at_index(0, self.len()) | self,
+                    None => &rhs.new_from_index(0, self.len()) | self,
                 };
             }
             _ => {}
@@ -218,14 +218,14 @@ impl BitAnd for &BooleanChunked {
                 return match self.get(0) {
                     Some(true) => rhs.clone(),
                     Some(false) => BooleanChunked::full(self.name(), false, rhs.len()),
-                    None => &self.expand_at_index(0, rhs.len()) & rhs,
+                    None => &self.new_from_index(0, rhs.len()) & rhs,
                 };
             }
             (_, 1) => {
                 return match rhs.get(0) {
                     Some(true) => self.clone(),
                     Some(false) => BooleanChunked::full(self.name(), false, self.len()),
-                    None => self & &rhs.expand_at_index(0, self.len()),
+                    None => self & &rhs.new_from_index(0, self.len()),
                 };
             }
             _ => {}

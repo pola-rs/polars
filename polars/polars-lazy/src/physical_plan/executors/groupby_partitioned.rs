@@ -80,7 +80,7 @@ fn run_partitions(
                             if agg.len() == 1 {
                                 Ok(match groups.len()  {
                                     0 => agg.slice(0, 0),
-                                    len => agg.expand_at_index(0, len)
+                                    len => agg.new_from_index(0, len)
                                 })
                             } else {
                                 Err(PolarsError::ComputeError(

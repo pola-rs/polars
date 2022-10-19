@@ -156,7 +156,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
             let mut ca = s.utf8()?.clone();
             // broadcast
             if ca.len() == 1 && len > 1 {
-                ca = ca.expand_at_index(0, len)
+                ca = ca.new_from_index(0, len)
             }
 
             Ok(ca)
