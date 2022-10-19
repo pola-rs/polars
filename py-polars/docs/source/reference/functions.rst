@@ -34,6 +34,8 @@ Eager/Lazy functions
    date_range
    get_dummies
    repeat
+   ones
+   zeros
 
 Parallelization
 ~~~~~~~~~~~~~~~

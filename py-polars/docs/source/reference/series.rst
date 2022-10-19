@@ -182,6 +182,7 @@ Manipulation/ selection
     Series.head
     Series.interpolate
     Series.limit
+    Series.new_from_index
     Series.rechunk
     Series.rename
     Series.reshape

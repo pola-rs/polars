@@ -76,6 +76,8 @@ from polars.internals.functions import (
     cut,
     date_range,
     get_dummies,
+    ones,
+    zeros,
 )
 from polars.internals.io import read_ipc_schema, read_parquet_schema
 from polars.internals.lazy_functions import _date as date
@@ -228,9 +230,11 @@ __all__ = [
     "concat",
     "date_range",
     "get_dummies",
+    "ones",
     "repeat",
     "element",
     "cut",
+    "zeros",
     # polars.internals.lazy_functions
     "col",
     "count",

@@ -2,7 +2,7 @@ use numpy::PyArray1;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::CustomIterTools;
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::Python;
@@ -492,6 +492,14 @@ impl PySeries {
             .extend(&other.series)
             .map_err(PyPolarsErr::from)?;
         Ok(())
+    }
+
+    pub fn new_from_index(&self, index: usize, length: usize) -> PyResult<Self> {
+        if index >= self.series.len() {
+            Err(PyValueError::new_err("index is out of bounds"))
+        } else {
+            Ok(self.series.new_from_index(index, length).into())
+        }
     }
 
     pub fn filter(&self, filter: &PySeries) -> PyResult<Self> {
