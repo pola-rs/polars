@@ -413,6 +413,20 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
             CastTimezone(tz) => map!(datetime::cast_timezone, &tz),
+            DateRange {
+                name,
+                every,
+                closed,
+                tz,
+            } => {
+                map_as_slice!(
+                    datetime::date_range_dispatch,
+                    name.as_ref(),
+                    every,
+                    closed,
+                    tz.clone()
+                )
+            }
         }
     }
 }

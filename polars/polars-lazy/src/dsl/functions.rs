@@ -3,6 +3,7 @@
 //! Function on multiple expressions.
 //!
 use polars_core::prelude::*;
+pub use polars_plan::dsl::functions::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;

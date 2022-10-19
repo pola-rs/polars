@@ -1,3 +1,4 @@
+use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +26,12 @@ pub enum TemporalFunction {
     Round(String, String),
     #[cfg(feature = "timezones")]
     CastTimezone(TimeZone),
+    DateRange {
+        name: String,
+        every: Duration,
+        closed: ClosedWindow,
+        tz: Option<TimeZone>,
+    },
 }
 
 impl Display for TemporalFunction {
@@ -50,6 +57,7 @@ impl Display for TemporalFunction {
             Round(..) => "round",
             #[cfg(feature = "timezones")]
             CastTimezone(_) => "cast_timezone",
+            DateRange { .. } => return write!(f, "date_range"),
         };
         write!(f, "dt.{}", s)
     }
@@ -126,4 +134,37 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
 pub(super) fn cast_timezone(s: &Series, tz: &str) -> PolarsResult<Series> {
     let ca = s.datetime()?;
     ca.cast_time_zone(tz).map(|ca| ca.into_series())
+}
+
+pub(super) fn date_range_dispatch(
+    s: &[Series],
+    name: &str,
+    every: Duration,
+    closed: ClosedWindow,
+    tz: Option<TimeZone>,
+) -> PolarsResult<Series> {
+    let start = &s[0];
+    let stop = &s[1];
+
+    match start.dtype() {
+        DataType::Date => {
+            let start = start.to_physical_repr();
+            let stop = stop.to_physical_repr();
+            // to milliseconds
+            let start = start.get(0).extract::<i64>().unwrap() * SECONDS_IN_DAY * 1000;
+            let stop = stop.get(0).extract::<i64>().unwrap() * SECONDS_IN_DAY * 1000;
+
+            date_range_impl(name, start, stop, every, closed, TimeUnit::Milliseconds, tz)
+                .cast(&DataType::Date)
+        }
+        DataType::Datetime(tu, _) => {
+            let start = start.to_physical_repr();
+            let stop = stop.to_physical_repr();
+            let start = start.get(0).extract::<i64>().unwrap();
+            let stop = stop.get(0).extract::<i64>().unwrap();
+
+            Ok(date_range_impl(name, start, stop, every, closed, *tu, tz).into_series())
+        }
+        _ => todo!(),
+    }
 }
