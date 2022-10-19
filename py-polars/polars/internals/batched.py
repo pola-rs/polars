@@ -123,9 +123,12 @@ class BatchedCsvReader:
 
         """
         batches = self._reader.next_batches(n)
-        if self.new_columns is not None and batches is not None:
-            return [
-                pli._update_columns(pli.wrap_df(df), self.new_columns) for df in batches
-            ]
-        else:
-            return [pli.wrap_df(df) for df in batches]
+        if batches is not None:
+            if self.new_columns:
+                return [
+                    pli._update_columns(pli.wrap_df(df), self.new_columns)
+                    for df in batches
+                ]
+            else:
+                return [pli.wrap_df(df) for df in batches]
+        return None
