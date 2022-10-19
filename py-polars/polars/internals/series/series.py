@@ -4652,6 +4652,10 @@ class Series:
         """
         return wrap_s(self._s.set_sorted(reverse))
 
+    def new_from_index(self, index: int, length: int) -> pli.Series:
+        """Create a new Series filled with values from the given index."""
+        return wrap_s(self._s.new_from_index(index, length))
+
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the
     # namespace `str`

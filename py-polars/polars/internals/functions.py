@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Sequence, overload
 
 from polars import internals as pli
-from polars.datatypes import Categorical, Date, Float64
+from polars.datatypes import Categorical, Date, Float64, PolarsDataType
 from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
 
 try:
@@ -573,3 +573,49 @@ def align_frames(
         aligned_frames = [df.select(select) for df in aligned_frames]
 
     return [df.collect() for df in aligned_frames] if eager else aligned_frames
+
+
+def ones(n: int, dtype: PolarsDataType | None = None) -> pli.Series:
+    """
+    Return a new Series of given length and type, filled with ones.
+
+    Parameters
+    ----------
+    n
+        Number of elements in the ``Series``
+    dtype
+        DataType of the elements, defaults to ``polars.Float64``
+
+    Notes
+    -----
+    In the lazy API you should probably not use this, but use ``lit(1)``
+    instead.
+
+    """
+    s = pli.Series([1.0])
+    if dtype:
+        s = s.cast(dtype)
+    return s.new_from_index(0, n)
+
+
+def zeros(n: int, dtype: PolarsDataType | None = None) -> pli.Series:
+    """
+    Return a new Series of given length and type, filled with zeros.
+
+    Parameters
+    ----------
+    n
+        Number of elements in the ``Series``
+    dtype
+        DataType of the elements, defaults to ``polars.Float64``
+
+    Notes
+    -----
+    In the lazy API you should probably not use this, but use ``lit(0)``
+    instead.
+
+    """
+    s = pli.Series([0.0])
+    if dtype:
+        s = s.cast(dtype)
+    return s.new_from_index(0, n)
