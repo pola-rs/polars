@@ -192,3 +192,10 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038() -> None:
     ).collect().sum().to_dict(False) == pytest.approx(
         {"a": [None], "corr": [6.988674024215477]}
     )
+
+
+def test_take_in_groupby() -> None:
+    df = pl.DataFrame({"group": [1, 1, 1, 2, 2, 2], "values": [10, 200, 3, 40, 500, 6]})
+    assert df.groupby("group").agg(
+        pl.col("values").take(1) - pl.col("values").take(2)
+    ).sort("group").to_dict(False) == {"group": [1, 2], "values": [197, 494]}
