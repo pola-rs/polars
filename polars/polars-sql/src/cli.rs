@@ -59,7 +59,7 @@ fn register_dataframe(
             dataframes.push((name.to_owned(), source.to_owned()));
             println!("Added dataframe \"{}\" from file {}", name, source)
         }
-        Err(e) => println!("{}", e),
+        Err(e) => eprintln!("{}", e),
     }
 }
 
@@ -200,7 +200,7 @@ pub fn run_tty() -> std::io::Result<()> {
             }
             Err(ReadlineError::Interrupted) => "exit".to_string(),
             Err(e) => {
-                println!("Error: {:?}", e);
+                eprintln!("Error: {:?}", e);
                 "".to_string()
             }
         };
@@ -236,7 +236,7 @@ pub fn run_tty() -> std::io::Result<()> {
                             start.elapsed().as_secs_f32()
                         )
                     }
-                    Err(e) => println!("{}", e),
+                    Err(e) => eprintln!("{}", e),
                 }
             }
         }
@@ -265,7 +265,7 @@ pub fn run() -> io::Result<()> {
 
         match execute_query(&mut context, query) {
             Ok(lf) => println!("{}", lf),
-            Err(e) => println!("{}", e),
+            Err(e) => eprintln!("{}", e),
         }
     }
 
