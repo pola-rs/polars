@@ -2098,7 +2098,6 @@ class DataFrame:
             Choose "lz4" for fast compression/decompression.
             Choose "snappy" for more backwards compatibility guarantees
             when you deal with older parquet readers.
-            Method "uncompressed" is not supported by pyarrow.
         compression_level
             The level of compression to use. Higher compression means smaller files on
             disk.
@@ -2112,7 +2111,8 @@ class DataFrame:
             Size of the row groups in number of rows.
             If None (default), the chunks of the `DataFrame` are
             used. Writing in smaller chunks may reduce memory pressure and improve
-            writing speeds. This argument has no effect if 'pyarrow' is used.
+            writing speeds. If None and ``use_pyarrow=True``, the row group size
+            will be the minimum of the DataFrame size and 64 * 1024 * 1024.
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
@@ -2149,7 +2149,9 @@ class DataFrame:
             pa.parquet.write_table(
                 table=tbl,
                 where=file,
-                compression=compression,
+                row_group_size=row_group_size,
+                compression=None if compression == "uncompressed" else compression,
+                compression_level=compression_level,
                 write_statistics=statistics,
                 **(pyarrow_options or {}),
             )
