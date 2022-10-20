@@ -466,9 +466,7 @@ impl Display for DataFrame {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last, str_truncate));
                 }
-                for row in rows {
-                    table.add_row(row);
-                }
+                table.add_rows(rows);
             } else {
                 for i in 0..self.height() {
                     if self.width() > 0 {
@@ -497,13 +495,13 @@ impl Display for DataFrame {
 
             // if tbl_width is explicitly set, use it
             if let Some(w) = tbl_width {
-                table.set_table_width(w);
+                table.set_width(w);
             }
 
             // if no tbl_width (its not-tty && it is not explicitly set), then set default.
             // this is needed to support non-tty applications
-            if !table.is_tty() && table.get_table_width().is_none() {
-                table.set_table_width(100);
+            if !table.is_tty() && table.width().is_none() {
+                table.set_width(100);
             }
 
             // set alignment of cells, if defined

@@ -45,7 +45,7 @@ dirs = "4.0"
 flate2 = { version = "1", optional = true, default-features = false }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 lexical-core = { version = "0.8", optional = true }
-memchr = "2.4"
+memchr = "2.5"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num.workspace = true
 once_cell = "1"
