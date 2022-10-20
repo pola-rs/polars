@@ -982,6 +982,7 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
 }
 
 ///  Create a date range from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
 pub fn date_range(
     name: String,
     start: Expr,

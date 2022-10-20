@@ -6,7 +6,7 @@ use super::*;
 fn test_expand_datetimes_3042() -> PolarsResult<()> {
     let low = NaiveDate::from_ymd(2020, 1, 1).and_hms(0, 0, 0);
     let high = NaiveDate::from_ymd(2020, 2, 1).and_hms(0, 0, 0);
-    let date_range = date_range(
+    let date_range = polars_time::date_range(
         "dt1",
         low,
         high,
