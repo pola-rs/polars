@@ -369,31 +369,28 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         let mut _has_categorical = false;
 
         #[allow(clippy::unnecessary_filter_map)]
-        let fields: Vec<_> = overwriting_schema
-            .iter_fields()
-            .filter_map(|mut fld| {
-                use DataType::*;
-                match fld.data_type() {
-                    Time => {
-                        to_cast.push(fld);
-                        // let inference decide the column type
-                        None
-                    }
-                    Int8 | Int16 | UInt8 | UInt16 => {
-                        // We have not compiled these buffers, so we cast them later.
-                        to_cast.push(fld.clone());
-                        fld.coerce(DataType::Int32);
-                        Some(fld)
-                    }
-                    #[cfg(feature = "dtype-categorical")]
-                    Categorical(_) => {
-                        _has_categorical = true;
-                        Some(fld)
-                    }
-                    _ => Some(fld),
+        let fields = overwriting_schema.iter_fields().filter_map(|mut fld| {
+            use DataType::*;
+            match fld.data_type() {
+                Time => {
+                    to_cast.push(fld);
+                    // let inference decide the column type
+                    None
                 }
-            })
-            .collect();
+                Int8 | Int16 | UInt8 | UInt16 => {
+                    // We have not compiled these buffers, so we cast them later.
+                    to_cast.push(fld.clone());
+                    fld.coerce(DataType::Int32);
+                    Some(fld)
+                }
+                #[cfg(feature = "dtype-categorical")]
+                Categorical(_) => {
+                    _has_categorical = true;
+                    Some(fld)
+                }
+                _ => Some(fld),
+            }
+        });
         let schema = Schema::from(fields);
         (schema, to_cast, _has_categorical)
     }
@@ -545,11 +542,10 @@ where
             let fixed_schema = match (schema_overwrite, dtype_overwrite) {
                 (Some(schema), _) => Cow::Borrowed(schema),
                 (None, Some(dtypes)) => {
-                    let fields: Vec<_> = dtypes
+                    let fields = dtypes
                         .iter()
                         .zip(df.get_column_names())
-                        .map(|(dtype, name)| Field::new(name, dtype.clone()))
-                        .collect();
+                        .map(|(dtype, name)| Field::new(name, dtype.clone()));
 
                     Cow::Owned(Schema::from(fields))
                 }

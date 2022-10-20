@@ -1,3 +1,4 @@
+import typing
 from datetime import date, datetime
 from typing import Any
 
@@ -455,3 +456,15 @@ def test_from_dicts_missing_columns() -> None:
     ]
 
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
+
+
+@typing.no_type_check
+def test_from_rows_dtype() -> None:
+    # 50 is the default inference length
+    df = pl.DataFrame(
+        data=[(None, None)] * 50 + [("1.23", None)],
+        columns=[("foo", pl.Utf8), ("bar", pl.Utf8)],
+        orient="row",
+    )
+    assert df.dtypes == [pl.Utf8, pl.Utf8]
+    assert df.null_count().row(0) == (50, 51)

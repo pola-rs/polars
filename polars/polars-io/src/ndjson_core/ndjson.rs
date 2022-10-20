@@ -161,7 +161,7 @@ impl<'a> CoreJsonReader<'a> {
 
                 let data_type = arrow_ndjson::read::infer(&mut cursor, infer_schema_len).unwrap();
                 let schema: polars_core::prelude::Schema =
-                    StructArray::get_fields(&data_type).into();
+                    StructArray::get_fields(&data_type).iter().into();
 
                 Cow::Owned(schema)
             }

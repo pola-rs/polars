@@ -616,9 +616,17 @@ def sequence_to_pydf(
             orient = "col" if len(columns) == len(data) else "row"
 
         if orient == "row":
-            pydf = PyDataFrame.read_rows(data, infer_schema_length)
-            if columns:
-                pydf = _post_apply_columns(pydf, columns)
+
+            column_names, dtypes = _unpack_columns(columns)
+
+            if len(dtypes) > 0:
+                pydf = PyDataFrame.read_rows(data, infer_schema_length, dtypes)
+            else:
+                pydf = PyDataFrame.read_rows(data, infer_schema_length)
+
+            # change column names given by infer_schema
+            if column_names:
+                pydf = _post_apply_columns(pydf, column_names)
             return pydf
         elif orient == "col" or orient is None:
             columns, dtypes = _unpack_columns(columns, n_expected=len(data))

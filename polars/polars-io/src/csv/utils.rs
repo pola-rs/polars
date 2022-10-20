@@ -450,7 +450,7 @@ pub fn infer_file_schema(
         );
     }
 
-    Ok((Schema::from(fields), rows_count))
+    Ok((Schema::from(fields.into_iter()), rows_count))
 }
 
 // magic numbers
