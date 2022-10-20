@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import sys
 import typing
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Literal, Sequence, overload
+from typing import TYPE_CHECKING, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64, PolarsDataType
 from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+
+if sys.version_info >= (3, 10):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
+
 
 try:
     from polars.polars import concat_df as _concat_df
@@ -181,11 +188,11 @@ def date_range(
     low: pli.Expr,
     high: date | datetime | pli.Expr | str,
     interval: str | timedelta,
+    lazy: Literal[False] = ...,
     closed: ClosedWindow = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
-    lazy: bool = False,
 ) -> pli.Expr:
     ...
 
@@ -195,12 +202,26 @@ def date_range(
     low: date | datetime | pli.Expr | str,
     high: pli.Expr,
     interval: str | timedelta,
+    lazy: Literal[False] = ...,
     closed: ClosedWindow = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
-    lazy: bool = False,
 ) -> pli.Expr:
+    ...
+
+
+@overload
+def date_range(
+    low: date | datetime | str,
+    high: date | datetime | str,
+    interval: str | timedelta,
+    lazy: Literal[False] = ...,
+    closed: ClosedWindow = "both",
+    name: str | None = None,
+    time_unit: TimeUnit | None = None,
+    time_zone: str | None = None,
+) -> pli.Series:
     ...
 
 
@@ -209,11 +230,11 @@ def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
     interval: str | timedelta,
+    lazy: Literal[True],
     closed: ClosedWindow = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
-    lazy: Literal[True] = ...,
 ) -> pli.Expr:
     ...
 
@@ -223,11 +244,11 @@ def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
     interval: str | timedelta,
+    lazy: bool = False,
     closed: ClosedWindow = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
-    lazy: bool = False,
 ) -> pli.Series | pli.Expr:
     """
     Create a range of type `Datetime` (or `Date`).
@@ -242,6 +263,8 @@ def date_range(
         Interval periods. It can be a python timedelta object, like
         ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``
         representing 3 days, 12 hours, 4 minutes, and 25 seconds.
+    lazy:
+        Return an expression.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
     name
@@ -250,8 +273,7 @@ def date_range(
         Set the time unit.
     time_zone:
         Optional timezone
-    lazy:
-        Return an expression.
+
 
     Notes
     -----
@@ -299,7 +321,6 @@ def date_range(
     ]
 
     """
-
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
     elif " " in interval:
