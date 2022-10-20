@@ -428,9 +428,17 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    pub fn read_dicts(dicts: &PyAny, infer_schema_length: Option<usize>) -> PyResult<Self> {
+    pub fn read_dicts(
+        dicts: &PyAny,
+        infer_schema_length: Option<usize>,
+        schema_overwrite: Option<Wrap<Schema>>,
+    ) -> PyResult<Self> {
         let (rows, names) = dicts_to_rows(dicts, infer_schema_length.unwrap_or(1))?;
-        let mut pydf = Self::finish_from_rows(rows, infer_schema_length, None)?;
+        let mut pydf = Self::finish_from_rows(
+            rows,
+            infer_schema_length,
+            schema_overwrite.map(|wrap| wrap.0),
+        )?;
         pydf.df
             .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;
