@@ -157,29 +157,6 @@ impl<'a> AggregationContext<'a> {
         &self.groups
     }
 
-    /// Check if this contexts group tuples can be combined with that of other.
-    pub(crate) fn can_combine(&self, other: &AggregationContext) -> bool {
-        match (
-            &self.groups,
-            self.sorted,
-            self.is_original_len(),
-            &other.groups,
-            other.sorted,
-            other.original_len,
-        ) {
-            (Cow::Borrowed(_), _, _, Cow::Borrowed(_), _, _) => true,
-            (Cow::Owned(_), _, _, Cow::Borrowed(_), _, _) => true,
-            (Cow::Borrowed(_), _, _, Cow::Owned(_), _, _) => true,
-            (Cow::Owned(_), true, true, Cow::Owned(_), true, true) => true,
-            (Cow::Owned(_), true, false, Cow::Owned(_), true, true) => false,
-            (Cow::Owned(_), true, true, Cow::Owned(_), true, false) => false,
-            (Cow::Owned(_), true, _, Cow::Owned(_), true, _) => {
-                self.groups.len() == other.groups.len()
-            }
-            _ => false,
-        }
-    }
-
     pub(crate) fn series(&self) -> &Series {
         match &self.state {
             AggState::NotAggregated(s)
@@ -251,10 +228,6 @@ impl<'a> AggregationContext<'a> {
             update_groups: UpdateGroups::No,
             original_len: true,
         }
-    }
-
-    pub(crate) fn is_original_len(&self) -> bool {
-        self.original_len
     }
 
     pub(crate) fn set_original_len(&mut self, original_len: bool) -> &mut Self {
