@@ -287,7 +287,7 @@ class Config:
         Examples
         --------
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
-        >>> pl.Config.set_tbl_dataframe_shape_below(True)  # doctest: +SKIP
+        >>> pl.Config.set_tbl_column_data_type_inline(True)  # doctest: +SKIP
         # ...
         # shape: (3, 2)        shape: (3, 2)
         # ┌─────┬───────┐      ┌───────────┬────────────┐
@@ -344,6 +344,7 @@ class Config:
             "ASCII_HORIZONTAL_ONLY",
             "ASCII_MARKDOWN",
             "UTF8_FULL",
+            "UTF8_FULL_CONDENSED",
             "UTF8_NO_BORDERS",
             "UTF8_BORDERS_ONLY",
             "UTF8_HORIZONTAL_ONLY",
@@ -356,17 +357,24 @@ class Config:
         Parameters
         ----------
         format : str
-            * "ASCII_FULL": ASCII borders / lines
-            * "ASCII_NO_BORDERS": ASCII no borders
-            * "ASCII_BORDERS_ONLY": ASCII borders only
-            * "ASCII_BORDERS_ONLY_CONDENSED": ASCII borders only condensed
-            * "ASCII_HORIZONTAL_ONLY": Horizontal lines only
-            * "ASCII_MARKDOWN": Markdown style
-            * "UTF8_FULL": UTF8 borders lines
-            * "UTF8_NO_BORDERS": UTF8 no borders
-            * "UTF8_BORDERS_ONLY": UTF8 borders only
-            * "UTF8_HORIZONTAL_ONLY": UTF8 horizontal only
-            * "NOTHING": No borders /lines
+            * "ASCII_FULL": ASCII, borders / lines.
+            * "ASCII_NO_BORDERS": ASCII, no borders.
+            * "ASCII_BORDERS_ONLY": ASCII, borders only.
+            * "ASCII_BORDERS_ONLY_CONDENSED": ASCII, borders only, dense row spacing.
+            * "ASCII_HORIZONTAL_ONLY": ASCII, horizontal lines only.
+            * "ASCII_MARKDOWN": ASCII, Markdown compatible.
+            * "UTF8_FULL": UTF8, with all borders and lines (default).
+            * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, with dense row spacing.
+            * "UTF8_NO_BORDERS": UTF8, no borders.
+            * "UTF8_BORDERS_ONLY": UTF8, borders only.
+            * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
+            * "NOTHING": No borders or other lines.
+
+        Notes
+        -----
+        The UTF8 styles all use one or more of the semigraphic box-drawing characters
+        found in the Unicode Box Drawing block, which are not ASCII compatible:
+        https://en.wikipedia.org/wiki/Box-drawing_character#Box_Drawing
 
         Raises
         ------
