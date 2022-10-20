@@ -139,6 +139,7 @@ impl FunctionExpr {
                             }
                         })
                     }
+                    DateRange { .. } => return super_type(),
                 };
                 with_dtype(dtype)
             }

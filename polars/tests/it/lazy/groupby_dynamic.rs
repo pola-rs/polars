@@ -11,7 +11,7 @@ use super::*;
 fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
     let start = NaiveDate::from_ymd(2022, 2, 1).and_hms(0, 0, 0);
     let stop = NaiveDate::from_ymd(2022, 2, 14).and_hms(0, 0, 0);
-    let range = date_range(
+    let range = polars_time::date_range(
         "dt",
         start,
         stop,

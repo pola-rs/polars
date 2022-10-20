@@ -5,7 +5,6 @@
 use std::ops::{BitAnd, BitOr};
 
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
-use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "rank")]
 use polars_core::utils::coalesce_nulls_series;
@@ -974,6 +973,34 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
     Expr::Function {
         input,
         function: FunctionExpr::Coalesce,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
+            ..Default::default()
+        },
+    }
+}
+
+///  Create a date range from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn date_range(
+    name: String,
+    start: Expr,
+    end: Expr,
+    every: Duration,
+    closed: ClosedWindow,
+    tz: Option<TimeZone>,
+) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange {
+            name,
+            every,
+            closed,
+            tz,
+        }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
