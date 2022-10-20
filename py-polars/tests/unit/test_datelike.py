@@ -1723,3 +1723,33 @@ def test_timezone_aware_date_range() -> None:
         "Given: 'UTC', got: 'Asia/Shanghai'.",
     ):
         pl.date_range(low, high, interval=timedelta(days=5), time_zone="UTC")
+
+
+def test_logical_nested_take() -> None:
+    frame = pl.DataFrame(
+        {
+            "ix": [2, 1],
+            "dt": [[datetime(2001, 1, 1)], [datetime(2001, 1, 2)]],
+            "d": [[date(2001, 1, 1)], [date(2001, 1, 1)]],
+            "t": [[time(10)], [time(10)]],
+            "del": [[timedelta(10)], [timedelta(10)]],
+            "str": [[{"a": time(10)}], [{"a": time(10)}]],
+        }
+    )
+    out = frame.sort(by="ix")
+
+    assert out.dtypes[:-1] == [
+        pl.Int64,
+        pl.List(pl.Datetime("us")),
+        pl.List(pl.Date),
+        pl.List(pl.Time),
+        pl.List(pl.Duration("us")),
+    ]
+    assert out.to_dict(False) == {
+        "ix": [1, 2],
+        "dt": [[datetime(2001, 1, 2, 0, 0)], [datetime(2001, 1, 1, 0, 0)]],
+        "d": [[date(2001, 1, 1)], [date(2001, 1, 1)]],
+        "t": [[time(10, 0)], [time(10, 0)]],
+        "del": [[timedelta(days=10)], [timedelta(days=10)]],
+        "str": [[{"a": time(10, 0)}], [{"a": time(10, 0)}]],
+    }
