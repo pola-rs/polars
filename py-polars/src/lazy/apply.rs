@@ -91,7 +91,11 @@ pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> PolarsRe
         let result_series_wrapper =
             match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!("custom python function failed: {}", e.value(py)),
+                Err(e) => {
+                    return Err(PolarsError::ComputeError(
+                        format!("custom python function failed: {}", e.value(py)).into(),
+                    ))
+                }
             };
         let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
             let pyexpr = expr.extract::<PyExpr>(py).unwrap();
