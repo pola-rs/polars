@@ -9,7 +9,13 @@ from hypothesis import given, settings
 from hypothesis.strategies import sampled_from
 
 import polars as pl
-from polars.testing import column, columns, dataframes, series, strategy_dtypes
+from polars.testing._parametric import (
+    column,
+    columns,
+    dataframes,
+    series,
+    strategy_dtypes,
+)
 
 # TODO: make dtype categories flexible and available from datatypes module
 TEMPORAL_DTYPES = [pl.Datetime, pl.Date, pl.Time, pl.Duration]

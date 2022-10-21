@@ -5,7 +5,7 @@ from hypothesis import given
 from hypothesis.strategies import integers
 
 import polars as pl
-from polars.testing import column, dataframes
+from polars.testing._parametric import column, dataframes
 
 
 @given(

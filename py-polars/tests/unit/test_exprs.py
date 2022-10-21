@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal, verify_series_and_expr_api
+from polars.testing import assert_series_equal
+from polars.testing._private import verify_series_and_expr_api
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
