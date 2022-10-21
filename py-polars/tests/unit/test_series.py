@@ -21,11 +21,8 @@ from polars.datatypes import (
     UInt32,
     UInt64,
 )
-from polars.testing import (
-    assert_frame_equal,
-    assert_series_equal,
-    verify_series_and_expr_api,
-)
+from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing._private import verify_series_and_expr_api
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit

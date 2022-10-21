@@ -11,7 +11,8 @@ from hypothesis.strategies import booleans, floats, sampled_from
 
 import polars as pl
 from polars.internals.expr.expr import _prepare_alpha
-from polars.testing import assert_series_equal, series
+from polars.testing import assert_series_equal
+from polars.testing._parametric import series
 
 
 def alpha_guard(**decay_param: float) -> bool:

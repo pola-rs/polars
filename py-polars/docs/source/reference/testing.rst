@@ -30,8 +30,8 @@ testing strategies and strategy helpers:
 .. autosummary::
    :toctree: api/
 
-    testing.dataframes
-    testing.series
+    testing._parametric.dataframes
+    testing._parametric.series
 
 Strategy helpers
 ~~~~~~~~~~~~~~~~
@@ -39,5 +39,5 @@ Strategy helpers
 .. autosummary::
    :toctree: api/
 
-    testing.column
-    testing.columns
+    testing._parametric.column
+    testing._parametric.columns
