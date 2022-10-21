@@ -225,7 +225,7 @@ class Series:
         ):
             import numpy as np
 
-            values = cast(np.ndarray[Any, Any], values)
+            values = cast("np.ndarray[Any, Any]", values)
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
             if values.dtype.type == np.datetime64:
                 # cast to appropriate dtype, handling NaT values
@@ -612,7 +612,7 @@ class Series:
         ):
             import numpy as np
 
-            idxs = cast(np.ndarray[Any, Any], idxs)
+            idxs = cast("np.ndarray[Any, Any]", idxs)
             if idxs.ndim != 1:
                 raise ValueError("Only 1D numpy array is supported as index.")
             if idxs.dtype.kind in ("i", "u"):
@@ -694,9 +694,7 @@ class Series:
         if _NUMPY_AVAILABLE and lazy_isinstance(
             item, "numpy", lambda: numpy_mod().ndarray
         ):
-            import numpy as np
-
-            item = cast(np.ndarray[Any, Any], item)
+            item = cast("np.ndarray[Any, Any]", item)
             if item.ndim != 1:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):
@@ -754,7 +752,7 @@ class Series:
         ):
             import numpy as np
 
-            key = cast(np.ndarray[Any, Any], key)
+            key = cast("np.ndarray[Any, Any]", key)
             if key.dtype == numpy_mod().bool_:
                 # boolean numpy mask
                 self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s

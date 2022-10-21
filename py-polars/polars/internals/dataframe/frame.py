@@ -283,7 +283,7 @@ class DataFrame:
         ):
             import numpy as np
 
-            data = cast(np.ndarray[Any, Any], data)
+            data = cast("np.ndarray[Any, Any]", data)
             self._df = numpy_to_pydf(data, columns=columns, orient=orient)
 
         elif _PYARROW_AVAILABLE and lazy_isinstance(
@@ -1191,7 +1191,7 @@ class DataFrame:
         ):
             import numpy as np
 
-            idxs = cast(np.ndarray[Any, Any], idxs)
+            idxs = cast("np.ndarray[Any, Any]", idxs)
             if idxs.ndim != 1:
                 raise ValueError("Only 1D numpy array is supported as index.")
             if idxs.dtype.kind in ("i", "u"):
@@ -1377,7 +1377,7 @@ class DataFrame:
         ):
             import numpy as np
 
-            item = cast(np.ndarray[Any, Any], item)
+            item = cast("np.ndarray[Any, Any]", item)
             if item.ndim != 1:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):

@@ -2003,9 +2003,7 @@ class Expr:
             _NUMPY_AVAILABLE
             and lazy_isinstance(indices, "numpy", lambda: numpy_mod().ndarray)
         ):
-            import numpy as np
-
-            indices = cast(np.ndarray[Any, Any], indices)
+            indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
         else:
             indices_lit = pli.expr_to_lit_or_expr(

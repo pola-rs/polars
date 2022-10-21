@@ -62,6 +62,8 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from polars.internals.type_aliases import InterpolationMethod, IntoExpr, TimeUnit
 
 
@@ -749,9 +751,7 @@ def lit(
     if _NUMPY_AVAILABLE and lazy_isinstance(
         value, "numpy", lambda: numpy_mod().ndarray
     ):
-        import numpy as np
-
-        value = cast(np.ndarray[Any, Any], value)
+        value = cast("np.ndarray[Any, Any]", value)
         return lit(pli.Series("", value))
 
     if dtype:
