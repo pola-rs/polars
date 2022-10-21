@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
+from polars.datatypes import Schema
 from polars.import_check import (
     _NUMPY_AVAILABLE,
     _PANDAS_AVAILABLE,
@@ -62,7 +63,10 @@ def from_dict(
 
 
 def from_dicts(
-    dicts: Sequence[dict[str, Any]], infer_schema_length: int | None = 50
+    dicts: Sequence[dict[str, Any]],
+    infer_schema_length: int | None = 50,
+    *,
+    schema: Schema | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a sequence of dictionaries. This operation clones data.
@@ -74,6 +78,8 @@ def from_dicts(
     infer_schema_length
         How many dictionaries/rows to scan to determine the data types
         if set to `None` all rows are scanned. This will be slow.
+    schema
+        Schema that (partially) overwrites the inferred schema.
 
     Returns
     -------
@@ -97,8 +103,39 @@ def from_dicts(
     │ 3   ┆ 6   │
     └─────┴─────┘
 
+    >>> # overwrite first column name and dtype
+    >>> pl.from_dicts(data, schema={"c": pl.Int32})
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ c   ┆ b   │
+    │ --- ┆ --- │
+    │ i32 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 4   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 6   │
+    └─────┴─────┘
+
+    >>> # let polars infer the dtypes
+    >>> # but inform about a 3rd column
+    >>> pl.from_dicts(data, schema={"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32})
+    shape: (3, 3)
+    ┌─────┬─────┬──────┐
+    │ a   ┆ b   ┆ c    │
+    │ --- ┆ --- ┆ ---  │
+    │ i64 ┆ i64 ┆ i32  │
+    ╞═════╪═════╪══════╡
+    │ 1   ┆ 4   ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2   ┆ 5   ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3   ┆ 6   ┆ null │
+    └─────┴─────┴──────┘
+
     """
-    return DataFrame._from_dicts(dicts, infer_schema_length)
+    return DataFrame._from_dicts(dicts, infer_schema_length, schema)
 
 
 def from_records(
