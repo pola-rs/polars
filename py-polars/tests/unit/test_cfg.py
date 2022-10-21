@@ -111,6 +111,19 @@ def test_set_tbl_rows() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8], "c": [9, 10, 11, 12]})
     ser = pl.Series("ser", [1, 2, 3, 4, 5])
 
+    pl.Config.set_tbl_rows(0)
+    assert (
+        str(df) == "shape: (4, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ ... ┆ ... ┆ ... │\n"
+        "└─────┴─────┴─────┘"
+    )
+    assert str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t...\n" "]"
+
     pl.Config.set_tbl_rows(1)
     assert (
         str(df) == "shape: (4, 3)\n"
@@ -122,18 +135,10 @@ def test_set_tbl_rows() -> None:
         "│ 1   ┆ 5   ┆ 9   │\n"
         "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ ... ┆ ... ┆ ... │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
-        "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
     assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t...\n"
-        "\t5\n"
-        "]"
+        str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t1\n" "\t...\n" "]"
     )
 
     pl.Config.set_tbl_rows(2)
@@ -184,6 +189,7 @@ def test_set_tbl_rows() -> None:
         "[\n"
         "\t1\n"
         "\t...\n"
+        "\t4\n"
         "\t5\n"
         "]"
     )
@@ -322,6 +328,7 @@ def test_set_tbl_formats() -> None:
             " 3    8.0  c   "
         )
 
+    # after scope, expect previous style
     assert str(df) == (
         "shape: (3, 3)\n"
         "+-----------------+\n"
@@ -359,14 +366,15 @@ def test_set_tbl_width_chars() -> None:
 
 def test_shape_below_table_and_inlined_dtype() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
-    pl.Config.set_tbl_dataframe_shape_below(True).set_tbl_column_data_type_inline(True)
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(True)
+    pl.Config.set_tbl_formatting("UTF8_FULL_CONDENSED")
     assert (
         str(df) == ""
         "┌─────────┬─────────┬─────────┐\n"
         "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
         "╞═════════╪═════════╪═════════╡\n"
         "│ 1       ┆ 3       ┆ 5       │\n"
-        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 2       ┆ 4       ┆ 6       │\n"
         "└─────────┴─────────┴─────────┘\n"
         "shape: (2, 3)"
@@ -379,7 +387,6 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
         "╞═════════╪═════════╪═════════╡\n"
         "│ 1       ┆ 3       ┆ 5       │\n"
-        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 2       ┆ 4       ┆ 6       │\n"
         "└─────────┴─────────┴─────────┘"
     )
@@ -393,7 +400,6 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│   1 ┆   3 ┆   5 │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│   2 ┆   4 ┆   6 │\n"
         "└─────┴─────┴─────┘"
     )
