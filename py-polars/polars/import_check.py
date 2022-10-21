@@ -1,5 +1,5 @@
 import importlib.util
-from typing import Any
+from typing import Any, Callable
 
 
 def pandas_mod() -> Any:
@@ -13,3 +13,10 @@ def pkg_is_available(name: str) -> bool:
 
 
 _PANDAS_AVAILABLE = pkg_is_available("pandas")
+
+
+def lazy_isinstance(value: Any, module_bound: str, types: Callable[[], Any]) -> bool:
+    if module_bound in str(type(value)):
+        check = types()
+        return isinstance(value, check)
+    return False

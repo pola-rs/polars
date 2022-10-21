@@ -40,7 +40,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
-from polars.import_check import _PANDAS_AVAILABLE, pandas_mod
+from polars.import_check import _PANDAS_AVAILABLE, lazy_isinstance, pandas_mod
 from polars.internals.construction import (
     arrow_to_pydf,
     dict_to_pydf,
@@ -302,13 +302,15 @@ class DataFrame:
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
 
-        elif _PANDAS_AVAILABLE and isinstance(data, pandas_mod().DataFrame):
+        elif _PANDAS_AVAILABLE and lazy_isinstance(
+            data, "pandas", lambda: pandas_mod().DataFrame
+        ):
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a pandas DataFrame to a"
                     " polars DataFrame."
                 )
-            self._df = pandas_to_pydf(data, columns=columns)
+            self._df = pandas_to_pydf(data, columns=columns)  # type: ignore[arg-type]
 
         else:
             raise ValueError("DataFrame constructor not called properly.")
