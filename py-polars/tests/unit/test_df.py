@@ -14,17 +14,14 @@ import pytest
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
+from polars.import_check import zoneinfo_mod
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing._parametric import columns
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    from backports.zoneinfo import ZoneInfo
-
-
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy
+
+zoneinfo = zoneinfo_mod()
 
 
 def test_version() -> None:
@@ -2400,7 +2397,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_us = "America/New_York"
     tz_europe = "Europe/Amsterdam"
 
-    dtm = datetime(2022, 10, 12, 12, 30, tzinfo=ZoneInfo("UTC"))
+    dtm = datetime(2022, 10, 12, 12, 30, tzinfo=zoneinfo.ZoneInfo("UTC"))
     for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
         df = pl.DataFrame(
             data={"d1": [dtm], "d2": [dtm]},
@@ -2412,8 +2409,8 @@ def test_init_datetimes_with_timezone() -> None:
         assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
         assert df.rows() == [
             (
-                datetime(2022, 10, 12, 8, 30, tzinfo=ZoneInfo(tz_us)),
-                datetime(2022, 10, 12, 14, 30, tzinfo=ZoneInfo(tz_europe)),
+                datetime(2022, 10, 12, 8, 30, tzinfo=zoneinfo.ZoneInfo(tz_us)),
+                datetime(2022, 10, 12, 14, 30, tzinfo=zoneinfo.ZoneInfo(tz_europe)),
             )
         ]
 
@@ -2435,7 +2432,7 @@ def test_init_physical_with_timezone() -> None:
         assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
         assert df.rows() == [
             (
-                datetime(2022, 10, 12, 16, 30, tzinfo=ZoneInfo(tz_uae)),
-                datetime(2022, 10, 12, 21, 30, tzinfo=ZoneInfo(tz_asia)),
+                datetime(2022, 10, 12, 16, 30, tzinfo=zoneinfo.ZoneInfo(tz_uae)),
+                datetime(2022, 10, 12, 21, 30, tzinfo=zoneinfo.ZoneInfo(tz_asia)),
             )
         ]
