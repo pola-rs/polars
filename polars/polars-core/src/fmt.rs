@@ -79,7 +79,6 @@ macro_rules! format_array {
             write!($f, "\t...\n")?;
             if limit > 1 {
                 for i in ($a.len() - (limit + 1) / 2)..$a.len() {
-                    //for i in (0..(limit / 2)).rev() {
                     let v = $a.get_any_value(i);
                     write_fn(v, $f)?;
                 }
