@@ -494,3 +494,17 @@ def test_from_rows_dtype() -> None:
     )
     assert df.dtypes == [pl.Int32, pl.Object, pl.Object]
     assert df.null_count().row(0) == (0, 0, 0)
+
+
+def test_from_dicts_schema() -> None:
+    data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
+
+    # let polars infer the dtypes
+    # but inform about a 3rd column
+    df = pl.from_dicts(data, schema={"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32})
+    assert df.dtypes == [pl.Int64, pl.Int64, pl.Int32]
+    assert df.to_dict(False) == {
+        "a": [1, 2, 3],
+        "b": [4, 5, 6],
+        "c": [None, None, None],
+    }

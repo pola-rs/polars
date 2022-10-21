@@ -71,7 +71,11 @@ impl PyDataFrame {
             for (i, (name, dtype)) in schema_overwrite.into_iter().enumerate() {
                 if let Some((name_, dtype_)) = schema.get_index_mut(i) {
                     *name_ = name;
-                    *dtype_ = dtype;
+
+                    // if user sets dtype unknown, we use the inferred datatype
+                    if !matches!(dtype, DataType::Unknown) {
+                        *dtype_ = dtype;
+                    }
                 } else {
                     schema.with_column(name, dtype)
                 }
@@ -436,15 +440,33 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        let (rows, names) = dicts_to_rows(dicts, infer_schema_length.unwrap_or(1))?;
+        let (rows, mut names) = dicts_to_rows(dicts, infer_schema_length.unwrap_or(1))?;
+
+        // ensure the new names are used
+        if let Some(schema) = &schema_overwrite {
+            for (new_name, name) in schema.0.iter_names().zip(names.iter_mut()) {
+                *name = new_name.clone();
+            }
+        }
         let mut pydf = Self::finish_from_rows(
             rows,
             infer_schema_length,
             schema_overwrite.map(|wrap| wrap.0),
         )?;
+
         pydf.df
-            .set_column_names(&names)
-            .map_err(PyPolarsErr::from)?;
+            .get_columns_mut()
+            .iter_mut()
+            .zip(&names)
+            .for_each(|(s, name)| {
+                s.rename(name);
+            });
+        let length = names.len();
+        if names.into_iter().collect::<PlHashSet<_>>().len() != length {
+            let err = PolarsError::SchemaMisMatch("duplicate column names found".into());
+            Err(PyPolarsErr::Polars(err))?;
+        }
+
         Ok(pydf)
     }
 

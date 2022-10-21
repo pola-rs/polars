@@ -78,7 +78,9 @@ impl DataFrame {
             })
             .collect();
 
+        let mut expected_len = 0;
         rows.try_for_each::<_, PolarsResult<()>>(|row| {
+            expected_len += 1;
             for (value, buf) in row.0.iter().zip(&mut buffers) {
                 buf.add_fallible(value)?
             }
@@ -89,8 +91,14 @@ impl DataFrame {
             .zip(schema.iter_names())
             .map(|(b, name)| {
                 let mut s = b.into_series();
-                s.rename(name);
-                s
+                // if the schema adds a column not in the rows, we
+                // fill it with nulls
+                if s.is_empty() {
+                    Series::full_null(name, expected_len, s.dtype())
+                } else {
+                    s.rename(name);
+                    s
+                }
             })
             .collect();
         DataFrame::new(v)

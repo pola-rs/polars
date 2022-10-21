@@ -32,6 +32,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     PolarsDataType,
+    Schema,
     UInt8,
     UInt16,
     UInt32,
@@ -324,8 +325,9 @@ class DataFrame:
         cls: type[DF],
         data: Sequence[dict[str, Any]],
         infer_schema_length: int | None = 100,
+        schema: Schema | None = None,
     ) -> DF:
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
         return cls._from_pydf(pydf)
 
     @classmethod
