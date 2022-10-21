@@ -1044,7 +1044,7 @@ def test_describe() -> None:
             "f": ["3", "0", None, None, "2020-01-01", "2022-01-01", None],
         }
     )
-    pl.testing.assert_frame_equal(df.describe(), expected)
+    assert_frame_equal(df.describe(), expected)
 
 
 def test_duration_arithmetic() -> None:

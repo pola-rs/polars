@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_explode_empty_df_3402() -> None:
@@ -48,7 +49,7 @@ def test_explode_empty_list_4003() -> None:
 def test_explode_empty_list_4107() -> None:
     df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_count()
 
-    pl.testing.assert_frame_equal(
+    assert_frame_equal(
         df.explode(["b"]), df.explode(["b"]).drop("row_nr").with_row_count()
     )
 

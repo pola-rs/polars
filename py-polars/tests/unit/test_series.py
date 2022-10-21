@@ -57,7 +57,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
         assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
         assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
         # "== []" will be cast to empty Series with Utf8 dtype.
-        pl.testing.assert_series_equal(
+        assert_series_equal(
             pl.Series([], dtype_if_empty=pl.Utf8) == [], pl.Series("", dtype=pl.Boolean)
         )
         assert pl.Series(values=[True, False]).dtype == pl.Boolean

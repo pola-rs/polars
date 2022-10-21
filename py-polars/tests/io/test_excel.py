@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_read_excel() -> None:
@@ -9,7 +10,7 @@ def test_read_excel() -> None:
 
     expected = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
 
-    pl.testing.assert_frame_equal(df, expected)
+    assert_frame_equal(df, expected)
 
 
 def test_read_excel_all_sheets() -> None:
@@ -19,5 +20,5 @@ def test_read_excel_all_sheets() -> None:
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
 
-    pl.testing.assert_frame_equal(df["Sheet1"], expected1)
-    pl.testing.assert_frame_equal(df["Sheet2"], expected2)
+    assert_frame_equal(df["Sheet1"], expected1)
+    assert_frame_equal(df["Sheet2"], expected2)

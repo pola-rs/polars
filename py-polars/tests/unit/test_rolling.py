@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import ClosedWindow
@@ -55,7 +56,7 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
                     pl.col("values").std().alias("std"),
                 ]
             )
-            pl.testing.assert_frame_equal(out1, out2)
+            assert_frame_equal(out1, out2)
 
 
 def test_rolling_skew() -> None:

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_groupby_sorted_empty_dataframe_3680() -> None:
@@ -143,7 +144,7 @@ def test_argsort_sort_by_groups_update__4360() -> None:
         ]
     )
 
-    pl.testing.assert_series_equal(out["result_a"], out["result_b"], check_names=False)
+    assert_series_equal(out["result_a"], out["result_b"], check_names=False)
     assert out["result_a"].to_list() == [1, 2, 3, 3, 2, 1, 2, 3, 1]
 
 
