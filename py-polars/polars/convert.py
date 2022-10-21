@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
+from polars.import_check import _PANDAS_AVAILABLE, pandas_mod
 from polars.internals import DataFrame, Series
 
 try:
@@ -18,14 +19,12 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-try:
-    import pandas as pd
-
-    _PANDAS_AVAILABLE = True
-except ImportError:
-    _PANDAS_AVAILABLE = False
 
 if TYPE_CHECKING:
+    try:  # noqa: SIM105
+        import pandas as pd
+    except ImportError:
+        pass
     from polars.internals.type_aliases import Orientation
 
 
@@ -364,6 +363,7 @@ def from_pandas(
     if not _PANDAS_AVAILABLE:
         raise ImportError("'pandas' is required when using from_pandas().")
 
+    pd = pandas_mod()
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
         return Series._from_pandas("", df, nan_to_none=nan_to_none)
     elif isinstance(df, pd.DataFrame):
