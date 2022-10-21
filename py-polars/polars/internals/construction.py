@@ -30,6 +30,13 @@ from polars.datatypes_constructor import (
     polars_type_to_constructor,
     py_type_to_constructor,
 )
+from polars.import_check import (
+    _NUMPY_AVAILABLE,
+    _PYARROW_AVAILABLE,
+    lazy_isinstance,
+    numpy_mod,
+    pyarrow_mod,
+)
 from polars.utils import threadpool_size
 
 if version_info >= (3, 10):
@@ -50,22 +57,11 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-try:
-    import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-try:
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
 
 if TYPE_CHECKING:
+    import numpy as np
     import pandas as pd
+    import pyarrow as pa
 
     from polars.internals.type_aliases import Orientation
 
@@ -93,6 +89,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
     array = coerce_arrow(values)
 
     # special handling of empty categorical arrays
+    pa = pyarrow_mod()
     if (
         len(array) == 0
         and isinstance(array.type, pa.DictionaryType)
@@ -130,6 +127,8 @@ def numpy_to_pyseries(
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
+    import numpy as np
+
     if not values.flags["C_CONTIGUOUS"]:
         values = np.array(values)
 
@@ -280,6 +279,7 @@ def sequence_to_pyseries(
                     "'pyarrow' is required for converting a Sequence of date or"
                     " datetime values to a PySeries."
                 )
+            pa = pyarrow_mod()
             # let arrow infer dtype if not timedelta
             # arrow uses microsecond durations by default, not supported yet.
             arrow_dtype = dtype_to_arrow_type(dtype)
@@ -324,6 +324,7 @@ def sequence_to_pyseries(
                             return PySeries.new_list(name, values, dtype)
                 # pass; we create an object if we get here
             else:
+                pa = pyarrow_mod()
                 try:
                     to_arrow_type = (
                         dtype_to_arrow_type
@@ -411,6 +412,7 @@ def _pandas_series_to_arrow(
     :class:`pyarrow.Array`
 
     """
+    pa = pyarrow_mod()
     dtype = getattr(values, "dtype", None)
     if dtype == "object" and len(values) > 0:
         first_non_none = _get_first_non_none(values.values)  # type: ignore[arg-type]
@@ -543,7 +545,11 @@ def dict_to_pydf(
         all_numpy = True
         for val in data.values():
             # only start a thread pool from a reasonable size.
-            all_numpy = all_numpy and isinstance(val, np.ndarray) and len(val) > 1000
+            all_numpy = (
+                all_numpy
+                and lazy_isinstance(val, "numpy", lambda: numpy_mod().ndarray)
+                and len(val) > 1000
+            )
             if not all_numpy:
                 break
 
@@ -736,6 +742,7 @@ def arrow_to_pydf(
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
         )
+    pa = pyarrow_mod()
     original_columns = columns
     if columns is not None:
         columns, dtypes = _unpack_columns(columns)
@@ -823,6 +830,7 @@ def pandas_to_pydf(
             "'pyarrow' is required when constructing a PyDataFrame from a pandas"
             " DataFrame."
         )
+    pa = pyarrow_mod()
     length = data.shape[0]
     arrow_dict = {
         str(col): _pandas_series_to_arrow(
@@ -835,6 +843,7 @@ def pandas_to_pydf(
 
 
 def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
+    pa = pyarrow_mod()
     # note: Decimal256 could not be cast to float
     if isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())

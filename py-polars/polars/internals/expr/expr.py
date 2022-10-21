@@ -4,7 +4,7 @@ import math
 import random
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, cast
 from warnings import warn
 
 from polars import internals as pli
@@ -16,6 +16,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
+from polars.import_check import _NUMPY_AVAILABLE, lazy_isinstance, numpy_mod
 from polars.internals.expr.categorical import ExprCatNameSpace
 from polars.internals.expr.datetime import ExprDateTimeNameSpace
 from polars.internals.expr.list import ExprListNameSpace
@@ -31,14 +32,9 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-try:
+if TYPE_CHECKING:
     import numpy as np
 
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         ClosedWindow,
         FillNullStrategy,
@@ -925,7 +921,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1.0, 2],
-        ...         "B": [3.0, np.inf],
+        ...         "B": [3.0, float("inf")],
         ...     }
         ... )
         >>> df.select(pl.all().is_finite())
@@ -957,7 +953,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1.0, 2],
-        ...         "B": [3.0, np.inf],
+        ...         "B": [3.0, float("inf")],
         ...     }
         ... )
         >>> df.select(pl.all().is_infinite())
@@ -2004,8 +2000,10 @@ class Expr:
 
         """
         if isinstance(indices, list) or (
-            _NUMPY_AVAILABLE and isinstance(indices, np.ndarray)
+            _NUMPY_AVAILABLE
+            and lazy_isinstance(indices, "numpy", lambda: numpy_mod().ndarray)
         ):
+            indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
         else:
             indices_lit = pli.expr_to_lit_or_expr(

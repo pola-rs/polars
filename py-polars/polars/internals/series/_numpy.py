@@ -3,14 +3,9 @@ from __future__ import annotations
 import ctypes
 from typing import Any
 
+import numpy as np
+
 from polars import internals as pli
-
-try:
-    import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
 
 
 # https://numpy.org/doc/stable/user/basics.subclassing.html#slightly-more-realistic-example-attribute-added-to-existing-array
@@ -53,7 +48,5 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray[Any, Any]:
     View of memory block as numpy array.
 
     """
-    if not _NUMPY_AVAILABLE:
-        raise ImportError("'numpy' is required for this functionality.")
     ptr_ctype = ctypes.cast(ptr, ctypes.POINTER(ptr_type))
     return np.ctypeslib.as_array(ptr_ctype, (len,))

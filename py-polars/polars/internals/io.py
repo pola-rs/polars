@@ -5,19 +5,11 @@ from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
-from urllib.request import urlopen
 
 import polars.internals as pli
 from polars.datatypes import DataType
+from polars.import_check import _WITH_FSSPEC
 from polars.utils import format_path
-
-try:
-    import fsspec
-    from fsspec.utils import infer_storage_options
-
-    _WITH_FSSPEC = True
-except ImportError:
-    _WITH_FSSPEC = False
 
 try:
     from polars.polars import ipc_schema as _ipc_schema
@@ -27,6 +19,8 @@ except ImportError:
 
 
 def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
+    from urllib.request import urlopen
+
     with urlopen(path) as f:
         if not encoding or encoding in {"utf8", "utf8-lossy"}:
             return BytesIO(f.read())
@@ -118,6 +112,9 @@ def _prepare_file_arg(
         if file.startswith("http"):
             return _process_http_file(file, encoding_str)
         if _WITH_FSSPEC:
+            import fsspec
+            from fsspec.utils import infer_storage_options
+
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if infer_storage_options(file)["protocol"] == "file":
                     return managed_file(format_path(file))
@@ -125,6 +122,9 @@ def _prepare_file_arg(
             return fsspec.open(file, **kwargs)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _WITH_FSSPEC:
+            import fsspec
+            from fsspec.utils import infer_storage_options
+
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if all(infer_storage_options(f)["protocol"] == "file" for f in file):
                     return managed_file([format_path(f) for f in file])

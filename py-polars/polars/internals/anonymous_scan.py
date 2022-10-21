@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import pickle
 from functools import partial
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import polars as pl
 from polars import internals as pli
+from polars.import_check import _PYARROW_AVAILABLE
 
-try:
+if TYPE_CHECKING:
     import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
 
 
 def _deser_and_exec(buf: bytes, with_columns: list[str] | None) -> pli.DataFrame:

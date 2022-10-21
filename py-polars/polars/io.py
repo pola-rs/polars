@@ -24,24 +24,12 @@ else:
     from typing_extensions import Literal
 
 import polars.internals as pli
-from polars.utils import deprecated_alias, format_path, handle_projection_columns
-
-try:
-    import pyarrow as pa
-
-    # do not remove these
-    import pyarrow.csv
-    import pyarrow.feather
-    import pyarrow.parquet
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
 from polars.convert import from_arrow
 from polars.datatypes import DataType, PolarsDataType, Utf8
+from polars.import_check import _PYARROW_AVAILABLE
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
+from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
 try:
     import connectorx as cx
@@ -51,6 +39,8 @@ except ImportError:
     _WITH_CX = False
 
 if TYPE_CHECKING:
+    import pyarrow as pa
+
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
 
 
@@ -265,6 +255,9 @@ def read_csv(
         with _prepare_file_arg(
             file, encoding=None, use_pyarrow=True, **storage_options
         ) as data:
+            import pyarrow as pa
+            import pyarrow.csv
+
             tbl = pa.csv.read_csv(
                 data,
                 pa.csv.ReadOptions(
@@ -859,6 +852,9 @@ def read_ipc(
                     " 'read_ipc(..., use_pyarrow=True)'."
                 )
 
+            import pyarrow as pa
+            import pyarrow.feather
+
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
             df = DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_count_name is not None:
@@ -950,6 +946,9 @@ def read_parquet(
                     "'pyarrow' is required when using"
                     " 'read_parquet(..., use_pyarrow=True)'."
                 )
+
+            import pyarrow as pa
+            import pyarrow.parquet
 
             return cast(
                 DataFrame,

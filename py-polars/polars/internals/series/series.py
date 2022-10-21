@@ -3,7 +3,16 @@ from __future__ import annotations
 import math
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, Union, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    NoReturn,
+    Sequence,
+    Union,
+    cast,
+    overload,
+)
 from warnings import warn
 
 from polars import internals as pli
@@ -35,7 +44,15 @@ from polars.datatypes import (
     py_type_to_dtype,
     supported_numpy_char_code,
 )
-from polars.import_check import _PANDAS_AVAILABLE, pandas_mod
+from polars.import_check import (
+    _NUMPY_AVAILABLE,
+    _PANDAS_AVAILABLE,
+    _PYARROW_AVAILABLE,
+    lazy_isinstance,
+    numpy_mod,
+    pandas_mod,
+    pyarrow_mod,
+)
 from polars.internals.construction import (
     arrow_to_pyseries,
     numpy_to_pyseries,
@@ -68,29 +85,13 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-try:
-    import numpy as np
-
-    from polars.internals.series._numpy import SeriesView, _ptr_to_numpy
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-try:
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
 
 if TYPE_CHECKING:
-    try:  # noqa: SIM105
-        import pandas as pd
-    except ImportError:
-        pass
+    import numpy as np
+    import pandas as pd
+    import pyarrow as pa
 
+    from polars.internals.series._numpy import SeriesView
     from polars.internals.type_aliases import (
         ComparisonOperator,
         FillNullStrategy,
@@ -215,9 +216,16 @@ class Series:
             )
         elif isinstance(values, Series):
             self._s = series_to_pyseries(name, values)
-        elif _PYARROW_AVAILABLE and isinstance(values, (pa.Array, pa.ChunkedArray)):
+        elif _PYARROW_AVAILABLE and lazy_isinstance(
+            values, "pyarrow", lambda: (pyarrow_mod().Array, pyarrow_mod().ChunkedArray)
+        ):
             self._s = arrow_to_pyseries(name, values)
-        elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
+        elif _NUMPY_AVAILABLE and lazy_isinstance(
+            values, "numpy", lambda: numpy_mod().ndarray
+        ):
+            import numpy as np
+
+            values = cast("np.ndarray[Any, Any]", values)
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
             if values.dtype.type == np.datetime64:
                 # cast to appropriate dtype, handling NaT values
@@ -236,10 +244,10 @@ class Series:
             self._s = sequence_to_pyseries(
                 name, values, dtype=dtype, strict=strict, dtype_if_empty=dtype_if_empty
             )
-        elif _PANDAS_AVAILABLE and isinstance(
-            values, (pandas_mod().Series, pandas_mod().DatetimeIndex)
+        elif _PANDAS_AVAILABLE and lazy_isinstance(
+            values, "pandas", lambda: (pandas_mod().Series, pandas_mod().DatetimeIndex)
         ):
-            self._s = pandas_to_pyseries(name, values)
+            self._s = pandas_to_pyseries(name, values)  # type: ignore[arg-type]
         else:
             raise ValueError("Series constructor not called properly.")
 
@@ -599,7 +607,12 @@ class Series:
 
                 return idxs.cast(idx_type)
 
-        if _NUMPY_AVAILABLE and isinstance(idxs, np.ndarray):
+        if _NUMPY_AVAILABLE and lazy_isinstance(
+            idxs, "numpy", lambda: numpy_mod().ndarray
+        ):
+            import numpy as np
+
+            idxs = cast("np.ndarray[Any, Any]", idxs)
             if idxs.ndim != 1:
                 raise ValueError("Only 1D numpy array is supported as index.")
             if idxs.dtype.kind in ("i", "u"):
@@ -653,8 +666,8 @@ class Series:
             or (isinstance(item, Series) and item.dtype == Boolean)
             or (
                 _NUMPY_AVAILABLE
-                and isinstance(item, np.ndarray)
-                and item.dtype.kind == "b"
+                and lazy_isinstance(item, "numpy", lambda: numpy_mod().ndarray)
+                and item.dtype.kind == "b"  # type: ignore[union-attr]
             )
         ):
             warnings.warn(
@@ -678,7 +691,10 @@ class Series:
 
             return self._s.get_idx(item)
 
-        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
+        if _NUMPY_AVAILABLE and lazy_isinstance(
+            item, "numpy", lambda: numpy_mod().ndarray
+        ):
+            item = cast("np.ndarray[Any, Any]", item)
             if item.ndim != 1:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):
@@ -731,12 +747,18 @@ class Series:
             elif key.dtype == UInt32:
                 self._s = self.set_at_idx(key, value)._s
         # TODO: implement for these types without casting to series
-        elif _NUMPY_AVAILABLE and isinstance(key, np.ndarray) and key.dtype == np.bool_:
-            # boolean numpy mask
-            self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
-        elif _NUMPY_AVAILABLE and isinstance(key, np.ndarray):
-            s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
-            self.__setitem__(s, value)
+        elif _NUMPY_AVAILABLE and lazy_isinstance(
+            key, "numpy", lambda: numpy_mod().ndarray
+        ):
+            import numpy as np
+
+            key = cast("np.ndarray[Any, Any]", key)
+            if key.dtype == numpy_mod().bool_:
+                # boolean numpy mask
+                self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
+            else:
+                s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
+                self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):
             s = wrap_s(sequence_to_pyseries("", key, dtype=UInt32))
             self.__setitem__(s, value)
@@ -757,6 +779,8 @@ class Series:
         """Numpy universal functions."""
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
+
+        import numpy as np
 
         if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
@@ -2547,6 +2571,8 @@ class Series:
         """
         if not ignore_nulls:
             assert not self.has_validity()
+
+        from polars.internals.series._numpy import SeriesView, _ptr_to_numpy
 
         ptr_type = dtype_to_ctype(self.dtype)
         ptr = self._s.as_single_ptr()
@@ -4713,7 +4739,7 @@ def _resolve_datetime_dtype(
 ) -> PolarsDataType | None:
     """Given polars/numpy datetime dtypes, resolve to an explicit unit."""
     if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
-        tu = getattr(dtype, "tu", None) or np.datetime_data(ndtype)[0]
+        tu = getattr(dtype, "tu", None) or numpy_mod().datetime_data(ndtype)[0]
         # explicit formulation is verbose, but keeps mypy happy
         # (and avoids unsupported timeunits such as "s")
         if tu == "ns":

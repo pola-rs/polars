@@ -9,6 +9,7 @@ from inspect import isclass
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Dict,
     ForwardRef,
     Mapping,
@@ -19,14 +20,9 @@ from typing import (
     Union,
 )
 
-try:
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
 from _ctypes import _SimpleCData  # type: ignore[import]
+
+from polars.import_check import _PYARROW_AVAILABLE, pyarrow_mod
 
 try:
     from polars.polars import dtype_str_repr
@@ -56,6 +52,8 @@ else:
 
 
 if TYPE_CHECKING:
+    import pyarrow as pa
+
     from polars.internals.type_aliases import TimeUnit
 
 
@@ -460,43 +458,40 @@ _NUMPY_CHAR_CODE_TO_DTYPE = {
 }
 
 if _PYARROW_AVAILABLE:
-    _PY_TYPE_TO_ARROW_TYPE: dict[type, pa.lib.DataType] = {
-        float: pa.float64(),
-        int: pa.int64(),
-        str: pa.large_utf8(),
-        bool: pa.bool_(),
-        date: pa.date32(),
-        time: pa.time64("us"),
-        datetime: pa.timestamp("us"),
-        timedelta: pa.duration("us"),
+    _PY_TYPE_TO_ARROW_TYPE: dict[type, Callable[[], pa.lib.DataType]] = {
+        float: lambda: pyarrow_mod().float64(),
+        int: lambda: pyarrow_mod().int64(),
+        str: lambda: pyarrow_mod().large_utf8(),
+        bool: lambda: pyarrow_mod().bool_(),
+        date: lambda: pyarrow_mod().date32(),
+        time: lambda: pyarrow_mod().time64("us"),
+        datetime: lambda: pyarrow_mod().timestamp("us"),
+        timedelta: lambda: pyarrow_mod().duration("us"),
     }
 
-    _DTYPE_TO_ARROW_TYPE = {
-        Int8: pa.int8(),
-        Int16: pa.int16(),
-        Int32: pa.int32(),
-        Int64: pa.int64(),
-        UInt8: pa.uint8(),
-        UInt16: pa.uint16(),
-        UInt32: pa.uint32(),
-        UInt64: pa.uint64(),
-        Float32: pa.float32(),
-        Float64: pa.float64(),
-        Boolean: pa.bool_(),
-        Utf8: pa.large_utf8(),
-        Date: pa.date32(),
-        Datetime: pa.timestamp("us"),
-        Datetime("ms"): pa.timestamp("ms"),
-        Datetime("us"): pa.timestamp("us"),
-        Datetime("ns"): pa.timestamp("ns"),
-        Duration: pa.duration("us"),
-        Duration("ms"): pa.duration("ms"),
-        Duration("us"): pa.duration("us"),
-        Duration("ns"): pa.duration("ns"),
-        Time: pa.time64("us"),
-        # Time("ms"): pa.time32("ms"),
-        # Time("us"): pa.time64("us"),
-        # Time("ns"): pa.time64("ns"),
+    _DTYPE_TO_ARROW_TYPE: dict[PolarsDataType, Callable[[], pa.lib.DataType]] = {
+        Int8: lambda: pyarrow_mod().int8(),
+        Int16: lambda: pyarrow_mod().int16(),
+        Int32: lambda: pyarrow_mod().int32(),
+        Int64: lambda: pyarrow_mod().int64(),
+        UInt8: lambda: pyarrow_mod().uint8(),
+        UInt16: lambda: pyarrow_mod().uint16(),
+        UInt32: lambda: pyarrow_mod().uint32(),
+        UInt64: lambda: pyarrow_mod().uint64(),
+        Float32: lambda: pyarrow_mod().float32(),
+        Float64: lambda: pyarrow_mod().float64(),
+        Boolean: lambda: pyarrow_mod().bool_(),
+        Utf8: lambda: pyarrow_mod().large_utf8(),
+        Date: lambda: pyarrow_mod().date32(),
+        Datetime: lambda: pyarrow_mod().timestamp("us"),
+        Datetime("ms"): lambda: pyarrow_mod().timestamp("ms"),
+        Datetime("us"): lambda: pyarrow_mod().timestamp("us"),
+        Datetime("ns"): lambda: pyarrow_mod().timestamp("ns"),
+        Duration: lambda: pyarrow_mod().duration("us"),
+        Duration("ms"): lambda: pyarrow_mod().duration("ms"),
+        Duration("us"): lambda: pyarrow_mod().duration("us"),
+        Duration("ns"): lambda: pyarrow_mod().duration("ns"),
+        Time: lambda: pyarrow_mod().time64("us"),
     }
 
 
@@ -582,7 +577,7 @@ def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsData
 def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
     """Convert a Python dtype to an Arrow dtype."""
     try:
-        return _PY_TYPE_TO_ARROW_TYPE[dtype]
+        return _PY_TYPE_TO_ARROW_TYPE[dtype]()
     except KeyError:  # pragma: no cover
         raise ValueError(
             f"Cannot parse Python data type {dtype} into Arrow data type."
@@ -598,7 +593,7 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
         if dtype == Datetime:
             dtype, tz = Datetime(dtype.tu), dtype.tz  # type: ignore[union-attr]
 
-        arrow_type = _DTYPE_TO_ARROW_TYPE[dtype]
+        arrow_type = _DTYPE_TO_ARROW_TYPE[dtype]()
         if tz:
             arrow_type = pa.timestamp(dtype.tu or "us", tz)  # type: ignore[union-attr]
         return arrow_type
