@@ -14,7 +14,6 @@ except ImportError:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
-from polars import testing
 from polars.cfg import Config
 from polars.convert import (
     from_arrow,
@@ -287,7 +286,6 @@ __all__ = [
     "from_arrow",
     "from_pandas",
     # testing
-    "testing",
     "threadpool_size",
     # version
     "show_versions",

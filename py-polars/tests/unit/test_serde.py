@@ -4,6 +4,7 @@ import pickle
 from datetime import datetime, timedelta
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_pickling_simple_expression() -> None:
@@ -51,7 +52,7 @@ def test_serde_duration() -> None:
     df = df.with_columns([pl.col("a").diff(n=1).alias("a_td")])
     serde_df = pickle.loads(pickle.dumps(df))
     assert serde_df["a_td"].dtype == pl.Duration("ns")
-    pl.testing.assert_series_equal(
+    assert_series_equal(
         serde_df["a_td"],
         pl.Series("a_td", [None, timedelta(days=1)], dtype=pl.Duration("ns")),
     )
