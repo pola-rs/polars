@@ -45,15 +45,10 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-try:
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
 
 if TYPE_CHECKING:
+    import pyarrow as pa
+
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         ClosedWindow,

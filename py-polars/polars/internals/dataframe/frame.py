@@ -1375,6 +1375,8 @@ class DataFrame:
         if _NUMPY_AVAILABLE and lazy_isinstance(
             item, "numpy", lambda: numpy_mod().ndarray
         ):
+            import numpy as np
+
             item = cast(np.ndarray[Any, Any], item)
             if item.ndim != 1:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
