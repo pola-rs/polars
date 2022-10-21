@@ -30,7 +30,13 @@ from polars.datatypes_constructor import (
     polars_type_to_constructor,
     py_type_to_constructor,
 )
-from polars.import_check import _PYARROW_AVAILABLE, pyarrow_mod
+from polars.import_check import (
+    _NUMPY_AVAILABLE,
+    _PYARROW_AVAILABLE,
+    lazy_isinstance,
+    numpy_mod,
+    pyarrow_mod,
+)
 from polars.utils import threadpool_size
 
 if version_info >= (3, 10):
@@ -51,15 +57,9 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-try:
-    import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
 
 if TYPE_CHECKING:
+    import numpy as np
     import pandas as pd
     import pyarrow as pa
 
@@ -127,6 +127,8 @@ def numpy_to_pyseries(
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
+    import numpy as np
+
     if not values.flags["C_CONTIGUOUS"]:
         values = np.array(values)
 
@@ -543,7 +545,11 @@ def dict_to_pydf(
         all_numpy = True
         for val in data.values():
             # only start a thread pool from a reasonable size.
-            all_numpy = all_numpy and isinstance(val, np.ndarray) and len(val) > 1000
+            all_numpy = (
+                all_numpy
+                and lazy_isinstance(val, "numpy", lambda: numpy_mod().ndarray)
+                and len(val) > 1000
+            )
             if not all_numpy:
                 break
 

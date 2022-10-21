@@ -17,6 +17,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
+from polars.import_check import _NUMPY_AVAILABLE, lazy_isinstance, numpy_mod
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
@@ -54,13 +55,6 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
-
-try:
-    import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -752,7 +746,12 @@ def lit(
             return e
         return e.alias(name)
 
-    if _NUMPY_AVAILABLE and isinstance(value, np.ndarray):
+    if _NUMPY_AVAILABLE and lazy_isinstance(
+        value, "numpy", lambda: numpy_mod().ndarray
+    ):
+        import numpy as np
+
+        value = cast(np.ndarray[Any, Any], value)
         return lit(pli.Series("", value))
 
     if dtype:

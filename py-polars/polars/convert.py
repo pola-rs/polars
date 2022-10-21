@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
 from polars.import_check import (
+    _NUMPY_AVAILABLE,
     _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     pandas_mod,
@@ -10,15 +11,8 @@ from polars.import_check import (
 )
 from polars.internals import DataFrame, Series
 
-try:
-    import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-
 if TYPE_CHECKING:
+    import numpy as np
     import pandas as pd
     import pyarrow as pa
 

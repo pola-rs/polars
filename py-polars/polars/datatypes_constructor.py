@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars.datatypes import (
     Boolean,
@@ -32,12 +32,8 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-try:
+if TYPE_CHECKING:
     import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
 
 
 if not _DOCUMENTING:
@@ -76,7 +72,13 @@ def polars_type_to_constructor(
         raise ValueError(f"Cannot construct PySeries for type {dtype}.") from None
 
 
-if _NUMPY_AVAILABLE and not _DOCUMENTING:
+_NUMPY_TYPE_TO_CONSTRUCTOR = None
+
+
+def _set_numpy_to_constructor() -> None:
+    import numpy as np
+
+    global _NUMPY_TYPE_TO_CONSTRUCTOR
     _NUMPY_TYPE_TO_CONSTRUCTOR = {
         np.float32: PySeries.new_f32,
         np.float64: PySeries.new_f64,
@@ -96,8 +98,10 @@ if _NUMPY_AVAILABLE and not _DOCUMENTING:
 
 def numpy_type_to_constructor(dtype: type[np.dtype[Any]]) -> Callable[..., PySeries]:
     """Get the right PySeries constructor for the given Polars dtype."""
+    if _NUMPY_TYPE_TO_CONSTRUCTOR is None:
+        _set_numpy_to_constructor()
     try:
-        return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]
+        return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]  # type:ignore[index]
     except KeyError:
         return PySeries.new_object
     except NameError:  # pragma: no cover
