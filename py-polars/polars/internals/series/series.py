@@ -35,6 +35,7 @@ from polars.datatypes import (
     py_type_to_dtype,
     supported_numpy_char_code,
 )
+from polars.import_check import _PANDAS_AVAILABLE, pandas_mod
 from polars.internals.construction import (
     arrow_to_pyseries,
     numpy_to_pyseries,
@@ -83,14 +84,13 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-try:
-    import pandas as pd
-
-    _PANDAS_AVAILABLE = True
-except ImportError:
-    _PANDAS_AVAILABLE = False
 
 if TYPE_CHECKING:
+    try:  # noqa: SIM105
+        import pandas as pd
+    except ImportError:
+        pass
+
     from polars.internals.type_aliases import (
         ComparisonOperator,
         FillNullStrategy,
@@ -236,7 +236,9 @@ class Series:
             self._s = sequence_to_pyseries(
                 name, values, dtype=dtype, strict=strict, dtype_if_empty=dtype_if_empty
             )
-        elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
+        elif _PANDAS_AVAILABLE and isinstance(
+            values, (pandas_mod().Series, pandas_mod().DatetimeIndex)
+        ):
             self._s = pandas_to_pyseries(name, values)
         else:
             raise ValueError("Series constructor not called properly.")

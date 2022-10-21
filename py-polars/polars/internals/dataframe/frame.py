@@ -40,6 +40,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
+from polars.import_check import _PANDAS_AVAILABLE, pandas_mod
 from polars.internals.construction import (
     arrow_to_pydf,
     dict_to_pydf,
@@ -88,13 +89,6 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-try:
-    import pandas as pd
-
-    _PANDAS_AVAILABLE = True
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
@@ -106,6 +100,11 @@ else:
     from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
+    try:  # noqa: SIM105
+        import pandas as pd
+    except ImportError:
+        pass
+
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -303,7 +302,7 @@ class DataFrame:
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
 
-        elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+        elif _PANDAS_AVAILABLE and isinstance(data, pandas_mod().DataFrame):
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a pandas DataFrame to a"
