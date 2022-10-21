@@ -14,6 +14,12 @@ def pyarrow_mod() -> Any:
     return pa
 
 
+def numpy_mod() -> Any:
+    import numpy as np
+
+    return np
+
+
 def pkg_is_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 

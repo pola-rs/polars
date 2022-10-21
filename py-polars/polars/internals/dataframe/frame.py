@@ -17,6 +17,7 @@ from typing import (
     Sequence,
     TextIO,
     TypeVar,
+    cast,
     overload,
 )
 from warnings import warn
@@ -41,9 +42,11 @@ from polars.datatypes import (
 )
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
 from polars.import_check import (
+    _NUMPY_AVAILABLE,
     _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     lazy_isinstance,
+    numpy_mod,
     pandas_mod,
     pyarrow_mod,
 )
@@ -77,13 +80,6 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-try:
-    import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
@@ -95,6 +91,7 @@ else:
     from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
+    import numpy as np
     import pandas as pd
     import pyarrow as pa
 
@@ -281,7 +278,12 @@ class DataFrame:
         elif isinstance(data, dict):
             self._df = dict_to_pydf(data, columns=columns)
 
-        elif _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
+        elif _NUMPY_AVAILABLE and lazy_isinstance(
+            data, "numpy", lambda: numpy_mod().ndarray
+        ):
+            import numpy as np
+
+            data = cast(np.ndarray[Any, Any], data)
             self._df = numpy_to_pydf(data, columns=columns, orient=orient)
 
         elif _PYARROW_AVAILABLE and lazy_isinstance(
@@ -479,6 +481,7 @@ class DataFrame:
 
         """
         # path for table without rows that keeps datatype
+        np = numpy_mod()
         if data.shape[0] == 0:
             series = []
             for name in data.columns:
@@ -1183,7 +1186,12 @@ class DataFrame:
 
                 return idxs.cast(idx_type)
 
-        if _NUMPY_AVAILABLE and isinstance(idxs, np.ndarray):
+        if _NUMPY_AVAILABLE and lazy_isinstance(
+            idxs, "numpy", lambda: numpy_mod().ndarray
+        ):
+            import numpy as np
+
+            idxs = cast(np.ndarray[Any, Any], idxs)
             if idxs.ndim != 1:
                 raise ValueError("Only 1D numpy array is supported as index.")
             if idxs.dtype.kind in ("i", "u"):
@@ -1314,9 +1322,12 @@ class DataFrame:
             # df[2, :] (select row as df)
             if isinstance(row_selection, int):
                 if isinstance(col_selection, (slice, list)) or (
-                    _NUMPY_AVAILABLE and isinstance(col_selection, np.ndarray)
+                    _NUMPY_AVAILABLE
+                    and lazy_isinstance(
+                        col_selection, "numpy", lambda: numpy_mod().ndarray
+                    )
                 ):
-                    df = self[:, col_selection]
+                    df = self[:, col_selection]  # type: ignore[index]
                     return df.slice(row_selection, 1)
                 # df[2, "a"]
                 if isinstance(col_selection, str):
@@ -1361,7 +1372,10 @@ class DataFrame:
         # select rows by numpy mask or index
         # df[np.array([1, 2, 3])]
         # df[np.array([True, False, True])]
-        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
+        if _NUMPY_AVAILABLE and lazy_isinstance(
+            item, "numpy", lambda: numpy_mod().ndarray
+        ):
+            item = cast(np.ndarray[Any, Any], item)
             if item.ndim != 1:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):
@@ -1413,6 +1427,7 @@ class DataFrame:
             # TODO: Use python sequence constructors
             if not _NUMPY_AVAILABLE:
                 raise ImportError("'numpy' is required for this functionality.")
+            np = numpy_mod()
             value = np.array(value)
             if value.ndim != 2:
                 raise ValueError("can only set multiple columns with 2D matrix")
@@ -1679,6 +1694,7 @@ class DataFrame:
         """
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
+        np = numpy_mod()
         out = self._df.to_numpy()
         if out is None:
             return np.vstack(
@@ -2481,7 +2497,9 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        if _NUMPY_AVAILABLE and isinstance(predicate, np.ndarray):
+        if _NUMPY_AVAILABLE and lazy_isinstance(
+            predicate, "numpy", lambda: numpy_mod().ndarray
+        ):
             predicate = pli.Series(predicate)
 
         return (
