@@ -196,7 +196,7 @@ pub fn infer_schema(
             add_or_insert(&mut values, &key, value.into());
         }
     }
-    Schema::from(resolve_fields(values))
+    Schema::from(resolve_fields(values).into_iter())
 }
 
 fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
@@ -384,16 +384,20 @@ impl<'a> AnyValueBuffer<'a> {
     pub fn add(&mut self, val: AnyValue<'a>) -> Option<()> {
         use AnyValueBuffer::*;
         match (self, val) {
-            (Boolean(builder), AnyValue::Boolean(v)) => builder.append_value(v),
             (Boolean(builder), AnyValue::Null) => builder.append_null(),
-            (Int32(builder), AnyValue::Int32(v)) => builder.append_value(v),
+            (Boolean(builder), AnyValue::Boolean(v)) => builder.append_value(v),
+            (Boolean(builder), val) => {
+                let v = val.extract::<u8>()?;
+                builder.append_value(v == 1)
+            }
             (Int32(builder), AnyValue::Null) => builder.append_null(),
-            (Int64(builder), AnyValue::Int64(v)) => builder.append_value(v),
+            (Int32(builder), val) => builder.append_value(val.extract()?),
             (Int64(builder), AnyValue::Null) => builder.append_null(),
-            (UInt32(builder), AnyValue::UInt32(v)) => builder.append_value(v),
+            (Int64(builder), val) => builder.append_value(val.extract()?),
             (UInt32(builder), AnyValue::Null) => builder.append_null(),
-            (UInt64(builder), AnyValue::UInt64(v)) => builder.append_value(v),
+            (UInt32(builder), val) => builder.append_value(val.extract()?),
             (UInt64(builder), AnyValue::Null) => builder.append_null(),
+            (UInt64(builder), val) => builder.append_value(val.extract()?),
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-date")]
@@ -401,23 +405,26 @@ impl<'a> AnyValueBuffer<'a> {
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder, _, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(builder, _, _), AnyValue::Datetime(v, _, _)) => builder.append_value(v),
+            (Datetime(builder, tu_l, _), AnyValue::Datetime(v, tu_r, _)) => {
+                // we convert right tu to left tu
+                // so we swap.
+                let v = convert_time_units(v, tu_r, *tu_l);
+                builder.append_value(v)
+            }
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Null) => builder.append_null(),
-            (Float32(builder), AnyValue::Float32(v)) => builder.append_value(v),
             (Float32(builder), AnyValue::Null) => builder.append_null(),
-            (Float64(builder), AnyValue::Float64(v)) => builder.append_value(v),
             (Float64(builder), AnyValue::Null) => builder.append_null(),
+            (Float32(builder), val) => builder.append_value(val.extract()?),
+            (Float64(builder), val) => builder.append_value(val.extract()?),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use anyvalues for that
             (All(_, vals), v) => vals.push(v),
 
             // dynamic types
-            (Float64(builder), av) => builder.append_value(av.extract()?),
-            (Int64(builder), av) => builder.append_value(av.extract()?),
             (Utf8(builder), av) => match av {
                 AnyValue::Utf8(v) => builder.append_value(v),
                 AnyValue::Int64(v) => builder.append_value(&format!("{}", v)),

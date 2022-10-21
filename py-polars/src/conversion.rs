@@ -343,7 +343,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
-                    "Object" => DataType::Object("unknown"),
+                    "Object" => DataType::Object("Object"),
                     "List" => DataType::List(Box::new(DataType::Boolean)),
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,

@@ -357,7 +357,7 @@ fn test_quoted_numeric() {
 #[test]
 fn test_empty_bytes_to_dataframe() {
     let fields = vec![Field::new("test_field", DataType::Utf8)];
-    let schema = Schema::from(fields);
+    let schema = Schema::from(fields.into_iter());
     let file = Cursor::new(vec![]);
 
     let result = CsvReader::new(file)
@@ -392,11 +392,14 @@ fn test_missing_value() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_schema(&Schema::from(vec![
-            Field::new("foo", DataType::UInt32),
-            Field::new("bar", DataType::UInt32),
-            Field::new("ham", DataType::UInt32),
-        ]))
+        .with_schema(&Schema::from(
+            vec![
+                Field::new("foo", DataType::UInt32),
+                Field::new("bar", DataType::UInt32),
+                Field::new("ham", DataType::UInt32),
+            ]
+            .into_iter(),
+        ))
         .finish()
         .unwrap();
     assert_eq!(df.column("ham").unwrap().len(), 3)
@@ -414,10 +417,13 @@ AUDCAD,1616455921,0.96212,0.95666,1
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_dtypes(Some(&Schema::from(vec![Field::new(
-            "b",
-            DataType::Datetime(TimeUnit::Nanoseconds, None),
-        )])))
+        .with_dtypes(Some(&Schema::from(
+            vec![Field::new(
+                "b",
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
+            )]
+            .into_iter(),
+        )))
         .finish()?;
 
     assert_eq!(

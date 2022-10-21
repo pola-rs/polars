@@ -10,6 +10,7 @@
 mod _serde;
 mod dtype;
 mod field;
+mod time_unit;
 
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
@@ -34,6 +35,7 @@ use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "serde")]
 use serde::{Deserializer, Serializer};
+pub use time_unit::*;
 
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
@@ -632,6 +634,7 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    #[inline]
     pub fn try_extract<T: NumCast>(&self) -> PolarsResult<T> {
         self.extract().ok_or_else(|| {
             PolarsError::ComputeError(
@@ -924,64 +927,6 @@ impl PartialOrd for AnyValue<'_> {
             #[cfg(feature = "dtype-binary")]
             (Binary(l), Binary(r)) => l.partial_cmp(r),
             _ => None,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(
-    any(feature = "serde-lazy", feature = "serde"),
-    derive(Serialize, Deserialize)
-)]
-pub enum TimeUnit {
-    Nanoseconds,
-    Microseconds,
-    Milliseconds,
-}
-
-impl From<&ArrowTimeUnit> for TimeUnit {
-    fn from(tu: &ArrowTimeUnit) -> Self {
-        match tu {
-            ArrowTimeUnit::Nanosecond => TimeUnit::Nanoseconds,
-            ArrowTimeUnit::Microsecond => TimeUnit::Microseconds,
-            ArrowTimeUnit::Millisecond => TimeUnit::Milliseconds,
-            // will be cast
-            ArrowTimeUnit::Second => TimeUnit::Milliseconds,
-        }
-    }
-}
-
-impl Display for TimeUnit {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TimeUnit::Nanoseconds => {
-                write!(f, "ns")
-            }
-            TimeUnit::Microseconds => {
-                write!(f, "μs")
-            }
-            TimeUnit::Milliseconds => {
-                write!(f, "ms")
-            }
-        }
-    }
-}
-
-impl TimeUnit {
-    pub fn to_ascii(self) -> &'static str {
-        use TimeUnit::*;
-        match self {
-            Nanoseconds => "ns",
-            Microseconds => "us",
-            Milliseconds => "ms",
-        }
-    }
-
-    pub fn to_arrow(self) -> ArrowTimeUnit {
-        match self {
-            TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
-            TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
-            TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
         }
     }
 }

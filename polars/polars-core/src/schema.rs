@@ -24,11 +24,10 @@ impl Debug for Schema {
 
 impl<I, J> From<I> for Schema
 where
-    I: IntoIterator<Item = J>,
+    I: Iterator<Item = J>,
     J: Into<Field>,
 {
-    fn from(flds: I) -> Self {
-        let iter = flds.into_iter();
+    fn from(iter: I) -> Self {
         let mut map: PlIndexMap<_, _> =
             IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
         for fld in iter {
@@ -44,7 +43,7 @@ where
     J: Into<Field>,
 {
     fn from_iter<I: IntoIterator<Item = J>>(iter: I) -> Self {
-        Schema::from(iter)
+        Schema::from(iter.into_iter())
     }
 }
 
@@ -140,6 +139,10 @@ impl Schema {
         self.inner.get_index(index)
     }
 
+    pub fn get_index_mut(&mut self, index: usize) -> Option<(&mut String, &mut DataType)> {
+        self.inner.get_index_mut(index)
+    }
+
     pub fn coerce_by_name(&mut self, name: &str, dtype: DataType) -> Option<()> {
         *self.inner.get_mut(name)? = dtype;
         Some(())
@@ -186,6 +189,15 @@ impl Schema {
 }
 
 pub type SchemaRef = Arc<Schema>;
+
+impl IntoIterator for Schema {
+    type Item = (String, DataType);
+    type IntoIter = <PlIndexMap<String, DataType> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
 
 /// This trait exists to be unify the API of polars Schema and arrows Schema
 #[cfg(feature = "private")]

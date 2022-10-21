@@ -47,7 +47,14 @@ impl PyDataFrame {
         PyDataFrame { df }
     }
 
-    fn finish_from_rows(rows: Vec<Row>, infer_schema_length: Option<usize>) -> PyResult<Self> {
+    fn finish_from_rows(
+        rows: Vec<Row>,
+        infer_schema_length: Option<usize>,
+        schema_overwrite: Option<Schema>,
+    ) -> PyResult<Self> {
+        // object builder must be registered.
+        crate::object::register_object_builder();
+
         let schema =
             rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
         // replace inferred nulls with boolean
@@ -58,7 +65,18 @@ impl PyDataFrame {
             }
             _ => fld,
         });
-        let schema = Schema::from(fields);
+        let mut schema = Schema::from(fields);
+
+        if let Some(schema_overwrite) = schema_overwrite {
+            for (i, (name, dtype)) in schema_overwrite.into_iter().enumerate() {
+                if let Some((name_, dtype_)) = schema.get_index_mut(i) {
+                    *name_ = name;
+                    *dtype_ = dtype;
+                } else {
+                    schema.with_column(name, dtype)
+                }
+            }
+        }
 
         let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
         Ok(df.into())
@@ -397,17 +415,33 @@ impl PyDataFrame {
 
     // somehow from_rows did not work
     #[staticmethod]
-    pub fn read_rows(rows: Vec<Wrap<Row>>, infer_schema_length: Option<usize>) -> PyResult<Self> {
+    pub fn read_rows(
+        rows: Vec<Wrap<Row>>,
+        infer_schema_length: Option<usize>,
+        schema_overwrite: Option<Wrap<Schema>>,
+    ) -> PyResult<Self> {
         // safety:
         // wrap is transparent
         let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
-        Self::finish_from_rows(rows, infer_schema_length)
+        Self::finish_from_rows(
+            rows,
+            infer_schema_length,
+            schema_overwrite.map(|wrap| wrap.0),
+        )
     }
 
     #[staticmethod]
-    pub fn read_dicts(dicts: &PyAny, infer_schema_length: Option<usize>) -> PyResult<Self> {
+    pub fn read_dicts(
+        dicts: &PyAny,
+        infer_schema_length: Option<usize>,
+        schema_overwrite: Option<Wrap<Schema>>,
+    ) -> PyResult<Self> {
         let (rows, names) = dicts_to_rows(dicts, infer_schema_length.unwrap_or(1))?;
-        let mut pydf = Self::finish_from_rows(rows, infer_schema_length)?;
+        let mut pydf = Self::finish_from_rows(
+            rows,
+            infer_schema_length,
+            schema_overwrite.map(|wrap| wrap.0),
+        )?;
         pydf.df
             .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;

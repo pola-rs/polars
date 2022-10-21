@@ -120,7 +120,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
         let schema = read::infer_schema(&metadata)?;
-        Ok((&schema.fields).into())
+        Ok(schema.fields.iter().into())
     }
 }
 
