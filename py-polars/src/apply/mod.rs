@@ -73,7 +73,7 @@ fn iterator_to_struct<'a>(
                 let dict = dict.downcast::<PyDict>()?;
                 if dict.len() != struct_width {
                     return Err(crate::error::ComputeError::new_err(
-                        "all tuples must have equal size",
+                        format!("Cannot create struct type.\n> The struct dtype expects {} fields, but it got a dict with {} fields.", struct_width, dict.len())
                     ));
                 }
                 // we ignore the keys of the rest of the dicts
