@@ -8,11 +8,14 @@ def pandas_mod() -> Any:
     return pd
 
 
+def pyarrow_mod() -> Any:
+    import pyarrow as pa
+
+    return pa
+
+
 def pkg_is_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
-
-
-_PANDAS_AVAILABLE = pkg_is_available("pandas")
 
 
 def lazy_isinstance(value: Any, module_bound: str, types: Callable[[], Any]) -> bool:
@@ -20,3 +23,8 @@ def lazy_isinstance(value: Any, module_bound: str, types: Callable[[], Any]) -> 
         check = types()
         return isinstance(value, check)
     return False
+
+
+_PANDAS_AVAILABLE = pkg_is_available("pandas")
+_PYARROW_AVAILABLE = pkg_is_available("pyarrow")
+_NUMPY_AVAILABLE = pkg_is_available("numpy")

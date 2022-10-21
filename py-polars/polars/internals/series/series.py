@@ -35,7 +35,13 @@ from polars.datatypes import (
     py_type_to_dtype,
     supported_numpy_char_code,
 )
-from polars.import_check import _PANDAS_AVAILABLE, lazy_isinstance, pandas_mod
+from polars.import_check import (
+    _PANDAS_AVAILABLE,
+    _PYARROW_AVAILABLE,
+    lazy_isinstance,
+    pandas_mod,
+    pyarrow_mod,
+)
 from polars.internals.construction import (
     arrow_to_pyseries,
     numpy_to_pyseries,
@@ -77,19 +83,10 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
-try:
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
 
 if TYPE_CHECKING:
-    try:  # noqa: SIM105
-        import pandas as pd
-    except ImportError:
-        pass
+    import pandas as pd
+    import pyarrow as pa
 
     from polars.internals.type_aliases import (
         ComparisonOperator,
@@ -215,7 +212,9 @@ class Series:
             )
         elif isinstance(values, Series):
             self._s = series_to_pyseries(name, values)
-        elif _PYARROW_AVAILABLE and isinstance(values, (pa.Array, pa.ChunkedArray)):
+        elif _PYARROW_AVAILABLE and lazy_isinstance(
+            values, "pyarrow", lambda: (pyarrow_mod().Array, pyarrow_mod().ChunkedArray)
+        ):
             self._s = arrow_to_pyseries(name, values)
         elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)

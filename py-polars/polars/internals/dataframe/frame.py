@@ -40,7 +40,13 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
-from polars.import_check import _PANDAS_AVAILABLE, lazy_isinstance, pandas_mod
+from polars.import_check import (
+    _PANDAS_AVAILABLE,
+    _PYARROW_AVAILABLE,
+    lazy_isinstance,
+    pandas_mod,
+    pyarrow_mod,
+)
 from polars.internals.construction import (
     arrow_to_pydf,
     dict_to_pydf,
@@ -78,17 +84,6 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
-try:
-    import pyarrow as pa
-
-    # do not remove these
-    import pyarrow.compute
-    import pyarrow.parquet
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
@@ -100,10 +95,8 @@ else:
     from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
-    try:  # noqa: SIM105
-        import pandas as pd
-    except ImportError:
-        pass
+    import pandas as pd
+    import pyarrow as pa
 
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
@@ -291,7 +284,9 @@ class DataFrame:
         elif _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(data, columns=columns, orient=orient)
 
-        elif _PYARROW_AVAILABLE and isinstance(data, pa.Table):
+        elif _PYARROW_AVAILABLE and lazy_isinstance(
+            data, "pyarrow", lambda: pyarrow_mod().Table
+        ):
             self._df = arrow_to_pydf(data, columns=columns)
 
         elif isinstance(data, Sequence) and not isinstance(data, str):
@@ -1527,6 +1522,7 @@ class DataFrame:
                 "'pyarrow' is required for converting a polars DataFrame to an Arrow"
                 " Table."
             )
+        pa = pyarrow_mod()
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
 
@@ -1730,6 +1726,7 @@ class DataFrame:
         """
         if not _PYARROW_AVAILABLE:  # pragma: no cover
             raise ImportError("'pyarrow' is required when using to_pandas().")
+        pa = pyarrow_mod()
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
@@ -2132,6 +2129,7 @@ class DataFrame:
                     "'pyarrow' is required when using"
                     " 'write_parquet(..., use_pyarrow=True)'."
                 )
+            pa = pyarrow_mod()
 
             tbl = self.to_arrow()
 
@@ -2146,6 +2144,10 @@ class DataFrame:
 
                 data[name] = column
             tbl = pa.table(data)
+
+            # do not remove this
+            # needed below
+            import pyarrow.parquet  # noqa: F401
 
             pa.parquet.write_table(
                 table=tbl,
