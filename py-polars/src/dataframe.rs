@@ -713,7 +713,7 @@ impl PyDataFrame {
     }
 
     pub fn to_pandas(&mut self) -> PyResult<Vec<PyObject>> {
-        self.df.rechunk();
+        self.df.as_single_chunk_par();
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
             let names = self.df.get_column_names();
