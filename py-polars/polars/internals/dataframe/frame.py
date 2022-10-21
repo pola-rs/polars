@@ -3578,7 +3578,7 @@ class DataFrame:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "idx": np.arange(6),
+        ...         "idx": pl.arange(0, 6, eager=True),
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )

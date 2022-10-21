@@ -921,7 +921,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1.0, 2],
-        ...         "B": [3.0, np.inf],
+        ...         "B": [3.0, float("inf")],
         ...     }
         ... )
         >>> df.select(pl.all().is_finite())
@@ -953,7 +953,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1.0, 2],
-        ...         "B": [3.0, np.inf],
+        ...         "B": [3.0, float("inf")],
         ...     }
         ... )
         >>> df.select(pl.all().is_infinite())

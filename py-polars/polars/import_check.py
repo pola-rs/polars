@@ -34,3 +34,4 @@ def lazy_isinstance(value: Any, module_bound: str, types: Callable[[], Any]) -> 
 _PANDAS_AVAILABLE = pkg_is_available("pandas")
 _PYARROW_AVAILABLE = pkg_is_available("pyarrow")
 _NUMPY_AVAILABLE = pkg_is_available("numpy")
+_WITH_FSSPEC = pkg_is_available("fsspec")
