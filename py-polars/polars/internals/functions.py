@@ -111,7 +111,7 @@ def concat(
     rechunk
         Make sure that all data is in contiguous memory.
     how : {'vertical', 'diagonal', 'horizontal'}
-        Only used if the items are DataFrames.
+        Lazy only supports the 'vertical' strategy.
 
         - Vertical: applies multiple `vstack` operations.
         - Diagonal: finds a union between the column schemas and fills missing column
@@ -156,7 +156,10 @@ def concat(
                 f"how must be one of {{'vertical', 'diagonal'}}, got {how}"
             )
     elif isinstance(first, pli.LazyFrame):
-        return pli.wrap_ldf(_concat_lf(items, rechunk, parallel))
+        if how == "vertical":
+            return pli.wrap_ldf(_concat_lf(items, rechunk, parallel))
+        else:
+            raise ValueError("Lazy only allows 'vertical' concat strategy.")
     elif isinstance(first, pli.Series):
         out = pli.wrap_s(_concat_series(items))
     elif isinstance(first, pli.Expr):

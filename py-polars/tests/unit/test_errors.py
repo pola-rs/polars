@@ -252,3 +252,27 @@ def test_window_expression_different_group_length() -> None:
         assert "Group:" in msg
         assert "Group length:" in msg
         assert "Output: 'shape:" in msg
+
+
+@typing.no_type_check
+def test_lazy_concat_err() -> None:
+    df1 = pl.DataFrame(
+        {
+            "foo": [1, 2],
+            "bar": [6, 7],
+            "ham": ["a", "b"],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "foo": [3, 4],
+            "ham": ["c", "d"],
+            "bar": [8, 9],
+        }
+    )
+
+    for how in ["horizontal", "diagonal"]:
+        with pytest.raises(
+            ValueError, match="Lazy only allows 'vertical' concat strategy."
+        ):
+            pl.concat([df1.lazy(), df2.lazy()], how=how).collect()
