@@ -16,7 +16,6 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing._parametric import columns
-from polars.testing._private import verify_series_and_expr_api
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
