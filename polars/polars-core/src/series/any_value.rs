@@ -142,7 +142,22 @@ impl Series {
                     .unwrap()
                     .into_series());
             }
-            dtype => panic!("dtype {:?} not implemented", dtype),
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                use crate::chunked_array::object::registry;
+                let converter = registry::get_object_converter();
+                let mut builder = registry::get_object_builder(name, av.len());
+                for av in av {
+                    if let AnyValue::Object(val) = av {
+                        builder.append_value(val.as_any())
+                    } else {
+                        let any = converter(av.as_borrowed());
+                        builder.append_value(&*any)
+                    }
+                }
+                return Ok(builder.to_series());
+            }
+            dt => panic!("{:?} not supported", dt),
         };
         s.rename(name);
         Ok(s)

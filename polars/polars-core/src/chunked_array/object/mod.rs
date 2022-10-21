@@ -12,6 +12,7 @@ pub mod builder;
 pub(crate) mod extension;
 mod is_valid;
 mod iterator;
+pub mod registry;
 
 #[derive(Debug, Clone)]
 pub struct ObjectArray<T>
@@ -27,6 +28,8 @@ where
 /// Trimmed down object safe polars object
 pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
     fn type_name(&self) -> &'static str;
+
+    fn as_any(&self) -> &dyn Any;
 }
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
@@ -40,6 +43,10 @@ pub trait PolarsObject:
 impl<T: PolarsObject> PolarsObjectSafe for T {
     fn type_name(&self) -> &'static str {
         T::type_name()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -147,6 +154,13 @@ where
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         unimplemented!()
+    }
+
+    fn null_count(&self) -> usize {
+        match &self.null_bitmap {
+            None => 0,
+            Some(validity) => validity.unset_bits(),
+        }
     }
 }
 

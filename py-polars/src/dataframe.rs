@@ -52,6 +52,9 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Schema>,
     ) -> PyResult<Self> {
+        // object builder must be registered.
+        crate::object::register_object_builder();
+
         let schema =
             rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
         // replace inferred nulls with boolean

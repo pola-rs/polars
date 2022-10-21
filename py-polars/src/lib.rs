@@ -16,6 +16,7 @@ pub mod file;
 pub mod lazy;
 mod list_construction;
 pub mod npy;
+mod object;
 pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;

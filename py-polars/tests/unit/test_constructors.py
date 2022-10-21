@@ -461,6 +461,7 @@ def test_from_dicts_missing_columns() -> None:
 @typing.no_type_check
 def test_from_rows_dtype() -> None:
     # 50 is the default inference length
+    # 5182
     df = pl.DataFrame(
         data=[(None, None)] * 50 + [("1.23", None)],
         columns=[("foo", pl.Utf8), ("bar", pl.Utf8)],
@@ -468,3 +469,28 @@ def test_from_rows_dtype() -> None:
     )
     assert df.dtypes == [pl.Utf8, pl.Utf8]
     assert df.null_count().row(0) == (50, 51)
+
+    type1 = [{"c1": 206, "c2": "type1", "c3": {"x1": "abcd", "x2": "jkl;"}}]
+    type2 = [
+        {"c1": 208, "c2": "type2", "c3": {"a1": "abcd", "a2": "jkl;", "a3": "qwerty"}}
+    ]
+
+    df = pl.DataFrame(
+        data=type1 * 50 + type2,
+        columns=[("c1", pl.Int32), ("c2", pl.Object), ("c3", pl.Object)],
+    )
+    assert df.dtypes == [pl.Int32, pl.Object, pl.Object]
+
+    # 50 is the default inference length
+    # 5266
+    type1 = [{"c1": 206, "c2": "type1", "c3": {"x1": "abcd", "x2": "jkl;"}}]
+    type2 = [
+        {"c1": 208, "c2": "type2", "c3": {"a1": "abcd", "a2": "jkl;", "a3": "qwerty"}}
+    ]
+
+    df = pl.DataFrame(
+        data=type1 * 50 + type2,
+        columns=[("c1", pl.Int32), ("c2", pl.Object), ("c3", pl.Object)],
+    )
+    assert df.dtypes == [pl.Int32, pl.Object, pl.Object]
+    assert df.null_count().row(0) == (0, 0, 0)
