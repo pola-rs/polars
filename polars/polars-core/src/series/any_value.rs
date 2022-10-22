@@ -36,6 +36,42 @@ fn any_values_to_bool(avs: &[AnyValue]) -> BooleanChunked {
         .collect_trusted()
 }
 
+fn coerce_recursively(a: &Series, dtype: &DataType) -> Series {
+    match (a.dtype(), dtype) {
+        (lhs, rhs) if lhs == rhs => a.clone(),
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(_), DataType::Struct(dtype_fields)) => {
+            let a = a.struct_().unwrap();
+            let mut new_fields = Vec::with_capacity(a.fields().len());
+            for (s_field, fld) in a.fields().iter().zip(dtype_fields) {
+                new_fields.push(coerce_recursively(s_field, fld.data_type()));
+            }
+            StructChunked::new(a.name(), &new_fields)
+                .unwrap()
+                .into_series()
+        }
+        (DataType::List(_), DataType::List(inner_type)) => {
+            let a = a.list().unwrap();
+            let a = a.rechunk();
+            let arr = a.downcast_iter().next().unwrap();
+            let s = Series::try_from(("", arr.values().clone())).unwrap();
+            let new_inner = coerce_recursively(&s, inner_type);
+            let new_values = new_inner.array_ref(0).clone();
+            let new_arr = ListArray::<i64>::new(
+                new_values.data_type().clone(),
+                arr.offsets().clone(),
+                new_values,
+                arr.validity().cloned(),
+            );
+            Series::try_from((s.name(), Box::new(new_arr) as ArrayRef)).unwrap()
+        }
+        _ => match a.cast(dtype) {
+            Ok(s) => s,
+            _ => Series::full_null("", a.len(), dtype),
+        },
+    }
+}
+
 fn any_values_to_list(avs: &[AnyValue], inner_type: &DataType) -> ListChunked {
     // this is handled downstream. The builder will choose the first non null type
     if inner_type == &DataType::Null {
@@ -54,7 +90,7 @@ fn any_values_to_list(avs: &[AnyValue], inner_type: &DataType) -> ListChunked {
                     if b.dtype() == inner_type {
                         Some(b.clone())
                     } else {
-                        Some(Series::full_null("", b.len(), inner_type))
+                        Some(coerce_recursively(b, inner_type))
                     }
                 }
                 _ => None,
