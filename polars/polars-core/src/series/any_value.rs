@@ -36,7 +36,6 @@ fn any_values_to_bool(avs: &[AnyValue]) -> BooleanChunked {
         .collect_trusted()
 }
 
-// TODO! add list as well.
 fn coerce_recursively(a: &Series, dtype: &DataType) -> Series {
     match (a.dtype(), dtype) {
         (lhs, rhs) if lhs == rhs => a.clone(),
@@ -50,6 +49,21 @@ fn coerce_recursively(a: &Series, dtype: &DataType) -> Series {
             StructChunked::new(a.name(), &new_fields)
                 .unwrap()
                 .into_series()
+        }
+        (DataType::List(_), DataType::List(inner_type)) => {
+            let a = a.list().unwrap();
+            let a = a.rechunk();
+            let arr = a.downcast_iter().next().unwrap();
+            let s = Series::try_from(("", arr.values().clone())).unwrap();
+            let new_inner = coerce_recursively(&s, inner_type);
+            let new_values = new_inner.array_ref(0).clone();
+            let new_arr = ListArray::<i64>::new(
+                new_values.data_type().clone(),
+                arr.offsets().clone(),
+                new_values,
+                arr.validity().cloned(),
+            );
+            Series::try_from((s.name(), Box::new(new_arr) as ArrayRef)).unwrap()
         }
         _ => match a.cast(dtype) {
             Ok(s) => s,
