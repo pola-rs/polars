@@ -332,6 +332,7 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.sort
     ListNameSpace.sum
     ListNameSpace.tail
+    ListNameSpace.to_struct
     ListNameSpace.unique
 
 Categories

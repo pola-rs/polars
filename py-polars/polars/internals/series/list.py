@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import NullBehavior
+    from polars.internals.type_aliases import NullBehavior, ToStructStrategy
     from polars.polars import PySeries
 
 
@@ -265,6 +265,48 @@ class ListNameSpace:
             [3, 4]
             [2, 1]
         ]
+
+        """
+
+    def to_struct(
+        self,
+        n_field_strategy: ToStructStrategy = "first_non_null",
+        name_generator: Callable[[int], str] | None = None,
+    ) -> pli.Series:
+        """
+        Convert the series of type ``List`` to a series of type ``Struct``.
+
+        Parameters
+        ----------
+        n_field_strategy : {'first_non_null', 'max_width'}
+            Strategy to determine the number of fields of the struct.
+        name_generator
+            A custom function that can be used to generate the field names.
+            Default field names are `field_0, field_1 .. field_n`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
+        >>> df.select([pl.col("a").arr.to_struct()])
+        shape: (2, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ struct[3]  │
+        ╞════════════╡
+        │ {1,2,3}    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {1,2,null} │
+        └────────────┘
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").arr.to_struct(
+        ...             name_generator=lambda idx: f"col_name_{idx}"
+        ...         )
+        ...     ]
+        ... ).to_series().to_list()
+        [{'col_name_0': 1, 'col_name_1': 2, 'col_name_2': 3},
+        {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
 
         """
 
