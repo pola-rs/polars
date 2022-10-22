@@ -26,7 +26,8 @@ else:
 import polars.internals as pli
 from polars.convert import from_arrow
 from polars.datatypes import DataType, PolarsDataType, Utf8
-from polars.import_check import _PYARROW_AVAILABLE
+from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 from polars.utils import deprecated_alias, format_path, handle_projection_columns
@@ -39,8 +40,6 @@ except ImportError:
     _WITH_CX = False
 
 if TYPE_CHECKING:
-    import pyarrow as pa
-
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
 
 

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Callable, Iterable, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
-from polars.import_check import _ZONEINFO_AVAILABLE, zoneinfo_mod
+from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 try:
     from polars.polars import PyExpr
@@ -219,7 +219,6 @@ def _to_python_datetime(
                     "Install polars[timezone] to handle datetimes with timezones."
                 )
 
-            zoneinfo = zoneinfo_mod()
             utc = zoneinfo.ZoneInfo("UTC")
             if tu == "ns":
                 # nanoseconds to seconds
@@ -246,7 +245,6 @@ def _localize(dt: datetime, tz: str) -> datetime:
             "backports.zoneinfo is not installed. Please run "
             "`pip install backports.zoneinfo`."
         )
-    zoneinfo = zoneinfo_mod()
     return dt.astimezone(zoneinfo.ZoneInfo(tz))
 
 

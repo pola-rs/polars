@@ -1,4 +1,8 @@
-hypothesis==6.55.0
+numpy
+pandas
+pyarrow
+
+hypothesis==6.56.3
 
 ghp-import==2.1.0
 sphinx==5.2.2

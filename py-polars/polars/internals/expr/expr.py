@@ -16,7 +16,8 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.import_check import _NUMPY_AVAILABLE, lazy_isinstance, numpy_mod
+from polars.dependencies import _NUMPY_AVAILABLE, _NUMPY_TYPE
+from polars.dependencies import numpy as np
 from polars.internals.expr.categorical import ExprCatNameSpace
 from polars.internals.expr.datetime import ExprDateTimeNameSpace
 from polars.internals.expr.list import ExprListNameSpace
@@ -33,8 +34,6 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    import numpy as np
-
     from polars.internals.type_aliases import (
         ClosedWindow,
         FillNullStrategy,
@@ -2000,8 +1999,7 @@ class Expr:
 
         """
         if isinstance(indices, list) or (
-            _NUMPY_AVAILABLE
-            and lazy_isinstance(indices, "numpy", lambda: numpy_mod().ndarray)
+            _NUMPY_TYPE(indices) and isinstance(indices, np.ndarray)
         ):
             indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
