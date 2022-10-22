@@ -508,3 +508,36 @@ def test_from_dicts_schema() -> None:
         "b": [4, 5, 6],
         "c": [None, None, None],
     }
+
+
+def test_nested_read_dict_4143() -> None:
+    assert pl.from_dicts(
+        [
+            {
+                "id": 1,
+                "hint": [
+                    {"some_text_here": "text", "list_": [1, 2, 4]},
+                    {"some_text_here": "text", "list_": [1, 2, 4]},
+                ],
+            },
+            {
+                "id": 2,
+                "hint": [
+                    {"some_text_here": None, "list_": [1]},
+                    {"some_text_here": None, "list_": [2]},
+                ],
+            },
+        ]
+    ).to_dict(False) == {
+        "hint": [
+            [
+                {"some_text_here": "text", "list_": [1, 2, 4]},
+                {"some_text_here": "text", "list_": [1, 2, 4]},
+            ],
+            [
+                {"some_text_here": None, "list_": [1]},
+                {"some_text_here": None, "list_": [2]},
+            ],
+        ],
+        "id": [1, 2],
+    }

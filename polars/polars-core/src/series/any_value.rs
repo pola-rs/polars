@@ -36,6 +36,28 @@ fn any_values_to_bool(avs: &[AnyValue]) -> BooleanChunked {
         .collect_trusted()
 }
 
+// TODO! add list as well.
+fn coerce_recursively(a: &Series, dtype: &DataType) -> Series {
+    match (a.dtype(), dtype) {
+        (lhs, rhs) if lhs == rhs => a.clone(),
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(_), DataType::Struct(dtype_fields)) => {
+            let a = a.struct_().unwrap();
+            let mut new_fields = Vec::with_capacity(a.fields().len());
+            for (s_field, fld) in a.fields().iter().zip(dtype_fields) {
+                new_fields.push(coerce_recursively(s_field, fld.data_type()));
+            }
+            StructChunked::new(a.name(), &new_fields)
+                .unwrap()
+                .into_series()
+        }
+        _ => match a.cast(dtype) {
+            Ok(s) => s,
+            _ => Series::full_null("", a.len(), dtype),
+        },
+    }
+}
+
 fn any_values_to_list(avs: &[AnyValue], inner_type: &DataType) -> ListChunked {
     // this is handled downstream. The builder will choose the first non null type
     if inner_type == &DataType::Null {
@@ -54,7 +76,7 @@ fn any_values_to_list(avs: &[AnyValue], inner_type: &DataType) -> ListChunked {
                     if b.dtype() == inner_type {
                         Some(b.clone())
                     } else {
-                        Some(Series::full_null("", b.len(), inner_type))
+                        Some(coerce_recursively(b, inner_type))
                     }
                 }
                 _ => None,

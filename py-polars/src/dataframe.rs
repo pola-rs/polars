@@ -440,7 +440,7 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        let (rows, mut names) = dicts_to_rows(dicts, infer_schema_length.unwrap_or(1))?;
+        let (rows, mut names) = dicts_to_rows(dicts, infer_schema_length.unwrap_or(50))?;
 
         // ensure the new names are used
         if let Some(schema) = &schema_overwrite {
