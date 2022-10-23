@@ -72,12 +72,20 @@ jobs:
 
       - name: Check import without optional dependencies
         run: |
-          pip uninstall pandas -y
-          python -c 'import polars'
-          pip uninstall numpy -y
-          python -c 'import polars'
-          pip uninstall pyarrow -y
-          python -c 'import polars'
+          declare -a deps=("pandas"
+          "pyarrow"
+          "fsspec"
+          "matplotlib"
+          "backports.zoneinfo"
+          "connectorx"
+          "xlsx2csv"
+          )
+          for d in "${deps[@]}"
+          do
+            echo "uninstall $i and check imports..."
+            pip uninstall "$d" -y
+            python -c 'import polars'
+          done
 
   windows:
     runs-on: windows-latest

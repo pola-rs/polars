@@ -31,7 +31,12 @@ def zoneinfo_mod() -> ModuleType:
 
 
 def pkg_is_available(name: str) -> bool:
-    return importlib.util.find_spec(name) is not None
+    try:
+        return importlib.util.find_spec(name) is not None
+    # in python 3.7 backports.zoneinfo fails
+    # likely due to the dot in the package name
+    except ModuleNotFoundError:
+        return False
 
 
 def lazy_isinstance(value: Any, module_bound: str, types: Callable[[], Any]) -> bool:
