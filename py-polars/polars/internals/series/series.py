@@ -36,7 +36,6 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.dependencies import (
-    _NUMPY_AVAILABLE,
     _NUMPY_TYPE,
     _PANDAS_TYPE,
     _PYARROW_AVAILABLE,
@@ -639,7 +638,7 @@ class Series:
             is_bool_sequence(item)
             or (isinstance(item, Series) and item.dtype == Boolean)
             or (
-                _NUMPY_AVAILABLE
+                _NUMPY_TYPE(item)
                 and isinstance(item, np.ndarray)
                 and item.dtype.kind == "b"
             )
@@ -744,9 +743,6 @@ class Series:
         self, ufunc: np.ufunc, method: str, *inputs: Any, **kwargs: Any
     ) -> Series:
         """Numpy universal functions."""
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-
         if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
 
@@ -2649,11 +2645,6 @@ class Series:
         dtype: int64
 
         """
-        if not _PYARROW_AVAILABLE:  # pragma: no cover
-            raise ImportError(
-                "'pyarrow' is required for converting a 'polars' Series to a 'pandas'"
-                " Series."
-            )
         return self.to_arrow().to_pandas()
 
     def set(self, filter: Series, value: int | float | str) -> Series:

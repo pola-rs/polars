@@ -63,8 +63,9 @@ def _get_dependency_info() -> dict[str, str]:
 def _get_dep_version(dep_name: str) -> str:
     try:
         module = importlib.import_module(dep_name)
+        module_version = getattr(module, "__version__", "<version not detected>")
     except ImportError:
         return "<not installed>"
 
-    # all our dependencies as of 2022-08-11 implement __version__
-    return getattr(module, "__version__", "<version not detected>")
+    # all our dependencies (as of 2022-08-11) implement __version__
+    return module_version

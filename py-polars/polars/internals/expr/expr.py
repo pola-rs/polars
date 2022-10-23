@@ -16,7 +16,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import _NUMPY_AVAILABLE, _NUMPY_TYPE
+from polars.dependencies import _NUMPY_TYPE
 from polars.dependencies import numpy as np
 from polars.internals.expr.categorical import ExprCatNameSpace
 from polars.internals.expr.datetime import ExprDateTimeNameSpace
@@ -248,9 +248,6 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Expr:
         """Numpy universal functions."""
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-
         args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
         def function(s: pli.Series) -> pli.Series:  # pragma: no cover

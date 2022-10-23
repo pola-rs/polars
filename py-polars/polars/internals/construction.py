@@ -262,16 +262,7 @@ def sequence_to_pyseries(
                     ._s
                 )
 
-            # TODO: use anyvalues here
-            # no need to require pyarrow for this.
-            if not _PYARROW_AVAILABLE:  # pragma: no cover
-                raise ImportError(
-                    "'pyarrow' is required for converting a Sequence of date or"
-                    " datetime values to a PySeries."
-                )
-
-            # let arrow infer dtype if not timedelta
-            # arrow uses microsecond durations by default, not supported yet.
+            # TODO: use anyvalues here (no need to require pyarrow for this).
             arrow_dtype = dtype_to_arrow_type(dtype)
             return arrow_to_pyseries(name, pa.array(values, type=arrow_dtype))
 
@@ -426,10 +417,6 @@ def pandas_to_pyseries(
     name: str, values: pd.Series | pd.DatetimeIndex, nan_to_none: bool = True
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
-    if not _PYARROW_AVAILABLE:  # pragma: no cover
-        raise ImportError(
-            "'pyarrow' is required when constructing a PySeries from a pandas Series."
-        )
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
     if not name and values.name is not None:
         name = str(values.name)
@@ -721,10 +708,6 @@ def arrow_to_pydf(
     data: pa.Table, columns: ColumnsType | None = None, rechunk: bool = True
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an Arrow Table."""
-    if not _PYARROW_AVAILABLE:  # pragma: no cover
-        raise ImportError(
-            "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
-        )
     original_columns = columns
     if columns is not None:
         columns, dtypes = _unpack_columns(columns)
@@ -807,11 +790,6 @@ def pandas_to_pydf(
     nan_to_none: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
-    if not _PYARROW_AVAILABLE:  # pragma: no cover
-        raise ImportError(
-            "'pyarrow' is required when constructing a PyDataFrame from a pandas"
-            " DataFrame."
-        )
     length = data.shape[0]
     arrow_dict = {
         str(col): _pandas_series_to_arrow(

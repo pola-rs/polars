@@ -3,13 +3,16 @@
 # ------------------------------------------------
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
+import pytest
 from hypothesis import given, settings
+from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import sampled_from
 
 import polars as pl
-from polars.testing._parametric import (
+from polars.testing.parametric import (
     column,
     columns,
     dataframes,
@@ -51,6 +54,10 @@ def test_strategy_shape(
     assert 3 <= s2.len() <= 8
     assert s1.name == ""
     assert s2.name == "col"
+
+    from polars.testing._parametric import MAX_COLS
+
+    assert 0 <= len(columns(None)) <= MAX_COLS
 
 
 @given(
@@ -195,3 +202,33 @@ def test_infinities(
     assert all(finite_float(val) for val in s.to_list())
     for col in df.columns:
         assert all(finite_float(val) for val in df[col].to_list())
+
+
+def test_invalid_arguments() -> None:
+    for invalid_probability in (-1.0, +2.0):
+        with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
+            column("colx", dtype=pl.Boolean, null_probability=invalid_probability)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=NonInteractiveExampleWarning)
+            with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
+                series(name="colx", null_probability=invalid_probability).example()
+            with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):
+                dataframes(
+                    cols=column(None),  # type: ignore[arg-type]
+                    null_probability=invalid_probability,
+                ).example()
+
+    for unsupported_type in (pl.List, pl.Struct):
+        # TODO: add support for compound types
+        with pytest.raises(InvalidArgument, match=f"for {unsupported_type} type"):
+            column("colx", dtype=unsupported_type)
+
+    with pytest.raises(InvalidArgument, match="not a valid polars datatype"):
+        columns(["colx", "coly"], dtype=pl.DataFrame)  # type: ignore[arg-type]
+
+    with pytest.raises(InvalidArgument, match=r"\d dtypes for \d names"):
+        columns(["colx", "coly"], dtype=[pl.Date, pl.Date, pl.Datetime])
+
+    with pytest.raises(InvalidArgument, match="Unable to determine dtype"):
+        column("colx", strategy=sampled_from([None]))

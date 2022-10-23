@@ -42,11 +42,10 @@ def assert_frame_equal(
 
     Examples
     --------
-    >>> import polars as pl
-    >>> import polars.testing
+    >>> from polars.testing import assert_frame_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [2, 3, 4]})
-    >>> pl.testing.assert_frame_equal(df1, df2)  # doctest: +SKIP
+    >>> assert_frame_equal(df1, df2)  # doctest: +SKIP
 
     """
     if isinstance(left, pli.LazyFrame) and isinstance(right, pli.LazyFrame):
@@ -121,11 +120,10 @@ def assert_series_equal(
 
     Examples
     --------
-    >>> import polars as pl
-    >>> import polars.testing
+    >>> from polars.testing import assert_series_equal
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([2, 3, 4])
-    >>> pl.testing.assert_series_equal(s1, s2)  # doctest: +SKIP
+    >>> assert_series_equal(s1, s2)  # doctest: +SKIP
 
     """
     obj = "Series"

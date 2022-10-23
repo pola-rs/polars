@@ -40,13 +40,7 @@ from polars.datatypes import (
     get_idx_type,
     py_type_to_dtype,
 )
-from polars.dependencies import (
-    _NUMPY_AVAILABLE,
-    _NUMPY_TYPE,
-    _PANDAS_TYPE,
-    _PYARROW_AVAILABLE,
-    _PYARROW_TYPE,
-)
+from polars.dependencies import _NUMPY_TYPE, _PANDAS_TYPE, _PYARROW_TYPE
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -290,11 +284,6 @@ class DataFrame:
             self._df = series_to_pydf(data, columns=columns)
 
         elif _PANDAS_TYPE(data) and isinstance(data, pd.DataFrame):
-            if not _PYARROW_AVAILABLE:  # pragma: no cover
-                raise ImportError(
-                    "'pyarrow' is required for converting a pandas DataFrame to a"
-                    " polars DataFrame."
-                )
             self._df = pandas_to_pydf(data, columns=columns)
 
         else:
@@ -1402,9 +1391,6 @@ class DataFrame:
         # df[["C", "D"]]
         elif isinstance(key, list):
             # TODO: Use python sequence constructors
-            if not _NUMPY_AVAILABLE:
-                raise ImportError("'numpy' is required for this functionality.")
-
             value = np.array(value)
             if value.ndim != 2:
                 raise ValueError("can only set multiple columns with 2D matrix")
@@ -1509,11 +1495,6 @@ class DataFrame:
         bar: [["a","b","c","d","e","f"]]
 
         """
-        if not _PYARROW_AVAILABLE:  # pragma: no cover
-            raise ImportError(
-                "'pyarrow' is required for converting a polars DataFrame to an Arrow"
-                " Table."
-            )
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
 
@@ -1668,9 +1649,6 @@ class DataFrame:
         <class 'numpy.ndarray'>
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-
         out = self._df.to_numpy()
         if out is None:
             return np.vstack(
@@ -1716,9 +1694,6 @@ class DataFrame:
         <class 'pandas.core.frame.DataFrame'>
 
         """
-        if not _PYARROW_AVAILABLE:  # pragma: no cover
-            raise ImportError("'pyarrow' is required when using to_pandas().")
-
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
@@ -2104,7 +2079,7 @@ class DataFrame:
             writing speeds. If None and ``use_pyarrow=True``, the row group size
             will be the minimum of the DataFrame size and 64 * 1024 * 1024.
         use_pyarrow
-            Use C++ parquet implementation vs rust parquet implementation.
+            Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
@@ -2116,12 +2091,6 @@ class DataFrame:
             file = format_path(file)
 
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:  # pragma: no cover
-                raise ImportError(
-                    "'pyarrow' is required when using"
-                    " 'write_parquet(..., use_pyarrow=True)'."
-                )
-
             tbl = self.to_arrow()
             data = {}
 
