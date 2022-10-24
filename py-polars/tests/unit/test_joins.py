@@ -89,16 +89,22 @@ def test_sorted_merge_joins() -> None:
             df_b = df_b.select(pl.all().reverse())
 
         join_strategies: list[JoinStrategy] = ["left", "inner"]
-        for how in join_strategies:
-            # hash join
-            out_hash_join = df_a.join(df_b, on="a", how=how)
+        for cast_to in [int, str, float]:
+            for how in join_strategies:
+                df_a_ = df_a.with_column(pl.col("a").cast(cast_to))
+                df_b_ = df_b.with_column(pl.col("a").cast(cast_to))
 
-            # sorted merge join
-            out_sorted_merge_join = df_a.with_column(
-                pl.col("a").set_sorted(reverse)
-            ).join(df_b.with_column(pl.col("a").set_sorted(reverse)), on="a", how=how)
+                # hash join
+                out_hash_join = df_a_.join(df_b_, on="a", how=how)
 
-            assert out_hash_join.frame_equal(out_sorted_merge_join)
+                # sorted merge join
+                out_sorted_merge_join = df_a_.with_column(
+                    pl.col("a").set_sorted(reverse)
+                ).join(
+                    df_b_.with_column(pl.col("a").set_sorted(reverse)), on="a", how=how
+                )
+
+                assert out_hash_join.frame_equal(out_sorted_merge_join)
 
 
 def test_join_negative_integers() -> None:
