@@ -25,6 +25,7 @@ pyo3 = { version = "0.16", optional = true }
 rayon.workspace = true
 
 [features]
+nightly = ["polars-core/nightly", "polars-pipe/nightly"]
 compile = ["polars-plan/compile"]
 default = ["compile", "private"]
 parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]

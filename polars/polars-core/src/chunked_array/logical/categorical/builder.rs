@@ -1,9 +1,9 @@
 use std::hash::{Hash, Hasher};
 
-use ahash::CallHasher;
 use arrow::array::*;
 use hashbrown::hash_map::RawEntryMut;
 use polars_arrow::trusted_len::PushUnchecked;
+use polars_utils::HashSingle;
 
 use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
@@ -190,7 +190,7 @@ impl CategoricalChunkedBuilder<'_> {
 }
 impl<'a> CategoricalChunkedBuilder<'a> {
     fn push_impl(&mut self, s: &'a str, store_hashes: bool) {
-        let h = str::get_hash(s, self.local_mapping.hasher());
+        let h = self.local_mapping.hasher().hash_single(s);
         let key = StrHashLocal::new(s, h);
         let mut idx = self.local_mapping.len() as u32;
 
@@ -214,7 +214,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
 
     /// Check if this categorical already exists
     pub fn exits(&self, s: &str) -> bool {
-        let h = str::get_hash(s, self.local_mapping.hasher());
+        let h = self.local_mapping.hasher().hash_single(s);
         let key = StrHashLocal::new(s, h);
         self.local_mapping.contains_key(&key)
     }
@@ -276,7 +276,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
             let hb = global_mapping.hasher().clone();
 
             for s in values.values_iter() {
-                let h = str::get_hash(s, &hb);
+                let h = hb.hash_single(s);
                 let mut global_idx = global_mapping.len() as u32;
                 // Note that we don't create the StrHashGlobal to search the key in the hashmap
                 // as StrHashGlobal may allocate a string

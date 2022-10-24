@@ -1320,9 +1320,9 @@ def test_reproducible_hash_with_seeds() -> None:
     expected = pl.Series(
         "s",
         [
-            15801072432137883943,
+            8823051245921001677,
             988796329533502010,
-            9604537446374444741,
+            7528667241828618484,
         ],
         dtype=pl.UInt64,
     )

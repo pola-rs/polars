@@ -8,6 +8,7 @@
 //!
 #[cfg(feature = "serde")]
 mod _serde;
+mod aliases;
 mod dtype;
 mod field;
 mod time_unit;
@@ -18,6 +19,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
 use ahash::RandomState;
+pub use aliases::*;
 use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
@@ -930,33 +932,6 @@ impl PartialOrd for AnyValue<'_> {
         }
     }
 }
-
-#[cfg(feature = "private")]
-pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
-#[cfg(feature = "private")]
-pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
-#[cfg(feature = "private")]
-pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, RandomState>;
-#[cfg(feature = "private")]
-pub type PlIndexSet<K> = indexmap::IndexSet<K, RandomState>;
-
-#[cfg(not(feature = "bigidx"))]
-pub type IdxCa = UInt32Chunked;
-#[cfg(feature = "bigidx")]
-pub type IdxCa = UInt64Chunked;
-pub use polars_arrow::index::{IdxArr, IdxSize};
-
-#[cfg(not(feature = "bigidx"))]
-pub const IDX_DTYPE: DataType = DataType::UInt32;
-#[cfg(feature = "bigidx")]
-pub const IDX_DTYPE: DataType = DataType::UInt64;
-
-#[cfg(not(feature = "bigidx"))]
-pub type IdxType = UInt32Type;
-#[cfg(feature = "bigidx")]
-pub type IdxType = UInt64Type;
-
-pub const NULL_DTYPE: DataType = DataType::Int32;
 
 #[cfg(test)]
 mod test {
