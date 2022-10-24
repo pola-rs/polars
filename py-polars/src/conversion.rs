@@ -65,7 +65,7 @@ impl<T> From<T> for Wrap<T> {
 
 pub(crate) fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
     let seq = <PySequence as PyTryFrom>::try_from(obj)?;
-    let len = seq.len()? as usize;
+    let len = seq.len()?;
     Ok((seq, len))
 }
 
@@ -743,7 +743,7 @@ impl Default for ObjectValue {
 impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let seq = <PySequence as PyTryFrom>::try_from(obj)?;
-        let mut v = Vec::with_capacity(seq.len().unwrap_or(0) as usize);
+        let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
         for item in seq.iter()? {
             v.push(item?.extract::<T>()?);
         }
@@ -1103,7 +1103,7 @@ pub(crate) fn parse_parquet_compression(
         "zstd" => ParquetCompression::Zstd(
             compression_level
                 .map(|lvl| {
-                    ZstdLevel::try_new(lvl as i32)
+                    ZstdLevel::try_new(lvl)
                         .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
                 })
                 .transpose()?,

@@ -145,7 +145,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             let rng = &mut SmallRng::from_rng(&mut thread_rng).unwrap();
 
             // Shuffle sort_idx positions which point to ties in the original series.
-            for i in 0..(ties_indices.len() - 1) as usize {
+            for i in 0..(ties_indices.len() - 1) {
                 let ties_index_start = ties_indices[i];
                 let ties_index_end = ties_indices[i + 1];
                 if ties_index_end - ties_index_start > 1 {

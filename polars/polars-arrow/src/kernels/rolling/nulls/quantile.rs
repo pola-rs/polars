@@ -104,8 +104,7 @@ where
     // we are in bounds
     let mut sorted_window = unsafe { SortedBufNulls::new(values, bitmap, start, end) };
 
-    let mut validity = match create_validity(min_periods, len as usize, window_size, det_offsets_fn)
-    {
+    let mut validity = match create_validity(min_periods, len, window_size, det_offsets_fn) {
         Some(v) => v,
         None => {
             let mut validity = MutableBitmap::with_capacity(len);

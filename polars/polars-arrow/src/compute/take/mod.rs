@@ -134,7 +134,7 @@ pub unsafe fn take_no_null_primitive_iter_unchecked<T: NativeType, I: TrustedLen
     let array_values = arr.values().as_slice();
 
     let iter = indices.into_iter().map(|idx| {
-        debug_assert!((idx as usize) < array_values.len());
+        debug_assert!((idx) < array_values.len());
         *array_values.get_unchecked(idx)
     });
 
@@ -476,7 +476,7 @@ pub unsafe fn take_utf8_unchecked(
     // Allocate 2.0 times the expected size.
     // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
     let mut values_capacity = if arr.len() > 0 {
-        ((arr.len() as f32 * 2.0) as usize) / arr.len() * indices.len() as usize
+        ((arr.len() as f32 * 2.0) as usize) / arr.len() * indices.len()
     } else {
         0
     };
@@ -589,7 +589,7 @@ pub unsafe fn take_binary_unchecked(
     // Allocate 2.0 times the expected size.
     // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
     let mut values_capacity = if arr.len() > 0 {
-        ((arr.len() as f32 * 2.0) as usize) / arr.len() * indices.len() as usize
+        ((arr.len() as f32 * 2.0) as usize) / arr.len() * indices.len()
     } else {
         0
     };

@@ -856,7 +856,7 @@ impl<'a> From<AnyValue<'a>> for Option<i64> {
         match val {
             Null => None,
             Int32(v) => Some(v as i64),
-            Int64(v) => Some(v as i64),
+            Int64(v) => Some(v),
             UInt32(v) => Some(v as i64),
             _ => todo!(),
         }
