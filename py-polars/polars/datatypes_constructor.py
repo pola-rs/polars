@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import Any, Callable, Sequence
 
 from polars.datatypes import (
     Boolean,
@@ -24,6 +24,7 @@ from polars.datatypes import (
     Utf8,
     _base_type,
 )
+from polars.dependencies import numpy as np
 
 try:
     from polars.polars import PySeries
@@ -31,9 +32,6 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
-
-if TYPE_CHECKING:
-    import numpy as np
 
 
 if not _DOCUMENTING:
@@ -76,8 +74,6 @@ _NUMPY_TYPE_TO_CONSTRUCTOR = None
 
 
 def _set_numpy_to_constructor() -> None:
-    import numpy as np
-
     global _NUMPY_TYPE_TO_CONSTRUCTOR
     _NUMPY_TYPE_TO_CONSTRUCTOR = {
         np.float32: PySeries.new_f32,

@@ -17,3 +17,6 @@ extend-exclude =
     # Automatically generated test artifacts
     venv/,
     target/,
+
+per-file-ignores =
+    polars/datatypes.py: B019
