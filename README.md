@@ -52,23 +52,18 @@ To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 ...     }
 ... )
 
-# embarrassingly parallel execution
-# very expressive query language
->>> (
-...     df
-...     .sort("fruits")
-...     .select(
-...         [
-...             "fruits",
-...             "cars",
-...             pl.lit("fruits").alias("literal_string_fruits"),
-...             pl.col("B").filter(pl.col("cars") == "beetle").sum(),
-...             pl.col("A").filter(pl.col("B") > 2).sum().over("cars").alias("sum_A_by_cars"),     # groups by "cars"
-...             pl.col("A").sum().over("fruits").alias("sum_A_by_fruits"),                         # groups by "fruits"
-...             pl.col("A").reverse().over("fruits").alias("rev_A_by_fruits"),                     # groups by "fruits
-...             pl.col("A").sort_by("B").over("fruits").alias("sort_A_by_B_by_fruits"),            # groups by "fruits"
-...         ]
-...     )
+# embarrassingly parallel execution & very expressive query language
+>>> df.sort("fruits").select(
+...     [
+...         "fruits",
+...         "cars",
+...         pl.lit("fruits").alias("literal_string_fruits"),
+...         pl.col("B").filter(pl.col("cars") == "beetle").sum(),
+...         pl.col("A").filter(pl.col("B") > 2).sum().over("cars").alias("sum_A_by_cars"),
+...         pl.col("A").sum().over("fruits").alias("sum_A_by_fruits"),
+...         pl.col("A").reverse().over("fruits").alias("rev_A_by_fruits"),
+...         pl.col("A").sort_by("B").over("fruits").alias("sort_A_by_B_by_fruits"),
+...     ]
 ... )
 shape: (5, 8)
 ┌──────────┬──────────┬──────────────┬─────┬─────────────┬─────────────┬─────────────┬─────────────┐
@@ -101,33 +96,30 @@ See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/)
 
 Install the latest polars version with:
 
+```sh
+pip install polars
 ```
-# Install Polars only.
-$ pip3 install -U 'polars'
+
+We also have a conda package (`conda install polars`), however pip is the preferred way to install Polars.
 
 # Install Polars with all optional dependencies.
-$ pip3 install -U 'polars[all]'
-
-# Install Polars and numpy.
-$ pip3 install -U 'polars[numpy]'
-
-# Install Polars and pyarrow/pandas/numpy to be able to convert to/from pandas and/or read data with pyarrow.
-$ pip3 install -U 'polars[pyarrow]'
-
-# Install Polars and pyarrow/pandas/numpy and fsspec (read from e.g. remote filesystems, compressed files).
-$ pip3 install -U 'polars[pyarrow,fsspec]'
-
-# Install Polars and connectorx (read data from SQL databases).
-$ pip3 install -U 'polars[connectorx]'
-
-# Install Polars and xlsx2csv (read data from Excel).
-$ pip3 install -U 'polars[xlsx2csv]'
-
-# Install Polars with timezone support, only needed if
-#   1. you are on Python < 3.9, Python 3.9+ has this in stdlib
-#   2. you are on Windows
-$ pip3 install -U 'polars[timezone]'
+```sh
+pip install polars[all]
+pip install polars[numpy,pandas,pyarrow]  # install a subset of all optional dependencies
 ```
+You can also install the dependencies directly.
+
+| Tag      | Description |
+| ----------- | ----------- |
+| all      | Install all optional dependencies (all of the following)       |
+| pandas   | Install with Pandas for converting data to and from Pandas Dataframes/Series       |
+| numpy   | Install with numpy for converting data to and from numpy arrays      |
+| pyarrow   | Reading data formats using PyArrow    |
+| fsspec   | Support for reading from remote file systems       |
+| connectorx   | Support for reading from SQL databases       |
+| xlsx2csv   | Support for reading from Excel files   |
+| timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed  |
+
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
 
@@ -153,7 +145,7 @@ Want to know about all the features Polars supports? Read the docs!
 
 #### Python
 
-  * Installation guide: `$ pip3 install polars`
+  * Installation guide: `pip install polars`
   * [Python documentation](https://pola-rs.github.io/polars/py-polars/html/reference/index.html)
   * [User guide](https://pola-rs.github.io/polars-book/)
 
@@ -164,7 +156,7 @@ Want to know about all the features Polars supports? Read the docs!
 
 #### Node
 
-  * Installation guide: `$ yarn add nodejs-polars`
+  * Installation guide: `yarn add nodejs-polars`
   * [Node documentation](https://pola-rs.github.io/nodejs-polars/index.html)
   * [User guide](https://pola-rs.github.io/polars-book/)
   * [Github](https://github.com/pola-rs/nodejs-polars)
@@ -182,14 +174,14 @@ If you want a bleeding edge release or maximal performance you should compile **
 This can be done by going through the following steps in sequence:
 
   1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
-  2. Install [maturin](https://maturin.rs/): `$ pip3 install maturin`
+  2. Install [maturin](https://maturin.rs/): `pip install maturin`
   3. Choose any of:
       * Fastest binary, very long compile times:
-        ```bash
+        ```sh
         $ cd py-polars && maturin develop --release -- -C target-cpu=native
         ```
       * Fast binary, Shorter compile times:
-        ```bash
+        ```sh
         $ cd py-polars && maturin develop --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
         ```
 
@@ -210,12 +202,12 @@ See [this example](./examples/python_rust_compiled_function).
 # Going big...
 Do you expect more than `2^32` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
 
-Or for python users install `$ pip install -U polars-u64-idx`.
+Or for python users install `pip install polars-u64-idx`.
 
 Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
 
 # Legacy
-Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `$pip -U polars-lts-cpu`. This polars project is 
+Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip polars-lts-cpu`. This polars project is 
 compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
 
 ## Acknowledgements
