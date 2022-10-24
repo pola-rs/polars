@@ -17,6 +17,7 @@ impl Display for ListFunction {
 
         let name = match self {
             Concat => "concat",
+            #[cfg(feature = "is_in")]
             Contains => "contains",
             Slice => "slice",
         };

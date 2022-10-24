@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+#[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_ops::prelude::*;
 
@@ -83,10 +84,10 @@ impl ListNameSpace {
     }
 
     /// Sort every sublist.
-    pub fn sort(self, reverse: bool) -> Expr {
+    pub fn sort(self, options: SortOptions) -> Expr {
         self.0
             .map(
-                move |s| Ok(s.list()?.lst_sort(reverse).into_series()),
+                move |s| Ok(s.list()?.lst_sort(options).into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("arr.sort")

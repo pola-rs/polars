@@ -13,7 +13,6 @@ use polars_core::utils::get_supertype;
 
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
-#[cfg(feature = "list")]
 use crate::dsl::function_expr::ListFunction;
 #[cfg(feature = "strings")]
 use crate::dsl::function_expr::StringFunction;
@@ -300,8 +299,6 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
 }
 
 /// Concat lists entries.
-#[cfg(feature = "list")]
-#[cfg_attr(docsrs, doc(cfg(feature = "list")))]
 pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
     let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
 

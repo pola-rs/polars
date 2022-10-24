@@ -1,8 +1,13 @@
+#[cfg(feature = "list_eval")]
 use std::sync::Mutex;
 
+#[cfg(feature = "list_eval")]
 use polars_arrow::utils::CustomIterTools;
+#[cfg(feature = "list_eval")]
 use polars_core::prelude::*;
+#[cfg(feature = "list_eval")]
 use polars_plan::dsl::*;
+#[cfg(feature = "list_eval")]
 use rayon::prelude::*;
 
 use crate::prelude::*;
