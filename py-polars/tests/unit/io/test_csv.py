@@ -911,3 +911,35 @@ def test_csv_single_categorical_null() -> None:
 
     assert df.dtypes == [pl.Utf8, pl.Categorical, pl.Utf8]
     assert df.to_dict(False) == {"x": ["A"], "y": [None], "z": ["A"]}
+
+
+def test_csv_with_small_dtypes() -> None:
+    f = io.BytesIO()
+    icol = [-1, -2, -3, 0, None, 7, 8, 9]
+    ucol = [0, 1, 2, 3, None, 7, 8, 9]
+    data = {
+        "i8_data": pl.Series(icol, dtype=pl.Int8),
+        "i16_data": pl.Series(icol, dtype=pl.Int16),
+        "i32_data": pl.Series(icol, dtype=pl.Int32),
+        "i64_data": pl.Series(icol, dtype=pl.Int64),
+        "u8_data": pl.Series(ucol, dtype=pl.UInt8),
+        "u16_data": pl.Series(ucol, dtype=pl.UInt16),
+        "u32_data": pl.Series(ucol, dtype=pl.UInt32),
+        "u64_data": pl.Series(ucol, dtype=pl.UInt64),
+    }
+    dtypes = [
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+    ]
+    pl.DataFrame(data).write_csv(f)
+    f.seek(0)
+    
+    df = pl.read_csv(f, dtypes=dtypes)
+
+    assert df.dtypes == dtypes

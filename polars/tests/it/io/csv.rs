@@ -1053,3 +1053,41 @@ fn test_parse_dates_3380() -> PolarsResult<()> {
     assert_eq!(df.column("validdate")?.null_count(), 0);
     Ok(())
 }
+
+#[test]
+fn test_with_specified_dtype() -> PolarsResult<()> {
+    let csv = r#"i8,i16,i32,i64,u8,u16,u32,u64
+    -4,-3,-2,-1,0,1,2,3
+    ,,,,,,,
+    0,1,2,3,4,5,6,7
+    "#;
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file)
+        .has_header(true)
+        .with_dtypes_slice(Some(&[
+            DataType::Int8,
+            DataType::Int16,
+            DataType::Int32,
+            DataType::Int64,
+            DataType::UInt8,
+            DataType::UInt16,
+            DataType::UInt32,
+            DataType::UInt64,
+        ]))
+        .finish()?;
+
+    assert_eq!(
+        df.dtypes(),
+        &[
+            DataType::Int8,
+            DataType::Int16,
+            DataType::Int32,
+            DataType::Int64,
+            DataType::UInt8,
+            DataType::UInt16,
+            DataType::UInt32,
+            DataType::UInt64,
+        ]
+    );
+    Ok(())
+}
