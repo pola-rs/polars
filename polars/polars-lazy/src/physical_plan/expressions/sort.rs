@@ -65,38 +65,46 @@ impl PhysicalExpr for SortExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let series = ac.flat_naive().into_owned();
-
-        let groups = match ac.groups().as_ref() {
-            GroupsProxy::Idx(groups) => {
-                groups
-                    .iter()
-                    .map(|(first, idx)| {
-                        // Safety:
-                        // Group tuples are always in bounds
-                        let group = unsafe {
-                            series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
-                        };
-
-                        let sorted_idx = group.argsort(self.options);
-                        let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
-                        (new_idx.first().copied().unwrap_or(first), new_idx)
-                    })
-                    .collect()
+        match ac.agg_state() {
+            AggState::AggregatedList(s) => {
+                let ca = s.list().unwrap();
+                let out = ca.lst_sort(self.options);
+                ac.with_series(out.into_series(), true);
             }
-            GroupsProxy::Slice { groups, .. } => groups
-                .iter()
-                .map(|&[first, len]| {
-                    let group = series.slice(first as i64, len as usize);
-                    let sorted_idx = group.argsort(self.options);
-                    let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
-                    (new_idx.first().copied().unwrap_or(first), new_idx)
-                })
-                .collect(),
-        };
-        let groups = GroupsProxy::Idx(groups);
+            _ => {
+                let series = ac.flat_naive().into_owned();
 
-        ac.with_groups(groups);
+                let groups = match ac.groups().as_ref() {
+                    GroupsProxy::Idx(groups) => {
+                        groups
+                            .iter()
+                            .map(|(first, idx)| {
+                                // Safety:
+                                // Group tuples are always in bounds
+                                let group = unsafe {
+                                    series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
+                                };
+
+                                let sorted_idx = group.argsort(self.options);
+                                let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
+                                (new_idx.first().copied().unwrap_or(first), new_idx)
+                            })
+                            .collect()
+                    }
+                    GroupsProxy::Slice { groups, .. } => groups
+                        .iter()
+                        .map(|&[first, len]| {
+                            let group = series.slice(first as i64, len as usize);
+                            let sorted_idx = group.argsort(self.options);
+                            let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
+                            (new_idx.first().copied().unwrap_or(first), new_idx)
+                        })
+                        .collect(),
+                };
+                let groups = GroupsProxy::Idx(groups);
+                ac.with_groups(groups);
+            }
+        }
 
         Ok(ac)
     }

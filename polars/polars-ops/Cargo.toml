@@ -32,8 +32,7 @@ propagate_nans = []
 
 # ops
 to_dummies = []
-list_to_struct = ["polars-core/dtype-struct", "list"]
-list = []
+list_to_struct = ["polars-core/dtype-struct"]
 diff = ["polars-core/diff"]
 strings = ["polars-core/strings"]
 string_justify = ["polars-core/strings"]

@@ -25,7 +25,6 @@ impl FunctionExpr {
         };
 
         // map all dtypes
-        #[cfg(feature = "list")]
         let map_dtypes = |func: &dyn Fn(&[&DataType]) -> DataType| {
             let mut fld = fields[0].clone();
             let dtypes = fields.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
@@ -58,7 +57,6 @@ impl FunctionExpr {
         };
 
         // inner super type of lists
-        #[cfg(feature = "list")]
         let inner_super_type_list = || {
             map_dtypes(&|dts| {
                 let mut super_type_inner = None;
@@ -157,7 +155,6 @@ impl FunctionExpr {
             Nan(n) => n.get_field(fields),
             #[cfg(feature = "round_series")]
             Clip { .. } => same_type(),
-            #[cfg(feature = "list")]
             ListExpr(l) => {
                 use ListFunction::*;
                 match l {

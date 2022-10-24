@@ -128,7 +128,6 @@ features = [
   "cum_agg",
   "rolling_window",
   "interpolate",
-  "list",
   "rank",
   "diff",
   "moment",
