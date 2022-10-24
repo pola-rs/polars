@@ -77,9 +77,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
                 .amortized_iter()
                 .zip(offset_ca)
                 .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
-                    (Some(s), Some(offset)) => {
-                        Some(s.as_ref().slice(offset, length_slice as usize))
-                    }
+                    (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
                     _ => None,
                 })
                 .collect_trusted()

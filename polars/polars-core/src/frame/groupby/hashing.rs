@@ -109,8 +109,6 @@ where
     let out = POOL
         .install(|| {
             (0..n_partitions).into_par_iter().map(|thread_no| {
-                let thread_no = thread_no as u64;
-
                 let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
                     PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
@@ -301,7 +299,6 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
         .install(|| {
             (0..n_partitions).into_par_iter().map(|thread_no| {
                 let hashes = &hashes;
-                let thread_no = thread_no as u64;
 
                 let mut hash_tbl: HashMap<IdxHash, (IdxSize, Vec<IdxSize>), IdBuildHasher> =
                     HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());

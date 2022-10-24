@@ -344,7 +344,7 @@ pub(crate) fn elim_cmn_subplans(
                 cache_mapping.insert(node2, cache_id);
                 cache_id
             }
-        } as usize;
+        };
 
         // reassign old nodes to another location as we are going to replace
         // them with a cache node

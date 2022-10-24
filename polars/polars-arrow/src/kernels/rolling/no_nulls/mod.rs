@@ -55,7 +55,7 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
+    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
     Box::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
@@ -103,7 +103,7 @@ where
         })
         .collect_trusted::<Vec<T>>();
 
-    let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
+    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
     Box::new(PrimitiveArray::from_data(
         DataType::from(T::PRIMITIVE),
         out.into(),

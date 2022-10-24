@@ -25,12 +25,7 @@ impl Series {
             }
             DataType::Float64 => {
                 let xs = self.f64().unwrap();
-                let result = ewm_mean(
-                    xs,
-                    options.alpha as f64,
-                    options.adjust,
-                    options.min_periods,
-                );
+                let result = ewm_mean(xs, options.alpha, options.adjust, options.min_periods);
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
             }
             _ => self.cast(&DataType::Float64)?.ewm_mean(options),
@@ -59,7 +54,7 @@ impl Series {
                 let xs = self.f64().unwrap();
                 let result = ewm_std(
                     xs,
-                    options.alpha as f64,
+                    options.alpha,
                     options.adjust,
                     options.bias,
                     options.min_periods,
@@ -92,7 +87,7 @@ impl Series {
                 let xs = self.f64().unwrap();
                 let result = ewm_var(
                     xs,
-                    options.alpha as f64,
+                    options.alpha,
                     options.adjust,
                     options.bias,
                     options.min_periods,

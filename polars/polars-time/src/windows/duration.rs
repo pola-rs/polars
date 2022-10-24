@@ -272,7 +272,7 @@ impl Duration {
 
                 // determine the total number of months and truncate
                 // the number of months by the duration amount
-                let mut total = (year * 12) as i32 + (month - 1) as i32;
+                let mut total = (year * 12) + (month as i32 - 1);
                 let remainder = total % self.months as i32;
                 total -= remainder;
 

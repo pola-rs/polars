@@ -20,7 +20,7 @@ unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn 
         let t_size = std::mem::size_of::<T>() as isize;
         for _ in 0..n_t_vals {
             let _ = std::ptr::read_unaligned(ptr as *const T);
-            ptr = ptr.offset(t_size as isize)
+            ptr = ptr.offset(t_size)
         }
     })
 }

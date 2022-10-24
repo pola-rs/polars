@@ -82,7 +82,7 @@ fn slice_groups_idx(offset: i64, length: usize, first: IdxSize, idx: &[IdxSize])
 }
 
 fn slice_groups_slice(offset: i64, length: usize, first: IdxSize, len: IdxSize) -> [IdxSize; 2] {
-    let (offset, len) = slice_offsets(offset, length as usize, len as usize);
+    let (offset, len) = slice_offsets(offset, length, len as usize);
     [first + offset as IdxSize, len as IdxSize]
 }
 
@@ -197,7 +197,7 @@ impl PhysicalExpr for SliceExpr {
                             .iter()
                             .zip(offset.into_no_null_iter())
                             .map(|((first, idx), offset)| {
-                                slice_groups_idx(offset, length as usize, first, idx)
+                                slice_groups_idx(offset, length, first, idx)
                             })
                             .collect();
                         GroupsProxy::Idx(groups)

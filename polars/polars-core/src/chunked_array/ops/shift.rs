@@ -85,7 +85,7 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
         // This has its own implementation because a ListChunked cannot have a full-null without
         // knowing the inner type
         let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
-        let slice_offset = (-periods).max(0) as i64;
+        let slice_offset = (-periods).max(0);
         let length = self.len() - abs(periods) as usize;
         let mut slice = self.slice(slice_offset, length);
 
