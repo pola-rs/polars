@@ -1,11 +1,12 @@
 use std::convert::TryInto;
 use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 
-use ahash::{CallHasher, RandomState};
+use ahash::RandomState;
 use arrow::bitmap::utils::get_bit_unchecked;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 use polars_arrow::utils::CustomIterTools;
+use polars_utils::HashSingle;
 use rayon::prelude::*;
 
 use crate::datatypes::UInt64Chunked;
@@ -44,7 +45,7 @@ pub(crate) fn get_null_hash_value(random_state: RandomState) -> u64 {
 impl<T> VecHash for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Hash + CallHasher,
+    T::Native: Hash,
 {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         // Note that we don't use the no null branch! This can break in unexpected ways.
@@ -61,7 +62,7 @@ where
                 arr.values()
                     .as_slice()
                     .iter()
-                    .map(|v| T::Native::get_hash(v, &random_state)),
+                    .map(|v| random_state.hash_single(v)),
             );
         });
 
@@ -95,7 +96,7 @@ where
                     .iter()
                     .zip(&mut hashes[offset..])
                     .for_each(|(v, h)| {
-                        let l = T::Native::get_hash(v, &random_state);
+                        let l = random_state.hash_single(v);
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
@@ -107,7 +108,7 @@ where
                         .zip(arr.values().as_slice())
                         .for_each(|((valid, h), l)| {
                             *h = _boost_hash_combine(
-                                [null_h, T::Native::get_hash(l, &random_state)][valid as usize],
+                                [null_h, random_state.hash_single(l)][valid as usize],
                                 *h,
                             )
                         });
@@ -125,7 +126,7 @@ impl VecHash for Utf8Chunked {
         let null_h = get_null_hash_value(random_state.clone());
         self.downcast_iter().for_each(|arr| {
             buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-                Some(v) => str::get_hash(v, &random_state),
+                Some(v) => random_state.hash_single(v),
                 None => null_h,
             }))
         });
@@ -136,7 +137,7 @@ impl VecHash for Utf8Chunked {
         self.apply_to_slice(
             |opt_v, h| {
                 let l = match opt_v {
-                    Some(v) => str::get_hash(v, &random_state),
+                    Some(v) => random_state.hash_single(v),
                     None => null_h,
                 };
                 _boost_hash_combine(l, *h)
@@ -154,7 +155,7 @@ impl VecHash for BinaryChunked {
         let null_h = get_null_hash_value(random_state.clone());
         self.downcast_iter().for_each(|arr| {
             buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-                Some(v) => <[u8]>::get_hash(v, &random_state),
+                Some(v) => random_state.hash_single(v),
                 None => null_h,
             }))
         });
@@ -165,7 +166,7 @@ impl VecHash for BinaryChunked {
         self.apply_to_slice(
             |opt_v, h| {
                 let l = match opt_v {
-                    Some(v) => <[u8]>::get_hash(v, &random_state),
+                    Some(v) => random_state.hash_single(v),
                     None => null_h,
                 };
                 _boost_hash_combine(l, *h)
@@ -180,11 +181,7 @@ impl VecHash for BooleanChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter().for_each(|arr| {
-            buf.extend(arr.into_iter().map(|opt_v| {
-                let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
-                hasher.finish()
-            }))
+            buf.extend(arr.into_iter().map(|opt_v| random_state.hash_single(opt_v)))
         });
     }
 
@@ -360,14 +357,14 @@ const BUILD_HASHER: RandomState = RandomState::with_seeds(0, 0, 0, 0);
 impl AsU64 for [u8; 17] {
     #[inline]
     fn as_u64(self) -> u64 {
-        <[u8]>::get_hash(&self, &BUILD_HASHER)
+        BUILD_HASHER.hash_single(self)
     }
 }
 
 impl AsU64 for [u8; 13] {
     #[inline]
     fn as_u64(self) -> u64 {
-        <[u8]>::get_hash(&self, &BUILD_HASHER)
+        BUILD_HASHER.hash_single(self)
     }
 }
 
