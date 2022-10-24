@@ -939,7 +939,7 @@ def test_csv_with_small_dtypes() -> None:
     ]
     pl.DataFrame(data).write_csv(f)
     f.seek(0)
-    
+
     df = pl.read_csv(f, dtypes=dtypes)
 
     assert df.dtypes == dtypes

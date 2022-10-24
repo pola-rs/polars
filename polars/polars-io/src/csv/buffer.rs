@@ -591,12 +591,28 @@ impl<'a> Buffer<'a> {
     pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
-            Buffer::Int8(v) => v.finish().into_series(),
-            Buffer::Int16(v) => v.finish().into_series(),
+            Buffer::Int8(v) => v
+                .finish()
+                .cast(&DataType::Int32)?
+                .into_series()
+                .cast(&DataType::Int8)?,
+            Buffer::Int16(v) => v
+                .finish()
+                .cast(&DataType::Int32)?
+                .into_series()
+                .cast(&DataType::Int16)?,
             Buffer::Int32(v) => v.finish().into_series(),
             Buffer::Int64(v) => v.finish().into_series(),
-            Buffer::UInt8(v) => v.finish().into_series(),
-            Buffer::UInt16(v) => v.finish().into_series(),
+            Buffer::UInt8(v) => v
+                .finish()
+                .cast(&DataType::UInt32)?
+                .into_series()
+                .cast(&DataType::UInt8)?,
+            Buffer::UInt16(v) => v
+                .finish()
+                .cast(&DataType::UInt32)?
+                .into_series()
+                .cast(&DataType::UInt16)?,
             Buffer::UInt32(v) => v.finish().into_series(),
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
@@ -681,10 +697,12 @@ impl<'a> Buffer<'a> {
             Buffer::Boolean(v) => v.append_null(),
             Buffer::Int8(v) => v.append_null(),
             Buffer::Int16(v) => v.append_null(),
+
             Buffer::Int32(v) => v.append_null(),
             Buffer::Int64(v) => v.append_null(),
             Buffer::UInt8(v) => v.append_null(),
             Buffer::UInt16(v) => v.append_null(),
+
             Buffer::UInt32(v) => v.append_null(),
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
