@@ -530,14 +530,13 @@ def dict_to_pydf(
         return PyDataFrame(data_series)
 
     if _NUMPY_AVAILABLE:
-        all_numpy = True
+        count_numpy = 0
         for val in data.values():
             # only start a thread pool from a reasonable size.
-            all_numpy = all_numpy and isinstance(val, np.ndarray) and len(val) > 1000
-            if not all_numpy:
-                break
+            count_numpy += int(isinstance(val, np.ndarray) and len(val) > 1000)
 
-        if all_numpy:
+        # if we have more than 3 numpy arrays we multi-thread
+        if count_numpy > 2:
             # yes, multi-threading was easier in python here
             # we cannot run multiple threads that run python code
             # and release the gil in pyo3
@@ -547,11 +546,11 @@ def dict_to_pydf(
             import multiprocessing.dummy
 
             pool_size = threadpool_size()
-            pool = multiprocessing.dummy.Pool(pool_size)
-            data_series = pool.map(
-                lambda t: pli.Series(t[0], t[1])._s,
-                [(k, v) for k, v in data.items()],
-            )
+            with multiprocessing.dummy.Pool(pool_size) as pool:
+                data_series = pool.map(
+                    lambda t: pli.Series(t[0], t[1])._s,
+                    [(k, v) for k, v in data.items()],
+                )
             return PyDataFrame(data_series)
 
     # fast path
