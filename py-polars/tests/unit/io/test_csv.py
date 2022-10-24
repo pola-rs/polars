@@ -939,7 +939,11 @@ def test_csv_with_small_dtypes() -> None:
     ]
     pl.DataFrame(data).write_csv(f)
     f.seek(0)
+<<<<<<< HEAD
 
+=======
+    
+>>>>>>> 9e1acf69b (fixes https://github.com/pola-rs/polars/issues/5214)
     df = pl.read_csv(f, dtypes=dtypes)
 
     assert df.dtypes == dtypes

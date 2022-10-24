@@ -591,6 +591,7 @@ impl<'a> Buffer<'a> {
     pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
+<<<<<<< HEAD
             Buffer::Int8(v) => v
                 .finish()
                 .cast(&DataType::Int32)?
@@ -613,6 +614,14 @@ impl<'a> Buffer<'a> {
                 .cast(&DataType::UInt32)?
                 .into_series()
                 .cast(&DataType::UInt16)?,
+=======
+            Buffer::Int8(v) => v.finish().into_series(),
+            Buffer::Int16(v) => v.finish().into_series(),
+            Buffer::Int32(v) => v.finish().into_series(),
+            Buffer::Int64(v) => v.finish().into_series(),
+            Buffer::UInt8(v) => v.finish().into_series(),
+            Buffer::UInt16(v) => v.finish().into_series(),
+>>>>>>> 9e1acf69b (fixes https://github.com/pola-rs/polars/issues/5214)
             Buffer::UInt32(v) => v.finish().into_series(),
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
@@ -697,12 +706,18 @@ impl<'a> Buffer<'a> {
             Buffer::Boolean(v) => v.append_null(),
             Buffer::Int8(v) => v.append_null(),
             Buffer::Int16(v) => v.append_null(),
+<<<<<<< HEAD
 
+=======
+>>>>>>> 9e1acf69b (fixes https://github.com/pola-rs/polars/issues/5214)
             Buffer::Int32(v) => v.append_null(),
             Buffer::Int64(v) => v.append_null(),
             Buffer::UInt8(v) => v.append_null(),
             Buffer::UInt16(v) => v.append_null(),
+<<<<<<< HEAD
 
+=======
+>>>>>>> 9e1acf69b (fixes https://github.com/pola-rs/polars/issues/5214)
             Buffer::UInt32(v) => v.append_null(),
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
