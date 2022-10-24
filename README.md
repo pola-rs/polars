@@ -102,10 +102,10 @@ pip install polars
 
 We also have a conda package (`conda install polars`), however pip is the preferred way to install Polars.
 
-# Install Polars with all optional dependencies.
+### Install Polars with all optional dependencies.
 ```sh
-pip install polars[all]
-pip install polars[numpy,pandas,pyarrow]  # install a subset of all optional dependencies
+pip install 'polars[all]'
+pip install 'polars[numpy,pandas,pyarrow]'  # install a subset of all optional dependencies
 ```
 You can also install the dependencies directly.
 
