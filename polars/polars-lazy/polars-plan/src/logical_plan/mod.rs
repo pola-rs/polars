@@ -26,7 +26,6 @@ pub(crate) mod options;
 mod projection;
 mod schema;
 
-pub use options::AnonymousScanOptions;
 pub use aexpr::*;
 pub use alp::*;
 pub use anonymous_scan::*;
