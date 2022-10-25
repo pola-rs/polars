@@ -18,7 +18,7 @@ Asserts
 Property-based testing
 ----------------------
 
-See the Hypothesis library for details:
+See the Hypothesis library for more detail:
 https://hypothesis.readthedocs.io/
 
 Strategies
@@ -30,8 +30,8 @@ testing strategies and strategy helpers:
 .. autosummary::
    :toctree: api/
 
-    testing._parametric.dataframes
-    testing._parametric.series
+    testing.parametric.dataframes
+    testing.parametric.series
 
 Strategy helpers
 ~~~~~~~~~~~~~~~~
@@ -39,5 +39,5 @@ Strategy helpers
 .. autosummary::
    :toctree: api/
 
-    testing._parametric.column
-    testing._parametric.columns
+    testing.parametric.column
+    testing.parametric.columns

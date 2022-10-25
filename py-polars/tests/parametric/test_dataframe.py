@@ -8,7 +8,7 @@ from hypothesis.strategies import integers
 
 import polars as pl
 from polars.testing import assert_frame_equal
-from polars.testing._parametric import column, dataframes
+from polars.testing.parametric import column, dataframes
 
 
 @given(df=dataframes())

@@ -46,6 +46,9 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
     )
     assert_frame_equal_local_categoricals(df, read_df)
 
+    with pytest.raises(AssertionError):
+        assert_frame_equal_local_categoricals(df.select(["time", "cat"]), read_df)
+
 
 def test_to_from_file(io_test_dir: str, df_no_lists: pl.DataFrame) -> None:
     df = df_no_lists
