@@ -71,6 +71,12 @@ pub(super) fn par_sorted_merge_left(
         DataType::Int64 => {
             par_sorted_merge_left_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
         }
+        DataType::Float32 => {
+            par_sorted_merge_left_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
+        }
+        DataType::Float64 => {
+            par_sorted_merge_left_impl(s_left.f64().unwrap(), s_right.f64().unwrap())
+        }
         _ => unreachable!(),
     }
 }
@@ -138,6 +144,12 @@ pub(super) fn par_sorted_merge_inner(
         DataType::Int64 => {
             par_sorted_merge_inner_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
         }
+        DataType::Float32 => {
+            par_sorted_merge_inner_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
+        }
+        DataType::Float64 => {
+            par_sorted_merge_inner_impl(s_left.f64().unwrap(), s_right.f64().unwrap())
+        }
         _ => unreachable!(),
     }
 }
@@ -183,7 +195,7 @@ pub(super) fn sort_or_hash_inner(
         .unwrap_or(1.0);
     let is_numeric = s_left.dtype().to_physical().is_numeric();
     match (s_left.is_sorted(), s_right.is_sorted()) {
-        (IsSorted::Ascending, IsSorted::Ascending) => {
+        (IsSorted::Ascending, IsSorted::Ascending) if is_numeric => {
             if verbose {
                 eprintln!("inner join: keys are sorted: use sorted merge join");
             }
@@ -253,7 +265,7 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
     let is_numeric = s_left.dtype().to_physical().is_numeric();
 
     match (s_left.is_sorted(), s_right.is_sorted()) {
-        (IsSorted::Ascending, IsSorted::Ascending) => {
+        (IsSorted::Ascending, IsSorted::Ascending) if is_numeric => {
             if verbose {
                 eprintln!("left join: keys are sorted: use sorted merge join");
             }

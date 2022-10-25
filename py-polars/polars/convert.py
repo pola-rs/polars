@@ -3,20 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
 from polars.datatypes import Schema
-from polars.import_check import (
-    _NUMPY_AVAILABLE,
-    _PANDAS_AVAILABLE,
-    _PYARROW_AVAILABLE,
-    pandas_mod,
-    pyarrow_mod,
-)
+from polars.dependencies import _NUMPY_AVAILABLE, _PANDAS_AVAILABLE, _PYARROW_AVAILABLE
+from polars.dependencies import numpy as np
+from polars.dependencies import pandas as pd
+from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, Series
 
 if TYPE_CHECKING:
-    import numpy as np
-    import pandas as pd
-    import pyarrow as pa
-
     from polars.internals.type_aliases import Orientation
 
 
@@ -301,7 +294,7 @@ def from_arrow(
     """
     if not _PYARROW_AVAILABLE:
         raise ImportError("'pyarrow' is required when using from_arrow().")
-    pa = pyarrow_mod()
+
     if isinstance(a, pa.Table):
         return DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, (pa.Array, pa.ChunkedArray)):
@@ -392,7 +385,6 @@ def from_pandas(
     if not _PANDAS_AVAILABLE:
         raise ImportError("'pandas' is required when using from_pandas().")
 
-    pd = pandas_mod()
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
         return Series._from_pandas("", df, nan_to_none=nan_to_none)
     elif isinstance(df, pd.DataFrame):

@@ -5,10 +5,8 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-binary = ["clap"]
 
 [dependencies]
-clap = { version = "4.0.18", features = ["derive"], optional = true }
 polars-arrow = { path = "../polars-arrow", features = ["like"] }
 polars-core = { path = "../polars-core", features = [] }
 polars-lazy = { path = "../polars-lazy", features = ["compile", "strings", "cross_join"] }

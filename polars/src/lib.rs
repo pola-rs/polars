@@ -88,7 +88,7 @@
 //!
 //! ## SIMD
 //! Polars / Arrow uses packed_simd to speed up kernels with SIMD operations. SIMD is an optional
-//! `feature = "simd"`, and requires a nightly compiler. If you don't need SIMD, **Polars runs on stable!**
+//! `feature = "nightly"`, and requires a nightly compiler. If you don't need SIMD, **Polars runs on stable!**
 //!
 //! ## API
 //! Polars supports an eager and a lazy API. The eager API directly yields results, but is overall
@@ -178,7 +178,7 @@
 //! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
-//!     - `simd` - SIMD operations _(nightly only)_
+//!     - `nightly` - Several nightly only features such as SIMD and specialization.
 //!     - `performant` - more fast paths, slower compile times.
 //!     - `bigidx` - Activate this feature if you expect >> 2^32 rows. This has not been needed by anyone.
 //!                  This allows polars to scale up way beyond that by using `u64` as an index.

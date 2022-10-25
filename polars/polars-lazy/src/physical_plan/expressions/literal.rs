@@ -51,8 +51,8 @@ impl PhysicalExpr for LiteralExpr {
                     ca.into_inner().into_series()
                 }
                 DataType::Int64 => {
-                    let low = *low as i64;
-                    let high = *high as i64;
+                    let low = *low;
+                    let high = *high;
                     let ca: NoNull<Int64Chunked> = (low..high).collect();
                     ca.into_inner().into_series()
                 }

@@ -10,7 +10,6 @@ mod from;
 pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
 pub mod functions;
-#[cfg(feature = "list")]
 mod list;
 #[cfg(feature = "meta")]
 mod meta;
@@ -28,7 +27,6 @@ use std::sync::Arc;
 pub use expr::*;
 pub use function_expr::*;
 pub use functions::*;
-#[cfg(feature = "list")]
 pub use list::*;
 pub use options::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -2253,7 +2251,6 @@ impl Expr {
     pub fn dt(self) -> dt::DateLikeNameSpace {
         dt::DateLikeNameSpace(self)
     }
-    #[cfg(feature = "list")]
     pub fn arr(self) -> list::ListNameSpace {
         list::ListNameSpace(self)
     }

@@ -42,8 +42,7 @@ where
     // Safety; we are in bounds
     let mut agg_window = unsafe { Agg::new(values, validity, start, end) };
 
-    let mut validity = match create_validity(min_periods, len as usize, window_size, det_offsets_fn)
-    {
+    let mut validity = match create_validity(min_periods, len, window_size, det_offsets_fn) {
         Some(v) => v,
         None => {
             let mut validity = MutableBitmap::with_capacity(len);

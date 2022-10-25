@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import functools
 import re
 import sys
 from datetime import date, datetime, time, timedelta
@@ -17,12 +18,14 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TypeVar,
     Union,
 )
 
 from _ctypes import _SimpleCData  # type: ignore[import]
 
-from polars.import_check import _PYARROW_AVAILABLE, pyarrow_mod
+from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import pyarrow as pa
 
 try:
     from polars.polars import dtype_str_repr
@@ -51,9 +54,16 @@ else:
         return tp
 
 
-if TYPE_CHECKING:
-    import pyarrow as pa
+T = TypeVar("T")
 
+
+def cache(func: Callable[..., T]) -> T:
+    # need this to satisfy mypy issue with "@property/@cache combination"
+    # See: https://github.com/python/mypy/issues/5858
+    return functools.lru_cache()(func)  # type: ignore[return-value]
+
+
+if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
 
 
@@ -354,145 +364,171 @@ TemporalDataType = Union[Type[Datetime], Datetime, Type[Date], Date, Type[Time],
 DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
 
 
-_DTYPE_TO_FFINAME: dict[PolarsDataType, str] = {
-    Int8: "i8",
-    Int16: "i16",
-    Int32: "i32",
-    Int64: "i64",
-    UInt8: "u8",
-    UInt16: "u16",
-    UInt32: "u32",
-    UInt64: "u64",
-    Float32: "f32",
-    Float64: "f64",
-    Boolean: "bool",
-    Utf8: "str",
-    List: "list",
-    Date: "date",
-    Datetime: "datetime",
-    Duration: "duration",
-    Time: "time",
-    Object: "object",
-    Categorical: "categorical",
-    Struct: "struct",
-    Binary: "binary",
-}
+class _DataTypeMappings:
+    @property
+    @cache
+    def DTYPE_TO_FFINAME(self) -> dict[PolarsDataType, str]:
+        return {
+            Int8: "i8",
+            Int16: "i16",
+            Int32: "i32",
+            Int64: "i64",
+            UInt8: "u8",
+            UInt16: "u16",
+            UInt32: "u32",
+            UInt64: "u64",
+            Float32: "f32",
+            Float64: "f64",
+            Boolean: "bool",
+            Utf8: "str",
+            List: "list",
+            Date: "date",
+            Datetime: "datetime",
+            Duration: "duration",
+            Time: "time",
+            Object: "object",
+            Categorical: "categorical",
+            Struct: "struct",
+            Binary: "binary",
+        }
+
+    @property
+    @cache
+    def DTYPE_TO_CTYPE(self) -> dict[PolarsDataType, Any]:
+        return {
+            UInt8: ctypes.c_uint8,
+            UInt16: ctypes.c_uint16,
+            UInt32: ctypes.c_uint32,
+            UInt64: ctypes.c_uint64,
+            Int8: ctypes.c_int8,
+            Int16: ctypes.c_int16,
+            Int32: ctypes.c_int32,
+            Date: ctypes.c_int32,
+            Int64: ctypes.c_int64,
+            Float32: ctypes.c_float,
+            Float64: ctypes.c_double,
+            Datetime: ctypes.c_int64,
+            Duration: ctypes.c_int64,
+            Time: ctypes.c_int64,
+        }
+
+    @property
+    @cache
+    def PY_TYPE_TO_DTYPE(self) -> dict[type, PolarsDataType]:
+        return {
+            float: Float64,
+            int: Int64,
+            str: Utf8,
+            bool: Boolean,
+            date: Date,
+            datetime: Datetime("us"),
+            timedelta: Duration("us"),
+            time: Time,
+            list: List,
+            tuple: List,
+            Decimal: Float64,
+            bytes: Binary,
+            object: Object,
+        }
+
+    @property
+    @cache
+    def PY_STR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
+        return {str(tp.__name__): dtype for tp, dtype in self.PY_TYPE_TO_DTYPE.items()}
+
+    @property
+    @cache
+    def DTYPE_TO_PY_TYPE(self) -> dict[PolarsDataType, type]:
+        return {
+            Float64: float,
+            Float32: float,
+            Int64: int,
+            Int32: int,
+            Int16: int,
+            Int8: int,
+            Utf8: str,
+            UInt8: int,
+            UInt16: int,
+            UInt32: int,
+            UInt64: int,
+            Boolean: bool,
+            Duration: timedelta,
+            Datetime: datetime,
+            Date: date,
+            Time: time,
+            Binary: bytes,
+            List: list,
+        }
+
+    @property
+    @cache
+    def NUMPY_CHAR_CODE_TO_DTYPE(self) -> dict[str, PolarsDataType]:
+        # Note: Windows behaves differently from other platforms as C long
+        # is only 32-bit on Windows, while it is 64-bit on other platforms.
+        # See: https://numpy.org/doc/stable/reference/arrays.scalars.html
+        return {
+            "b": Int8,
+            "h": Int16,
+            "i": Int32,
+            ("q" if sys.platform == "win32" else "l"): Int64,
+            "B": UInt8,
+            "H": UInt16,
+            "I": UInt32,
+            ("Q" if sys.platform == "win32" else "L"): UInt64,
+            "f": Float32,
+            "d": Float64,
+            "?": Boolean,
+        }
+
+    if _PYARROW_AVAILABLE:
+
+        @property
+        @cache
+        def PY_TYPE_TO_ARROW_TYPE(self) -> dict[type, Callable[[], pa.lib.DataType]]:
+            return {
+                float: pa.float64(),
+                int: pa.int64(),
+                str: pa.large_utf8(),
+                bool: pa.bool_(),
+                date: pa.date32(),
+                time: pa.time64("us"),
+                datetime: pa.timestamp("us"),
+                timedelta: pa.duration("us"),
+            }
+
+        @property
+        @cache
+        def DTYPE_TO_ARROW_TYPE(
+            self,
+        ) -> dict[PolarsDataType, Callable[[], pa.lib.DataType]]:
+            return {
+                Int8: pa.int8(),
+                Int16: pa.int16(),
+                Int32: pa.int32(),
+                Int64: pa.int64(),
+                UInt8: pa.uint8(),
+                UInt16: pa.uint16(),
+                UInt32: pa.uint32(),
+                UInt64: pa.uint64(),
+                Float32: pa.float32(),
+                Float64: pa.float64(),
+                Boolean: pa.bool_(),
+                Utf8: pa.large_utf8(),
+                Date: pa.date32(),
+                Datetime: pa.timestamp("us"),
+                Datetime("ms"): pa.timestamp("ms"),
+                Datetime("us"): pa.timestamp("us"),
+                Datetime("ns"): pa.timestamp("ns"),
+                Duration: pa.duration("us"),
+                Duration("ms"): pa.duration("ms"),
+                Duration("us"): pa.duration("us"),
+                Duration("ns"): pa.duration("ns"),
+                Time: pa.time64("us"),
+            }
 
 
-_DTYPE_TO_CTYPE: dict[PolarsDataType, Any] = {
-    UInt8: ctypes.c_uint8,
-    UInt16: ctypes.c_uint16,
-    UInt32: ctypes.c_uint32,
-    UInt64: ctypes.c_uint64,
-    Int8: ctypes.c_int8,
-    Int16: ctypes.c_int16,
-    Int32: ctypes.c_int32,
-    Date: ctypes.c_int32,
-    Int64: ctypes.c_int64,
-    Float32: ctypes.c_float,
-    Float64: ctypes.c_double,
-    Datetime: ctypes.c_int64,
-    Duration: ctypes.c_int64,
-    Time: ctypes.c_int64,
-}
-
-
-_PY_TYPE_TO_DTYPE: dict[type, PolarsDataType] = {
-    float: Float64,
-    int: Int64,
-    str: Utf8,
-    bool: Boolean,
-    date: Date,
-    datetime: Datetime("us"),
-    timedelta: Duration("us"),
-    time: Time,
-    list: List,
-    tuple: List,
-    Decimal: Float64,
-    bytes: Binary,
-    object: Object,
-}
-
-_PY_STR_TO_DTYPE: dict[str, PolarsDataType] = {
-    str(tp.__name__): dtype for tp, dtype in _PY_TYPE_TO_DTYPE.items()
-}
-
-_DTYPE_TO_PY_TYPE: dict[PolarsDataType, type] = {
-    Float64: float,
-    Float32: float,
-    Int64: int,
-    Int32: int,
-    Int16: int,
-    Int8: int,
-    Utf8: str,
-    UInt8: int,
-    UInt16: int,
-    UInt32: int,
-    UInt64: int,
-    Boolean: bool,
-    Duration: timedelta,
-    Datetime: datetime,
-    Date: date,
-    Time: time,
-    Binary: bytes,
-    List: list,
-}
-
-# Map Numpy char codes to polars dtypes.
-#
-# Windows behaves differently from other platforms as C long is
-# only 32-bit on Windows, while it is 64-bit on other platforms.
-# See: https://numpy.org/doc/stable/reference/arrays.scalars.html
-_NUMPY_CHAR_CODE_TO_DTYPE = {
-    "b": Int8,
-    "h": Int16,
-    "i": Int32,
-    ("q" if sys.platform == "win32" else "l"): Int64,
-    "B": UInt8,
-    "H": UInt16,
-    "I": UInt32,
-    ("Q" if sys.platform == "win32" else "L"): UInt64,
-    "f": Float32,
-    "d": Float64,
-    "?": Boolean,
-}
-
-if _PYARROW_AVAILABLE:
-    _PY_TYPE_TO_ARROW_TYPE: dict[type, Callable[[], pa.lib.DataType]] = {
-        float: lambda: pyarrow_mod().float64(),
-        int: lambda: pyarrow_mod().int64(),
-        str: lambda: pyarrow_mod().large_utf8(),
-        bool: lambda: pyarrow_mod().bool_(),
-        date: lambda: pyarrow_mod().date32(),
-        time: lambda: pyarrow_mod().time64("us"),
-        datetime: lambda: pyarrow_mod().timestamp("us"),
-        timedelta: lambda: pyarrow_mod().duration("us"),
-    }
-
-    _DTYPE_TO_ARROW_TYPE: dict[PolarsDataType, Callable[[], pa.lib.DataType]] = {
-        Int8: lambda: pyarrow_mod().int8(),
-        Int16: lambda: pyarrow_mod().int16(),
-        Int32: lambda: pyarrow_mod().int32(),
-        Int64: lambda: pyarrow_mod().int64(),
-        UInt8: lambda: pyarrow_mod().uint8(),
-        UInt16: lambda: pyarrow_mod().uint16(),
-        UInt32: lambda: pyarrow_mod().uint32(),
-        UInt64: lambda: pyarrow_mod().uint64(),
-        Float32: lambda: pyarrow_mod().float32(),
-        Float64: lambda: pyarrow_mod().float64(),
-        Boolean: lambda: pyarrow_mod().bool_(),
-        Utf8: lambda: pyarrow_mod().large_utf8(),
-        Date: lambda: pyarrow_mod().date32(),
-        Datetime: lambda: pyarrow_mod().timestamp("us"),
-        Datetime("ms"): lambda: pyarrow_mod().timestamp("ms"),
-        Datetime("us"): lambda: pyarrow_mod().timestamp("us"),
-        Datetime("ns"): lambda: pyarrow_mod().timestamp("ns"),
-        Duration: lambda: pyarrow_mod().duration("us"),
-        Duration("ms"): lambda: pyarrow_mod().duration("ms"),
-        Duration("us"): lambda: pyarrow_mod().duration("us"),
-        Duration("ns"): lambda: pyarrow_mod().duration("ns"),
-        Time: lambda: pyarrow_mod().time64("us"),
-    }
+# initialise once (poor man's singleton :)
+DataTypeMappings = _DataTypeMappings()
 
 
 def _base_type(dtype: PolarsDataType) -> type[DataType]:
@@ -506,7 +542,7 @@ def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
     """Convert a Polars dtype to a ctype."""
     try:
         dtype = _base_type(dtype)
-        return _DTYPE_TO_CTYPE[dtype]
+        return DataTypeMappings.DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
             f"Conversion of polars data type {dtype} to C-type not implemented."
@@ -517,7 +553,7 @@ def dtype_to_ffiname(dtype: PolarsDataType) -> str:
     """Return FFI function name associated with the given Polars dtype."""
     try:
         dtype = _base_type(dtype)
-        return _DTYPE_TO_FFINAME[dtype]
+        return DataTypeMappings.DTYPE_TO_FFINAME[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
             f"Conversion of polars data type {dtype} to FFI not implemented."
@@ -528,7 +564,7 @@ def dtype_to_py_type(dtype: PolarsDataType) -> type:
     """Convert a Polars dtype to a Python dtype."""
     try:
         dtype = _base_type(dtype)
-        return _DTYPE_TO_PY_TYPE[dtype]
+        return DataTypeMappings.DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
             f"Conversion of polars data type {dtype} to Python type not implemented."
@@ -547,7 +583,7 @@ def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsData
     if isinstance(data_type, ForwardRef):
         annotation = data_type.__forward_arg__
         data_type = (
-            _PY_STR_TO_DTYPE.get(
+            DataTypeMappings.PY_STR_TO_DTYPE.get(
                 re.sub(r"(^None \|)|(\| None$)", "", annotation).strip(), data_type
             )
             if isinstance(annotation, str)  # type: ignore[redundant-expr]
@@ -564,7 +600,7 @@ def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsData
         if len(possible_types) == 1:
             data_type = possible_types[0]
     try:
-        return _PY_TYPE_TO_DTYPE[data_type]
+        return DataTypeMappings.PY_TYPE_TO_DTYPE[data_type]
     except KeyError:  # pragma: no cover
         if not raise_unmatched:
             return None  # type: ignore[return-value]
@@ -577,7 +613,7 @@ def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsData
 def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
     """Convert a Python dtype to an Arrow dtype."""
     try:
-        return _PY_TYPE_TO_ARROW_TYPE[dtype]()
+        return DataTypeMappings.PY_TYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover
         raise ValueError(
             f"Cannot parse Python data type {dtype} into Arrow data type."
@@ -593,7 +629,7 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
         if dtype == Datetime:
             dtype, tz = Datetime(dtype.tu), dtype.tz  # type: ignore[union-attr]
 
-        arrow_type = _DTYPE_TO_ARROW_TYPE[dtype]()
+        arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
         if tz:
             arrow_type = pa.timestamp(dtype.tu or "us", tz)  # type: ignore[union-attr]
         return arrow_type
@@ -604,13 +640,13 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
 
 
 def supported_numpy_char_code(dtype: str) -> bool:
-    return dtype in _NUMPY_CHAR_CODE_TO_DTYPE
+    return dtype in DataTypeMappings.NUMPY_CHAR_CODE_TO_DTYPE
 
 
 def numpy_char_code_to_dtype(dtype: str) -> PolarsDataType:
     """Convert a numpy character dtype to a Polars dtype."""
     try:
-        return _NUMPY_CHAR_CODE_TO_DTYPE[dtype]
+        return DataTypeMappings.NUMPY_CHAR_CODE_TO_DTYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
             f"Cannot parse numpy data type {dtype} into Polars data type."

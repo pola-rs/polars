@@ -14,6 +14,7 @@ sql = ["polars-sql"]
 rows = ["polars-core/rows"]
 simd = ["polars-core/simd"]
 avx512 = ["polars-core/avx512"]
+nightly = ["polars-core/nightly", "polars-ops/nightly", "simd"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy/random"]
@@ -89,7 +90,6 @@ lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
 rolling_window = ["polars-core/rolling_window", "polars-lazy/rolling_window", "polars-time/rolling_window"]
 interpolate = ["polars-core/interpolate", "polars-lazy/interpolate"]
-list = ["polars-lazy/list", "polars-ops/list"]
 rank = ["polars-core/rank", "polars-lazy/rank"]
 diff = ["polars-core/diff", "polars-lazy/diff", "polars-ops/diff"]
 pct_change = ["polars-core/pct_change", "polars-lazy/pct_change"]
@@ -135,7 +135,6 @@ test = [
   "private",
   "rolling_window",
   "rank",
-  "list",
   "round_series",
   "csv-file",
   "dtype-categorical",
@@ -253,7 +252,6 @@ docs-selection = [
   "interpolate",
   "diff",
   "rank",
-  "list",
   "arange",
   "diagonal_concat",
   "horizontal_concat",

@@ -8,7 +8,6 @@ mod dispatch;
 mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
-#[cfg(any(feature = "is_in", feature = "list"))]
 mod list;
 mod nan;
 mod pow;
@@ -33,7 +32,6 @@ mod trigonometry;
 
 use std::fmt::{Display, Formatter};
 
-#[cfg(feature = "list")]
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -91,7 +89,6 @@ pub enum FunctionExpr {
         min: Option<AnyValue<'static>>,
         max: Option<AnyValue<'static>>,
     },
-    #[cfg(feature = "list")]
     ListExpr(ListFunction),
     #[cfg(feature = "dtype-struct")]
     StructExpr(StructFunction),
@@ -147,7 +144,6 @@ impl Display for FunctionExpr {
                 (Some(_), None) => "clip_min",
                 _ => unreachable!(),
             },
-            #[cfg(feature = "list")]
             ListExpr(func) => return write!(f, "{}", func),
             #[cfg(feature = "dtype-struct")]
             StructExpr(func) => return write!(f, "{}", func),
@@ -301,7 +297,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Clip { min, max } => {
                 map_owned!(clip::clip, min.clone(), max.clone())
             }
-            #[cfg(feature = "list")]
             ListExpr(lf) => {
                 use ListFunction::*;
                 match lf {

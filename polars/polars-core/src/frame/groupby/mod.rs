@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
-use ahash::{CallHasher, RandomState};
+use ahash::RandomState;
 use num::NumCast;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;

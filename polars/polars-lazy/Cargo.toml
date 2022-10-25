@@ -25,6 +25,7 @@ pyo3 = { version = "0.16", optional = true }
 rayon.workspace = true
 
 [features]
+nightly = ["polars-core/nightly", "polars-pipe/nightly"]
 compile = ["polars-plan/compile"]
 default = ["compile", "private"]
 parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
@@ -56,7 +57,7 @@ timezones = ["polars-plan/timezones"]
 true_div = ["polars-plan/true_div"]
 
 # operations
-is_in = ["polars-plan/is_in", "list"]
+is_in = ["polars-plan/is_in"]
 repeat_by = ["polars-plan/repeat_by"]
 round_series = ["polars-plan/round_series"]
 is_first = ["polars-plan/is_first"]
@@ -76,7 +77,6 @@ rank = ["polars-plan/rank"]
 diff = ["polars-plan/diff", "polars-plan/diff"]
 pct_change = ["polars-plan/pct_change"]
 moment = ["polars-plan/moment"]
-list = ["polars-plan/list"]
 abs = ["polars-plan/abs"]
 random = ["polars-plan/random"]
 dynamic_groupby = ["polars-plan/dynamic_groupby", "polars-time", "temporal"]
@@ -115,7 +115,6 @@ test = [
   "private",
   "rolling_window",
   "rank",
-  "list",
   "round_series",
   "csv-file",
   "dtype-categorical",

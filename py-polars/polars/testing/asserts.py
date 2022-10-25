@@ -42,6 +42,8 @@ def assert_frame_equal(
 
     Examples
     --------
+    >>> import polars as pl
+    >>> import polars.testing
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [2, 3, 4]})
     >>> pl.testing.assert_frame_equal(df1, df2)  # doctest: +SKIP
@@ -119,6 +121,8 @@ def assert_series_equal(
 
     Examples
     --------
+    >>> import polars as pl
+    >>> import polars.testing
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([2, 3, 4])
     >>> pl.testing.assert_series_equal(s1, s2)  # doctest: +SKIP

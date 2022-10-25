@@ -78,7 +78,7 @@ fn all_unit_length(ca: &ListChunked) -> bool {
     assert_eq!(ca.chunks().len(), 1);
     let list_arr = ca.downcast_iter().next().unwrap();
     let offset = list_arr.offsets().as_slice();
-    (offset[offset.len() - 1] as usize) == list_arr.len() as usize
+    (offset[offset.len() - 1] as usize) == list_arr.len()
 }
 
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {

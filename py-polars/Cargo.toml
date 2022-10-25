@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.14.22"
+version = "0.14.23"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -22,7 +22,7 @@ mimalloc = { version = "*", default-features = false }
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [dependencies]
-ahash = "0.7"
+ahash = "0.8"
 bincode = "1.3"
 # todo: unfix when compilation problem is solved
 libc = "0.2"
@@ -48,7 +48,8 @@ asof_join = ["polars/asof_join"]
 cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
-simd = ["polars/simd"]
+# also includes simd
+nightly = ["polars/nightly"]
 meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress"]
@@ -99,7 +100,7 @@ all = [
 # with --no-default-features --features=all for targets without simd
 default = [
   "all",
-  "simd",
+  "nightly",
 ]
 
 [dependencies.polars]
@@ -127,7 +128,6 @@ features = [
   "cum_agg",
   "rolling_window",
   "interpolate",
-  "list",
   "rank",
   "diff",
   "moment",

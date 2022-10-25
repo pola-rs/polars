@@ -13,15 +13,13 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.dependencies import zoneinfo
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
-from polars.import_check import zoneinfo_mod
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing._parametric import columns
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy
-
-zoneinfo = zoneinfo_mod()
 
 
 def test_version() -> None:
@@ -1322,9 +1320,9 @@ def test_reproducible_hash_with_seeds() -> None:
     expected = pl.Series(
         "s",
         [
-            15801072432137883943,
+            8823051245921001677,
             988796329533502010,
-            9604537446374444741,
+            7528667241828618484,
         ],
         dtype=pl.UInt64,
     )

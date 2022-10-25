@@ -2,7 +2,7 @@
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
-use polars_utils::flatten;
+use polars_utils::{flatten, HashSingle};
 
 use super::*;
 use crate::utils::{_split_offsets, copy_from_slice_unchecked};
@@ -252,7 +252,7 @@ impl IntoGroupsProxy for Utf8Chunked {
                         ca.into_iter()
                             .map(|opt_s| {
                                 let hash = match opt_s {
-                                    Some(s) => str::get_hash(s, &hb),
+                                    Some(s) => hb.hash_single(s),
                                     None => null_h,
                                 };
                                 // Safety:
@@ -273,7 +273,7 @@ impl IntoGroupsProxy for Utf8Chunked {
                 .into_iter()
                 .map(|opt_s| {
                     let hash = match opt_s {
-                        Some(s) => str::get_hash(s, &hb),
+                        Some(s) => hb.hash_single(s),
                         None => null_h,
                     };
                     BytesHash::new_from_str(opt_s, hash)
@@ -305,7 +305,7 @@ impl IntoGroupsProxy for BinaryChunked {
                         ca.into_iter()
                             .map(|opt_b| {
                                 let hash = match opt_b {
-                                    Some(s) => <[u8]>::get_hash(s, &hb),
+                                    Some(s) => hb.hash_single(s),
                                     None => null_h,
                                 };
                                 // Safety:
@@ -326,7 +326,7 @@ impl IntoGroupsProxy for BinaryChunked {
                 .into_iter()
                 .map(|opt_b| {
                     let hash = match opt_b {
-                        Some(s) => <[u8]>::get_hash(s, &hb),
+                        Some(s) => hb.hash_single(s),
                         None => null_h,
                     };
                     BytesHash::new(opt_b, hash)
@@ -359,7 +359,7 @@ impl IntoGroupsProxy for ListChunked {
                 for arr in ca.downcast_iter() {
                     out.extend(numeric_list_bytes_iter(arr)?.map(|opt_bytes| {
                         let hash = match opt_bytes {
-                            Some(s) => str::get_hash(s, &hb),
+                            Some(s) => hb.hash_single(s),
                             None => null_h,
                         };
 
@@ -574,7 +574,7 @@ pub(super) fn pack_utf8_columns(
                                 values.get_unchecked(start..end),
                             ))
                         };
-                        let hash = str::get_hash(str_val, &hb);
+                        let hash = hb.hash_single(str_val);
                         str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
                     (None, Some(rhs)) => {
@@ -589,7 +589,7 @@ pub(super) fn pack_utf8_columns(
                                 values.get_unchecked(start..end),
                             ))
                         };
-                        let hash = str::get_hash(str_val, &hb);
+                        let hash = hb.hash_single(str_val);
                         str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
                     (Some(lhs), None) => {
@@ -604,7 +604,7 @@ pub(super) fn pack_utf8_columns(
                                 values.get_unchecked(start..end),
                             ))
                         };
-                        let hash = str::get_hash(str_val, &hb);
+                        let hash = hb.hash_single(str_val);
                         str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
                     (None, None) => str_hashes.push(BytesHash::new(None, null_h)),

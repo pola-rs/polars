@@ -1,17 +1,18 @@
 use std::hash::Hash;
 
 use polars_core::export::_boost_hash_combine;
-use polars_core::export::ahash::{self, CallHasher};
+use polars_core::export::ahash::{self};
 use polars_core::export::rayon::prelude::*;
 use polars_core::utils::NoNull;
 use polars_core::POOL;
+use polars_utils::HashSingle;
 
 use super::*;
 
 fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &ahash::RandomState) -> u64
 where
     T: PolarsIntegerType,
-    T::Native: Hash + CallHasher,
+    T::Native: Hash,
 {
     // Note that we don't use the no null branch! This can break in unexpected ways.
     // for instance with threading we split an array in n_threads, this may lead to
@@ -30,7 +31,7 @@ where
         for opt_v in arr.iter() {
             match opt_v {
                 Some(v) => {
-                    let r = T::Native::get_hash(v, random_state);
+                    let r = random_state.hash_single(v);
                     hash_agg = _boost_hash_combine(hash_agg, r);
                 }
                 None => {

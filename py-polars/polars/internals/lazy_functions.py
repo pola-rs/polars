@@ -17,7 +17,8 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.import_check import _NUMPY_AVAILABLE, lazy_isinstance, numpy_mod
+from polars.dependencies import _NUMPY_TYPE
+from polars.dependencies import numpy as np
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
@@ -62,8 +63,6 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    import numpy as np
-
     from polars.internals.type_aliases import InterpolationMethod, IntoExpr, TimeUnit
 
 
@@ -748,10 +747,7 @@ def lit(
             return e
         return e.alias(name)
 
-    if _NUMPY_AVAILABLE and lazy_isinstance(
-        value, "numpy", lambda: numpy_mod().ndarray
-    ):
-        value = cast("np.ndarray[Any, Any]", value)
+    if _NUMPY_TYPE(value) and isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
 
     if dtype:

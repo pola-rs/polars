@@ -26,6 +26,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57e6e951cfbb2db8de1828d49073a113a29fd7117b1596caa781a258c7e38d72"
+dependencies = [
+ "cfg-if",
+ "getrandom",
+ "once_cell",
+ "version_check",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "0.7.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -86,7 +98,7 @@ version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6f62e41078c967a4c063fcbdfd3801a2a9632276402c045311c4d73d0845f3"
 dependencies = [
- "ahash",
+ "ahash 0.7.6",
  "arrow-format",
  "avro-schema",
  "base64",
@@ -712,7 +724,7 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
- "ahash",
+ "ahash 0.7.6",
  "rayon",
 ]
 
@@ -1372,7 +1384,7 @@ dependencies = [
 name = "polars-core"
 version = "0.24.3"
 dependencies = [
- "ahash",
+ "ahash 0.8.0",
  "anyhow",
  "arrow2",
  "base64",
@@ -1402,7 +1414,7 @@ dependencies = [
 name = "polars-io"
 version = "0.24.3"
 dependencies = [
- "ahash",
+ "ahash 0.8.0",
  "anyhow",
  "arrow2",
  "csv-core",
@@ -1429,7 +1441,7 @@ dependencies = [
 name = "polars-lazy"
 version = "0.24.3"
 dependencies = [
- "ahash",
+ "ahash 0.8.0",
  "bitflags",
  "glob",
  "polars-arrow",
@@ -1452,6 +1464,7 @@ dependencies = [
  "jsonpath_lib",
  "polars-arrow",
  "polars-core",
+ "polars-utils",
  "serde_json",
 ]
 
@@ -1473,7 +1486,7 @@ dependencies = [
 name = "polars-plan"
 version = "0.24.3"
 dependencies = [
- "ahash",
+ "ahash 0.8.0",
  "polars-arrow",
  "polars-core",
  "polars-io",
@@ -1536,9 +1549,9 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.14.22"
+version = "0.14.23"
 dependencies = [
- "ahash",
+ "ahash 0.8.0",
  "bincode",
  "jemallocator",
  "libc",

@@ -1302,7 +1302,10 @@ impl PyExpr {
         self.inner
             .clone()
             .arr()
-            .sort(reverse)
+            .sort(SortOptions {
+                descending: reverse,
+                ..Default::default()
+            })
             .with_fmt("arr.sort")
             .into()
     }

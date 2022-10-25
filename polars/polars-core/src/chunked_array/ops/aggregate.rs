@@ -179,7 +179,7 @@ fn quantile_idx(
         }
     };
 
-    base_idx = std::cmp::min(std::cmp::max(base_idx, 0), (length - 1) as i64);
+    base_idx = base_idx.clamp(0, (length - 1) as i64);
     let float_idx = ((length - null_count) as f64 - 1.0) * quantile + null_count as f64;
     let top_idx = f64::ceil(float_idx) as i64;
 

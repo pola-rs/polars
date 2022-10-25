@@ -372,7 +372,7 @@ impl Display for DataFrame {
 
             let field_to_str = |f: &Field| {
                 let name = make_str_val(f.name(), str_truncate);
-                let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
+                let lower_bounds = name.len().clamp(5, 12);
                 let mut column_name = name;
                 if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
                     column_name = "".to_string();

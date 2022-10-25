@@ -28,6 +28,7 @@ from polars.datatypes import (
     Utf8,
     py_type_to_dtype,
 )
+from polars.dependencies import pyarrow as pa
 from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
@@ -47,8 +48,6 @@ except ImportError:
 
 
 if TYPE_CHECKING:
-    import pyarrow as pa
-
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         ClosedWindow,

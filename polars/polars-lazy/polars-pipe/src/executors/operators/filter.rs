@@ -23,8 +23,9 @@ impl Operator for FilterOperator {
                 format!("Filter predicate must be of type Boolean, got: {:?}", e).into(),
             )
         })?;
-        // TODO! filter sequentially?
-        let df = chunk.data.filter(mask)?;
+        // the filter is sequential as they are already executed on different threads
+        // we don't want to increase contention and data copies
+        let df = chunk.data._filter_seq(mask)?;
 
         Ok(OperatorResult::Finished(chunk.with_data(df)))
     }

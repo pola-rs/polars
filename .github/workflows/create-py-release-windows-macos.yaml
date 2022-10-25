@@ -34,7 +34,7 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
         with:
-          rust-toolchain: nightly-2022-10-06
+          rust-toolchain: nightly-2022-10-24
           maturin-version: '0.13.5'
           command: publish
           args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46

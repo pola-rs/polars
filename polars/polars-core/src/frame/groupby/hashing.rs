@@ -1,9 +1,8 @@
 use std::hash::{BuildHasher, Hash};
 
-use ahash::CallHasher;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
-use polars_utils::flatten;
+use polars_utils::{flatten, HashSingle};
 use rayon::prelude::*;
 
 use super::GroupsProxy;
@@ -99,7 +98,7 @@ pub(crate) fn groupby_threaded_num<T, IntoSlice>(
     sorted: bool,
 ) -> GroupsProxy
 where
-    T: Send + Hash + Eq + Sync + Copy + AsU64 + CallHasher,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
     assert!(n_partitions.is_power_of_two());
@@ -110,8 +109,6 @@ where
     let out = POOL
         .install(|| {
             (0..n_partitions).into_par_iter().map(|thread_no| {
-                let thread_no = thread_no as u64;
-
                 let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
                     PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
@@ -127,7 +124,7 @@ where
                         cnt += 1;
 
                         if this_partition(k.as_u64(), thread_no, n_partitions) {
-                            let hash = T::get_hash(k, &hasher);
+                            let hash = hasher.hash_single(k);
                             let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
 
                             match entry {
@@ -135,7 +132,7 @@ where
                                     let mut tuples = Vec::with_capacity(group_size_hint);
                                     tuples.push(idx);
                                     entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
-                                        T::get_hash(k, &hasher)
+                                        hasher.hash_single(k)
                                     });
                                 }
                                 RawEntryMut::Occupied(mut entry) => {
@@ -302,7 +299,6 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
         .install(|| {
             (0..n_partitions).into_par_iter().map(|thread_no| {
                 let hashes = &hashes;
-                let thread_no = thread_no as u64;
 
                 let mut hash_tbl: HashMap<IdxHash, (IdxSize, Vec<IdxSize>), IdBuildHasher> =
                     HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());

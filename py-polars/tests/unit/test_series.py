@@ -106,7 +106,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.Series("bigint", [2**64])
 
     # numpy not available
-    monkeypatch.setattr(pl.internals.series.series, "_NUMPY_AVAILABLE", False)
+    monkeypatch.setattr(pl.internals.series.series, "_NUMPY_TYPE", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
 

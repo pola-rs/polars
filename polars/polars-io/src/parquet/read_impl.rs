@@ -103,7 +103,7 @@ fn rg_to_dfs(
             assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
         }
 
-        let chunk_size = md.num_rows() as usize;
+        let chunk_size = md.num_rows();
         let columns = if let ParallelStrategy::Columns = parallel {
             POOL.install(|| {
                 projection
@@ -129,8 +129,7 @@ fn rg_to_dfs(
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 
-        *remaining_rows =
-            remaining_rows.saturating_sub(file_metadata.row_groups[rg].num_rows() as usize);
+        *remaining_rows = remaining_rows.saturating_sub(file_metadata.row_groups[rg].num_rows());
 
         let mut df = DataFrame::new_no_checks(columns);
         if let Some(rc) = &row_count {
@@ -195,18 +194,11 @@ fn rg_to_dfs_par(
                 assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
             }
 
-            let chunk_size = md.num_rows() as usize;
+            let chunk_size = md.num_rows();
             let columns = projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(
-                        *column_i,
-                        md,
-                        local_limit as usize,
-                        schema,
-                        bytes,
-                        chunk_size,
-                    )
+                    column_idx_to_series(*column_i, md, local_limit, schema, bytes, chunk_size)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 

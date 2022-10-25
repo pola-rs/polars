@@ -172,7 +172,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
         _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), columns=["a"])
 
     # NumPy not available
-    monkeypatch.setattr(pl.internals.dataframe.frame, "_NUMPY_AVAILABLE", False)
+    monkeypatch.setattr(pl.internals.dataframe.frame, "_NUMPY_TYPE", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
 
@@ -325,7 +325,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # pandas is not available
-    monkeypatch.setattr(pl.internals.dataframe.frame, "_PANDAS_AVAILABLE", False)
+    monkeypatch.setattr(pl.internals.dataframe.frame, "_PANDAS_TYPE", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(pandas_df)
 

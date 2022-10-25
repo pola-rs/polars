@@ -11,6 +11,7 @@ description = "Core of the Polars DataFrame library"
 
 [features]
 simd = ["arrow/simd"]
+nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono"]

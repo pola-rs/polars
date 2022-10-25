@@ -166,8 +166,8 @@ impl Seek for PyFileLikeObject {
         Python::with_gil(|py| {
             let (whence, offset) = match pos {
                 SeekFrom::Start(i) => (0, i as i64),
-                SeekFrom::Current(i) => (1, i as i64),
-                SeekFrom::End(i) => (2, i as i64),
+                SeekFrom::Current(i) => (1, i),
+                SeekFrom::End(i) => (2, i),
             };
 
             let new_position = self

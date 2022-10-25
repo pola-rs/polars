@@ -8,7 +8,7 @@ from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 
 import polars.internals as pli
 from polars.datatypes import DataType
-from polars.import_check import _FSSPEC_AVAILABLE
+from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.utils import format_path
 
 try:
@@ -112,7 +112,6 @@ def _prepare_file_arg(
         if file.startswith("http"):
             return _process_http_file(file, encoding_str)
         if _FSSPEC_AVAILABLE:
-            import fsspec
             from fsspec.utils import infer_storage_options
 
             if not has_non_utf8_non_utf8_lossy_encoding:
@@ -122,7 +121,6 @@ def _prepare_file_arg(
             return fsspec.open(file, **kwargs)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:
-            import fsspec
             from fsspec.utils import infer_storage_options
 
             if not has_non_utf8_non_utf8_lossy_encoding:
