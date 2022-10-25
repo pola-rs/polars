@@ -2373,7 +2373,12 @@ where
 ///
 /// * `[map_mul]` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 /// * `[apply_mul]` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-pub fn apply_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+pub fn apply_multiple<F, E>(
+    function: F,
+    expr: E,
+    output_type: GetOutput,
+    returns_scalar: bool,
+) -> Expr
 where
     F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
@@ -2386,7 +2391,9 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            auto_explode: true,
+            // don't set this to true
+            // this is for the caller to decide
+            auto_explode: returns_scalar,
             fmt_str: "",
             ..Default::default()
         },

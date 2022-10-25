@@ -186,6 +186,7 @@ pub fn map_mul(
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
     apply_groups: bool,
+    returns_scalar: bool,
 ) -> PyExpr {
     // get the pypolars module
     // do the import outside of the function to prevent import side effects in a hot loop.
@@ -212,7 +213,7 @@ pub fn map_mul(
         None => fld.clone(),
     });
     if apply_groups {
-        polars::lazy::dsl::apply_multiple(function, exprs, output_map).into()
+        polars::lazy::dsl::apply_multiple(function, exprs, output_map, returns_scalar).into()
     } else {
         polars::lazy::dsl::map_multiple(function, exprs, output_map).into()
     }

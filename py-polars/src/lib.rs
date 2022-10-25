@@ -442,8 +442,16 @@ pub fn map_mul(
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
     apply_groups: bool,
+    returns_scalar: bool,
 ) -> PyExpr {
-    lazy::map_mul(&pyexpr, py, lambda, output_type, apply_groups)
+    lazy::map_mul(
+        &pyexpr,
+        py,
+        lambda,
+        output_type,
+        apply_groups,
+        returns_scalar,
+    )
 }
 
 #[pyfunction]
