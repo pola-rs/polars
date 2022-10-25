@@ -193,6 +193,7 @@ pub fn map_mul(
     lambda: PyObject,
     output_type: &PyAny,
     apply_groups: bool,
+    returns_scalar: bool,
 ) -> PyExpr {
     let output_type = get_output_type(output_type);
 
@@ -221,7 +222,7 @@ pub fn map_mul(
         None => fld.clone(),
     });
     if apply_groups {
-        polars::lazy::dsl::apply_multiple(function, exprs, output_map).into()
+        polars::lazy::dsl::apply_multiple(function, exprs, output_map, returns_scalar).into()
     } else {
         polars::lazy::dsl::map_multiple(function, exprs, output_map).into()
     }

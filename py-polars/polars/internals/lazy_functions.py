@@ -968,13 +968,16 @@ def map(
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=False))
+    return pli.wrap_expr(
+        _map_mul(exprs, f, return_dtype, apply_groups=False, returns_scalar=False)
+    )
 
 
 def apply(
     exprs: Sequence[str | pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series | Any],
     return_dtype: type[DataType] | None = None,
+    returns_scalar: bool = True,
 ) -> pli.Expr:
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
@@ -995,6 +998,8 @@ def apply(
         Function to apply over the input
     return_dtype
         dtype of the output Series
+    returns_scalar
+        If the function returns a single scalar as output.
 
     Returns
     -------
@@ -1002,7 +1007,11 @@ def apply(
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=True))
+    return pli.wrap_expr(
+        _map_mul(
+            exprs, f, return_dtype, apply_groups=True, returns_scalar=returns_scalar
+        )
+    )
 
 
 def fold(

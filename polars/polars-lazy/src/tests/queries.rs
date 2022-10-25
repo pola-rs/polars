@@ -1675,46 +1675,6 @@ fn test_groupby_rank() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_apply_multiple_columns() -> PolarsResult<()> {
-    let df = fruits_cars();
-
-    let multiply = |s: &mut [Series]| Ok(&(&s[0] * &s[0]) * &s[1]);
-
-    let out = df
-        .clone()
-        .lazy()
-        .select([map_multiple(
-            multiply,
-            [col("A"), col("B")],
-            GetOutput::from_type(DataType::Float64),
-        )])
-        .collect()?;
-    let out = out.column("A")?;
-    let out = out.i32()?;
-    assert_eq!(
-        Vec::from(out),
-        &[Some(5), Some(16), Some(27), Some(32), Some(25)]
-    );
-
-    let out = df
-        .lazy()
-        .groupby_stable([col("cars")])
-        .agg([apply_multiple(
-            multiply,
-            [col("A"), col("B")],
-            GetOutput::from_type(DataType::Float64),
-        )])
-        .collect()?;
-
-    let out = out.column("A")?;
-    let out = out.list()?.get(1).unwrap();
-    let out = out.i32()?;
-
-    assert_eq!(Vec::from(out), &[Some(16)]);
-    Ok(())
-}
-
-#[test]
 pub fn test_select_by_dtypes() -> PolarsResult<()> {
     let df = df![
         "bools" => [true, false, true],
