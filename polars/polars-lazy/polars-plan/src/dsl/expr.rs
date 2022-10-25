@@ -312,16 +312,6 @@ pub enum Expr {
         truthy: Box<Expr>,
         falsy: Box<Expr>,
     },
-    #[cfg_attr(feature = "serde", serde(skip))]
-    AnonymousFunction {
-        /// function arguments
-        input: Vec<Expr>,
-        /// function to apply
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
-        /// output dtype of the function
-        output_type: GetOutput,
-        options: FunctionOptions,
-    },
     Function {
         /// function arguments
         input: Vec<Expr>,
@@ -353,15 +343,26 @@ pub enum Expr {
     Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
+    /// Special case that does not need columns
+    Count,
+    /// Take the nth column in the `DataFrame`
+    Nth(i64),
+    // skipped fields must be last otherwise serde fails in pickle
     #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Box<Expr>,
     },
-    /// Special case that does not need columns
-    Count,
-    /// Take the nth column in the `DataFrame`
-    Nth(i64),
+    #[cfg_attr(feature = "serde", serde(skip))]
+    AnonymousFunction {
+        /// function arguments
+        input: Vec<Expr>,
+        /// function to apply
+        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        /// output dtype of the function
+        output_type: GetOutput,
+        options: FunctionOptions,
+    },
 }
 
 // TODO! derive. This is only a temporary fix
