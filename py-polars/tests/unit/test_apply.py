@@ -261,3 +261,16 @@ def test_apply_object_dtypes() -> None:
         "is_numeric1": [True, True, False, True, True],
         "is_numeric_infer": [True, True, False, True, True],
     }
+
+
+def test_apply_explicit_list_output_type() -> None:
+    out = pl.DataFrame({"str": ["a", "b"]}).with_columns(
+        [
+            pl.col("str").apply(
+                lambda _: pl.Series([1, 2, 3]), return_dtype=pl.List(pl.Int64)
+            )
+        ]
+    )
+
+    assert out.dtypes == [pl.List(pl.Int64)]
+    assert out.to_dict(False) == {"str": [[1, 2, 3], [1, 2, 3]]}

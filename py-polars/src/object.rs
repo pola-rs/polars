@@ -10,6 +10,8 @@ use pyo3::prelude::*;
 use crate::prelude::ObjectValue;
 use crate::Wrap;
 
+pub(crate) const OBJECT_NAME: &str = "object";
+
 pub(crate) fn register_object_builder() {
     if !registry::is_object_builder_registered() {
         let object_builder = Box::new(|name: &str, capacity: usize| {

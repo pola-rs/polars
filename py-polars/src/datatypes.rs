@@ -1,6 +1,7 @@
 use polars::prelude::*;
 use pyo3::{FromPyObject, PyAny, PyResult};
 
+use crate::object::OBJECT_NAME;
 use crate::Wrap;
 
 // Don't change the order of these!
@@ -92,7 +93,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Duration(tu) => Duration(tu),
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
-            PyDataType::Object => Object("object"),
+            PyDataType::Object => Object(OBJECT_NAME),
             PyDataType::Categorical => Categorical(None),
             PyDataType::Struct => Struct(vec![]),
         }

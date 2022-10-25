@@ -3264,7 +3264,7 @@ class Series:
     def apply(
         self,
         func: Callable[[Any], Any],
-        return_dtype: type[DataType] | None = None,
+        return_dtype: PolarsDataType | None = None,
         skip_nulls: bool = True,
     ) -> Series:
         """

@@ -1001,7 +1001,7 @@ impl PySeries {
                 }
                 None => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
 
-                _ => return dispatch_apply!(series, apply_lambda, py, lambda),
+                _ => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
             };
 
             Ok(PySeries::new(out))

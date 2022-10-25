@@ -3019,7 +3019,7 @@ class Expr:
     def apply(
         self,
         f: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
-        return_dtype: type[DataType] | None = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
         Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.

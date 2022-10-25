@@ -24,6 +24,7 @@ use pyo3::{PyAny, PyResult};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::lazy::dataframe::PyLazyFrame;
+use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 use crate::series::PySeries;
@@ -343,7 +344,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
-                    "Object" => DataType::Object("Object"),
+                    "Object" => DataType::Object(OBJECT_NAME),
                     "List" => DataType::List(Box::new(DataType::Boolean)),
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
