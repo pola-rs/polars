@@ -37,18 +37,19 @@ def _proxy_module(module_name: str, register: bool = True) -> ModuleType:
     # module-level getattr for the proxy
     def __getattr__(*args: Any, **kwargs: Any) -> None:
         attr = args[0]
+        # handle some introspection issues on private module attrs
         if re.match(r"^__\w+__$", attr):
             return None
 
+        # other attribute access raises exception
         pfx = _mod_pfx.get(module_name, "")
         raise ModuleNotFoundError(
             f"{pfx}{attr} requires '{module_name}' module to be installed"
         ) from None
 
     # create module that raises an exception on attribute access.
-    # (note: setting '__wrapped__' and '__file__' fixes some introspection issues)
     proxy_module = module_from_spec(ModuleSpec(module_name, None))
-    for name, obj in (("__getattr__", __getattr__), ("__version__", "0.0")):
+    for name, obj in (("__getattr__", __getattr__),):
         setattr(proxy_module, name, obj)
 
     # add proxy into sys.modules under the target module's name
@@ -96,6 +97,19 @@ def lazy_import(module_name: str) -> tuple[ModuleType, bool]:
     if spec is None:
         return _proxy_module(module_name), False
     else:
+        # handle modules that have old-style loaders (ref: #5326)
+        if not hasattr(spec.loader, "exec_module"):
+            if hasattr(spec.loader, "load_module"):
+                spec.loader.exec_module = (  # type: ignore[assignment, union-attr]
+                    # wrap deprecated 'load_module' for use with 'exec_module'
+                    lambda module: spec.loader.load_module(module.__name__)  # type: ignore[union-attr] # noqa: E501
+                )
+            if not hasattr(spec.loader, "create_module"):
+                spec.loader.create_module = (  # type: ignore[assignment, union-attr]
+                    # note: returning 'None' implies use of the standard machinery
+                    lambda spec: None
+                )
+
         # module IS available, but not yet imported into the environment; create
         # a lazy loader that proxies (then replaces) the module in sys.modules
         loader = LazyLoader(spec.loader)  # type: ignore[arg-type]
