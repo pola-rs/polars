@@ -1044,7 +1044,12 @@ impl PyExpr {
             .into()
     }
 
-    pub fn map(&self, lambda: PyObject, output_type: &PyAny, agg_list: bool) -> PyExpr {
+    pub fn map(
+        &self,
+        lambda: PyObject,
+        output_type: Option<Wrap<DataType>>,
+        agg_list: bool,
+    ) -> PyExpr {
         map_single(self, lambda, output_type, agg_list)
     }
 
