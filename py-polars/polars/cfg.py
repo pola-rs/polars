@@ -280,6 +280,38 @@ class Config:
         return cls
 
     @classmethod
+    def set_fmt_struct_data_type(cls, active: bool = True) -> type[Config]:
+        """
+        Displays all fields (name, dtype) of struct dtype.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+            "a": ["A", "AA"],
+            "b": ["B", "BB"],
+            "c": ["C", "CC"],
+            "d": [{"D1": "D2", "DD1": None}, {"D1": None, "DD1": "DD2"}],
+            })
+        >>> pl.Config.set_fmt_struct_data_type(True)  # doctest: +SKIP
+        # ...
+        # shape: (2, 4)                         shape: (2, 4)
+        # ┌─────┬─────┬─────┬──────────────┐    ┌─────┬─────┬─────┬───────────────┐
+        # │ a   ┆ b   ┆ c   ┆ d            │    │ a   ┆ b   ┆ c   ┆ d             │
+        # │ --- ┆ --- ┆ --- ┆ ---          │    │ --- ┆ --- ┆ --- ┆ ---           │
+        # │ str ┆ str ┆ str ┆ struct[2]    │    │ str ┆ str ┆ str ┆ struct[2]:    │
+        # │     ┆     ┆     ┆              │    │     ┆     ┆     ┆  |-- D1: str  │
+        # │     ┆     ┆     ┆              │    │     ┆     ┆     ┆  |-- DD1: str │
+        # ╞═════╪═════╪═════╪══════════════╡ >> ╞═════╪═════╪═════╪═══════════════╡
+        # │ A   ┆ B   ┆ C   ┆ {"D2",null}  │    │ A   ┆ B   ┆ C   ┆ {"D2",null}   │
+        # ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        # │ AA  ┆ BB  ┆ CC  ┆ {null,"DD2"} │    │ AA  ┆ BB  ┆ CC  ┆ {null,"DD2"}  │
+        # └─────┴─────┴─────┴──────────────┘    └─────┴─────┴─────┴───────────────┘
+
+        """
+        os.environ["POLARS_FMT_STRUCT_DATA_TYPE"] = str(int(active))
+        return cls
+
+    @classmethod
     def set_tbl_column_data_type_inline(cls, active: bool = True) -> type[Config]:
         """
         Moves the data type inline with the column name (to the right, in parentheses).

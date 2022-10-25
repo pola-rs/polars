@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::*;
 
 pub type TimeZone = String;
 
@@ -251,6 +252,10 @@ impl PartialEq<ArrowDataType> for DataType {
     }
 }
 
+fn env_is_true(varname: &str) -> bool {
+    std::env::var(varname).as_deref().unwrap_or("0") == "1"
+}
+
 impl Display for DataType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
@@ -286,11 +291,15 @@ impl Display for DataType {
             DataType::Categorical(_) => "cat",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
-                writeln!(f, "Struct:",);
-                for field in fields {
-                    writeln!(f, "|-- {}: {} ", field.name, field.dtype);
+                if env_is_true(FMT_STRUCT_DATA_TYPE) {
+                    writeln!(f, "struct[{}]:", fields.len());
+                    for field in fields {
+                        writeln!(f, "|-- {}: {} ", field.name, field.dtype);
+                    }
+                    return Ok(());
+                } else {
+                    return write!(f, "struct[{}]", fields.len());
                 }
-                return Ok(());
             }
             DataType::Unknown => unreachable!(),
         };

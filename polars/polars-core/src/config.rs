@@ -2,6 +2,7 @@
 pub(crate) const FMT_MAX_COLS: &str = "POLARS_FMT_MAX_COLS";
 pub(crate) const FMT_MAX_ROWS: &str = "POLARS_FMT_MAX_ROWS";
 pub(crate) const FMT_STR_LEN: &str = "POLARS_FMT_STR_LEN";
+pub(crate) const FMT_STRUCT_DATA_TYPE: &str = "POLARS_FMT_STRUCT_DATA_TYPE";
 pub(crate) const FMT_TABLE_CELL_ALIGNMENT: &str = "POLARS_FMT_TABLE_CELL_ALIGNMENT";
 pub(crate) const FMT_TABLE_DATAFRAME_SHAPE_BELOW: &str = "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW";
 pub(crate) const FMT_TABLE_FORMATTING: &str = "POLARS_FMT_TABLE_FORMATTING";
