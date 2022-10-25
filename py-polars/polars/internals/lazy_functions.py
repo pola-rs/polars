@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence, cast, overload
 
 from polars import internals as pli
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     DataType,
     Date,
     Datetime,
     Duration,
+    Int64,
     PolarsDataType,
     Time,
     UInt32,
@@ -19,6 +21,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _NUMPY_TYPE
 from polars.dependencies import numpy as np
+from polars.internals.type_aliases import EpochTimeUnit
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
@@ -2044,3 +2047,95 @@ def coalesce(
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_coalesce_exprs(exprs))
+
+
+@overload
+def from_epoch(
+    column: str | pli.Expr | pli.Series,
+    unit: EpochTimeUnit = "s",
+    *,
+    eager: Literal[False],
+) -> pli.Expr:
+    ...
+
+
+@overload
+def from_epoch(
+    column: str | pli.Expr | pli.Series,
+    unit: EpochTimeUnit = "s",
+    *,
+    eager: Literal[True],
+) -> pli.Series:
+    ...
+
+
+@overload
+def from_epoch(
+    column: str | pli.Expr | pli.Series,
+    unit: EpochTimeUnit = "s",
+    *,
+    eager: bool = False,
+) -> pli.Expr | pli.Series:
+    ...
+
+
+def from_epoch(
+    column: str | pli.Expr | pli.Series,
+    unit: EpochTimeUnit = "s",
+    *,
+    eager: bool = False,
+) -> pli.Expr | pli.Series:
+    """
+    Utility function that parses epoch time (or unix time) from different units to
+    Polars' corresponding `pl.Datetime` (defaults to "us").
+
+    This can be used in a `select`, `with_column` etc.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
+    >>> df.select(pl.from_epoch(pl.col("timestamp"), unit="s")).collect()
+    shape: (2, 1)
+    ┌─────────────────────┐
+    │ timestamp           │
+    │ ---                 │
+    │ datetime[μs]        │
+    ╞═════════════════════╡
+    │ 2022-10-25 07:31:17 │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2022-10-25 07:31:39 │
+    └─────────────────────┘
+
+    Parameters
+    ----------
+    condition
+        Series or expression to parse integers to pl.Datetime.
+    unit
+        The unit of the timesteps since epoch time.
+    eager
+        If eager evaluation is `True`, a Series is returned instead of an Expr.
+
+    """
+
+    expr = col(column) if isinstance(column, str) else column
+
+    if unit == "d":
+        expr = expr.cast(Date)
+    elif unit == "s":
+        expr = (expr.cast(Int64) * 1_000_000).cast(Datetime("us"))
+    elif unit in DTYPE_TEMPORAL_UNITS:
+        expr = expr.cast(Datetime(unit))
+    else:
+        raise ValueError(
+            f"'unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got '{unit}'."
+        )
+
+    if eager:
+        if not isinstance(column, pli.Series):
+            raise ValueError(
+                "expected 'Series' in 'from_epoch' if 'eager=True', got"
+                f" {type(column)}"
+            )
+        return column.to_frame().select(expr).to_series()
+    else:
+        return expr

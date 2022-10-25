@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Union, cast
 
 import numpy as np
 import pandas as pd
@@ -2310,3 +2310,20 @@ def test_repr() -> None:
 def test_builtin_abs() -> None:
     s = pl.Series("s", [-1, 0, 1, None])
     assert abs(s).to_list() == [1, 0, 1, None]
+
+
+@pytest.mark.parametrize(
+    "value, unit, exp",
+    [
+        (13285, "d", date(2006, 5, 17)),
+        (1147880044, "s", datetime(2006, 5, 17, 15, 34, 4)),
+        (1147880044 * 1_000, "ms", datetime(2006, 5, 17, 15, 34, 4)),
+        (1147880044 * 1_000_000, "us", datetime(2006, 5, 17, 15, 34, 4)),
+        (1147880044 * 1_000_000_000, "ns", datetime(2006, 5, 17, 15, 34, 4)),
+    ],
+)
+def test_from_epoch_expr(value: int, unit: str, exp: date | datetime) -> None:
+    s = pl.Series("timestamp", [value, None])
+    result = pl.from_epoch(s, unit=unit)
+    expected = pl.Series("timestamp", [exp, None])
+    assert result.series_equal(expected, null_equal=True)

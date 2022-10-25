@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import date, datetime
 from functools import reduce
 from operator import add
 from string import ascii_letters
@@ -12,6 +13,7 @@ from _pytest.capture import CaptureFixture
 
 import polars as pl
 from polars import col, lit, when
+from polars.datatypes import PolarsDataType
 from polars.testing import assert_frame_equal
 
 
@@ -1517,3 +1519,42 @@ def test_quadratic_behavior_4736() -> None:
     # our tests it has passed.
     df = pl.DataFrame(columns=list(ascii_letters))
     df.lazy().select(reduce(add, (pl.col(fld) for fld in df.columns)))
+
+
+@pytest.mark.parametrize("input_dtype", [pl.Utf8, pl.Int64, pl.Float64])
+def test_from_epoch(input_dtype: PolarsDataType) -> None:
+    ldf = pl.DataFrame(
+        [
+            pl.Series("timestamp_d", [13285]).cast(input_dtype),
+            pl.Series("timestamp_s", [1147880044]).cast(input_dtype),
+            pl.Series("timestamp_ms", [1147880044 * 1_000]).cast(input_dtype),
+            pl.Series("timestamp_us", [1147880044 * 1_000_000]).cast(input_dtype),
+            pl.Series("timestamp_ns", [1147880044 * 1_000_000_000]).cast(input_dtype),
+        ]
+    ).lazy()
+
+    exp_dt = datetime(2006, 5, 17, 15, 34, 4)
+    expected = pl.DataFrame(
+        [
+            pl.Series("timestamp_d", [date(2006, 5, 17)]),
+            pl.Series("timestamp_s", [exp_dt]),  # s is no Polars dtype, defaults to us
+            pl.Series("timestamp_ms", [exp_dt]).cast(pl.Datetime("ms")),
+            pl.Series("timestamp_us", [exp_dt]),  # us is Polars Datetime default
+            pl.Series("timestamp_ns", [exp_dt]).cast(pl.Datetime("ns")),
+        ]
+    )
+
+    ldf_result = ldf.select(
+        [
+            pl.from_epoch(pl.col("timestamp_d"), unit="d"),
+            pl.from_epoch(pl.col("timestamp_s"), unit="s"),
+            pl.from_epoch(pl.col("timestamp_ms"), unit="ms"),
+            pl.from_epoch(pl.col("timestamp_us"), unit="us"),
+            pl.from_epoch(pl.col("timestamp_ns"), unit="ns"),
+        ]
+    ).collect()
+
+    assert_frame_equal(ldf_result, expected)
+
+    with pytest.raises(ValueError):
+        _ = ldf.select(pl.from_epoch(pl.col("timestamp_s"), unit="unknown"))
