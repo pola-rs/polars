@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 
 use polars_core::prelude::*;
 
-use crate::prelude::AnonymousScanOptions;
+pub use super::options::AnonymousScanOptions;
 
 pub trait AnonymousScan: Send + Sync {
     /// Creates a dataframe from the supplied function & scan options.
