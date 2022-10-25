@@ -2086,10 +2086,18 @@ def from_epoch(
     eager: bool = False,
 ) -> pli.Expr | pli.Series:
     """
-    Utility function that parses epoch time (or unix time) from different units to
-    Polars' corresponding `pl.Datetime` (defaults to "us").
+    Utility function that parses epoch time to Polars Datetime.
 
-    This can be used in a `select`, `with_column` etc.
+    If possible, the unit will persist in `pl.Date` or `pl.Datetime`, defaults to "ns".
+
+    Parameters
+    ----------
+    column
+        Series or expression to parse integers to pl.Datetime.
+    unit
+        The unit of the timesteps since epoch time.
+    eager
+        If eager evaluation is `True`, a Series is returned instead of an Expr.
 
     Examples
     --------
@@ -2106,17 +2114,7 @@ def from_epoch(
     │ 2022-10-25 07:31:39 │
     └─────────────────────┘
 
-    Parameters
-    ----------
-    condition
-        Series or expression to parse integers to pl.Datetime.
-    unit
-        The unit of the timesteps since epoch time.
-    eager
-        If eager evaluation is `True`, a Series is returned instead of an Expr.
-
     """
-
     expr = col(column) if isinstance(column, str) else column
 
     if unit == "d":
