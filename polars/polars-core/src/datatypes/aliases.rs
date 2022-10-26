@@ -57,3 +57,15 @@ impl<K> InitHashMaps for PlHashSet<K> {
         Self::with_capacity_and_hasher(capacity, Default::default())
     }
 }
+
+impl<K> InitHashMaps for PlIndexSet<K> {
+    type HashMap = Self;
+
+    fn new() -> Self::HashMap {
+        Self::with_capacity_and_hasher(0, Default::default())
+    }
+
+    fn with_capacity(capacity: usize) -> Self::HashMap {
+        Self::with_capacity_and_hasher(capacity, Default::default())
+    }
+}

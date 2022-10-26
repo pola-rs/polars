@@ -16,6 +16,9 @@ def test_list_arr_get() -> None:
     out = a.arr.get(0)
     expected = pl.Series("a", [1, 4, 6])
     assert_series_equal(out, expected)
+    out = a.arr[0]
+    expected = pl.Series("a", [1, 4, 6])
+    assert_series_equal(out, expected)
     out = a.arr.first()
     assert_series_equal(out, expected)
     out = pl.select(pl.lit(a).arr.first()).to_series()

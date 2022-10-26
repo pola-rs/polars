@@ -84,6 +84,9 @@ class ListNameSpace:
 
         """
 
+    def __getitem__(self, item: int) -> pli.Series:
+        return self.get(item)
+
     def join(self, separator: str) -> pli.Series:
         """
         Join all string items in a sublist and place a separator between them.
