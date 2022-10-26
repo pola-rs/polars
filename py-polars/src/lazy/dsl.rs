@@ -1333,8 +1333,8 @@ impl PyExpr {
             .into()
     }
 
-    fn lst_get(&self, index: i64) -> Self {
-        self.inner.clone().arr().get(index).into()
+    fn lst_get(&self, index: PyExpr) -> Self {
+        self.inner.clone().arr().get(index.inner).into()
     }
 
     fn lst_join(&self, separator: &str) -> Self {

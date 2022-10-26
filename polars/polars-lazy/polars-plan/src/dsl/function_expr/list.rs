@@ -9,6 +9,7 @@ pub enum ListFunction {
     #[cfg(feature = "is_in")]
     Contains,
     Slice,
+    Get,
 }
 
 impl Display for ListFunction {
@@ -20,6 +21,7 @@ impl Display for ListFunction {
             #[cfg(feature = "is_in")]
             Contains => "contains",
             Slice => "slice",
+            Get => "get",
         };
         write!(f, "{}", name)
     }
@@ -128,4 +130,50 @@ pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Series> {
         }
     };
     first_ca.lst_concat(other).map(|ca| ca.into_series())
+}
+
+pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
+    let ca = s[0].list()?;
+    let index = s[1].cast(&DataType::Int64)?;
+    let index = index.i64().unwrap();
+
+    match index.len() {
+        1 => {
+            let index = index.get(0);
+            if let Some(index) = index {
+                ca.lst_get(index)
+            } else {
+                Err(PolarsError::ComputeError("Expression 'arr.get' expected a valid index, got 'null' instead.".into()))
+            }
+        }
+        len if len == ca.len() => {
+            let ca = ca.rechunk();
+            let arr = ca.downcast_iter().next().unwrap();
+            let offsets = arr.offsets().as_slice();
+
+            let take_by = index.into_iter().enumerate().map(|(i, opt_idx)| {
+                opt_idx.and_then(|idx| {
+                    let (start, end) =  unsafe {
+                        (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
+                    };
+                    let offset = if idx >= 0 {
+                        start + idx
+                    } else {
+                        end + idx
+                    };
+                    if offset > end || offset < start || start == end {
+                        None
+                    } else {
+                        Some(offset as IdxSize)
+                    }
+                })
+            }).collect::<IdxCa>();
+            let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
+            unsafe { s.take_unchecked(&take_by) }
+        }
+        len => {
+            Err(PolarsError::ComputeError(format!("Expression 'arr.get' got an index array of length: {} where there were {} elements in the list.", len, ca.len()).into()))
+        }
+
+    }
 }

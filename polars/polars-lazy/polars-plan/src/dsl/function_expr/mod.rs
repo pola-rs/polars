@@ -304,6 +304,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "is_in")]
                     Contains => wrap!(list::contains),
                     Slice => wrap!(list::slice),
+                    Get => wrap!(list::get),
                 }
             }
             #[cfg(feature = "dtype-struct")]
