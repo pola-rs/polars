@@ -17,5 +17,7 @@ pub trait Sink: Send + Sync {
 
     fn finalize(&mut self) -> PolarsResult<DataFrame>;
 
-    fn as_any(&self) -> &dyn Any;
+    fn as_any(&mut self) -> &mut dyn Any;
+
+    fn into_source(&mut self) -> PolarsResult<Option<Box<dyn Source>>>;
 }

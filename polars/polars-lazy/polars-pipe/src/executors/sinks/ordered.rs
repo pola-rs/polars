@@ -3,8 +3,9 @@ use std::any::Any;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use crate::executors::sources::DataFrameSource;
 
-use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult};
+use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult, Source};
 
 // Ensure the data is return in the order it was streamed
 #[derive(Clone)]
@@ -28,7 +29,7 @@ impl Sink for OrderedSink {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, other: Box<dyn Sink>) {
+    fn combine(&mut self, mut other: Box<dyn Sink>) {
         let other = other.as_any().downcast_ref::<OrderedSink>().unwrap();
         self.chunks.extend_from_slice(&other.chunks);
         self.sort();
@@ -45,7 +46,12 @@ impl Sink for OrderedSink {
                 .map(|chunk| chunk.data),
         ))
     }
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn into_source(&mut self) -> PolarsResult<Option<Box<dyn Source>>> {
+        let df = self.finalize()?;
+        Ok(Some(Box::new(DataFrameSource::from_df(df))))
     }
 }
