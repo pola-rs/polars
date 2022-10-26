@@ -255,6 +255,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.strftime
     DateTimeNameSpace.timestamp
     DateTimeNameSpace.truncate
+    DateTimeNameSpace.tz_localize
     DateTimeNameSpace.round
     DateTimeNameSpace.week
     DateTimeNameSpace.weekday

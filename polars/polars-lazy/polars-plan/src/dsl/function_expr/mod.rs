@@ -409,6 +409,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
             CastTimezone(tz) => map!(datetime::cast_timezone, &tz),
+            #[cfg(feature = "timezones")]
+            TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             DateRange {
                 name,
                 every,

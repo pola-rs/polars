@@ -1014,6 +1014,20 @@ class DateTimeNameSpace:
 
         """
 
+    def tz_localize(self, tz: str) -> pli.Series:
+        """
+        Localize tz-naive Datetime Series to tz-aware Datetime Series.
+
+        This method takes a naive Datetime Series and makes this time zone aware.
+        It does not move the time to another time zone.
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series.
+
+        """
+
     def days(self) -> pli.Series:
         """
         Extract the days from a Duration type.

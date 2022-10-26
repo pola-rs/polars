@@ -26,6 +26,8 @@ pub enum TemporalFunction {
     Round(String, String),
     #[cfg(feature = "timezones")]
     CastTimezone(TimeZone),
+    #[cfg(feature = "timezones")]
+    TzLocalize(TimeZone),
     DateRange {
         name: String,
         every: Duration,
@@ -57,6 +59,8 @@ impl Display for TemporalFunction {
             Round(..) => "round",
             #[cfg(feature = "timezones")]
             CastTimezone(_) => "cast_timezone",
+            #[cfg(feature = "timezones")]
+            TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
         };
         write!(f, "dt.{}", s)
@@ -134,6 +138,19 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
 pub(super) fn cast_timezone(s: &Series, tz: &str) -> PolarsResult<Series> {
     let ca = s.datetime()?;
     ca.cast_time_zone(tz).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "timezones")]
+pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
+    let ca = s.datetime()?.clone();
+    match ca.time_zone() {
+        Some(tz) if !tz.is_empty() => {
+            Err(PolarsError::ComputeError("Cannot localize a tz-aware datetime. Consider using 'dt.with_time_zone' or 'dt.cast_time_zone'".into()))
+        },
+        _ => {
+            Ok(ca.with_time_zone(Some(tz.into())).cast_time_zone("UTC")?.with_time_zone(Some(tz.into())).into_series())
+        }
+    }
 }
 
 pub(super) fn date_range_dispatch(

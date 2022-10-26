@@ -902,6 +902,10 @@ impl PyExpr {
         self.inner.clone().dt().cast_time_zone(tz).into()
     }
 
+    pub fn dt_tz_localize(&self, tz: String) -> PyExpr {
+        self.inner.clone().dt().tz_localize(tz).into()
+    }
+
     pub fn dt_truncate(&self, every: &str, offset: &str) -> PyExpr {
         self.inner.clone().dt().truncate(every, offset).into()
     }

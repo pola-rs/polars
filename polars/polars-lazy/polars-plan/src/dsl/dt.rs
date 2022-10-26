@@ -82,6 +82,17 @@ impl DateLikeNameSpace {
         )
     }
 
+    /// Localize tz-naive Datetime Series to tz-aware Datetime Series.
+    //
+    // This method takes a naive Datetime Series and makes this time zone aware.
+    // It does not move the time to another time zone.
+    #[cfg(feature = "timezones")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "timezones")))]
+    pub fn tz_localize(self, tz: TimeZone) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TzLocalize(tz)))
+    }
+
     /// Get the year of a Date/Datetime
     pub fn year(self) -> Expr {
         self.0

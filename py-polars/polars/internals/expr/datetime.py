@@ -1088,6 +1088,21 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_cast_time_zone(tz))
 
+    def tz_localize(self, tz: str) -> pli.Expr:
+        """
+        Localize tz-naive Datetime Series to tz-aware Datetime Series.
+
+        This method takes a naive Datetime Series and makes this time zone aware.
+        It does not move the time to another time zone.
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series.
+
+        """
+        return pli.wrap_expr(self._pyexpr.dt_tz_localize(tz))
+
     def days(self) -> pli.Expr:
         """
         Extract the days from a Duration type.
