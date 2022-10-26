@@ -1750,3 +1750,26 @@ def test_logical_nested_take() -> None:
         "del": [[timedelta(days=10)], [timedelta(days=10)]],
         "str": [[{"a": time(10, 0)}], [{"a": time(10, 0)}]],
     }
+
+
+def test_tz_localize() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.Series(["2022-01-01", "2022-01-02"]).str.strptime(
+                pl.Date, "%Y-%m-%d"
+            )
+        }
+    )
+
+    assert df.select(
+        pl.col("date").cast(pl.Datetime).dt.tz_localize("America/New_York")
+    ).to_dict(False) == {
+        "date": [
+            datetime(
+                2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 1, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+        ]
+    }

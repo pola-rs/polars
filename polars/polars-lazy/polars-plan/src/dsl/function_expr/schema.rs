@@ -92,6 +92,19 @@ impl FunctionExpr {
             })
         };
 
+        #[cfg(feature = "timezones")]
+        let cast_tz = |tz: &TimeZone| {
+            try_map_dtype(&|dt| {
+                if let DataType::Datetime(tu, _) = dt {
+                    Ok(DataType::Datetime(*tu, Some(tz.clone())))
+                } else {
+                    Err(PolarsError::SchemaMisMatch(
+                        format!("expected Datetime got {:?}", dt).into(),
+                    ))
+                }
+            })
+        };
+
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
@@ -137,17 +150,7 @@ impl FunctionExpr {
                     Truncate(..) => same_type().unwrap().dtype,
                     Round(..) => same_type().unwrap().dtype,
                     #[cfg(feature = "timezones")]
-                    CastTimezone(tz) => {
-                        return try_map_dtype(&|dt| {
-                            if let DataType::Datetime(tu, _) = dt {
-                                Ok(DataType::Datetime(*tu, Some(tz.clone())))
-                            } else {
-                                Err(PolarsError::SchemaMisMatch(
-                                    format!("expected Datetime got {:?}", dt).into(),
-                                ))
-                            }
-                        })
-                    }
+                    CastTimezone(tz) | TzLocalize(tz) => return cast_tz(tz),
                     DateRange { .. } => return super_type(),
                 };
                 with_dtype(dtype)

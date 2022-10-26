@@ -303,6 +303,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.strftime
     ExprDateTimeNameSpace.timestamp
     ExprDateTimeNameSpace.truncate
+    ExprDateTimeNameSpace.tz_localize
     ExprDateTimeNameSpace.round
     ExprDateTimeNameSpace.week
     ExprDateTimeNameSpace.weekday
