@@ -69,7 +69,7 @@ class ListNameSpace:
 
         """
 
-    def get(self, index: int) -> pli.Series:
+    def get(self, index: int | pli.Series | list[int]) -> pli.Series:
         """
         Get the value by index in the sublists.
 

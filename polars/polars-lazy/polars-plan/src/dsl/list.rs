@@ -114,24 +114,19 @@ impl ListNameSpace {
     }
 
     /// Get items in every sublist by index.
-    pub fn get(self, index: i64) -> Expr {
-        self.0.map(
-            move |s| s.list()?.lst_get(index),
-            GetOutput::map_field(|field| match field.data_type() {
-                DataType::List(inner) => Field::new(field.name(), *inner.clone()),
-                dt => panic!("should be a list type, got {:?}", dt),
-            }),
-        )
+    pub fn get(self, index: Expr) -> Expr {
+        self.0
+            .map_many_private(FunctionExpr::ListExpr(ListFunction::Get), &[index], false)
     }
 
     /// Get first item of every sublist.
     pub fn first(self) -> Expr {
-        self.get(0)
+        self.get(lit(0i64))
     }
 
     /// Get last item of every sublist.
     pub fn last(self) -> Expr {
-        self.get(-1)
+        self.get(lit(-1i64))
     }
 
     /// Join all string items in a sublist and place a separator between them.

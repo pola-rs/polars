@@ -250,7 +250,7 @@ class ExprListNameSpace:
         other_list.insert(0, pli.wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
 
-    def get(self, index: int) -> pli.Expr:
+    def get(self, index: int | pli.Expr | str) -> pli.Expr:
         """
         Get the value by index in the sublists.
 
@@ -281,6 +281,7 @@ class ExprListNameSpace:
         └──────┘
 
         """
+        index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_get(index))
 
     def first(self) -> pli.Expr:

@@ -48,6 +48,13 @@ def test_list_arr_get() -> None:
         "get_3": [None, None, None, None, None, None],
     }
 
+    # get by indexes where some are out of bounds
+    df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []], "indexes": [-2, 1, -3, 0]})
+
+    assert df.select([pl.col("cars").arr.get("indexes")]).to_dict(False) == {
+        "cars": [2, 3, None, None]
+    }
+
 
 def test_contains() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])

@@ -56,6 +56,17 @@ impl FunctionExpr {
             Ok(first)
         };
 
+        let inner_type_list = || {
+            let mut first = fields[0].clone();
+            let dt = first
+                .data_type()
+                .inner_dtype()
+                .cloned()
+                .unwrap_or(DataType::Unknown);
+            first.coerce(dt);
+            Ok(first)
+        };
+
         // inner super type of lists
         let inner_super_type_list = || {
             map_dtypes(&|dts| {
@@ -162,6 +173,7 @@ impl FunctionExpr {
                     #[cfg(feature = "is_in")]
                     Contains => with_dtype(DataType::Boolean),
                     Slice => same_type(),
+                    Get => inner_type_list(),
                 }
             }
             #[cfg(feature = "dtype-struct")]
