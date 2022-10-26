@@ -198,6 +198,82 @@ def test_join_asof_tolerance() -> None:
     }
 
 
+def test_join_asof_tolerance_forward() -> None:
+    df_quotes = pl.DataFrame(
+        {
+            "time": [
+                datetime(2020, 1, 1, 9, 0, 0),
+                datetime(2020, 1, 1, 9, 0, 2),
+                datetime(2020, 1, 1, 9, 0, 4),
+                datetime(2020, 1, 1, 9, 0, 6),
+                datetime(2020, 1, 1, 9, 0, 7),
+            ],
+            "stock": ["A", "B", "C", "A", "D"],
+            "quote": [100, 300, 501, 102, 10],
+        }
+    )
+
+    df_trades = pl.DataFrame(
+        {
+            "time": [
+                datetime(2020, 1, 1, 9, 0, 2),
+                datetime(2020, 1, 1, 9, 0, 1),
+                datetime(2020, 1, 1, 9, 0, 3),
+                datetime(2020, 1, 1, 9, 0, 6),
+                datetime(2020, 1, 1, 9, 0, 7),
+            ],
+            "stock": ["A", "B", "B", "C", "D"],
+            "trade": [101, 299, 301, 500, 10],
+        }
+    )
+
+    assert df_quotes.join_asof(
+        df_trades, on="time", by="stock", tolerance="2s", strategy="forward"
+    ).to_dict(False) == {
+        "time": [
+            datetime(2020, 1, 1, 9, 0, 0),
+            datetime(2020, 1, 1, 9, 0, 2),
+            datetime(2020, 1, 1, 9, 0, 4),
+            datetime(2020, 1, 1, 9, 0, 6),
+            datetime(2020, 1, 1, 9, 0, 7),
+        ],
+        "stock": ["A", "B", "C", "A", "D"],
+        "quote": [100, 300, 501, 102, 10],
+        "trade": [101, 301, 500, None, 10],
+    }
+
+    assert df_quotes.join_asof(
+        df_trades, on="time", by="stock", tolerance="1s", strategy="forward"
+    ).to_dict(False) == {
+        "time": [
+            datetime(2020, 1, 1, 9, 0, 0),
+            datetime(2020, 1, 1, 9, 0, 2),
+            datetime(2020, 1, 1, 9, 0, 4),
+            datetime(2020, 1, 1, 9, 0, 6),
+            datetime(2020, 1, 1, 9, 0, 7),
+        ],
+        "stock": ["A", "B", "C", "A", "D"],
+        "quote": [100, 300, 501, 102, 10],
+        "trade": [None, 301, None, None, 10],
+    }
+
+    # Sanity check that this gives us equi-join
+    assert df_quotes.join_asof(
+        df_trades, on="time", by="stock", tolerance="0s", strategy="forward"
+    ).to_dict(False) == {
+        "time": [
+            datetime(2020, 1, 1, 9, 0, 0),
+            datetime(2020, 1, 1, 9, 0, 2),
+            datetime(2020, 1, 1, 9, 0, 4),
+            datetime(2020, 1, 1, 9, 0, 6),
+            datetime(2020, 1, 1, 9, 0, 7),
+        ],
+        "stock": ["A", "B", "C", "A", "D"],
+        "quote": [100, 300, 501, 102, 10],
+        "trade": [None, None, None, None, 10],
+    }
+
+
 def test_deprecated() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     other = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
