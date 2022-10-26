@@ -383,6 +383,12 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                     fld.coerce(DataType::Int32);
                     Some(fld)
                 }
+                Int32 | Int64 | UInt32 | UInt64 => {
+                    // Enable granular specification of buffer-compliant
+                    // numerical columns
+                    to_cast.push(fld.clone());
+                    Some(fld)
+                }
                 #[cfg(feature = "dtype-categorical")]
                 Categorical(_) => {
                     _has_categorical = true;
@@ -496,34 +502,79 @@ where
         #[cfg(feature = "dtype-categorical")]
         let mut _cat_lock = None;
 
-        let mut df = if let Some(schema) = schema_overwrite {
-            let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema);
+        let (mut df, hack_flag) = match (schema_overwrite, dtype_overwrite) {
+            (Some(schema), _) => {
+                let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema);
 
-            #[cfg(feature = "dtype-categorical")]
-            if _has_cat {
-                _cat_lock = Some(polars_core::IUseStringCache::new())
-            }
-
-            let mut csv_reader = self.core_reader(Some(&schema), to_cast)?;
-            csv_reader.as_df()?
-        } else {
-            #[cfg(feature = "dtype-categorical")]
-            {
-                let has_cat = self
-                    .schema
-                    .map(|schema| {
-                        schema
-                            .iter_dtypes()
-                            .any(|dtype| matches!(dtype, DataType::Categorical(_)))
-                    })
-                    .unwrap_or(false);
-                if has_cat {
+                #[cfg(feature = "dtype-categorical")]
+                if _has_cat {
                     _cat_lock = Some(polars_core::IUseStringCache::new())
                 }
+
+                let mut csv_reader = self.core_reader(Some(&schema), to_cast)?;
+                (csv_reader.as_df()?, false)
             }
-            let mut csv_reader = self.core_reader(self.schema, vec![])?;
-            csv_reader.as_df()?
+            (None, Some(dtypes)) => {
+                // we need to get the column names from the header
+                let reader_bytes = get_reader_bytes(&mut self.reader)?;
+
+                let (mut schema, _) = infer_file_schema(
+                    &reader_bytes,
+                    self.delimiter.unwrap_or(b','),
+                    Some(10),
+                    self.has_header,
+                    None,
+                    &mut self.skip_rows_before_header,
+                    self.skip_rows_after_header,
+                    self.comment_char,
+                    self.quote_char,
+                    self.eol_char,
+                    self.null_values.as_ref(),
+                    self.parse_dates,
+                )?;
+
+                for (index, dt) in dtypes.iter().enumerate() {
+                    schema.coerce_by_index(index, dt.clone()).unwrap();
+                }
+                let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(&schema);
+
+                #[cfg(feature = "dtype-categorical")]
+                if _has_cat {
+                    _cat_lock = Some(polars_core::IUseStringCache::new())
+                }
+
+                // HACK:
+                // We temporarily unset this value in order to to not
+                // have CoreReader::new() pick up any un-supported dtypes
+                // if present.
+                self.dtype_overwrite = None;
+
+                let mut csv_reader = self.core_reader(Some(&schema), to_cast)?;
+                (csv_reader.as_df()?, true)
+            }
+            _ => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    let has_cat = self
+                        .schema
+                        .map(|schema| {
+                            schema
+                                .iter_dtypes()
+                                .any(|dtype| matches!(dtype, DataType::Categorical(_)))
+                        })
+                        .unwrap_or(false);
+                    if has_cat {
+                        _cat_lock = Some(polars_core::IUseStringCache::new())
+                    }
+                }
+                let mut csv_reader = self.core_reader(self.schema, vec![])?;
+                (csv_reader.as_df()?, true)
+            }
         };
+
+        if hack_flag {
+            self.dtype_overwrite = dtype_overwrite;
+        }
 
         // Important that this rechunk is never done in parallel.
         // As that leads to great memory overhead.
@@ -538,7 +589,8 @@ where
         #[cfg(feature = "temporal")]
         // only needed until we also can parse time columns in place
         if should_parse_dates {
-            // determine the schema that's given by the user. That should not be changed
+            // determine the schema that's given by the user. That should not
+            // be changed
             let fixed_schema = match (schema_overwrite, dtype_overwrite) {
                 (Some(schema), _) => Cow::Borrowed(schema),
                 (None, Some(dtypes)) => {
