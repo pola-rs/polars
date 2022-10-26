@@ -329,7 +329,7 @@ class Field:
 
 
 class Struct(DataType):
-    def __init__(self, fields: Sequence[Field]):
+    def __init__(self, fields: Sequence[Field] | dict[str, PolarsDataType]):
         """
         Struct composite type.
 
@@ -339,7 +339,13 @@ class Struct(DataType):
             The sequence of fields that make up the struct
 
         """
-        self.fields = fields
+        if isinstance(fields, dict):
+            new_fields = []
+            for name, dtype in fields.items():
+                new_fields.append(Field(name, dtype))
+            self.fields: Sequence[Field] = new_fields
+        else:
+            self.fields = fields
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes, and specific

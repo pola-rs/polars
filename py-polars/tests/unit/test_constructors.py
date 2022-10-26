@@ -541,3 +541,40 @@ def test_nested_read_dict_4143() -> None:
         ],
         "id": [1, 2],
     }
+
+    out = pl.from_dicts(
+        [
+            {
+                "id": 1,
+                "hint": [
+                    {"some_text_here": "text", "list_": [1, 2, 4]},
+                    {"some_text_here": "text", "list_": [1, 2, 4]},
+                ],
+            },
+            {
+                "id": 2,
+                "hint": [
+                    {"some_text_here": "text", "list_": []},
+                    {"some_text_here": "text", "list_": []},
+                ],
+            },
+        ]
+    )
+
+    assert out.dtypes == [
+        pl.Int64,
+        pl.List(pl.Struct({"some_text_here": pl.Utf8, "list_": pl.List(pl.Int64)})),
+    ]
+    assert out.to_dict(False) == {
+        "id": [1, 2],
+        "hint": [
+            [
+                {"some_text_here": "text", "list_": [1, 2, 4]},
+                {"some_text_here": "text", "list_": [1, 2, 4]},
+            ],
+            [
+                {"some_text_here": "text", "list_": []},
+                {"some_text_here": "text", "list_": []},
+            ],
+        ],
+    }

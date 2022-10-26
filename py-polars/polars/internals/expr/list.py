@@ -283,6 +283,9 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_get(index))
 
+    def __getitem__(self, item: int) -> pli.Expr:
+        return self.get(item)
+
     def first(self) -> pli.Expr:
         """
         Get the first value of the sublists.

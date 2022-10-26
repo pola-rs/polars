@@ -44,7 +44,11 @@ fn coerce_recursively(a: &Series, dtype: &DataType) -> Series {
             let a = a.struct_().unwrap();
             let mut new_fields = Vec::with_capacity(a.fields().len());
             for (s_field, fld) in a.fields().iter().zip(dtype_fields) {
-                new_fields.push(coerce_recursively(s_field, fld.data_type()));
+                let mut new_s = coerce_recursively(s_field, fld.data_type());
+                if new_s.name() != fld.name {
+                    new_s.rename(&fld.name);
+                }
+                new_fields.push(new_s);
             }
             StructChunked::new(a.name(), &new_fields)
                 .unwrap()
@@ -57,8 +61,10 @@ fn coerce_recursively(a: &Series, dtype: &DataType) -> Series {
             let s = Series::try_from(("", arr.values().clone())).unwrap();
             let new_inner = coerce_recursively(&s, inner_type);
             let new_values = new_inner.array_ref(0).clone();
+
+            let data_type = ListArray::<i64>::default_datatype(new_values.data_type().clone());
             let new_arr = ListArray::<i64>::new(
-                new_values.data_type().clone(),
+                data_type,
                 arr.offsets().clone(),
                 new_values,
                 arr.validity().cloned(),

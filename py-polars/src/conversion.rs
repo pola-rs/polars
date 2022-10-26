@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
@@ -758,7 +757,7 @@ pub(crate) fn dicts_to_rows(
 ) -> PyResult<(Vec<Row>, Vec<String>)> {
     let (dicts, len) = get_pyseq(records)?;
 
-    let mut key_names = BTreeSet::new();
+    let mut key_names = PlIndexSet::new();
     for d in dicts.iter()?.take(infer_schema_len) {
         let d = d?;
         let d = d.downcast::<PyDict>()?;
