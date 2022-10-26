@@ -39,13 +39,15 @@ def mp_check() -> None:
         #   - "fork": Still the default on Linux.
         mp.set_start_method("spawn")
     elif mp_method == "fork":
-        raise ImportError(
-            "Polars only works with python multiprocessing method set to: "
-            '`mp.set_start_method("spawn")` or `mp.set_start_method("forkserver")`'
-            "before importing polars. "
-            "See: https://docs.python.org/3/library/multiprocessing.html"
-            "#contexts-and-start-methods"
-        )
+        import warnings
+
+        msg = "Polars only works with python multiprocessing method set to: "
+        '`mp.set_start_method("spawn")` or `mp.set_start_method("forkserver")`'
+        "before importing polars. "
+        "See: https://docs.python.org/3/library/multiprocessing.html"
+        "#contexts-and-start-methods"
+
+        warnings.warn(msg, ImportWarning)
 
 
 mp_check()
