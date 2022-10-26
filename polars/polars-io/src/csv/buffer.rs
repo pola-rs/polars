@@ -29,18 +29,6 @@ impl PrimitiveParser for Float64Type {
     }
 }
 
-impl PrimitiveParser for Int8Type {
-    #[inline]
-    fn parse(bytes: &[u8]) -> Option<i8> {
-        lexical::parse(bytes).ok()
-    }
-}
-impl PrimitiveParser for Int16Type {
-    #[inline]
-    fn parse(bytes: &[u8]) -> Option<i16> {
-        lexical::parse(bytes).ok()
-    }
-}
 impl PrimitiveParser for Int32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i32> {
@@ -50,18 +38,6 @@ impl PrimitiveParser for Int32Type {
 impl PrimitiveParser for Int64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i64> {
-        lexical::parse(bytes).ok()
-    }
-}
-impl PrimitiveParser for UInt8Type {
-    #[inline]
-    fn parse(bytes: &[u8]) -> Option<u8> {
-        lexical::parse(bytes).ok()
-    }
-}
-impl PrimitiveParser for UInt16Type {
-    #[inline]
-    fn parse(bytes: &[u8]) -> Option<u16> {
         lexical::parse(bytes).ok()
     }
 }
@@ -521,12 +497,8 @@ pub(crate) fn init_buffers<'a>(
 
             let builder = match dtype {
                 &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
-                &DataType::Int8 => Buffer::Int8(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::Int16 => Buffer::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::UInt8 => Buffer::UInt8(PrimitiveChunkedBuilder::new(name, capacity)),
-                &DataType::UInt16 => Buffer::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
@@ -564,12 +536,8 @@ pub(crate) fn init_buffers<'a>(
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Buffer<'a> {
     Boolean(BooleanChunkedBuilder),
-    Int8(PrimitiveChunkedBuilder<Int8Type>),
-    Int16(PrimitiveChunkedBuilder<Int16Type>),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
-    UInt8(PrimitiveChunkedBuilder<UInt8Type>),
-    UInt16(PrimitiveChunkedBuilder<UInt16Type>),
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
@@ -591,37 +559,8 @@ impl<'a> Buffer<'a> {
     pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
-<<<<<<< HEAD
-            Buffer::Int8(v) => v
-                .finish()
-                .cast(&DataType::Int32)?
-                .into_series()
-                .cast(&DataType::Int8)?,
-            Buffer::Int16(v) => v
-                .finish()
-                .cast(&DataType::Int32)?
-                .into_series()
-                .cast(&DataType::Int16)?,
             Buffer::Int32(v) => v.finish().into_series(),
             Buffer::Int64(v) => v.finish().into_series(),
-            Buffer::UInt8(v) => v
-                .finish()
-                .cast(&DataType::UInt32)?
-                .into_series()
-                .cast(&DataType::UInt8)?,
-            Buffer::UInt16(v) => v
-                .finish()
-                .cast(&DataType::UInt32)?
-                .into_series()
-                .cast(&DataType::UInt16)?,
-=======
-            Buffer::Int8(v) => v.finish().into_series(),
-            Buffer::Int16(v) => v.finish().into_series(),
-            Buffer::Int32(v) => v.finish().into_series(),
-            Buffer::Int64(v) => v.finish().into_series(),
-            Buffer::UInt8(v) => v.finish().into_series(),
-            Buffer::UInt16(v) => v.finish().into_series(),
->>>>>>> 9e1acf69b (fixes https://github.com/pola-rs/polars/issues/5214)
             Buffer::UInt32(v) => v.finish().into_series(),
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
@@ -704,20 +643,8 @@ impl<'a> Buffer<'a> {
     pub(crate) fn add_null(&mut self) {
         match self {
             Buffer::Boolean(v) => v.append_null(),
-            Buffer::Int8(v) => v.append_null(),
-            Buffer::Int16(v) => v.append_null(),
-<<<<<<< HEAD
-
-=======
->>>>>>> 9e1acf69b (fixes https://github.com/pola-rs/polars/issues/5214)
             Buffer::Int32(v) => v.append_null(),
             Buffer::Int64(v) => v.append_null(),
-            Buffer::UInt8(v) => v.append_null(),
-            Buffer::UInt16(v) => v.append_null(),
-<<<<<<< HEAD
-
-=======
->>>>>>> 9e1acf69b (fixes https://github.com/pola-rs/polars/issues/5214)
             Buffer::UInt32(v) => v.append_null(),
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
@@ -748,12 +675,8 @@ impl<'a> Buffer<'a> {
     pub(crate) fn dtype(&self) -> DataType {
         match self {
             Buffer::Boolean(_) => DataType::Boolean,
-            Buffer::Int8(_) => DataType::Int8,
-            Buffer::Int16(_) => DataType::Int16,
             Buffer::Int32(_) => DataType::Int32,
             Buffer::Int64(_) => DataType::Int64,
-            Buffer::UInt8(_) => DataType::UInt8,
-            Buffer::UInt16(_) => DataType::UInt16,
             Buffer::UInt32(_) => DataType::UInt32,
             Buffer::UInt64(_) => DataType::UInt64,
             Buffer::Float32(_) => DataType::Float32,
@@ -792,18 +715,6 @@ impl<'a> Buffer<'a> {
                 ignore_errors,
                 needs_escaping,
             ),
-            Int8(buf) => <PrimitiveChunkedBuilder<Int8Type> as ParsedBuffer>::parse_bytes(
-                buf,
-                bytes,
-                ignore_errors,
-                needs_escaping,
-            ),
-            Int16(buf) => <PrimitiveChunkedBuilder<Int16Type> as ParsedBuffer>::parse_bytes(
-                buf,
-                bytes,
-                ignore_errors,
-                needs_escaping,
-            ),
             Int32(buf) => <PrimitiveChunkedBuilder<Int32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
@@ -811,18 +722,6 @@ impl<'a> Buffer<'a> {
                 needs_escaping,
             ),
             Int64(buf) => <PrimitiveChunkedBuilder<Int64Type> as ParsedBuffer>::parse_bytes(
-                buf,
-                bytes,
-                ignore_errors,
-                needs_escaping,
-            ),
-            UInt8(buf) => <PrimitiveChunkedBuilder<UInt8Type> as ParsedBuffer>::parse_bytes(
-                buf,
-                bytes,
-                ignore_errors,
-                needs_escaping,
-            ),
-            UInt16(buf) => <PrimitiveChunkedBuilder<UInt16Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,

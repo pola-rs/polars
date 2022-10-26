@@ -1,5 +1,6 @@
 use std::io::Cursor;
 
+use polars::export::arrow::datatypes::SchemaRef;
 use polars::io::RowCount;
 
 use super::*;
@@ -1055,8 +1056,21 @@ fn test_parse_dates_3380() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_with_specified_dtype() -> PolarsResult<()> {
-    let csv = r#"i8,i16,i32,i64,u8,u16,u32,u64
+fn test_with_specified_dtype_and_header() -> PolarsResult<()> {
+    let schema = Schema::from(
+        vec![
+            Field::new("i8_col", DataType::Int8),
+            Field::new("i16_col", DataType::Int16),
+            Field::new("i32_col", DataType::Int32),
+            Field::new("i64_col", DataType::Int64),
+            Field::new("u8_col", DataType::UInt8),
+            Field::new("u16_col", DataType::UInt16),
+            Field::new("u32_col", DataType::UInt32),
+            Field::new("u64_col", DataType::UInt64),
+        ]
+        .into_iter(),
+    );
+    let csv = r#"i8_col,i16_col,i32_col,i64_col,u8_col,u16_col,u32_col,u64_col
     -4,-3,-2,-1,0,1,2,3
     ,,,,,,,
     0,1,2,3,4,5,6,7
@@ -1064,16 +1078,7 @@ fn test_with_specified_dtype() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_dtypes_slice(Some(&[
-            DataType::Int8,
-            DataType::Int16,
-            DataType::Int32,
-            DataType::Int64,
-            DataType::UInt8,
-            DataType::UInt16,
-            DataType::UInt32,
-            DataType::UInt64,
-        ]))
+        .with_dtypes(Some(&schema))
         .finish()?;
 
     assert_eq!(
@@ -1089,5 +1094,62 @@ fn test_with_specified_dtype() -> PolarsResult<()> {
             DataType::UInt64,
         ]
     );
+    Ok(())
+}
+
+#[test]
+fn test_with_specified_dtype_wo_header() -> PolarsResult<()> {
+    let col_dtypes = [
+        DataType::Int8,
+        DataType::Int16,
+        DataType::Int32,
+        DataType::Int64,
+        DataType::UInt8,
+        DataType::UInt16,
+        DataType::UInt32,
+        DataType::UInt64,
+    ];
+    let csv = r#"-4,-3,-2,-1,0,1,2,3
+    ,,,,,,,
+    0,1,2,3,4,5,6,7
+    "#;
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file)
+        .has_header(false)
+        .with_dtypes_slice(Some(&col_dtypes))
+        .finish()?;
+
+    assert_eq!(df.dtypes(), col_dtypes);
+
+    Ok(())
+}
+
+#[test]
+fn test_with_specified_dtype_via_slice() -> PolarsResult<()> {
+    let col_dtypes = [
+        DataType::Int8,
+        DataType::Int16,
+        DataType::Int32,
+        DataType::Int64,
+        DataType::UInt8,
+        DataType::UInt16,
+        DataType::UInt32,
+        DataType::UInt64,
+    ];
+    let csv = r#"i8_col,i16_col,i32_col,i64_col,u8_col,u16_col,u32_col,u64_col
+    -4,-3,-2,-1,0,1,2,3
+    ,,,,,,,
+    0,1,2,3,4,5,6,7
+    "#;
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file)
+        .has_header(true)
+        .with_dtypes_slice(Some(&col_dtypes))
+        .finish()?;
+
+    println!("df = {:?}", &df);
+
+    assert_eq!(df.dtypes(), col_dtypes);
+
     Ok(())
 }

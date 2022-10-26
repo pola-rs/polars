@@ -918,14 +918,14 @@ def test_csv_with_small_dtypes() -> None:
     icol = [-1, -2, -3, 0, None, 7, 8, 9]
     ucol = [0, 1, 2, 3, None, 7, 8, 9]
     data = {
-        "i8_data": pl.Series(icol, dtype=pl.Int8),
-        "i16_data": pl.Series(icol, dtype=pl.Int16),
-        "i32_data": pl.Series(icol, dtype=pl.Int32),
-        "i64_data": pl.Series(icol, dtype=pl.Int64),
-        "u8_data": pl.Series(ucol, dtype=pl.UInt8),
-        "u16_data": pl.Series(ucol, dtype=pl.UInt16),
-        "u32_data": pl.Series(ucol, dtype=pl.UInt32),
-        "u64_data": pl.Series(ucol, dtype=pl.UInt64),
+        "i8_col": pl.Series(icol, dtype=pl.Int8),
+        "i16_col": pl.Series(icol, dtype=pl.Int16),
+        "i32_col": pl.Series(icol, dtype=pl.Int32),
+        "i64_col": pl.Series(icol, dtype=pl.Int64),
+        "u8_col": pl.Series(ucol, dtype=pl.UInt8),
+        "u16_col": pl.Series(ucol, dtype=pl.UInt16),
+        "u32_col": pl.Series(ucol, dtype=pl.UInt32),
+        "u64_col": pl.Series(ucol, dtype=pl.UInt64),
     }
     dtypes = [
         pl.Int8,
@@ -939,11 +939,7 @@ def test_csv_with_small_dtypes() -> None:
     ]
     pl.DataFrame(data).write_csv(f)
     f.seek(0)
-<<<<<<< HEAD
 
-=======
-    
->>>>>>> 9e1acf69b (fixes https://github.com/pola-rs/polars/issues/5214)
     df = pl.read_csv(f, dtypes=dtypes)
 
     assert df.dtypes == dtypes
