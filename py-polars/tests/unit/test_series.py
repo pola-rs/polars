@@ -17,10 +17,12 @@ from polars.datatypes import (
     Float64,
     Int32,
     Int64,
+    PolarsDataType,
     Time,
     UInt32,
     UInt64,
 )
+from polars.internals.type_aliases import EpochTimeUnit
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing._private import verify_series_and_expr_api
 
@@ -2313,17 +2315,30 @@ def test_builtin_abs() -> None:
 
 
 @pytest.mark.parametrize(
-    "value, unit, exp",
+    "value, unit, exp, exp_type",
     [
-        (13285, "d", date(2006, 5, 17)),
-        (1147880044, "s", datetime(2006, 5, 17, 15, 34, 4)),
-        (1147880044 * 1_000, "ms", datetime(2006, 5, 17, 15, 34, 4)),
-        (1147880044 * 1_000_000, "us", datetime(2006, 5, 17, 15, 34, 4)),
-        (1147880044 * 1_000_000_000, "ns", datetime(2006, 5, 17, 15, 34, 4)),
+        (13285, "d", date(2006, 5, 17), pl.Date),
+        (1147880044, "s", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime),
+        (1147880044 * 1_000, "ms", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime("ms")),
+        (
+            1147880044 * 1_000_000,
+            "us",
+            datetime(2006, 5, 17, 15, 34, 4),
+            pl.Datetime("us"),
+        ),
+        (
+            1147880044 * 1_000_000_000,
+            "ns",
+            datetime(2006, 5, 17, 15, 34, 4),
+            pl.Datetime("ns"),
+        ),
     ],
 )
-def test_from_epoch_expr(value: int, unit: str, exp: date | datetime) -> None:
+def test_from_epoch_expr(
+    value: int, unit: EpochTimeUnit, exp: date | datetime, exp_type: PolarsDataType
+) -> None:
     s = pl.Series("timestamp", [value, None])
     result = pl.from_epoch(s, unit=unit)
-    expected = pl.Series("timestamp", [exp, None])
-    assert result.series_equal(expected, null_equal=True)
+
+    expected = pl.Series("timestamp", [exp, None]).cast(exp_type)
+    assert_series_equal(result, expected)

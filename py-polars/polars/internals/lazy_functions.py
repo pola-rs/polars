@@ -2052,7 +2052,7 @@ def coalesce(
 @overload
 def from_epoch(
     column: str | pli.Expr | pli.Series,
-    unit: EpochTimeUnit = "s",
+    unit: EpochTimeUnit = ...,
     *,
     eager: Literal[False],
 ) -> pli.Expr:
@@ -2062,7 +2062,7 @@ def from_epoch(
 @overload
 def from_epoch(
     column: str | pli.Expr | pli.Series,
-    unit: EpochTimeUnit = "s",
+    unit: EpochTimeUnit = ...,
     *,
     eager: Literal[True],
 ) -> pli.Series:
@@ -2071,10 +2071,30 @@ def from_epoch(
 
 @overload
 def from_epoch(
-    column: str | pli.Expr | pli.Series,
-    unit: EpochTimeUnit = "s",
+    column: pli.Series,
+    unit: EpochTimeUnit = ...,
     *,
-    eager: bool = False,
+    eager: Literal[True] = ...,
+) -> pli.Series:
+    ...
+
+
+@overload
+def from_epoch(
+    column: str | pli.Expr,
+    unit: EpochTimeUnit = ...,
+    *,
+    eager: Literal[False] = ...,
+) -> pli.Expr:
+    ...
+
+
+@overload
+def from_epoch(
+    column: str | pli.Expr | pli.Series,
+    unit: EpochTimeUnit = ...,
+    *,
+    eager: bool = ...,
 ) -> pli.Expr | pli.Series:
     ...
 
@@ -2088,7 +2108,7 @@ def from_epoch(
     """
     Utility function that parses epoch time to Polars Datetime.
 
-    If possible, the unit will persist in `pl.Date` or `pl.Datetime`, defaults to "ns".
+    If possible, the unit will persist in `pl.Datetime`, defaults to "ns".
 
     Parameters
     ----------
@@ -2129,11 +2149,14 @@ def from_epoch(
         )
 
     if eager:
-        if not isinstance(column, pli.Series):
+        if isinstance(column, pli.Series):
+            return column.to_frame().select(expr).to_series()
+        elif isinstance(column, (pli.Expr, str)):
+            return pli.select(expr).to_series()
+        else:
             raise ValueError(
-                "expected 'Series' in 'from_epoch' if 'eager=True', got"
-                f" {type(column)}"
+                "Expected 'str', 'Expr' or 'Series' in 'from_epoch' if 'eager=True', "
+                f"got {type(column)}"
             )
-        return column.to_frame().select(expr).to_series()
     else:
         return expr
