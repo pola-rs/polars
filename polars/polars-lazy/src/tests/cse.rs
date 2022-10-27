@@ -198,3 +198,59 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
 
     Ok(())
 }
+#[test]
+#[cfg(feature = "semi_anti_join")]
+fn test_cache_with_partial_projection() -> PolarsResult<()> {
+    let lf1 = df![
+        "id" => ["a"],
+        "x" => [1],
+        "freq" => [2]
+    ]?
+    .lazy();
+
+    let lf2 = df![
+        "id" => ["a"]
+    ]?
+    .lazy();
+
+    let q = lf2
+        .join(
+            lf1.clone().select([col("id"), col("freq")]),
+            [col("id")],
+            [col("id")],
+            JoinType::Semi,
+        )
+        .join(
+            lf1.clone().filter(col("x").neq(lit(8))),
+            [col("id")],
+            [col("id")],
+            JoinType::Semi,
+        )
+        .join(
+            lf1.clone().filter(col("x").neq(lit(8))),
+            [col("id")],
+            [col("id")],
+            JoinType::Semi,
+        );
+
+    let q = q.with_common_subplan_elimination(true);
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    // ensure we get two different caches
+    // and ensure that every cache only has 1 hit.
+    let cache_ids = (&lp_arena)
+        .iter(lp)
+        .flat_map(|(_, lp)| {
+            use ALogicalPlan::*;
+            match lp {
+                Cache { id, .. } => Some(*id),
+                _ => None,
+            }
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(cache_ids.len(), 2);
+
+    Ok(())
+}

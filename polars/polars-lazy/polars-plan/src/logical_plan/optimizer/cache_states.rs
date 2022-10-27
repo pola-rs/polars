@@ -15,7 +15,7 @@ fn get_upper_projections(
     use ALogicalPlan::*;
     // during projection pushdown all accumulated p
     match parent {
-        Projection { expr, .. } => {
+        Projection { expr, .. } | HStack { exprs: expr, .. } => {
             let mut out = Vec::with_capacity(expr.len());
             for node in expr {
                 out.extend(aexpr_to_leaf_names_iter(*node, expr_arena));
@@ -92,12 +92,9 @@ pub(super) fn set_cache_states(
                     if let Some(names) = get_upper_projections(parent_node, lp_arena, expr_arena) {
                         entry.1.extend(names);
                     }
-                    // if there is no projection above, it maybe that the
-                    // cache is underneath another cache and projection pushdown never reached it.
-                    // other trails may take care of that cache
-                    // if there is no other cache above, then there was no projection and we must take
+                    // There was no projection and we must take
                     // all columns
-                    else if previous_cache.is_none() {
+                    else {
                         let schema = lp.schema(lp_arena);
                         entry
                             .1

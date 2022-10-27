@@ -239,12 +239,14 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
 }
 
 /// Iterate from two leaf location upwards and find the latest matching node.
+///
+/// Returns the matching nodes
 fn longest_subgraph(
     trail_a: &Trail,
     trail_b: &Trail,
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
-) -> Option<(usize, Node, Node)> {
+) -> Option<(Node, Node)> {
     if trail_a.is_empty() || trail_b.is_empty() {
         return None;
     }
@@ -276,7 +278,7 @@ fn longest_subgraph(
     }
     // previous node was equal
     if i > 0 {
-        Some((i - 1, prev_node_a, prev_node_b))
+        Some((prev_node_a, prev_node_b))
     } else {
         None
     }
@@ -317,14 +319,14 @@ pub(crate) fn elim_cmn_subplans(
     let mut changed = false;
 
     let mut cache_mapping = BTreeMap::new();
+    let mut cache_counts = PlHashMap::with_capacity(trail_ends.len());
 
-    // insert cache nodes
     for combination in trail_ends.iter() {
         // both are the same, but only point to a different location
         // in our arena so we hash one and store the hash for both locations
         // this will ensure all matches have the same hash.
-        let node1 = combination.1 .0;
-        let node2 = combination.2 .0;
+        let node1 = combination.0 .0;
+        let node2 = combination.1 .0;
 
         let cache_id = match (cache_mapping.get(&node1), cache_mapping.get(&node2)) {
             (Some(h), _) => *h,
@@ -345,12 +347,31 @@ pub(crate) fn elim_cmn_subplans(
                 cache_id
             }
         };
+        *cache_counts.entry(cache_id).or_insert(0usize) += 1;
+    }
+
+    // insert cache nodes
+    for combination in trail_ends.iter() {
+        // both are the same, but only point to a different location
+        // in our arena so we hash one and store the hash for both locations
+        // this will ensure all matches have the same hash.
+        let node1 = combination.0 .0;
+        let node2 = combination.1 .0;
+
+        let cache_id = match (cache_mapping.get(&node1), cache_mapping.get(&node2)) {
+            (Some(h), _) => *h,
+            (_, Some(h)) => *h,
+            _ => {
+                unreachable!()
+            }
+        };
+        let cache_count = *cache_counts.get(&cache_id).unwrap();
 
         // reassign old nodes to another location as we are going to replace
         // them with a cache node
-        for inp_node in [combination.1, combination.2] {
+        for inp_node in [combination.0, combination.1] {
             if let ALogicalPlan::Cache { count, .. } = lp_arena.get_mut(inp_node) {
-                *count += 1;
+                *count = cache_count;
             } else {
                 let lp = lp_arena.get(inp_node).clone();
 
@@ -360,7 +381,7 @@ pub(crate) fn elim_cmn_subplans(
                     input: node,
                     id: cache_id,
                     // remove after one cache hit.
-                    count: 1,
+                    count: cache_count,
                 };
                 lp_arena.replace(inp_node, cache_lp.clone());
             };
