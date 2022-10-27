@@ -124,3 +124,21 @@ def test_pivot_categorical_index() -> None:
         "Car": [1, 2],
         "Ship": [1, None],
     }
+
+
+def test_pivot_multiple_values_column_names_5116() -> None:
+    df = pl.DataFrame(
+        {
+            "x1": [1, 2, 3, 4, 5, 6, 7, 8],
+            "x2": [8, 7, 6, 5, 4, 3, 2, 1],
+            "c1": ["A", "B"] * 4,
+            "c2": ["C", "C", "D", "D"] * 2,
+        }
+    )
+    assert df.pivot(values=["x1", "x2"], index="c1", columns="c2").to_dict(False) == {
+        "c1": ["A", "B"],
+        "x1_C": [1, 2],
+        "x1_D": [3, 4],
+        "x2_C": [8, 7],
+        "x2_D": [6, 5],
+    }
