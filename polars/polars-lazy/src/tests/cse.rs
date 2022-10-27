@@ -199,6 +199,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
     Ok(())
 }
 #[test]
+#[cfg(feature = "semi_anti_join")]
 fn test_cache_with_partial_projection() -> PolarsResult<()> {
     let lf1 = df![
         "id" => ["a"],

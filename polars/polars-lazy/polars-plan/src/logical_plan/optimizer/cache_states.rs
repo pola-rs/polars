@@ -15,7 +15,7 @@ fn get_upper_projections(
     use ALogicalPlan::*;
     // during projection pushdown all accumulated p
     match parent {
-        Projection { expr, .. } => {
+        Projection { expr, .. } | HStack { exprs: expr, .. } => {
             let mut out = Vec::with_capacity(expr.len());
             for node in expr {
                 out.extend(aexpr_to_leaf_names_iter(*node, expr_arena));
