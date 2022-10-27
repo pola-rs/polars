@@ -125,7 +125,6 @@ pub enum JoinType {
     Inner,
     Outer,
     #[cfg(feature = "asof_join")]
-    #[cfg_attr(feature = "serde", serde(skip))]
     AsOf(AsOfOptions),
     Cross,
     #[cfg(feature = "semi_anti_join")]
