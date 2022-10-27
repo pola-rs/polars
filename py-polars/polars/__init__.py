@@ -1,9 +1,5 @@
 import warnings
 
-# Set python multiprocessing start method to "spawn" if undefined.
-# or raise ImportError if defined, but not set to "spawn".
-import polars.mp_check  # noqa: F401
-
 try:
     from polars.polars import version
 except ImportError:
