@@ -1285,12 +1285,6 @@ class DataFrame:
                     df = self.__class__(series_list)
                     return df[row_selection]
 
-                # single slice
-                # df[:, unknown]
-                series = self.__getitem__(col_selection)
-                # s[:]
-                pli.wrap_s(series[row_selection])
-
             # df[2, :] (select row as df)
             if isinstance(row_selection, int):
                 if isinstance(col_selection, (slice, list)) or (
