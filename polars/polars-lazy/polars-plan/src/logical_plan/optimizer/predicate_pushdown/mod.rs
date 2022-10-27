@@ -12,6 +12,20 @@ use crate::utils::{aexprs_to_schema, check_input_node, has_aexpr};
 #[derive(Default)]
 pub struct PredicatePushDown {}
 
+fn join_produces_null(how: &JoinType) -> bool {
+    #[cfg(feature = "asof_join")]
+    {
+        matches!(
+            how,
+            JoinType::Left | JoinType::Outer | JoinType::Cross | JoinType::AsOf(_)
+        )
+    }
+    #[cfg(not(feature = "asof_join"))]
+    {
+        matches!(how, JoinType::Left | JoinType::Outer | JoinType::Cross)
+    }
+}
+
 impl PredicatePushDown {
     fn optional_apply_predicate(
         &self,
@@ -427,7 +441,7 @@ impl PredicatePushDown {
                         // join might create null values.
                         || has_aexpr(predicate, expr_arena, checks_nulls)
                         // only these join types produce null values
-                        && matches!(&options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
+                        && join_produces_null(&options.how) {
                         local_predicates.push(predicate);
                         continue;
                     }
