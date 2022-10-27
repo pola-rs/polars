@@ -62,3 +62,35 @@ def test_unnest_projection_pushdown() -> None:
         "col": ["z", "z", "c", "c"],
         "value": [1, 2, 2, 3],
     }
+
+
+def test_unnest_columns_available() -> None:
+    df = pl.DataFrame(
+        {
+            "title": ["Avatar", "spectre", "King Kong"],
+            "content_rating": ["PG-13"] * 3,
+            "genres": [
+                "Action|Adventure|Fantasy|Sci-Fi",
+                "Action|Adventure|Thriller",
+                "Action|Adventure|Drama|Romance",
+            ],
+        }
+    ).lazy()
+
+    q = df.with_column(
+        pl.col("genres")
+        .str.split("|")
+        .arr.to_struct(
+            n_field_strategy="max_width", name_generator=lambda i: f"genre{i+1}"
+        )
+    ).unnest("genres")
+
+    out = q.collect()
+    assert out.to_dict(False) == {
+        "title": ["Avatar", "spectre", "King Kong"],
+        "content_rating": ["PG-13", "PG-13", "PG-13"],
+        "genre1": ["Action", "Action", "Action"],
+        "genre2": ["Adventure", "Adventure", "Adventure"],
+        "genre3": ["Fantasy", "Thriller", "Drama"],
+        "genre4": ["Sci-Fi", None, "Romance"],
+    }

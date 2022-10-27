@@ -1149,7 +1149,7 @@ impl ProjectionPushDown {
                     input,
                     function: function.clone(),
                 };
-                if function.allow_projection_pd() {
+                if function.allow_projection_pd() && !acc_projections.is_empty() {
                     for name in function.additional_projection_pd_columns() {
                         let node = expr_arena.add(AExpr::Column(name.clone()));
                         add_expr_to_accumulated(
