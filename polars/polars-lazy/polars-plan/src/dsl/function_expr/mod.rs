@@ -19,6 +19,7 @@ mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
+mod shrink_type;
 #[cfg(feature = "sign")]
 mod sign;
 #[cfg(feature = "strings")]
@@ -105,6 +106,7 @@ pub enum FunctionExpr {
     IsUnique,
     IsDuplicated,
     Coalesce,
+    ShrinkType,
 }
 
 impl Display for FunctionExpr {
@@ -157,6 +159,7 @@ impl Display for FunctionExpr {
             IsUnique => "is_unique",
             IsDuplicated => "is_duplicated",
             Coalesce => "coalesce",
+            ShrinkType => "shrink_dtype",
         };
         write!(f, "{}", s)
     }
@@ -327,6 +330,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsUnique => map!(dispatch::is_unique),
             IsDuplicated => map!(dispatch::is_duplicated),
             Coalesce => map_as_slice!(fill_null::coalesce),
+            ShrinkType => map_owned!(shrink_type::shrink),
         }
     }
 }

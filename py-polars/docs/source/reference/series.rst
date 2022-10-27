@@ -194,6 +194,7 @@ Manipulation/ selection
     Series.shift
     Series.shift_and_fill
     Series.shrink_to_fit
+    Series.shrink_dtype
     Series.shuffle
     Series.slice
     Series.sort
