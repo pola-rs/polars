@@ -1944,6 +1944,18 @@ def test_get_item() -> None:
     with pytest.raises(ValueError):
         df[pl.Series([True, False, True]), "b"]
 
+    # 5343
+    df = pl.DataFrame(
+        {
+            f"fo{col}": [n**col for n in range(5)]  # 5 rows
+            for col in range(12)  # 12 columns
+        }
+    )
+    assert df[4, 4] == 256
+    assert df[4, 5] == 1024
+    assert df[4, [2]].frame_equal(pl.DataFrame({"fo2": [16]}))
+    assert df[4, [5]].frame_equal(pl.DataFrame({"fo5": [1024]}))
+
 
 @pytest.mark.parametrize("as_series,inner_dtype", [(True, pl.Series), (False, list)])
 def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
