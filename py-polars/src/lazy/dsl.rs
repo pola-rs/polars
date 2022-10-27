@@ -506,6 +506,10 @@ impl PyExpr {
         self.clone().inner.product().into()
     }
 
+    pub fn shrink_dtype(&self) -> PyExpr {
+        self.inner.clone().shrink_dtype().into()
+    }
+
     pub fn str_parse_date(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
         self.inner
             .clone()

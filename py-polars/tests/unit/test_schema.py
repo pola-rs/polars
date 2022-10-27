@@ -201,3 +201,39 @@ def test_fill_null_static_schema_4843() -> None:
     df2 = df1.select([pl.col(pl.Int64).fill_null(0)])
     df3 = df2.select(pl.col(pl.Int64))
     assert df3.schema == {"a": pl.Int64, "b": pl.Int64}
+
+
+def test_shrink_dtype() -> None:
+    out = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [1, 2, 2 << 32],
+            "c": [-1, 2, 1 << 30],
+            "d": [-112, 2, 112],
+            "e": [-112, 2, 129],
+            "f": ["a", "b", "c"],
+            "g": [0.1, 1.32, 0.12],
+            "h": [True, None, False],
+        }
+    ).select(pl.all().shrink_dtype())
+    assert out.dtypes == [
+        pl.Int8,
+        pl.Int64,
+        pl.Int32,
+        pl.Int8,
+        pl.Int16,
+        pl.Utf8,
+        pl.Float32,
+        pl.Boolean,
+    ]
+
+    assert out.to_dict(False) == {
+        "a": [1, 2, 3],
+        "b": [1, 2, 8589934592],
+        "c": [-1, 2, 1073741824],
+        "d": [-112, 2, 112],
+        "e": [-112, 2, 129],
+        "f": ["a", "b", "c"],
+        "g": [0.10000000149011612, 1.3200000524520874, 0.11999999731779099],
+        "h": [True, None, False],
+    }

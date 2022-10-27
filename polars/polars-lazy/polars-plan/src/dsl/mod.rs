@@ -2086,6 +2086,13 @@ impl Expr {
         })
     }
 
+    /// Shrink numeric columns to the minimal required datatype
+    /// needed to fit the extrema of this [`Series`].
+    /// This can be used to reduce memory pressure.
+    pub fn shrink_dtype(self) -> Self {
+        self.map_private(FunctionExpr::ShrinkType)
+    }
+
     /// Check if all boolean values are `true`
     pub fn all(self) -> Self {
         self.apply(
@@ -2104,24 +2111,6 @@ impl Expr {
             opt.auto_explode = true;
             opt
         })
-    }
-
-    /// This is useful if an `apply` function needs a floating point type.
-    /// Because this cast is done on a `map` level, it will be faster.
-    pub fn to_float(self) -> Self {
-        self.map(
-            |s| match s.dtype() {
-                DataType::Float32 | DataType::Float64 => Ok(s),
-                _ => s.cast(&DataType::Float64),
-            },
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
     }
 
     #[cfg(feature = "dtype-struct")]

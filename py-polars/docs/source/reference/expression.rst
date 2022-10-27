@@ -218,6 +218,7 @@ Manipulation/ selection
     Expr.sample
     Expr.shift
     Expr.shift_and_fill
+    Expr.shrink_dtype
     Expr.shuffle
     Expr.slice
     Expr.sort

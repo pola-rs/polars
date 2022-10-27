@@ -4640,6 +4640,14 @@ class Series:
         """Create a new Series filled with values from the given index."""
         return wrap_s(self._s.new_from_index(index, length))
 
+    def shrink_dtype(self) -> Series:
+        """
+        Shrink numeric columns to the minimal required datatype.
+
+        Shrink to the dtype needed to fit the extrema of this [`Series`].
+        This can be used to reduce memory pressure.
+        """
+
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the
     # namespace `str`
