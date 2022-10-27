@@ -1,5 +1,7 @@
 mod positioning;
 
+use std::borrow::Cow;
+
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::groupby::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
@@ -196,7 +198,11 @@ fn pivot_impl(
                 };
 
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
-                let headers = headers.utf8().unwrap();
+                let mut headers = headers.utf8().unwrap().clone();
+                if values.len() > 1 {
+                    headers = headers.apply(|v| Cow::from(format!("{}_{}", value_col_name, v)))
+                }
+
                 let n_cols = headers.len();
                 let value_agg_phys = value_agg.to_physical_repr();
                 let logical_type = value_agg.dtype();
@@ -214,7 +220,7 @@ fn pivot_impl(
                                 &col_locations,
                                 $ca,
                                 logical_type,
-                                headers,
+                                &headers,
                             )
                         }};
                     }
@@ -227,7 +233,7 @@ fn pivot_impl(
                         &col_locations,
                         &value_agg_phys,
                         logical_type,
-                        headers,
+                        &headers,
                     )
                 };
 
