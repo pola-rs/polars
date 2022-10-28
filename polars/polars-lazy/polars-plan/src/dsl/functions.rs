@@ -701,6 +701,25 @@ where
     a.apply_many(function, &[b], output_type)
 }
 
+#[cfg(feature = "dtype-struct")]
+fn cumfold_dtype() -> GetOutput {
+    GetOutput::map_fields(|fields| {
+        let mut st = fields[0].dtype.clone();
+        for fld in &fields[1..] {
+            st = get_supertype(&st, &fld.dtype).unwrap();
+        }
+        Field::new(
+            &fields[0].name,
+            DataType::Struct(
+                fields
+                    .iter()
+                    .map(|fld| Field::new(fld.name(), st.clone()))
+                    .collect(),
+            ),
+        )
+    })
+}
+
 /// Accumulate over multiple columns horizontally / row wise.
 pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
 where
@@ -728,6 +747,90 @@ where
             input_wildcard_expansion: true,
             auto_explode: true,
             fmt_str: "fold",
+            ..Default::default()
+        },
+    }
+}
+
+pub fn reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
+where
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
+{
+    let exprs = exprs.as_ref().to_vec();
+
+    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
+        let mut s_iter = series.iter();
+
+        match s_iter.next() {
+            Some(acc) => {
+                let mut acc = acc.clone();
+
+                for s in s_iter {
+                    acc = f(acc, s.clone())?;
+                }
+                Ok(acc)
+            }
+            None => Err(PolarsError::ComputeError(
+                "Reduce did not have any expressions to fold".into(),
+            )),
+        }
+    }) as Arc<dyn SeriesUdf>);
+
+    Expr::AnonymousFunction {
+        input: exprs,
+        function,
+        output_type: GetOutput::super_type(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            fmt_str: "reduce",
+            ..Default::default()
+        },
+    }
+}
+
+/// Accumulate over multiple columns horizontally / row wise.
+#[cfg(feature = "dtype-struct")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
+pub fn cumreduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
+where
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
+{
+    let exprs = exprs.as_ref().to_vec();
+
+    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
+        let mut s_iter = series.iter();
+
+        match s_iter.next() {
+            Some(acc) => {
+                let mut acc = acc.clone();
+                let mut result = vec![acc.clone()];
+
+                for s in s_iter {
+                    let name = s.name().to_string();
+                    acc = f(acc, s.clone())?;
+                    acc.rename(&name);
+                    result.push(acc.clone());
+                }
+
+                StructChunked::new(acc.name(), &result).map(|ca| ca.into_series())
+            }
+            None => Err(PolarsError::ComputeError(
+                "Reduce did not have any expressions to fold".into(),
+            )),
+        }
+    }) as Arc<dyn SeriesUdf>);
+
+    Expr::AnonymousFunction {
+        input: exprs,
+        function,
+        output_type: cumfold_dtype(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            fmt_str: "cumreduce",
             ..Default::default()
         },
     }
@@ -770,21 +873,7 @@ where
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: GetOutput::map_fields(|fields| {
-            let mut st = fields[0].dtype.clone();
-            for fld in &fields[1..] {
-                st = get_supertype(&st, &fld.dtype).unwrap();
-            }
-            Field::new(
-                &fields[0].name,
-                DataType::Struct(
-                    fields
-                        .iter()
-                        .map(|fld| Field::new(fld.name(), st.clone()))
-                        .collect(),
-                ),
-            )
-        }),
+        output_type: cumfold_dtype(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,

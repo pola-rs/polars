@@ -24,6 +24,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    coalesce
    cov
    cumfold
+   cumreduce
    cumsum
    date
    datetime
@@ -45,6 +46,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    n_unique
    pearson_corr
    quantile
+   reduce
    repeat
    select
    spearman_rank_corr

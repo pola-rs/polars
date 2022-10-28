@@ -1695,11 +1695,25 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     polars::lazy::dsl::fold_exprs(acc.inner, func, exprs).into()
 }
 
+pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = py_exprs_to_exprs(exprs);
+
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    polars::lazy::dsl::reduce_exprs(func, exprs).into()
+}
+
 pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = py_exprs_to_exprs(exprs);
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
     polars::lazy::dsl::cumfold_exprs(acc.inner, func, exprs, include_init).into()
+}
+
+pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = py_exprs_to_exprs(exprs);
+
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    polars::lazy::dsl::cumreduce_exprs(func, exprs).into()
 }
 
 pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {

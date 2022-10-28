@@ -1,6 +1,27 @@
 import polars as pl
 
 
+def test_fold() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = df.select(
+        [
+            pl.sum(["a", "b"]),
+            pl.max(["a", pl.col("b") ** 2]),
+            pl.min(["a", pl.col("b") ** 2]),
+        ]
+    )
+    assert out["sum"].series_equal(pl.Series("sum", [2.0, 4.0, 6.0]))
+    assert out["max"].series_equal(pl.Series("max", [1.0, 4.0, 9.0]))
+    assert out["min"].series_equal(pl.Series("min", [1.0, 2.0, 3.0]))
+
+    out = df.select(
+        pl.fold(acc=pl.lit(0), f=lambda acc, x: acc + x, exprs=pl.all()).alias("foo")
+    )
+    assert out["foo"].to_list() == [2, 4, 6]
+    out = df.select(pl.reduce(f=lambda acc, x: acc + x, exprs=pl.all()).alias("foo"))
+    assert out["foo"].to_list() == [2, 4, 6]
+
+
 def test_cumfold() -> None:
     df = pl.DataFrame(
         {
@@ -12,6 +33,13 @@ def test_cumfold() -> None:
 
     assert df.select(
         [pl.cumfold(pl.lit(0), lambda a, b: a + b, pl.all()).alias("folded")]
+    ).unnest("folded").to_dict(False) == {
+        "a": [1, 2, 3, 4],
+        "b": [6, 8, 10, 12],
+        "c": [16, 28, 40, 52],
+    }
+    assert df.select(
+        [pl.cumreduce(lambda a, b: a + b, pl.all()).alias("folded")]
     ).unnest("folded").to_dict(False) == {
         "a": [1, 2, 3, 4],
         "b": [6, 8, 10, 12],
