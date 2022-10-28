@@ -650,7 +650,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             graph = subprocess.check_output(
                 ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
             )
-        except ImportError:
+        except (ImportError, FileNotFoundError):
             raise ImportError("Graphviz dot binary should be on your PATH") from None
 
         if output_path:

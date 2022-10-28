@@ -13,14 +13,14 @@ description = "Lazy query engine for the Polars DataFrame library"
 ahash.workspace = true
 bitflags.workspace = true
 glob = "0.3"
-polars-arrow = { version = "0.24.3", path = "../polars-arrow" }
-polars-core = { version = "0.24.3", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.24.3", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
-polars-ops = { version = "0.24.3", path = "../polars-ops", default-features = false }
-polars-pipe = { version = "0.24.3", path = "./polars-pipe" }
-polars-plan = { version = "0.24.3", path = "./polars-plan" }
-polars-time = { version = "0.24.3", path = "../polars-time", optional = true }
-polars-utils = { version = "0.24.3", path = "../polars-utils" }
+polars-arrow = { version = "0.25.1", path = "../polars-arrow" }
+polars-core = { version = "0.25.1", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.25.1", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.25.1", path = "../polars-ops", default-features = false }
+polars-pipe = { version = "0.25.1", path = "./polars-pipe" }
+polars-plan = { version = "0.25.1", path = "./polars-plan" }
+polars-time = { version = "0.25.1", path = "../polars-time", optional = true }
+polars-utils = { version = "0.25.1", path = "../polars-utils" }
 pyo3 = { version = "0.16", optional = true }
 rayon.workspace = true
 
@@ -76,7 +76,7 @@ rolling_window = [
 rank = ["polars-plan/rank"]
 diff = ["polars-plan/diff", "polars-plan/diff"]
 pct_change = ["polars-plan/pct_change"]
-moment = ["polars-plan/moment"]
+moment = ["polars-plan/moment", "polars-ops/moment"]
 abs = ["polars-plan/abs"]
 random = ["polars-plan/random"]
 dynamic_groupby = ["polars-plan/dynamic_groupby", "polars-time", "temporal"]
@@ -101,7 +101,13 @@ cse = ["polars-plan/cse"]
 propagate_nans = ["polars-plan/propagate_nans"]
 coalesce = ["polars-plan/coalesce"]
 regex = ["polars-plan/regex"]
-serde = ["polars-plan/serde"]
+serde = [
+  "polars-plan/serde",
+  "polars-arrow/serde",
+  "polars-core/serde-lazy",
+  "polars-time/serde",
+  "polars-io/serde",
+]
 
 # no guarantees whatsoever
 private = ["polars-plan/private"]

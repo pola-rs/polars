@@ -97,8 +97,14 @@ publish:
 	sleep 20
 	cargo publish --allow-dirty -p polars-io
 	sleep 20
+	cargo publish --allow-dirty -p polars-plan
+	sleep 20
+	cargo publish --allow-dirty -p polars-pipe
+	sleep 20
 	cargo publish --allow-dirty -p polars-lazy
 	sleep 20
 	cargo publish --allow-dirty -p polars-algo
+	sleep 20
+	cargo publish --allow-dirty -p polars-sql
 	sleep 20
 	cargo publish --allow-dirty -p polars
