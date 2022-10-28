@@ -1,4 +1,4 @@
-use arrow::bitmap::utils::{count_zeros, zip_validity};
+use arrow::bitmap::utils::{count_zeros, ZipValidityIter};
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
 
@@ -9,7 +9,7 @@ pub fn is_reverse_sorted_max_nulls<T: NativeType + PartialOrd + IsFloat>(
     validity: &Bitmap,
 ) -> bool {
     let mut current_max = None;
-    for opt_v in zip_validity(values.iter(), Some(validity.iter())) {
+    for opt_v in ZipValidityIter::new(values.iter(), validity.iter()) {
         match (current_max, opt_v) {
             // do nothing
             (None, None) => {}

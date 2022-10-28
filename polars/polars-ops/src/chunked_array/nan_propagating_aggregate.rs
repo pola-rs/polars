@@ -43,6 +43,7 @@ where
             arr.values().iter().copied().fold_first_(min_or_max_fn)
         } else {
             arr.iter()
+                .unwrap_optional()
                 .map(|opt| opt.copied())
                 .fold_first_(|a, b| match (a, b) {
                     (Some(a), Some(b)) => Some(min_or_max_fn(a, b)),

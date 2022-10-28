@@ -306,18 +306,36 @@ impl<'a> IntoIterator for &'a ListChunked {
     fn into_iter(self) -> Self::IntoIter {
         let dtype = self.inner_dtype();
 
-        // we know that we only iterate over length == self.len()
-        unsafe {
-            Box::new(
-                self.downcast_iter()
-                    .flat_map(|arr| arr.iter())
-                    .trust_my_length(self.len())
-                    .map(move |arr| {
-                        arr.map(|arr| {
-                            Series::from_chunks_and_dtype_unchecked("", vec![arr], &dtype)
-                        })
-                    }),
-            )
+        if self.null_count() == 0 {
+            // we know that we only iterate over length == self.len()
+            unsafe {
+                Box::new(
+                    self.downcast_iter()
+                        .flat_map(|arr| arr.iter().unwrap_required())
+                        .trust_my_length(self.len())
+                        .map(move |arr| {
+                            Some(Series::from_chunks_and_dtype_unchecked(
+                                "",
+                                vec![arr],
+                                &dtype,
+                            ))
+                        }),
+                )
+            }
+        } else {
+            // we know that we only iterate over length == self.len()
+            unsafe {
+                Box::new(
+                    self.downcast_iter()
+                        .flat_map(|arr| arr.iter().unwrap_optional())
+                        .trust_my_length(self.len())
+                        .map(move |arr| {
+                            arr.map(|arr| {
+                                Series::from_chunks_and_dtype_unchecked("", vec![arr], &dtype)
+                            })
+                        }),
+                )
+            }
         }
     }
 }

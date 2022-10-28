@@ -105,21 +105,34 @@ impl Series {
                 })
             }
         } else {
-            // TODO! null_count paths, but first exactsize iters must be implmeneted upstream
             match dtype {
                 DataType::Utf8 => {
                     let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-                    Box::new(arr.iter().map(|value| match value {
-                        Some(value) => AnyValue::Utf8(value),
-                        None => AnyValue::Null,
-                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
+                    if arr.null_count() == 0 {
+                        Box::new(arr.values_iter().map(AnyValue::Utf8))
+                            as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
+                    } else {
+                        let zipvalid = arr.iter();
+                        Box::new(zipvalid.unwrap_optional().map(|v| match v {
+                            Some(value) => AnyValue::Utf8(value),
+                            None => AnyValue::Null,
+                        }))
+                            as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
+                    }
                 }
                 DataType::Boolean => {
                     let arr = arr.as_any().downcast_ref::<BooleanArray>().unwrap();
-                    Box::new(arr.iter().map(|value| match value {
-                        Some(value) => AnyValue::Boolean(value),
-                        None => AnyValue::Null,
-                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
+                    if arr.null_count() == 0 {
+                        Box::new(arr.values_iter().map(AnyValue::Boolean))
+                            as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
+                    } else {
+                        let zipvalid = arr.iter();
+                        Box::new(zipvalid.unwrap_optional().map(|v| match v {
+                            Some(value) => AnyValue::Boolean(value),
+                            None => AnyValue::Null,
+                        }))
+                            as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
+                    }
                 }
                 _ => Box::new(self.iter()),
             }
