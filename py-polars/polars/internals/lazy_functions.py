@@ -2061,7 +2061,7 @@ def from_epoch(
 
 @overload
 def from_epoch(
-    column: str | pli.Expr | pli.Series,
+    column: str | pli.Expr | pli.Series | Sequence[int],
     unit: EpochTimeUnit = ...,
     *,
     eager: Literal[True],
@@ -2071,7 +2071,7 @@ def from_epoch(
 
 @overload
 def from_epoch(
-    column: pli.Series,
+    column: pli.Series | Sequence[int],
     unit: EpochTimeUnit = ...,
     *,
     eager: Literal[True] = ...,
@@ -2091,7 +2091,7 @@ def from_epoch(
 
 @overload
 def from_epoch(
-    column: str | pli.Expr | pli.Series,
+    column: str | pli.Expr | pli.Series | Sequence[int],
     unit: EpochTimeUnit = ...,
     *,
     eager: bool = ...,
@@ -2100,13 +2100,13 @@ def from_epoch(
 
 
 def from_epoch(
-    column: str | pli.Expr | pli.Series,
+    column: str | pli.Expr | pli.Series | Sequence[int],
     unit: EpochTimeUnit = "s",
     *,
     eager: bool = False,
 ) -> pli.Expr | pli.Series:
     """
-    Utility function that parses epoch time to Polars Datetime.
+    Utility function that parses an epoch timestamp (or Unix time) to Polars Datetime.
 
     If possible, the unit will persist in `pl.Datetime`, defaults to "ns".
 
@@ -2135,28 +2135,29 @@ def from_epoch(
     └─────────────────────┘
 
     """
-    expr = col(column) if isinstance(column, str) else column
+    if isinstance(column, str):
+        column = col(column)
+    elif not isinstance(column, (pli.Series, pli.Expr)):
+        column = pli.Series(column)  # Sequence input handled by Series constructor
 
     if unit == "d":
-        expr = expr.cast(Date)
+        expr = column.cast(Date)
     elif unit == "s":
-        expr = (expr.cast(Int64) * 1_000_000).cast(Datetime("us"))
+        expr = (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
     elif unit in DTYPE_TEMPORAL_UNITS:
-        expr = expr.cast(Datetime(unit))
+        expr = column.cast(Datetime(unit))
     else:
         raise ValueError(
             f"'unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got '{unit}'."
         )
 
     if eager:
-        if isinstance(column, pli.Series):
-            return column.to_frame().select(expr).to_series()
-        elif isinstance(column, (pli.Expr, str)):
-            return pli.select(expr).to_series()
-        else:
+        if not isinstance(column, pli.Series):
             raise ValueError(
-                "Expected 'str', 'Expr' or 'Series' in 'from_epoch' if 'eager=True', "
-                f"got {type(column)}"
+                "expected 'Series or Sequence' in 'from_epoch' if 'eager=True', got"
+                f" {type(column)}"
             )
+        else:
+            return column.to_frame().select(expr).to_series()
     else:
         return expr

@@ -15,6 +15,7 @@ import polars as pl
 from polars import col, lit, when
 from polars.datatypes import PolarsDataType
 from polars.testing import assert_frame_equal
+from polars.testing.asserts import assert_series_equal
 
 
 def test_lazy() -> None:
@@ -1559,3 +1560,10 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
     with pytest.raises(ValueError):
         ts_col = pl.col("timestamp_s")
         _ = ldf.select(pl.from_epoch(ts_col, unit="s2"))  # type: ignore[call-overload]
+
+
+def test_from_epoch_seq_input() -> None:
+    seq_input = [1147880044]
+    expected = pl.Series([datetime(2006, 5, 17, 15, 34, 4)])
+    result = pl.from_epoch(seq_input)
+    assert_series_equal(result, expected)
