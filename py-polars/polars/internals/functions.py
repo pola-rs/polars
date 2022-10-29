@@ -562,7 +562,7 @@ def align_frames(
     ...         "x": [2.0, 5.0],
     ...         "y": [2.5, 2.0],
     ...     }
-    ... )
+    ... )  # doctest: +IGNORE_RESULT
     #
     # df1                              df2                              df3
     # shape: (3, 3)                    shape: (3, 3)                    shape: (2, 3)
@@ -579,7 +579,9 @@ def align_frames(
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘
     ...
     >>> # align frames by the "dt" column:
-    >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt")
+    >>> af1, af2, af3 = pl.align_frames(
+    ...     df1, df2, df3, on="dt"
+    ... )  # doctest: +IGNORE_RESULT
     #
     # df1                              df2                              df3
     # shape: (3, 3)                    shape: (3, 3)                    shape: (3, 3)
@@ -596,7 +598,9 @@ def align_frames(
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
     ...
     >>> # align frames by "dt", but keep only cols "x" and "y":
-    >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt", select=["x", "y"])
+    >>> af1, af2, af3 = pl.align_frames(
+    ...     df1, df2, df3, on="dt", select=["x", "y"]
+    ... )  # doctest: +IGNORE_RESULT
     #
     # af1                 af2                 af3
     # shape: (3, 3)       shape: (3, 3)       shape: (3, 3)
