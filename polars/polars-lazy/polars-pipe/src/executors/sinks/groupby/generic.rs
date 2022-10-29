@@ -18,7 +18,7 @@ use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::utils::compute_slices;
 use crate::executors::sources::DataFrameSource;
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult, Source};
+use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, Source};
 
 // This is the hash and the Index offset in the linear buffer
 type Key = (u64, IdxSize);
@@ -407,10 +407,10 @@ impl Sink for GenericGroupbySink {
         Box::new(new)
     }
 
-    fn finalize(&mut self) -> PolarsResult<DataFrame> {
+    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
         let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-        DataFrame::new(std::mem::take(df.get_columns_mut()))
+        DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished)
     }
 
 

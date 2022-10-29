@@ -126,6 +126,6 @@ impl Pipeline {
                 a
             })
             .unwrap();
-        reduced_sink.finalize()
+        reduced_sink.finalize().map(|fs| fs.unwrap())
     }
 }

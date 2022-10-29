@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use crate::executors::sources::DataFrameSource;
 
-use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult, Source};
+use crate::operators::{chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, Source};
 
 // Ensure the data is return in the order it was streamed
 #[derive(Clone)]
@@ -38,20 +38,17 @@ impl Sink for OrderedSink {
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         Box::new(self.clone())
     }
-    fn finalize(&mut self) -> PolarsResult<DataFrame> {
+    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
         self.sort();
-        Ok(accumulate_dataframes_vertical_unchecked(
-            std::mem::take(&mut self.chunks)
-                .into_iter()
-                .map(|chunk| chunk.data),
-        ))
+        let chunks = std::mem::take(&mut self.chunks);
+        Ok(FinalizedSink::Finished(chunks_to_df_unchecked(chunks)))
     }
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
 
     fn into_source(&mut self) -> PolarsResult<Option<Box<dyn Source>>> {
-        let df = self.finalize()?;
+        let df = self.finalize()?.unwrap();
         Ok(Some(Box::new(DataFrameSource::from_df(df))))
     }
 }

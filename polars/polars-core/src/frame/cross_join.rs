@@ -41,7 +41,7 @@ fn take_right(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, us
 
 impl DataFrame {
     /// Creates the cartesian product from both frames, preserves the order of the left keys.
-    pub(crate) fn cross_join(
+    pub fn cross_join(
         &self,
         other: &DataFrame,
         suffix: Option<String>,

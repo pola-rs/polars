@@ -33,8 +33,8 @@ impl DataFrameSource {
 }
 
 impl Source for DataFrameSource  {
-    fn get_batches(&mut self, context: &PExecutionContext) -> PolarsResult<SourceResult> {
-        let chunks = self.dfs.map(|(chunk_index, data)| DataChunk { chunk_index: chunk_index as IdxSize, data }).take(self.n_threads).collect::<Vec<_>>();
+    fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+        let chunks = (&mut self.dfs).map(|(chunk_index, data)| DataChunk { chunk_index: chunk_index as IdxSize, data }).take(self.n_threads).collect::<Vec<_>>();
 
         if chunks.len() > 0 {
             Ok(SourceResult::GotMoreData(chunks))
