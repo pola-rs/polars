@@ -230,6 +230,7 @@ The following methods are available under the `Series.dt` attribute.
 
     DateTimeNameSpace.cast_time_unit
     DateTimeNameSpace.cast_time_zone
+    DateTimeNameSpace.with_time_zone
     DateTimeNameSpace.day
     DateTimeNameSpace.days
     DateTimeNameSpace.epoch
