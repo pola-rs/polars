@@ -41,8 +41,8 @@ Descriptive stats
     LazyFrame.describe_optimized_plan
     LazyFrame.show_graph
 
-Manipulation/ selection
------------------------
+Manipulation / selection
+------------------------
 .. autosummary::
    :toctree: api/
 

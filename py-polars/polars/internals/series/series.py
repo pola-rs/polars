@@ -62,6 +62,7 @@ from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
+    accessor,
     deprecated_alias,
     is_bool_sequence,
     is_int_sequence,
@@ -175,6 +176,8 @@ class Series:
     ]
 
     """
+
+    _s: PySeries = None
 
     def __init__(
         self,
@@ -4651,28 +4654,27 @@ class Series:
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the
     # namespace `str`
-
-    @property
-    def dt(self) -> DateTimeNameSpace:
-        """Create an object namespace of all datetime related methods."""
-        return DateTimeNameSpace(self)
-
-    @property
+    @accessor
     def arr(self) -> ListNameSpace:
         """Create an object namespace of all list related methods."""
         return ListNameSpace(self)
 
-    @property
-    def str(self) -> StringNameSpace:
-        """Create an object namespace of all string related methods."""
-        return StringNameSpace(self)
-
-    @property
+    @accessor
     def cat(self) -> CatNameSpace:
         """Create an object namespace of all categorical related methods."""
         return CatNameSpace(self)
 
-    @property
+    @accessor
+    def dt(self) -> DateTimeNameSpace:
+        """Create an object namespace of all datetime related methods."""
+        return DateTimeNameSpace(self)
+
+    @accessor
+    def str(self) -> StringNameSpace:
+        """Create an object namespace of all string related methods."""
+        return StringNameSpace(self)
+
+    @accessor
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)

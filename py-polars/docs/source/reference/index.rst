@@ -1,4 +1,3 @@
-
 =============
 API reference
 =============
@@ -11,10 +10,10 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
 
    io
    functions
-   series
+   series/index
    dataframe
    lazyframe
-   expression
+   expressions/index
    datatypes
    config
    exceptions

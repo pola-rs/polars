@@ -28,14 +28,20 @@ Eager/Lazy functions
 .. autosummary::
    :toctree: api/
 
-   arg_where
-   concat
-   cut
-   date_range
-   get_dummies
-   repeat
-   ones
-   zeros
+    arg_where
+    concat
+    cut
+    date_range
+    get_dummies
+    ones
+    zeros
+
+Miscellaneous
+~~~~~~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+    align_frames
 
 Parallelization
 ~~~~~~~~~~~~~~~

@@ -72,8 +72,8 @@ Computations
     DataFrame.fold
     DataFrame.hash_rows
 
-Manipulation/ selection
------------------------
+Manipulation / selection
+------------------------
 .. autosummary::
    :toctree: api/
 

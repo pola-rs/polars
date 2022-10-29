@@ -24,7 +24,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.utils import deprecated_alias
+from polars.utils import accessor, deprecated_alias
 
 try:
     from polars.polars import PyExpr
@@ -129,7 +129,8 @@ def wrap_expr(pyexpr: PyExpr) -> Expr:
 class Expr:
     """Expressions that can be used in various contexts."""
 
-    _pyexpr: PyExpr
+    _pyexpr: PyExpr = None
+    _accessors = {"arr", "cat", "dt", "meta", "str"}
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
@@ -6030,37 +6031,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shrink_dtype())
 
-    @property
-    def str(self) -> ExprStringNameSpace:
-        """
-        Create an object namespace of all string related methods.
-
-        See the individual method pages for full details
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"letters": ["a", "b"]})
-        >>> df.select(pl.col("letters").str.to_uppercase())
-        shape: (2, 1)
-        ┌─────────┐
-        │ letters │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ A       │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ B       │
-        └─────────┘
-
-        """
-        return ExprStringNameSpace(self)
-
-    @property
-    def dt(self) -> ExprDateTimeNameSpace:
-        """Create an object namespace of all datetime related methods."""
-        return ExprDateTimeNameSpace(self)
-
-    @property
+    @accessor
     def arr(self) -> ExprListNameSpace:
         """
         Create an object namespace of all list related methods.
@@ -6070,7 +6041,7 @@ class Expr:
         """
         return ExprListNameSpace(self)
 
-    @property
+    @accessor
     def cat(self) -> ExprCatNameSpace:
         """
         Create an object namespace of all categorical related methods.
@@ -6097,7 +6068,47 @@ class Expr:
         """
         return ExprCatNameSpace(self)
 
-    @property
+    @accessor
+    def dt(self) -> ExprDateTimeNameSpace:
+        """Create an object namespace of all datetime related methods."""
+        return ExprDateTimeNameSpace(self)
+
+    @accessor
+    def meta(self) -> ExprMetaNameSpace:
+        """
+        Create an object namespace of all meta related expression methods.
+
+        This can be used to modify and traverse existing expressions
+
+        """
+        return ExprMetaNameSpace(self)
+
+    @accessor
+    def str(self) -> ExprStringNameSpace:
+        """
+        Create an object namespace of all string related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"letters": ["a", "b"]})
+        >>> df.select(pl.col("letters").str.to_uppercase())
+        shape: (2, 1)
+        ┌─────────┐
+        │ letters │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ A       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ B       │
+        └─────────┘
+
+        """
+        return ExprStringNameSpace(self)
+
+    @accessor
     def struct(self) -> ExprStructNameSpace:
         """
         Create an object namespace of all struct related methods.
@@ -6132,16 +6143,6 @@ class Expr:
 
         """
         return ExprStructNameSpace(self)
-
-    @property
-    def meta(self) -> ExprMetaNameSpace:
-        """
-        Create an object namespace of all meta related expression methods.
-
-        This can be used to modify and traverse existing expressions
-
-        """
-        return ExprMetaNameSpace(self)
 
 
 def _prepare_alpha(
