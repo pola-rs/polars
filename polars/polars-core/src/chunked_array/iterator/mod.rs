@@ -327,7 +327,7 @@ impl<'a> IntoIterator for &'a ListChunked {
             unsafe {
                 Box::new(
                     self.downcast_iter()
-                        .flat_map(|arr| arr.iter().unwrap_optional())
+                        .flat_map(|arr| arr.iter())
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             arr.map(|arr| {
