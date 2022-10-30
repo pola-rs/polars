@@ -3,3 +3,4 @@ mod ordered;
 mod joins;
 
 pub(crate) use ordered::*;
+pub(crate) use joins::*;

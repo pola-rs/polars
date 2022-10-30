@@ -130,3 +130,28 @@ fn test_streaming_slice() -> PolarsResult<()> {
     assert_eq!(out_streaming.shape(), (3, 2));
     Ok(())
 }
+
+#[test]
+fn test_streaming_pipeline_stack() -> PolarsResult<()> {
+    let q = get_parquet_file().with_column(col("calories").alias("calories_right")).filter(col("calories").gt(col("calories_right")));
+
+    let q1 = q.clone().with_streaming(true);
+    println!("{}", q1.describe_optimized_plan().unwrap());
+    let out_streaming = q1.collect()?;
+
+    dbg!(out_streaming);
+    Ok(())
+}
+
+#[test]
+fn test_streaming_cross_join() -> PolarsResult<()> {
+    let q = get_parquet_file().with_projection_pushdown(false); // ;.slice(3, 3);
+    let q  = q.clone().select([col("calories")]).clone().cross_join(q).filter(col("calories").gt(col("calories_right")));
+
+    let q1 = q.clone().with_streaming(true);
+    println!("{}", q1.describe_optimized_plan().unwrap());
+    let out_streaming = q1.collect()?;
+
+    dbg!(out_streaming);
+    Ok(())
+}

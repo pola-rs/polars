@@ -1,4 +1,6 @@
 use std::any::Any;
+use std::borrow::Cow;
+use std::sync::{Arc, Mutex};
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::JoinType::Outer;
@@ -7,12 +9,23 @@ use crate::operators::{chunks_to_df_unchecked, DataChunk, FinalizedSink, Operato
 
 
 #[derive(Default)]
-pub struct OuterJoinPhase1 {
+pub struct CrossJoin {
     chunks: Vec<DataChunk>,
-    suffix: Option<String>
+    suffix: Cow<'static, str>,
+    shared: Arc<Mutex<DataFrame>>
 }
 
-impl Sink for OuterJoinPhase1 {
+impl CrossJoin {
+    pub(crate) fn new(suffix: Cow<'static, str>) -> Self {
+        CrossJoin {
+            chunks: vec![],
+            suffix,
+            shared: Default::default()
+        }
+    }
+}
+
+impl Sink for CrossJoin {
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         self.chunks.push(chunk);
         Ok(SinkResult::CanHaveMoreInput)
@@ -25,10 +38,14 @@ impl Sink for OuterJoinPhase1 {
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
-        Box::new(Self::default())
+        let mut new = Self::default();
+        // ensure the arc ptr is shared
+        new.shared = self.shared.clone();
+        Box::new(new)
     }
 
     fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
+        // todo! share sink
         Ok(FinalizedSink::Operator(
             Box::new(CrossJoinPhase2{
                 df: chunks_to_df_unchecked(std::mem::take(&mut self.chunks)),
@@ -48,13 +65,13 @@ impl Sink for OuterJoinPhase1 {
 
 pub struct CrossJoinPhase2 {
     df: DataFrame,
-    suffix: Option<String>
+    suffix: Cow<'static, str>
 }
 
 impl Operator for CrossJoinPhase2 {
     fn execute(&self, _context: &PExecutionContext, chunk: &DataChunk) -> PolarsResult<OperatorResult> {
         // todo! amortize left and right name creation
-        let df = self.df.cross_join(&chunk.data, self.suffix.clone(), None)?;
+        let df = self.df.cross_join(&chunk.data, Some(self.suffix.to_string()), None)?;
         Ok(OperatorResult::Finished(chunk.with_data(df)))
     }
 }

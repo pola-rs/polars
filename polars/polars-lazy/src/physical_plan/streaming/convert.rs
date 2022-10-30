@@ -1,13 +1,18 @@
 use std::any::Any;
+use std::collections::{BTreeSet, VecDeque};
+use std::os::linux::raw::stat;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Field, SchemaRef, Series};
+use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_pipe::expressions::PhysicalPipedExpr;
-use polars_pipe::operators::chunks::DataChunk;
-use polars_pipe::pipeline::{create_pipeline, Pipeline};
+use polars_pipe::operators::{
+    Sink,
+    chunks::DataChunk
+};
+use polars_pipe::pipeline::{create_pipeline, get_operator, get_sink, PipeLine};
 use polars_plan::prelude::*;
 
 use crate::physical_plan::planner::create_physical_expr;
@@ -40,7 +45,7 @@ fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
         AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
             matches!(options.collect_groups, ApplyOptions::ApplyFlat)
         }
-        AExpr::Cast { .. } | AExpr::Column(_) | AExpr::Literal(_) => true,
+        AExpr::Cast { .. } | AExpr::Column(_) | AExpr::Literal(_) | AExpr::BinaryExpr {..} | AExpr::Alias(_, _) => true,
         _ => false,
     })
 }
@@ -60,14 +65,35 @@ pub(crate) fn insert_streaming_nodes(
 
     let mut stack = Vec::with_capacity(lp_arena.len() / 3 + 1);
     stack.push((root, State::default()));
+
+    // A state holds a full pipeline until the breaker
+    //  1/\
+    //   2/\
+    //     3\
+    //
+    // so 1 and 2 are short pipelines and 3 goes all the way to the root.
+    // but 3 can only run if 1 and 2 have finished and set the join as operator in 3
+    // and state are filled with pipeline 1, 2, 3 in that order
+    //
+    //     / \
+    //  /\  3/\
+    //  1 2    4\
+    // or in this case 1, 2, 3, 4
     let mut states = vec![];
+
+    let mut shared_sinks = PlHashSet::new();
 
     use ALogicalPlan::*;
     while let Some((root, mut state)) = stack.pop() {
         match lp_arena.get(root) {
             Selection { input, predicate } if is_streamable(*predicate, expr_arena) => {
                 state.streamable = true;
-                state.operators.push(root);
+                state.operators_sinks.push((false, false, root));
+                stack.push((*input, state))
+            }
+            HStack {input, exprs, ..} if all_streamable(exprs, expr_arena) => {
+                state.streamable = true;
+                state.operators_sinks.push((false, false, root));
                 stack.push((*input, state))
             }
             MapFunction {
@@ -75,12 +101,12 @@ pub(crate) fn insert_streaming_nodes(
                 function: FunctionNode::FastProjection { .. },
             } => {
                 state.streamable = true;
-                state.operators.push(root);
+                state.operators_sinks.push((false, false, root));
                 stack.push((*input, state))
             }
             Projection { input, expr, .. } if all_streamable(expr, expr_arena) => {
                 state.streamable = true;
-                state.operators.push(root);
+                state.operators_sinks.push((false, false, root));
                 stack.push((*input, state))
             }
             MapFunction {
@@ -105,6 +131,26 @@ pub(crate) fn insert_streaming_nodes(
                     states.push(state)
                 }
             }
+            #[cfg(feature = "cross_join")]
+            Join {
+                input_left,
+                input_right,
+                options,
+                ..
+            } if matches!(options.how, JoinType::Cross) => {
+                state.streamable = true;
+                shared_sinks.insert(root);
+
+                // lhs is a new pipeline
+                let mut state_left = State::default();
+                state.operators_sinks.push((true, false, root));
+                stack.push((*input_left, state_left));
+
+                // rhs
+                let mut state_right = state;
+                state_right.operators_sinks.push((true, true, root));
+                stack.push((*input_right, state_right));
+            }
             // add globbing patterns
             #[cfg(all(feature = "csv-file", feature = "parquet"))]
             Union { inputs, .. } => {
@@ -122,7 +168,7 @@ pub(crate) fn insert_streaming_nodes(
                     })
                 {
                     state.sources.push(root);
-                    states.push(state)
+                    states.push(state);
                 }
             }
             Aggregate {
@@ -137,7 +183,7 @@ pub(crate) fn insert_streaming_nodes(
                     .all(|node| polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena))
                 {
                     state.streamable = true;
-                    state.sink = Some(root);
+                    state.operators_sinks.push((true, false, root));
                     stack.push((*input, state))
                 } else {
                     stack.push((*input, State::default()))
@@ -152,46 +198,78 @@ pub(crate) fn insert_streaming_nodes(
             }
         }
     }
+    dbg!(&states);
+
+    let mut pipelines = VecDeque::with_capacity(states.len());
+
+    // if join is
+    //     1
+    //    /\2
+    //      /\3
+    //
+    // we are iterating from 3 to 1.
+    let mut latest = Default::default();
+    let mut sink_node = None;
 
     for state in states {
-        let latest = match state.sink {
-            Some(node) => node,
-            None => {
-                if state.operators.is_empty() {
-                    continue;
-                } else {
-                    state.operators[state.operators.len() - 1]
-                }
+
+        let mut operators = Vec::with_capacity(state.operators_sinks.len());
+        let mut iter = state.operators_sinks.into_iter().rev();
+
+        for (is_sink, is_rhs_join, node) in &mut iter {
+            latest = node;
+            if is_sink {
+                sink_node = Some(node);
+                break;
             }
-        };
-        let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
+            let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
+            operators.push(op)
+        }
+
+
         let pipeline = create_pipeline(
             &state.sources,
-            &state.operators,
-            state.sink,
+            operators,
+            sink_node,
             lp_arena,
             expr_arena,
             to_physical_piped_expr,
         )?;
-
-        // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
-        let pipeline_node = get_pipeline_node(lp_arena, pipeline, schema);
-        lp_arena.replace(latest, pipeline_node)
+        pipelines.push_back(pipeline);
     }
+    // the most right latest node should be the root of the pipeline
+    latest = sink_node.unwrap_or(latest);
+    let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
+
+    if let Some(mut most_left) = pipelines.pop_front() {
+        while let Some(rhs) = pipelines.pop_front() {
+            most_left = most_left.with_rhs(rhs)
+        }
+        // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+        let pipeline_node = get_pipeline_node(lp_arena, most_left, schema);
+        lp_arena.replace(latest, pipeline_node)
+    } else {
+        panic!()
+    }
+
     Ok(())
 }
 
-#[derive(Default, Debug)]
+type IsSink = bool;
+// a rhs of a join will be replaced later
+type IsRhsJoin = bool;
+
+#[derive(Default, Debug, Clone)]
 struct State {
     streamable: bool,
     sources: Vec<Node>,
-    operators: Vec<Node>,
-    sink: Option<Node>,
+    // node is operator/sink
+    operators_sinks: Vec<(IsSink, IsRhsJoin, Node)>,
 }
 
 fn get_pipeline_node(
     lp_arena: &mut Arena<ALogicalPlan>,
-    mut pipeline: Pipeline,
+    mut pipeline: PipeLine,
     schema: SchemaRef,
 ) -> ALogicalPlan {
     // create a dummy input as the map function will call the input

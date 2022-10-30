@@ -5,33 +5,41 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::POOL;
 use rayon::prelude::*;
+use polars_core::prelude::{PlHashMap, PlHashSet};
+use polars_utils::arena::Node;
+use crate::executors::sinks::OrderedSink;
 
-use crate::operators::{
-    DataChunk, Operator, OperatorResult, PExecutionContext, Sink, SinkResult, Source, SourceResult,
-};
+use crate::operators::{DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult, Source, SourceResult};
 
-pub struct Pipeline {
+pub struct PipeLine {
     sources: Vec<Box<dyn Source>>,
     operators: Vec<Arc<dyn Operator>>,
-    // a sink for every thread
     sink: Vec<Box<dyn Sink>>,
+    rh_sides: Vec<PipeLine>
 }
 
-impl Pipeline {
+impl PipeLine {
     pub fn new(
         sources: Vec<Box<dyn Source>>,
         operators: Vec<Arc<dyn Operator>>,
         sink: Box<dyn Sink>,
-    ) -> Pipeline {
+    ) -> PipeLine {
         let n_threads = POOL.current_num_threads();
-
         let sink = (0..n_threads).map(|i| sink.split(i)).collect();
 
-        Pipeline {
+        PipeLine {
             sources,
             operators,
             sink,
+            rh_sides: vec![]
         }
+    }
+
+    /// Add a parent
+    /// This should be in the right order
+    pub fn with_rhs(mut self, rhs: PipeLine) -> Self {
+        self.rh_sides.push(rhs);
+        self
     }
 
     fn par_process_chunks(
@@ -126,6 +134,15 @@ impl Pipeline {
                 a
             })
             .unwrap();
-        reduced_sink.finalize().map(|fs| fs.unwrap())
+
+        match reduced_sink.finalize()? {
+            FinalizedSink::Finished(df) => Ok(df),
+            FinalizedSink::Operator(op) => {
+                // for parent in &mut self.parents {
+                //     todo!()
+                // }
+                return Err(todo!());
+            }
+        }
     }
 }

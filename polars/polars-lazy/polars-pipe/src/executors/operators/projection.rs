@@ -41,3 +41,27 @@ impl Operator for ProjectionOperator {
         Ok(OperatorResult::Finished(chunk))
     }
 }
+
+pub(crate) struct HstackOperator {
+    pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
+
+}
+
+impl Operator for HstackOperator {
+    fn execute(
+        &self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<OperatorResult> {
+        let projected = self
+            .exprs
+            .iter()
+            .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let df = chunk.data.hstack(&projected)?;
+
+        let chunk = chunk.with_data(df);
+        Ok(OperatorResult::Finished(chunk))
+    }
+}
