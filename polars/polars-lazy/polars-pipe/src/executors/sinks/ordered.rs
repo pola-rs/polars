@@ -1,11 +1,10 @@
 use std::any::Any;
 
 use polars_core::error::PolarsResult;
-use polars_core::frame::DataFrame;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use crate::executors::sources::DataFrameSource;
 
-use crate::operators::{chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, Source};
+use crate::operators::{
+    chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
+};
 
 // Ensure the data is return in the order it was streamed
 #[derive(Clone)]
@@ -45,10 +44,5 @@ impl Sink for OrderedSink {
     }
     fn as_any(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn into_source(&mut self) -> PolarsResult<Option<Box<dyn Source>>> {
-        let df = self.finalize()?.unwrap();
-        Ok(Some(Box::new(DataFrameSource::from_df(df))))
     }
 }

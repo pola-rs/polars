@@ -18,9 +18,8 @@ use super::aggregates::AggregateFn;
 use super::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::utils::compute_slices;
-use crate::executors::sources::DataFrameSource;
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, Source};
+use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
 // hash + value
 #[derive(Eq, Copy, Clone)]
@@ -68,8 +67,8 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
-    where
-        ChunkedArray<K>: IntoSeries,
+where
+    ChunkedArray<K>: IntoSeries,
 {
     pub fn new(
         key: Arc<dyn PhysicalPipedExpr>,
@@ -311,15 +310,7 @@ where
         Box::new(new)
     }
 
-
     fn as_any(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn into_source(&mut self) -> PolarsResult<Option<Box<dyn Source>>> {
-        let dfs = self.pre_finalize()?;
-        Ok(Some(
-            Box::new(DataFrameSource::from_partitions(dfs))
-        ))
     }
 }

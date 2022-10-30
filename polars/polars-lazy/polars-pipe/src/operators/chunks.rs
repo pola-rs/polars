@@ -1,4 +1,5 @@
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+
 use super::*;
 
 #[derive(Clone, Debug)]

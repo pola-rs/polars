@@ -1,18 +1,20 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
+
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::JoinType::Outer;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use crate::operators::{chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult, Source, SourceResult};
 
+use crate::operators::{
+    chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext,
+    Sink, SinkResult,
+};
 
 #[derive(Default)]
 pub struct CrossJoin {
     chunks: Vec<DataChunk>,
     suffix: Cow<'static, str>,
-    shared: Arc<Mutex<DataFrame>>
+    shared: Arc<Mutex<DataFrame>>,
 }
 
 impl CrossJoin {
@@ -20,7 +22,7 @@ impl CrossJoin {
         CrossJoin {
             chunks: vec![],
             suffix,
-            shared: Default::default()
+            shared: Default::default(),
         }
     }
 }
@@ -38,40 +40,41 @@ impl Sink for CrossJoin {
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
-        let mut new = Self::default();
-        // ensure the arc ptr is shared
-        new.shared = self.shared.clone();
-        Box::new(new)
+        Box::new(Self {
+            suffix: self.suffix.clone(),
+            shared: self.shared.clone(),
+            ..Default::default()
+        })
     }
 
     fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
         // todo! share sink
-        Ok(FinalizedSink::Operator(
-            Box::new(CrossJoinPhase2{
-                df: chunks_to_df_unchecked(std::mem::take(&mut self.chunks)),
-                suffix: std::mem::take(&mut self.suffix)
-            })
-        ))
+        Ok(FinalizedSink::Operator(Arc::new(CrossJoinPhase2 {
+            df: chunks_to_df_unchecked(std::mem::take(&mut self.chunks)),
+            suffix: std::mem::take(&mut self.suffix),
+        })))
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
-
-    fn into_source(&mut self) -> PolarsResult<Option<Box<dyn Source>>> {
-        Ok(None)
-    }
 }
 
 pub struct CrossJoinPhase2 {
     df: DataFrame,
-    suffix: Cow<'static, str>
+    suffix: Cow<'static, str>,
 }
 
 impl Operator for CrossJoinPhase2 {
-    fn execute(&self, _context: &PExecutionContext, chunk: &DataChunk) -> PolarsResult<OperatorResult> {
+    fn execute(
+        &self,
+        _context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<OperatorResult> {
         // todo! amortize left and right name creation
-        let df = self.df.cross_join(&chunk.data, Some(self.suffix.to_string()), None)?;
+        let df = self
+            .df
+            .cross_join(&chunk.data, Some(self.suffix.to_string()), None)?;
         Ok(OperatorResult::Finished(chunk.with_data(df)))
     }
 }

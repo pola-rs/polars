@@ -16,9 +16,8 @@ use super::aggregates::AggregateFn;
 use super::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::utils::compute_slices;
-use crate::executors::sources::DataFrameSource;
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, Source};
+use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
 // This is the hash and the Index offset in the linear buffer
 type Key = (u64, IdxSize);
@@ -413,15 +412,7 @@ impl Sink for GenericGroupbySink {
         DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished)
     }
 
-
     fn as_any(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn into_source(&mut self) -> PolarsResult<Option<Box<dyn Source>>> {
-        let dfs = self.pre_finalize()?;
-        Ok(Some(
-            Box::new(DataFrameSource::from_partitions(dfs))
-        ))
     }
 }

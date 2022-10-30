@@ -10,16 +10,7 @@ pub enum SinkResult {
 
 pub enum FinalizedSink {
     Finished(DataFrame),
-    Operator(Box<dyn Operator>)
-}
-
-impl FinalizedSink {
-    pub(crate) fn unwrap(self) -> DataFrame {
-        match self {
-            FinalizedSink::Finished(df) => df,
-            _ => panic!("not a df")
-        }
-    }
+    Operator(Arc<dyn Operator>),
 }
 
 pub trait Sink: Send + Sync {
@@ -32,8 +23,4 @@ pub trait Sink: Send + Sync {
     fn finalize(&mut self) -> PolarsResult<FinalizedSink>;
 
     fn as_any(&mut self) -> &mut dyn Any;
-
-    fn into_source(&mut self) -> PolarsResult<Option<Box<dyn Source>>> {
-        Ok(None)
-    }
 }

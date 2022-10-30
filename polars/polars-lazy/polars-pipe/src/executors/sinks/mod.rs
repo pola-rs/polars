@@ -1,6 +1,6 @@
 pub(crate) mod groupby;
-mod ordered;
 mod joins;
+mod ordered;
 
-pub(crate) use ordered::*;
 pub(crate) use joins::*;
+pub(crate) use ordered::*;

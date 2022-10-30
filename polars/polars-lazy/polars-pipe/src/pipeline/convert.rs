@@ -5,7 +5,7 @@ use polars_core::with_match_physical_integer_polars_type;
 use polars_plan::prelude::*;
 
 use crate::executors::sinks::groupby::aggregates::convert_to_hash_agg;
-use crate::executors::sinks::{groupby, OrderedSink, CrossJoin};
+use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{Operator, Sink, Source};
@@ -81,21 +81,18 @@ pub fn get_sink<F>(
     node: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
-    to_physical: &F
+    to_physical: &F,
 ) -> Box<dyn Sink>
-    where
-        F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+where
+    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     match lp_arena.get(node) {
-        Join {options, ..} => {
-            match options.how {
-                JoinType::Cross => {
-                    Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>
-                }
-                _ => unimplemented!()
-            }
-        }
+        #[cfg(feature = "cross_join")]
+        Join { options, .. } => match options.how {
+            JoinType::Cross => Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>,
+            _ => unimplemented!(),
+        },
         Aggregate {
             input,
             keys,
@@ -129,14 +126,14 @@ pub fn get_sink<F>(
             ) {
                 (dt, 1) if dt.is_integer() => {
                     with_match_physical_integer_polars_type!(dt, |$T| {
-                            Box::new(groupby::PrimitiveGroupbySink::<$T>::new(
-                                key_columns[0].clone(),
-                                aggregation_columns,
-                                agg_fns,
-                                output_schema.clone(),
-                                options.slice
-                            )) as Box<dyn Sink>
-                        })
+                        Box::new(groupby::PrimitiveGroupbySink::<$T>::new(
+                            key_columns[0].clone(),
+                            aggregation_columns,
+                            agg_fns,
+                            output_schema.clone(),
+                            options.slice
+                        )) as Box<dyn Sink>
+                    })
                 }
                 _ => Box::new(groupby::GenericGroupbySink::new(
                     key_columns,
@@ -153,14 +150,18 @@ pub fn get_sink<F>(
     }
 }
 
+pub fn get_dummy_operator() -> Arc<dyn Operator> {
+    Arc::new(operators::Dummy {})
+}
+
 pub fn get_operator<F>(
     node: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
-    to_physical: &F
+    to_physical: &F,
 ) -> PolarsResult<Arc<dyn Operator>>
-    where
-        F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+where
+    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     let op = match lp_arena.get(node) {
@@ -185,7 +186,9 @@ pub fn get_operator<F>(
             function: FunctionNode::FastProjection { columns },
             ..
         } => {
-            let op = operators::FastProjectionOperator { columns: columns.clone() };
+            let op = operators::FastProjectionOperator {
+                columns: columns.clone(),
+            };
             Arc::new(op) as Arc<dyn Operator>
         }
 
@@ -199,7 +202,8 @@ pub fn get_operator<F>(
 pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Arc<dyn Operator>>,
-    sink: Option<Node>,
+    operator_nodes: Vec<Node>,
+    sink_node: Option<Node>,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
@@ -215,13 +219,21 @@ where
     for node in sources {
         let src = match lp_arena.get(*node) {
             #[cfg(feature = "csv-file")]
-            lp @ CsvScan { .. } => {
-                get_source(lp.clone(), &mut operator_objects, expr_arena, &to_physical, true)?
-            }
+            lp @ CsvScan { .. } => get_source(
+                lp.clone(),
+                &mut operator_objects,
+                expr_arena,
+                &to_physical,
+                true,
+            )?,
             #[cfg(feature = "parquet")]
-            lp @ ParquetScan { .. } => {
-                get_source(lp.clone(), &mut operator_objects, expr_arena, &to_physical, true)?
-            }
+            lp @ ParquetScan { .. } => get_source(
+                lp.clone(),
+                &mut operator_objects,
+                expr_arena,
+                &to_physical,
+                true,
+            )?,
             Union { inputs, .. } => {
                 let sources = inputs
                     .iter()
@@ -229,7 +241,13 @@ where
                     .map(|(i, node)| {
                         let lp = lp_arena.get(*node);
                         // only push predicate of first source
-                        get_source(lp.clone(), &mut operator_objects, expr_arena, &to_physical, i == 0)
+                        get_source(
+                            lp.clone(),
+                            &mut operator_objects,
+                            expr_arena,
+                            &to_physical,
+                            i == 0,
+                        )
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Box::new(sources::UnionSource::new(sources)) as Box<dyn Source>
@@ -240,7 +258,20 @@ where
         };
         source_objects.push(src)
     }
-    let sink = sink.map(|node| get_sink(node, lp_arena, expr_arena, &to_physical)).unwrap_or_else(|| Box::new(OrderedSink::new()));
+    let sink = sink_node
+        .map(|node| get_sink(node, lp_arena, expr_arena, &to_physical))
+        .unwrap_or_else(|| Box::new(OrderedSink::new()));
 
-    Ok(PipeLine::new(source_objects, operator_objects, sink))
+    // this offset is because the source might have inserted operators
+    let operator_offset = operator_objects.len();
+    operator_objects.extend(operators);
+
+    Ok(PipeLine::new(
+        source_objects,
+        operator_objects,
+        operator_nodes,
+        sink,
+        sink_node,
+        operator_offset,
+    ))
 }

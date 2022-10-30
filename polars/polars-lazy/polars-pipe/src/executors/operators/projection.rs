@@ -44,7 +44,6 @@ impl Operator for ProjectionOperator {
 
 pub(crate) struct HstackOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
-
 }
 
 impl Operator for HstackOperator {
