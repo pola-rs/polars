@@ -129,6 +129,12 @@ pub(crate) fn insert_streaming_nodes(
                     states.push(state)
                 }
             }
+            DataFrameScan { .. } => {
+                if state.streamable {
+                    state.sources.push(root);
+                    states.push(state)
+                }
+            }
             #[cfg(feature = "cross_join")]
             Join {
                 input_left,

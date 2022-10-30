@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::prelude::{JoinType, PolarsResult};
+use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 use polars_plan::prelude::*;
 
@@ -37,6 +37,27 @@ where
 {
     use ALogicalPlan::*;
     match source {
+        DataFrameScan {
+            df,
+            projection,
+            selection,
+            ..
+        } => {
+            let mut df = (*df).clone();
+            if push_predicate {
+                if let Some(predicate) = selection {
+                    let predicate = to_physical(predicate, expr_arena)?;
+                    let op = operators::FilterOperator { predicate };
+                    let op = Arc::new(op) as Arc<dyn Operator>;
+                    operator_objects.push(op)
+                }
+                // projection is free
+                if let Some(projection) = projection {
+                    df = df.select(projection.as_slice())?;
+                }
+            }
+            Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
+        }
         #[cfg(feature = "csv-file")]
         CsvScan {
             path,
@@ -218,6 +239,13 @@ where
 
     for node in sources {
         let src = match lp_arena.get(*node) {
+            lp @ DataFrameScan { .. } => get_source(
+                lp.clone(),
+                &mut operator_objects,
+                expr_arena,
+                &to_physical,
+                true,
+            )?,
             #[cfg(feature = "csv-file")]
             lp @ CsvScan { .. } => get_source(
                 lp.clone(),

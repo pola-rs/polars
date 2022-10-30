@@ -21,13 +21,6 @@ impl DataFrameSource {
         let dfs = dfs.into_iter().enumerate();
         Self { dfs, n_threads }
     }
-
-    pub(crate) fn from_partitions(dfs: Vec<DataFrame>) -> Self {
-        Self {
-            dfs: dfs.into_iter().enumerate(),
-            n_threads: POOL.current_num_threads(),
-        }
-    }
 }
 
 impl Source for DataFrameSource {

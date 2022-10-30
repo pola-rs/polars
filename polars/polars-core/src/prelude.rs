@@ -37,10 +37,10 @@ pub use crate::error::{PolarsError, PolarsResult};
 pub use crate::frame::asof_join::*;
 pub use crate::frame::explode::MeltArgs;
 pub(crate) use crate::frame::groupby::aggregations::*;
-pub use crate::frame::groupby::{GroupsIdx, GroupsProxy, GroupsSlice};
+pub use crate::frame::groupby::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
 pub use crate::frame::hash_join::JoinType;
 pub(crate) use crate::frame::hash_join::*;
-pub use crate::frame::*;
+pub use crate::frame::{DataFrame, UniqueKeepStrategy};
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]
