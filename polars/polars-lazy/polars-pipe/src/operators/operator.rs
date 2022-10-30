@@ -1,7 +1,8 @@
 use super::*;
 
 pub enum OperatorResult {
-    NeedMoreInput,
+    NeedsNewData,
+    // needs to be called again with same chunk.
     HaveMoreOutPut(DataChunk),
     Finished(DataChunk),
 }

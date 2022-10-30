@@ -156,23 +156,14 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
         )
     })
 }
-
-#[cfg(feature = "private")]
-#[doc(hidden)]
-/// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
-pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
-    if n == 0 {
-        return Ok(vec![df.clone()]);
-    }
-    // make sure that chunks are aligned.
-    df.rechunk();
+pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
     let chunk_size = total_len / n;
 
     if df.n_chunks()? == n
         && df.get_columns()[0]
-            .chunk_lengths()
-            .all(|len| len.abs_diff(chunk_size) < 100)
+        .chunk_lengths()
+        .all(|len| len.abs_diff(chunk_size) < 100)
     {
         return Ok(flatten_df(df).collect());
     }
@@ -197,6 +188,18 @@ pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     }
 
     Ok(out)
+}
+
+#[cfg(feature = "private")]
+#[doc(hidden)]
+/// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
+pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
+    if n == 0 {
+        return Ok(vec![df.clone()]);
+    }
+    // make sure that chunks are aligned.
+    df.rechunk();
+    split_df_as_ref(df, n)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {

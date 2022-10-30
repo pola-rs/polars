@@ -127,15 +127,15 @@ impl PipeLine {
                         }
                     }
                     OperatorResult::HaveMoreOutPut(output_chunk) => {
+                        // push the output in the next operator
                         if let Some(op) = op_iter.next() {
                             in_process.push((op, output_chunk))
                         }
-                        // this operator first at the top of the stack
+                        // but put this operator first at the top of the stack
                         in_process.push((op, chunk))
                     }
-                    OperatorResult::NeedMoreInput => {
-                        // current chunk will be used again
-                        in_process.push((op, chunk))
+                    OperatorResult::NeedsNewData => {
+                        // done, take another chunk from the stack
                     }
                 }
             }
