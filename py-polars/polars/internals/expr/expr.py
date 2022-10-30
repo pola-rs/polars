@@ -5063,6 +5063,25 @@ class Expr:
         min_val
             Minimum value.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
+        >>> df.with_column(pl.col("foo").clip_min(0).alias("foo_clipped"))
+        shape: (4, 2)
+        ┌──────┬─────────────┐
+        │ foo  ┆ foo_clipped │
+        │ ---  ┆ ---         │
+        │ i64  ┆ i64         │
+        ╞══════╪═════════════╡
+        │ -50  ┆ 0           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ null        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 50   ┆ 50          │
+        └──────┴─────────────┘
+
         """
         return wrap_expr(self._pyexpr.clip_min(min_val))
 
@@ -5079,6 +5098,25 @@ class Expr:
         ----------
         max_val
             Maximum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
+        >>> df.with_column(pl.col("foo").clip_max(0).alias("foo_clipped"))
+        shape: (4, 2)
+        ┌──────┬─────────────┐
+        │ foo  ┆ foo_clipped │
+        │ ---  ┆ ---         │
+        │ i64  ┆ i64         │
+        ╞══════╪═════════════╡
+        │ -50  ┆ -50         │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 0           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ null        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 50   ┆ 0           │
+        └──────┴─────────────┘
 
         """
         return wrap_expr(self._pyexpr.clip_max(max_val))
@@ -5807,17 +5845,24 @@ class Expr:
 
         Examples
         --------
-        >>> s = pl.Series([1, 2, 3])
-        >>> s.extend_constant(99, n=2)
-        shape: (5,)
-        Series: '' [i64]
-        [
-                1
-                2
-                3
-                99
-                99
-        ]
+        >>> df = pl.DataFrame({"values": [1, 2, 3]})
+        >>> df.select(pl.col("values").extend_constant(99, n=2))
+        shape: (5, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 3      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 99     │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 99     │
+        └────────┘
 
         """
         return wrap_expr(self._pyexpr.extend_constant(value, n))
