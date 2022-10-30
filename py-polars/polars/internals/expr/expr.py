@@ -1918,14 +1918,14 @@ class Expr:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 2, 3, 5],
+        ...         "values": [1, 2, 3, 5],
         ...     }
         ... )
         >>> df.select(
         ...     [
-        ...         pl.col("value").search_sorted(0).alias("zero"),
-        ...         pl.col("value").search_sorted(3).alias("three"),
-        ...         pl.col("value").search_sorted(6).alias("six"),
+        ...         pl.col("values").search_sorted(0).alias("zero"),
+        ...         pl.col("values").search_sorted(3).alias("three"),
+        ...         pl.col("values").search_sorted(6).alias("six"),
         ...     ]
         ... )
         shape: (1, 3)
@@ -2415,9 +2415,9 @@ class Expr:
         ┌─────┐
         │ a   │
         │ --- │
-        │ i64 │
+        │ f64 │
         ╞═════╡
-        │ 1   │
+        │ 1.0 │
         └─────┘
 
         """
@@ -2432,13 +2432,13 @@ class Expr:
         >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
         >>> df.select(pl.col("a").min())
         shape: (1, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ -1  │
-        └─────┘
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ -1.0 │
+        └──────┘
 
         """
         return wrap_expr(self._pyexpr.min())
