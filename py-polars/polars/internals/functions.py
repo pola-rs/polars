@@ -520,7 +520,7 @@ def align_frames(
     Frames that do not contain the given key values have rows injected (with nulls
     filling the non-key columns), and each resulting frame is sorted by the key.
 
-    The original column order of input frames is not changed unless `select` is
+    The original column order of input frames is not changed unless ``select`` is
     specified (in which case the final column order is determined from that).
 
     Note that this does not result in a joined frame - you receive the same number
@@ -562,8 +562,8 @@ def align_frames(
     ...         "x": [2.0, 5.0],
     ...         "y": [2.5, 2.0],
     ...     }
-    ... )
-
+    ... )  # doctest: +IGNORE_RESULT
+    #
     # df1                              df2                              df3
     # shape: (3, 3)                    shape: (3, 3)                    shape: (2, 3)
     # ┌────────────┬─────┬──────┐      ┌────────────┬─────┬──────┐      ┌────────────┬─────┬─────┐
@@ -577,10 +577,12 @@ def align_frames(
     # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤  /\  ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      └────────────┴─────┴─────┘
     # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │_/  `>│ 2022-09-01 ┆ 3.5 ┆ 5.0  │-//-
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘
-
+    ...
     >>> # align frames by the "dt" column:
-    >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt")
-
+    >>> af1, af2, af3 = pl.align_frames(
+    ...     df1, df2, df3, on="dt"
+    ... )  # doctest: +IGNORE_RESULT
+    #
     # df1                              df2                              df3
     # shape: (3, 3)                    shape: (3, 3)                    shape: (3, 3)
     # ┌────────────┬─────┬──────┐      ┌────────────┬─────┬──────┐      ┌────────────┬──────┬──────┐
@@ -594,10 +596,12 @@ def align_frames(
     # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │----->│ 2022-09-03 ┆ 1.0 ┆ 12.0 │----->│ 2022-09-03 ┆ 2.0  ┆ 2.5  │
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
-
+    ...
     >>> # align frames by "dt", but keep only cols "x" and "y":
-    >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt", select=["x", "y"])
-
+    >>> af1, af2, af3 = pl.align_frames(
+    ...     df1, df2, df3, on="dt", select=["x", "y"]
+    ... )  # doctest: +IGNORE_RESULT
+    #
     # af1                 af2                 af3
     # shape: (3, 3)       shape: (3, 3)       shape: (3, 3)
     # ┌─────┬──────┐      ┌─────┬──────┐      ┌──────┬──────┐
@@ -611,7 +615,7 @@ def align_frames(
     # ├╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     # │ 1.0 ┆ 1.5  │      │ 1.0 ┆ 12.0 │      │ 2.0  ┆ 2.5  │
     # └─────┴──────┘      └─────┴──────┘      └──────┴──────┘
-
+    ...
     >>> # now data is aligned, can easily calculate the row-wise dot product:
     >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
     shape: (3, 1)

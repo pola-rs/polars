@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
+from polars.utils import accessor
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
@@ -30,9 +31,11 @@ class StructNameSpace:
         """Convert this Struct Series to a DataFrame."""
         return pli.wrap_df(self._s.struct_to_frame())
 
-    @property
+    @accessor
     def fields(self) -> list[str]:
         """Get the names of the fields."""
+        if getattr(self, "_s", None) is None:
+            return []
         return self._s.struct_fields()
 
     def field(self, name: str) -> pli.Series:

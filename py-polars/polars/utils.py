@@ -7,7 +7,7 @@ import sys
 import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Iterable, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
@@ -321,6 +321,22 @@ def _rename_kwargs(
                 stacklevel=3,
             )
             kwargs[new] = kwargs.pop(alias)
+
+
+class accessor:
+    """Property decorator for namespaces that can act on both instances AND classes."""
+
+    def __init__(self, method: Callable[..., Any] | None = None) -> None:
+        self.fget = method
+
+    def __get__(self, instance: Any, cls: type | None = None) -> Any:
+        return self.fget(  # type: ignore[misc]
+            instance if isinstance(instance, cls) else cls  # type: ignore[arg-type]
+        )
+
+    def getter(self, method: Callable[..., Any] | None) -> Any:
+        self.fget = method
+        return self
 
 
 def scale_bytes(sz: int, to: SizeUnit) -> int | float:

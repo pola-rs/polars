@@ -64,7 +64,7 @@ from polars.internals import BatchedCsvReader
 # TODO remove need for wrap_df
 from polars.internals.dataframe import wrap_df  # noqa: F401
 from polars.internals.dataframe import DataFrame
-from polars.internals.expr import Expr
+from polars.internals.expr.expr import Expr
 from polars.internals.functions import (
     align_frames,
     concat,
@@ -128,7 +128,7 @@ from polars.internals.lazyframe import LazyFrame
 
 # TODO: remove need for wrap_s
 from polars.internals.series import wrap_s  # noqa: F401
-from polars.internals.series import Series
+from polars.internals.series.series import Series
 from polars.internals.sql import SQLContext
 from polars.internals.whenthen import when
 from polars.io import (
