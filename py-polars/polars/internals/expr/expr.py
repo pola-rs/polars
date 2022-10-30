@@ -1782,6 +1782,36 @@ class Expr:
         reverse
             Return the smallest elements.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("value").top_k().alias("top_k"),
+        ...         pl.col("value").top_k(reverse=True).alias("bottom_k"),
+        ...     ]
+        ... )
+        shape: (5, 2)
+        ┌───────┬──────────┐
+        │ top_k ┆ bottom_k │
+        │ ---   ┆ ---      │
+        │ i64   ┆ i64      │
+        ╞═══════╪══════════╡
+        │ 99    ┆ 1        │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 98    ┆ 2        │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4     ┆ 3        │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ 4        │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ 98       │
+        └───────┴──────────┘
+
         """
         return wrap_expr(self._pyexpr.top_k(k, reverse))
 
@@ -1883,6 +1913,23 @@ class Expr:
         ----------
         element
             Expression or scalar value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 5],
+        ...     }
+        ... )
+        >>> df.select([pl.col("value").search_sorted(0).alias("zero"),pl.col("value").search_sorted(3).alias("three"),pl.col("value").search_sorted(6).alias("six")])
+        shape: (1, 3)
+        ┌──────┬───────┬─────┐
+        │ zero ┆ three ┆ six │
+        │ ---  ┆ ---   ┆ --- │
+        │ u32  ┆ u32   ┆ u32 │
+        ╞══════╪═══════╪═════╡
+        │ 0    ┆ 2     ┆ 4   │
+        └──────┴───────┴─────┘
 
         """
         element = expr_to_lit_or_expr(element, str_to_lit=False)
@@ -2131,6 +2178,19 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 99  ┆ 6   │
         └─────┴─────┘
+        >>> df.fill_null(strategy="forward")
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 6   │
+        └─────┴─────┘
 
         """
         if value is not None and strategy is not None:
@@ -2343,7 +2403,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
         >>> df.select(pl.col("a").max())
         shape: (1, 1)
         ┌─────┐
@@ -2363,7 +2423,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
         >>> df.select(pl.col("a").min())
         shape: (1, 1)
         ┌─────┐
@@ -2384,6 +2444,19 @@ class Expr:
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [0, float("nan")]})
+        >>> df.select(pl.col("a").nan_max())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ NaN │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.nan_max())
 
@@ -2393,6 +2466,19 @@ class Expr:
 
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [0, float("nan")]})
+        >>> df.select(pl.col("a").nan_min())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ NaN │
+        └─────┘
 
         """
         return wrap_expr(self._pyexpr.nan_min())
