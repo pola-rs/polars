@@ -5,13 +5,14 @@ use polars_core::error::{PolarsError, PolarsResult};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
+#[derive(Clone)]
 pub(crate) struct FilterOperator {
     pub(crate) predicate: Arc<dyn PhysicalPipedExpr>,
 }
 
 impl Operator for FilterOperator {
     fn execute(
-        &self,
+        &mut self,
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
@@ -28,5 +29,8 @@ impl Operator for FilterOperator {
         let df = chunk.data._filter_seq(mask)?;
 
         Ok(OperatorResult::Finished(chunk.with_data(df)))
+    }
+    fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
+        Box::new(self.clone())
     }
 }

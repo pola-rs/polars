@@ -49,9 +49,9 @@ impl Sink for CrossJoin {
 
     fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
         // todo! share sink
-        Ok(FinalizedSink::Operator(Arc::new(CrossJoinPhase2 {
-            df: chunks_to_df_unchecked(std::mem::take(&mut self.chunks)),
-            suffix: std::mem::take(&mut self.suffix),
+        Ok(FinalizedSink::Operator(Box::new(CrossJoinPhase2 {
+            df: Arc::new(chunks_to_df_unchecked(std::mem::take(&mut self.chunks))),
+            suffix: Arc::from(self.suffix.as_ref()),
         })))
     }
 
@@ -60,14 +60,15 @@ impl Sink for CrossJoin {
     }
 }
 
+#[derive(Clone)]
 pub struct CrossJoinPhase2 {
-    df: DataFrame,
-    suffix: Cow<'static, str>,
+    df: Arc<DataFrame>,
+    suffix: Arc<str>,
 }
 
 impl Operator for CrossJoinPhase2 {
     fn execute(
-        &self,
+        &mut self,
         _context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
@@ -76,5 +77,8 @@ impl Operator for CrossJoinPhase2 {
             .df
             .cross_join(&chunk.data, Some(self.suffix.to_string()), None)?;
         Ok(OperatorResult::Finished(chunk.with_data(df)))
+    }
+    fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
+        Box::new(self.clone())
     }
 }

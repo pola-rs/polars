@@ -10,7 +10,7 @@ pub enum SinkResult {
 
 pub enum FinalizedSink {
     Finished(DataFrame),
-    Operator(Arc<dyn Operator>),
+    Operator(Box<dyn Operator>),
 }
 
 pub trait Sink: Send + Sync {

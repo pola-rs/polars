@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::io::BufRead;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
@@ -14,18 +15,19 @@ use crate::operators::{
 
 pub struct PipeLine {
     sources: Vec<Box<dyn Source>>,
-    operators: Vec<Arc<dyn Operator>>,
+    operators: Vec<Vec<Box<dyn Operator>>>,
     operator_nodes: Vec<Node>,
     sink: Vec<Box<dyn Sink>>,
     sink_node: Option<Node>,
     rh_sides: Vec<PipeLine>,
     operator_offset: usize,
+    n_threads: usize
 }
 
 impl PipeLine {
     pub fn new(
         sources: Vec<Box<dyn Source>>,
-        operators: Vec<Arc<dyn Operator>>,
+        operators: Vec<Box<dyn Operator>>,
         operator_nodes: Vec<Node>,
         sink: Box<dyn Sink>,
         sink_node: Option<Node>,
@@ -33,7 +35,14 @@ impl PipeLine {
     ) -> PipeLine {
         debug_assert_eq!(operators.len(), operator_nodes.len() + operator_offset);
         let n_threads = POOL.current_num_threads();
+
+        // We split so that every thread get's an operator
         let sink = (0..n_threads).map(|i| sink.split(i)).collect();
+
+        // every index maps to a chain of operators than can be pushed as a pipeline for one thread
+        let operators = (0..n_threads).map(|i|{
+            operators.iter().map(|op| op.split(i)).collect()
+        }).collect();
 
         PipeLine {
             sources,
@@ -43,6 +52,7 @@ impl PipeLine {
             sink_node,
             rh_sides: vec![],
             operator_offset,
+            n_threads
         }
     }
 
@@ -53,25 +63,30 @@ impl PipeLine {
         self
     }
 
-    fn replace_operator(&mut self, op: &Arc<dyn Operator>, node: Node) {
+    fn replace_operator(&mut self, op: &Box<dyn Operator>, node: Node) {
         if let Some(pos) = self.operator_nodes.iter().position(|n| *n == node) {
-            self.operators[pos + self.operator_offset] = op.clone();
+            let pos = pos + self.operator_offset;
+            for (i, operator_pipe) in &mut self.operators.iter_mut().enumerate() {
+                operator_pipe[pos] = op.split(i)
+            }
         }
     }
 
     fn par_process_chunks(
-        &self,
+        &mut self,
         chunks: Vec<DataChunk>,
         sink: &mut [Box<dyn Sink>],
         ec: &PExecutionContext,
     ) -> PolarsResult<Vec<SinkResult>> {
         debug_assert!(chunks.len() <= sink.len());
-        POOL.install(|| {
+        let mut operators = std::mem::take(&mut self.operators);
+        let out = POOL.install(|| {
             chunks
                 .into_par_iter()
                 .zip(sink.par_iter_mut())
-                .map(|(chunk, sink)| {
-                    let chunk = match self.push_operators(chunk, ec)? {
+                .zip(operators.par_iter_mut())
+                .map(|((chunk, sink), operator_pipe)| {
+                    let chunk = match self.push_operators(chunk, ec, operator_pipe)? {
                         OperatorResult::Finished(chunk) => chunk,
                         _ => todo!(),
                     };
@@ -85,16 +100,19 @@ impl PipeLine {
                     Err(_) => true,
                 })
                 .collect()
-        })
+        });
+        self.operators = operators;
+        out
     }
 
     fn push_operators(
         &self,
         chunk: DataChunk,
         ec: &PExecutionContext,
+        operators: &mut Vec<Box<dyn Operator>>
     ) -> PolarsResult<OperatorResult> {
         let mut in_process = vec![];
-        let mut op_iter = self.operators.iter();
+        let mut op_iter = operators.iter_mut();
 
         if let Some(op) = op_iter.next() {
             in_process.push((op, chunk));

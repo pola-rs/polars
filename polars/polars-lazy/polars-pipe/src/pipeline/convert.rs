@@ -27,7 +27,7 @@ where
 
 fn get_source<F>(
     source: ALogicalPlan,
-    operator_objects: &mut Vec<Arc<dyn Operator>>,
+    operator_objects: &mut Vec<Box<dyn Operator>>,
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
     push_predicate: bool,
@@ -48,7 +48,7 @@ where
                 if let Some(predicate) = selection {
                     let predicate = to_physical(predicate, expr_arena)?;
                     let op = operators::FilterOperator { predicate };
-                    let op = Arc::new(op) as Arc<dyn Operator>;
+                    let op = Box::new(op) as Box<dyn Operator>;
                     operator_objects.push(op)
                 }
                 // projection is free
@@ -70,7 +70,7 @@ where
             if let (true, Some(predicate)) = (push_predicate, predicate) {
                 let predicate = to_physical(predicate, expr_arena)?;
                 let op = operators::FilterOperator { predicate };
-                let op = Arc::new(op) as Arc<dyn Operator>;
+                let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
             let src = sources::CsvSource::new(path, schema, options)?;
@@ -88,7 +88,7 @@ where
             if let (true, Some(predicate)) = (push_predicate, predicate) {
                 let predicate = to_physical(predicate, expr_arena)?;
                 let op = operators::FilterOperator { predicate };
-                let op = Arc::new(op) as Arc<dyn Operator>;
+                let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
             let src = sources::ParquetSource::new(path, options, &schema)?;
@@ -171,8 +171,8 @@ where
     }
 }
 
-pub fn get_dummy_operator() -> Arc<dyn Operator> {
-    Arc::new(operators::Dummy {})
+pub fn get_dummy_operator() -> Box<dyn Operator> {
+    Box::new(operators::Dummy {})
 }
 
 pub fn get_operator<F>(
@@ -180,7 +180,7 @@ pub fn get_operator<F>(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
-) -> PolarsResult<Arc<dyn Operator>>
+) -> PolarsResult<Box<dyn Operator>>
 where
     F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
@@ -190,18 +190,18 @@ where
             let op = operators::ProjectionOperator {
                 exprs: exprs_to_physical(expr, expr_arena, &to_physical)?,
             };
-            Arc::new(op) as Arc<dyn Operator>
+            Box::new(op) as Box<dyn Operator>
         }
         HStack { exprs, .. } => {
             let op = operators::HstackOperator {
                 exprs: exprs_to_physical(exprs, expr_arena, &to_physical)?,
             };
-            Arc::new(op) as Arc<dyn Operator>
+            Box::new(op) as Box<dyn Operator>
         }
         Selection { predicate, .. } => {
             let predicate = to_physical(*predicate, expr_arena)?;
             let op = operators::FilterOperator { predicate };
-            Arc::new(op) as Arc<dyn Operator>
+            Box::new(op) as Box<dyn Operator>
         }
         MapFunction {
             function: FunctionNode::FastProjection { columns },
@@ -210,7 +210,7 @@ where
             let op = operators::FastProjectionOperator {
                 columns: columns.clone(),
             };
-            Arc::new(op) as Arc<dyn Operator>
+            Box::new(op) as Box<dyn Operator>
         }
 
         lp => {
@@ -222,7 +222,7 @@ where
 
 pub fn create_pipeline<F>(
     sources: &[Node],
-    operators: Vec<Arc<dyn Operator>>,
+    operators: Vec<Box<dyn Operator>>,
     operator_nodes: Vec<Node>,
     sink_node: Option<Node>,
     lp_arena: &mut Arena<ALogicalPlan>,
