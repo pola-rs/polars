@@ -1921,7 +1921,13 @@ class Expr:
         ...         "a": [1, 2, 3, 5],
         ...     }
         ... )
-        >>> df.select([pl.col("value").search_sorted(0).alias("zero"),pl.col("value").search_sorted(3).alias("three"),pl.col("value").search_sorted(6).alias("six")])
+        >>> df.select(
+        ...     [
+        ...         pl.col("value").search_sorted(0).alias("zero"),
+        ...         pl.col("value").search_sorted(3).alias("three"),
+        ...         pl.col("value").search_sorted(6).alias("six"),
+        ...     ]
+        ... )
         shape: (1, 3)
         ┌──────┬───────┬─────┐
         │ zero ┆ three ┆ six │
