@@ -126,6 +126,22 @@ def test_datetime_parsing() -> None:
     assert df.dtypes == [pl.Datetime, pl.Float64, pl.Float64]
 
 
+def test_datetime_parsing_default_formats() -> None:
+    csv = textwrap.dedent(
+        """\
+        ts_dmy,ts_dmy_f,ts_dmy_p
+        01/01/21 00:00:00,31-01-2021T00:00:00.123,31-01-2021 11:00 AM
+        01/01/21 00:15:00,31-01-2021T00:15:00.123,31-01-2021 01:00 PM
+        01/01/21 00:30:00,31-01-2021T00:30:00.123,31-01-2021 01:15 PM
+        01/01/21 00:45:00,31-01-2021T00:45:00.123,31-01-2021 01:30 PM
+        """
+    )
+
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, parse_dates=True)
+    assert df.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
+
+
 def test_partial_dtype_overwrite() -> None:
     csv = textwrap.dedent(
         """\

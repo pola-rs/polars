@@ -24,7 +24,7 @@ pub(super) static DATETIME_D_M_Y: &[&str] = &[
     // --
     // supported by polars' parser
     // ---
-    // 31/12/21 12:54:98
+    // 31/12/21 12:54:48
     "%d/%m/%y %H:%M:%S",
     // 31-12-2021 24:58:01
     "%d-%m-%Y %H:%M:%S",
@@ -44,12 +44,18 @@ pub(super) static DATETIME_D_M_Y: &[&str] = &[
     // no times
     "%d-%m-%Y",
     "%d-%m-%y",
+    // 31/12/2021 11:54:48 PM
+    "%d/%m/%Y %I:%M:%S %p",
+    "%d-%m-%Y %I:%M:%S %p",
+    // 31/12/2021 11:54 PM
+    "%d/%m/%Y %I:%M %p",
+    "%d-%m-%Y %I:%M %p",
 ];
 
 /// NOTE: don't use single letter dates like %F
 /// polars parsers does not support them, so it will be slower
 pub(super) static DATETIME_Y_M_D: &[&str] = &[
-    // 21/12/31 12:54:98
+    // 21/12/31 12:54:48
     "%y/%m/%d %H:%M:%S",
     // 2021-12-31 24:58:01
     "%Y-%m-%d %H:%M:%S",
@@ -82,6 +88,12 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     // no times
     "%Y-%m-%d",
     "%Y/%m/%d",
+    // 2021/12/31 11:54:48 PM
+    "%Y/%m/%d %I:%M:%S %p",
+    "%Y-%m-%d %I:%M:%S %p",
+    // 2021/12/31 11:54 PM
+    "%Y/%m/%d %I:%M %p",
+    "%Y-%m-%d %I:%M %p",
     // --
     // not supported by polars' parser
     // ---
