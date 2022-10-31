@@ -1,9 +1,8 @@
 use std::any::Any;
-use std::io::BufRead;
-use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_core::utils::concat_df_unchecked;
 use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
@@ -21,7 +20,6 @@ pub struct PipeLine {
     sink_node: Option<Node>,
     rh_sides: Vec<PipeLine>,
     operator_offset: usize,
-    n_threads: usize
 }
 
 impl PipeLine {
@@ -40,9 +38,9 @@ impl PipeLine {
         let sink = (0..n_threads).map(|i| sink.split(i)).collect();
 
         // every index maps to a chain of operators than can be pushed as a pipeline for one thread
-        let operators = (0..n_threads).map(|i|{
-            operators.iter().map(|op| op.split(i)).collect()
-        }).collect();
+        let operators = (0..n_threads)
+            .map(|i| operators.iter().map(|op| op.split(i)).collect())
+            .collect();
 
         PipeLine {
             sources,
@@ -52,7 +50,6 @@ impl PipeLine {
             sink_node,
             rh_sides: vec![],
             operator_offset,
-            n_threads
         }
     }
 
@@ -63,7 +60,7 @@ impl PipeLine {
         self
     }
 
-    fn replace_operator(&mut self, op: &Box<dyn Operator>, node: Node) {
+    fn replace_operator(&mut self, op: &dyn Operator, node: Node) {
         if let Some(pos) = self.operator_nodes.iter().position(|n| *n == node) {
             let pos = pos + self.operator_offset;
             for (i, operator_pipe) in &mut self.operators.iter_mut().enumerate() {
@@ -86,10 +83,18 @@ impl PipeLine {
                 .zip(sink.par_iter_mut())
                 .zip(operators.par_iter_mut())
                 .map(|((chunk, sink), operator_pipe)| {
+                    // operators don't like empty
+                    if chunk.data.height() == 0 {
+                        return Ok(SinkResult::Finished);
+                    }
                     let chunk = match self.push_operators(chunk, ec, operator_pipe)? {
                         OperatorResult::Finished(chunk) => chunk,
                         _ => todo!(),
                     };
+                    // sinks don't need to store empty
+                    if chunk.data.height() == 0 {
+                        return Ok(SinkResult::Finished);
+                    }
                     sink.sink(ec, chunk)
                 })
                 // only collect failed and finished messages as there should be acted upon those
@@ -109,40 +114,52 @@ impl PipeLine {
         &self,
         chunk: DataChunk,
         ec: &PExecutionContext,
-        operators: &mut Vec<Box<dyn Operator>>
+        operators: &mut [Box<dyn Operator>],
     ) -> PolarsResult<OperatorResult> {
         let mut in_process = vec![];
-        let mut op_iter = operators.iter_mut();
+        let mut out = vec![];
 
-        if let Some(op) = op_iter.next() {
-            in_process.push((op, chunk));
+        let operator_offset = 0usize;
+        in_process.push((operator_offset, chunk));
 
-            while let Some((op, chunk)) = in_process.pop() {
-                match op.execute(ec, &chunk)? {
-                    OperatorResult::Finished(chunk) => {
-                        if let Some(op) = op_iter.next() {
-                            in_process.push((op, chunk))
-                        } else {
-                            return Ok(OperatorResult::Finished(chunk));
-                        }
+        while let Some((op_i, chunk)) = in_process.pop() {
+            // if chunk.data.height() == 0 {
+            //     continue;
+            // }
+            match operators.get_mut(op_i) {
+                None => {
+                    if chunk.data.height() > 0 || out.is_empty() {
+                        // final chunk of the pipeline
+                        out.push(chunk)
                     }
-                    OperatorResult::HaveMoreOutPut(output_chunk) => {
-                        // push the output in the next operator
-                        if let Some(op) = op_iter.next() {
-                            in_process.push((op, output_chunk))
+                }
+                Some(op) => {
+                    match op.execute(ec, &chunk)? {
+                        OperatorResult::Finished(chunk) => in_process.push((op_i + 1, chunk)),
+                        OperatorResult::HaveMoreOutPut(output_chunk) => {
+                            // first on the stack the next operator call
+                            in_process.push((op_i, chunk));
+
+                            // but first push the output in the next operator
+                            // is a join can produce many rows, we want the filter to
+                            // be executed in between.
+                            in_process.push((op_i + 1, output_chunk));
                         }
-                        // but put this operator first at the top of the stack
-                        in_process.push((op, chunk))
-                    }
-                    OperatorResult::NeedsNewData => {
-                        // done, take another chunk from the stack
+                        OperatorResult::NeedsNewData => {
+                            // done, take another chunk from the stack
+                        }
                     }
                 }
             }
-            unreachable!()
-        } else {
-            Ok(OperatorResult::Finished(chunk))
         }
+        let out = match out.len() {
+            1 => OperatorResult::Finished(out.pop().unwrap()),
+            _ => {
+                let data = concat_df_unchecked(out.iter().map(|chunk| &chunk.data));
+                OperatorResult::Finished(out[out.len() - 1].with_data(data))
+            }
+        };
+        Ok(out)
     }
 
     pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<FinalizedSink> {
@@ -193,7 +210,7 @@ impl PipeLine {
                     // we unwrap, because the latest pipeline should not return an Operator
                     let pipeline = pipelines.next().unwrap();
                     if let Some(sink_node) = sink_node {
-                        pipeline.replace_operator(op, sink_node);
+                        pipeline.replace_operator(op.as_ref(), sink_node);
                         sink_out = pipeline.run_pipeline(&ec)?;
                     }
                     sink_node = pipeline.sink_node;

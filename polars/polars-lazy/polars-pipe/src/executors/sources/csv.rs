@@ -8,6 +8,7 @@ use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::CsvParserOptions;
 
 use super::*;
+use crate::CHUNK_SIZE;
 
 pub(crate) struct CsvSource {
     #[allow(dead_code)]
@@ -58,7 +59,7 @@ impl CsvSource {
             .with_end_of_line_char(options.eol_char)
             .with_encoding(options.encoding)
             .with_rechunk(options.rechunk)
-            .with_chunk_size(50_000)
+            .with_chunk_size(CHUNK_SIZE)
             .with_row_count(options.row_count)
             .with_parse_dates(options.parse_dates);
 

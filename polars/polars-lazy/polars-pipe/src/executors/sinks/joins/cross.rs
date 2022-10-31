@@ -1,11 +1,12 @@
 use std::any::Any;
 use std::borrow::Cow;
+use std::iter::StepBy;
+use std::ops::Range;
 use std::sync::{Arc, Mutex};
 use std::vec;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::utils::{split_df, split_df_as_ref};
 
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext,
@@ -54,7 +55,9 @@ impl Sink for CrossJoin {
         Ok(FinalizedSink::Operator(Box::new(CrossJoinPhase2 {
             df: Arc::new(chunks_to_df_unchecked(std::mem::take(&mut self.chunks))),
             suffix: Arc::from(self.suffix.as_ref()),
-            in_process: None
+            in_process_left: None,
+            in_process_right: None,
+            in_process_left_df: Default::default(),
         })))
     }
 
@@ -67,7 +70,9 @@ impl Sink for CrossJoin {
 pub struct CrossJoinPhase2 {
     df: Arc<DataFrame>,
     suffix: Arc<str>,
-    in_process: Option<vec::IntoIter<DataFrame>>
+    in_process_left: Option<StepBy<Range<usize>>>,
+    in_process_right: Option<StepBy<Range<usize>>>,
+    in_process_left_df: DataFrame,
 }
 
 impl Operator for CrossJoinPhase2 {
@@ -76,52 +81,60 @@ impl Operator for CrossJoinPhase2 {
         _context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        if self.in_process.is_none() {
-            let data_size = chunk.data.height();
-            let left_len = self.df.height();
-            let output_size = left_len * data_size;
-            if output_size > crate::CHUNK_SIZE && left_len > 10 {
-                let mut n_chunks = output_size / crate::CHUNK_SIZE;
-                if n_chunks > self.df.height() {
-                    n_chunks = 2
-                }
-                let chunks = split_df_as_ref(&self.df, n_chunks).unwrap();
-                debug_assert_eq!(chunks.iter().map(|df|df.height()).sum::<usize>(), left_len);
-                // set in process
-                // it is used below
-                self.in_process = Some(chunks.into_iter())
-            }
-                // we can do a single join
-            else {
-                dbg!("fast path");
+        // expected output size = size**2
+        // so this is a small number
+        let size = 250;
 
-                // todo! amortize left and right name creation
-                let df = self
-                    .df
-                    .cross_join(&chunk.data, Some(self.suffix.to_string()), None)?;
-                return Ok(OperatorResult::Finished(chunk.with_data(df)))
-            }
-
+        if self.in_process_left.is_none() {
+            let mut iter_left = (0..self.df.height()).step_by(size);
+            let offset = iter_left.next().unwrap();
+            self.in_process_left_df = self.df.slice(offset as i64, size);
+            self.in_process_left = Some(iter_left);
+        }
+        if self.in_process_right.is_none() {
+            self.in_process_right = Some((0..chunk.data.height()).step_by(size));
         }
         // output size is large we process in chunks
-        let iter = self.in_process.as_mut().unwrap();
-        match iter.next() {
-            Some(df) => {
-                // todo! amortize left and right name creation
-                let df = df
-                    .cross_join(&chunk.data, Some(self.suffix.to_string()), None)?;
+        let iter_left = self.in_process_left.as_mut().unwrap();
+        let iter_right = self.in_process_right.as_mut().unwrap();
 
-                dbg!(&df.shape());
+        match iter_right.next() {
+            None => {
+                self.in_process_right = None;
+
+                // if right is depleted take the next left chunk
+                match iter_left.next() {
+                    None => {
+                        self.in_process_left = None;
+                        Ok(OperatorResult::NeedsNewData)
+                    }
+                    Some(offset) => {
+                        self.in_process_left_df = self.df.slice(offset as i64, size);
+                        self.in_process_right = Some((0..chunk.data.height()).step_by(size));
+                        let iter_right = self.in_process_right.as_mut().unwrap();
+                        let offset = iter_right.next().unwrap();
+                        let right_df = chunk.data.slice(offset as i64, size);
+                        let df = self.in_process_left_df.cross_join(
+                            &right_df,
+                            Some(self.suffix.to_string()),
+                            None,
+                        )?;
+                        Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
+                    }
+                }
+            }
+            // deplete the right chunks over the current left chunk
+            Some(offset) => {
+                let right_df = chunk.data.slice(offset as i64, size);
+                // todo! amortize left and right name creation
+                let df = self.in_process_left_df.cross_join(
+                    &right_df,
+                    Some(self.suffix.to_string()),
+                    None,
+                )?;
                 Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
             }
-            None => {
-                self.in_process = None;
-                Ok(OperatorResult::NeedsNewData)
-            }
-
         }
-
-
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())

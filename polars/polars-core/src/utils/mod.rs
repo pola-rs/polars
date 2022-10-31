@@ -141,8 +141,8 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
 }
 
 fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
-    df.iter_chunks().map(|chunk| {
-        DataFrame::new_no_checks(
+    df.iter_chunks().flat_map(|chunk| {
+        let df = DataFrame::new_no_checks(
             df.iter()
                 .zip(chunk.into_arrays())
                 .map(|(s, arr)| {
@@ -153,7 +153,12 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
                     }
                 })
                 .collect(),
-        )
+        );
+        if df.height() == 0 {
+            None
+        } else {
+            Some(df)
+        }
     })
 }
 pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
@@ -162,8 +167,8 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
 
     if df.n_chunks()? == n
         && df.get_columns()[0]
-        .chunk_lengths()
-        .all(|len| len.abs_diff(chunk_size) < 100)
+            .chunk_lengths()
+            .all(|len| len.abs_diff(chunk_size) < 100)
     {
         return Ok(flatten_df(df).collect());
     }

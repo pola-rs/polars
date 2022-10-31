@@ -525,6 +525,13 @@ impl LazyFrame {
     fn prepare_collect(self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
         let file_caching = self.opt_state.file_caching;
         let streaming = self.opt_state.streaming;
+
+        #[cfg(feature = "cse")]
+        if streaming && self.opt_state.common_subplan_elimination {
+            return Err(PolarsError::ComputeError(
+                "Cannot combine streaming with common_subplan_elimination".into(),
+            ));
+        }
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let mut scratch = vec![];

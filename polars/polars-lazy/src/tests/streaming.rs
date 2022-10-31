@@ -133,6 +133,13 @@ fn test_streaming_slice() -> PolarsResult<()> {
 
 #[test]
 fn test_streaming_cross_join() -> PolarsResult<()> {
+    let df = df![
+        "a" => [1 ,2, 3]
+    ]?;
+    let q = df.lazy();
+    let out = q.clone().cross_join(q).with_streaming(true).collect()?;
+    assert_eq!(out.shape(), (9, 2));
+
     let q = get_parquet_file().with_projection_pushdown(false); // ;.slice(3, 3);
     let q1 = q
         .clone()

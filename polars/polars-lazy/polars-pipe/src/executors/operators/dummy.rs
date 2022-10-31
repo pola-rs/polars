@@ -15,6 +15,6 @@ impl Operator for Dummy {
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
-        Box::new(Self{})
+        Box::new(Self {})
     }
 }

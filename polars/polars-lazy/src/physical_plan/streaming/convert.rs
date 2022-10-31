@@ -150,7 +150,10 @@ pub(crate) fn insert_streaming_nodes(
 
                 // we want to traverse lhs first, so push it latest on the stack
                 // lhs is a new pipeline
-                let mut state_left = State::default();
+                let mut state_left = State {
+                    streamable: true,
+                    ..Default::default()
+                };
                 state_left.operators_sinks.push((true, false, root));
                 stack.push((*input_left, state_left));
             }
