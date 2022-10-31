@@ -1,3 +1,5 @@
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -13,4 +15,8 @@ impl DataChunk {
             data,
         }
     }
+}
+
+pub(crate) fn chunks_to_df_unchecked(chunks: Vec<DataChunk>) -> DataFrame {
+    accumulate_dataframes_vertical_unchecked(chunks.into_iter().map(|c| c.data))
 }

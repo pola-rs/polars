@@ -908,6 +908,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             slice_pushdown = False
             common_subplan_elimination = False
 
+        if allow_streaming:
+            common_subplan_elimination = False
+
         ldf = self._ldf.optimization_toggle(
             type_coercion,
             predicate_pushdown,

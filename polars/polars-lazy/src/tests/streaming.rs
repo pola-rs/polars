@@ -130,3 +130,39 @@ fn test_streaming_slice() -> PolarsResult<()> {
     assert_eq!(out_streaming.shape(), (3, 2));
     Ok(())
 }
+
+#[test]
+fn test_streaming_cross_join() -> PolarsResult<()> {
+    let df = df![
+        "a" => [1 ,2, 3]
+    ]?;
+    let q = df.lazy();
+    let out = q.clone().cross_join(q).with_streaming(true).collect()?;
+    assert_eq!(out.shape(), (9, 2));
+
+    let q = get_parquet_file().with_projection_pushdown(false); // ;.slice(3, 3);
+    let q1 = q
+        .clone()
+        .select([col("calories")])
+        .clone()
+        .cross_join(q.clone())
+        .filter(col("calories").gt(col("calories_right")));
+    let q2 = q1
+        .select([all().suffix("_second")])
+        .cross_join(q)
+        .filter(col("calories_right_second").lt(col("calories")))
+        .select([
+            col("calories"),
+            col("calories_right_second").alias("calories_right"),
+        ]);
+
+    let q2 = q2.clone().with_streaming(true);
+    let out_streaming = q2.collect()?;
+
+    assert_eq!(
+        out_streaming.get_column_names(),
+        &["calories", "calories_right"]
+    );
+    assert_eq!(out_streaming.shape(), (5753, 2));
+    Ok(())
+}

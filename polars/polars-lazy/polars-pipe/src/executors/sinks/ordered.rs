@@ -1,10 +1,10 @@
 use std::any::Any;
 
 use polars_core::error::PolarsResult;
-use polars_core::frame::DataFrame;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
-use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult};
+use crate::operators::{
+    chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
+};
 
 // Ensure the data is return in the order it was streamed
 #[derive(Clone)]
@@ -28,7 +28,7 @@ impl Sink for OrderedSink {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, other: Box<dyn Sink>) {
+    fn combine(&mut self, mut other: Box<dyn Sink>) {
         let other = other.as_any().downcast_ref::<OrderedSink>().unwrap();
         self.chunks.extend_from_slice(&other.chunks);
         self.sort();
@@ -37,15 +37,12 @@ impl Sink for OrderedSink {
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         Box::new(self.clone())
     }
-    fn finalize(&mut self) -> PolarsResult<DataFrame> {
+    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
         self.sort();
-        Ok(accumulate_dataframes_vertical_unchecked(
-            std::mem::take(&mut self.chunks)
-                .into_iter()
-                .map(|chunk| chunk.data),
-        ))
+        let chunks = std::mem::take(&mut self.chunks);
+        Ok(FinalizedSink::Finished(chunks_to_df_unchecked(chunks)))
     }
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&mut self) -> &mut dyn Any {
         self
     }
 }

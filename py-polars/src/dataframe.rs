@@ -13,7 +13,7 @@ use polars::io::RowCount;
 use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::ArrowChunk;
+use polars_core::frame::*;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;

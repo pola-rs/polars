@@ -22,3 +22,4 @@ rayon.workspace = true
 csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]
 parquet = ["polars-plan/parquet", "polars-io/parquet"]
 nightly = ["polars-core/nightly", "polars-utils/nightly", "hashbrown/nightly"]
+cross_join = ["polars-core/cross_join"]

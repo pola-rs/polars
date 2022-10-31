@@ -8,5 +8,5 @@ pub(crate) use chunks::*;
 pub(crate) use context::*;
 pub(crate) use operator::*;
 pub(crate) use polars_core::prelude::*;
-pub(crate) use sink::*;
+pub use sink::*;
 pub(crate) use source::*;
