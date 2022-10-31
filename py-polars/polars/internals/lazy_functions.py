@@ -2106,9 +2106,14 @@ def from_epoch(
     eager: bool = False,
 ) -> pli.Expr | pli.Series:
     """
-    Utility function that parses an epoch timestamp (or Unix time) to Polars Datetime.
+    Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
 
-    If possible, the unit will persist in `pl.Datetime`, defaults to "ns".
+    Depending on the `unit` provided, this function will return a different dtype:
+    - unit="d" returns pl.Date
+    - unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
+    - unit="ms" returns pl.Datetime["ms"]
+    - unit="us" returns pl.Datetime["us"]
+    - unit="ns" returns pl.Datetime["ns"]
 
     Parameters
     ----------
