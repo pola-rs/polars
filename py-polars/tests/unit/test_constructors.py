@@ -324,6 +324,35 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.schema == {"x": pl.Float64, "y": pl.Float64}
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
+    # subclassed pandas object, with/without data & overrides
+    class XSeries(pd.Series):
+        @property
+        def _constructor(self) -> type:
+            return XSeries
+
+    df = pl.DataFrame(
+        data=[
+            XSeries(name="x", data=[], dtype=np.dtype("<M8[ns]")),
+            XSeries(name="y", data=[], dtype=np.dtype("f8")),
+            XSeries(name="z", data=[], dtype=np.dtype("?")),
+        ],
+    )
+    assert df.schema == {"x": pl.Datetime("ns"), "y": pl.Float64, "z": pl.Boolean}
+    assert df.rows() == []
+
+    df = pl.DataFrame(
+        data=[
+            XSeries(
+                name="x",
+                data=[datetime(2022, 10, 31, 10, 30, 45, 123456)],
+                dtype=np.dtype("<M8[ns]"),
+            )
+        ],
+        columns={"colx": pl.Datetime("us")},
+    )
+    assert df.schema == {"colx": pl.Datetime("us")}
+    assert df.rows() == [(datetime(2022, 10, 31, 10, 30, 45, 123456),)]
+
     # pandas is not available
     monkeypatch.setattr(pl.internals.dataframe.frame, "_PANDAS_TYPE", lambda x: False)
     with pytest.raises(ValueError):
