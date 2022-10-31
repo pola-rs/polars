@@ -24,7 +24,7 @@ def test_csv_scan_categorical() -> None:
 
 def test_read_csv_chunked() -> None:
     """Check that row count is properly functioning."""
-    csv = "\n".join(["1" * 10_000])
+    csv = "\n".join(["1" for _ in range(10_000)])
     df = pl.read_csv(io.StringIO(csv), row_count_name="count")
 
     # The next value should always be higher if monotonically increasing.
