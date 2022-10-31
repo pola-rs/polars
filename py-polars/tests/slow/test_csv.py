@@ -20,3 +20,12 @@ def test_csv_scan_categorical() -> None:
             "/tmp/test_csv_scan_categorical.csv", dtypes={"x": pl.Categorical}
         ).collect()
         assert df["x"].dtype == pl.Categorical
+
+
+def test_read_csv_chunked() -> None:
+    """Check that row count is properly functioning."""
+    csv = "\n".join(["1" * 10_000])
+    df = pl.read_csv(io.StringIO(csv), row_count_name="count")
+
+    # The next value should always be higher if monotonically increasing.
+    assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()

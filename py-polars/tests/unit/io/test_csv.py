@@ -930,12 +930,3 @@ def test_csv_single_categorical_null() -> None:
 
     assert df.dtypes == [pl.Utf8, pl.Categorical, pl.Utf8]
     assert df.to_dict(False) == {"x": ["A"], "y": [None], "z": ["A"]}
-
-
-def test_read_csv_chunked() -> None:
-    """Check that row count is properly functioning."""
-    csv = "\n".join(["1" for _ in range(10000)])
-    df = pl.read_csv(io.StringIO(csv), row_count_name="count")
-
-    # The next value should always be higher if monotonically increasing.
-    assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
