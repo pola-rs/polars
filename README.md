@@ -1,10 +1,25 @@
-# Polars
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg">
+  <br>
+</h1>
 
-[![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
-[![Build and test](https://github.com/pola-rs/polars/workflows/Build%20and%20test/badge.svg)](https://github.com/pola-rs/polars/actions)
-[![](https://img.shields.io/crates/v/polars.svg)](https://crates.io/crates/polars)
-[![PyPI Latest Release](https://img.shields.io/pypi/v/polars.svg)](https://pypi.org/project/polars/)
-[![NPM Latest Release](https://img.shields.io/npm/v/nodejs-polars.svg)](https://www.npmjs.com/package/nodejs-polars)
+<div align="center">
+  <a href="https://docs.rs/polars/latest/polars/">
+    <img src="https://docs.rs/polars/badge.svg" alt="rust docs"/>
+  </a>
+  <a href="https://github.com/pola-rs/polars/actions">
+    <img src="https://github.com/pola-rs/polars/workflows/Build%20and%20test/badge.svg" alt="Build and test"/>
+  </a>
+  <a href="https://crates.io/crates/polars">
+    <img src="https://img.shields.io/crates/v/polars.svg"/>
+  </a>
+  <a href="https://pypi.org/project/polars/">
+    <img src="https://img.shields.io/pypi/v/polars.svg" alt="PyPi Latest Release"/>
+  </a>
+  <a href="https://www.npmjs.com/package/nodejs-polars">
+    <img src="https://img.shields.io/npm/v/nodejs-polars.svg" alt="NPM Latest Release"/>
+  </a>
+</div>
 
 <p align="center">
   <b>Documentation</b>:
@@ -26,9 +41,7 @@
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
 
-
-## Blazingly fast DataFrames in Rust, Python & Node.js
-
+## Polars: Blazingly fast DataFrames in Rust, Python & Node.js
 Polars is a blazingly fast DataFrames library implemented in Rust using
 [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) as the memory model.
 
