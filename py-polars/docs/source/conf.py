@@ -87,7 +87,17 @@ html_theme_options = {
         {
             "name": "GitHub",
             "url": "https://github.com/pola-rs/polars",
-            "icon": "fab fa-github-square",
+            "icon": "fa-brands fa-github",
+        },
+        {
+            "name": "Discord",
+            "url": "https://discord.gg/4UfP5cfBE7",
+            "icon": "fa-brands fa-discord",
+        },
+        {
+            "name": "Twitter",
+            "url": "https://twitter.com/DataPolars",
+            "icon": "fa-brands fa-twitter",
         },
     ],
     "favicons": [
