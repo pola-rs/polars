@@ -13,6 +13,7 @@
 import datetime
 import inspect
 import os
+import re
 import sys
 import warnings
 
@@ -182,3 +183,30 @@ def linkcode_resolve(domain, info):
     return (
         f"https://github.com/pola-rs/polars/blob/master/py-polars/polars/{fn}{linespec}"
     )
+
+
+def _minify_classpaths(s: str) -> str:
+    # strip private polars classpaths, leaving the classname:
+    # * "pli.Expr" -> "Expr"
+    # * "polars.internals.expr.expr.Expr" -> "Expr"
+    # * "polars.internals.lazyframe.frame.LazyFrame" -> "LazyFrame"
+    return re.sub(
+        pattern=r"~?(pli|polars\.(?:internals|datatypes)[\w.]+?)\.([A-Z][\w.]+)",
+        repl=r"\2",
+        string=s,
+    )
+
+
+def process_signature(app, what, name, obj, options, signature, return_annotation):
+    return (
+        _minify_classpaths(signature) if signature else signature,
+        _minify_classpaths(return_annotation)
+        if return_annotation
+        else return_annotation,
+    )
+
+
+def setup(app):
+    # TODO: a handful of methods do not seem to trigger the event for
+    #  some reason (possibly @overloads?) - investigate further...
+    app.connect("autodoc-process-signature", process_signature)

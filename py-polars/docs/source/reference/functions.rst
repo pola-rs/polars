@@ -3,14 +3,6 @@ Functions
 =================
 .. currentmodule:: polars
 
-Config
-~~~~~~
-.. autosummary::
-   :toctree: api/
-
-    toggle_string_cache
-    StringCache
-
 Conversion
 ~~~~~~~~~~
 .. autosummary::
@@ -50,3 +42,11 @@ Parallelization
 
    collect_all
    threadpool_size
+
+StringCache
+~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+    toggle_string_cache
+    StringCache

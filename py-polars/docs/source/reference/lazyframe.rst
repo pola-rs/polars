@@ -8,6 +8,7 @@ LazyFrame
 
     Representation of a Lazy computation graph/ query.
 
+
 Attributes
 ----------
 
@@ -31,6 +32,22 @@ Aggregation
     LazyFrame.std
     LazyFrame.sum
     LazyFrame.var
+
+Apply
+-----
+.. autosummary::
+   :toctree: api/
+
+    LazyFrame.map
+
+Conversion
+----------
+.. autosummary::
+   :toctree: api/
+
+    LazyFrame.from_json
+    LazyFrame.read_json
+    LazyFrame.write_json
 
 Descriptive stats
 -----------------
@@ -82,24 +99,8 @@ Manipulation / selection
     LazyFrame.with_context
     LazyFrame.with_row_count
 
-Conversion
-----------
-.. autosummary::
-   :toctree: api/
-
-    LazyFrame.from_json
-    LazyFrame.read_json
-    LazyFrame.write_json
-
-Apply
------
-.. autosummary::
-   :toctree: api/
-
-    LazyFrame.map
-
-Various
--------
+Miscellaneous
+-------------
 .. autosummary::
    :toctree: api/
 
