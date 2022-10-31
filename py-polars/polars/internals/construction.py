@@ -30,7 +30,7 @@ from polars.datatypes_constructor import (
     polars_type_to_constructor,
     py_type_to_constructor,
 )
-from polars.dependencies import _NUMPY_AVAILABLE, _PYARROW_AVAILABLE
+from polars.dependencies import _NUMPY_AVAILABLE, _PANDAS_TYPE, _PYARROW_AVAILABLE
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -613,6 +613,7 @@ def sequence_to_pydf(
             raise ValueError(
                 f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
             )
+
     elif is_dataclass(data[0]):
         columns = columns or [
             (col, py_type_to_dtype(tp, raise_unmatched=False))
@@ -623,6 +624,22 @@ def sequence_to_pydf(
             columns=columns,
         )
         return pydf
+
+    elif _PANDAS_TYPE(data[0]) and isinstance(data[0], (pd.Series, pd.DatetimeIndex)):
+        dtypes = {}
+        if columns is not None:
+            columns, dtypes = _unpack_columns(columns, n_expected=1)
+
+        data_series = []
+        for i, s in enumerate(data):
+            name = columns[i] if columns else s.name
+            dtype = dtypes.get(name, None)
+            pyseries = pandas_to_pyseries(name=name, values=s)
+            if dtype is not None and dtype != pyseries.dtype():
+                pyseries = pyseries.cast(dtype, strict=True)
+            data_series.append(pyseries)
+
+        columns = None
     else:
         columns, dtypes = _unpack_columns(columns, n_expected=1)
         data_series = [pli.Series(columns[0], data, dtypes.get(columns[0]))._s]

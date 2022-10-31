@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import re
 import sys
 from importlib.machinery import ModuleSpec
@@ -41,7 +42,7 @@ def _proxy_module(module_name: str, register: bool = True) -> ModuleType:
         if re.match(r"^__\w+__$", attr):
             return None
 
-        # other attribute access raises exception
+        # all other attribute access raises exception
         pfx = _mod_pfx.get(module_name, "")
         raise ModuleNotFoundError(
             f"{pfx}{attr} requires '{module_name}' module to be installed"
@@ -145,15 +146,24 @@ else:
 
 
 def _NUMPY_TYPE(obj: Any) -> bool:
-    return _NUMPY_AVAILABLE and "numpy." in str(type(obj))
+    return _NUMPY_AVAILABLE and any(
+        "numpy." in str(o)
+        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
+    )
 
 
 def _PANDAS_TYPE(obj: Any) -> bool:
-    return _PANDAS_AVAILABLE and "pandas." in str(type(obj))
+    return _PANDAS_AVAILABLE and any(
+        "pandas." in str(o)
+        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
+    )
 
 
 def _PYARROW_TYPE(obj: Any) -> bool:
-    return _PYARROW_AVAILABLE and "pyarrow." in str(type(obj))
+    return _PYARROW_AVAILABLE and any(
+        "pyarrow." in str(o)
+        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
+    )
 
 
 __all__ = [
