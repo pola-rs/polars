@@ -932,7 +932,7 @@ def test_csv_single_categorical_null() -> None:
     assert df.to_dict(False) == {"x": ["A"], "y": [None], "z": ["A"]}
 
 
-def test_read_csv_chunked():
+def test_read_csv_chunked() -> None:
     """
     Check that row count is properly functioning.
     """
