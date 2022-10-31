@@ -1783,6 +1783,36 @@ class Expr:
         reverse
             Return the smallest elements.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("value").top_k().alias("top_k"),
+        ...         pl.col("value").top_k(reverse=True).alias("bottom_k"),
+        ...     ]
+        ... )
+        shape: (5, 2)
+        ┌───────┬──────────┐
+        │ top_k ┆ bottom_k │
+        │ ---   ┆ ---      │
+        │ i64   ┆ i64      │
+        ╞═══════╪══════════╡
+        │ 99    ┆ 1        │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 98    ┆ 2        │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4     ┆ 3        │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ 4        │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ 98       │
+        └───────┴──────────┘
+
         """
         return wrap_expr(self._pyexpr.top_k(k, reverse))
 
@@ -1884,6 +1914,29 @@ class Expr:
         ----------
         element
             Expression or scalar value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "values": [1, 2, 3, 5],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("values").search_sorted(0).alias("zero"),
+        ...         pl.col("values").search_sorted(3).alias("three"),
+        ...         pl.col("values").search_sorted(6).alias("six"),
+        ...     ]
+        ... )
+        shape: (1, 3)
+        ┌──────┬───────┬─────┐
+        │ zero ┆ three ┆ six │
+        │ ---  ┆ ---   ┆ --- │
+        │ u32  ┆ u32   ┆ u32 │
+        ╞══════╪═══════╪═════╡
+        │ 0    ┆ 2     ┆ 4   │
+        └──────┴───────┴─────┘
 
         """
         element = expr_to_lit_or_expr(element, str_to_lit=False)
@@ -2132,6 +2185,19 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 99  ┆ 6   │
         └─────┴─────┘
+        >>> df.fill_null(strategy="forward")
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 6   │
+        └─────┴─────┘
 
         """
         if value is not None and strategy is not None:
@@ -2344,15 +2410,15 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
         >>> df.select(pl.col("a").max())
         shape: (1, 1)
         ┌─────┐
         │ a   │
         │ --- │
-        │ i64 │
+        │ f64 │
         ╞═════╡
-        │ 1   │
+        │ 1.0 │
         └─────┘
 
         """
@@ -2364,16 +2430,16 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
         >>> df.select(pl.col("a").min())
         shape: (1, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ -1  │
-        └─────┘
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ -1.0 │
+        └──────┘
 
         """
         return wrap_expr(self._pyexpr.min())
@@ -2385,6 +2451,19 @@ class Expr:
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [0, float("nan")]})
+        >>> df.select(pl.col("a").nan_max())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ NaN │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.nan_max())
 
@@ -2394,6 +2473,19 @@ class Expr:
 
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [0, float("nan")]})
+        >>> df.select(pl.col("a").nan_min())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ NaN │
+        └─────┘
 
         """
         return wrap_expr(self._pyexpr.nan_min())
@@ -4972,6 +5064,25 @@ class Expr:
         min_val
             Minimum value.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
+        >>> df.with_column(pl.col("foo").clip_min(0).alias("foo_clipped"))
+        shape: (4, 2)
+        ┌──────┬─────────────┐
+        │ foo  ┆ foo_clipped │
+        │ ---  ┆ ---         │
+        │ i64  ┆ i64         │
+        ╞══════╪═════════════╡
+        │ -50  ┆ 0           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ null        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 50   ┆ 50          │
+        └──────┴─────────────┘
+
         """
         return wrap_expr(self._pyexpr.clip_min(min_val))
 
@@ -4988,6 +5099,25 @@ class Expr:
         ----------
         max_val
             Maximum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
+        >>> df.with_column(pl.col("foo").clip_max(0).alias("foo_clipped"))
+        shape: (4, 2)
+        ┌──────┬─────────────┐
+        │ foo  ┆ foo_clipped │
+        │ ---  ┆ ---         │
+        │ i64  ┆ i64         │
+        ╞══════╪═════════════╡
+        │ -50  ┆ -50         │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 0           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ null        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 50   ┆ 0           │
+        └──────┴─────────────┘
 
         """
         return wrap_expr(self._pyexpr.clip_max(max_val))
@@ -5716,17 +5846,24 @@ class Expr:
 
         Examples
         --------
-        >>> s = pl.Series([1, 2, 3])
-        >>> s.extend_constant(99, n=2)
-        shape: (5,)
-        Series: '' [i64]
-        [
-                1
-                2
-                3
-                99
-                99
-        ]
+        >>> df = pl.DataFrame({"values": [1, 2, 3]})
+        >>> df.select(pl.col("values").extend_constant(99, n=2))
+        shape: (5, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 3      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 99     │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 99     │
+        └────────┘
 
         """
         return wrap_expr(self._pyexpr.extend_constant(value, n))
