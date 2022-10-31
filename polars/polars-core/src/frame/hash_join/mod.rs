@@ -274,7 +274,7 @@ impl DataFrame {
         &self,
         mut df_left: DataFrame,
         mut df_right: DataFrame,
-        suffix: Option<String>,
+        suffix: Option<&str>,
     ) -> PolarsResult<DataFrame> {
         let mut left_names = PlHashSet::with_capacity(df_left.width());
 
@@ -289,7 +289,7 @@ impl DataFrame {
                 rename_strs.push(series.name().to_owned())
             }
         });
-        let suffix = suffix.as_deref().unwrap_or("_right");
+        let suffix = suffix.unwrap_or("_right");
 
         for name in rename_strs {
             df_right.rename(&name, &format!("{}{}", name, suffix))?;
@@ -354,7 +354,7 @@ impl DataFrame {
     ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
-            return self.cross_join(other, suffix, slice);
+            return self.cross_join(other, suffix.as_deref(), slice);
         }
 
         #[cfg(feature = "chunked_ids")]
@@ -517,7 +517,7 @@ impl DataFrame {
                             ._take_unchecked_slice(join_idx_right, true)
                     },
                 );
-                self.finish_join(df_left, df_right, suffix)
+                self.finish_join(df_left, df_right, suffix.as_deref())
             }
             JoinType::Left => {
                 let mut left = DataFrame::new_no_checks(selected_left_physical);
@@ -565,7 +565,7 @@ impl DataFrame {
                 }
                 keys.extend_from_slice(df_left.get_columns());
                 let df_left = DataFrame::new_no_checks(keys);
-                self.finish_join(df_left, df_right, suffix)
+                self.finish_join(df_left, df_right, suffix.as_deref())
             }
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => Err(PolarsError::ComputeError(
@@ -638,7 +638,7 @@ impl DataFrame {
     {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
-            return self.cross_join(other, suffix, None);
+            return self.cross_join(other, suffix.as_deref(), None);
         }
         let selected_left = self.select_series(left_on)?;
         let selected_right = other.select_series(right_on)?;
@@ -709,7 +709,7 @@ impl DataFrame {
                     ._take_unchecked_slice(join_tuples_right, true)
             },
         );
-        self.finish_join(df_left, df_right, suffix)
+        self.finish_join(df_left, df_right, suffix.as_deref())
     }
 
     /// Perform a left join on two DataFrames
@@ -789,7 +789,7 @@ impl DataFrame {
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
-        self.finish_join(df_left, df_right, suffix)
+        self.finish_join(df_left, df_right, suffix.as_deref())
     }
 
     #[cfg(feature = "chunked_ids")]
@@ -840,7 +840,7 @@ impl DataFrame {
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
-        self.finish_join(df_left, df_right, suffix)
+        self.finish_join(df_left, df_right, suffix.as_deref())
     }
 
     pub(crate) fn left_join_from_series(
@@ -976,7 +976,7 @@ impl DataFrame {
         };
 
         df_left.get_columns_mut().insert(join_column_index, s);
-        self.finish_join(df_left, df_right, suffix)
+        self.finish_join(df_left, df_right, suffix.as_deref())
     }
 }
 

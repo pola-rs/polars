@@ -40,13 +40,12 @@ fn take_right(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, us
 }
 
 impl DataFrame {
-    /// Creates the cartesian product from both frames, preserves the order of the left keys.
-    pub fn cross_join(
+    fn cross_join_dfs(
         &self,
         other: &DataFrame,
-        suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> PolarsResult<DataFrame> {
+        parallel: bool,
+    ) -> PolarsResult<(DataFrame, DataFrame)> {
         let n_rows_left = self.height() as IdxSize;
         let n_rows_right = other.height() as IdxSize;
         let total_rows = n_rows_right * n_rows_left;
@@ -78,8 +77,43 @@ impl DataFrame {
                 concat_df_unchecked(iter)
             }
         };
+        let (l_df, r_df) = if parallel {
+            POOL.install(|| rayon::join(create_left_df, create_right_df))
+        } else {
+            (create_left_df(), create_right_df())
+        };
+        Ok((l_df, r_df))
+    }
 
-        let (l_df, r_df) = POOL.install(|| rayon::join(create_left_df, create_right_df));
+    #[doc(hidden)]
+    /// used by streaming
+    pub fn _cross_join_with_names(
+        &self,
+        other: &DataFrame,
+        names: &[String],
+    ) -> PolarsResult<DataFrame> {
+        let (mut l_df, r_df) = self.cross_join_dfs(other, None, false)?;
+        l_df.get_columns_mut().extend_from_slice(&r_df.columns);
+
+        l_df.get_columns_mut()
+            .iter_mut()
+            .zip(names)
+            .for_each(|(s, name)| {
+                if s.name() != name {
+                    s.rename(name);
+                }
+            });
+        Ok(l_df)
+    }
+
+    /// Creates the cartesian product from both frames, preserves the order of the left keys.
+    pub fn cross_join(
+        &self,
+        other: &DataFrame,
+        suffix: Option<&str>,
+        slice: Option<(i64, usize)>,
+    ) -> PolarsResult<DataFrame> {
+        let (l_df, r_df) = self.cross_join_dfs(other, slice, true)?;
 
         self.finish_join(l_df, r_df, suffix)
     }

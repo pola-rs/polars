@@ -58,6 +58,7 @@ impl Sink for CrossJoin {
             in_process_left: None,
             in_process_right: None,
             in_process_left_df: Default::default(),
+            output_names: None,
         })))
     }
 
@@ -73,6 +74,7 @@ pub struct CrossJoinPhase2 {
     in_process_left: Option<StepBy<Range<usize>>>,
     in_process_right: Option<StepBy<Range<usize>>>,
     in_process_left_df: DataFrame,
+    output_names: Option<Vec<String>>,
 }
 
 impl Operator for CrossJoinPhase2 {
@@ -116,7 +118,7 @@ impl Operator for CrossJoinPhase2 {
                         let right_df = chunk.data.slice(offset as i64, size);
                         let df = self.in_process_left_df.cross_join(
                             &right_df,
-                            Some(self.suffix.to_string()),
+                            Some(self.suffix.as_ref()),
                             None,
                         )?;
                         Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
@@ -125,13 +127,27 @@ impl Operator for CrossJoinPhase2 {
             }
             // deplete the right chunks over the current left chunk
             Some(offset) => {
+                // this will be the branch of the first call
+
                 let right_df = chunk.data.slice(offset as i64, size);
-                // todo! amortize left and right name creation
-                let df = self.in_process_left_df.cross_join(
-                    &right_df,
-                    Some(self.suffix.to_string()),
-                    None,
-                )?;
+
+                // we use the first join to determine the output names
+                // this we can amortize the name allocations.
+                let df = match &self.output_names {
+                    None => {
+                        let df = self.in_process_left_df.cross_join(
+                            &right_df,
+                            Some(self.suffix.as_ref()),
+                            None,
+                        )?;
+                        self.output_names = Some(df.get_column_names_owned());
+                        df
+                    }
+                    Some(names) => self
+                        .in_process_left_df
+                        ._cross_join_with_names(&right_df, names)?,
+                };
+
                 Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
             }
         }
