@@ -95,7 +95,7 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
             if let Some(s) = df.get_columns_mut().get_mut(0) {
                 *s = &*s + previous;
             }
-            previous = *n_read;
+            previous += *n_read;
         }
     }
 }
