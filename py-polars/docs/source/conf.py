@@ -47,6 +47,7 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.todo",
     "sphinx_autosummary_accessors",
+    "sphinx_copybutton",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -70,10 +71,14 @@ html_theme = "pydata_sphinx_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]  # relative to html_static_path
-
 html_show_sourcelink = False
-
 html_logo = "../img/polars_logo.png"
+
+# adds useful copy functionality to all the examples; also
+# strips the '>>>' and '...' prompt/continuation prefixes.
+copybutton_prompt_text = r">>> |\.\.\. "
+copybutton_prompt_is_regexp = True
+
 autosummary_generate = True
 
 html_theme_options = {
