@@ -14,7 +14,13 @@ DF = TypeVar("DF", bound="pli.DataFrame")
 
 
 class PivotOps(Generic[DF]):
-    """Utility class returned in a pivot operation."""
+    """
+    Utility class returned in a pivot operation.
+
+    .. deprecated:: 0.13.23
+          `PivotOps` will be removed in favour of `DataFrame.pivot`.
+
+    """
 
     def __init__(
         self,

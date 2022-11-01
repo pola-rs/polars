@@ -1,7 +1,7 @@
 ==========
 Data Types
 ==========
-.. currentmodule:: polars.datatypes
+.. currentmodule:: polars
 
 .. autosummary::
     :toctree: api/

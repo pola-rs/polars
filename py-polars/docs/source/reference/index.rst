@@ -9,11 +9,11 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
    :maxdepth: 2
 
    io
-   functions
    series/index
    dataframe
    lazyframe
    expressions/index
+   functions
    datatypes
    config
    exceptions

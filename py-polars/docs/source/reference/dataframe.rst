@@ -23,18 +23,6 @@ Attributes
     DataFrame.shape
     DataFrame.width
 
-Conversion
-----------
-.. autosummary::
-   :toctree: api/
-
-    DataFrame.to_arrow
-    DataFrame.to_dict
-    DataFrame.to_dicts
-    DataFrame.to_numpy
-    DataFrame.to_pandas
-    DataFrame.to_struct
-
 Aggregation
 -----------
 .. autosummary::
@@ -50,6 +38,33 @@ Aggregation
     DataFrame.sum
     DataFrame.var
 
+Apply
+-----
+.. autosummary::
+   :toctree: api/
+
+    DataFrame.apply
+
+Computations
+------------
+.. autosummary::
+   :toctree: api/
+
+    DataFrame.fold
+    DataFrame.hash_rows
+
+Conversion
+----------
+.. autosummary::
+   :toctree: api/
+
+    DataFrame.to_arrow
+    DataFrame.to_dict
+    DataFrame.to_dicts
+    DataFrame.to_numpy
+    DataFrame.to_pandas
+    DataFrame.to_struct
+
 Descriptive stats
 -----------------
 .. autosummary::
@@ -64,16 +79,34 @@ Descriptive stats
     DataFrame.n_unique
     DataFrame.null_count
 
-Computations
-------------
+GroupBy
+-------
+This namespace is available after calling :code:`DataFrame.groupby(...)`.
+
+.. currentmodule:: polars.internals.dataframe.groupby
 .. autosummary::
    :toctree: api/
 
-    DataFrame.fold
-    DataFrame.hash_rows
+    GroupBy.agg
+    GroupBy.agg_list
+    GroupBy.apply
+    GroupBy.count
+    GroupBy.first
+    GroupBy.head
+    GroupBy.last
+    GroupBy.max
+    GroupBy.mean
+    GroupBy.median
+    GroupBy.min
+    GroupBy.n_unique
+    GroupBy.pivot
+    GroupBy.quantile
+    GroupBy.sum
+    GroupBy.tail
 
 Manipulation / selection
 ------------------------
+.. currentmodule:: polars
 .. autosummary::
    :toctree: api/
 
@@ -132,55 +165,24 @@ Manipulation / selection
     DataFrame.with_columns
     DataFrame.with_row_count
 
-Apply
------
-.. autosummary::
-   :toctree: api/
-
-    DataFrame.apply
-
-Various
---------
+Miscellaneous
+-------------
 .. autosummary::
    :toctree: api/
 
     DataFrame.frame_equal
     DataFrame.lazy
 
-GroupBy
--------
-This namespace comes available by calling `DataFrame.groupby(..)`.
-
-.. currentmodule:: polars.internals.dataframe.groupby
-
-.. autosummary::
-   :toctree: api/
-
-    GroupBy.agg
-    GroupBy.agg_list
-    GroupBy.apply
-    GroupBy.count
-    GroupBy.first
-    GroupBy.head
-    GroupBy.last
-    GroupBy.max
-    GroupBy.mean
-    GroupBy.median
-    GroupBy.min
-    GroupBy.n_unique
-    GroupBy.pivot
-    GroupBy.quantile
-    GroupBy.sum
-    GroupBy.tail
-
 Pivot
 -----
-This namespace comes available by calling `DataFrame.groupby(..).pivot`
+This namespace is available after calling :code:`DataFrame.groupby(...).pivot`
 
-*Note that this API is deprecated in favor of `DataFrame.pivot`*
+.. deprecated:: 0.13.23
+
+   Note that this API has been deprecated in favor of :meth:`DataFrame.pivot`
+   and will be removed in a future version.
 
 .. currentmodule:: polars.internals.dataframe.pivot
-
 .. autosummary::
    :toctree: api/
 
