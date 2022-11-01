@@ -197,12 +197,10 @@ def _minify_classpaths(s: str) -> str:
     )
 
 
-def process_signature(app, what, name, obj, options, signature, return_annotation):
+def process_signature(app, what, name, obj, opts, sig, ret):
     return (
-        _minify_classpaths(signature) if signature else signature,
-        _minify_classpaths(return_annotation)
-        if return_annotation
-        else return_annotation,
+        _minify_classpaths(sig) if sig else sig,
+        _minify_classpaths(ret) if ret else ret,
     )
 
 
