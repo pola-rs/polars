@@ -22,40 +22,41 @@ _ZONEINFO_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 
 
-def _proxy_module(module_name: str, register: bool = True) -> ModuleType:
+def _proxy_module(module_name: str) -> ModuleType:
     """
     Create a module that raises a helpful/explanatory exception on attribute access.
+
+    Notes
+    -----
+    We do NOT register this module with `sys.modules` so as not to cause confusion
+    in the global environment. This way we have a valid lazy/proxy module for our
+    own use, but it is scoped _exclusively_ for use within polars.
 
     Parameters
     ----------
     module_name : str
         the name of the new/proxy module.
 
-    register : bool
-        indicate if the module should be registered with ``sys.modules``.
-
     """
     # module-level getattr for the proxy
     def __getattr__(*args: Any, **kwargs: Any) -> None:
         attr = args[0]
-        # handle some introspection issues on private module attrs
+        # allow some very minimal introspection on private module
+        # attrs to avoid unnecessary error-handling elsewhere
         if re.match(r"^__\w+__$", attr):
             return None
 
-        # all other attribute access raises exception
+        # all other attribute access raises an exception
         pfx = _mod_pfx.get(module_name, "")
         raise ModuleNotFoundError(
             f"{pfx}{attr} requires '{module_name}' module to be installed"
         ) from None
 
-    # create module that raises an exception on attribute access.
+    # create the module (do NOT register with sys.globals)
     proxy_module = module_from_spec(ModuleSpec(module_name, None))
     for name, obj in (("__getattr__", __getattr__),):
         setattr(proxy_module, name, obj)
 
-    # add proxy into sys.modules under the target module's name
-    if register:
-        sys.modules[module_name] = proxy_module
     return proxy_module
 
 
