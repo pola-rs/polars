@@ -230,7 +230,7 @@ class Series:
         elif _PANDAS_TYPE(values) and isinstance(values, (pd.Series, pd.DatetimeIndex)):
             self._s = pandas_to_pyseries(name, values)
         else:
-            raise ValueError("Series constructor not called properly.")
+            raise ValueError(f"Series constructor not called properly. Got {values}.")
 
     @classmethod
     def _from_pyseries(cls, pyseries: PySeries) -> Series:

@@ -101,6 +101,7 @@ from polars.internals.lazy_functions import (
     first,
     fold,
     format,
+    from_epoch,
     groups,
     head,
     last,
@@ -270,6 +271,7 @@ __all__ = [
     "collect_all",
     "exclude",
     "format",
+    "from_epoch",
     "datetime",  # named _datetime, see import above
     "date",  # name _date, see import above
     "list",  # named to_list, see import above
