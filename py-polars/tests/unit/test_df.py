@@ -1786,17 +1786,17 @@ def test_shrink_to_fit() -> None:
 def test_arithmetic() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
 
-    df_mul = df * 2
-    expected = pl.DataFrame({"a": [2, 4], "b": [6, 8]})
-    assert df_mul.frame_equal(expected)
+    for df_mul in (df * 2, 2 * df):
+        expected = pl.DataFrame({"a": [2, 4], "b": [6, 8]})
+        assert df_mul.frame_equal(expected)
+
+    for df_plus in (df + 2, 2 + df):
+        expected = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
+        assert df_plus.frame_equal(expected)
 
     df_div = df / 2
     expected = pl.DataFrame({"a": [0.5, 1.0], "b": [1.5, 2.0]})
     assert df_div.frame_equal(expected)
-
-    df_plus = df + 2
-    expected = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
-    assert df_plus.frame_equal(expected)
 
     df_minus = df - 2
     expected = pl.DataFrame({"a": [-1, 0], "b": [1, 2]})
@@ -1845,11 +1845,15 @@ def test_arithmetic() -> None:
 
 def test_add_string() -> None:
     df = pl.DataFrame({"a": ["hi", "there"], "b": ["hello", "world"]})
-    result = df + " hello"
     expected = pl.DataFrame(
         {"a": ["hi hello", "there hello"], "b": ["hello hello", "world hello"]}
     )
-    assert result.frame_equal(expected)
+    assert (df + " hello").frame_equal(expected)
+
+    expected = pl.DataFrame(
+        {"a": ["hello hi", "hello there"], "b": ["hello hello", "hello world"]}
+    )
+    assert ("hello " + df).frame_equal(expected)
 
 
 def test_get_item() -> None:

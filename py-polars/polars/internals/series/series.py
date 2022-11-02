@@ -437,9 +437,19 @@ class Series:
             )
         return wrap_s(f(other))
 
+    @overload
+    def __add__(self, other: pli.DataFrame) -> pli.DataFrame:  # type: ignore[misc]
+        ...
+
+    @overload
     def __add__(self, other: Any) -> Series:
+        ...
+
+    def __add__(self, other: Any) -> Series | pli.DataFrame:
         if isinstance(other, str):
             other = Series("", [other])
+        elif isinstance(other, pli.DataFrame):
+            return other + self
         return self._arithmetic(other, "add", "add_<>")
 
     def __sub__(self, other: Any) -> Series:
@@ -464,10 +474,26 @@ class Series:
             result = result.floor()
         return result
 
+    def __invert__(self) -> Series:
+        if self.dtype == Boolean:
+            return wrap_s(self._s._not())
+        return NotImplemented
+
+    @overload
+    def __mul__(self, other: pli.DataFrame) -> pli.DataFrame:  # type: ignore[misc]
+        ...
+
+    @overload
     def __mul__(self, other: Any) -> Series:
+        ...
+
+    def __mul__(self, other: Any) -> Series | pli.DataFrame:
         if self.is_datelike():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
-        return self._arithmetic(other, "mul", "mul_<>")
+        elif isinstance(other, pli.DataFrame):
+            return other * self
+        else:
+            return self._arithmetic(other, "mul", "mul_<>")
 
     def __mod__(self, other: Any) -> Series:
         if self.is_datelike():
@@ -484,15 +510,12 @@ class Series:
         return self._arithmetic(other, "rem", "rem_<>_rhs")
 
     def __radd__(self, other: Any) -> Series:
+        if isinstance(other, str):
+            return (other + self.to_frame()).to_series()
         return self._arithmetic(other, "add", "add_<>_rhs")
 
     def __rsub__(self, other: Any) -> Series:
         return self._arithmetic(other, "sub", "sub_<>_rhs")
-
-    def __invert__(self) -> Series:
-        if self.dtype == Boolean:
-            return wrap_s(self._s._not())
-        return NotImplemented
 
     def __rtruediv__(self, other: Any) -> Series:
         if self.is_datelike():
@@ -502,7 +525,6 @@ class Series:
 
         if isinstance(other, int):
             other = float(other)
-
         return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
