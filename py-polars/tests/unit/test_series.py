@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Iterator, cast
 
 import numpy as np
 import pandas as pd
@@ -22,6 +22,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
 )
+from polars.internals.construction import iterable_to_pyseries
 from polars.internals.type_aliases import EpochTimeUnit
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing._private import verify_series_and_expr_api
@@ -1377,6 +1378,43 @@ def test_to_numpy(monkeypatch: Any) -> None:
                 # As Null values can't be encoded natively in a numpy array,
                 # this array will never be a view.
                 assert np_array_with_missing_values.flags.writeable == writable
+
+
+def test_from_generator_or_iterable() -> None:
+    # iterable object
+    class Data:
+        def __init__(self, n: int):
+            self._n = n
+
+        def __iter__(self) -> Iterator[int]:
+            yield from range(self._n)
+
+    # generator function
+    def gen(n: int) -> Iterator[int]:
+        yield from range(n)
+
+    expected = pl.Series("s", range(10))
+    assert expected.dtype == pl.Int64
+
+    for generated_series in (
+        pl.Series("s", values=gen(10)),
+        pl.Series("s", values=Data(10)),
+        pl.Series("s", values=(x for x in gen(10))),
+    ):
+        assert_series_equal(expected, generated_series)
+
+    # test 'iterable_to_pyseries' directly to validate 'chunk_size' behaviour
+    ps1 = iterable_to_pyseries("s", gen(10), dtype=pl.UInt8)
+    ps2 = iterable_to_pyseries("s", gen(10), dtype=pl.UInt8, chunk_size=3)
+    ps3 = iterable_to_pyseries("s", Data(10), dtype=pl.UInt8, chunk_size=6)
+
+    expected = pl.Series("s", range(10), dtype=pl.UInt8)
+    assert expected.dtype == pl.UInt8
+
+    for ps in (ps1, ps2, ps3):
+        generated_series = pl.Series("s")
+        generated_series._s = ps
+        assert_series_equal(expected, generated_series)
 
 
 def test_from_sequences(monkeypatch: Any) -> None:

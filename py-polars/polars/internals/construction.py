@@ -3,9 +3,17 @@ from __future__ import annotations
 from contextlib import suppress
 from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
-from itertools import zip_longest
+from itertools import islice, zip_longest
 from sys import version_info
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, get_type_hints
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generator,
+    Iterable,
+    Mapping,
+    Sequence,
+    get_type_hints,
+)
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -176,6 +184,47 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
         return PySeries.new_object(name, values, False)
+
+
+def iterable_to_pyseries(
+    name: str,
+    values: Iterable[Any],
+    dtype: PolarsDataType | None = None,
+    strict: bool = True,
+    dtype_if_empty: PolarsDataType | None = None,
+    chunk_size: int = 1_000_000,
+) -> PySeries:
+    """Construct a PySeries from an iterable/generator."""
+    if not isinstance(values, Generator):
+        values = iter(values)
+
+    def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> pli.Series:
+        return pli.Series(
+            name=name,
+            values=values,
+            dtype=dtype,
+            strict=strict,
+            dtype_if_empty=dtype_if_empty,
+        )
+
+    n_chunks = 0
+    series: pli.Series = None  # type: ignore[assignment]
+    while True:
+        slice_values = list(islice(values, chunk_size))
+        if not slice_values:
+            break
+        schunk = to_series_chunk(slice_values, dtype)
+        if series is None:
+            series = schunk
+            dtype = series.dtype
+        else:
+            series.append(schunk, append_chunks=True)
+            n_chunks += 1
+
+    if n_chunks > 0:
+        series.rechunk(in_place=True)
+
+    return series._s
 
 
 def sequence_to_pyseries(
