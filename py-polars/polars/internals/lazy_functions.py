@@ -1387,11 +1387,13 @@ def arange(
     """
     low = pli.expr_to_lit_or_expr(low, str_to_lit=False)
     high = pli.expr_to_lit_or_expr(high, str_to_lit=False)
-
     if eager:
-        df = pli.DataFrame({"a": [1]})
-        return df.select(arange(low, high, step).alias("arange"))["arange"]
-
+        return (
+            pli.DataFrame()
+            .select(arange(low, high, step))
+            .to_series()
+            .rename("arange", in_place=True)
+        )
     return pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
 
 
