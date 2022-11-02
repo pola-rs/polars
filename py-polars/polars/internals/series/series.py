@@ -206,8 +206,10 @@ class Series:
             )
         elif isinstance(values, Series):
             self._s = series_to_pyseries(name, values)
+
         elif _PYARROW_TYPE(values) and isinstance(values, (pa.Array, pa.ChunkedArray)):
             self._s = arrow_to_pyseries(name, values)
+
         elif _NUMPY_TYPE(values) and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
             if values.dtype.type == np.datetime64:
@@ -223,13 +225,13 @@ class Series:
 
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
+
         elif isinstance(values, range):
             self._s = (
-                pli.DataFrame()
-                .select(pli.arange(values.start, values.stop, values.step))
-                .to_series()
+                pli.arange(values.start, values.stop, values.step, eager=True)
                 .rename(name, in_place=True)
-            )._s
+                ._s
+            )
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
                 name, values, dtype=dtype, strict=strict, dtype_if_empty=dtype_if_empty
