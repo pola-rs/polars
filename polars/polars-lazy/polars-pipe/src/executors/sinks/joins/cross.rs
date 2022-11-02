@@ -17,7 +17,6 @@ use crate::operators::{
 pub struct CrossJoin {
     chunks: Vec<DataChunk>,
     suffix: Cow<'static, str>,
-    shared: Arc<Mutex<DataFrame>>,
 }
 
 impl CrossJoin {
@@ -25,7 +24,6 @@ impl CrossJoin {
         CrossJoin {
             chunks: vec![],
             suffix,
-            shared: Default::default(),
         }
     }
 }
@@ -45,7 +43,6 @@ impl Sink for CrossJoin {
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         Box::new(Self {
             suffix: self.suffix.clone(),
-            shared: self.shared.clone(),
             ..Default::default()
         })
     }

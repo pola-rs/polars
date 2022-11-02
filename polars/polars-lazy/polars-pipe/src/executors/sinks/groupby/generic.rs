@@ -16,6 +16,7 @@ use super::aggregates::AggregateFn;
 use super::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::utils::compute_slices;
+use crate::executors::sinks::utils::hash_series;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
@@ -200,6 +201,11 @@ impl Sink for GenericGroupbySink {
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
+        for phys_e in self.key_columns.iter() {
+            let s = phys_e.evaluate(&chunk, context.execution_state.as_ref())?;
+            let s = s.to_physical_repr();
+            self.keys_series.push(s.rechunk());
+        }
 
         let mut agg_iters = self
             .aggregation_series
@@ -207,29 +213,18 @@ impl Sink for GenericGroupbySink {
             .map(|s| s.phys_iter())
             .collect::<Vec<_>>();
 
-        for phys_e in self.key_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_ref())?;
-            let s = s.to_physical_repr();
-            self.keys_series.push(s.rechunk());
-        }
+        // write the hashes to self.hashes buffer
+        hash_series(&self.keys_series, &mut self.hashes, &self.hb);
 
+        // iterators over anyvalues
         let mut key_iters = self
             .keys_series
             .iter()
             .map(|s| s.phys_iter())
             .collect::<Vec<_>>();
 
-        let mut iter_keys = self.keys_series.iter();
-        let first_key = iter_keys.next().unwrap();
-        first_key
-            .vec_hash(self.hb.clone(), &mut self.hashes)
-            .unwrap();
-        for other_key in iter_keys {
-            other_key
-                .vec_hash_combine(self.hb.clone(), &mut self.hashes)
-                .unwrap();
-        }
-
+        // a small buffer that holds the current key values
+        // if we groupby 2 keys, this holds 2 anyvalues.
         let mut current_keys_buf = Vec::with_capacity(self.keys.len());
 
         for &h in &self.hashes {
