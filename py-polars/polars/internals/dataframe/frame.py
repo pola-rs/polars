@@ -5383,6 +5383,7 @@ class DataFrame:
         ├╌╌╌╌╌╌╌╌╌┤
         │ 10      │
         └─────────┘
+
         """
         return self._from_pydf(
             self.lazy()
