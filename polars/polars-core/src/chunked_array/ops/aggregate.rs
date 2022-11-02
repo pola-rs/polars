@@ -1,9 +1,11 @@
 //! Implementations of the ChunkAgg trait.
+use std::cmp::Ordering;
 use std::ops::Add;
 
 use arrow::compute;
 use arrow::types::simd::Simd;
 use num::{Float, ToPrimitive};
+use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 use crate::chunked_array::ChunkedArray;
@@ -88,7 +90,13 @@ where
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_primitive)
-                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+                .fold_first_(|acc, v| {
+                    if matches!(compare_fn_nan_max(&acc, &v), Ordering::Less) {
+                        acc
+                    } else {
+                        v
+                    }
+                }),
         }
     }
 
@@ -111,7 +119,13 @@ where
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_primitive)
-                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+                .fold_first_(|acc, v| {
+                    if matches!(compare_fn_nan_min(&acc, &v), Ordering::Greater) {
+                        acc
+                    } else {
+                        v
+                    }
+                }),
         }
     }
 
