@@ -13,6 +13,7 @@
 import datetime
 import inspect
 import os
+import re
 import sys
 import warnings
 
@@ -46,6 +47,7 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.todo",
     "sphinx_autosummary_accessors",
+    "sphinx_copybutton",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -69,10 +71,14 @@ html_theme = "pydata_sphinx_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]  # relative to html_static_path
-
 html_show_sourcelink = False
-
 html_logo = "../img/polars_logo.png"
+
+# adds useful copy functionality to all the examples; also
+# strips the '>>>' and '...' prompt/continuation prefixes.
+copybutton_prompt_text = r">>> |\.\.\. "
+copybutton_prompt_is_regexp = True
+
 autosummary_generate = True
 
 html_theme_options = {
@@ -182,3 +188,28 @@ def linkcode_resolve(domain, info):
     return (
         f"https://github.com/pola-rs/polars/blob/master/py-polars/polars/{fn}{linespec}"
     )
+
+
+def _minify_classpaths(s: str) -> str:
+    # strip private polars classpaths, leaving the classname:
+    # * "pli.Expr" -> "Expr"
+    # * "polars.internals.expr.expr.Expr" -> "Expr"
+    # * "polars.internals.lazyframe.frame.LazyFrame" -> "LazyFrame"
+    return re.sub(
+        pattern=r"~?(pli|polars\.(?:internals|datatypes)[\w.]+?)\.([A-Z][\w.]+)",
+        repl=r"\2",
+        string=s,
+    )
+
+
+def process_signature(app, what, name, obj, opts, sig, ret):
+    return (
+        _minify_classpaths(sig) if sig else sig,
+        _minify_classpaths(ret) if ret else ret,
+    )
+
+
+def setup(app):
+    # TODO: a handful of methods do not seem to trigger the event for
+    #  some reason (possibly @overloads?) - investigate further...
+    app.connect("autodoc-process-signature", process_signature)

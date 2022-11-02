@@ -8,6 +8,11 @@ pub enum SinkResult {
     CanHaveMoreInput,
 }
 
+pub enum FinalizedSink {
+    Finished(DataFrame),
+    Operator(Box<dyn Operator>),
+}
+
 pub trait Sink: Send + Sync {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult>;
 
@@ -15,7 +20,7 @@ pub trait Sink: Send + Sync {
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink>;
 
-    fn finalize(&mut self) -> PolarsResult<DataFrame>;
+    fn finalize(&mut self) -> PolarsResult<FinalizedSink>;
 
-    fn as_any(&self) -> &dyn Any;
+    fn as_any(&mut self) -> &mut dyn Any;
 }

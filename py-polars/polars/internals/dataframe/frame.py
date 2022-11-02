@@ -1071,6 +1071,9 @@ class DataFrame:
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.mul(other._s))
 
+    def __rmul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+        return self * other
+
     def __truediv__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.div_df(other._df))
@@ -1079,13 +1082,19 @@ class DataFrame:
         return self._from_pydf(self._df.div(other._s))
 
     def __add__(
-        self: DF,
-        other: DataFrame | pli.Series | int | float | bool | str,
+        self: DF, other: DataFrame | pli.Series | int | float | bool | str
     ) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.add_df(other._df))
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.add(other._s))
+
+    def __radd__(
+        self: DF, other: DataFrame | pli.Series | int | float | bool | str
+    ) -> DF:
+        if isinstance(other, str):
+            return self.select((pli.lit(other) + pli.col("*")).keep_name())
+        return self + other
 
     def __sub__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
         if isinstance(other, DataFrame):

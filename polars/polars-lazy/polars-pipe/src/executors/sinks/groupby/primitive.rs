@@ -19,7 +19,7 @@ use super::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::utils::compute_slices;
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult};
+use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
 // hash + value
 #[derive(Eq, Copy, Clone)]
@@ -66,7 +66,10 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     slice: Option<(i64, usize)>,
 }
 
-impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
+impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
+where
+    ChunkedArray<K>: IntoSeries,
+{
     pub fn new(
         key: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -108,6 +111,72 @@ impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
     #[inline]
     fn number_of_aggs(&self) -> usize {
         self.aggregation_columns.len()
+    }
+
+    fn pre_finalize(&mut self) -> PolarsResult<Vec<DataFrame>> {
+        // TODO! parallel
+        let mut aggregators = std::mem::take(&mut self.aggregators);
+        let slices = compute_slices(&self.pre_agg_partitions, self.slice);
+
+        POOL.install(|| {
+            let dfs =
+                self.pre_agg_partitions
+                    .par_iter()
+                    .zip(aggregators.par_iter_mut())
+                    .zip(slices.par_iter())
+                    .filter_map(|((agg_map, agg_fns), slice)| {
+                        let (offset, slice_len) = (*slice)?;
+                        if agg_map.is_empty() {
+                            return None;
+                        }
+                        let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
+                            self.output_schema.get_index(0).unwrap().0,
+                            agg_map.len(),
+                        );
+                        let dtypes = agg_fns
+                            .iter()
+                            .take(self.number_of_aggs())
+                            .map(|func| func.dtype())
+                            .collect::<Vec<_>>();
+
+                        let mut buffers = dtypes
+                            .iter()
+                            .map(|dtype| AnyValueBuffer::new(dtype, slice_len))
+                            .collect::<Vec<_>>();
+
+                        agg_map.into_iter().skip(offset).take(slice_len).for_each(
+                            |(k, &offset)| {
+                                key_builder.append_option(k.value);
+
+                                for (i, buffer) in (offset as usize
+                                    ..offset as usize + self.aggregation_columns.len())
+                                    .zip(buffers.iter_mut())
+                                {
+                                    unsafe {
+                                        let agg_fn = agg_fns.get_unchecked_release_mut(i);
+                                        let av = agg_fn.finalize();
+                                        buffer.add(av);
+                                    }
+                                }
+                            },
+                        );
+
+                        let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
+                        cols.push(key_builder.finish().into_series());
+                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        for (s, (name, dtype)) in cols.iter_mut().zip(self.output_schema.iter()) {
+                            if s.name() != name {
+                                s.rename(name);
+                            }
+                            if s.dtype() != dtype {
+                                *s = s.cast(dtype).unwrap()
+                            }
+                        }
+                        Some(DataFrame::new_no_checks(cols))
+                    })
+                    .collect::<Vec<_>>();
+            Ok(dfs)
+        })
     }
 }
 
@@ -182,7 +251,7 @@ where
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, other: Box<dyn Sink>) {
+    fn combine(&mut self, mut other: Box<dyn Sink>) {
         // don't parallel this as this is already done in parallel.
         let other = other.as_any().downcast_ref::<Self>().unwrap();
 
@@ -222,6 +291,12 @@ where
             );
     }
 
+    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
+        let dfs = self.pre_finalize()?;
+        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
+        DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished)
+    }
+
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
         let mut new = Self::new(
             self.key.clone(),
@@ -235,74 +310,7 @@ where
         Box::new(new)
     }
 
-    fn finalize(&mut self) -> PolarsResult<DataFrame> {
-        // TODO! parallel
-        let mut aggregators = std::mem::take(&mut self.aggregators);
-        let slices = compute_slices(&self.pre_agg_partitions, self.slice);
-
-        POOL.install(|| {
-            let dfs =
-                self.pre_agg_partitions
-                    .par_iter()
-                    .zip(aggregators.par_iter_mut())
-                    .zip(slices.par_iter())
-                    .filter_map(|((agg_map, agg_fns), slice)| {
-                        let (offset, slice_len) = (*slice)?;
-                        if agg_map.is_empty() {
-                            return None;
-                        }
-                        let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
-                            self.output_schema.get_index(0).unwrap().0,
-                            agg_map.len(),
-                        );
-                        let dtypes = agg_fns
-                            .iter()
-                            .take(self.number_of_aggs())
-                            .map(|func| func.dtype())
-                            .collect::<Vec<_>>();
-
-                        let mut buffers = dtypes
-                            .iter()
-                            .map(|dtype| AnyValueBuffer::new(dtype, slice_len))
-                            .collect::<Vec<_>>();
-
-                        agg_map.into_iter().skip(offset).take(slice_len).for_each(
-                            |(k, &offset)| {
-                                key_builder.append_option(k.value);
-
-                                for (i, buffer) in (offset as usize
-                                    ..offset as usize + self.aggregation_columns.len())
-                                    .zip(buffers.iter_mut())
-                                {
-                                    unsafe {
-                                        let agg_fn = agg_fns.get_unchecked_release_mut(i);
-                                        let av = agg_fn.finalize();
-                                        buffer.add(av);
-                                    }
-                                }
-                            },
-                        );
-
-                        let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
-                        cols.push(key_builder.finish().into_series());
-                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
-                        for (s, (name, dtype)) in cols.iter_mut().zip(self.output_schema.iter()) {
-                            if s.name() != name {
-                                s.rename(name);
-                            }
-                            if s.dtype() != dtype {
-                                *s = s.cast(dtype).unwrap()
-                            }
-                        }
-                        Some(DataFrame::new_no_checks(cols))
-                    })
-                    .collect::<Vec<_>>();
-            let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-            DataFrame::new(std::mem::take(df.get_columns_mut()))
-        })
-    }
-
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&mut self) -> &mut dyn Any {
         self
     }
 }

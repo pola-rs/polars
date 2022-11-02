@@ -40,6 +40,7 @@ endif
 	$(VENV_ACT_BIN)pip install -U pip
 	$(VENV_ACT_BIN)pip install -r requirements-dev.txt
 	$(VENV_ACT_BIN)pip install -r requirements-lint.txt
+	$(VENV_ACT_BIN)pip install -r docs/requirements-docs.txt
 endif
 
 develop: $(VENV)  ## Build by running `maturin develop`
