@@ -223,6 +223,13 @@ class Series:
 
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
+        elif isinstance(values, range):
+            self._s = (
+                pli.DataFrame()
+                .select(pli.arange(values.start, values.stop, values.step))
+                .to_series()
+                .rename(name, in_place=True)
+            )._s
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
                 name, values, dtype=dtype, strict=strict, dtype_if_empty=dtype_if_empty
