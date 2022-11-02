@@ -269,9 +269,10 @@ def test_arithmetic(s: pl.Series) -> None:
     assert ((a / 1) == [1.0, 2.0]).sum() == 2
     assert ((a // 2) == [0, 1]).sum() == 2
     assert ((a * 2) == [2, 4]).sum() == 2
-    assert ((1 + a) == [2, 3]).sum() == 2
+    assert ((2 + a) == [3, 4]).sum() == 2
     assert ((1 - a) == [0, -1]).sum() == 2
-    assert ((1 * a) == [1, 2]).sum() == 2
+    assert ((2 * a) == [2, 4]).sum() == 2
+
     # integer division
     assert_series_equal(1 / a, pl.Series([1.0, 0.5]))
     if s.dtype == Int64:
@@ -343,6 +344,9 @@ def test_add_string() -> None:
     s = pl.Series(["hello", "weird"])
     result = s + " world"
     assert_series_equal(result, pl.Series(["hello world", "weird world"]))
+
+    result = "pfx:" + s
+    assert_series_equal(result, pl.Series(["pfx:hello", "pfx:weird"]))
 
 
 def test_append_extend() -> None:
