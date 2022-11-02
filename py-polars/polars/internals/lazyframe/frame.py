@@ -1145,6 +1145,61 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ├╌╌╌╌╌┤
         │ 3   │
         └─────┘
+        >>> df.select(["foo", "bar"]).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   │
+        └─────┴─────┘
+
+        >>> df.select(pl.col("foo") + 1).collect()
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        ├╌╌╌╌╌┤
+        │ 4   │
+        └─────┘
+
+        >>> df.select([pl.col("foo") + 1, pl.col("bar") + 1]).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 2   ┆ 7   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 9   │
+        └─────┴─────┘
+
+        >>> df.select(pl.when(pl.col("foo") > 2).then(10).otherwise(0)).collect()
+        shape: (3, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ i64     │
+        ╞═════════╡
+        │ 0       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 0       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 10      │
+        └─────────┘
 
         """
         exprs = pli.selection_to_pyexpr_list(exprs)
@@ -1634,6 +1689,39 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
+        >>> df.join(other_df, on="ham", how="left").collect()
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ foo ┆ bar ┆ ham ┆ apple │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ i64 ┆ f64 ┆ str ┆ str   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ 1   ┆ 6.0 ┆ a   ┆ x     │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2   ┆ 7.0 ┆ b   ┆ y     │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3   ┆ 8.0 ┆ c   ┆ null  │
+        └─────┴─────┴─────┴───────┘
+        >>> df.join(other_df, on="ham", how="semi").collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ f64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6.0 ┆ a   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7.0 ┆ b   │
+        └─────┴─────┴─────┘
+        >>> df.join(other_df, on="ham", how="anti").collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ f64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 3   ┆ 8.0 ┆ c   │
+        └─────┴─────┴─────┘
 
         """
         if not isinstance(other, LazyFrame):
@@ -2157,6 +2245,77 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         matches_supertype
             Fill all matching supertype of the fill ``value``.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None, 4],
+        ...         "b": [0.5, 4, None, 13],
+        ...     }
+        ... ).lazy()
+        >>> df.fill_null(99).collect()
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ f64  │
+        ╞═════╪══════╡
+        │ 1   ┆ 0.5  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ 4.0  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 99  ┆ 99.0 │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 4   ┆ 13.0 │
+        └─────┴──────┘
+        >>> df.fill_null(strategy="forward").collect()
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ f64  │
+        ╞═════╪══════╡
+        │ 1   ┆ 0.5  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ 4.0  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ 4.0  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 4   ┆ 13.0 │
+        └─────┴──────┘
+
+        >>> df.fill_null(strategy="max").collect()
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ f64  │
+        ╞═════╪══════╡
+        │ 1   ┆ 0.5  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ 4.0  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 4   ┆ 13.0 │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 4   ┆ 13.0 │
+        └─────┴──────┘
+
+        >>> df.fill_null(strategy="zero").collect()
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ f64  │
+        ╞═════╪══════╡
+        │ 1   ┆ 0.5  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ 4.0  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 0   ┆ 0.0  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 4   ┆ 13.0 │
+        └─────┴──────┘
+
         """
         if value is not None:
             if isinstance(value, pli.Expr):
@@ -2210,6 +2369,30 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Note that floating point NaN (Not a Number) are not missing values!
         To replace missing values, use :func:`fill_null` instead.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1.5, 2, float("NaN"), 4],
+        ...         "b": [0.5, 4, float("NaN"), 13],
+        ...     }
+        ... ).lazy()
+        >>> df.fill_nan(99).collect()
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ f64  ┆ f64  │
+        ╞══════╪══════╡
+        │ 1.5  ┆ 0.5  │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2.0  ┆ 4.0  │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 99.0 ┆ 99.0 │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 4.0  ┆ 13.0 │
+        └──────┴──────┘
+
         """
         if not isinstance(fill_value, pli.Expr):
             fill_value = pli.lit(fill_value)
@@ -2231,6 +2414,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞══════════╪═════╡
         │ 1.290994 ┆ 0.5 │
         └──────────┴─────┘
+        >>> df.std(ddof=0).collect()
+        shape: (1, 2)
+        ┌──────────┬──────────┐
+        │ a        ┆ b        │
+        │ ---      ┆ ---      │
+        │ f64      ┆ f64      │
+        ╞══════════╪══════════╡
+        │ 1.118034 ┆ 0.433013 │
+        └──────────┴──────────┘
 
         """
         return self._from_pyldf(self._ldf.std(ddof))
@@ -2251,6 +2443,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞══════════╪══════╡
         │ 1.666667 ┆ 0.25 │
         └──────────┴──────┘
+        >>> df.var(ddof=0).collect()
+        shape: (1, 2)
+        ┌──────┬────────┐
+        │ a    ┆ b      │
+        │ ---  ┆ ---    │
+        │ f64  ┆ f64    │
+        ╞══════╪════════╡
+        │ 1.25 ┆ 0.1875 │
+        └──────┴────────┘
 
         """
         return self._from_pyldf(self._ldf.var(ddof))

@@ -1338,6 +1338,8 @@ class DateTimeNameSpace:
         """
         Divide the date/ datetime range into buckets.
 
+        Each date/datetime is mapped to the start of its bucket.
+
         The `every` and `offset` argument are created with the
         the following string language:
 
@@ -1402,6 +1404,34 @@ class DateTimeNameSpace:
         >>> s.dt.truncate("1h").series_equal(s.dt.truncate(timedelta(hours=1)))
         True
 
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 1, 1)
+        >>> s = pl.date_range(start, stop, "10m", name="dates")
+        >>> s
+        shape: (7,)
+        Series: 'dates' [datetime[μs]]
+        [
+                2001-01-01 00:00:00
+                2001-01-01 00:10:00
+                2001-01-01 00:20:00
+                2001-01-01 00:30:00
+                2001-01-01 00:40:00
+                2001-01-01 00:50:00
+                2001-01-01 01:00:00
+        ]
+        >>> s.dt.truncate("30m")
+        shape: (7,)
+        Series: 'dates' [datetime[μs]]
+        [
+                2001-01-01 00:00:00
+                2001-01-01 00:00:00
+                2001-01-01 00:00:00
+                2001-01-01 00:30:00
+                2001-01-01 00:30:00
+                2001-01-01 00:30:00
+                2001-01-01 01:00:00
+        ]
+
         """
 
     def round(
@@ -1411,6 +1441,11 @@ class DateTimeNameSpace:
     ) -> pli.Series:
         """
         Divide the date/ datetime range into buckets.
+
+        Each date/datetime in the first half of the interval
+        is mapped to the start of its bucket.
+        Each date/datetime in the seconod half of the interval
+        is mapped to the end of its bucket.
 
         The `every` and `offset` argument are created with the
         the following string language:
@@ -1480,5 +1515,21 @@ class DateTimeNameSpace:
         ]
         >>> s.dt.round("1h").series_equal(s.dt.round(timedelta(hours=1)))
         True
+
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 1, 1)
+        >>> s = pl.date_range(start, stop, "10m", name="dates")
+        >>> s.dt.round("30m")
+        shape: (7,)
+        Series: 'dates' [datetime[μs]]
+        [
+                2001-01-01 00:00:00
+                2001-01-01 00:00:00
+                2001-01-01 00:30:00
+                2001-01-01 00:30:00
+                2001-01-01 00:30:00
+                2001-01-01 01:00:00
+                2001-01-01 01:00:00
+        ]
 
         """
