@@ -22,6 +22,7 @@ type WindowSize = usize;
 type Len = usize;
 
 #[inline]
+/// NaN will be smaller than every valid value
 pub fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
 where
     T: PartialOrd + IsFloat,
@@ -42,6 +43,7 @@ where
 }
 
 #[inline]
+/// NaN will be larger than every valid value
 pub fn compare_fn_nan_max<T>(a: &T, b: &T) -> Ordering
 where
     T: PartialOrd + IsFloat,
