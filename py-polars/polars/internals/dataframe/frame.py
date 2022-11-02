@@ -5278,13 +5278,6 @@ class DataFrame:
         -------
         LazyFrame
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3]}).lazy()
-        naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
-
-          DF ["a"]; PROJECT */1 COLUMNS; SELECTION: "None"
-
         """
         return pli.wrap_ldf(self._df.lazy())
 
@@ -5668,6 +5661,7 @@ class DataFrame:
                 "27b"
                 "38c"
         ]
+
         """
         if axis == 0:
             return self._from_pydf(self._df.sum())
@@ -5817,7 +5811,7 @@ class DataFrame:
         ╞═════╪═════╪══════╡
         │ 1.0 ┆ 1.0 ┆ null │
         └─────┴─────┴──────┘
-        >>> df.std(ddof = 0)
+        >>> df.std(ddof=0)
         shape: (1, 3)
         ┌──────────┬──────────┬──────┐
         │ foo      ┆ bar      ┆ ham  │
@@ -5826,6 +5820,7 @@ class DataFrame:
         ╞══════════╪══════════╪══════╡
         │ 0.816497 ┆ 0.816497 ┆ null │
         └──────────┴──────────┴──────┘
+
         """
         return self._from_pydf(self._df.std(ddof))
 
@@ -5856,7 +5851,7 @@ class DataFrame:
         ╞═════╪═════╪══════╡
         │ 1.0 ┆ 1.0 ┆ null │
         └─────┴─────┴──────┘
-        >>> df.var(ddof = 0)
+        >>> df.var(ddof=0)
         shape: (1, 3)
         ┌──────────┬──────────┬──────┐
         │ foo      ┆ bar      ┆ ham  │
@@ -5865,6 +5860,7 @@ class DataFrame:
         ╞══════════╪══════════╪══════╡
         │ 0.666667 ┆ 0.666667 ┆ null │
         └──────────┴──────────┴──────┘
+
         """
         return self._from_pydf(self._df.var(ddof))
 

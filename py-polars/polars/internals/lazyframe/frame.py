@@ -2411,7 +2411,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞══════════╪═════╡
         │ 1.290994 ┆ 0.5 │
         └──────────┴─────┘
-        >>> df.std(ddof = 0).collect()
+        >>> df.std(ddof=0).collect()
         shape: (1, 2)
         ┌──────────┬──────────┐
         │ a        ┆ b        │
@@ -2420,6 +2420,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞══════════╪══════════╡
         │ 1.118034 ┆ 0.433013 │
         └──────────┴──────────┘
+
         """
         return self._from_pyldf(self._ldf.std(ddof))
 
@@ -2439,7 +2440,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞══════════╪══════╡
         │ 1.666667 ┆ 0.25 │
         └──────────┴──────┘
-        >>> df.var(ddof = 0).collect()
+        >>> df.var(ddof=0).collect()
         shape: (1, 2)
         ┌──────┬────────┐
         │ a    ┆ b      │
@@ -2448,6 +2449,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞══════╪════════╡
         │ 1.25 ┆ 0.1875 │
         └──────┴────────┘
+
         """
         return self._from_pyldf(self._ldf.var(ddof))
 
