@@ -237,3 +237,15 @@ def test_shrink_dtype() -> None:
         "g": [0.10000000149011612, 1.3200000524520874, 0.11999999731779099],
         "h": [True, None, False],
     }
+
+
+def test_diff_duration_dtype() -> None:
+    dates = ["2022-01-01", "2022-01-02", "2022-01-03", "2022-01-03"]
+    df = pl.DataFrame({"date": pl.Series(dates).str.strptime(pl.Date, "%Y-%m-%d")})
+
+    assert df.select(pl.col("date").diff() < pl.duration(days=1))["date"].to_list() == [
+        None,
+        False,
+        False,
+        True,
+    ]

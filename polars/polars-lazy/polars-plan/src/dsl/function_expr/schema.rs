@@ -211,6 +211,16 @@ impl FunctionExpr {
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
             IsNotNull | IsNull | Not | IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
+            #[cfg(feature = "diff")]
+            Diff(_, _) => map_dtype(&|dt| match dt {
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(tu, _) => DataType::Duration(*tu),
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
+                #[cfg(feature = "dtype-time")]
+                DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
+                dt => dt.clone(),
+            }),
             ShrinkType => {
                 // we return the smallest type this can return
                 // this might not be correct once the actual data

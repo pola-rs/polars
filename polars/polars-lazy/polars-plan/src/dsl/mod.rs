@@ -1814,11 +1814,7 @@ impl Expr {
     #[cfg(feature = "diff")]
     #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
     pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
-        self.apply(
-            move |s| Ok(s.diff(n, null_behavior)),
-            GetOutput::same_type(),
-        )
-        .with_fmt("diff")
+        self.apply_private(FunctionExpr::Diff(n, null_behavior))
     }
 
     #[cfg(feature = "pct_change")]
