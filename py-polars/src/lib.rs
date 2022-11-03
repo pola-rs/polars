@@ -25,10 +25,10 @@ mod set;
 mod sql;
 pub mod utils;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(use_mimalloc)))]
 use jemallocator::Jemalloc;
 use lazy::ToExprs;
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(not(target_os = "linux"), use_mimalloc))]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
@@ -57,11 +57,11 @@ use crate::prelude::{
 use crate::series::PySeries;
 
 #[global_allocator]
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(use_mimalloc)))]
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(not(target_os = "linux"), use_mimalloc))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pyfunction]
