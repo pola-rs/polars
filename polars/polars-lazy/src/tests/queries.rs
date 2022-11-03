@@ -2049,3 +2049,33 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "cross_join")]
+fn test_cse_columns_projections() -> PolarsResult<()> {
+    let right = df![
+        "A" => [1, 2],
+        "B" => [3, 4],
+        "D" => [5, 6]
+    ]?
+    .lazy();
+
+    let left = df![
+        "C" => [3, 4],
+    ]?
+    .lazy();
+
+    let left = left.cross_join(right.clone().select([col("A")]));
+    let q = left.join(
+        right.rename(["B"], ["C"]),
+        [col("A"), col("C")],
+        [col("A"), col("C")],
+        JoinType::Left,
+    );
+
+    let out = q.collect()?;
+
+    assert_eq!(out.get_column_names(), &["C", "A", "D"]);
+
+    Ok(())
+}
