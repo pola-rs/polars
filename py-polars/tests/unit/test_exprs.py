@@ -375,6 +375,7 @@ def test_arr_contains() -> None:
 
 
 def test_rank_so_4109() -> None:
+    # also tests ranks null behavior
     df = pl.from_dict(
         {
             "id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4],
@@ -382,13 +383,21 @@ def test_rank_so_4109() -> None:
         }
     ).sort(by=["id", "rank"])
 
-    assert df.groupby("id").agg(pl.col("rank").rank()).to_dict(False) == {
+    assert df.groupby("id").agg(
+        [
+            pl.col("rank").alias("original"),
+            pl.col("rank").rank(method="dense").alias("dense"),
+            pl.col("rank").rank(method="average").alias("average"),
+        ]
+    ).to_dict(False) == {
         "id": [1, 2, 3, 4],
-        "rank": [
+        "original": [[None, 2, 3, 4], [1, 2, 3, 4], [None, 1, 3, 4], [None, 1, 3, 4]],
+        "dense": [[None, 1, 2, 3], [1, 2, 3, 4], [None, 1, 2, 3], [None, 1, 2, 3]],
+        "average": [
+            [None, 1.0, 2.0, 3.0],
             [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [1.0, 2.0, 3.0, 4.0],
+            [None, 1.0, 2.0, 3.0],
+            [None, 1.0, 2.0, 3.0],
         ],
     }
 

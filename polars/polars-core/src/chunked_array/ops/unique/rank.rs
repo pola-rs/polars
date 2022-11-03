@@ -50,17 +50,27 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
         _ => {}
     }
 
-    // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
-    // TODO: Need to expose nulls_last in argsort to prevent this.
     if s.null_count() > 0 {
-        // Fill using MaxBound/MinBound to keep nulls first.
+        let nulls = s.is_not_null().rechunk();
+        let arr = nulls.downcast_iter().next().unwrap();
+        let validity = arr.values();
+        // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
+        // TODO: Need to expose nulls_last in argsort to prevent this.
+        // Fill using MaxBound/MinBound to give nulls last rank.
+        // we will replace them later.
         let null_strategy = if reverse {
-            FillNullStrategy::MaxBound
-        } else {
             FillNullStrategy::MinBound
+        } else {
+            FillNullStrategy::MaxBound
         };
         let s = s.fill_null(null_strategy).unwrap();
-        return rank(&s, method, reverse);
+
+        let mut out = rank(&s, method, reverse);
+        unsafe {
+            let arr = &mut out.chunks_mut()[0];
+            *arr = arr.with_validity(Some(validity.clone()))
+        }
+        return out;
     }
 
     // See: https://github.com/scipy/scipy/blob/v1.7.1/scipy/stats/stats.py#L8631-L8737
