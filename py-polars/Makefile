@@ -1,10 +1,11 @@
-.DEFAULT_GOAL := telp
+.DEFAULT_GOAL := help
 
 SHELL=/bin/bash
 VENV ?= venv
 
 WHEELS_DEBUG   = wheels/debug
 WHEELS_RELEASE = wheels/release
+RELEASE_FLAGS  = --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
 
 ifeq ($(OS),Windows_NT)
     VENV_BIN=$(VENV)/Scripts
@@ -27,7 +28,7 @@ venv:
 	:
 else # use VENV
 	VENV_BIN    := $(abspath $(VENV_BIN))/# no space after trailing '/'
-	VENV_ACT_BIN = $(VENV_BIN)# no space after closing ')'
+	VENV_ACT_BIN = $(CONDA_DEACT) . $(VENV_BIN)activate; $(VENV_BIN)# no space after closing ')'
 	CLEAN_VENV   = -rm -rf $(VENV)
 ifeq ($(VENV),venv)
 venv:  ## Create virtual environment for building polars (optionally with VENV=<name>)
@@ -38,6 +39,7 @@ $(VENV):
 endif
 	python -m venv  $(VENV)
 	$(VENV_ACT_BIN)pip install -U pip
+	$(VENV_ACT_BIN)pip install -U wheel
 	$(VENV_ACT_BIN)pip install -r requirements-dev.txt
 	$(VENV_ACT_BIN)pip install -r requirements-lint.txt
 	$(VENV_ACT_BIN)pip install -r docs/requirements-docs.txt
@@ -47,14 +49,13 @@ develop: $(VENV)  ## Build by running `maturin develop`
 	$(VENV_ACT_BIN)maturin develop
 
 develop-release: $(VENV)  ## Build by running `maturin develop --release`
-	$(VENV_ACT_BIN)maturin develop --release
+	$(VENV_ACT_BIN)maturin develop $(RELEASE_FLAGS)
 
 .PHONY: clean cleaner cleanest
 clean:  ## Just run `cargo clean`
 	-cargo clean
 
-cleaner: clean  ## clean + remove VENV and other auto-generated dirs & files
-	$(CLEAN_VENV)
+cleaner: clean  ## make clean + auto-generated dirs & files
 	-rm -rf target
 	-rm -rf docs/build
 	-rm -rf docs/source/reference/api
@@ -67,7 +68,8 @@ cleaner: clean  ## clean + remove VENV and other auto-generated dirs & files
 	-rm -f polars/polars.abi3.so
 	-find . \( -type f -name '*.py[co]' \) -or \( -type d -name __pycache__ \) -delete
 
-cleanest: cleaner  ## cleaner + remove the wheels
+cleanest: cleaner  ## make cleaner + remove VENV and the wheels
+	$(CLEAN_VENV)
 	-rm -rf $(WHEELS_DEBUG)
 	-rm -rf $(WHEELS_RELEASE)
 	-rm -rf wheels
@@ -91,27 +93,27 @@ clippy:  ## Run clippy
 pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
-test: develop # develop  ## Run fast unittests
-	$(VENV_ACT_BIN)pytest tests/unit/
+test: $(VENV)  ## Run fast unittests
+	$(VENV_ACT_BIN)pytest -v tests/unit/
 
 .PHONY: doctest
-doctest: $(VENV) develop  ## Run doctests
+doctest: $(VENV)  ## Run doctests
 	$(VENV_ACT_BIN)python tests/docs/run_doc_examples.py
 
 .PHONY: test-all
-test-all: # develop  ## Run all tests
-	$(VENV_ACT_BIN)pytest
-	$(VENV_ACT_BIN)python tests/docs/run_doc_examples.py
+test-all: $(VENV)  ## Run all tests
+	-$(VENV_ACT_BIN)pytest -v
+	-$(VENV_ACT_BIN)python tests/docs/run_doc_examples.py
 
 .PHONY: coverage
-coverage:  ## Run tests and report coverage
-	$(VENV_ACT_BIN)pytest --cov
+coverage: $(VENV)  ## Run tests and report coverage
+	$(VENV_ACT_BIN)pytest -v --cov
 
 build-debug: $(VENV)  ## Build debug wheel
 	$(VENV_ACT_BIN)maturin build -o $(WHEELS_DEBUG)
 
 build: $(VENV)  ## Build release wheel
-	$(VENV_ACT_BIN)maturin build -o $(WHEELS_RELEASE) --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
+	$(VENV_ACT_BIN)maturin build -o $(WHEELS_RELEASE) $(RELEASE_FLAGS)
 
 install-debug: $(VENV)  ## pip install debug wheel
 	$(VENV_ACT_BIN)pip install --no-deps --force-reinstall -U $(WHEELS_DEBUG)/polars-*.whl
@@ -119,25 +121,27 @@ install-debug: $(VENV)  ## pip install debug wheel
 install: $(VENV)  ## pip install release wheel
 	$(VENV_ACT_BIN)pip install --no-deps --force-reinstall -U $(WHEELS_RELEASE)/polars-*.whl
 
-# Shortcut targets
-build-install-debug: build-debug install-debug  ## Build and install debug wheel
-build-install: build install  ## Build and install release wheel
-
 .PHONY: help
 help:  ## Display this help screen
 	@echo "Usage:"
-	@echo "* To run a make <comand> with venv, issue"
-	@echo "  > make <command>"
-	@echo "* To run a make <command> with alternative environement <name>, issue"
-	@echo "  > make VENV=<name> <command>"
-	@echo "* To run a make <command> without virtual environment (ex: conda), issue"
-	@echo "  > make VENV='' <command>"
+	@echo "  * To run a make <comand> with venv, issue"
+	@echo "    $$ make <command>"
+	@echo "  * To run a make <command> with alternative environement <name>, issue"
+	@echo "    $$ make VENV=<name> <command>"
+	@echo "  * To run a make <command> without virtual environment (ex: conda), issue"
+	@echo "    $$ make VENV='' <command>"
 	@echo
-	@echo "Currently:"
-	@echo "  VENV = '$(VENV)'"
-	@echo
-
 	@echo -e '\033[1mAvailable commands:\033[0m'
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort
+	@echo
+	@echo "Examples:"
+	@echo "  * Compile polars (debug) in venv and run test-all in one go"
+	@echo "    $$ make develop test-all"
+	@echo "  * Build polars release wheel, install it in venv and run test-all in one go"
+	@echo "    $$ make build install test-all"
+	@echo "  * Build release wheel, then install into venv and outside of venv"
+	@echo "    $$ make build   # build release wheel"
+	@echo "    $$ make install # install release wheel into venv"
+	@echo "    $$ make install VENV='' # install release wheel outside of venv (e.g. in conda env)"
 
 #EOF
