@@ -288,3 +288,37 @@ def test_explicit_list_agg_sort_in_groupby() -> None:
         .sort("A")
         .frame_equal(df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A"))
     )
+
+
+def test_sorted_join_query_5406() -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "Datetime": [
+                    "2022-11-02 08:00:00",
+                    "2022-11-02 08:00:00",
+                    "2022-11-02 08:01:00",
+                    "2022-11-02 07:59:00",
+                    "2022-11-02 08:02:00",
+                    "2022-11-02 08:02:00",
+                ],
+                "Group": ["A", "A", "A", "B", "B", "B"],
+                "Value": [1, 2, 1, 1, 2, 1],
+            }
+        )
+        .with_column(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
+        .with_row_count("RowId")
+    )
+
+    df1 = df.sort(by=["Datetime", "RowId"])
+
+    filter1 = (
+        df1.groupby(["Datetime", "Group"])
+        .agg([pl.all().sort_by("Value", reverse=True).first()])
+        .sort(["Datetime", "RowId"])
+    )
+
+    out = df1.join(filter1, on="RowId", how="left").select(
+        pl.exclude(["Datetime_right", "Group_right"])
+    )
+    assert out["Value_right"].to_list() == [1, None, 2, 1, 2, None]

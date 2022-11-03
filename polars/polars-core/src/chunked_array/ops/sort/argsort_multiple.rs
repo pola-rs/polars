@@ -54,7 +54,6 @@ pub(crate) fn argsort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
         }
     });
     let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-    let mut ca = ca.into_inner();
-    ca.set_sorted(reverse[0]);
-    Ok(ca)
+    // Don't set to sorted. Argsort indices are not sorted.
+    Ok(ca.into_inner())
 }
