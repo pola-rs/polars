@@ -18,8 +18,11 @@ pub mod pct_change;
 mod round;
 mod to_list;
 mod unique;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NullBehavior {
     /// drop nulls
     Drop,

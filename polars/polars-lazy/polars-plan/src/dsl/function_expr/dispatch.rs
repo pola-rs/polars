@@ -29,3 +29,8 @@ pub(super) fn is_unique(s: &Series) -> PolarsResult<Series> {
 pub(super) fn is_duplicated(s: &Series) -> PolarsResult<Series> {
     s.is_duplicated().map(|ca| ca.into_series())
 }
+
+#[cfg(feature = "diff")]
+pub(super) fn diff(s: &Series, n: usize, null_behavior: NullBehavior) -> PolarsResult<Series> {
+    Ok(s.diff(n, null_behavior))
+}

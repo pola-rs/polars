@@ -107,6 +107,8 @@ pub enum FunctionExpr {
     IsDuplicated,
     Coalesce,
     ShrinkType,
+    #[cfg(feature = "diff")]
+    Diff(usize, NullBehavior),
 }
 
 impl Display for FunctionExpr {
@@ -160,6 +162,8 @@ impl Display for FunctionExpr {
             IsDuplicated => "is_duplicated",
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
+            #[cfg(feature = "diff")]
+            Diff(_, _) => "diff",
         };
         write!(f, "{}", s)
     }
@@ -331,6 +335,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsDuplicated => map!(dispatch::is_duplicated),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
+            #[cfg(feature = "diff")]
+            Diff(n, null_behavior) => map!(dispatch::diff, n, null_behavior),
         }
     }
 }
