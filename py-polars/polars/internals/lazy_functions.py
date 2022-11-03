@@ -1340,6 +1340,7 @@ def arange(
     step: int = ...,
     *,
     eager: Literal[True],
+    dtype: PolarsDataType | None = ...,
 ) -> pli.Series:
     ...
 
@@ -1351,6 +1352,7 @@ def arange(
     step: int = ...,
     *,
     eager: bool = False,
+    dtype: PolarsDataType | None = ...,
 ) -> pli.Expr | pli.Series:
     ...
 
@@ -1361,13 +1363,13 @@ def arange(
     step: int = 1,
     *,
     eager: bool = False,
+    dtype: PolarsDataType | None = None,
 ) -> pli.Expr | pli.Series:
     """
-    Create a range expression.
+    Create a range expression (or Series).
 
-    This can be used in a `select`, `with_column` etc.
-
-    Be sure that the range size is equal to the DataFrame you are collecting.
+    This can be used in a `select`, `with_column` etc. Be sure that the resulting
+    range size is equal to the length of the DataFrame you are collecting.
 
     Examples
     --------
@@ -1383,18 +1385,25 @@ def arange(
         Step size of the range.
     eager
         If eager evaluation is `True`, a Series is returned instead of an Expr.
+    dtype
+        Apply an explicit integer dtype to the resulting expression (default is Int64).
 
     """
     low = pli.expr_to_lit_or_expr(low, str_to_lit=False)
     high = pli.expr_to_lit_or_expr(high, str_to_lit=False)
-    if eager:
+    range_expr = pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
+
+    if dtype is not None and dtype != Int64:
+        range_expr = range_expr.cast(dtype)
+    if not eager:
+        return range_expr
+    else:
         return (
             pli.DataFrame()
-            .select(arange(low, high, step))
+            .select(range_expr)
             .to_series()
             .rename("arange", in_place=True)
         )
-    return pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
 
 
 def argsort_by(

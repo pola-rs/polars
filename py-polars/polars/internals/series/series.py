@@ -3,7 +3,18 @@ from __future__ import annotations
 import math
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, Union, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generator,
+    Iterable,
+    Mapping,
+    NoReturn,
+    Sequence,
+    Union,
+    overload,
+)
 from warnings import warn
 
 from polars import internals as pli
@@ -46,6 +57,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.internals.construction import (
     arrow_to_pyseries,
+    iterable_to_pyseries,
     numpy_to_pyseries,
     pandas_to_pyseries,
     sequence_to_pyseries,
@@ -228,7 +240,13 @@ class Series:
 
         elif isinstance(values, range):
             self._s = (
-                pli.arange(values.start, values.stop, values.step, eager=True)
+                pli.arange(
+                    low=values.start,
+                    high=values.stop,
+                    step=values.step,
+                    eager=True,
+                    dtype=dtype,
+                )
                 .rename(name, in_place=True)
                 ._s
             )
@@ -238,6 +256,17 @@ class Series:
             )
         elif _PANDAS_TYPE(values) and isinstance(values, (pd.Series, pd.DatetimeIndex)):
             self._s = pandas_to_pyseries(name, values)
+
+        elif isinstance(values, (Generator, Iterable)) and not isinstance(
+            values, Mapping
+        ):
+            self._s = iterable_to_pyseries(
+                name,
+                values,
+                dtype=dtype,
+                strict=strict,
+                dtype_if_empty=dtype_if_empty,
+            )
         else:
             raise ValueError(f"Series constructor not called properly. Got {values}.")
 
