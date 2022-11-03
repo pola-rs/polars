@@ -577,11 +577,15 @@ def dtype_to_py_type(dtype: PolarsDataType) -> type:
         ) from None
 
 
-def is_polars_dtype(data_type: Any) -> bool:
+def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
-    return isinstance(data_type, DataType) or (
-        type(data_type) is type and issubclass(data_type, DataType)
-    )
+    if data_type == Unknown:
+        # does not represent a realisable dtype, so ignore by default
+        return include_unknown
+    else:
+        return isinstance(data_type, DataType) or (
+            type(data_type) is type and issubclass(data_type, DataType)
+        )
 
 
 def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsDataType:

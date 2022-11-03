@@ -108,6 +108,11 @@ def test_init_inputs(monkeypatch: Any) -> None:
     with pytest.raises(OverflowError):
         pl.Series("bigint", [2**64])
 
+    # numpy not available
+    monkeypatch.setattr(pl.internals.series.series, "_NUMPY_TYPE", lambda x: False)
+    with pytest.raises(ValueError):
+        pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
+
 
 def test_init_dataclass_namedtuple() -> None:
     from dataclasses import dataclass
@@ -1376,17 +1381,17 @@ def test_to_numpy(monkeypatch: Any) -> None:
 
 
 def test_from_generator_or_iterable() -> None:
+    # generator function
+    def gen(n: int) -> Iterator[int]:
+        yield from range(n)
+
     # iterable object
     class Data:
         def __init__(self, n: int):
             self._n = n
 
         def __iter__(self) -> Iterator[int]:
-            yield from range(self._n)
-
-    # generator function
-    def gen(n: int) -> Iterator[int]:
-        yield from range(n)
+            yield from gen(self._n)
 
     expected = pl.Series("s", range(10))
     assert expected.dtype == pl.Int64
@@ -1410,6 +1415,9 @@ def test_from_generator_or_iterable() -> None:
         generated_series = pl.Series("s")
         generated_series._s = ps
         assert_series_equal(expected, generated_series)
+
+    # empty generator
+    assert_series_equal(pl.Series("s", []), pl.Series("s", values=gen(0)))
 
 
 def test_from_sequences(monkeypatch: Any) -> None:
