@@ -22,6 +22,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
 )
+from polars.exceptions import ShapeError
 from polars.internals.construction import iterable_to_pyseries
 from polars.internals.type_aliases import EpochTimeUnit
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -1613,9 +1614,21 @@ def test_is_duplicated() -> None:
 
 
 def test_dot() -> None:
-    s = pl.Series("a", [1, 2, 3])
+    s1 = pl.Series("a", [1, 2, 3])
     s2 = pl.Series("b", [4.0, 5.0, 6.0])
-    assert s.dot(s2) == 32
+
+    assert np.array([1, 2, 3]) @ np.array([4, 5, 6]) == 32
+
+    for dot_result in (
+        s1.dot(s2),
+        s1 @ s2,
+        [1, 2, 3] @ s2,
+        s1 @ np.array([4, 5, 6]),
+    ):
+        assert dot_result == 32
+
+    with pytest.raises(ShapeError, match="length mismatch"):
+        s1 @ [4, 5, 6, 7, 8]
 
 
 def test_sample() -> None:

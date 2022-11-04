@@ -55,6 +55,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
+from polars.exceptions import ShapeError
 from polars.internals.construction import (
     arrow_to_pyseries,
     iterable_to_pyseries,
@@ -194,7 +195,7 @@ class Series:
     def __init__(
         self,
         name: str | ArrayLike | None = None,
-        values: ArrayLike | Sequence[Any] | None = None,
+        values: ArrayLike | None = None,
         dtype: type[DataType] | DataType | None = None,
         strict: bool = True,
         nan_to_null: bool = False,
@@ -268,7 +269,9 @@ class Series:
                 dtype_if_empty=dtype_if_empty,
             )
         else:
-            raise ValueError(f"Series constructor not called properly. Got {values}.")
+            raise ValueError(
+                f"Series constructor called with unsupported type; got {type(values)}"
+            )
 
     @classmethod
     def _from_pyseries(cls, pyseries: PySeries) -> Series:
@@ -588,6 +591,22 @@ class Series:
                 "first cast to integer before raising datelike dtypes to a power"
             )
         return self.to_frame().select(other ** pli.col(self.name)).to_series()
+
+    def __matmul__(self, other: Any) -> float | Series | None:
+        if isinstance(other, Sequence) or (
+            _NUMPY_TYPE(other) and isinstance(other, np.ndarray)
+        ):
+            other = Series(other)
+        # elif isinstance(other, pli.DataFrame):
+        #     return other.__rmatmul__(self)  # type: ignore[return-value]
+        return self.dot(other)
+
+    def __rmatmul__(self, other: Any) -> float | Series | None:
+        if isinstance(other, Sequence) or (
+            _NUMPY_TYPE(other) and isinstance(other, np.ndarray)
+        ):
+            other = Series(other)
+        return other.dot(self)
 
     def __neg__(self) -> Series:
         return 0 - self
@@ -3034,7 +3053,7 @@ class Series:
 
         """
 
-    def dot(self, other: Series) -> float | None:
+    def dot(self, other: Series | ArrayLike) -> float | None:
         """
         Compute the dot/inner product between two Series.
 
@@ -3048,9 +3067,14 @@ class Series:
         Parameters
         ----------
         other
-            Series to compute dot product with
+            Series (or array) to compute dot product with.
 
         """
+        if not isinstance(other, Series):
+            other = Series(other)
+        if len(self) != len(other):
+            n, m = len(self), len(other)
+            raise ShapeError(f"Series length mismatch: expected {n}, found {m}")
         return self._s.dot(other._s)
 
     def mode(self) -> Series:
