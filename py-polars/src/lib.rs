@@ -4,6 +4,16 @@
 extern crate core;
 extern crate polars;
 
+#[cfg(feature = "build_info")]
+#[macro_use]
+extern crate pyo3_built;
+
+#[cfg(feature = "build_info")]
+#[allow(dead_code)]
+mod build {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 pub mod apply;
 pub mod arrow_interop;
 #[cfg(feature = "csv-file")]
@@ -568,6 +578,13 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         py.get_type::<InvalidOperationError>(),
     )
     .unwrap();
+
+    #[cfg(feature = "build_info")]
+    m.add(
+        "_build_info_",
+        pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
+    )?;
+
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();

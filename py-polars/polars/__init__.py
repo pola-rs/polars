@@ -1,3 +1,4 @@
+import os
 import warnings
 
 try:
@@ -148,7 +149,7 @@ from polars.io import (
     scan_ndjson,
     scan_parquet,
 )
-from polars.show_versions import show_versions
+from polars.show_versions import build_info, show_versions
 from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
 from polars.utils import threadpool_size
 
@@ -291,11 +292,10 @@ __all__ = [
     "threadpool_size",
     # version
     "show_versions",
+    "build_info",
     "SQLContext",
 ]
 
 __version__ = version()
-
-import os
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

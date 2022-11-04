@@ -31,6 +31,7 @@ once_cell = "1"
 polars-core = { path = "../polars/polars-core", default-features = false }
 polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
 pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
+pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
 
@@ -60,6 +61,7 @@ pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
+build_info = ["dep:pyo3-built", "dep:built"]
 
 all = [
   "json",
@@ -83,6 +85,7 @@ all = [
   "object",
   "pivot",
   "top_k",
+  "build_info",
   # we need to add this, as maturin fails if we don't
   # remove this once polars-algo is released
   "polars/algo",
@@ -170,3 +173,6 @@ lto = "fat"
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
 # target-cpu = "native"
+
+[build-dependencies]
+built = { version = "0.5", features = ["chrono", "git2"], optional = true }
