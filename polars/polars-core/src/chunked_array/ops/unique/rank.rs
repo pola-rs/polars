@@ -50,17 +50,27 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
         _ => {}
     }
 
-    // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
-    // TODO: Need to expose nulls_last in argsort to prevent this.
     if s.null_count() > 0 {
-        // Fill using MaxBound/MinBound to keep nulls first.
+        let nulls = s.is_not_null().rechunk();
+        let arr = nulls.downcast_iter().next().unwrap();
+        let validity = arr.values();
+        // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
+        // TODO: Need to expose nulls_last in argsort to prevent this.
+        // Fill using MaxBound/MinBound to give nulls last rank.
+        // we will replace them later.
         let null_strategy = if reverse {
-            FillNullStrategy::MaxBound
-        } else {
             FillNullStrategy::MinBound
+        } else {
+            FillNullStrategy::MaxBound
         };
         let s = s.fill_null(null_strategy).unwrap();
-        return rank(&s, method, reverse);
+
+        let mut out = rank(&s, method, reverse);
+        unsafe {
+            let arr = &mut out.chunks_mut()[0];
+            *arr = arr.with_validity(Some(validity.clone()))
+        }
+        return out;
     }
 
     // See: https://github.com/scipy/scipy/blob/v1.7.1/scipy/stats/stats.py#L8631-L8737
@@ -333,13 +343,13 @@ mod test {
         assert_eq!(
             out,
             &[
-                Some(4.0f32),
-                Some(5.5),
-                Some(7.0),
-                Some(5.5),
-                Some(1.5),
-                Some(1.5),
-                Some(3.0)
+                Some(2.0f32),
+                Some(3.5),
+                Some(5.0),
+                Some(3.5),
+                None,
+                None,
+                Some(1.0)
             ]
         );
         let s = Series::new(
@@ -357,9 +367,21 @@ mod test {
         );
         let out = rank(&s, RankMethod::Max, false)
             .idx()?
-            .into_no_null_iter()
+            .into_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[5, 6, 4, 1, 8, 4, 2, 7]);
+        assert_eq!(
+            out,
+            &[
+                Some(4),
+                Some(5),
+                Some(3),
+                None,
+                Some(7),
+                Some(3),
+                Some(1),
+                Some(6)
+            ]
+        );
 
         Ok(())
     }
@@ -394,9 +416,9 @@ mod test {
         let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
         let out = rank(&s, RankMethod::Dense, true)
             .idx()?
-            .into_no_null_iter()
+            .into_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[1 as IdxSize, 3, 3, 2, 1]);
+        assert_eq!(out, &[None, Some(2 as IdxSize), Some(2), Some(1), None]);
 
         Ok(())
     }
