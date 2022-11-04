@@ -1249,7 +1249,7 @@ impl LazyGroupBy {
         #[cfg(feature = "dynamic_groupby")]
         let lp = LogicalPlanBuilder::from(self.logical_plan)
             .groupby(
-                Arc::new(self.keys),
+                self.keys,
                 aggs,
                 None,
                 self.maintain_order,
@@ -1260,7 +1260,7 @@ impl LazyGroupBy {
 
         #[cfg(not(feature = "dynamic_groupby"))]
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(Arc::new(self.keys), aggs, None, self.maintain_order)
+            .groupby(self.keys, aggs, None, self.maintain_order)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }

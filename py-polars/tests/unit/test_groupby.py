@@ -200,3 +200,15 @@ def test_take_in_groupby() -> None:
     assert df.groupby("group").agg(
         pl.col("values").take(1) - pl.col("values").take(2)
     ).sort("group").to_dict(False) == {"group": [1, 2], "values": [197, 494]}
+
+
+def test_groupby_wildcard() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 2],
+        }
+    )
+    assert df.groupby([pl.col("*")], maintain_order=True).agg(
+        [pl.col("a").first().suffix("_agg")]
+    ).to_dict(False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}

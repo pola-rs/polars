@@ -30,7 +30,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-10-24
+          toolchain: nightly-2022-11-03
           components: rust-docs
 
       - name: Cache Rust
