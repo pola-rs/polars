@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import warnings
+from collections.abc import Sized
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -9,7 +10,6 @@ from typing import (
     Callable,
     Generator,
     Iterable,
-    Mapping,
     NoReturn,
     Sequence,
     Union,
@@ -258,7 +258,7 @@ class Series:
             self._s = pandas_to_pyseries(name, values)
 
         elif isinstance(values, (Generator, Iterable)) and not isinstance(
-            values, Mapping
+            values, Sized
         ):
             self._s = iterable_to_pyseries(
                 name,

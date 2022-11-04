@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import os
 import sys
+from collections.abc import Sized
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
@@ -11,6 +12,8 @@ from typing import (
     Any,
     BinaryIO,
     Callable,
+    Generator,
+    Iterable,
     Iterator,
     Mapping,
     NoReturn,
@@ -48,6 +51,7 @@ from polars.exceptions import NoRowsReturned, TooManyRowsReturned
 from polars.internals.construction import (
     arrow_to_pydf,
     dict_to_pydf,
+    iterable_to_pydf,
     numpy_to_pydf,
     pandas_to_pydf,
     sequence_to_pydf,
@@ -279,13 +283,14 @@ class DataFrame:
             self._df = sequence_to_pydf(
                 data, columns=columns, orient=orient, infer_schema_length=50
             )
-
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
 
         elif _PANDAS_TYPE(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(data, columns=columns)
 
+        elif isinstance(data, (Generator, Iterable)) and not isinstance(data, Sized):
+            self._df = iterable_to_pydf(data, columns=columns, orient=orient)
         else:
             raise ValueError("DataFrame constructor not called properly.")
 

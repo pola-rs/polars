@@ -15,6 +15,7 @@ import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.dependencies import zoneinfo
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
+from polars.internals.construction import iterable_to_pydf
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import columns
 
@@ -1213,6 +1214,66 @@ def test_write_csv() -> None:
     assert s == expected
 
 
+def test_from_generator_or_iterable() -> None:
+    # generator function
+    def gen(n: int, strkey: bool = True) -> Iterator[Any]:
+        for i in range(n):
+            yield (str(i) if strkey else i), 1 * i, 2**i, 3**i
+
+    # iterable object
+    class Rows:
+        def __init__(self, n: int, strkey: bool = True):
+            self._n = n
+            self._strkey = strkey
+
+        def __iter__(self) -> Iterator[Any]:
+            yield from gen(self._n, self._strkey)
+
+    # check init from column-oriented generator
+    assert_frame_equal(
+        pl.DataFrame(data=gen(4, False), orient="col"),
+        pl.DataFrame(
+            data=[(0, 0, 1, 1), (1, 1, 2, 3), (2, 2, 4, 9), (3, 3, 8, 27)], orient="col"
+        ),
+    )
+    # check init from row-oriented generators (more common)
+    expected = pl.DataFrame(
+        data=list(gen(4)), columns=["a", "b", "c", "d"], orient="row"
+    )
+    for generated_frame in (
+        pl.DataFrame(data=gen(4), columns=["a", "b", "c", "d"]),
+        pl.DataFrame(data=Rows(4), columns=["a", "b", "c", "d"]),
+        pl.DataFrame(data=(x for x in Rows(4)), columns=["a", "b", "c", "d"]),
+    ):
+        assert_frame_equal(expected, generated_frame)
+        assert generated_frame.schema == {
+            "a": pl.Utf8,
+            "b": pl.Int64,
+            "c": pl.Int64,
+            "d": pl.Int64,
+        }
+
+    # test 'iterable_to_pydf' directly to validate 'chunk_size' behaviour
+    cols = ["a", "b", ("c", pl.Int8), "d"]
+
+    d1 = iterable_to_pydf(gen(4), columns=cols, chunk_size=2)  # type: ignore[arg-type]
+    d2 = iterable_to_pydf(Rows(4), columns=cols, chunk_size=3)  # type: ignore[arg-type]
+    d3 = iterable_to_pydf(Rows(4), columns=cols)  # type: ignore[arg-type]
+
+    expected_data = [("0", 0, 1, 1), ("1", 1, 2, 3), ("2", 2, 4, 9), ("3", 3, 8, 27)]
+    expected_schema = [("a", pl.Utf8), ("b", pl.Int64), ("c", pl.Int8), ("d", pl.Int64)]
+
+    for d in (d1, d2, d3):
+        assert expected_data == d.row_tuples()
+        assert expected_schema == list(zip(d1.columns(), d1.dtypes()))
+
+    # empty iterator
+    assert_frame_equal(
+        pl.DataFrame(data=gen(0), columns=["a", "b", "c", "d"]),
+        pl.DataFrame(columns=["a", "b", "c", "d"]),
+    )
+
+
 def test_from_rows() -> None:
     df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]], orient="row")
     assert df.frame_equal(
@@ -1220,7 +1281,6 @@ def test_from_rows() -> None:
             {"column_0": [1, 2], "column_1": [2, 3], "column_2": ["foo", "bar"]}
         )
     )
-
     df = pl.from_records(
         [[1, datetime.fromtimestamp(100)], [2, datetime.fromtimestamp(2398754908)]],
         orient="row",
@@ -1315,18 +1375,28 @@ def test_reproducible_hash_with_seeds() -> None:
     the same seeds.
 
     """
+    import platform
+
     df = pl.DataFrame({"s": [1234, None, 5678]})
     seeds = (11, 22, 33, 44)
+
+    # TODO: introduce a platform-stable string hash...
+    #  in the meantime, account for arm64 (mac) hash values to reduce noise
     expected = pl.Series(
         "s",
         [
+            7179856081800753525,
+            15496313222292466864,
+            4963241831945886452,
+        ]
+        if platform.mac_ver()[-1] == "arm64"
+        else [
             8823051245921001677,
             988796329533502010,
             7528667241828618484,
         ],
         dtype=pl.UInt64,
     )
-
     result = df.hash_rows(*seeds)
     assert_series_equal(expected, result, check_names=False, check_exact=True)
     result = df["s"].hash(*seeds)

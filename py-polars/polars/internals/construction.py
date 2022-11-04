@@ -27,6 +27,7 @@ from polars.datatypes import (
     List,
     PolarsDataType,
     Time,
+    Unknown,
     dtype_to_arrow_type,
     dtype_to_py_type,
     is_polars_dtype,
@@ -42,6 +43,7 @@ from polars.dependencies import _NUMPY_AVAILABLE, _PANDAS_TYPE, _PYARROW_AVAILAB
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
+from polars.exceptions import ShapeError
 from polars.utils import threadpool_size
 
 if version_info >= (3, 10):
@@ -72,6 +74,13 @@ def is_namedtuple(value: Any, annotated: bool = False) -> bool:
     if all(hasattr(value, attr) for attr in ("_fields", "_field_defaults", "_replace")):
         return len(value.__annotations__) == len(value._fields) if annotated else True
     return False
+
+
+def include_unknowns(
+    schema: dict[str, PolarsDataType], cols: Sequence[str]
+) -> dict[str, PolarsDataType]:
+    """Complete partial schema dict by including Unknown type."""
+    return {col: (schema.get(col, Unknown) or Unknown) for col in cols}
 
 
 ################################
@@ -221,6 +230,8 @@ def iterable_to_pyseries(
             series.append(schunk, append_chunks=True)
             n_chunks += 1
 
+    if series is None:
+        series = to_series_chunk([], dtype)
     if n_chunks > 0:
         series.rechunk(in_place=True)
 
@@ -604,24 +615,25 @@ def sequence_to_pydf(
 
     if len(data) == 0:
         return dict_to_pydf({}, columns=columns)
+    if isinstance(data[0], Generator):
+        data = [list(row) for row in data]
 
-    elif isinstance(data[0], pli.Series):
+    if isinstance(data[0], pli.Series):
         series_names = [s.name for s in data]
         columns, dtypes = _unpack_columns(columns or series_names, n_expected=len(data))
         data_series = []
         for i, s in enumerate(data):
             if not s.name:  # TODO: Replace by `if s.name is None` once allowed
                 s.rename(columns[i], in_place=True)
-
             new_dtype = dtypes.get(columns[i])
             if new_dtype and new_dtype != s.dtype:
                 s = s.cast(new_dtype)
-
             data_series.append(s._s)
 
     elif isinstance(data[0], dict):
         column_names, dtypes = _unpack_columns(columns)
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, dtypes)
+        schema_overrides = include_unknowns(dtypes, column_names) if dtypes else None
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema_overrides)
         if column_names:
             pydf = _post_apply_columns(pydf, column_names)
         return pydf
@@ -643,15 +655,15 @@ def sequence_to_pydf(
 
         if orient == "row":
             column_names, dtypes = _unpack_columns(columns)
-            if len(dtypes) > 0:
-                pydf = PyDataFrame.read_rows(data, infer_schema_length, dtypes)
-            else:
-                pydf = PyDataFrame.read_rows(data, infer_schema_length)
+            schema_override = include_unknowns(dtypes, column_names) if dtypes else None
+            if column_names and data and len(data[0]) != len(column_names):
+                raise ShapeError("The row data does not match the number of columns")
 
-            # change column names given by infer_schema
+            pydf = PyDataFrame.read_rows(data, infer_schema_length, schema_override)
             if column_names:
                 pydf = _post_apply_columns(pydf, column_names)
             return pydf
+
         elif orient == "col" or orient is None:
             columns, dtypes = _unpack_columns(columns, n_expected=len(data))
             data_series = [
@@ -664,14 +676,21 @@ def sequence_to_pydf(
             )
 
     elif is_dataclass(data[0]):
-        columns = columns or [
-            (col, py_type_to_dtype(tp, raise_unmatched=False))
-            for col, tp in dataclass_type_hints(data[0].__class__).items()
-        ]
-        pydf = _post_apply_columns(
-            PyDataFrame.read_rows([astuple(dc) for dc in data], infer_schema_length),
-            columns=columns,
+        if columns:
+            columns, dtypes = _unpack_columns(columns)
+            schema_override = {col: dtypes.get(col, Unknown) for col in columns}
+        else:
+            columns = None
+            schema_override = {
+                col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
+                for col, tp in dataclass_type_hints(data[0].__class__).items()
+            }
+
+        pydf = PyDataFrame.read_rows(
+            [astuple(dc) for dc in data], infer_schema_length, schema_override
         )
+        if columns:
+            pydf = _post_apply_columns(pydf, columns)
         return pydf
 
     elif _PANDAS_TYPE(data[0]) and isinstance(data[0], (pd.Series, pd.DatetimeIndex)):
@@ -774,7 +793,7 @@ def arrow_to_pydf(
     data: pa.Table, columns: ColumnsType | None = None, rechunk: bool = True
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an Arrow Table."""
-    original_columns = columns
+    original_columns, dtypes = columns, None
     if columns is not None:
         columns, dtypes = _unpack_columns(columns)
         try:
@@ -847,6 +866,72 @@ def series_to_pydf(data: pli.Series, columns: ColumnsType | None = None) -> PyDa
 
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
+
+
+def iterable_to_pydf(
+    data: Iterable[Any],
+    columns: ColumnsType | None = None,
+    orient: Orientation | None = None,
+    chunk_size: int | None = None,
+) -> PyDataFrame:
+    """Construct a PyDataFrame from an iterable/generator."""
+    original_columns = columns
+    dtypes: dict[str, PolarsDataType] = {}
+    dtypes_by_idx: dict[int, PolarsDataType] = {}
+    if columns is not None:
+        columns, dtypes = _unpack_columns(columns)
+
+    if not isinstance(data, Generator):
+        data = iter(data)
+
+    if orient == "col":
+        if columns is not None and dtypes:
+            dtypes_by_idx = {
+                idx: dtypes.get(col, Unknown) for idx, col in enumerate(columns)
+            }
+
+        return pli.DataFrame(
+            {
+                (f"column_{idx}" if columns is None else columns[idx]): pli.Series(
+                    coldata, dtype=dtypes_by_idx.get(idx)
+                )
+                for idx, coldata in enumerate(data)
+            }
+        )._df
+
+    def to_frame_chunk(values: list[Any], columns: ColumnsType | None) -> pli.DataFrame:
+        return pli.DataFrame(data=values, columns=columns, orient="row")
+
+    n_chunks = 0
+    n_chunk_elems = 1_000_000
+
+    if chunk_size:
+        adaptive_chunk_size = chunk_size
+    elif columns:
+        adaptive_chunk_size = n_chunk_elems // len(columns)
+    else:
+        adaptive_chunk_size = None
+
+    df: pli.DataFrame = None  # type: ignore[assignment]
+    while True:
+        values = list(islice(data, adaptive_chunk_size or 1000))
+        if not values:
+            break
+        frame_chunk = to_frame_chunk(values, original_columns)
+        if df is None:
+            df = frame_chunk
+            if not original_columns:
+                original_columns = list(df.schema.items())
+            if not adaptive_chunk_size:
+                adaptive_chunk_size = n_chunk_elems // len(df.columns)
+        else:
+            df.vstack(frame_chunk, in_place=True)
+            n_chunks += 1
+
+    if df is None:
+        df = to_frame_chunk([], original_columns)
+
+    return (df.rechunk() if n_chunks > 0 else df)._df
 
 
 def pandas_to_pydf(
