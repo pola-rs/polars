@@ -343,13 +343,13 @@ mod test {
         assert_eq!(
             out,
             &[
-                Some(4.0f32),
-                Some(5.5),
-                Some(7.0),
-                Some(5.5),
-                Some(1.5),
-                Some(1.5),
-                Some(3.0)
+                Some(2.0f32),
+                Some(3.5),
+                Some(5.0),
+                Some(3.5),
+                None,
+                None,
+                Some(1.0)
             ]
         );
         let s = Series::new(
@@ -367,9 +367,21 @@ mod test {
         );
         let out = rank(&s, RankMethod::Max, false)
             .idx()?
-            .into_no_null_iter()
+            .into_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[5, 6, 4, 1, 8, 4, 2, 7]);
+        assert_eq!(
+            out,
+            &[
+                Some(4),
+                Some(5),
+                Some(3),
+                None,
+                Some(7),
+                Some(3),
+                Some(1),
+                Some(6)
+            ]
+        );
 
         Ok(())
     }
@@ -404,9 +416,9 @@ mod test {
         let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
         let out = rank(&s, RankMethod::Dense, true)
             .idx()?
-            .into_no_null_iter()
+            .into_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[1 as IdxSize, 3, 3, 2, 1]);
+        assert_eq!(out, &[None, Some(2 as IdxSize), Some(2), Some(1), None]);
 
         Ok(())
     }
