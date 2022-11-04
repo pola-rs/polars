@@ -72,7 +72,7 @@ def _get_dep_version(dep_name: str) -> str:
     return module_version
 
 
-def _closure_() -> None:
+def _closure_() -> _typing_.Callable[[], _typing_.Any]:
 
     try:
         from polars.polars import _build_info_
@@ -89,8 +89,6 @@ def _closure_() -> None:
     info = {"version": _version_}
     info.update(_build_info_)
 
-    global build_info
-
     def build_info() -> dict[str, _typing_.Any]:
         """
         Return a dict with polars build information.
@@ -100,8 +98,8 @@ def _closure_() -> None:
         """
         return info
 
+    return build_info
 
-_closure_()
+
+build_info = _closure_()
 del _closure_
-
-build_info: _typing_.Callable[[], _typing_.Any]  # declaration to make mypy happy
