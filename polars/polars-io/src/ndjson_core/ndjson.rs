@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 pub use arrow::array::StructArray;
 pub use arrow::io::ndjson as arrow_ndjson;
+use num::traits::Pow;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
@@ -19,6 +20,7 @@ const QUOTE_CHAR: u8 = b'"';
 const SEP: u8 = b',';
 const NEWLINE: u8 = b'\n';
 const RETURN: u8 = b'\r';
+const CLOSING_BRACKET: u8 = b'}';
 
 #[must_use]
 pub struct JsonLineReader<'a, R>
@@ -180,14 +182,7 @@ impl<'a> CoreJsonReader<'a> {
         let mut bytes = bytes;
         let mut total_rows = 128;
 
-        if let Some((mean, std)) = get_line_stats(
-            bytes,
-            self.sample_size,
-            NEWLINE,
-            self.schema.len(),
-            SEP,
-            None,
-        ) {
+        if let Some((mean, std)) = get_line_stats_json(bytes, self.sample_size, self.schema.len()) {
             let line_length_upper_bound = mean + 1.1 * std;
 
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
@@ -197,7 +192,13 @@ impl<'a> CoreJsonReader<'a> {
                 let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
                 if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position_naive(&bytes[n_bytes..], NEWLINE) {
+                    if let Some(pos) = next_line_position(
+                        &bytes[n_bytes..],
+                        Some(self.schema.len()),
+                        SEP,
+                        Some(QUOTE_CHAR),
+                        NEWLINE,
+                    ) {
                         bytes = &bytes[..n_bytes + pos]
                     }
                 }
@@ -324,16 +325,14 @@ fn parse_lines<'a>(
 
     let total_bytes = bytes.len();
     let mut offset = 0;
-    for line in SplitLines::new(bytes, QUOTE_CHAR, NEWLINE) {
-        offset += 1; // the newline
-        offset += parse_impl(line, buffers, &mut buf)?;
-    }
-
-    // if file doesn't end with a newline, parse the last line
-    if offset < total_bytes {
-        let rem = &bytes[offset..];
-        offset += rem.len();
-        parse_impl(rem, buffers, &mut buf)?;
+    // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
+    // It is used to properly iterate over the lines without re-implementing the splitlines logic when this does the same thing.
+    let mut iter =
+        serde_json::Deserializer::from_slice(bytes).into_iter::<Box<serde_json::value::RawValue>>();
+    while let Some(Ok(value)) = iter.next() {
+        let bytes = value.get().as_bytes();
+        offset += bytes.len();
+        parse_impl(bytes, buffers, &mut buf)?;
     }
 
     if offset != total_bytes {
@@ -343,4 +342,67 @@ fn parse_lines<'a>(
     };
 
     Ok(())
+}
+
+/// Find the nearest next line position.
+/// Does not check for new line characters embedded in String fields.
+pub(crate) fn next_line_position_naive_json(input: &[u8]) -> Option<usize> {
+    let pos = memchr::memchr(NEWLINE, input)?;
+    let is_closing_bracket = input.get(pos - 1) == Some(&CLOSING_BRACKET);
+    if is_closing_bracket {
+        Some(pos + 1)
+    } else {
+        None
+    }
+}
+
+/// Get the mean and standard deviation of length of lines in bytes
+pub(crate) fn get_line_stats_json(
+    bytes: &[u8],
+    n_lines: usize,
+    expected_fields: usize,
+) -> Option<(f32, f32)> {
+    let mut lengths = Vec::with_capacity(n_lines);
+
+    let mut bytes_trunc;
+    let n_lines_per_iter = n_lines / 2;
+
+    let mut n_read = 0;
+
+    // sample from start and 75% in the file
+    for offset in [0, (bytes.len() as f32 * 0.75) as usize] {
+        bytes_trunc = &bytes[offset..];
+        let pos = next_line_position(
+            bytes_trunc,
+            Some(expected_fields),
+            SEP,
+            Some(QUOTE_CHAR),
+            NEWLINE,
+        )?;
+        bytes_trunc = &bytes_trunc[pos + 1..];
+
+        for _ in offset..(offset + n_lines_per_iter) {
+            let pos = next_line_position_naive_json(bytes_trunc);
+            if let Some(pos) = pos {
+                lengths.push(pos);
+                let next_bytes = &bytes_trunc[pos..];
+                if next_bytes.is_empty() {
+                    return None;
+                }
+                bytes_trunc = next_bytes;
+                n_read += pos;
+            } else {
+                break;
+            }
+        }
+    }
+
+    let n_samples = lengths.len();
+    let mean = (n_read as f32) / (n_samples as f32);
+    let mut std = 0.0;
+    for &len in lengths.iter() {
+        std += (len as f32 - mean).pow(2.0)
+    }
+    std = (std / n_samples as f32).sqrt();
+    Some((mean, std))
 }

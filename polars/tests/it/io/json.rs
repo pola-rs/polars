@@ -58,6 +58,28 @@ fn read_json_with_whitespace() {
     assert_eq!((12, 4), df.shape());
 }
 #[test]
+fn read_json_with_escapes() {
+    let escaped_json = r#"{"id": 0, "text":"\"","date":"2013-08-03 15:17:23"}
+{"id": 1, "text":"\"123\"","date":"2009-05-19 21:07:53"}
+{"id": 2, "text":"\/....","date":"2009-05-19 21:07:53"}
+{"id": 3, "text":"\n\n..","date":"2"}
+{"id": 4, "text":"\"'\/\n...","date":"2009-05-19 21:07:53"}
+{"id": 5, "text":".h\"h1hh\\21hi1e2emm...","date":"2009-05-19 21:07:53"}
+{"id": 6, "text":"xxxx....","date":"2009-05-19 21:07:53"}
+{"id": 7, "text":".\"quoted text\".","date":"2009-05-19 21:07:53"}
+"#;
+    let file = Cursor::new(escaped_json);
+    let df = JsonLineReader::new(file)
+        .infer_schema_len(Some(3))
+        .finish()
+        .unwrap();
+    assert_eq!("id", df.get_columns()[0].name());
+    assert_eq!(AnyValue::Utf8("\""), df.column("text").unwrap().get(0));
+    assert_eq!("text", df.get_columns()[1].name());
+    assert_eq!((8, 3), df.shape());
+}
+
+#[test]
 fn read_unordered_json() {
     let unordered_json = r#"{"a":1, "b":2.0, "c":false, "d":"4"}
 {"a":-10, "b":-3.5, "c":true, "d":"4"}

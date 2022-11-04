@@ -1433,6 +1433,7 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+ "serde_json",
  "simd-json",
  "simdutf8",
 ]

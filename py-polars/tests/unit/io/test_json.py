@@ -73,3 +73,11 @@ def test_write_json2(df: pl.DataFrame) -> None:
     file.seek(0)
     out = pl.read_json(file)
     assert df.frame_equal(out, null_equal=True)
+
+
+def test_read_escaped_json() -> None:
+    file_path = os.path.join(os.path.dirname(__file__), "escape_chars.json")
+    file_str = str(file_path)
+    expected = pl.DataFrame({"text": ['"hello', '"world"'], "id": [1, 2]})
+    actual = pl.scan_ndjson(file_str).collect()
+    assert expected.frame_equal(actual)
