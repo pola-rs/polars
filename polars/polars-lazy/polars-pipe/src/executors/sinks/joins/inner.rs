@@ -4,8 +4,10 @@ use std::sync::Arc;
 use hashbrown::hash_map::RawEntryMut;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
-use polars_core::frame::hash_join::ChunkId;
+use polars_core::frame::hash_join::{_finish_join, ChunkId};
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
+use polars_core::utils::{accumulate_dataframes_vertical_unchecked, concat_df_unchecked};
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
@@ -33,7 +35,7 @@ pub struct GenericBuild {
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Vec<PlHashMap<Key, Vec<(ChunkIdx, DfIdx)>>>,
+    hash_tables: Vec<PlHashMap<Key, Vec<ChunkId>>>,
 
     // the columns that will be joined on
     join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -187,7 +189,7 @@ impl Sink for GenericBuild {
                 )
             });
 
-            let payload = (current_chunk_offset, current_df_idx);
+            let payload = [current_chunk_offset, current_df_idx];
             match entry {
                 RawEntryMut::Vacant(entry) => {
                     let key = (*h, current_chunk_offset, current_df_idx);
@@ -218,7 +220,7 @@ impl Sink for GenericBuild {
         for (ht, other_ht) in self.hash_tables.iter_mut().zip(&other.hash_tables) {
             for (k, val) in other_ht.iter() {
                 // use the indexes to materialize the row
-                for (chunk_idx, df_idx) in val {
+                for [chunk_idx, df_idx] in val {
                     unsafe { other.get_tuple(*chunk_idx, *df_idx, &mut tuple_buf) };
                 }
 
@@ -235,14 +237,14 @@ impl Sink for GenericBuild {
 
                 match entry {
                     RawEntryMut::Vacant(entry) => {
-                        let (chunk_idx, df_idx) = unsafe { val.get_unchecked_release(0) };
+                        let [chunk_idx, df_idx] = unsafe { val.get_unchecked_release(0) };
                         let new_chunk_idx = chunk_idx + chunks_offset;
                         let key = (h, new_chunk_idx, *df_idx);
-                        let mut payload = vec![(new_chunk_idx, *df_idx)];
+                        let mut payload = vec![[new_chunk_idx, *df_idx]];
                         if val.len() > 1 {
                             let iter = val[1..]
                                 .iter()
-                                .map(|(chunk_idx, val_idx)| (*chunk_idx + chunks_offset, *val_idx));
+                                .map(|[chunk_idx, val_idx]| [*chunk_idx + chunks_offset, *val_idx]);
                             payload.extend(iter);
                         }
                         entry.insert(key, payload);
@@ -250,7 +252,7 @@ impl Sink for GenericBuild {
                     RawEntryMut::Occupied(mut entry) => {
                         let iter = val
                             .iter()
-                            .map(|(chunk_idx, val_idx)| (*chunk_idx + 1, *val_idx));
+                            .map(|[chunk_idx, val_idx]| [*chunk_idx + 1, *val_idx]);
                         entry.get_mut().extend(iter);
                     }
                 }
@@ -273,7 +275,42 @@ impl Sink for GenericBuild {
     }
 
     fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
-        todo!()
+        match self.join_type {
+            JoinType::Inner => {
+                let left_df = Arc::new(accumulate_dataframes_vertical_unchecked(std::mem::take(&mut self.chunks).into_iter().map(|chunk| chunk.data)));
+                let materialized_join_cols = Arc::new(std::mem::take(&mut self.materialized_join_cols));
+                let suffix = self.suffix.clone();
+                let hb = self.hb.clone();
+                let hash_tables = Arc::new(std::mem::take(&mut self.hash_tables));
+                let join_columns_right = self.join_columns_right.clone();
+                let join_names_right = self.join_names_right.clone();
+
+                // take the buffers, this saves one allocation
+                let mut join_series = std::mem::take(&mut self.join_series);
+                join_series.clear();
+                let mut hashes = std::mem::take(&mut self.hashes);
+                hashes.clear();
+
+                let probe_operator = InnerJoinProbe {
+                    left_df,
+                    materialized_join_cols,
+                    suffix,
+                    hb,
+                    hash_tables,
+                    join_columns_right,
+                    join_names_right,
+                    join_series,
+                    join_tuples_left: vec![],
+                    join_tuples_right: vec![],
+                    hashes,
+                    join_type: JoinType::Inner,
+                    swapped: self.swapped
+                };
+                Ok(FinalizedSink::Operator(Box::new(probe_operator)))
+
+            },
+            _ => unimplemented!()
+        }
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -282,10 +319,11 @@ impl Sink for GenericBuild {
 }
 
 
+#[derive(Clone)]
 pub struct InnerJoinProbe {
     // all chunks are stacked into a single dataframe
     // the dataframe is not rechunked.
-    left_df: DataFrame,
+    left_df: Arc<DataFrame>,
     // the join columns are all tightly packed
     // the values of a join column(s) can be found
     // by:
@@ -293,12 +331,12 @@ pub struct InnerJoinProbe {
     // columns
     //      * chunk_offset = (idx * n_join_keys)
     //      * end = (offset + n_join_keys)
-    materialized_join_cols: Vec<ArrayRef>,
+    materialized_join_cols: Arc<Vec<ArrayRef>>,
     suffix: Arc<str>,
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Arc<Vec<PlHashMap<Key, Vec<(ChunkIdx, DfIdx)>>>>,
+    hash_tables: Arc<Vec<PlHashMap<Key, Vec<ChunkId>>>>,
 
     // the columns that will be joined on
     join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -306,7 +344,7 @@ pub struct InnerJoinProbe {
 
     // amortize allocations
     join_series: Vec<Series>,
-    join_tuples_left: Vec<(ChunkIdx, DfIdx)>,
+    join_tuples_left: Vec<ChunkId>,
     join_tuples_right: Vec<DfIdx>,
     hashes: Vec<u64>,
     join_type: JoinType,
@@ -385,12 +423,21 @@ impl Operator for InnerJoinProbe {
 
         }
 
-        // self.left_df._take_chunked_unchecked_seq(idx)
+        let left_df = unsafe { self.left_df._take_chunked_unchecked_seq(&self.join_tuples_left, IsSorted::Not) };
+        let right_df = unsafe {chunk.data._take_unchecked_slice(&self.join_tuples_right, false)};
 
-        todo!()
+        let (a, b) = if self.swapped {
+            (right_df, left_df)
+        } else {
+            (left_df, right_df)
+        };
+        let out = _finish_join(a, b, Some(self.suffix.as_ref()))?;
+
+        Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
 
-    fn split(&self, thread_no: usize) -> Box<dyn Operator> {
-        todo!()
+    fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
+        let new = self.clone();
+        Box::new(new)
     }
 }

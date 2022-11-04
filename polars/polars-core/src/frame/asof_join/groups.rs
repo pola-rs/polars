@@ -690,7 +690,7 @@ impl DataFrame {
             )
         };
 
-        self.finish_join(left, right_df, None)
+        _finish_join(left, right_df, None)
     }
 
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.

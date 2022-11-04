@@ -186,7 +186,7 @@ impl DataFrame {
             )
         };
 
-        self.finish_join(left, right_df, suffix.as_deref())
+        _finish_join(left, right_df, suffix.as_deref())
     }
 
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
