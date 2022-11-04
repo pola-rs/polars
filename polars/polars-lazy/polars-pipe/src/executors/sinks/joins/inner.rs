@@ -12,7 +12,7 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::utils::hash_series;
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+use crate::operators::{DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult};
 
 type ChunkIdx = IdxSize;
 type DfIdx = IdxSize;
@@ -29,19 +29,52 @@ pub struct GenericBuild {
     //      * chunk_offset = (idx * n_join_keys)
     //      * end = (offset + n_join_keys)
     materialized_join_cols: Vec<ArrayRef>,
-    suffix: String,
+    suffix: Arc<str>,
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
     hash_tables: Vec<PlHashMap<Key, Vec<(ChunkIdx, DfIdx)>>>,
 
     // the columns that will be joined on
-    join_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    join_names: Arc<Vec<String>>,
+    join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+    join_names_left: Arc<Vec<String>>,
+
+    join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+    join_names_right: Arc<Vec<String>>,
 
     // amortize allocations
     join_series: Vec<Series>,
     hashes: Vec<u64>,
+    join_type: JoinType,
+    // the join order is swapped to ensure we hash the smaller table
+    swapped: bool
+}
+
+impl GenericBuild {
+    fn new(suffix: Arc<str>,
+           join_type: JoinType,
+           swapped: bool,
+           join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+           join_names_left: Arc<Vec<String>>,
+           join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+           join_names_right: Arc<Vec<String>>,
+    ) -> Self {
+        GenericBuild {
+            chunks: vec![],
+            join_type,
+            suffix,
+            hb: Default::default(),
+            swapped,
+            join_columns_left,
+            join_names_left,
+            join_columns_right,
+            join_names_right,
+            join_series: vec![],
+            materialized_join_cols: vec![],
+            hash_tables: vec![],
+            hashes: vec![]
+        }
+    }
 }
 
 fn compare_fn(
@@ -74,7 +107,7 @@ fn compare_fn(
 impl GenericBuild {
     #[inline]
     fn number_of_keys(&self) -> usize {
-        self.join_columns.len()
+        self.join_columns_left.len()
     }
 
     fn set_join_series(
@@ -83,7 +116,7 @@ impl GenericBuild {
         chunk: &DataChunk,
     ) -> PolarsResult<&[Series]> {
         self.join_series.clear();
-        for phys_e in self.join_columns.iter() {
+        for phys_e in self.join_columns_left.iter() {
             let s = phys_e.evaluate(chunk, context.execution_state.as_ref())?;
             let s = s.to_physical_repr();
             self.join_series.push(s.rechunk());
@@ -127,16 +160,17 @@ impl Sink for GenericBuild {
 
         // a small buffer that holds the current key values
         // if we join by 2 keys, this holds 2 anyvalues.
-        let mut current_keys_buf = Vec::with_capacity(self.number_of_keys());
+        let mut current_tuple_buf = Vec::with_capacity(self.number_of_keys());
         let n_join_cols = self.number_of_keys();
 
         // row offset in the chunk belonging to the hash
         let mut current_df_idx = 0 as IdxSize;
         for h in &self.hashes {
             // load the keys in the buffer
-            current_keys_buf.clear();
+            // TODO! write an iterator for this
+            current_tuple_buf.clear();
             for key_iter in key_iters.iter_mut() {
-                unsafe { current_keys_buf.push(key_iter.next().unwrap_unchecked_release()) }
+                unsafe { current_tuple_buf.push(key_iter.next().unwrap_unchecked_release()) }
             }
 
             // get the hashtable belonging by this hash partition
@@ -148,7 +182,7 @@ impl Sink for GenericBuild {
                     key,
                     *h,
                     &self.materialized_join_cols,
-                    &current_keys_buf,
+                    &current_tuple_buf,
                     n_join_cols,
                 )
             });
@@ -224,8 +258,18 @@ impl Sink for GenericBuild {
         }
     }
 
-    fn split(&self, thread_no: usize) -> Box<dyn Sink> {
-        todo!()
+    fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
+        let mut new = Self::new(
+            self.suffix.clone(),
+            self.join_type.clone(),
+            self.swapped,
+            self.join_columns_left.clone(),
+            self.join_names_left.clone(),
+            self.join_columns_right.clone(),
+            self.join_names_right.clone(),
+        );
+        new.hb = self.hb.clone();
+        Box::new(new)
     }
 
     fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
@@ -234,5 +278,119 @@ impl Sink for GenericBuild {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+
+pub struct InnerJoinProbe {
+    // all chunks are stacked into a single dataframe
+    // the dataframe is not rechunked.
+    left_df: DataFrame,
+    // the join columns are all tightly packed
+    // the values of a join column(s) can be found
+    // by:
+    // first get the offset of the chunks and multiply that with the number of join
+    // columns
+    //      * chunk_offset = (idx * n_join_keys)
+    //      * end = (offset + n_join_keys)
+    materialized_join_cols: Vec<ArrayRef>,
+    suffix: Arc<str>,
+    hb: RandomState,
+    // partitioned tables that will be used for probing
+    // stores the key and the chunk_idx, df_idx of the left table
+    hash_tables: Arc<Vec<PlHashMap<Key, Vec<(ChunkIdx, DfIdx)>>>>,
+
+    // the columns that will be joined on
+    join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+    join_names_right: Arc<Vec<String>>,
+
+    // amortize allocations
+    join_series: Vec<Series>,
+    join_tuples_left: Vec<(ChunkIdx, DfIdx)>,
+    join_tuples_right: Vec<DfIdx>,
+    hashes: Vec<u64>,
+    join_type: JoinType,
+    // the join order is swapped to ensure we hash the smaller table
+    swapped: bool
+}
+
+impl InnerJoinProbe {
+    #[inline]
+    fn number_of_keys(&self) -> usize {
+        self.join_columns_right.len()
+    }
+
+    fn set_join_series(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<&[Series]> {
+        self.join_series.clear();
+        for phys_e in self.join_columns_right.iter() {
+            let s = phys_e.evaluate(chunk, context.execution_state.as_ref())?;
+            let s = s.to_physical_repr();
+            self.join_series.push(s.rechunk());
+        }
+        Ok(&self.join_series)
+    }
+}
+
+impl Operator for InnerJoinProbe {
+    fn execute(&mut self, context: &PExecutionContext, chunk: &DataChunk) -> PolarsResult<OperatorResult> {
+        self.join_tuples_left.clear();
+        self.join_tuples_right.clear();
+        let mut hashes = std::mem::take(&mut self.hashes);
+        self.set_join_series(context, &chunk)?;
+        hash_series(&self.join_series, &mut hashes, &self.hb);
+        self.hashes = hashes;
+
+        // iterators over anyvalues
+        let mut key_iters = self
+            .join_series
+            .iter()
+            .map(|s| s.phys_iter())
+            .collect::<Vec<_>>();
+
+        // a small buffer that holds the current key values
+        // if we join by 2 keys, this holds 2 anyvalues.
+        let mut current_tuple_buf = Vec::with_capacity(self.number_of_keys());
+        let n_join_cols = self.number_of_keys();
+
+        for (i, h) in self.hashes.iter().enumerate() {
+            let df_idx_right = i as IdxSize;
+
+            // load the keys in the buffer
+            current_tuple_buf.clear();
+            for key_iter in key_iters.iter_mut() {
+                unsafe { current_tuple_buf.push(key_iter.next().unwrap_unchecked_release()) }
+            }
+            // get the hashtable belonging by this hash partition
+            let partition = hash_to_partition(*h, self.hash_tables.len());
+            let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
+
+            let entry = current_table.raw_entry().from_hash(*h, |key| {
+                compare_fn(
+                    key,
+                    *h,
+                    &self.materialized_join_cols,
+                    &current_tuple_buf,
+                    current_tuple_buf.len(),
+                )
+            }).map(|key_val|key_val.1);
+
+            if let Some(indexes_left) = entry {
+                // self.join_tuples_left.extend_from_slice(indexes_left);
+                self.join_tuples_right.extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
+            }
+
+        }
+
+        // self.left_df._take_chunked_unchecked_seq(idx)
+
+        todo!()
+    }
+
+    fn split(&self, thread_no: usize) -> Box<dyn Operator> {
+        todo!()
     }
 }

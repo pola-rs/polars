@@ -3114,6 +3114,14 @@ impl DataFrame {
     }
 
     #[cfg(feature = "chunked_ids")]
+    // `sorted` indicates if the chunks are sorted.
+    pub unsafe fn _take_chunked_unchecked_seq(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
+        let cols = self.apply_columns(&|s| s._take_chunked_unchecked(idx, sorted));
+
+        DataFrame::new_no_checks(cols)
+    }
+
+    #[cfg(feature = "chunked_ids")]
     pub(crate) unsafe fn take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
             DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, sorted, true),

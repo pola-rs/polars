@@ -2,7 +2,7 @@ use std::any::Any;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::utils::concat_df_unchecked;
+use polars_core::utils::{_set_partition_size, concat_df_unchecked};
 use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
@@ -32,7 +32,7 @@ impl PipeLine {
         operator_offset: usize,
     ) -> PipeLine {
         debug_assert_eq!(operators.len(), operator_nodes.len() + operator_offset);
-        let n_threads = POOL.current_num_threads();
+        let n_threads = _set_partition_size();
 
         // We split so that every thread get's an operator
         let sink = (0..n_threads).map(|i| sink.split(i)).collect();

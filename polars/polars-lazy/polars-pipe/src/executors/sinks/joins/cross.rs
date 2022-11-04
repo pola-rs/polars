@@ -49,7 +49,7 @@ impl Sink for CrossJoin {
 
     fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
         // todo! share sink
-        Ok(FinalizedSink::Operator(Box::new(CrossJoinPhase2 {
+        Ok(FinalizedSink::Operator(Box::new(CrossJoinProbe {
             df: Arc::new(chunks_to_df_unchecked(std::mem::take(&mut self.chunks))),
             suffix: Arc::from(self.suffix.as_ref()),
             in_process_left: None,
@@ -65,7 +65,7 @@ impl Sink for CrossJoin {
 }
 
 #[derive(Clone)]
-pub struct CrossJoinPhase2 {
+pub struct CrossJoinProbe {
     df: Arc<DataFrame>,
     suffix: Arc<str>,
     in_process_left: Option<StepBy<Range<usize>>>,
@@ -74,7 +74,7 @@ pub struct CrossJoinPhase2 {
     output_names: Option<Vec<String>>,
 }
 
-impl Operator for CrossJoinPhase2 {
+impl Operator for CrossJoinProbe {
     fn execute(
         &mut self,
         _context: &PExecutionContext,
