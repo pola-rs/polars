@@ -48,7 +48,10 @@ impl DataFrame {
     ) -> PolarsResult<(DataFrame, DataFrame)> {
         let n_rows_left = self.height() as IdxSize;
         let n_rows_right = other.height() as IdxSize;
-        let total_rows = n_rows_right * n_rows_left;
+        let Some(total_rows) = n_rows_left.checked_mul(n_rows_right) else {
+            return Err(PolarsError::ComputeError("Cross joins would produce more rows than fits into 2^32.\n\
+            Consider comping with polars-big-idx feature, or set 'allow_streaming'.".into()))
+        };
 
         // the left side has the Nth row combined with every row from right.
         // So let's say we have the following no. of rows

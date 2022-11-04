@@ -948,7 +948,7 @@ impl PyDataFrame {
     }
 
     pub fn select(&self, selection: Vec<&str>) -> PyResult<Self> {
-        let df = self.df.select(&selection).map_err(PyPolarsErr::from)?;
+        let df = self.df.select(selection).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 

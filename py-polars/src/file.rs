@@ -238,7 +238,7 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
         let s = pstring.to_string();
         let p = std::path::Path::new(&s);
         let p = resolve_homedir(p);
-        let f = match File::open(&p) {
+        let f = match File::open(p) {
             Ok(file) => file,
             Err(_e) => {
                 return Err(PyErr::new::<PyFileNotFoundError, _>(format!(

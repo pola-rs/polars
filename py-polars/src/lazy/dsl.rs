@@ -1099,7 +1099,7 @@ impl PyExpr {
             .into()
     }
     pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
-        self.inner.clone().exclude(&columns).into()
+        self.inner.clone().exclude(columns).into()
     }
     pub fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> PyExpr {
         // Safety:

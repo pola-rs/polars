@@ -365,7 +365,7 @@ impl LogicalPlanBuilder {
 
     pub fn groupby<E: AsRef<[Expr]>>(
         self,
-        keys: Arc<Vec<Expr>>,
+        keys: Vec<Expr>,
         aggs: E,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
@@ -374,6 +374,7 @@ impl LogicalPlanBuilder {
     ) -> Self {
         let current_schema = try_delayed!(self.0.schema(), &self.0, into);
         let current_schema = current_schema.as_ref();
+        let keys = rewrite_projections(keys, current_schema, &[]);
         let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
 
         let mut schema = try_delayed!(
@@ -422,7 +423,7 @@ impl LogicalPlanBuilder {
 
         LogicalPlan::Aggregate {
             input: Box::new(self.0),
-            keys,
+            keys: Arc::new(keys),
             aggs,
             schema: Arc::new(schema),
             apply,
