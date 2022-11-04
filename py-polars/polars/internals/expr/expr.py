@@ -606,44 +606,42 @@ class Expr:
 
         Examples
         --------
-        A groupby aggregation often changes the name of a column.
-        With `keep_name` we can keep the original name of the column
-
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": ["a", "b", None],
+        ...         "a": [1, 2],
+        ...         "b": [3, 4],
         ...     }
         ... )
-        >>> df.groupby("a").agg(pl.col("b").list()).sort(by="a")
-        shape: (3, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ b         │
-        │ --- ┆ ---       │
-        │ i64 ┆ list[str] │
-        ╞═════╪═══════════╡
-        │ 1   ┆ ["a"]     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ ["b"]     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3   ┆ [null]    │
-        └─────┴───────────┘
 
-        Keep the original column name:
+        Keep original column name to undo an alias operation.
 
-        >>> df.groupby("a").agg(pl.col("b").list().keep_name()).sort(by="a")
-        shape: (3, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ b         │
-        │ --- ┆ ---       │
-        │ i64 ┆ list[str] │
-        ╞═════╪═══════════╡
-        │ 1   ┆ ["a"]     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ ["b"]     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3   ┆ [null]    │
-        └─────┴───────────┘
+        >>> df.with_columns([(pl.col("a") * 9).alias("c").keep_name()])
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 9   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 18  ┆ 4   │
+        └─────┴─────┘
+
+        Prevent
+        "DuplicateError: Column with name: 'literal' has more than one occurrences"
+        errors.
+
+        >>> df.select([(pl.lit(10) / pl.all()).keep_name()])
+        shape: (2, 2)
+        ┌──────┬──────────┐
+        │ a    ┆ b        │
+        │ ---  ┆ ---      │
+        │ f64  ┆ f64      │
+        ╞══════╪══════════╡
+        │ 10.0 ┆ 3.333333 │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 5.0  ┆ 2.5      │
+        └──────┴──────────┘
 
         """
         return wrap_expr(self._pyexpr.keep_name())
