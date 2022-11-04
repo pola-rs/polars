@@ -14,11 +14,10 @@ description = "Blazingly fast DataFrame library"
 
 [workspace]
 # prevents package from thinking it's in the workspace
-
-[target.'cfg(not(target_os="linux"))'.dependencies]
+[target.'cfg(any(not(target_os = "linux"), use_mimalloc))'.dependencies]
 mimalloc = { version = "*", default-features = false }
 
-[target.'cfg(target_os="linux")'.dependencies]
+[target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [dependencies]
