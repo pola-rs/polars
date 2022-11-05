@@ -35,19 +35,23 @@ def test_lazy() -> None:
     )
 
     # test if pl.list is available, this is `to_list` re-exported as list
-    df.groupby("a").agg(pl.list("b"))
+    eager = df.groupby("a").agg(pl.list("b"))
+    assert sorted(eager.rows()) == [(1, [1.0]), (2, [2.0]), (3, [3.0])]
 
     # profile lazyframe operation/plan
-    df.lazy().groupby("a").agg(pl.list("b")).profile()
+    lazy = df.lazy().groupby("a").agg(pl.list("b"))
+    profiling_info = lazy.profile()
     # ┌──────────────┬───────┬─────┐
     # │ node         ┆ start ┆ end │
     # │ ---          ┆ ---   ┆ --- │
     # │ str          ┆ u64   ┆ u64 │
     # ╞══════════════╪═══════╪═════╡
-    # │ optimization ┆ 0     ┆ 6   │
+    # │ optimization ┆ 0     ┆ 69  │
     # ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-    # │ groupby(a)   ┆ 6     ┆ 230 │
+    # │ groupby(a)   ┆ 69    ┆ 342 │
     # └──────────────┴───────┴─────┘
+    assert len(profiling_info) == 2
+    assert profiling_info[1].columns == ["node", "start", "end"]
 
 
 def test_lazyframe_membership_operator() -> None:
@@ -69,9 +73,12 @@ def test_apply() -> None:
 
 
 def test_add_eager_column() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    out = df.lazy().with_column(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
+    ldf = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]}).lazy()
+    assert ldf.width == 2
+
+    out = ldf.with_column(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
     assert out["c"].sum() == 6
+    assert out.width == 3
 
 
 def test_set_null() -> None:
@@ -292,27 +299,29 @@ def test_arg_sort() -> None:
 
 
 def test_window_function() -> None:
-    df = pl.DataFrame(
+    ldf = pl.DataFrame(
         {
             "A": [1, 2, 3, 4, 5],
             "fruits": ["banana", "banana", "apple", "apple", "banana"],
             "B": [5, 4, 3, 2, 1],
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
         }
-    )
+    ).lazy()
+    assert ldf.width == 4
 
-    q = df.lazy().with_columns(
+    q = ldf.with_columns(
         [
             pl.sum("A").over("fruits").alias("fruit_sum_A"),
             pl.first("B").over("fruits").alias("fruit_first_B"),
             pl.max("B").over("cars").alias("cars_max_B"),
         ]
     )
-    out = q.collect()
-    assert out["cars_max_B"].to_list() == [5, 4, 5, 5, 5]
+    assert q.width == 7
 
-    out = df.select([pl.first("B").over(["fruits", "cars"]).alias("B_first")])
-    assert out["B_first"].to_list() == [5, 4, 3, 3, 5]
+    assert q.collect()["cars_max_B"].to_list() == [5, 4, 5, 5, 5]
+
+    out = ldf.select([pl.first("B").over(["fruits", "cars"]).alias("B_first")])
+    assert out.collect()["B_first"].to_list() == [5, 4, 3, 3, 5]
 
 
 def test_when_then_flatten() -> None:

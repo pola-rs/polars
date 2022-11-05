@@ -399,6 +399,20 @@ class LazyFrame:
         """  # noqa: E501
         return self._ldf.schema()
 
+    @property
+    def width(self) -> int:
+        """
+        Get the width of the LazyFrame.
+
+        Examples
+        --------
+        >>> lf = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]}).lazy()
+        >>> lf.width
+        2
+
+        """
+        return self._ldf.width()
+
     def __bool__(self) -> NoReturn:
         raise ValueError(
             "The truth value of a LazyFrame is ambiguous; consequently it "
