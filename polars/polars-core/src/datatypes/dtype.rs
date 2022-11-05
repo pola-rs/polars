@@ -23,7 +23,7 @@ pub enum DataType {
     /// in days (32 bits).
     Date,
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
-    /// in milliseconds (64 bits).
+    /// in the given timeunit (64 bits).
     Datetime(TimeUnit, Option<TimeZone>),
     // 64-bit integer representing difference between times in milliseconds or nanoseconds
     Duration(TimeUnit),

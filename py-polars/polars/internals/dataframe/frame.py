@@ -292,7 +292,9 @@ class DataFrame:
         elif isinstance(data, (Generator, Iterable)) and not isinstance(data, Sized):
             self._df = iterable_to_pydf(data, columns=columns, orient=orient)
         else:
-            raise ValueError("DataFrame constructor not called properly.")
+            raise ValueError(
+                f"DataFrame constructor called with unsupported type; got {type(data)}"
+            )
 
     @classmethod
     def _from_pydf(cls: type[DF], py_df: PyDataFrame) -> DF:
