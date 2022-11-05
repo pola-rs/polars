@@ -1,8 +1,8 @@
-==========
-Conversion
-==========
+======
+Export
+======
 
-Convert Series data to other formats:
+Export Series data to other formats:
 
 .. currentmodule:: polars
 .. autosummary::

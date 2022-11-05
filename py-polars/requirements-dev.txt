@@ -11,7 +11,7 @@ tzdata; platform_system == 'Windows'
 xlsx2csv
 
 # Tooling
-hypothesis==6.56.3
+hypothesis==6.56.4
 maturin==0.13.6
 mypy==0.982
 pytest==7.2.0

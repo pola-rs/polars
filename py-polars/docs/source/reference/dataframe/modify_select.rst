@@ -1,0 +1,62 @@
+======================
+Manipulation/selection
+======================
+
+.. currentmodule:: polars
+.. autosummary::
+   :toctree: api/
+
+    DataFrame.cleared
+    DataFrame.clone
+    DataFrame.drop
+    DataFrame.drop_in_place
+    DataFrame.drop_nulls
+    DataFrame.explode
+    DataFrame.extend
+    DataFrame.fill_nan
+    DataFrame.fill_null
+    DataFrame.filter
+    DataFrame.find_idx_by_name
+    DataFrame.get_column
+    DataFrame.get_columns
+    DataFrame.groupby
+    DataFrame.groupby_dynamic
+    DataFrame.groupby_rolling
+    DataFrame.head
+    DataFrame.hstack
+    DataFrame.insert_at_idx
+    DataFrame.interpolate
+    DataFrame.join
+    DataFrame.join_asof
+    DataFrame.limit
+    DataFrame.melt
+    DataFrame.partition_by
+    DataFrame.pipe
+    DataFrame.pivot
+    DataFrame.rechunk
+    DataFrame.rename
+    DataFrame.replace
+    DataFrame.replace_at_idx
+    DataFrame.reverse
+    DataFrame.row
+    DataFrame.rows
+    DataFrame.sample
+    DataFrame.select
+    DataFrame.shift
+    DataFrame.shift_and_fill
+    DataFrame.shrink_to_fit
+    DataFrame.slice
+    DataFrame.sort
+    DataFrame.tail
+    DataFrame.take_every
+    DataFrame.to_dummies
+    DataFrame.to_series
+    DataFrame.transpose
+    DataFrame.unique
+    DataFrame.unnest
+    DataFrame.unstack
+    DataFrame.upsample
+    DataFrame.vstack
+    DataFrame.with_column
+    DataFrame.with_columns
+    DataFrame.with_row_count

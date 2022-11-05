@@ -35,7 +35,9 @@ copyright = f"{datetime.date.today().year}, {author}"
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "numpydoc",  # numpy docstrings
+    # ----------------------
+    # sphinx extensions
+    # ----------------------
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.coverage",
@@ -46,6 +48,11 @@ extensions = [
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
     "sphinx.ext.todo",
+    # ----------------------
+    # third-party extensions
+    # ----------------------
+    "autodocsumm",
+    "numpydoc",
     "sphinx_autosummary_accessors",
     "sphinx_copybutton",
 ]
@@ -72,7 +79,6 @@ html_theme = "pydata_sphinx_theme"
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]  # relative to html_static_path
 html_show_sourcelink = False
-html_logo = "../img/polars_logo.png"
 
 # adds useful copy functionality to all the examples; also
 # strips the '>>>' and '...' prompt/continuation prefixes.
@@ -80,6 +86,7 @@ copybutton_prompt_text = r">>> |\.\.\. "
 copybutton_prompt_is_regexp = True
 
 autosummary_generate = True
+numpydoc_show_class_members = False
 
 html_theme_options = {
     "external_links": [
@@ -118,6 +125,10 @@ html_theme_options = {
             "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/touchicon-180x180.png",  # noqa: E501
         },
     ],
+    "logo": {
+        "image_light": "https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars-logo-dark-medium.png",  # noqa: E501
+        "image_dark": "https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars-logo-dimmed-medium.png",  # noqa: E501
+    },
 }
 
 intersphinx_mapping = {
@@ -195,10 +206,25 @@ def _minify_classpaths(s: str) -> str:
     # * "pli.Expr" -> "Expr"
     # * "polars.internals.expr.expr.Expr" -> "Expr"
     # * "polars.internals.lazyframe.frame.LazyFrame" -> "LazyFrame"
+    # also:
+    # * "datetime.date" => "date"
+    s = s.replace("datetime.", "")
     return re.sub(
-        pattern=r"~?(pli|polars\.(?:internals|datatypes)[\w.]+?)\.([A-Z][\w.]+)",
+        pattern=r"""
+        ~?
+        (
+          (?:pli|
+            (?:polars\.
+              (?:internals|datatypes)
+            )
+          )
+          (?:\.[a-z.]+)?\.
+          ([A-Z][\w.]+)
+        )
+        """,
         repl=r"\2",
         string=s,
+        flags=re.VERBOSE,
     )
 
 

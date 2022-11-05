@@ -1,30 +1,23 @@
-======
-Series
-======
+=========
+LazyFrame
+=========
 
-This page gives an overview of all public Series methods.
+This page gives an overview of all public LazyFrame methods.
 
 .. toctree::
    :maxdepth: 2
    :hidden:
 
    aggregation
-   array
    attributes
-   boolean
-   categories
-   computation
    descriptive
-   export
+   groupby
    modify_select
    miscellaneous
-   strings
-   struct
-   timeseries
 
 .. currentmodule:: polars
 
-.. autoclass:: Series
+.. autoclass:: LazyFrame
     :members:
     :noindex:
     :autosummary:

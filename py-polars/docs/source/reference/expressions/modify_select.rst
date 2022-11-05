@@ -1,6 +1,6 @@
-========================
-Manipulation / selection
-========================
+======================
+Manipulation/selection
+======================
 
 .. currentmodule:: polars
 .. autosummary::

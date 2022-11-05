@@ -1,6 +1,6 @@
-========================
-Manipulation / selection
-========================
+======================
+Manipulation/selection
+======================
 
 .. currentmodule:: polars
 .. autosummary::
@@ -49,5 +49,6 @@ Manipulation / selection
     Series.take_every
     Series.to_dummies
     Series.top_k
+    Series.unique
     Series.view
     Series.zip_with

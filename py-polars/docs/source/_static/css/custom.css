@@ -21,3 +21,27 @@ dl.class > dt:first-of-type {
 .bd-toc-item {
     overflow-wrap: break-word;
 }
+
+/* Dark & light theme tweaks */
+html[data-theme="light"] {
+    --pst-color-on-background: #ecf4ff;
+    --pst-color-border: #cccccc;
+}
+
+html[data-theme="dark"] {
+    --pst-color-on-background: #333333;
+    --pst-color-border: #444444;
+}
+
+footer.bd-footer{
+    background-color: var(--pst-color-on-background);
+}
+
+/*
+ We're not currently doing anything meaningful with the right
+ ToC, so hide until there's actually something to put there...
+ */
+div.bd-sidebar-secondary {
+    position: absolute;
+    display: none;
+}
