@@ -18,6 +18,7 @@ Attributes
     LazyFrame.columns
     LazyFrame.dtypes
     LazyFrame.schema
+    LazyFrame.width
 
 Aggregation
 -----------
