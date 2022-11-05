@@ -837,4 +837,8 @@ impl PyLazyFrame {
     pub fn unnest(&self, cols: Vec<String>) -> PyLazyFrame {
         self.ldf.clone().unnest(cols).into()
     }
+
+    pub fn width(&self) -> PyResult<usize> {
+        Ok(self.get_schema()?.len())
+    }
 }
