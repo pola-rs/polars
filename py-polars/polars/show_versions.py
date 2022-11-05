@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import platform
 import sys
-import typing as _typing_
 
 try:
     from polars.polars import get_idx_type as _get_idx_type
@@ -70,36 +69,3 @@ def _get_dep_version(dep_name: str) -> str:
 
     # all our dependencies (as of 2022-08-11) implement __version__
     return module_version
-
-
-def _closure_() -> _typing_.Callable[[], _typing_.Any]:
-
-    try:
-        from polars.polars import _build_info_
-    except ImportError:
-        _build_info_ = {}
-
-    try:
-        from polars.polars import version
-
-        _version_ = version()
-    except ImportError:
-        _version_ = "<missing>"
-
-    info = {"version": _version_}
-    info.update(_build_info_)
-
-    def build_info() -> dict[str, _typing_.Any]:
-        """
-        Return a dict with polars build information.
-
-        If compiled with "build_info" feature gate return the full build info,
-        otherwise only version is included.
-        """
-        return info
-
-    return build_info
-
-
-build_info = _closure_()
-del _closure_

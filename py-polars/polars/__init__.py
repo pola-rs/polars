@@ -11,6 +11,7 @@ except ImportError:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
+from polars.build_info import build_info
 from polars.cfg import Config
 from polars.convert import (
     from_arrow,
@@ -149,7 +150,7 @@ from polars.io import (
     scan_ndjson,
     scan_parquet,
 )
-from polars.show_versions import build_info, show_versions
+from polars.show_versions import show_versions
 from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
 from polars.utils import threadpool_size
 
