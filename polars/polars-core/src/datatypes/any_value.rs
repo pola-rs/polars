@@ -797,7 +797,7 @@ mod test {
     }
 }
 pub trait GetAnyValue {
-    /// # Unsafe
+    /// # Safety
     ///
     /// Get an value without doing bound checks.
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue;

@@ -59,7 +59,7 @@ fn streamable_join(join_type: &JoinType) -> bool {
         #[cfg(feature = "cross_join")]
         JoinType::Cross => true,
         JoinType::Inner => true,
-        _ => false
+        _ => false,
     }
 }
 

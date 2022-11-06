@@ -49,6 +49,7 @@ pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 # also includes simd
 nightly = ["polars/nightly"]
+streaming = ["polars/streaming"]
 meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress"]
@@ -100,6 +101,7 @@ all = [
 default = [
   "all",
   "nightly",
+  "streaming",
 ]
 
 [dependencies.polars]

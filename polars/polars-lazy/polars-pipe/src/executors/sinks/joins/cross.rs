@@ -2,7 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::iter::StepBy;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::vec;
 
 use polars_core::error::PolarsResult;

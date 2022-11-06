@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -8,13 +9,13 @@ use polars_core::export::ahash::RandomState;
 use polars_core::frame::hash_join::{ChunkId, _finish_join};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked, concat_df_unchecked};
+use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 
 use crate::executors::sinks::utils::{hash_series, load_vec};
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{
     DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult,
@@ -27,17 +28,16 @@ type DfIdx = IdxSize;
 struct Key {
     hash: u64,
     chunk_idx: ChunkIdx,
-    df_idx: DfIdx
+    df_idx: DfIdx,
 }
 
 impl Key {
-
     #[inline]
     fn new(hash: u64, chunk_idx: ChunkIdx, df_idx: DfIdx) -> Self {
         Key {
             hash,
             chunk_idx,
-            df_idx
+            df_idx,
         }
     }
 }
@@ -63,7 +63,7 @@ pub struct GenericBuild {
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Vec<PlHashMap<Key, Vec<ChunkId>>>,
+    hash_tables: Vec<PlIdHashMap<Key, Vec<ChunkId>>>,
 
     // the columns that will be joined on
     join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -87,10 +87,7 @@ impl GenericBuild {
     ) -> Self {
         let hb: RandomState = Default::default();
         let partitions = _set_partition_size();
-        let hash_tables = load_vec(partitions, || PlHashMap::with_capacity_and_hasher(
-            HASHMAP_INIT_SIZE,
-            hb.clone(),
-        ));
+        let hash_tables = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
         GenericBuild {
             chunks: vec![],
             join_type,
@@ -124,16 +121,14 @@ fn compare_fn(
         join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
     };
 
-    dbg!(h, key_hash);
-
     // we check the hash and
     // we get the appropriate values from the join columns and compare it with the current row
-    dbg!(key_hash == h && {
+    key_hash == h && {
         join_cols
             .iter()
             .zip(current_row)
             .all(|(column, value)| unsafe { &column.get_unchecked(df_idx) == value })
-    })
+    }
 }
 
 impl GenericBuild {
@@ -211,7 +206,6 @@ impl Sink for GenericBuild {
             let partition = hash_to_partition(*h, self.hash_tables.len());
             let current_table = unsafe { self.hash_tables.get_unchecked_release_mut(partition) };
 
-            dbg!(h, partition, current_table.len());
             let entry = current_table.raw_entry_mut().from_hash(*h, |key| {
                 compare_fn(
                     key,
@@ -285,7 +279,7 @@ impl Sink for GenericBuild {
                     RawEntryMut::Occupied(mut entry) => {
                         let iter = val
                             .iter()
-                            .map(|[chunk_idx, val_idx]| [*chunk_idx + 1, *val_idx]);
+                            .map(|[chunk_idx, val_idx]| [*chunk_idx + chunks_offset, *val_idx]);
                         entry.get_mut().extend(iter);
                     }
                 }
@@ -337,8 +331,8 @@ impl Sink for GenericBuild {
                     join_tuples_left: vec![],
                     join_tuples_right: vec![],
                     hashes,
-                    join_type: JoinType::Inner,
                     swapped: self.swapped,
+                    join_column_idx: None,
                 };
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
             }
@@ -368,7 +362,7 @@ pub struct InnerJoinProbe {
     hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    hash_tables: Arc<Vec<PlHashMap<Key, Vec<ChunkId>>>>,
+    hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
 
     // the columns that will be joined on
     join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -378,9 +372,11 @@ pub struct InnerJoinProbe {
     join_tuples_left: Vec<ChunkId>,
     join_tuples_right: Vec<DfIdx>,
     hashes: Vec<u64>,
-    join_type: JoinType,
     // the join order is swapped to ensure we hash the smaller table
     swapped: bool,
+    // location of join columns.
+    // these column locations need to be dropped from the rhs
+    join_column_idx: Option<Vec<usize>>,
 }
 
 impl InnerJoinProbe {
@@ -400,6 +396,19 @@ impl InnerJoinProbe {
             let s = s.to_physical_repr();
             self.join_series.push(s.rechunk());
         }
+
+        if self.join_column_idx.is_none() {
+            let mut idx = self
+                .join_series
+                .iter()
+                .filter_map(|s| chunk.data.find_idx_by_name(s.name()))
+                .collect::<Vec<_>>();
+            // ensure that it is sorted so that we can later remove columns in
+            // a predictable order
+            idx.sort_unstable();
+            self.join_column_idx = Some(idx);
+        }
+
         Ok(&self.join_series)
     }
 }
@@ -413,7 +422,7 @@ impl Operator for InnerJoinProbe {
         self.join_tuples_left.clear();
         self.join_tuples_right.clear();
         let mut hashes = std::mem::take(&mut self.hashes);
-        self.set_join_series(context, &chunk)?;
+        self.set_join_series(context, chunk)?;
         hash_series(&self.join_series, &mut hashes, &self.hb);
         self.hashes = hashes;
 
@@ -439,8 +448,6 @@ impl Operator for InnerJoinProbe {
             // get the hashtable belonging by this hash partition
             let partition = hash_to_partition(*h, self.hash_tables.len());
             let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
-            dbg!(&current_table);
-            dbg!(*h);
 
             let entry = current_table
                 .raw_entry()
@@ -456,21 +463,29 @@ impl Operator for InnerJoinProbe {
                 .map(|key_val| key_val.1);
 
             if let Some(indexes_left) = entry {
-                // self.join_tuples_left.extend_from_slice(indexes_left);
+                self.join_tuples_left.extend_from_slice(indexes_left);
                 self.join_tuples_right
                     .extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
             }
         }
-        // dbg!(&self.join_tuples_left, &self.join_tuples_right, &self.left_df);
 
         let left_df = unsafe {
             self.left_df
                 ._take_chunked_unchecked_seq(&self.join_tuples_left, IsSorted::Not)
         };
         let right_df = unsafe {
-            chunk
-                .data
-                ._take_unchecked_slice(&self.join_tuples_right, false)
+            let mut df = Cow::Borrowed(&chunk.data);
+            if let Some(ids) = &self.join_column_idx {
+                let mut tmp = df.into_owned();
+                let cols = tmp.get_columns_mut();
+                // we go from higher idx to lower so that lower indices remain untouched
+                // by our mutation
+                for idx in ids.iter().rev() {
+                    let _ = cols.remove(*idx);
+                }
+                df = Cow::Owned(tmp);
+            }
+            df._take_unchecked_slice(&self.join_tuples_right, false)
         };
 
         let (a, b) = if self.swapped {

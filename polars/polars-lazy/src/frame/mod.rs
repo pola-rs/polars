@@ -553,13 +553,13 @@ impl LazyFrame {
         };
 
         if streaming {
-            #[cfg(any(feature = "csv-file", feature = "parquet"))]
+            #[cfg(feature = "streaming")]
             {
                 insert_streaming_nodes(lp_top, &mut lp_arena, &mut expr_arena, &mut scratch)?;
             }
-            #[cfg(not(any(feature = "csv-file", feature = "parquet")))]
+            #[cfg(not(feature = "streaming"))]
             {
-                panic!("activate feature 'csv-file' or 'parquet'")
+                panic!("activate feature 'streaming'")
             }
         }
 

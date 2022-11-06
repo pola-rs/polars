@@ -129,6 +129,7 @@ algo = ["polars-algo"]
 cse = ["polars-lazy/cse"]
 propagate_nans = ["polars-lazy/propagate_nans"]
 coalesce = ["polars-lazy/coalesce"]
+streaming = ["polars-lazy/streaming"]
 
 test = [
   "lazy",

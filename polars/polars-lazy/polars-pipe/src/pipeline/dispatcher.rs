@@ -2,7 +2,7 @@ use std::any::Any;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::utils::{_set_partition_size, concat_df_unchecked};
+use polars_core::utils::concat_df_unchecked;
 use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;

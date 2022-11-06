@@ -5,4 +5,3 @@ mod utils;
 
 pub(crate) use generic::*;
 pub(crate) use primitive::*;
-

@@ -17,8 +17,8 @@ use rayon::prelude::*;
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::utils::compute_slices;
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::utils::load_vec;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
@@ -81,13 +81,12 @@ where
         let hb = RandomState::default();
         let partitions = _set_partition_size();
 
-        let pre_agg = load_vec(partitions, || PlHashMap::with_capacity_and_hasher(
-            HASHMAP_INIT_SIZE,
-            hb.clone(),
-        ));
-        let aggregators = load_vec(partitions, || Vec::with_capacity(
-            HASHMAP_INIT_SIZE * aggregation_columns.len(),
-        ));
+        let pre_agg = load_vec(partitions, || {
+            PlHashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, hb.clone())
+        });
+        let aggregators = load_vec(partitions, || {
+            Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len())
+        });
 
         Self {
             thread_no: 0,

@@ -3114,7 +3114,11 @@ impl DataFrame {
     }
 
     #[cfg(feature = "chunked_ids")]
-    // `sorted` indicates if the chunks are sorted.
+    #[doc(hidden)]
+    //// Take elements by a slice of [`ChunkId`]s.
+    /// # Safety
+    /// Does not do any bound checks.
+    /// `sorted` indicates if the chunks are sorted.
     pub unsafe fn _take_chunked_unchecked_seq(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
         let cols = self.apply_columns(&|s| s._take_chunked_unchecked(idx, sorted));
 

@@ -141,7 +141,7 @@ where
             options,
             ..
         } => {
-            let key_columns = Arc::new(exprs_to_physical(&keys, expr_arena, to_physical)?);
+            let key_columns = Arc::new(exprs_to_physical(keys, expr_arena, to_physical)?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
             let mut agg_fns = Vec::with_capacity(aggs.len());
