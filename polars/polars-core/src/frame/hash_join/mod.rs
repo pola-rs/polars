@@ -301,7 +301,6 @@ pub fn _finish_join(
 }
 
 impl DataFrame {
-
     /// # Safety
     /// Join tuples must be in bounds
     #[cfg(feature = "chunked_ids")]

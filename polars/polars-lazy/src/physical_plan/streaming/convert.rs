@@ -54,6 +54,15 @@ fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     exprs.iter().all(|node| is_streamable(*node, expr_arena))
 }
 
+fn streamable_join(join_type: &JoinType) -> bool {
+    match join_type {
+        #[cfg(feature = "cross_join")]
+        JoinType::Cross => true,
+        JoinType::Inner => true,
+        _ => false
+    }
+}
+
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 pub(crate) fn insert_streaming_nodes(
     root: Node,
@@ -135,13 +144,12 @@ pub(crate) fn insert_streaming_nodes(
                     states.push(state)
                 }
             }
-            #[cfg(feature = "cross_join")]
             Join {
                 input_left,
                 input_right,
                 options,
                 ..
-            } if matches!(options.how, JoinType::Cross) => {
+            } if streamable_join(&options.how) => {
                 state.streamable = true;
                 // rhs
                 let mut state_right = state;

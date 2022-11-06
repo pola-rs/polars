@@ -103,15 +103,34 @@ pub fn get_sink<F>(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
-) -> Box<dyn Sink>
+) -> PolarsResult<Box<dyn Sink>>
 where
     F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
-    match lp_arena.get(node) {
+    let out = match lp_arena.get(node) {
         #[cfg(feature = "cross_join")]
-        Join { options, .. } => match options.how {
+        Join {
+            options,
+            left_on,
+            right_on,
+            ..
+        } => match &options.how {
             JoinType::Cross => Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>,
+            join_type @ JoinType::Inner => {
+                let join_columns_left =
+                    Arc::new(exprs_to_physical(left_on, expr_arena, to_physical)?);
+                let join_columns_right =
+                    Arc::new(exprs_to_physical(right_on, expr_arena, to_physical)?);
+
+                Box::new(GenericBuild::new(
+                    Arc::from(options.suffix.as_ref()),
+                    join_type.clone(),
+                    false,
+                    join_columns_left,
+                    join_columns_right,
+                ))
+            }
             _ => unimplemented!(),
         },
         Aggregate {
@@ -122,11 +141,7 @@ where
             options,
             ..
         } => {
-            let key_columns = Arc::new(
-                keys.iter()
-                    .map(|node| to_physical(*node, expr_arena).unwrap())
-                    .collect::<Vec<_>>(),
-            );
+            let key_columns = Arc::new(exprs_to_physical(&keys, expr_arena, to_physical)?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
             let mut agg_fns = Vec::with_capacity(aggs.len());
@@ -168,7 +183,8 @@ where
         _ => {
             todo!()
         }
-    }
+    };
+    Ok(out)
 }
 
 pub fn get_dummy_operator() -> Box<dyn Operator> {
@@ -288,7 +304,7 @@ where
     }
     let sink = sink_node
         .map(|node| get_sink(node, lp_arena, expr_arena, &to_physical))
-        .unwrap_or_else(|| Box::new(OrderedSink::new()));
+        .unwrap_or_else(|| Ok(Box::new(OrderedSink::new())))?;
 
     // this offset is because the source might have inserted operators
     let operator_offset = operator_objects.len();

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use hashbrown::hash_map::RawEntryMut;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
-use polars_core::frame::hash_join::{_finish_join, ChunkId};
+use polars_core::frame::hash_join::{ChunkId, _finish_join};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, concat_df_unchecked};
@@ -14,7 +14,9 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::utils::hash_series;
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult};
+use crate::operators::{
+    DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult,
+};
 
 type ChunkIdx = IdxSize;
 type DfIdx = IdxSize;
@@ -39,27 +41,23 @@ pub struct GenericBuild {
 
     // the columns that will be joined on
     join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    join_names_left: Arc<Vec<String>>,
-
     join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    join_names_right: Arc<Vec<String>>,
 
     // amortize allocations
     join_series: Vec<Series>,
     hashes: Vec<u64>,
     join_type: JoinType,
     // the join order is swapped to ensure we hash the smaller table
-    swapped: bool
+    swapped: bool,
 }
 
 impl GenericBuild {
-    fn new(suffix: Arc<str>,
-           join_type: JoinType,
-           swapped: bool,
-           join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-           join_names_left: Arc<Vec<String>>,
-           join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-           join_names_right: Arc<Vec<String>>,
+    pub(crate) fn new(
+        suffix: Arc<str>,
+        join_type: JoinType,
+        swapped: bool,
+        join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     ) -> Self {
         GenericBuild {
             chunks: vec![],
@@ -68,13 +66,11 @@ impl GenericBuild {
             hb: Default::default(),
             swapped,
             join_columns_left,
-            join_names_left,
             join_columns_right,
-            join_names_right,
             join_series: vec![],
             materialized_join_cols: vec![],
             hash_tables: vec![],
-            hashes: vec![]
+            hashes: vec![],
         }
     }
 }
@@ -266,9 +262,7 @@ impl Sink for GenericBuild {
             self.join_type.clone(),
             self.swapped,
             self.join_columns_left.clone(),
-            self.join_names_left.clone(),
             self.join_columns_right.clone(),
-            self.join_names_right.clone(),
         );
         new.hb = self.hb.clone();
         Box::new(new)
@@ -277,13 +271,17 @@ impl Sink for GenericBuild {
     fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
         match self.join_type {
             JoinType::Inner => {
-                let left_df = Arc::new(accumulate_dataframes_vertical_unchecked(std::mem::take(&mut self.chunks).into_iter().map(|chunk| chunk.data)));
-                let materialized_join_cols = Arc::new(std::mem::take(&mut self.materialized_join_cols));
+                let left_df = Arc::new(accumulate_dataframes_vertical_unchecked(
+                    std::mem::take(&mut self.chunks)
+                        .into_iter()
+                        .map(|chunk| chunk.data),
+                ));
+                let materialized_join_cols =
+                    Arc::new(std::mem::take(&mut self.materialized_join_cols));
                 let suffix = self.suffix.clone();
                 let hb = self.hb.clone();
                 let hash_tables = Arc::new(std::mem::take(&mut self.hash_tables));
                 let join_columns_right = self.join_columns_right.clone();
-                let join_names_right = self.join_names_right.clone();
 
                 // take the buffers, this saves one allocation
                 let mut join_series = std::mem::take(&mut self.join_series);
@@ -298,18 +296,16 @@ impl Sink for GenericBuild {
                     hb,
                     hash_tables,
                     join_columns_right,
-                    join_names_right,
                     join_series,
                     join_tuples_left: vec![],
                     join_tuples_right: vec![],
                     hashes,
                     join_type: JoinType::Inner,
-                    swapped: self.swapped
+                    swapped: self.swapped,
                 };
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
-
-            },
-            _ => unimplemented!()
+            }
+            _ => unimplemented!(),
         }
     }
 
@@ -317,7 +313,6 @@ impl Sink for GenericBuild {
         self
     }
 }
-
 
 #[derive(Clone)]
 pub struct InnerJoinProbe {
@@ -340,7 +335,6 @@ pub struct InnerJoinProbe {
 
     // the columns that will be joined on
     join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    join_names_right: Arc<Vec<String>>,
 
     // amortize allocations
     join_series: Vec<Series>,
@@ -349,7 +343,7 @@ pub struct InnerJoinProbe {
     hashes: Vec<u64>,
     join_type: JoinType,
     // the join order is swapped to ensure we hash the smaller table
-    swapped: bool
+    swapped: bool,
 }
 
 impl InnerJoinProbe {
@@ -374,7 +368,11 @@ impl InnerJoinProbe {
 }
 
 impl Operator for InnerJoinProbe {
-    fn execute(&mut self, context: &PExecutionContext, chunk: &DataChunk) -> PolarsResult<OperatorResult> {
+    fn execute(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<OperatorResult> {
         self.join_tuples_left.clear();
         self.join_tuples_right.clear();
         let mut hashes = std::mem::take(&mut self.hashes);
@@ -406,25 +404,35 @@ impl Operator for InnerJoinProbe {
             let partition = hash_to_partition(*h, self.hash_tables.len());
             let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
 
-            let entry = current_table.raw_entry().from_hash(*h, |key| {
-                compare_fn(
-                    key,
-                    *h,
-                    &self.materialized_join_cols,
-                    &current_tuple_buf,
-                    current_tuple_buf.len(),
-                )
-            }).map(|key_val|key_val.1);
+            let entry = current_table
+                .raw_entry()
+                .from_hash(*h, |key| {
+                    compare_fn(
+                        key,
+                        *h,
+                        &self.materialized_join_cols,
+                        &current_tuple_buf,
+                        current_tuple_buf.len(),
+                    )
+                })
+                .map(|key_val| key_val.1);
 
             if let Some(indexes_left) = entry {
                 // self.join_tuples_left.extend_from_slice(indexes_left);
-                self.join_tuples_right.extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
+                self.join_tuples_right
+                    .extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
             }
-
         }
 
-        let left_df = unsafe { self.left_df._take_chunked_unchecked_seq(&self.join_tuples_left, IsSorted::Not) };
-        let right_df = unsafe {chunk.data._take_unchecked_slice(&self.join_tuples_right, false)};
+        let left_df = unsafe {
+            self.left_df
+                ._take_chunked_unchecked_seq(&self.join_tuples_left, IsSorted::Not)
+        };
+        let right_df = unsafe {
+            chunk
+                .data
+                ._take_unchecked_slice(&self.join_tuples_right, false)
+        };
 
         let (a, b) = if self.swapped {
             (right_df, left_df)
