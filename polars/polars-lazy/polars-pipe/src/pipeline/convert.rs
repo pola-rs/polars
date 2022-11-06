@@ -109,13 +109,13 @@ where
 {
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
-        #[cfg(feature = "cross_join")]
         Join {
             options,
             left_on,
             right_on,
             ..
         } => match &options.how {
+            #[cfg(feature = "cross_join")]
             JoinType::Cross => Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>,
             join_type @ JoinType::Inner => {
                 let join_columns_left =

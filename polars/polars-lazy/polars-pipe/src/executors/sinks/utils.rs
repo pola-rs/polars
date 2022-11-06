@@ -9,3 +9,11 @@ pub(super) fn hash_series(columns: &[Series], buf: &mut Vec<u64>, hb: &RandomSta
         other_key.vec_hash_combine(hb.clone(), buf).unwrap();
     }
 }
+
+pub(super) fn load_vec<T, F: Fn() -> T>(partitions: usize, item: F) -> Vec<T> {
+    let mut buf = Vec::with_capacity(partitions);
+    for _ in 0..partitions {
+        buf.push(item());
+    }
+    buf
+}

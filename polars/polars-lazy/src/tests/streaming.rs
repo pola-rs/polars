@@ -132,6 +132,7 @@ fn test_streaming_slice() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cross_join")]
 fn test_streaming_cross_join() -> PolarsResult<()> {
     let df = df![
         "a" => [1 ,2, 3]
@@ -165,4 +166,29 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
     );
     assert_eq!(out_streaming.shape(), (5753, 2));
     Ok(())
+}
+
+
+#[test]
+fn test_streaming_inner_join() -> PolarsResult<()> {
+
+    let lf_left = df![
+            "col1" => [1, 1, 1],
+            "col2" => ["a", "a", "b"],
+            "int_col" => [1, 2, 3]
+        ]?.lazy();
+
+    let lf_right = df![
+            "col1" => [1, 1, 1, 1, 1, 2],
+            "col2" => ["a", "a", "a", "a", "a", "c"],
+            "floats" => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+        ]?.lazy();
+
+    let q= lf_left.inner_join(lf_right,col("col1"), col("col1") );
+
+    let out = q.with_streaming(true).collect()?;
+    dbg!(out);
+
+    Ok(())
+
 }

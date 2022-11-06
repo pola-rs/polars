@@ -1,6 +1,10 @@
+#[cfg(feature = "compile")]
 mod executors;
+#[cfg(feature = "compile")]
 pub mod expressions;
+#[cfg(feature = "compile")]
 pub mod operators;
+#[cfg(feature = "compile")]
 pub mod pipeline;
 
 // ideal chunk size we strive to
