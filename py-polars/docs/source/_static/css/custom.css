@@ -25,12 +25,21 @@ dl.class > dt:first-of-type {
 /* Dark & light theme tweaks */
 html[data-theme="light"] {
     --pst-color-on-background: #ecf4ff;
+    --pst-gradient-sidebar-left: #ffffff;
+    --pst-gradient-sidebar-right: #fbfbfb;
     --pst-color-border: #cccccc;
 }
 
 html[data-theme="dark"] {
     --pst-color-on-background: #333333;
+    --pst-gradient-sidebar-left: #121212;
+    --pst-gradient-sidebar-right: #181818;
+    --pst-color-sidebar-nav: #181818;
     --pst-color-border: #444444;
+}
+
+div.bd-sidebar-primary {
+    background-image: linear-gradient(90deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
 }
 
 footer.bd-footer{
