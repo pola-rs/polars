@@ -63,7 +63,6 @@ fn streamable_join(join_type: &JoinType) -> bool {
     }
 }
 
-#[cfg(any(feature = "csv-file", feature = "parquet"))]
 pub(crate) fn insert_streaming_nodes(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,

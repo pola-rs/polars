@@ -656,7 +656,7 @@ def test_streaming_joins() -> None:
         )
 
         a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
-        pl.testing.assert_frame_equal(a, pl_result)
+        pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
 
         pd_result = dfa.merge(dfb, on=["a", "b"], how=how)
 
@@ -667,5 +667,6 @@ def test_streaming_joins() -> None:
             .collect(allow_streaming=True)
         )
 
+        # we cast to integer because pandas joins creates floats
         a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
-        pl.testing.assert_frame_equal(a, pl_result)
+        pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
