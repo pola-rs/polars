@@ -386,6 +386,7 @@ impl Hasher for IdHasher {
         self.write_u64(i as u64)
     }
 
+    #[inline]
     fn write_u64(&mut self, i: u64) {
         self.hash = i;
     }

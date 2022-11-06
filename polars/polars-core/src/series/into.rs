@@ -10,6 +10,7 @@ use crate::prelude::*;
 
 impl Series {
     /// Returns a reference to the Arrow ArrayRef
+    #[inline]
     pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
         &self.chunks()[chunk_idx] as &ArrayRef
     }

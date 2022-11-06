@@ -17,7 +17,7 @@ polars-arrow = { version = "0.25.1", path = "../polars-arrow" }
 polars-core = { version = "0.25.1", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.25.1", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
 polars-ops = { version = "0.25.1", path = "../polars-ops", default-features = false }
-polars-pipe = { version = "0.25.1", path = "./polars-pipe" }
+polars-pipe = { version = "0.25.1", path = "./polars-pipe", optional = true }
 polars-plan = { version = "0.25.1", path = "./polars-plan" }
 polars-time = { version = "0.25.1", path = "../polars-time", optional = true }
 polars-utils = { version = "0.25.1", path = "../polars-utils" }
@@ -27,6 +27,7 @@ rayon.workspace = true
 [features]
 nightly = ["polars-core/nightly", "polars-pipe/nightly"]
 compile = ["polars-plan/compile"]
+streaming = ["chunked_ids", "polars-pipe/compile"]
 default = ["compile", "private"]
 parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
@@ -86,7 +87,7 @@ unique_counts = ["polars-plan/unique_counts"]
 log = ["polars-plan/log"]
 list_eval = []
 cumulative_eval = []
-chunked_ids = ["polars-plan/chunked_ids"]
+chunked_ids = ["polars-plan/chunked_ids", "polars-core/chunked_ids"]
 list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python"]
 row_hash = ["polars-plan/row_hash"]

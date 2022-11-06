@@ -132,6 +132,7 @@ fn test_streaming_slice() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cross_join")]
 fn test_streaming_cross_join() -> PolarsResult<()> {
     let df = df![
         "a" => [1 ,2, 3]
@@ -164,5 +165,52 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
         &["calories", "calories_right"]
     );
     assert_eq!(out_streaming.shape(), (5753, 2));
+    Ok(())
+}
+
+#[test]
+fn test_streaming_inner_join() -> PolarsResult<()> {
+    let lf_left = df![
+        "col1" => [1, 1, 1],
+        "col2" => ["a", "a", "b"],
+        "int_col" => [1, 2, 3]
+    ]?
+    .lazy();
+
+    let lf_right = df![
+        "col1" => [1, 1, 1, 1, 1, 2],
+        "col2" => ["a", "a", "a", "a", "a", "c"],
+        "floats" => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+    ]?
+    .lazy();
+
+    let q = lf_left.inner_join(lf_right, col("col1"), col("col1"));
+
+    let out1 = q.clone().with_streaming(true).collect()?;
+    let out2 = q.clone().with_streaming(false).collect()?;
+    assert!(out1.frame_equal(&out2));
+
+    Ok(())
+}
+#[test]
+fn test_streaming_inner_join2() -> PolarsResult<()> {
+    let lf_left = df![
+           "a"=> [0, 0, 0, 3, 0, 1, 3, 3, 3, 1, 4, 4, 2, 1, 1, 3, 1, 4, 2, 2],
+    "b"=> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+       ]?
+    .lazy();
+
+    let lf_right = df![
+           "a"=> [10, 18, 13, 9, 1, 13, 14, 12, 15, 11],
+    "b"=> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+       ]?
+    .lazy();
+
+    let q = lf_left.inner_join(lf_right, col("a"), col("a"));
+
+    let out1 = q.clone().with_streaming(true).collect()?;
+    let out2 = q.clone().with_streaming(false).collect()?;
+    assert!(out1.frame_equal(&out2));
+
     Ok(())
 }

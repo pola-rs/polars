@@ -32,6 +32,8 @@ impl PipeLine {
         operator_offset: usize,
     ) -> PipeLine {
         debug_assert_eq!(operators.len(), operator_nodes.len() + operator_offset);
+        // we don't use the power of two partition size here
+        // we only do that in the sinks itself.
         let n_threads = POOL.current_num_threads();
 
         // We split so that every thread get's an operator
@@ -91,10 +93,6 @@ impl PipeLine {
                         OperatorResult::Finished(chunk) => chunk,
                         _ => todo!(),
                     };
-                    // sinks don't need to store empty
-                    if chunk.data.height() == 0 {
-                        return Ok(SinkResult::Finished);
-                    }
                     sink.sink(ec, chunk)
                 })
                 // only collect failed and finished messages as there should be acted upon those

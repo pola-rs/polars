@@ -16,6 +16,7 @@ mod predicate_queries;
 mod projection_queries;
 #[cfg(feature = "test")]
 mod queries;
+#[cfg(feature = "streaming")]
 mod streaming;
 #[cfg(feature = "strings")]
 mod tpch;

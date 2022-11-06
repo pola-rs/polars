@@ -41,7 +41,7 @@ use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::planner::create_physical_plan;
 use crate::physical_plan::state::ExecutionState;
-#[cfg(any(feature = "csv-file", feature = "parquet"))]
+#[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
 
@@ -553,13 +553,13 @@ impl LazyFrame {
         };
 
         if streaming {
-            #[cfg(any(feature = "csv-file", feature = "parquet"))]
+            #[cfg(feature = "streaming")]
             {
                 insert_streaming_nodes(lp_top, &mut lp_arena, &mut expr_arena, &mut scratch)?;
             }
-            #[cfg(not(any(feature = "csv-file", feature = "parquet")))]
+            #[cfg(not(feature = "streaming"))]
             {
-                panic!("activate feature 'csv-file' or 'parquet'")
+                panic!("activate feature 'streaming'")
             }
         }
 

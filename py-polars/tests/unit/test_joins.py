@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+import polars.testing
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy
@@ -621,3 +622,51 @@ def test_asof_join_schema_5211() -> None:
         )
         .schema
     ) == {"today": pl.Int64, "next_friday": pl.Int64}
+
+
+@typing.no_type_check
+def test_streaming_joins() -> None:
+    n = 100
+    dfa = pd.DataFrame(
+        {
+            "a": np.random.randint(0, 40, n),
+            "b": np.arange(0, n),
+        }
+    )
+
+    n = 100
+    dfb = pd.DataFrame(
+        {
+            "a": np.random.randint(0, 40, n),
+            "b": np.arange(0, n),
+        }
+    )
+    dfa_pl = pl.from_pandas(dfa).sort("a")
+    dfb_pl = pl.from_pandas(dfb)
+
+    for how in ["inner"]:
+        pd_result = dfa.merge(dfb, on="a", how=how)
+        pd_result.columns = ["a", "b", "b_right"]
+
+        pl_result = (
+            dfa_pl.lazy()
+            .join(dfb_pl.lazy(), on="a", how=how)
+            .sort(["a", "b"])
+            .collect(allow_streaming=True)
+        )
+
+        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
+
+        pd_result = dfa.merge(dfb, on=["a", "b"], how=how)
+
+        pl_result = (
+            dfa_pl.lazy()
+            .join(dfb_pl.lazy(), on=["a", "b"], how=how)
+            .sort(["a", "b"])
+            .collect(allow_streaming=True)
+        )
+
+        # we cast to integer because pandas joins creates floats
+        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)

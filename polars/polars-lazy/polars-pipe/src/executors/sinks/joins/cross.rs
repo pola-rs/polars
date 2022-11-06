@@ -2,7 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::iter::StepBy;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::vec;
 
 use polars_core::error::PolarsResult;
@@ -17,7 +17,6 @@ use crate::operators::{
 pub struct CrossJoin {
     chunks: Vec<DataChunk>,
     suffix: Cow<'static, str>,
-    shared: Arc<Mutex<DataFrame>>,
 }
 
 impl CrossJoin {
@@ -25,7 +24,6 @@ impl CrossJoin {
         CrossJoin {
             chunks: vec![],
             suffix,
-            shared: Default::default(),
         }
     }
 }
@@ -45,14 +43,13 @@ impl Sink for CrossJoin {
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         Box::new(Self {
             suffix: self.suffix.clone(),
-            shared: self.shared.clone(),
             ..Default::default()
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
         // todo! share sink
-        Ok(FinalizedSink::Operator(Box::new(CrossJoinPhase2 {
+        Ok(FinalizedSink::Operator(Box::new(CrossJoinProbe {
             df: Arc::new(chunks_to_df_unchecked(std::mem::take(&mut self.chunks))),
             suffix: Arc::from(self.suffix.as_ref()),
             in_process_left: None,
@@ -68,7 +65,7 @@ impl Sink for CrossJoin {
 }
 
 #[derive(Clone)]
-pub struct CrossJoinPhase2 {
+pub struct CrossJoinProbe {
     df: Arc<DataFrame>,
     suffix: Arc<str>,
     in_process_left: Option<StepBy<Range<usize>>>,
@@ -77,7 +74,7 @@ pub struct CrossJoinPhase2 {
     output_names: Option<Vec<String>>,
 }
 
-impl Operator for CrossJoinPhase2 {
+impl Operator for CrossJoinProbe {
     fn execute(
         &mut self,
         _context: &PExecutionContext,

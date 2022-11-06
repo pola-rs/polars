@@ -24,7 +24,10 @@ impl OrderedSink {
 
 impl Sink for OrderedSink {
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        self.chunks.push(chunk);
+        // don't add empty dataframes
+        if chunk.data.height() > 0 || self.chunks.is_empty() {
+            self.chunks.push(chunk);
+        }
         Ok(SinkResult::CanHaveMoreInput)
     }
 

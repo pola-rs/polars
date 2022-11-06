@@ -8,6 +8,7 @@ mod file_cache;
 mod node_timer;
 pub mod planner;
 pub(crate) mod state;
+#[cfg(feature = "streaming")]
 pub(crate) mod streaming;
 
 use errors::expression_err;
