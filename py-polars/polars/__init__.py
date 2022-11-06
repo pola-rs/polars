@@ -1,3 +1,4 @@
+import os
 import warnings
 
 try:
@@ -10,6 +11,7 @@ except ImportError:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
+from polars.build_info import build_info
 from polars.cfg import Config
 from polars.convert import (
     from_arrow,
@@ -291,11 +293,10 @@ __all__ = [
     "threadpool_size",
     # version
     "show_versions",
+    "build_info",
     "SQLContext",
 ]
 
 __version__ = version()
-
-import os
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"
