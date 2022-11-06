@@ -140,9 +140,7 @@ mod test {
 
         let out = sublist_get_indexes(&arr, 1);
         assert_eq!(
-            out.into_iter()
-                .map(|opt_v| opt_v.cloned())
-                .collect::<Vec<_>>(),
+            out.into_iter().collect::<Vec<_>>(),
             &[None, None, None, Some(4), Some(7), Some(10)]
         );
     }

@@ -652,7 +652,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                     });
                     f(x)
                 });
-                let len = values.len();
+                let len = array.len();
 
                 // we know the iterators len
                 unsafe {
