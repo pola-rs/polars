@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import typing
+from datetime import date, datetime, time, timedelta
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, overload
@@ -10,9 +11,13 @@ from warnings import warn
 from polars import internals as pli
 from polars.cfg import Config
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Boolean,
     Categorical,
     DataType,
+    Date,
+    Datetime,
+    Duration,
     Float32,
     Float64,
     Int8,
@@ -21,6 +26,7 @@ from polars.datatypes import (
     Int64,
     PolarsDataType,
     Schema,
+    Time,
     UInt8,
     UInt16,
     UInt32,
@@ -2269,7 +2275,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Number of consecutive null values to fill when using the 'forward' or
             'backward' strategy.
         matches_supertype
-            Fill all matching supertype of the fill ``value``.
+            Fill all matching supertypes of the fill ``value`` literal.
 
         Examples
         --------
@@ -2343,39 +2349,38 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴──────┘
 
         """
+        dtypes: Sequence[PolarsDataType]
+
         if value is not None:
+
+            def infer_dtype(value: Any) -> PolarsDataType:
+                return next(iter(self.select(value).schema.values()))
+
             if isinstance(value, pli.Expr):
-                dtype = next(iter(self.select(value).schema.values()))
-                dtypes = [dtype]
+                dtypes = [infer_dtype(value)]
             elif isinstance(value, bool):
                 dtypes = [Boolean]
+            elif matches_supertype and isinstance(value, (int, float)):
+                ints = [Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64]
+                floats = [Float32, Float64]
+                dtypes = ints + floats
             elif isinstance(value, int):
                 dtypes = [Int64]
-                if matches_supertype:
-                    dtypes.append(Int8)
-                    dtypes.append(Int16)
-                    dtypes.append(Int32)
-                    dtypes.append(UInt8)
-                    dtypes.append(UInt16)
-                    dtypes.append(UInt32)
-                    dtypes.append(UInt64)
-                    dtypes.append(Float32)
-                    dtypes.append(Float64)
             elif isinstance(value, float):
                 dtypes = [Float64]
-                if matches_supertype:
-                    dtypes.append(Int8)
-                    dtypes.append(Int16)
-                    dtypes.append(Int32)
-                    dtypes.append(Int64)
-                    dtypes.append(UInt8)
-                    dtypes.append(UInt16)
-                    dtypes.append(UInt32)
-                    dtypes.append(UInt64)
-                    dtypes.append(Float32)
-                    dtypes.append(Float64)
+            elif isinstance(value, datetime):
+                dtypes = [Datetime] + [Datetime(tu) for tu in DTYPE_TEMPORAL_UNITS]
+            elif isinstance(value, timedelta):
+                dtypes = [Duration] + [Duration(tu) for tu in DTYPE_TEMPORAL_UNITS]
+            elif isinstance(value, date):
+                dtypes = [Date]
+            elif isinstance(value, time):
+                dtypes = [Time]
             elif isinstance(value, str):
                 dtypes = [Utf8, Categorical]
+            else:
+                # fallback; anything not explicitly handled above
+                dtypes = [infer_dtype(pli.lit(value))]
 
             return self.with_column(pli.col(dtypes).fill_null(value, strategy, limit))
 
