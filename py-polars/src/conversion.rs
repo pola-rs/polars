@@ -550,7 +550,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     let ts = dt.call_method0("timestamp")?;
                     // s to us
                     let v = (ts.extract::<f64>()? * 1_000_000.0) as i64;
-                    // we choose us as that is pythons default unit
+                    // choose "us" as that is python's default unit
                     Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
                 }
             })

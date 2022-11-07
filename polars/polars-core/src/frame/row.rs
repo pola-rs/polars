@@ -379,6 +379,8 @@ pub enum AnyValueBuffer<'a> {
         TimeUnit,
         Option<TimeZone>,
     ),
+    #[cfg(feature = "dtype-duration")]
+    Duration(PrimitiveChunkedBuilder<Int64Type>, TimeUnit),
     #[cfg(feature = "dtype-time")]
     Time(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
@@ -416,6 +418,13 @@ impl<'a> AnyValueBuffer<'a> {
             (Datetime(builder, tu_l, _), AnyValue::Datetime(v, tu_r, _)) => {
                 // we convert right tu to left tu
                 // so we swap.
+                let v = convert_time_units(v, tu_r, *tu_l);
+                builder.append_value(v)
+            }
+            #[cfg(feature = "dtype-duration")]
+            (Duration(builder, _), AnyValue::Null) => builder.append_null(),
+            #[cfg(feature = "dtype-duration")]
+            (Duration(builder, tu_l), AnyValue::Duration(v, tu_r)) => {
                 let v = convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             }
@@ -465,6 +474,8 @@ impl<'a> AnyValueBuffer<'a> {
             Date(b) => b.finish().into_date().into_series(),
             #[cfg(feature = "dtype-datetime")]
             Datetime(b, tu, tz) => b.finish().into_datetime(tu, tz).into_series(),
+            #[cfg(feature = "dtype-duration")]
+            Duration(b, tu) => b.finish().into_duration(tu).into_series(),
             #[cfg(feature = "dtype-time")]
             Time(b) => b.finish().into_time().into_series(),
             Float32(b) => b.finish().into_series(),
@@ -496,6 +507,8 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Datetime(tu, tz) => {
                 AnyValueBuffer::Datetime(PrimitiveChunkedBuilder::new("", len), *tu, tz.clone())
             }
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => AnyValueBuffer::Duration(PrimitiveChunkedBuilder::new("", len), *tu),
             #[cfg(feature = "dtype-time")]
             Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
