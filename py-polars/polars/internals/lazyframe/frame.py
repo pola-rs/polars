@@ -71,7 +71,19 @@ def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
 
 
 class LazyFrame:
-    """Representation of a Lazy computation graph/query."""
+    """
+    Representation of a Lazy computation graph/query againat a DataFrame.
+
+    Notes
+    -----
+    LazyFrames are instantiated by calling :meth:`~DataFrame.lazy()` on an
+    existing DataFrame; they are also created when calling the various "scan"
+    :doc:`IO methods </reference/io>`, and are the preferred way to operate
+    on data with polars.
+
+    >>> ldf = pl.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]}).lazy()
+
+    """
 
     _ldf: PyLazyFrame
 

@@ -1,5 +1,5 @@
 ==========
-Data Types
+Data types
 ==========
 .. currentmodule:: polars
 

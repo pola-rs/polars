@@ -6,6 +6,7 @@ This page gives an overview of all public polars expressions.
 
 .. toctree::
    :maxdepth: 2
+   :hidden:
 
    aggregation
    array
@@ -21,3 +22,11 @@ This page gives an overview of all public polars expressions.
    struct
    timeseries
    window
+
+.. currentmodule:: polars
+
+.. autoclass:: Expr
+    :members:
+    :noindex:
+    :autosummary:
+    :autosummary-nosignatures:

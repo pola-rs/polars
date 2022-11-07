@@ -324,7 +324,7 @@ def _rename_kwargs(
 
 
 class accessor:
-    """Property decorator for namespaces that can act on both instances AND classes."""
+    """Property decorator for namespaces (can act on both instances AND classes)."""
 
     def __init__(self, method: Callable[..., Any] | None = None) -> None:
         self.fget = method

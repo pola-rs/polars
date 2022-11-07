@@ -10,8 +10,8 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
 
    io
    series/index
-   dataframe
-   lazyframe
+   dataframe/index
+   lazyframe/index
    expressions/index
    functions
    datatypes

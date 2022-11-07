@@ -1,30 +1,26 @@
-======
-Series
-======
+=========
+DataFrame
+=========
 
-This page gives an overview of all public Series methods.
+This page gives an overview of all public DataFrame methods.
 
 .. toctree::
    :maxdepth: 2
    :hidden:
 
    aggregation
-   array
    attributes
-   boolean
-   categories
    computation
    descriptive
    export
+   groupby
    modify_select
    miscellaneous
-   strings
-   struct
-   timeseries
+   pivot
 
 .. currentmodule:: polars
 
-.. autoclass:: Series
+.. autoclass:: DataFrame
     :members:
     :noindex:
     :autosummary:

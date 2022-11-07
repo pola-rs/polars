@@ -1,6 +1,6 @@
-===========
-Time series
-===========
+========
+Temporal
+========
 
 The following methods are available under the `expr.dt` attribute.
 

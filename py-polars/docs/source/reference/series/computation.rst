@@ -55,4 +55,3 @@ Computation
     Series.sqrt
     Series.tan
     Series.tanh
-    Series.unique
