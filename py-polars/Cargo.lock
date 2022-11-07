@@ -1569,6 +1569,7 @@ dependencies = [
  "enum_dispatch",
  "hashbrown",
  "num",
+ "polars-arrow",
  "polars-core",
  "polars-io",
  "polars-plan",

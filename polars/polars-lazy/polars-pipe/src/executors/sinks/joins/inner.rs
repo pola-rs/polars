@@ -8,7 +8,6 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::utils::hash_series;
@@ -50,11 +49,6 @@ pub struct InnerJoinProbe {
 }
 
 impl InnerJoinProbe {
-    #[inline]
-    fn number_of_keys(&self) -> usize {
-        self.join_columns_right.len()
-    }
-
     fn set_join_series(
         &mut self,
         context: &PExecutionContext,
@@ -95,26 +89,11 @@ impl Operator for InnerJoinProbe {
         self.set_join_series(context, chunk)?;
         hash_series(&self.join_series, &mut hashes, &self.hb);
         self.hashes = hashes;
-
-        // iterators over anyvalues
-        let mut key_iters = self
-            .join_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
-
-        // a small buffer that holds the current key values
-        // if we join by 2 keys, this holds 2 anyvalues.
-        let mut current_tuple_buf = Vec::with_capacity(self.number_of_keys());
+        let mut keys_iter = KeysIter::new(&self.join_series);
 
         for (i, h) in self.hashes.iter().enumerate() {
             let df_idx_right = i as IdxSize;
-
-            // load the keys in the buffer
-            current_tuple_buf.clear();
-            for key_iter in key_iters.iter_mut() {
-                unsafe { current_tuple_buf.push(key_iter.next().unwrap_unchecked_release()) }
-            }
+            let current_tuple = unsafe { keys_iter.lend_next() };
             // get the hashtable belonging by this hash partition
             let partition = hash_to_partition(*h, self.hash_tables.len());
             let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
@@ -126,8 +105,8 @@ impl Operator for InnerJoinProbe {
                         key,
                         *h,
                         &self.materialized_join_cols,
-                        &current_tuple_buf,
-                        current_tuple_buf.len(),
+                        current_tuple,
+                        current_tuple.len(),
                     )
                 })
                 .map(|key_val| key_val.1);

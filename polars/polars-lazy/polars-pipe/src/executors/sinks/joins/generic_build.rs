@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use hashbrown::hash_map::RawEntryMut;
+use polars_arrow::trusted_len::PushUnchecked;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::hash_join::ChunkId;
@@ -178,27 +179,13 @@ impl Sink for GenericBuild {
 
         let current_chunk_offset = self.chunks.len() as ChunkIdx;
 
-        // iterators over anyvalues
-        let mut key_iters = self
-            .join_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
-
-        // a small buffer that holds the current key values
-        // if we join by 2 keys, this holds 2 anyvalues.
-        let mut current_tuple_buf = Vec::with_capacity(self.number_of_keys());
+        let mut keys_iter = KeysIter::new(&self.join_series);
         let n_join_cols = self.number_of_keys();
 
         // row offset in the chunk belonging to the hash
         let mut current_df_idx = 0 as IdxSize;
         for h in &self.hashes {
-            // load the keys in the buffer
-            // TODO! write an iterator for this
-            current_tuple_buf.clear();
-            for key_iter in key_iters.iter_mut() {
-                unsafe { current_tuple_buf.push(key_iter.next().unwrap_unchecked_release()) }
-            }
+            let current_tuple = unsafe { keys_iter.lend_next() };
 
             // get the hashtable belonging by this hash partition
             let partition = hash_to_partition(*h, self.hash_tables.len());
@@ -209,7 +196,7 @@ impl Sink for GenericBuild {
                     key,
                     *h,
                     &self.materialized_join_cols,
-                    &current_tuple_buf,
+                    current_tuple,
                     n_join_cols,
                 )
             });
@@ -340,5 +327,39 @@ impl Sink for GenericBuild {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+pub(super) struct KeysIter<'a> {
+    key_iters: Vec<Box<dyn ExactSizeIterator<Item = AnyValue<'a>> + 'a>>,
+    // a small buffer that holds the current key values
+    // if we join by 2 keys, this holds 2 anyvalues.
+    buf: Vec<AnyValue<'a>>,
+}
+
+impl<'a> KeysIter<'a> {
+    pub(super) fn new(join_series: &'a [Series]) -> Self {
+        // iterators over anyvalues
+        let key_iters = join_series
+            .iter()
+            .map(|s| s.phys_iter())
+            .collect::<Vec<_>>();
+
+        // ensure that they have the appriate size as we will not bound check on push
+        let buf = Vec::with_capacity(key_iters.len());
+        Self { key_iters, buf }
+    }
+
+    /// # Safety
+    /// will not check any bounds on iterators. `lend_next` should not be called more often
+    /// than items in the given iterators.
+    pub(super) unsafe fn lend_next<'b>(&'b mut self) -> &'b [AnyValue<'a>] {
+        self.buf.clear();
+        for key_iter in self.key_iters.iter_mut() {
+            // safety: we allocated up front
+            self.buf
+                .push_unchecked(key_iter.next().unwrap_unchecked_release())
+        }
+        &self.buf
     }
 }
