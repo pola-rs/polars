@@ -21,7 +21,7 @@ use polars_io::{
 
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::rewrite_projections;
-use crate::logical_plan::schema::det_join_schema;
+use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
@@ -72,9 +72,13 @@ impl LogicalPlanBuilder {
             None => function.schema(infer_schema_length)?,
         });
 
+        let file_info = FileInfo {
+            schema: schema.clone(),
+            row_estimation: None,
+        };
         Ok(LogicalPlan::AnonymousScan {
             function,
-            schema: schema.clone(),
+            file_info,
             predicate: None,
             options: AnonymousScanOptions {
                 fmt_str: name,
@@ -104,10 +108,14 @@ impl LogicalPlanBuilder {
         let path = path.into();
         let file = std::fs::File::open(&path)?;
         let schema = Arc::new(ParquetReader::new(file).schema()?);
+        let file_info = FileInfo {
+            schema,
+            row_estimation: None,
+        };
 
         Ok(LogicalPlan::ParquetScan {
             path,
-            schema,
+            file_info,
             predicate: None,
             options: ParquetOptions {
                 n_rows,
@@ -132,9 +140,13 @@ impl LogicalPlanBuilder {
         let file = std::fs::File::open(&path)?;
         let schema = Arc::new(IpcReader::new(file).schema()?);
 
+        let file_info = FileInfo {
+            schema,
+            row_estimation: None,
+        };
         Ok(LogicalPlan::IpcScan {
             path,
-            schema,
+            file_info,
             predicate: None,
             options: options.into(),
         }
@@ -198,9 +210,13 @@ impl LogicalPlanBuilder {
             Arc::new(schema)
         });
         skip_rows += skip_rows_after_header;
+        let file_info = FileInfo {
+            schema,
+            row_estimation: None,
+        };
         Ok(LogicalPlan::CsvScan {
             path,
-            schema,
+            file_info,
             options: CsvParserOptions {
                 has_header,
                 delimiter,

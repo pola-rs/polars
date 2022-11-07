@@ -61,7 +61,7 @@ where
         #[cfg(feature = "csv-file")]
         CsvScan {
             path,
-            schema,
+            file_info,
             options,
             predicate,
             ..
@@ -73,13 +73,13 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::CsvSource::new(path, schema, options)?;
+            let src = sources::CsvSource::new(path, file_info.schema, options)?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         #[cfg(feature = "parquet")]
         ParquetScan {
             path,
-            schema,
+            file_info,
             options,
             predicate,
             ..
@@ -91,7 +91,7 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::ParquetSource::new(path, options, &schema)?;
+            let src = sources::ParquetSource::new(path, options, &file_info.schema)?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         _ => todo!(),

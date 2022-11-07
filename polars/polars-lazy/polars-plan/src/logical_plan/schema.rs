@@ -1,6 +1,15 @@
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct FileInfo {
+    pub schema: SchemaRef,
+    pub row_estimation: Option<usize>,
+}
 
 pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
