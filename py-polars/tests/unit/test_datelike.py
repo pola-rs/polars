@@ -1083,6 +1083,22 @@ def test_timelike_init() -> None:
         assert s.to_list() == ts
 
 
+def test_timedelta_timeunit_init() -> None:
+    d, s, us = 7, 45045, 123456
+    td_us = timedelta(days=d, seconds=s, microseconds=us)
+    df = pl.DataFrame(
+        [[td_us, td_us, td_us]],
+        columns=[
+            ("x", pl.Duration("ms")),
+            ("y", pl.Duration("us")),
+            ("z", pl.Duration("ns")),
+        ],
+        orient="row",
+    )
+    td_ms = timedelta(days=d, seconds=s, microseconds=(us // 1000) * 1000)
+    assert df.rows() == [(td_ms, td_us, td_us)]
+
+
 def test_duration_filter() -> None:
     df = pl.DataFrame(
         {
