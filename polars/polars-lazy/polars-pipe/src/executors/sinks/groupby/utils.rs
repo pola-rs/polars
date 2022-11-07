@@ -1,8 +1,8 @@
-use polars_core::prelude::PlHashMap;
+use hashbrown::HashMap;
 use polars_core::utils::slice_offsets;
 
-pub(super) fn compute_slices<K, V>(
-    pre_agg_partitions: &[PlHashMap<K, V>],
+pub(super) fn compute_slices<K, V, HB>(
+    pre_agg_partitions: &[HashMap<K, V, HB>],
     slice: Option<(i64, usize)>,
 ) -> Vec<Option<(usize, usize)>> {
     if let Some((offset, slice_len)) = slice {
