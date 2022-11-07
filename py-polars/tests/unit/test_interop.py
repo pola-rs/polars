@@ -312,20 +312,20 @@ def test_from_pandas_series() -> None:
 
 
 def test_from_optional_not_available() -> None:
-    from polars.dependencies import _proxy_module
+    from polars.dependencies import _LazyModule
 
     # proxy module is created dynamically if the required module is not available
     # (see the polars.dependencies source code for additional detail/comments)
 
-    np = _proxy_module("numpy")
+    np = _LazyModule("numpy", module_available=False)
     with pytest.raises(ImportError, match=r"np\.array requires 'numpy'"):
         pl.from_numpy(np.array([[1, 2], [3, 4]]), columns=["a", "b"])
 
-    pa = _proxy_module("pyarrow")
+    pa = _LazyModule("pyarrow", module_available=False)
     with pytest.raises(ImportError, match=r"pa\.table requires 'pyarrow'"):
         pl.from_arrow(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}))
 
-    pd = _proxy_module("pandas")
+    pd = _LazyModule("pandas", module_available=False)
     with pytest.raises(ImportError, match=r"pd\.Series requires 'pandas'"):
         pl.from_pandas(pd.Series([1, 2, 3]))
 
