@@ -25,21 +25,23 @@ if TYPE_CHECKING:
 
 
 def test_fill_null() -> None:
-    dt = datetime.strptime("2021-01-01", "%Y-%m-%d")
-    s = pl.Series("A", [dt, None])
+    dtm = datetime.strptime("2021-01-01", "%Y-%m-%d")
+    s = pl.Series("A", [dtm, None])
 
-    for fill_val in (dt, pl.lit(dt)):
+    for fill_val in (dtm, pl.lit(dtm)):
         out = s.fill_null(fill_val)
 
         assert out.null_count() == 0
-        assert out.dt[0] == dt
-        assert out.dt[1] == dt
+        assert out.dt[0] == dtm
+        assert out.dt[1] == dtm
 
     dt1 = date(2001, 1, 1)
     dt2 = date(2001, 1, 2)
     dt3 = date(2001, 1, 3)
+
     s = pl.Series("a", [dt1, dt2, dt3, None])
     dt_2 = date(2001, 1, 4)
+
     for fill_val in (dt_2, pl.lit(dt_2)):
         out = s.fill_null(fill_val)
 
@@ -47,6 +49,65 @@ def test_fill_null() -> None:
         assert out.dt[0] == dt1
         assert out.dt[1] == dt2
         assert out.dt[-1] == dt_2
+
+
+def test_fill_null_temporal() -> None:
+    # test filling nulls with temporal literals across cols that use various timeunits
+    dtm = datetime.now()
+    dtm_ms = dtm.replace(microsecond=(dtm.microsecond // 1000) * 1000)
+    td = timedelta(days=7, seconds=45045)
+    tm = dtm.time()
+    dt = dtm.date()
+
+    df = pl.DataFrame(
+        [
+            [dtm, dtm_ms, dtm, dtm, dt, tm, td, td, td, td],
+            [None] * 10,
+        ],
+        columns=[  # type: ignore[arg-type]
+            ("a", pl.Datetime),
+            ("b", pl.Datetime("ms")),
+            ("c", pl.Datetime("us")),
+            ("d", pl.Datetime("ns")),
+            ("e", pl.Date),
+            ("f", pl.Time),
+            ("g", pl.Duration),
+            ("h", pl.Duration("ms")),
+            ("i", pl.Duration("us")),
+            ("j", pl.Duration("ns")),
+        ],
+        orient="row",
+    )
+
+    # fill literals
+    dtm_us_fill = dtm_ns_fill = datetime(2023, 12, 31, 23, 59, 59, 999999)
+    dtm_ms_fill = datetime(2023, 12, 31, 23, 59, 59, 999000)
+    td_us_fill = timedelta(days=7, seconds=45045, microseconds=123456)
+    td_ms_fill = timedelta(days=7, seconds=45045, microseconds=123000)
+    dt_fill = date(2023, 12, 31)
+    tm_fill = time(23, 59, 59)
+
+    # apply literals via fill_null
+    ldf = df.lazy()
+    for temporal_literal in (dtm_ns_fill, td_us_fill, dt_fill, tm_fill):
+        ldf = ldf.fill_null(temporal_literal)
+
+    # validate
+    assert ldf.collect().rows() == [
+        (dtm, dtm_ms, dtm, dtm, dt, tm, td, td, td, td),  # first row (no null values)
+        (  # second row (was composed entirely of nulls, now filled-in with literals)
+            dtm_us_fill,
+            dtm_ms_fill,
+            dtm_us_fill,
+            dtm_ns_fill,
+            dt_fill,
+            tm_fill,
+            td_us_fill,
+            td_ms_fill,
+            td_us_fill,
+            td_us_fill,
+        ),
+    ]
 
 
 def test_filter_date() -> None:
@@ -1084,8 +1145,9 @@ def test_timelike_init() -> None:
 
 
 def test_timedelta_timeunit_init() -> None:
-    d, s, us = 7, 45045, 123456
-    td_us = timedelta(days=d, seconds=s, microseconds=us)
+    td_us = timedelta(days=7, seconds=45045, microseconds=123456)
+    td_ms = timedelta(days=7, seconds=45045, microseconds=123000)
+
     df = pl.DataFrame(
         [[td_us, td_us, td_us]],
         columns=[
@@ -1095,7 +1157,6 @@ def test_timedelta_timeunit_init() -> None:
         ],
         orient="row",
     )
-    td_ms = timedelta(days=d, seconds=s, microseconds=(us // 1000) * 1000)
     assert df.rows() == [(td_ms, td_us, td_us)]
 
 
