@@ -52,10 +52,8 @@ develop-release: $(VENV)  ## Build by running `maturin develop --release`
 	$(VENV_ACT_BIN)maturin develop $(RELEASE_FLAGS)
 
 .PHONY: clean cleaner cleanest
-clean:  ## Just run `cargo clean`
+clean:  ## cargo clean + remove auto-generated files & dirs
 	-cargo clean
-
-cleaner: clean  ## make clean + auto-generated dirs & files
 	-rm -rf target
 	-rm -rf docs/build
 	-rm -rf docs/source/reference/api
@@ -66,10 +64,12 @@ cleaner: clean  ## make clean + auto-generated dirs & files
 	-rm -f .coverage
 	-rm -f coverage.xml
 	-rm -f polars/polars.abi3.so
-	-find . \( -type f -name '*.py[co]' \) -or \( -type d -name __pycache__ \) -delete
+	-find . \( -type f -name '*.py[co]' -or -type d -name __pycache__ \) -delete
 
-cleanest: cleaner  ## make cleaner + remove VENV and the wheels
+cleaner: clean  ## make clean + remove VENV
 	$(CLEAN_VENV)
+
+cleanest: cleaner  ## make cleaner + remove the wheels
 	-rm -rf $(WHEELS_DEBUG)
 	-rm -rf $(WHEELS_RELEASE)
 	-rm -rf wheels
@@ -134,14 +134,12 @@ help:  ## Display this help screen
 	@echo -e '\033[1mAvailable commands:\033[0m'
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort
 	@echo
-	@echo "Examples:"
-	@echo "  * Compile polars (debug) in venv and run test-all in one go"
-	@echo "    $$ make develop test-all"
-	@echo "  * Build polars release wheel, install it in venv and run test-all in one go"
-	@echo "    $$ make build install test-all"
-	@echo "  * Build release wheel, then install into venv and outside of venv"
-	@echo "    $$ make build   # build release wheel"
-	@echo "    $$ make install # install release wheel into venv"
-	@echo "    $$ make install VENV='' # install release wheel outside of venv (e.g. in conda env)"
+	@echo "Examples (one-liners):"
+	@echo "  * Compile polars (debug) in venv and run test in one go"
+	@echo "    $$ make develop test"
+	@echo "  * Build polars release wheel, install it in venv and run test in one go"
+	@echo "    $$ make build install test"
+	@echo "  * Build release wheel; then install globally (or in active in conda env)"
+	@echo "    $$ make build; make install VENV=''"
 
 #EOF
