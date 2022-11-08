@@ -11,6 +11,7 @@ except ImportError:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
+from polars import api
 from polars.build_info import build_info
 from polars.cfg import Config
 from polars.convert import (
@@ -155,6 +156,7 @@ from polars.string_cache import StringCache, toggle_string_cache, using_string_c
 from polars.utils import threadpool_size
 
 __all__ = [
+    "api",
     "exceptions",
     "NotFoundError",
     "ShapeError",

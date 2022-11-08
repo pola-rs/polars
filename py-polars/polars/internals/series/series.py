@@ -191,6 +191,7 @@ class Series:
     """
 
     _s: PySeries = None
+    _accessors: set[str] = {"arr", "cat", "dt", "str", "struct"}
 
     def __init__(
         self,

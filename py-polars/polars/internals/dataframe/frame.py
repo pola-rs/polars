@@ -255,6 +255,8 @@ class DataFrame:
 
     """
 
+    _accessors: set[str] = set()
+
     def __init__(
         self,
         data: (
@@ -2992,16 +2994,23 @@ class DataFrame:
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
-        Apply a function on Self.
+        Offers a structured way to apply a sequence of user-defined functions (UDFs).
 
         Parameters
         ----------
         func
-            Callable.
+            Callable; will receive the frame as the first parameter,
+            followed by any given args/kwargs.
         args
-            Arguments.
+            Arguments to pass to the UDF.
         kwargs
-            Keyword arguments.
+            Keyword arguments to pass to the UDF.
+
+        Notes
+        -----
+        It is recommended to use LazyFrame when piping operations, in order
+        to fully take advantage of query optimization and parallelization.
+        See :meth:`df.lazy() <polars.DataFrame.lazy>`.
 
         Examples
         --------
