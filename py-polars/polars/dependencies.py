@@ -65,6 +65,13 @@ class _LazyModule(ModuleType):
         return module
 
     def __getattr__(self, attr: Any) -> Any:
+        # have "hasattr('__wrapped__')" return False without triggering import (it's
+        # for decorators, not modules, but this change keeps "make doctest" happy)
+        if attr == "__wrapped__":
+            raise AttributeError(
+                f"{self._module_name!r} object has no attribute {attr!r}"
+            )
+
         # accessing the proxy module's attributes triggers import of the real thing
         if self._module_available:
             # import the module and return the request attribute
