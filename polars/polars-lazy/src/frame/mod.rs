@@ -179,7 +179,12 @@ impl LazyFrame {
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(64);
-        let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
+        let lp_top = self.clone().optimize_with_scratch(
+            &mut lp_arena,
+            &mut expr_arena,
+            &mut vec![],
+            true,
+        )?;
         let logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         Ok(logical_plan.describe())
     }
@@ -498,13 +503,7 @@ impl LazyFrame {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
-        optimize(
-            self.logical_plan,
-            self.opt_state,
-            lp_arena,
-            expr_arena,
-            &mut vec![],
-        )
+        self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
     }
 
     fn optimize_with_scratch(
@@ -512,30 +511,39 @@ impl LazyFrame {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
+        _fmt: bool,
     ) -> PolarsResult<Node> {
-        optimize(
-            self.logical_plan,
-            self.opt_state,
-            lp_arena,
-            expr_arena,
-            scratch,
-        )
+        #[allow(unused_mut)]
+        let mut opt_state = self.opt_state;
+        let streaming = self.opt_state.streaming;
+        #[cfg(feature = "cse")]
+        if streaming && self.opt_state.common_subplan_elimination {
+            eprintln!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
+            opt_state.common_subplan_elimination = false;
+        }
+        let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
+
+        if streaming {
+            #[cfg(feature = "streaming")]
+            {
+                insert_streaming_nodes(lp_top, lp_arena, expr_arena, scratch, _fmt)?;
+            }
+            #[cfg(not(feature = "streaming"))]
+            {
+                panic!("activate feature 'streaming'")
+            }
+        }
+        Ok(lp_top)
     }
 
     #[allow(unused_mut)]
     fn prepare_collect(mut self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
         let file_caching = self.opt_state.file_caching;
-        let streaming = self.opt_state.streaming;
-
-        #[cfg(feature = "cse")]
-        if streaming && self.opt_state.common_subplan_elimination {
-            eprintln!("Cannot combine 'streaming' with 'common_subplan_elimination'. CSE will be turned off.");
-            self.opt_state.common_subplan_elimination = false;
-        }
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let mut scratch = vec![];
-        let lp_top = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
+        let lp_top =
+            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
 
         let finger_prints = if file_caching {
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
@@ -551,18 +559,6 @@ impl LazyFrame {
         } else {
             None
         };
-
-        if streaming {
-            #[cfg(feature = "streaming")]
-            {
-                insert_streaming_nodes(lp_top, &mut lp_arena, &mut expr_arena, &mut scratch)?;
-            }
-            #[cfg(not(feature = "streaming"))]
-            {
-                panic!("activate feature 'streaming'")
-            }
-        }
-
         let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::with_finger_prints(finger_prints);
