@@ -225,7 +225,8 @@ impl LogicalPlan {
             MapFunction {
                 input, function, ..
             } => {
-                writeln!(f, "{:indent$}{:?}", "", function)?;
+                let function_fmt = format!("{}", function);
+                writeln!(f, "{:indent$}{}", "", function_fmt)?;
                 input._format(f, indent)
             }
             Error { input, err } => write!(f, "{:?}\n{:?}", err, input),

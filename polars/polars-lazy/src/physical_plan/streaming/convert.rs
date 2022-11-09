@@ -70,6 +70,7 @@ pub(crate) fn insert_streaming_nodes(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
+    fmt: bool,
 ) -> PolarsResult<()> {
     // this is needed to determine which side of the joins should be
     // traversed first
@@ -229,66 +230,77 @@ pub(crate) fn insert_streaming_nodes(
             }
         }
     }
+    if !states.is_empty() {
+        let mut pipelines = VecDeque::with_capacity(states.len());
 
-    let mut pipelines = VecDeque::with_capacity(states.len());
+        // if join is
+        //     1
+        //    /\2
+        //      /\3
+        //
+        // we are iterating from 3 to 1.
 
-    // if join is
-    //     1
-    //    /\2
-    //      /\3
-    //
-    // we are iterating from 3 to 1.
+        // the most far right branch will be the latest that sets this
+        // variable and thus will point to root
+        let mut latest = Default::default();
 
-    // the most far right branch will be the latest that sets this
-    // variable and thus will point to root
-    let mut latest = Default::default();
+        for state in states {
+            // should be reset for every branch
+            let mut sink_node = None;
 
-    for state in states {
-        // should be reset for every branch
-        let mut sink_node = None;
+            let mut operators = Vec::with_capacity(state.operators_sinks.len());
+            let mut operator_nodes = Vec::with_capacity(state.operators_sinks.len());
+            let mut iter = state.operators_sinks.into_iter().rev();
 
-        let mut operators = Vec::with_capacity(state.operators_sinks.len());
-        let mut operator_nodes = Vec::with_capacity(state.operators_sinks.len());
-        let mut iter = state.operators_sinks.into_iter().rev();
-
-        for (is_sink, is_rhs_join, node) in &mut iter {
-            latest = node;
-            if is_sink && !is_rhs_join {
-                sink_node = Some(node);
-            } else {
-                operator_nodes.push(node);
-                let op = if is_rhs_join {
-                    get_dummy_operator()
+            for (is_sink, is_rhs_join, node) in &mut iter {
+                latest = node;
+                if is_sink && !is_rhs_join {
+                    sink_node = Some(node);
                 } else {
-                    get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?
-                };
-                operators.push(op)
+                    operator_nodes.push(node);
+                    let op = if is_rhs_join {
+                        get_dummy_operator()
+                    } else {
+                        get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?
+                    };
+                    operators.push(op)
+                }
             }
-        }
 
-        let pipeline = create_pipeline(
-            &state.sources,
-            operators,
-            operator_nodes,
-            sink_node,
-            lp_arena,
-            expr_arena,
-            to_physical_piped_expr,
-        )?;
-        pipelines.push_back(pipeline);
-    }
-    // the most right latest node should be the root of the pipeline
-    let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
-
-    if let Some(mut most_left) = pipelines.pop_front() {
-        while let Some(rhs) = pipelines.pop_front() {
-            most_left = most_left.with_rhs(rhs)
+            let pipeline = create_pipeline(
+                &state.sources,
+                operators,
+                operator_nodes,
+                sink_node,
+                lp_arena,
+                expr_arena,
+                to_physical_piped_expr,
+            )?;
+            pipelines.push_back(pipeline);
         }
-        // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
-        let pipeline_node = get_pipeline_node(lp_arena, most_left, schema);
-        lp_arena.replace(latest, pipeline_node)
-    } else {
-        panic!()
+        // the most right latest node should be the root of the pipeline
+        let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
+
+        if let Some(mut most_left) = pipelines.pop_front() {
+            while let Some(rhs) = pipelines.pop_front() {
+                most_left = most_left.with_rhs(rhs)
+            }
+            // keep the original around for formatting purposes
+            let original_lp = if fmt {
+                let original_lp = lp_arena.take(latest);
+                let original_node = lp_arena.add(original_lp);
+                let original_lp = node_to_lp(original_node, expr_arena, lp_arena);
+                Some(original_lp)
+            } else {
+                None
+            };
+
+            // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+            let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
+            lp_arena.replace(latest, pipeline_node)
+        } else {
+            panic!()
+        }
     }
 
     Ok(())
@@ -310,6 +322,7 @@ fn get_pipeline_node(
     lp_arena: &mut Arena<ALogicalPlan>,
     mut pipeline: PipeLine,
     schema: SchemaRef,
+    original_lp: Option<LogicalPlan>,
 ) -> ALogicalPlan {
     // create a dummy input as the map function will call the input
     // so we just create a scan that returns an empty df
@@ -332,6 +345,7 @@ fn get_pipeline_node(
                 pipeline.execute(state)
             }),
             schema,
+            original: original_lp.map(Arc::new),
         },
         input: dummy,
     }
