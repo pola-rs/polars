@@ -60,7 +60,7 @@ fn streamable_join(join_type: &JoinType) -> bool {
     match join_type {
         #[cfg(feature = "cross_join")]
         JoinType::Cross => true,
-        JoinType::Inner => true,
+        JoinType::Inner | JoinType::Left => true,
         _ => false,
     }
 }
@@ -156,11 +156,17 @@ pub(crate) fn insert_streaming_nodes(
                 ..
             } if streamable_join(&options.how) => {
                 state.streamable = true;
-                let (input_left, input_right) = if swap_join_order(options) {
-                    (*input_right, *input_left)
-                } else {
-                    (*input_left, *input_right)
-                };
+                // We swap so that the build phase contains the smallest table
+                // and then we stream the larger table
+                // *except* for a left join. In a left join we use the right
+                // table as build table and we stream the left table. This way
+                // we maintain order in the left join.
+                let (input_left, input_right) =
+                    if swap_join_order(options) || matches!(options.how, JoinType::Left) {
+                        (*input_right, *input_left)
+                    } else {
+                        (*input_left, *input_right)
+                    };
 
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;

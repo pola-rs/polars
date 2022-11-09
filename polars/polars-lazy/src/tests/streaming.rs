@@ -210,8 +210,29 @@ fn test_streaming_inner_join2() -> PolarsResult<()> {
 
     let out1 = q.clone().with_streaming(true).collect()?;
     let out2 = q.clone().with_streaming(false).collect()?;
-    dbg!(&out1, &out2);
     assert!(out1.frame_equal(&out2));
+
+    Ok(())
+}
+#[test]
+fn test_streaming_left_join() -> PolarsResult<()> {
+    let lf_left = df![
+           "a"=> [0, 0, 0, 3, 0, 1, 3, 3, 3, 1, 4, 4, 2, 1, 1, 3, 1, 4, 2, 2],
+    "b"=> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+       ]?
+    .lazy();
+
+    let lf_right = df![
+           "a"=> [10, 18, 13, 9, 1, 13, 14, 12, 15, 11],
+    "b"=> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+       ]?
+    .lazy();
+
+    let q = lf_left.left_join(lf_right, col("a"), col("a"));
+
+    let out1 = q.clone().with_streaming(true).collect()?;
+    let out2 = q.clone().with_streaming(false).collect()?;
+    assert!(out1.frame_equal_missing(&out2));
 
     Ok(())
 }
