@@ -267,7 +267,7 @@ impl PredicatePushDown {
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
@@ -277,7 +277,7 @@ impl PredicatePushDown {
 
                 let lp = IpcScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options,
@@ -287,7 +287,7 @@ impl PredicatePushDown {
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
@@ -298,7 +298,7 @@ impl PredicatePushDown {
 
                 let lp = ParquetScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options,
@@ -308,7 +308,7 @@ impl PredicatePushDown {
             #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 options,
                 predicate,
@@ -319,7 +319,7 @@ impl PredicatePushDown {
                 let lp = if let (Some(predicate), Some(_)) = (predicate, options.n_rows) {
                     let lp = CsvScan {
                         path,
-                        schema,
+                        file_info,
                         output_schema,
                         options,
                         predicate: None,
@@ -332,7 +332,7 @@ impl PredicatePushDown {
                 } else {
                     CsvScan {
                         path,
-                        schema,
+                        file_info,
                         output_schema,
                         options,
                         predicate,
@@ -343,7 +343,7 @@ impl PredicatePushDown {
             }
             AnonymousScan {
                 function,
-                schema,
+                file_info,
                 output_schema,
                 options,
                 predicate,
@@ -353,7 +353,7 @@ impl PredicatePushDown {
                     let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
                     let lp = AnonymousScan {
                         function,
-                        schema,
+                        file_info,
                         output_schema,
                         options,
                         predicate,
@@ -362,7 +362,7 @@ impl PredicatePushDown {
                 } else {
                     let lp = AnonymousScan {
                         function,
-                        schema,
+                        file_info,
                         output_schema,
                         options,
                         predicate,

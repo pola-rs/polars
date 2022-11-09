@@ -27,6 +27,7 @@ python = ["pyo3"]
 # this dependency gets activated
 compile = []
 default = ["compile", "private"]
+streaming = []
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json"]

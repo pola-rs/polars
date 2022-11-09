@@ -165,7 +165,10 @@ pub(crate) fn parse_bytes_with_encoding(
 ///
 /// If `max_read_records` is not set, the whole file is read to infer its schema.
 ///
-/// Return inferred schema and number of records used for inference.
+/// Returns
+///     - inferred schema
+///     - number of rows used for inference.
+///     - bytes read
 #[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
@@ -182,7 +185,10 @@ pub fn infer_file_schema(
     eol_char: u8,
     null_values: Option<&NullValues>,
     parse_dates: bool,
-) -> PolarsResult<(Schema, usize)> {
+) -> PolarsResult<(Schema, usize, usize)> {
+    // keep track so that we can determine the amount of bytes read
+    let start_ptr = reader_bytes.as_ptr() as usize;
+
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
@@ -311,11 +317,14 @@ pub fn infer_file_schema(
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
 
+    let mut end_ptr = start_ptr;
     for mut line in records_ref
         .take(max_read_lines.unwrap_or(usize::MAX))
         .skip(skip_rows_after_header)
     {
         rows_count += 1;
+        // keep track so that we can determine the amount of bytes read
+        end_ptr = line.as_ptr() as usize + line.len();
 
         if let Some(c) = comment_char {
             // line is a comment -> skip
@@ -450,7 +459,11 @@ pub fn infer_file_schema(
         );
     }
 
-    Ok((Schema::from(fields.into_iter()), rows_count))
+    Ok((
+        Schema::from(fields.into_iter()),
+        rows_count,
+        end_ptr - start_ptr,
+    ))
 }
 
 // magic numbers

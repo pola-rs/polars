@@ -2,6 +2,7 @@ use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use arrow::io::parquet::read;
+use arrow::io::parquet::write::FileMetaData;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,7 @@ pub struct ParquetReader<R: Read + Seek> {
     parallel: ParallelStrategy,
     row_count: Option<RowCount>,
     low_memory: bool,
+    metadata: Option<FileMetaData>,
 }
 
 impl<R: MmapBytesReader> ParquetReader<R> {
@@ -116,11 +118,22 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    pub fn schema(mut self) -> PolarsResult<Schema> {
-        let metadata = read::read_metadata(&mut self.reader)?;
-
-        let schema = read::infer_schema(&metadata)?;
+    /// [`Schema`] of the file.
+    pub fn schema(&mut self) -> PolarsResult<Schema> {
+        let metadata = self.get_metadata()?;
+        let schema = read::infer_schema(metadata)?;
         Ok(schema.fields.iter().into())
+    }
+    /// Number of rows in the parquet file.
+    pub fn num_rows(&mut self) -> PolarsResult<usize> {
+        let metadata = self.get_metadata()?;
+        Ok(metadata.num_rows)
+    }
+    fn get_metadata(&mut self) -> PolarsResult<&FileMetaData> {
+        if self.metadata.is_none() {
+            self.metadata = Some(read::read_metadata(&mut self.reader)?);
+        }
+        Ok(self.metadata.as_ref().unwrap())
     }
 }
 
@@ -147,6 +160,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             parallel: Default::default(),
             row_count: None,
             low_memory: false,
+            metadata: None,
         }
     }
 

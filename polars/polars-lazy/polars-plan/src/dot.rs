@@ -123,8 +123,8 @@ impl LogicalPlan {
         use LogicalPlan::*;
         let (mut branch, id) = id;
         match self {
-            AnonymousScan { schema, .. } => {
-                let total_columns = schema.len();
+            AnonymousScan { file_info, .. } => {
+                let total_columns = file_info.schema.len();
 
                 let fmt = format!("ANONYMOUS SCAN;\nπ {}", total_columns);
                 let current_node = DotNode {
@@ -201,11 +201,11 @@ impl LogicalPlan {
             CsvScan {
                 path,
                 options,
-                schema,
+                file_info,
                 predicate,
                 ..
             } => {
-                let total_columns = schema.len();
+                let total_columns = file_info.schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -382,12 +382,12 @@ impl LogicalPlan {
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
-                schema,
+                file_info,
                 predicate,
                 options,
                 ..
             } => {
-                let total_columns = schema.len();
+                let total_columns = file_info.schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -411,12 +411,12 @@ impl LogicalPlan {
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,
-                schema,
+                file_info,
                 options,
                 predicate,
                 ..
             } => {
-                let total_columns = schema.len();
+                let total_columns = file_info.schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());

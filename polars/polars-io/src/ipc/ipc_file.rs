@@ -72,12 +72,30 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(crate) columns: Option<Vec<String>>,
     pub(super) row_count: Option<RowCount>,
     memmap: bool,
+    metadata: Option<read::FileMetadata>,
 }
 
 impl<R: MmapBytesReader> IpcReader<R> {
+    #[doc(hidden)]
+    /// A very bad estimated of the number of rows
+    /// This estimation will be entirely off if the file is compressed.
+    /// And will be varying off depending on the data types.
+    pub fn _num_rows(&mut self) -> PolarsResult<usize> {
+        let metadata = self.get_metadata()?;
+        let n_cols = metadata.schema.fields.len();
+        // this magic number 10 is computed from the yellow trip dataset
+        Ok((metadata.size as usize) / n_cols / 10)
+    }
+    fn get_metadata(&mut self) -> PolarsResult<&read::FileMetadata> {
+        if self.metadata.is_none() {
+            self.metadata = Some(read::read_file_metadata(&mut self.reader)?);
+        }
+        Ok(self.metadata.as_ref().unwrap())
+    }
+
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
-        let metadata = read::read_file_metadata(&mut self.reader)?;
+        let metadata = self.get_metadata()?;
         Ok(metadata.schema.fields.iter().into())
     }
 
@@ -178,6 +196,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             projection: None,
             row_count: None,
             memmap: true,
+            metadata: None,
         }
     }
 

@@ -37,6 +37,7 @@ pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
 use polars_core::frame::explode::MeltArgs;
+pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -49,6 +50,7 @@ use serde::{Deserialize, Serialize};
 pub use crate::logical_plan::optimizer::file_caching::{
     collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
 };
+use crate::logical_plan::schema::FileInfo;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {
@@ -65,7 +67,7 @@ pub enum LogicalPlan {
     #[cfg_attr(feature = "serde", serde(skip))]
     AnonymousScan {
         function: Arc<dyn AnonymousScan>,
-        schema: SchemaRef,
+        file_info: FileInfo,
         predicate: Option<Expr>,
         options: AnonymousScanOptions,
     },
@@ -86,7 +88,7 @@ pub enum LogicalPlan {
     #[cfg(feature = "csv-file")]
     CsvScan {
         path: PathBuf,
-        schema: SchemaRef,
+        file_info: FileInfo,
         options: CsvParserOptions,
         /// Filters at the scan level
         predicate: Option<Expr>,
@@ -96,7 +98,7 @@ pub enum LogicalPlan {
     /// Scan a Parquet file
     ParquetScan {
         path: PathBuf,
-        schema: SchemaRef,
+        file_info: FileInfo,
         predicate: Option<Expr>,
         options: ParquetOptions,
     },
@@ -104,7 +106,7 @@ pub enum LogicalPlan {
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     IpcScan {
         path: PathBuf,
-        schema: SchemaRef,
+        file_info: FileInfo,
         options: IpcScanOptionsInner,
         predicate: Option<Expr>,
     },
@@ -244,14 +246,14 @@ impl LogicalPlan {
             Sort { input, .. } => input.schema(),
             Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
-            ParquetScan { schema, .. } => Ok(Cow::Borrowed(schema)),
+            ParquetScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             #[cfg(feature = "ipc")]
-            IpcScan { schema, .. } => Ok(Cow::Borrowed(schema)),
+            IpcScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            AnonymousScan { schema, .. } => Ok(Cow::Borrowed(schema)),
+            AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Selection { input, .. } => input.schema(),
             #[cfg(feature = "csv-file")]
-            CsvScan { schema, .. } => Ok(Cow::Borrowed(schema)),
+            CsvScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
             LocalProjection { schema, .. } => Ok(Cow::Borrowed(schema)),
             Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),

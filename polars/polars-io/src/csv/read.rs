@@ -426,7 +426,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
             None => {
                 let reader_bytes = get_reader_bytes(&mut self.reader)?;
 
-                let (inferred_schema, _) = infer_file_schema(
+                let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
                     self.delimiter.unwrap_or(b','),
                     self.max_records,

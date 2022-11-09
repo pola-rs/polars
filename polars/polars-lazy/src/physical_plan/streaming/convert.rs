@@ -8,7 +8,9 @@ use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
-use polars_pipe::pipeline::{create_pipeline, get_dummy_operator, get_operator, PipeLine};
+use polars_pipe::pipeline::{
+    create_pipeline, get_dummy_operator, get_operator, swap_join_order, PipeLine,
+};
 use polars_plan::prelude::*;
 
 use crate::physical_plan::planner::create_physical_expr;
@@ -69,6 +71,10 @@ pub(crate) fn insert_streaming_nodes(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
 ) -> PolarsResult<()> {
+    // this is needed to determine which side of the joins should be
+    // traversed first
+    set_estimated_row_counts(root, lp_arena, expr_arena, 0);
+
     scratch.clear();
 
     let mut stack = Vec::with_capacity(lp_arena.len() / 3 + 1);
@@ -150,19 +156,25 @@ pub(crate) fn insert_streaming_nodes(
                 ..
             } if streamable_join(&options.how) => {
                 state.streamable = true;
-                // rhs
+                let (input_left, input_right) = if swap_join_order(options) {
+                    (*input_right, *input_left)
+                } else {
+                    (*input_left, *input_right)
+                };
+
+                // rhs is second, so that is first on the stack
                 let mut state_right = state;
                 state_right.operators_sinks.push((true, true, root));
-                stack.push((*input_right, state_right));
+                stack.push((input_right, state_right));
 
                 // we want to traverse lhs first, so push it latest on the stack
-                // lhs is a new pipeline
+                // rhs is a new pipeline
                 let mut state_left = State {
                     streamable: true,
                     ..Default::default()
                 };
                 state_left.operators_sinks.push((true, false, root));
-                stack.push((*input_left, state_left));
+                stack.push((input_left, state_left));
             }
             // add globbing patterns
             #[cfg(all(feature = "csv-file", feature = "parquet"))]

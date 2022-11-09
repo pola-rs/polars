@@ -284,19 +284,20 @@ impl Sink for GenericBuild {
         Box::new(new)
     }
 
-    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         match self.join_type {
             JoinType::Inner => {
-                let left_df = Arc::new(accumulate_dataframes_vertical_unchecked(
+                let left_df = accumulate_dataframes_vertical_unchecked(
                     std::mem::take(&mut self.chunks)
                         .into_iter()
                         .map(|chunk| chunk.data),
-                ));
+                );
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));
                 let suffix = self.suffix.clone();
                 let hb = self.hb.clone();
                 let hash_tables = Arc::new(std::mem::take(&mut self.hash_tables));
+                let join_columns_left = self.join_columns_right.clone();
                 let join_columns_right = self.join_columns_right.clone();
 
                 // take the buffers, this saves one allocation
@@ -305,20 +306,19 @@ impl Sink for GenericBuild {
                 let mut hashes = std::mem::take(&mut self.hashes);
                 hashes.clear();
 
-                let probe_operator = InnerJoinProbe {
+                let probe_operator = InnerJoinProbe::new(
                     left_df,
                     materialized_join_cols,
                     suffix,
                     hb,
                     hash_tables,
+                    join_columns_left,
                     join_columns_right,
+                    self.swapped,
                     join_series,
-                    join_tuples_left: vec![],
-                    join_tuples_right: vec![],
                     hashes,
-                    swapped: self.swapped,
-                    join_column_idx: None,
-                };
+                    context,
+                );
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
             }
             _ => unimplemented!(),

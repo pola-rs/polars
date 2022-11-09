@@ -37,7 +37,7 @@ pub fn create_physical_plan(
         #[cfg(feature = "csv-file")]
         CsvScan {
             path,
-            schema,
+            file_info,
             output_schema: _,
             options,
             predicate,
@@ -47,7 +47,7 @@ pub fn create_physical_plan(
                 .map_or(Ok(None), |v| v.map(Some))?;
             Ok(Box::new(executors::CsvExec {
                 path,
-                schema,
+                schema: file_info.schema,
                 options,
                 predicate,
             }))
@@ -55,7 +55,7 @@ pub fn create_physical_plan(
         #[cfg(feature = "ipc")]
         IpcScan {
             path,
-            schema,
+            file_info,
             output_schema: _,
             predicate,
             options,
@@ -66,7 +66,7 @@ pub fn create_physical_plan(
 
             Ok(Box::new(executors::IpcExec {
                 path,
-                schema,
+                schema: file_info.schema,
                 predicate,
                 options,
             }))
@@ -74,7 +74,7 @@ pub fn create_physical_plan(
         #[cfg(feature = "parquet")]
         ParquetScan {
             path,
-            schema,
+            file_info,
             output_schema: _,
             predicate,
             options,
@@ -84,7 +84,10 @@ pub fn create_physical_plan(
                 .map_or(Ok(None), |v| v.map(Some))?;
 
             Ok(Box::new(executors::ParquetExec::new(
-                path, schema, predicate, options,
+                path,
+                file_info.schema,
+                predicate,
+                options,
             )))
         }
         Projection {

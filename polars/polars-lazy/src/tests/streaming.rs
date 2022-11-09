@@ -210,6 +210,7 @@ fn test_streaming_inner_join2() -> PolarsResult<()> {
 
     let out1 = q.clone().with_streaming(true).collect()?;
     let out2 = q.clone().with_streaming(false).collect()?;
+    dbg!(&out1, &out2);
     assert!(out1.frame_equal(&out2));
 
     Ok(())

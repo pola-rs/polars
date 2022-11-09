@@ -8,7 +8,7 @@ use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use crate::logical_plan::functions::FunctionNode;
-use crate::logical_plan::schema::det_join_schema;
+use crate::logical_plan::schema::{det_join_schema, FileInfo};
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
@@ -22,7 +22,7 @@ use crate::utils::{aexprs_to_schema, PushNode};
 pub enum ALogicalPlan {
     AnonymousScan {
         function: Arc<dyn AnonymousScan>,
-        schema: SchemaRef,
+        file_info: FileInfo,
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
         options: AnonymousScanOptions,
@@ -48,8 +48,7 @@ pub enum ALogicalPlan {
     #[cfg(feature = "csv-file")]
     CsvScan {
         path: PathBuf,
-        // schema of the complete file
-        schema: SchemaRef,
+        file_info: FileInfo,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         options: CsvParserOptions,
@@ -58,7 +57,7 @@ pub enum ALogicalPlan {
     #[cfg(feature = "ipc")]
     IpcScan {
         path: PathBuf,
-        schema: SchemaRef,
+        file_info: FileInfo,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         options: IpcScanOptionsInner,
@@ -67,8 +66,7 @@ pub enum ALogicalPlan {
     #[cfg(feature = "parquet")]
     ParquetScan {
         path: PathBuf,
-        // schema of the complete file
-        schema: SchemaRef,
+        file_info: FileInfo,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
@@ -168,12 +166,12 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options } => &options.schema,
             #[cfg(feature = "csv-file")]
-            CsvScan { schema, .. } => schema,
+            CsvScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "parquet")]
-            ParquetScan { schema, .. } => schema,
+            ParquetScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "ipc")]
-            IpcScan { schema, .. } => schema,
-            AnonymousScan { schema, .. } => schema,
+            IpcScan { file_info, .. } => &file_info.schema,
+            AnonymousScan { file_info, .. } => &file_info.schema,
             _ => unreachable!(),
         }
     }
@@ -190,33 +188,33 @@ impl ALogicalPlan {
             Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan {
-                schema,
+                file_info,
                 output_schema,
                 ..
-            } => output_schema.as_ref().unwrap_or(schema),
+            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             #[cfg(feature = "ipc")]
             IpcScan {
-                schema,
+                file_info,
                 output_schema,
                 ..
-            } => output_schema.as_ref().unwrap_or(schema),
+            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             DataFrameScan {
                 schema,
                 output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
             AnonymousScan {
-                schema,
+                file_info,
                 output_schema,
                 ..
-            } => output_schema.as_ref().unwrap_or(schema),
+            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
             #[cfg(feature = "csv-file")]
             CsvScan {
-                schema,
+                file_info,
                 output_schema,
                 ..
-            } => output_schema.as_ref().unwrap_or(schema),
+            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Projection { schema, .. } => schema,
             LocalProjection { schema, .. } => schema,
             Aggregate { schema, .. } => schema,
@@ -342,7 +340,7 @@ impl ALogicalPlan {
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 options,
                 predicate,
@@ -355,7 +353,7 @@ impl ALogicalPlan {
 
                 IpcScan {
                     path: path.clone(),
-                    schema: schema.clone(),
+                    file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
                     options: options.clone(),
@@ -365,7 +363,7 @@ impl ALogicalPlan {
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
@@ -378,7 +376,7 @@ impl ALogicalPlan {
 
                 ParquetScan {
                     path: path.clone(),
-                    schema: schema.clone(),
+                    file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
                     options: options.clone(),
@@ -387,7 +385,7 @@ impl ALogicalPlan {
             #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
@@ -399,7 +397,7 @@ impl ALogicalPlan {
                 }
                 CsvScan {
                     path: path.clone(),
-                    schema: schema.clone(),
+                    file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
                     options: options.clone(),
                     predicate: new_predicate,
@@ -427,7 +425,7 @@ impl ALogicalPlan {
             }
             AnonymousScan {
                 function,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
@@ -439,7 +437,7 @@ impl ALogicalPlan {
 
                 AnonymousScan {
                     function: function.clone(),
-                    schema: schema.clone(),
+                    file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
                     options: options.clone(),
@@ -588,7 +586,10 @@ impl ALogicalPlan {
         inputs
     }
     /// panics if more than one input
-    #[cfg(all(feature = "strings", feature = "concat_str"))]
+    #[cfg(any(
+        all(feature = "strings", feature = "concat_str"),
+        feature = "streaming"
+    ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
         let mut inputs = [None];
         self.copy_inputs(&mut inputs);

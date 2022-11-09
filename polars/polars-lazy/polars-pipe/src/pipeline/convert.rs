@@ -61,7 +61,7 @@ where
         #[cfg(feature = "csv-file")]
         CsvScan {
             path,
-            schema,
+            file_info,
             options,
             predicate,
             ..
@@ -73,13 +73,13 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::CsvSource::new(path, schema, options)?;
+            let src = sources::CsvSource::new(path, file_info.schema, options)?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         #[cfg(feature = "parquet")]
         ParquetScan {
             path,
-            schema,
+            file_info,
             options,
             predicate,
             ..
@@ -91,7 +91,7 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::ParquetSource::new(path, options, &schema)?;
+            let src = sources::ParquetSource::new(path, options, &file_info.schema)?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         _ => todo!(),
@@ -123,10 +123,12 @@ where
                 let join_columns_right =
                     Arc::new(exprs_to_physical(right_on, expr_arena, to_physical)?);
 
+                let swapped = swap_join_order(options);
+
                 Box::new(GenericBuild::new(
                     Arc::from(options.suffix.as_ref()),
                     join_type.clone(),
-                    false,
+                    swapped,
                     join_columns_left,
                     join_columns_right,
                 ))
@@ -318,4 +320,11 @@ where
         sink_node,
         operator_offset,
     ))
+}
+
+pub fn swap_join_order(options: &JoinOptions) -> bool {
+    match (options.rows_left, options.rows_right) {
+        ((Some(left), _), (Some(right), _)) => left > right,
+        ((_, left), (_, right)) => left > right,
+    }
 }

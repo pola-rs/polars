@@ -40,7 +40,7 @@ impl Sink for OrderedSink {
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         Box::new(self.clone())
     }
-    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         self.sort();
         let chunks = std::mem::take(&mut self.chunks);
         Ok(FinalizedSink::Finished(chunks_to_df_unchecked(chunks)))

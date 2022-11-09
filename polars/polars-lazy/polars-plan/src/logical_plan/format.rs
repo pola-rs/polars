@@ -35,7 +35,7 @@ impl LogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { .. } => writeln!(f, "{:indent$}PYTHON SCAN\n", ""),
             AnonymousScan {
-                schema,
+                file_info,
                 predicate,
                 options,
                 ..
@@ -51,7 +51,7 @@ impl LogicalPlan {
                     Path::new(""),
                     indent,
                     n_columns,
-                    schema.len(),
+                    file_info.schema.len(),
                     predicate,
                 )
             }
@@ -70,7 +70,7 @@ impl LogicalPlan {
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
-                schema,
+                file_info,
                 predicate,
                 options,
                 ..
@@ -86,14 +86,14 @@ impl LogicalPlan {
                     path,
                     indent,
                     n_columns,
-                    schema.len(),
+                    file_info.schema.len(),
                     predicate,
                 )
             }
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,
-                schema,
+                file_info,
                 options,
                 predicate,
                 ..
@@ -103,7 +103,15 @@ impl LogicalPlan {
                     .as_ref()
                     .map(|columns| columns.len() as i64)
                     .unwrap_or(-1);
-                write_scan(f, "IPC", path, indent, n_columns, schema.len(), predicate)
+                write_scan(
+                    f,
+                    "IPC",
+                    path,
+                    indent,
+                    n_columns,
+                    file_info.schema.len(),
+                    predicate,
+                )
             }
             Selection { predicate, input } => {
                 writeln!(f, "{:indent$}FILTER {:?} FROM", "", predicate)?;
@@ -117,7 +125,7 @@ impl LogicalPlan {
             CsvScan {
                 path,
                 options,
-                schema,
+                file_info,
                 predicate,
                 ..
             } => {
@@ -126,7 +134,15 @@ impl LogicalPlan {
                     .as_ref()
                     .map(|columns| columns.len() as i64)
                     .unwrap_or(-1);
-                write_scan(f, "CSV", path, indent, n_columns, schema.len(), predicate)
+                write_scan(
+                    f,
+                    "CSV",
+                    path,
+                    indent,
+                    n_columns,
+                    file_info.schema.len(),
+                    predicate,
+                )
             }
             DataFrameScan {
                 schema,

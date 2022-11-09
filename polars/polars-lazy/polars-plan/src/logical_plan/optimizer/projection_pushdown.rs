@@ -377,7 +377,7 @@ impl ProjectionPushDown {
             }
             AnonymousScan {
                 function,
-                schema,
+                file_info,
                 predicate,
                 mut options,
                 output_schema,
@@ -391,7 +391,7 @@ impl ProjectionPushDown {
                         Some(Arc::new(update_scan_schema(
                             &acc_projections,
                             expr_arena,
-                            &schema,
+                            &file_info.schema,
                             true,
                         )?))
                     };
@@ -399,7 +399,7 @@ impl ProjectionPushDown {
 
                     let lp = AnonymousScan {
                         function,
-                        schema,
+                        file_info,
                         output_schema,
                         options,
                         predicate,
@@ -408,7 +408,7 @@ impl ProjectionPushDown {
                 } else {
                     let lp = AnonymousScan {
                         function,
-                        schema,
+                        file_info,
                         predicate,
                         options,
                         output_schema,
@@ -445,7 +445,7 @@ impl ProjectionPushDown {
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,
-                schema,
+                file_info,
                 predicate,
                 mut options,
                 ..
@@ -457,7 +457,7 @@ impl ProjectionPushDown {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &schema,
+                        &file_info.schema,
                         false,
                     )?))
                 };
@@ -465,7 +465,7 @@ impl ProjectionPushDown {
 
                 let lp = IpcScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options,
@@ -476,7 +476,7 @@ impl ProjectionPushDown {
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
-                schema,
+                file_info,
                 predicate,
                 mut options,
                 ..
@@ -488,7 +488,7 @@ impl ProjectionPushDown {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &schema,
+                        &file_info.schema,
                         false,
                     )?))
                 };
@@ -496,7 +496,7 @@ impl ProjectionPushDown {
 
                 let lp = ParquetScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options,
@@ -522,7 +522,7 @@ impl ProjectionPushDown {
             #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
-                schema,
+                file_info,
                 mut options,
                 predicate,
                 ..
@@ -535,14 +535,14 @@ impl ProjectionPushDown {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &schema,
+                        &file_info.schema,
                         true,
                     )?))
                 };
 
                 let lp = CsvScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     options,
                     predicate,

@@ -164,12 +164,12 @@ pub fn to_alp(
     let v = match lp {
         LogicalPlan::AnonymousScan {
             function,
-            schema,
+            file_info,
             predicate,
             options,
         } => ALogicalPlan::AnonymousScan {
             function,
-            schema,
+            file_info,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             options,
@@ -210,12 +210,12 @@ pub fn to_alp(
         #[cfg(feature = "csv-file")]
         LogicalPlan::CsvScan {
             path,
-            schema,
+            file_info,
             options,
             predicate,
         } => ALogicalPlan::CsvScan {
             path,
-            schema,
+            file_info,
             output_schema: None,
             options,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
@@ -223,12 +223,12 @@ pub fn to_alp(
         #[cfg(feature = "ipc")]
         LogicalPlan::IpcScan {
             path,
-            schema,
+            file_info,
             predicate,
             options,
         } => ALogicalPlan::IpcScan {
             path,
-            schema,
+            file_info,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             options,
@@ -236,12 +236,12 @@ pub fn to_alp(
         #[cfg(feature = "parquet")]
         LogicalPlan::ParquetScan {
             path,
-            schema,
+            file_info,
             predicate,
             options,
         } => ALogicalPlan::ParquetScan {
             path,
-            schema,
+            file_info,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             options,
@@ -651,13 +651,13 @@ pub fn node_to_lp(
     match lp {
         ALogicalPlan::AnonymousScan {
             function,
-            schema,
+            file_info,
             output_schema: _,
             predicate,
             options,
         } => LogicalPlan::AnonymousScan {
             function,
-            schema,
+            file_info,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
             options,
         },
@@ -689,39 +689,39 @@ pub fn node_to_lp(
         #[cfg(feature = "csv-file")]
         ALogicalPlan::CsvScan {
             path,
-            schema,
+            file_info,
             output_schema: _,
             options,
             predicate,
         } => LogicalPlan::CsvScan {
             path,
-            schema,
+            file_info,
             options,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
         },
         #[cfg(feature = "ipc")]
         ALogicalPlan::IpcScan {
             path,
-            schema,
+            file_info,
             output_schema: _,
             predicate,
             options,
         } => LogicalPlan::IpcScan {
             path,
-            schema,
+            file_info,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
             options,
         },
         #[cfg(feature = "parquet")]
         ALogicalPlan::ParquetScan {
             path,
-            schema,
+            file_info,
             output_schema: _,
             predicate,
             options,
         } => LogicalPlan::ParquetScan {
             path,
-            schema,
+            file_info,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
             options,
         },

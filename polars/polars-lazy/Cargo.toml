@@ -27,7 +27,7 @@ rayon.workspace = true
 [features]
 nightly = ["polars-core/nightly", "polars-pipe/nightly"]
 compile = ["polars-plan/compile"]
-streaming = ["chunked_ids", "polars-pipe/compile"]
+streaming = ["chunked_ids", "polars-pipe/compile", "polars-plan/streaming"]
 default = ["compile", "private"]
 parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]

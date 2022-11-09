@@ -38,6 +38,8 @@ pub struct JoinOptions {
     pub how: JoinType,
     pub suffix: Cow<'static, str>,
     pub slice: Option<(i64, usize)>,
+    pub rows_left: (Option<usize>, usize),
+    pub rows_right: (Option<usize>, usize),
 }
 
 impl Default for JoinOptions {
@@ -48,6 +50,8 @@ impl Default for JoinOptions {
             how: JoinType::Left,
             suffix: "_right".into(),
             slice: None,
+            rows_left: (None, usize::MAX),
+            rows_right: (None, usize::MAX),
         }
     }
 }

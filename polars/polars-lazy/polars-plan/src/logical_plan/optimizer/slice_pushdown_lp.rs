@@ -97,7 +97,7 @@ impl SlicePushDown {
         match (lp, state) {
             (AnonymousScan {
                 function,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
@@ -109,7 +109,7 @@ impl SlicePushDown {
                 options.n_rows = Some(state.len as usize);
                 let lp = AnonymousScan {
                     function,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options,
@@ -121,7 +121,7 @@ impl SlicePushDown {
             #[cfg(feature = "parquet")]
             (ParquetScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
@@ -134,7 +134,7 @@ impl SlicePushDown {
                 options.n_rows = Some(state.len as usize);
                 let lp = ParquetScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options
@@ -144,7 +144,7 @@ impl SlicePushDown {
             },
             #[cfg(feature = "ipc")]
             (IpcScan {path,
-            schema,
+            file_info,
                 output_schema,
                 predicate,
                 options
@@ -153,7 +153,7 @@ impl SlicePushDown {
                 options.n_rows = Some(state.len as usize);
                 let lp = IpcScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options
@@ -166,7 +166,7 @@ impl SlicePushDown {
             #[cfg(feature = "csv-file")]
             (CsvScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 options,
                 predicate,
@@ -177,7 +177,7 @@ impl SlicePushDown {
 
                 let lp = CsvScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     options,
                     predicate,
