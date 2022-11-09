@@ -91,7 +91,6 @@ impl GenericJoinProbe {
                 .collect::<Vec<_>>();
             df_a = df_a.drop_many(&names)
         }
-        dbg!(&df_a);
 
         GenericJoinProbe {
             df_a: Arc::new(df_a),

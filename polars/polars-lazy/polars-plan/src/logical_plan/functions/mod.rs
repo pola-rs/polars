@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 use polars_core::prelude::*;
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FunctionNode {
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -27,6 +27,7 @@ pub enum FunctionNode {
     Pipeline {
         function: Arc<dyn DataFrameUdfMut>,
         schema: SchemaRef,
+        original: Option<Arc<LogicalPlan>>,
     },
     Unnest {
         columns: Arc<Vec<Arc<str>>>,
@@ -163,6 +164,12 @@ impl FunctionNode {
     }
 }
 
+impl Debug for FunctionNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 impl Display for FunctionNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionNode::*;
@@ -184,7 +191,16 @@ impl Display for FunctionNode {
                 let columns = columns.as_slice();
                 fmt_column_delimited(f, columns, "[", "]")
             }
-            Pipeline { .. } => write!(f, "PIPELINE"),
+            Pipeline { original, .. } => {
+                if let Some(original) = original {
+                    writeln!(f, "--- PIPELINE")?;
+                    write!(f, "{:?}", original.as_ref())?;
+                    let indent = 2;
+                    writeln!(f, "{:indent$}--- END PIPELINE", "")
+                } else {
+                    writeln!(f, "PIPELINE")
+                }
+            }
         }
     }
 }

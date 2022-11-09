@@ -200,14 +200,16 @@ impl LogicalPlan {
                 input_right,
                 left_on,
                 right_on,
+                options,
                 ..
             } => {
-                writeln!(f, "{:indent$}JOIN:", "")?;
+                let how = &options.how;
+                writeln!(f, "{:indent$}{} JOIN:", "", how)?;
                 writeln!(f, "{:indent$}LEFT PLAN ON: {:?}", "", left_on)?;
                 input_left._format(f, indent)?;
                 writeln!(f, "{:indent$}RIGHT PLAN ON: {:?}", "", right_on)?;
                 input_right._format(f, indent)?;
-                writeln!(f, "{:indent$}END JOIN", "")
+                writeln!(f, "{:indent$}END {} JOIN", "", how)
             }
             HStack { input, exprs, .. } => {
                 writeln!(f, "{:indent$} WITH_COLUMNS:", "",)?;
@@ -225,7 +227,8 @@ impl LogicalPlan {
             MapFunction {
                 input, function, ..
             } => {
-                writeln!(f, "{:indent$}{:?}", "", function)?;
+                let function_fmt = format!("{}", function);
+                writeln!(f, "{:indent$}{}", "", function_fmt)?;
                 input._format(f, indent)
             }
             Error { input, err } => write!(f, "{:?}\n{:?}", err, input),

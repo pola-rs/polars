@@ -1,3 +1,5 @@
+use polars_core::prelude::JoinType::AsOf;
+
 use super::*;
 
 fn get_csv_file() -> LazyFrame {
@@ -141,7 +143,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
     let out = q.clone().cross_join(q).with_streaming(true).collect()?;
     assert_eq!(out.shape(), (9, 2));
 
-    let q = get_parquet_file().with_projection_pushdown(false); // ;.slice(3, 3);
+    let q = get_parquet_file().with_projection_pushdown(false);
     let q1 = q
         .clone()
         .select([col("calories")])
@@ -169,7 +171,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_streaming_inner_join() -> PolarsResult<()> {
+fn test_streaming_inner_join3() -> PolarsResult<()> {
     let lf_left = df![
         "col1" => [1, 1, 1],
         "col2" => ["a", "a", "b"],
@@ -233,6 +235,45 @@ fn test_streaming_left_join() -> PolarsResult<()> {
     let out1 = q.clone().with_streaming(true).collect()?;
     let out2 = q.clone().with_streaming(false).collect()?;
     assert!(out1.frame_equal_missing(&out2));
+
+    Ok(())
+}
+
+#[test]
+fn test_streaming_partial() -> PolarsResult<()> {
+    let lf_left = df![
+        "a"=> [0],
+         "b"=> [0],
+    ]?
+    .lazy();
+
+    let lf_right = df![
+        "a"=> [0],
+         "b"=> [0],
+    ]?
+    .lazy();
+
+    let q = lf_left.clone().left_join(lf_right, col("a"), col("a"));
+
+    // we add a join that is not supported streaming (for now)
+    // so we can test if the
+    let q = q
+        .join_builder()
+        .with(lf_left.clone())
+        .left_on([col("a")])
+        .right_on([col("a")])
+        .suffix("_foo")
+        .how(JoinType::Outer)
+        .finish();
+
+    let q = q.left_join(
+        lf_left.clone().select([all().suffix("_foo")]),
+        col("a"),
+        col("a_foo"),
+    );
+    let out = q.with_streaming(true).collect()?;
+    // simply check if it runs panic free
+    assert_eq!(out.shape(), (1, 5));
 
     Ok(())
 }
