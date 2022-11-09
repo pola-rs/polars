@@ -13,7 +13,7 @@ use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
-use crate::executors::sinks::joins::inner::InnerJoinProbe;
+use crate::executors::sinks::joins::inner::GenericJoinProbe;
 use crate::executors::sinks::utils::{hash_series, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -286,7 +286,7 @@ impl Sink for GenericBuild {
 
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         match self.join_type {
-            JoinType::Inner => {
+            JoinType::Inner | JoinType::Left => {
                 let left_df = accumulate_dataframes_vertical_unchecked(
                     std::mem::take(&mut self.chunks)
                         .into_iter()
@@ -306,7 +306,7 @@ impl Sink for GenericBuild {
                 let mut hashes = std::mem::take(&mut self.hashes);
                 hashes.clear();
 
-                let probe_operator = InnerJoinProbe::new(
+                let probe_operator = GenericJoinProbe::new(
                     left_df,
                     materialized_join_cols,
                     suffix,
@@ -318,6 +318,7 @@ impl Sink for GenericBuild {
                     join_series,
                     hashes,
                     context,
+                    self.join_type.clone(),
                 );
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
             }

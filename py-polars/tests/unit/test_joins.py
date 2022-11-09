@@ -644,7 +644,7 @@ def test_streaming_joins() -> None:
     dfa_pl = pl.from_pandas(dfa).sort("a")
     dfb_pl = pl.from_pandas(dfb)
 
-    for how in ["inner"]:
+    for how in ["inner", "left"]:
         pd_result = dfa.merge(dfb, on="a", how=how)
         pd_result.columns = ["a", "b", "b_right"]
 

@@ -117,7 +117,7 @@ where
         } => match &options.how {
             #[cfg(feature = "cross_join")]
             JoinType::Cross => Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>,
-            join_type @ JoinType::Inner => {
+            join_type @ JoinType::Inner | join_type @ JoinType::Left => {
                 let join_columns_left =
                     Arc::new(exprs_to_physical(left_on, expr_arena, to_physical)?);
                 let join_columns_right =

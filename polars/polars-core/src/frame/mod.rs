@@ -3134,8 +3134,22 @@ impl DataFrame {
     /// # Safety
     /// Does not do any bound checks.
     /// `sorted` indicates if the chunks are sorted.
+    #[doc(hidden)]
     pub unsafe fn _take_chunked_unchecked_seq(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
         let cols = self.apply_columns(&|s| s._take_chunked_unchecked(idx, sorted));
+
+        DataFrame::new_no_checks(cols)
+    }
+    #[cfg(feature = "chunked_ids")]
+    //// Take elements by a slice of optional [`ChunkId`]s.
+    /// # Safety
+    /// Does not do any bound checks.
+    #[doc(hidden)]
+    pub unsafe fn _take_opt_chunked_unchecked_seq(&self, idx: &[Option<ChunkId>]) -> Self {
+        let cols = self.apply_columns(&|s| match s.dtype() {
+            DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+            _ => s._take_opt_chunked_unchecked(idx),
+        });
 
         DataFrame::new_no_checks(cols)
     }
