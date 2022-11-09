@@ -87,6 +87,8 @@ pub struct UnionOptions {
     pub slice_offset: i64,
     pub slice_len: IdxSize,
     pub parallel: bool,
+    // known row_output, estimated row output
+    pub rows: (Option<usize>, usize),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -413,7 +413,7 @@ impl Sink for GenericGroupbySink {
         Box::new(new)
     }
 
-    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
         let mut df = accumulate_dataframes_vertical_unchecked(dfs);
         DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished)

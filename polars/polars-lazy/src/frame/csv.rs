@@ -208,7 +208,7 @@ impl<'a> LazyCsvReader<'a> {
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;
 
-        let (schema, _) = infer_file_schema(
+        let (schema, _, _) = infer_file_schema(
             &reader_bytes,
             self.delimiter,
             self.infer_schema_length,

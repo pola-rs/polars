@@ -1410,7 +1410,7 @@ impl JoinBuilder {
                     force_parallel: self.force_parallel,
                     how: self.how,
                     suffix,
-                    slice: None,
+                    ..Default::default()
                 },
             )
             .build();

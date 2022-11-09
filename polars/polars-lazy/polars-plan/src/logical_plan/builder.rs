@@ -1,4 +1,5 @@
 use std::io::{Read, Seek, SeekFrom};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -74,7 +75,7 @@ impl LogicalPlanBuilder {
 
         let file_info = FileInfo {
             schema: schema.clone(),
-            row_estimation: None,
+            row_estimation: (n_rows, n_rows.unwrap_or(usize::MAX)),
         };
         Ok(LogicalPlan::AnonymousScan {
             function,
@@ -107,10 +108,12 @@ impl LogicalPlanBuilder {
 
         let path = path.into();
         let file = std::fs::File::open(&path)?;
-        let schema = Arc::new(ParquetReader::new(file).schema()?);
+        let mut reader = ParquetReader::new(file);
+        let schema = Arc::new(reader.schema()?);
+        let num_rows = reader.num_rows()?;
         let file_info = FileInfo {
             schema,
-            row_estimation: None,
+            row_estimation: (Some(num_rows), num_rows),
         };
 
         Ok(LogicalPlan::ParquetScan {
@@ -138,11 +141,13 @@ impl LogicalPlanBuilder {
 
         let path = path.into();
         let file = std::fs::File::open(&path)?;
-        let schema = Arc::new(IpcReader::new(file).schema()?);
+        let mut reader = IpcReader::new(file);
+        let schema = Arc::new(reader.schema()?);
 
+        let num_rows = reader._num_rows()?;
         let file_info = FileInfo {
             schema,
-            row_estimation: None,
+            row_estimation: (None, num_rows),
         };
         Ok(LogicalPlan::IpcScan {
             path,
@@ -191,28 +196,31 @@ impl LogicalPlanBuilder {
         file.seek(SeekFrom::Start(0))?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
-        let schema = schema.unwrap_or_else(|| {
-            let (schema, _) = infer_file_schema(
-                &reader_bytes,
-                delimiter,
-                infer_schema_length,
-                has_header,
-                schema_overwrite,
-                &mut skip_rows,
-                skip_rows_after_header,
-                comment_char,
-                quote_char,
-                eol_char,
-                null_values.as_ref(),
-                parse_dates,
-            )
-            .expect("could not read schema");
-            Arc::new(schema)
-        });
+        // TODO! delay inferring schema until absolutely necessary
+        // this needs a way to estimated bytes/rows.
+        let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
+            &reader_bytes,
+            delimiter,
+            infer_schema_length,
+            has_header,
+            schema_overwrite,
+            &mut skip_rows,
+            skip_rows_after_header,
+            comment_char,
+            quote_char,
+            eol_char,
+            null_values.as_ref(),
+            parse_dates,
+        )?;
+
+        let schema = schema.unwrap_or_else(|| Arc::new(inferred_schema));
+        let n_bytes = reader_bytes.deref().len();
+        let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
+
         skip_rows += skip_rows_after_header;
         let file_info = FileInfo {
             schema,
-            row_estimation: None,
+            row_estimation: (None, estimated_n_rows),
         };
         Ok(LogicalPlan::CsvScan {
             path,

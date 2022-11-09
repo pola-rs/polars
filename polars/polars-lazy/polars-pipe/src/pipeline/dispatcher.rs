@@ -183,7 +183,7 @@ impl PipeLine {
                 a
             })
             .unwrap();
-        reduced_sink.finalize()
+        reduced_sink.finalize(ec)
     }
 
     pub fn execute(&mut self, state: Box<dyn Any + Send + Sync>) -> PolarsResult<DataFrame> {

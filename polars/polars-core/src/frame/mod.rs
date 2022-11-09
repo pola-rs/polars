@@ -1070,6 +1070,21 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_cols))
     }
 
+    pub fn drop_many<S: AsRef<str>>(&self, names: &[S]) -> Self {
+        let names = names.iter().map(|s| s.as_ref()).collect();
+        fn inner(df: &DataFrame, names: Vec<&str>) -> DataFrame {
+            let mut new_cols = Vec::with_capacity(df.columns.len() - names.len());
+            df.columns.iter().for_each(|s| {
+                if !names.contains(&s.name()) {
+                    new_cols.push(s.clone())
+                }
+            });
+
+            DataFrame::new_no_checks(new_cols)
+        }
+        inner(self, names)
+    }
+
     fn insert_at_idx_no_name_check(
         &mut self,
         index: usize,

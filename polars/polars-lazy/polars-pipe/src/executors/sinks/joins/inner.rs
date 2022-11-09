@@ -18,7 +18,7 @@ use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 pub struct InnerJoinProbe {
     // all chunks are stacked into a single dataframe
     // the dataframe is not rechunked.
-    pub(super) left_df: Arc<DataFrame>,
+    left_df: Arc<DataFrame>,
     // the join columns are all tightly packed
     // the values of a join column(s) can be found
     // by:
@@ -26,29 +26,78 @@ pub struct InnerJoinProbe {
     // columns
     //      * chunk_offset = (idx * n_join_keys)
     //      * end = (offset + n_join_keys)
-    pub(super) materialized_join_cols: Arc<Vec<ArrayRef>>,
-    pub(super) suffix: Arc<str>,
-    pub(super) hb: RandomState,
+    materialized_join_cols: Arc<Vec<ArrayRef>>,
+    suffix: Arc<str>,
+    hb: RandomState,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
-    pub(super) hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
+    hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
 
     // the columns that will be joined on
-    pub(super) join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+    join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
 
     // amortize allocations
-    pub(super) join_series: Vec<Series>,
-    pub(super) join_tuples_left: Vec<ChunkId>,
-    pub(super) join_tuples_right: Vec<DfIdx>,
-    pub(super) hashes: Vec<u64>,
+    join_series: Vec<Series>,
+    join_tuples_left: Vec<ChunkId>,
+    join_tuples_right: Vec<DfIdx>,
+    hashes: Vec<u64>,
     // the join order is swapped to ensure we hash the smaller table
-    pub(super) swapped: bool,
+    swapped: bool,
     // location of join columns.
     // these column locations need to be dropped from the rhs
-    pub(super) join_column_idx: Option<Vec<usize>>,
+    join_column_idx: Option<Vec<usize>>,
+    // cached output names
+    output_names: Option<Vec<String>>,
 }
 
 impl InnerJoinProbe {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn new(
+        mut left_df: DataFrame,
+        materialized_join_cols: Arc<Vec<ArrayRef>>,
+        suffix: Arc<str>,
+        hb: RandomState,
+        hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
+        join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        swapped: bool,
+        join_series: Vec<Series>,
+        hashes: Vec<u64>,
+        context: &PExecutionContext,
+    ) -> Self {
+        if swapped {
+            let tmp = DataChunk {
+                data: left_df.slice(0, 1),
+                chunk_index: 0,
+            };
+            let names = join_columns_left
+                .iter()
+                .map(|phys_e| {
+                    let s = phys_e
+                        .evaluate(&tmp, context.execution_state.as_ref())
+                        .unwrap();
+                    s.name().to_string()
+                })
+                .collect::<Vec<_>>();
+            left_df = left_df.drop_many(&names)
+        }
+
+        InnerJoinProbe {
+            left_df: Arc::new(left_df),
+            materialized_join_cols,
+            suffix,
+            hb,
+            hash_tables,
+            join_columns_right,
+            join_series,
+            join_tuples_left: vec![],
+            join_tuples_right: vec![],
+            hashes,
+            swapped,
+            join_column_idx: None,
+            output_names: None,
+        }
+    }
     fn set_join_series(
         &mut self,
         context: &PExecutionContext,
@@ -61,7 +110,10 @@ impl InnerJoinProbe {
             self.join_series.push(s.rechunk());
         }
 
-        if self.join_column_idx.is_none() {
+        // we determine the indices of the columns that have to be removed
+        // if swapped the join column is already removed from the `build_df` as that will
+        // be the rhs one.
+        if !self.swapped && self.join_column_idx.is_none() {
             let mut idx = self
                 .join_series
                 .iter()
@@ -137,12 +189,28 @@ impl Operator for InnerJoinProbe {
             df._take_unchecked_slice(&self.join_tuples_right, false)
         };
 
-        let (a, b) = if self.swapped {
+        let (mut a, b) = if self.swapped {
             (right_df, left_df)
         } else {
             (left_df, right_df)
         };
-        let out = _finish_join(a, b, Some(self.suffix.as_ref()))?;
+        let out = match &self.output_names {
+            None => {
+                let out = _finish_join(a, b, Some(self.suffix.as_ref()))?;
+                self.output_names = Some(out.get_column_names_owned());
+                out
+            }
+            Some(names) => {
+                a.hstack_mut(b.get_columns()).unwrap();
+                a.get_columns_mut()
+                    .iter_mut()
+                    .zip(names)
+                    .for_each(|(s, name)| {
+                        s.rename(name);
+                    });
+                a
+            }
+        };
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }

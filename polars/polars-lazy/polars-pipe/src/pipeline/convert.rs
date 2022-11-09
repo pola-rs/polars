@@ -123,10 +123,12 @@ where
                 let join_columns_right =
                     Arc::new(exprs_to_physical(right_on, expr_arena, to_physical)?);
 
+                let swapped = swap_join_order(options);
+
                 Box::new(GenericBuild::new(
                     Arc::from(options.suffix.as_ref()),
                     join_type.clone(),
-                    false,
+                    swapped,
                     join_columns_left,
                     join_columns_right,
                 ))
@@ -318,4 +320,11 @@ where
         sink_node,
         operator_offset,
     ))
+}
+
+pub fn swap_join_order(options: &JoinOptions) -> bool {
+    match (options.rows_left, options.rows_right) {
+        ((Some(left), _), (Some(right), _)) => left > right,
+        ((_, left), (_, right)) => left > right,
+    }
 }

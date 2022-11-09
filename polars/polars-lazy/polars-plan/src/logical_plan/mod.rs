@@ -37,6 +37,7 @@ pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
 use polars_core::frame::explode::MeltArgs;
+pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

@@ -211,7 +211,7 @@ impl<'a> CoreReader<'a> {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
 
-                    let (inferred_schema, _) = infer_file_schema(
+                    let (inferred_schema, _, _) = infer_file_schema(
                         &reader_bytes,
                         delimiter,
                         max_records,

@@ -47,7 +47,7 @@ impl Sink for CrossJoin {
         })
     }
 
-    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         // todo! share sink
         Ok(FinalizedSink::Operator(Box::new(CrossJoinProbe {
             df: Arc::new(chunks_to_df_unchecked(std::mem::take(&mut self.chunks))),
