@@ -116,6 +116,11 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push((false, false, root));
                 stack.push((*input, state, current_idx))
             }
+            Slice { input, offset, .. } if *offset >= 0 => {
+                state.streamable = true;
+                state.operators_sinks.push((true, false, root));
+                stack.push((*input, state, current_idx))
+            }
             MapFunction {
                 input,
                 function: FunctionNode::FastProjection { .. },
@@ -163,8 +168,10 @@ pub(crate) fn insert_streaming_nodes(
                 options,
                 ..
             } if streamable_join(&options.how) => {
-                state.join_count += 1;
+                let input_left = *input_left;
+                let input_right = *input_right;
                 state.streamable = true;
+                state.join_count += 1;
 
                 let join_count = state.join_count;
                 // We swap so that the build phase contains the smallest table
@@ -174,9 +181,9 @@ pub(crate) fn insert_streaming_nodes(
                 // we maintain order in the left join.
                 let (input_left, input_right) =
                     if swap_join_order(options) || matches!(options.how, JoinType::Left) {
-                        (*input_right, *input_left)
+                        (input_right, input_left)
                     } else {
-                        (*input_left, *input_right)
+                        (input_left, input_right)
                     };
 
                 // rhs is second, so that is first on the stack
@@ -284,6 +291,22 @@ pub(crate) fn insert_streaming_nodes(
                     } else {
                         operator_nodes.push(node);
                         let op = if is_rhs_join {
+                            if let Join {
+                                options:
+                                    JoinOptions {
+                                        slice: Some((offset, len)),
+                                        ..
+                                    },
+                                ..
+                            } = lp_arena.get(node)
+                            {
+                                let slice_node = lp_arena.add(ALogicalPlan::Slice {
+                                    input: Node::default(),
+                                    offset: *offset,
+                                    len: *len as IdxSize,
+                                });
+                                sink_node = Some(slice_node);
+                            }
                             get_dummy_operator()
                         } else {
                             get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?

@@ -119,7 +119,7 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_streaming_slice() -> PolarsResult<()> {
+fn test_streaming__aggregate_slice() -> PolarsResult<()> {
     let q = get_parquet_file();
 
     let q = q
@@ -240,6 +240,23 @@ fn test_streaming_left_join() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cross_join")]
+fn test_streaming_slice() -> PolarsResult<()> {
+    let vals = (0..100).collect::<Vec<_>>();
+    let s = Series::new("", vals);
+    let lf_a = df![
+        "a" => s
+    ]?
+    .lazy();
+
+    let q = lf_a.clone().cross_join(lf_a).slice(10, 20);
+    let a = q.clone().with_streaming(true).collect().unwrap();
+    assert_eq!(a.shape(), (20, 2));
+
+    Ok(())
+}
+
+#[test]
 fn test_streaming_partial() -> PolarsResult<()> {
     let lf_left = df![
         "a"=> [0],
@@ -256,7 +273,7 @@ fn test_streaming_partial() -> PolarsResult<()> {
     let q = lf_left.clone().left_join(lf_right, col("a"), col("a"));
 
     // we add a join that is not supported streaming (for now)
-    // so we can test if the
+    // so we can test if the partial query is executed with out panics
     let q = q
         .join_builder()
         .with(lf_left.clone())
