@@ -24,7 +24,6 @@ from typing import (
 
 from _ctypes import _SimpleCData  # type: ignore[import]
 
-from polars.dependencies import _PYARROW_AVAILABLE
 from polars.dependencies import pyarrow as pa
 
 try:
@@ -486,51 +485,49 @@ class _DataTypeMappings:
             "?": Boolean,
         }
 
-    if _PYARROW_AVAILABLE:
+    @property
+    @cache
+    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[type, Callable[[], pa.lib.DataType]]:
+        return {
+            float: pa.float64(),
+            int: pa.int64(),
+            str: pa.large_utf8(),
+            bool: pa.bool_(),
+            date: pa.date32(),
+            time: pa.time64("us"),
+            datetime: pa.timestamp("us"),
+            timedelta: pa.duration("us"),
+        }
 
-        @property
-        @cache
-        def PY_TYPE_TO_ARROW_TYPE(self) -> dict[type, Callable[[], pa.lib.DataType]]:
-            return {
-                float: pa.float64(),
-                int: pa.int64(),
-                str: pa.large_utf8(),
-                bool: pa.bool_(),
-                date: pa.date32(),
-                time: pa.time64("us"),
-                datetime: pa.timestamp("us"),
-                timedelta: pa.duration("us"),
-            }
-
-        @property
-        @cache
-        def DTYPE_TO_ARROW_TYPE(
-            self,
-        ) -> dict[PolarsDataType, Callable[[], pa.lib.DataType]]:
-            return {
-                Int8: pa.int8(),
-                Int16: pa.int16(),
-                Int32: pa.int32(),
-                Int64: pa.int64(),
-                UInt8: pa.uint8(),
-                UInt16: pa.uint16(),
-                UInt32: pa.uint32(),
-                UInt64: pa.uint64(),
-                Float32: pa.float32(),
-                Float64: pa.float64(),
-                Boolean: pa.bool_(),
-                Utf8: pa.large_utf8(),
-                Date: pa.date32(),
-                Datetime: pa.timestamp("us"),
-                Datetime("ms"): pa.timestamp("ms"),
-                Datetime("us"): pa.timestamp("us"),
-                Datetime("ns"): pa.timestamp("ns"),
-                Duration: pa.duration("us"),
-                Duration("ms"): pa.duration("ms"),
-                Duration("us"): pa.duration("us"),
-                Duration("ns"): pa.duration("ns"),
-                Time: pa.time64("us"),
-            }
+    @property
+    @cache
+    def DTYPE_TO_ARROW_TYPE(
+        self,
+    ) -> dict[PolarsDataType, Callable[[], pa.lib.DataType]]:
+        return {
+            Int8: pa.int8(),
+            Int16: pa.int16(),
+            Int32: pa.int32(),
+            Int64: pa.int64(),
+            UInt8: pa.uint8(),
+            UInt16: pa.uint16(),
+            UInt32: pa.uint32(),
+            UInt64: pa.uint64(),
+            Float32: pa.float32(),
+            Float64: pa.float64(),
+            Boolean: pa.bool_(),
+            Utf8: pa.large_utf8(),
+            Date: pa.date32(),
+            Datetime: pa.timestamp("us"),
+            Datetime("ms"): pa.timestamp("ms"),
+            Datetime("us"): pa.timestamp("us"),
+            Datetime("ns"): pa.timestamp("ns"),
+            Duration: pa.duration("us"),
+            Duration("ms"): pa.duration("ms"),
+            Duration("us"): pa.duration("us"),
+            Duration("ns"): pa.duration("ns"),
+            Time: pa.time64("us"),
+        }
 
 
 # initialise once (poor man's singleton :)
