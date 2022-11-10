@@ -135,6 +135,10 @@ where
             }
             _ => unimplemented!(),
         },
+        Slice { offset, len, .. } => {
+            let slice = SliceSink::new(*offset as u64, *len as usize);
+            Box::new(slice) as Box<dyn Sink>
+        }
         Aggregate {
             input,
             keys,
@@ -182,8 +186,8 @@ where
                 )) as Box<dyn Sink>,
             }
         }
-        _ => {
-            todo!()
+        lp => {
+            panic!("{:?} not implemented", lp)
         }
     };
     Ok(out)
