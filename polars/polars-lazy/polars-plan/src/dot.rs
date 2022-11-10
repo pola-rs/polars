@@ -442,13 +442,14 @@ impl LogicalPlan {
                 input_right,
                 left_on,
                 right_on,
+                options,
                 ..
             } => {
                 let fmt = format!(
-                    r#"JOIN
+                    r#"JOIN {}
                     left {:?};
                     right: {:?}"#,
-                    left_on, right_on
+                    options.how, left_on, right_on
                 );
                 let current_node = DotNode {
                     branch,

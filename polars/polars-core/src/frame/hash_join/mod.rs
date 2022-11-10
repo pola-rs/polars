@@ -10,7 +10,7 @@ pub(super) mod sort_merge;
 
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{BuildHasher, Hash, Hasher};
 
 use ahash::RandomState;
@@ -119,7 +119,7 @@ pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
     Left,
@@ -132,6 +132,31 @@ pub enum JoinType {
     Semi,
     #[cfg(feature = "semi_anti_join")]
     Anti,
+}
+
+impl Display for JoinType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use JoinType::*;
+        let val = match self {
+            Left => "LEFT",
+            Inner => "INNER",
+            Outer => "OUTER",
+            #[cfg(feature = "asof_join")]
+            AsOf(_) => "ASOF",
+            Cross => "CROSS",
+            #[cfg(feature = "semi_anti_join")]
+            Semi => "SEMI",
+            #[cfg(feature = "semi_anti_join")]
+            Anti => "ANTI",
+        };
+        write!(f, "{}", val)
+    }
+}
+
+impl Debug for JoinType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(

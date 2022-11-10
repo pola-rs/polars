@@ -78,8 +78,13 @@ pub(crate) fn insert_streaming_nodes(
 
     scratch.clear();
 
-    let mut stack = Vec::with_capacity(lp_arena.len() / 3 + 1);
-    stack.push((root, State::default()));
+    let mut stack = Vec::with_capacity(16);
+
+    // The index of the pipeline tree we are building at this moment
+    // if we have a node we cannot do streaming, we have finished that pipeline tree
+    // and start a new one.
+    type CurrentIdx = usize;
+    stack.push((root, Branch::default(), 0 as CurrentIdx));
 
     // A state holds a full pipeline until the breaker
     //  1/\
@@ -94,20 +99,22 @@ pub(crate) fn insert_streaming_nodes(
     //  /\  3/\
     //  1 2    4\
     // or in this case 1, 2, 3, 4
-    let mut states = vec![];
+    // every inner vec contains a branch/pipeline of a complete pipeline tree
+    // the outer vec contains whole pipeline trees
+    let mut pipeline_trees = vec![vec![]];
 
     use ALogicalPlan::*;
-    while let Some((root, mut state)) = stack.pop() {
+    while let Some((root, mut state, mut current_idx)) = stack.pop() {
         match lp_arena.get(root) {
             Selection { input, predicate } if is_streamable(*predicate, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push((false, false, root));
-                stack.push((*input, state))
+                stack.push((*input, state, current_idx))
             }
             HStack { input, exprs, .. } if all_streamable(exprs, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push((false, false, root));
-                stack.push((*input, state))
+                stack.push((*input, state, current_idx))
             }
             MapFunction {
                 input,
@@ -115,12 +122,12 @@ pub(crate) fn insert_streaming_nodes(
             } => {
                 state.streamable = true;
                 state.operators_sinks.push((false, false, root));
-                stack.push((*input, state))
+                stack.push((*input, state, current_idx))
             }
             Projection { input, expr, .. } if all_streamable(expr, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push((false, false, root));
-                stack.push((*input, state))
+                stack.push((*input, state, current_idx))
             }
             MapFunction {
                 input,
@@ -128,26 +135,26 @@ pub(crate) fn insert_streaming_nodes(
             } => {
                 // we ignore a rechunk
                 state.streamable = true;
-                stack.push((*input, state))
+                stack.push((*input, state, current_idx))
             }
             #[cfg(feature = "csv-file")]
             CsvScan { .. } => {
                 if state.streamable {
                     state.sources.push(root);
-                    states.push(state)
+                    pipeline_trees[current_idx].push(state)
                 }
             }
             #[cfg(feature = "parquet")]
             ParquetScan { .. } => {
                 if state.streamable {
                     state.sources.push(root);
-                    states.push(state)
+                    pipeline_trees[current_idx].push(state)
                 }
             }
             DataFrameScan { .. } => {
                 if state.streamable {
                     state.sources.push(root);
-                    states.push(state)
+                    pipeline_trees[current_idx].push(state)
                 }
             }
             Join {
@@ -156,7 +163,10 @@ pub(crate) fn insert_streaming_nodes(
                 options,
                 ..
             } if streamable_join(&options.how) => {
+                state.join_count += 1;
                 state.streamable = true;
+
+                let join_count = state.join_count;
                 // We swap so that the build phase contains the smallest table
                 // and then we stream the larger table
                 // *except* for a left join. In a left join we use the right
@@ -171,17 +181,19 @@ pub(crate) fn insert_streaming_nodes(
 
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
+                state_right.join_count = 0;
                 state_right.operators_sinks.push((true, true, root));
-                stack.push((input_right, state_right));
+                stack.push((input_right, state_right, current_idx));
 
                 // we want to traverse lhs first, so push it latest on the stack
                 // rhs is a new pipeline
-                let mut state_left = State {
+                let mut state_left = Branch {
                     streamable: true,
+                    join_count,
                     ..Default::default()
                 };
                 state_left.operators_sinks.push((true, false, root));
-                stack.push((input_left, state_left));
+                stack.push((input_left, state_left, current_idx));
             }
             // add globbing patterns
             #[cfg(all(feature = "csv-file", feature = "parquet"))]
@@ -200,7 +212,7 @@ pub(crate) fn insert_streaming_nodes(
                     })
                 {
                     state.sources.push(root);
-                    states.push(state);
+                    pipeline_trees[current_idx].push(state);
                 }
             }
             Aggregate {
@@ -216,90 +228,104 @@ pub(crate) fn insert_streaming_nodes(
                 {
                     state.streamable = true;
                     state.operators_sinks.push((true, false, root));
-                    stack.push((*input, state))
+                    stack.push((*input, state, current_idx))
                 } else {
-                    stack.push((*input, State::default()))
+                    stack.push((*input, Branch::default(), current_idx))
                 }
             }
             lp => {
+                if state.streamable {
+                    current_idx += 1;
+                    pipeline_trees.push(vec![]);
+                }
                 state.streamable = false;
                 lp.copy_inputs(scratch);
                 while let Some(input) = scratch.pop() {
-                    stack.push((input, State::default()))
+                    stack.push((input, Branch::default(), current_idx))
                 }
             }
         }
     }
-    if !states.is_empty() {
-        let mut pipelines = VecDeque::with_capacity(states.len());
+    for tree in pipeline_trees {
+        if !tree.is_empty() {
+            let mut pipelines = VecDeque::with_capacity(tree.len());
 
-        // if join is
-        //     1
-        //    /\2
-        //      /\3
-        //
-        // we are iterating from 3 to 1.
+            // if join is
+            //     1
+            //    /\2
+            //      /\3
+            //
+            // we are iterating from 3 to 1.
 
-        // the most far right branch will be the latest that sets this
-        // variable and thus will point to root
-        let mut latest = Default::default();
+            // the most far right branch will be the latest that sets this
+            // variable and thus will point to root
+            let mut latest = Default::default();
 
-        for state in states {
-            // should be reset for every branch
-            let mut sink_node = None;
+            let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<IdxSize>();
+            let branches_in_tree = tree.len() as IdxSize;
 
-            let mut operators = Vec::with_capacity(state.operators_sinks.len());
-            let mut operator_nodes = Vec::with_capacity(state.operators_sinks.len());
-            let mut iter = state.operators_sinks.into_iter().rev();
+            // all join branches should be added, if not we skip the tree, as it is invalid
+            if (branches_in_tree - 1) != joins_in_tree {
+                continue;
+            }
 
-            for (is_sink, is_rhs_join, node) in &mut iter {
-                latest = node;
-                if is_sink && !is_rhs_join {
-                    sink_node = Some(node);
-                } else {
-                    operator_nodes.push(node);
-                    let op = if is_rhs_join {
-                        get_dummy_operator()
+            for branch in tree {
+                // should be reset for every branch
+                let mut sink_node = None;
+
+                let mut operators = Vec::with_capacity(branch.operators_sinks.len());
+                let mut operator_nodes = Vec::with_capacity(branch.operators_sinks.len());
+                let mut iter = branch.operators_sinks.into_iter().rev();
+
+                for (is_sink, is_rhs_join, node) in &mut iter {
+                    latest = node;
+                    if is_sink && !is_rhs_join {
+                        sink_node = Some(node);
                     } else {
-                        get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?
-                    };
-                    operators.push(op)
+                        operator_nodes.push(node);
+                        let op = if is_rhs_join {
+                            get_dummy_operator()
+                        } else {
+                            get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?
+                        };
+                        operators.push(op)
+                    }
                 }
-            }
 
-            let pipeline = create_pipeline(
-                &state.sources,
-                operators,
-                operator_nodes,
-                sink_node,
-                lp_arena,
-                expr_arena,
-                to_physical_piped_expr,
-            )?;
-            pipelines.push_back(pipeline);
-        }
-        // the most right latest node should be the root of the pipeline
-        let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
-
-        if let Some(mut most_left) = pipelines.pop_front() {
-            while let Some(rhs) = pipelines.pop_front() {
-                most_left = most_left.with_rhs(rhs)
+                let pipeline = create_pipeline(
+                    &branch.sources,
+                    operators,
+                    operator_nodes,
+                    sink_node,
+                    lp_arena,
+                    expr_arena,
+                    to_physical_piped_expr,
+                )?;
+                pipelines.push_back(pipeline);
             }
-            // keep the original around for formatting purposes
-            let original_lp = if fmt {
-                let original_lp = lp_arena.take(latest);
-                let original_node = lp_arena.add(original_lp);
-                let original_lp = node_to_lp(original_node, expr_arena, lp_arena);
-                Some(original_lp)
+            // the most right latest node should be the root of the pipeline
+            let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
+
+            if let Some(mut most_left) = pipelines.pop_front() {
+                while let Some(rhs) = pipelines.pop_front() {
+                    most_left = most_left.with_rhs(rhs)
+                }
+                // keep the original around for formatting purposes
+                let original_lp = if fmt {
+                    let original_lp = lp_arena.take(latest);
+                    let original_node = lp_arena.add(original_lp);
+                    let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
+                    Some(original_lp)
+                } else {
+                    None
+                };
+
+                // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+                let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
+                lp_arena.replace(latest, pipeline_node)
             } else {
-                None
-            };
-
-            // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
-            let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
-            lp_arena.replace(latest, pipeline_node)
-        } else {
-            panic!()
+                panic!()
+            }
         }
     }
 
@@ -311,9 +337,11 @@ type IsSink = bool;
 type IsRhsJoin = bool;
 
 #[derive(Default, Debug, Clone)]
-struct State {
+struct Branch {
     streamable: bool,
     sources: Vec<Node>,
+    // joins seen in whole branch (we count a union as joins with multiple counts)
+    join_count: IdxSize,
     // node is operator/sink
     operators_sinks: Vec<(IsSink, IsRhsJoin, Node)>,
 }
