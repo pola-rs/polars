@@ -19,7 +19,7 @@ mod test {
     #[test]
     fn test_simple_select() -> PolarsResult<()> {
         let df = create_sample_df()?;
-        let mut context = SQLContext::try_new();
+        let mut context = SQLContext::try_new()?;
         context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(
@@ -44,7 +44,7 @@ mod test {
     #[test]
     fn test_groupby_simple() -> PolarsResult<()> {
         let df = create_sample_df()?;
-        let mut context = SQLContext::try_new();
+        let mut context = SQLContext::try_new()?;
         context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(
