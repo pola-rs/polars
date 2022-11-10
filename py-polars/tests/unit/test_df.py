@@ -264,14 +264,14 @@ def test_dataclasses_and_namedtuple() -> None:
             data=trades,
             columns=[  # type: ignore[arg-type]
                 ("ts", pl.Datetime("ms")),
-                ("tk", pl.Utf8),
+                ("tk", pl.Categorical),
                 ("pc", pl.Float32),
                 ("sz", pl.UInt16),
             ],
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Utf8,
+            "tk": pl.Categorical,
             "pc": pl.Float32,
             "sz": pl.UInt16,
         }
@@ -1086,6 +1086,7 @@ def test_string_cache_eager_lazy() -> None:
         df1 = pl.DataFrame(
             {"region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"]}
         ).select([pl.col("region_ids").cast(pl.Categorical)])
+
         df2 = pl.DataFrame(
             {"seq_name": ["reg4", "reg2", "reg1"], "score": [3.0, 1.0, 2.0]}
         ).select([pl.col("seq_name").cast(pl.Categorical), pl.col("score")])
@@ -1100,6 +1101,14 @@ def test_string_cache_eager_lazy() -> None:
         assert df1.join(
             df2, left_on="region_ids", right_on="seq_name", how="left"
         ).frame_equal(expected, null_equal=True)
+
+        # also check row-wise categorical insert.
+        # (column-wise is preferred, but this shouldn't fail)
+        df3 = pl.DataFrame(
+            data=[["reg1"], ["reg2"], ["reg3"], ["reg4"], ["reg5"]],
+            columns=[("region_ids", pl.Categorical)],
+        )
+        assert_frame_equal(df1, df3)
 
 
 def test_assign() -> None:

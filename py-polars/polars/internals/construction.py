@@ -28,6 +28,7 @@ from polars.datatypes import (
     PolarsDataType,
     Time,
     Unknown,
+    Utf8,
     dtype_to_arrow_type,
     dtype_to_py_type,
     is_polars_dtype,
@@ -507,18 +508,22 @@ def _handle_columns_arg(
             raise ValueError("Dimensions of columns arg must match data dimensions.")
 
 
-def _post_apply_columns(pydf: PyDataFrame, columns: ColumnsType) -> PyDataFrame:
+def _post_apply_columns(
+    pydf: PyDataFrame, columns: ColumnsType, categoricals: set[str] | None = None
+) -> PyDataFrame:
     """Apply 'columns' param _after_ PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
     columns, dtypes = _unpack_columns(columns or pydf_columns)
     if columns != pydf_columns:
         pydf.set_column_names(columns)
 
-    column_casts = [
-        pli.col(col).cast(dtypes[col])._pyexpr
-        for i, col in enumerate(columns)
-        if col in dtypes and dtypes[col] != pydf_dtypes[i]
-    ]
+    column_casts = []
+    for i, col in enumerate(columns):
+        if categoricals and col in categoricals:
+            column_casts.append(pli.col(col).cast(Categorical)._pyexpr)
+        elif col in dtypes and dtypes[col] != pydf_dtypes[i]:
+            column_casts.append(pli.col(col).cast(dtypes[col])._pyexpr)
+
     if column_casts:
         pydf = pydf.lazy().with_columns(column_casts).collect()
     return pydf
@@ -655,13 +660,22 @@ def sequence_to_pydf(
 
         if orient == "row":
             column_names, dtypes = _unpack_columns(columns)
-            schema_override = include_unknowns(dtypes, column_names) if dtypes else None
+            schema_override = include_unknowns(dtypes, column_names) if dtypes else {}
             if column_names and data and len(data[0]) != len(column_names):
                 raise ShapeError("The row data does not match the number of columns")
+            categoricals = {
+                col for col, tp in schema_override.items() if tp == Categorical
+            }
+            for col in categoricals:
+                schema_override[col] = Utf8
 
-            pydf = PyDataFrame.read_rows(data, infer_schema_length, schema_override)
+            pydf = PyDataFrame.read_rows(
+                data,
+                infer_schema_length,
+                schema_override or None,
+            )
             if column_names:
-                pydf = _post_apply_columns(pydf, column_names)
+                pydf = _post_apply_columns(pydf, column_names, categoricals)
             return pydf
 
         elif orient == "col" or orient is None:
@@ -685,12 +699,15 @@ def sequence_to_pydf(
                 col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
                 for col, tp in dataclass_type_hints(data[0].__class__).items()
             }
+        categoricals = {col for col, tp in schema_override.items() if tp == Categorical}
+        for col in categoricals:
+            schema_override[col] = Utf8
 
         pydf = PyDataFrame.read_rows(
-            [astuple(dc) for dc in data], infer_schema_length, schema_override
+            [astuple(dc) for dc in data], infer_schema_length, schema_override or None
         )
         if columns:
-            pydf = _post_apply_columns(pydf, columns)
+            pydf = _post_apply_columns(pydf, columns, categoricals)
         return pydf
 
     elif _PANDAS_TYPE(data[0]) and isinstance(data[0], (pd.Series, pd.DatetimeIndex)):
