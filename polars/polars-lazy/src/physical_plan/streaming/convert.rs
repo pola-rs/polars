@@ -278,19 +278,29 @@ pub(crate) fn insert_streaming_nodes(
 
             for branch in tree {
                 // should be reset for every branch
-                let mut sink_node = None;
+                let mut sink_nodes = vec![];
 
                 let mut operators = Vec::with_capacity(branch.operators_sinks.len());
                 let mut operator_nodes = Vec::with_capacity(branch.operators_sinks.len());
+
+                // iterate from leaves upwards
                 let mut iter = branch.operators_sinks.into_iter().rev();
 
                 for (is_sink, is_rhs_join, node) in &mut iter {
                     latest = node;
+                    let operator_offset = operators.len();
                     if is_sink && !is_rhs_join {
-                        sink_node = Some(node);
+                        sink_nodes.push((operator_offset, node))
                     } else {
                         operator_nodes.push(node);
+
+                        // rhs join we create a dummy operator. This operator will
+                        // be replaced by the dispatcher for the real rhs join.
                         let op = if is_rhs_join {
+                            // if the join has a slice, we add a new slice node
+                            // note that we take the offset + 1, because we want to
+                            // slice AFTER the join has happened and the join will be an
+                            // operator
                             if let Join {
                                 options:
                                     JoinOptions {
@@ -305,7 +315,7 @@ pub(crate) fn insert_streaming_nodes(
                                     offset: *offset,
                                     len: *len as IdxSize,
                                 });
-                                sink_node = Some(slice_node);
+                                sink_nodes.push((operator_offset + 1, slice_node));
                             }
                             get_dummy_operator()
                         } else {
@@ -319,7 +329,7 @@ pub(crate) fn insert_streaming_nodes(
                     &branch.sources,
                     operators,
                     operator_nodes,
-                    sink_node,
+                    sink_nodes,
                     lp_arena,
                     expr_arena,
                     to_physical_piped_expr,

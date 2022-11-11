@@ -172,6 +172,9 @@ impl GenericBuild {
 
 impl Sink for GenericBuild {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if chunk.is_empty() {
+            return Ok(SinkResult::CanHaveMoreInput);
+        }
         let mut hashes = std::mem::take(&mut self.hashes);
         self.set_join_series(context, &chunk)?;
         hash_series(&self.join_series, &mut hashes, &self.hb);
@@ -287,11 +290,15 @@ impl Sink for GenericBuild {
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         match self.join_type {
             JoinType::Inner | JoinType::Left => {
+                let chunks_len = self.chunks.len();
                 let left_df = accumulate_dataframes_vertical_unchecked(
                     std::mem::take(&mut self.chunks)
                         .into_iter()
                         .map(|chunk| chunk.data),
                 );
+                if let Ok(n_chunks) = left_df.n_chunks() {
+                    assert_eq!(n_chunks, chunks_len);
+                }
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));
                 let suffix = self.suffix.clone();

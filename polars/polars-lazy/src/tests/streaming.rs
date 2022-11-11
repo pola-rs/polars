@@ -119,7 +119,7 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_streaming__aggregate_slice() -> PolarsResult<()> {
+fn test_streaming_aggregate_slice() -> PolarsResult<()> {
     let q = get_parquet_file();
 
     let q = q
@@ -292,5 +292,21 @@ fn test_streaming_partial() -> PolarsResult<()> {
     // simply check if it runs panic free
     assert_eq!(out.shape(), (1, 5));
 
+    Ok(())
+}
+
+#[test]
+fn test_streaming_aggregate_join() -> PolarsResult<()> {
+    let q = get_parquet_file();
+
+    let q = q
+        .groupby([col("sugars_g")])
+        .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
+        .slice(0, 3);
+
+    let q = q.clone().left_join(q, col("sugars_g"), col("sugars_g"));
+    let q1 = q.clone().with_streaming(true);
+    let out_streaming = q1.collect()?;
+    assert_eq!(out_streaming.shape(), (3, 3));
     Ok(())
 }
