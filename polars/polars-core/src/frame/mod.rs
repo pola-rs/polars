@@ -2934,7 +2934,7 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    #[deprecated(note = "use distinct")]
+    #[deprecated(note = "use DataFrame::unique")]
     pub fn drop_duplicates(
         &self,
         maintain_order: bool,
@@ -2987,7 +2987,7 @@ impl DataFrame {
         self.unique_impl(true, subset, keep)
     }
 
-    /// Unstable distinct. See [`DataFrame::distinct_stable`].
+    /// Unstable distinct. See [`DataFrame::unique_stable`].
     pub fn unique(
         &self,
         subset: Option<&[String]>,
