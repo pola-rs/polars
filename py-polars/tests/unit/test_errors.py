@@ -276,3 +276,20 @@ def test_lazy_concat_err() -> None:
             ValueError, match="Lazy only allows 'vertical' concat strategy."
         ):
             pl.concat([df1.lazy(), df2.lazy()], how=how).collect()
+
+
+def test_invalid_sort_by() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["bill", "bob", "jen", "allie", "george"],
+            "b": ["M", "M", "F", "F", "M"],
+            "c": [32, 40, 20, 19, 39],
+        }
+    )
+
+    # `select a where b order by c desc`
+    with pytest.raises(
+        pl.ComputeError,
+        match="The sortby operation produced a different length than the Series that has to be sorted.",  # noqa: E501
+    ):
+        df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", True))
