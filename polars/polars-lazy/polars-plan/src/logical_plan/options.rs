@@ -6,6 +6,8 @@ use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::prelude::Expr;
+
 pub type FileCount = u32;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -226,5 +228,6 @@ pub struct AnonymousScanOptions {
     pub skip_rows: Option<usize>,
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
+    pub predicate: Option<Expr>,
     pub fmt_str: &'static str,
 }

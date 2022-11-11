@@ -88,6 +88,7 @@ impl LogicalPlanBuilder {
                 n_rows,
                 output_schema: None,
                 with_columns: None,
+                predicate: None,
             },
         }
         .into())
