@@ -56,3 +56,8 @@ def test_serde_duration() -> None:
         serde_df["a_td"],
         pl.Series("a_td", [None, timedelta(days=1)], dtype=pl.Duration("ns")),
     )
+
+
+def test_serde_expression_5461() -> None:
+    e = pl.col("a").sqrt() / pl.col("b").alias("c")
+    assert pickle.loads(pickle.dumps(e)).meta == e.meta

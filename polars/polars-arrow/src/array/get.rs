@@ -27,6 +27,7 @@ impl<T: NativeType> ArrowGetItem for PrimitiveArray<T> {
 
     #[inline]
     unsafe fn get_unchecked(&self, item: usize) -> Option<Self::Item> {
+        debug_assert!(item < self.len());
         if self.is_null_unchecked(item) {
             None
         } else {
@@ -49,6 +50,7 @@ impl ArrowGetItem for BooleanArray {
 
     #[inline]
     unsafe fn get_unchecked(&self, item: usize) -> Option<Self::Item> {
+        debug_assert!(item < self.len());
         if self.is_null_unchecked(item) {
             None
         } else {
@@ -71,6 +73,7 @@ impl<'a> ArrowGetItem for &'a Utf8Array<i64> {
 
     #[inline]
     unsafe fn get_unchecked(&self, item: usize) -> Option<Self::Item> {
+        debug_assert!(item < self.len());
         if self.is_null_unchecked(item) {
             None
         } else {
@@ -93,6 +96,7 @@ impl<'a> ArrowGetItem for &'a BinaryArray<i64> {
 
     #[inline]
     unsafe fn get_unchecked(&self, item: usize) -> Option<Self::Item> {
+        debug_assert!(item < self.len());
         if self.is_null_unchecked(item) {
             None
         } else {
@@ -106,6 +110,7 @@ impl ArrowGetItem for ListArray<i64> {
 
     #[inline]
     fn get(&self, item: usize) -> Option<Self::Item> {
+        debug_assert!(item < self.len());
         if item >= self.len() {
             None
         } else {
@@ -115,6 +120,7 @@ impl ArrowGetItem for ListArray<i64> {
 
     #[inline]
     unsafe fn get_unchecked(&self, item: usize) -> Option<Self::Item> {
+        debug_assert!(item < self.len());
         if self.is_null_unchecked(item) {
             None
         } else {

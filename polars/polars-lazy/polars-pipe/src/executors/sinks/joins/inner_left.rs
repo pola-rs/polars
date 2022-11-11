@@ -207,7 +207,9 @@ impl GenericJoinProbe {
                 out
             }
             Some(names) => {
-                left_df.hstack_mut(right_df.get_columns()).unwrap();
+                left_df
+                    .get_columns_mut()
+                    .extend_from_slice(right_df.get_columns());
                 left_df
                     .get_columns_mut()
                     .iter_mut()

@@ -1462,6 +1462,9 @@ class DataFrame:
     def __deepcopy__(self: DF, memo: None = None) -> DF:
         return self.clone()
 
+    def _ipython_key_completions_(self) -> list[str]:
+        return self.columns
+
     def _repr_html_(self) -> str:
         """
         Format output data in HTML for display in Jupyter Notebooks.
