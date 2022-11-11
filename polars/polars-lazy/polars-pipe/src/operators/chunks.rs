@@ -15,6 +15,9 @@ impl DataChunk {
             data,
         }
     }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.data.height() == 0
+    }
 }
 
 pub(crate) fn chunks_to_df_unchecked(chunks: Vec<DataChunk>) -> DataFrame {
