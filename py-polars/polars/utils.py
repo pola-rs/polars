@@ -323,20 +323,20 @@ def _rename_kwargs(
             kwargs[new] = kwargs.pop(alias)
 
 
-class accessor:
-    """Property decorator for namespaces (can act on both instances AND classes)."""
+if not os.getenv("BUILDING_SPHINX_DOCS"):
+    # if NOT building docs we use a simple @property decorator for namespace accessors,
+    # which plays much better with mypy, pylint, and the various IDEs' autocomplete.
+    accessor = property
+else:
+    # however, when building docs (with Sphinx) we need access to the functions
+    # associated with the namespaces from the class, as we don't have an instance.
+    NS = TypeVar("NS")
 
-    def __init__(self, method: Callable[..., Any] | None = None) -> None:
-        self.fget = method
-
-    def __get__(self, instance: Any, cls: type | None = None) -> Any:
-        return self.fget(  # type: ignore[misc]
-            instance if isinstance(instance, cls) else cls  # type: ignore[arg-type]
-        )
-
-    def getter(self, method: Callable[..., Any] | None) -> Any:
-        self.fget = method
-        return self
+    class accessor(property):  # type: ignore[no-redef]
+        def __get__(self, instance: Any, cls: type[NS]) -> NS:  # type: ignore[override]
+            return self.fget(  # type: ignore[misc]
+                instance if isinstance(instance, cls) else cls
+            )
 
 
 def scale_bytes(sz: int, to: SizeUnit) -> int | float:
