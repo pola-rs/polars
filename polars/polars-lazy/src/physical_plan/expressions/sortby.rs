@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
 
+use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -72,6 +73,15 @@ impl PhysicalExpr for SortByExpr {
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
         let (sorted_idx, series) = (sorted_idx?, series?);
+        if sorted_idx.len() != series.len() {
+            let msg = format!(
+                "The sortby operation produced a different length than the \
+            Series that has to be sorted.\nExpected length: {}, got length: {}",
+                series.len(),
+                sorted_idx.len()
+            );
+            return Err(expression_err!(msg, self.expr, ComputeError));
+        }
 
         // Safety:
         // sorted index are within bounds
