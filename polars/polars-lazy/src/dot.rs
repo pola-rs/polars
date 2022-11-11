@@ -18,8 +18,13 @@ impl LazyFrame {
             let mut expr_arena = Arena::with_capacity(64);
             let mut lp_arena = Arena::with_capacity(32);
 
-            let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
-            logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+            let lp_top = self.clone().optimize_with_scratch(
+                &mut lp_arena,
+                &mut expr_arena,
+                &mut vec![],
+                true,
+            )?;
+            logical_plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
         }
 
         let prev_node = DotNode {

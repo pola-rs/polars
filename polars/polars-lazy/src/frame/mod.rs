@@ -185,7 +185,7 @@ impl LazyFrame {
             &mut vec![],
             true,
         )?;
-        let logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+        let logical_plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
         Ok(logical_plan.describe())
     }
 
@@ -506,7 +506,7 @@ impl LazyFrame {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
     }
 
-    fn optimize_with_scratch(
+    pub(crate) fn optimize_with_scratch(
         self,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,

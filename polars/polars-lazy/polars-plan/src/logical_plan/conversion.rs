@@ -639,251 +639,291 @@ fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()
 }
 
-/// converts a node from the ALogicalPlan arena to a LogicalPlan
-pub fn node_to_lp(
-    node: Node,
-    expr_arena: &mut Arena<AExpr>,
-    lp_arena: &mut Arena<ALogicalPlan>,
-) -> LogicalPlan {
-    let lp = lp_arena.get_mut(node);
-    let lp = std::mem::take(lp);
-
-    match lp {
-        ALogicalPlan::AnonymousScan {
-            function,
-            file_info,
-            output_schema: _,
-            predicate,
-            options,
-        } => LogicalPlan::AnonymousScan {
-            function,
-            file_info,
-            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            options,
-        },
-        #[cfg(feature = "python")]
-        ALogicalPlan::PythonScan { options } => LogicalPlan::PythonScan { options },
-        ALogicalPlan::Union { inputs, options } => {
-            let inputs = inputs
-                .into_iter()
-                .map(|node| node_to_lp(node, expr_arena, lp_arena))
-                .collect();
-            LogicalPlan::Union { inputs, options }
-        }
-        ALogicalPlan::Slice { input, offset, len } => {
-            let lp = node_to_lp(input, expr_arena, lp_arena);
-            LogicalPlan::Slice {
-                input: Box::new(lp),
-                offset,
-                len,
+impl ALogicalPlan {
+    fn into_lp<F, LPA>(
+        self,
+        conversion_fn: &F,
+        lp_arena: &mut LPA,
+        expr_arena: &Arena<AExpr>,
+    ) -> LogicalPlan
+    where
+        F: Fn(Node, &mut LPA) -> ALogicalPlan,
+    {
+        let lp = self;
+        let convert_to_lp = |node: Node, lp_arena: &mut LPA| {
+            conversion_fn(node, lp_arena).into_lp(conversion_fn, lp_arena, expr_arena)
+        };
+        match lp {
+            ALogicalPlan::AnonymousScan {
+                function,
+                file_info,
+                output_schema: _,
+                predicate,
+                options,
+            } => LogicalPlan::AnonymousScan {
+                function,
+                file_info,
+                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
+                options,
+            },
+            #[cfg(feature = "python")]
+            ALogicalPlan::PythonScan { options } => LogicalPlan::PythonScan { options },
+            ALogicalPlan::Union { inputs, options } => {
+                let inputs = inputs
+                    .into_iter()
+                    .map(|node| convert_to_lp(node, lp_arena))
+                    .collect();
+                LogicalPlan::Union { inputs, options }
             }
-        }
-        ALogicalPlan::Selection { input, predicate } => {
-            let lp = node_to_lp(input, expr_arena, lp_arena);
-            let p = node_to_expr(predicate, expr_arena);
-            LogicalPlan::Selection {
-                input: Box::new(lp),
-                predicate: p,
+            ALogicalPlan::Slice { input, offset, len } => {
+                let lp = convert_to_lp(input, lp_arena);
+                LogicalPlan::Slice {
+                    input: Box::new(lp),
+                    offset,
+                    len,
+                }
             }
-        }
-        #[cfg(feature = "csv-file")]
-        ALogicalPlan::CsvScan {
-            path,
-            file_info,
-            output_schema: _,
-            options,
-            predicate,
-        } => LogicalPlan::CsvScan {
-            path,
-            file_info,
-            options,
-            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-        },
-        #[cfg(feature = "ipc")]
-        ALogicalPlan::IpcScan {
-            path,
-            file_info,
-            output_schema: _,
-            predicate,
-            options,
-        } => LogicalPlan::IpcScan {
-            path,
-            file_info,
-            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            options,
-        },
-        #[cfg(feature = "parquet")]
-        ALogicalPlan::ParquetScan {
-            path,
-            file_info,
-            output_schema: _,
-            predicate,
-            options,
-        } => LogicalPlan::ParquetScan {
-            path,
-            file_info,
-            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            options,
-        },
-        ALogicalPlan::DataFrameScan {
-            df,
-            schema,
-            output_schema,
-            projection,
-            selection,
-        } => LogicalPlan::DataFrameScan {
-            df,
-            schema,
-            output_schema,
-            projection,
-            selection: selection.map(|n| node_to_expr(n, expr_arena)),
-        },
-        ALogicalPlan::Projection {
-            expr,
-            input,
-            schema,
-        } => {
-            let i = node_to_lp(input, expr_arena, lp_arena);
-
-            LogicalPlan::Projection {
-                expr: nodes_to_exprs(&expr, expr_arena),
-                input: Box::new(i),
+            ALogicalPlan::Selection { input, predicate } => {
+                let lp = convert_to_lp(input, lp_arena);
+                let p = node_to_expr(predicate, expr_arena);
+                LogicalPlan::Selection {
+                    input: Box::new(lp),
+                    predicate: p,
+                }
+            }
+            #[cfg(feature = "csv-file")]
+            ALogicalPlan::CsvScan {
+                path,
+                file_info,
+                output_schema: _,
+                options,
+                predicate,
+            } => LogicalPlan::CsvScan {
+                path,
+                file_info,
+                options,
+                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
+            },
+            #[cfg(feature = "ipc")]
+            ALogicalPlan::IpcScan {
+                path,
+                file_info,
+                output_schema: _,
+                predicate,
+                options,
+            } => LogicalPlan::IpcScan {
+                path,
+                file_info,
+                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
+                options,
+            },
+            #[cfg(feature = "parquet")]
+            ALogicalPlan::ParquetScan {
+                path,
+                file_info,
+                output_schema: _,
+                predicate,
+                options,
+            } => LogicalPlan::ParquetScan {
+                path,
+                file_info,
+                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
+                options,
+            },
+            ALogicalPlan::DataFrameScan {
+                df,
                 schema,
-            }
-        }
-        ALogicalPlan::LocalProjection {
-            expr,
-            input,
-            schema,
-        } => {
-            let i = node_to_lp(input, expr_arena, lp_arena);
-
-            LogicalPlan::LocalProjection {
-                expr: nodes_to_exprs(&expr, expr_arena),
-                input: Box::new(i),
+                output_schema,
+                projection,
+                selection,
+            } => LogicalPlan::DataFrameScan {
+                df,
                 schema,
-            }
-        }
-        ALogicalPlan::Sort {
-            input,
-            by_column,
-            args,
-        } => {
-            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Sort {
+                output_schema,
+                projection,
+                selection: selection.map(|n| node_to_expr(n, expr_arena)),
+            },
+            ALogicalPlan::Projection {
+                expr,
                 input,
-                by_column: nodes_to_exprs(&by_column, expr_arena),
-                args,
+                schema,
+            } => {
+                let i = convert_to_lp(input, lp_arena);
+
+                LogicalPlan::Projection {
+                    expr: nodes_to_exprs(&expr, expr_arena),
+                    input: Box::new(i),
+                    schema,
+                }
             }
-        }
-        ALogicalPlan::Explode {
-            input,
-            columns,
-            schema,
-        } => {
-            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Explode {
+            ALogicalPlan::LocalProjection {
+                expr,
+                input,
+                schema,
+            } => {
+                let i = convert_to_lp(input, lp_arena);
+
+                LogicalPlan::LocalProjection {
+                    expr: nodes_to_exprs(&expr, expr_arena),
+                    input: Box::new(i),
+                    schema,
+                }
+            }
+            ALogicalPlan::Sort {
+                input,
+                by_column,
+                args,
+            } => {
+                let input = Box::new(convert_to_lp(input, lp_arena));
+                LogicalPlan::Sort {
+                    input,
+                    by_column: nodes_to_exprs(&by_column, expr_arena),
+                    args,
+                }
+            }
+            ALogicalPlan::Explode {
                 input,
                 columns,
                 schema,
+            } => {
+                let input = Box::new(convert_to_lp(input, lp_arena));
+                LogicalPlan::Explode {
+                    input,
+                    columns,
+                    schema,
+                }
             }
-        }
-        ALogicalPlan::Cache { input, id, count } => {
-            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Cache { input, id, count }
-        }
-        ALogicalPlan::Aggregate {
-            input,
-            keys,
-            aggs,
-            schema,
-            apply,
-            maintain_order,
-            options: dynamic_options,
-        } => {
-            let i = node_to_lp(input, expr_arena, lp_arena);
-
-            LogicalPlan::Aggregate {
-                input: Box::new(i),
-                keys: Arc::new(nodes_to_exprs(&keys, expr_arena)),
-                aggs: nodes_to_exprs(&aggs, expr_arena),
+            ALogicalPlan::Cache { input, id, count } => {
+                let input = Box::new(convert_to_lp(input, lp_arena));
+                LogicalPlan::Cache { input, id, count }
+            }
+            ALogicalPlan::Aggregate {
+                input,
+                keys,
+                aggs,
                 schema,
                 apply,
                 maintain_order,
                 options: dynamic_options,
-            }
-        }
-        ALogicalPlan::Join {
-            input_left,
-            input_right,
-            schema,
-            left_on,
-            right_on,
-            options,
-        } => {
-            let i_l = node_to_lp(input_left, expr_arena, lp_arena);
-            let i_r = node_to_lp(input_right, expr_arena, lp_arena);
+            } => {
+                let i = convert_to_lp(input, lp_arena);
 
-            LogicalPlan::Join {
-                input_left: Box::new(i_l),
-                input_right: Box::new(i_r),
-                schema,
-                left_on: nodes_to_exprs(&left_on, expr_arena),
-                right_on: nodes_to_exprs(&right_on, expr_arena),
-                options,
+                LogicalPlan::Aggregate {
+                    input: Box::new(i),
+                    keys: Arc::new(nodes_to_exprs(&keys, expr_arena)),
+                    aggs: nodes_to_exprs(&aggs, expr_arena),
+                    schema,
+                    apply,
+                    maintain_order,
+                    options: dynamic_options,
+                }
             }
-        }
-        ALogicalPlan::HStack {
-            input,
-            exprs,
-            schema,
-        } => {
-            let i = node_to_lp(input, expr_arena, lp_arena);
+            ALogicalPlan::Join {
+                input_left,
+                input_right,
+                schema,
+                left_on,
+                right_on,
+                options,
+            } => {
+                let i_l = convert_to_lp(input_left, lp_arena);
+                let i_r = convert_to_lp(input_right, lp_arena);
 
-            LogicalPlan::HStack {
-                input: Box::new(i),
-                exprs: nodes_to_exprs(&exprs, expr_arena),
+                LogicalPlan::Join {
+                    input_left: Box::new(i_l),
+                    input_right: Box::new(i_r),
+                    schema,
+                    left_on: nodes_to_exprs(&left_on, expr_arena),
+                    right_on: nodes_to_exprs(&right_on, expr_arena),
+                    options,
+                }
+            }
+            ALogicalPlan::HStack {
+                input,
+                exprs,
                 schema,
+            } => {
+                let i = convert_to_lp(input, lp_arena);
+
+                LogicalPlan::HStack {
+                    input: Box::new(i),
+                    exprs: nodes_to_exprs(&exprs, expr_arena),
+                    schema,
+                }
             }
-        }
-        ALogicalPlan::Distinct { input, options } => {
-            let i = node_to_lp(input, expr_arena, lp_arena);
-            LogicalPlan::Distinct {
-                input: Box::new(i),
-                options,
+            ALogicalPlan::Distinct { input, options } => {
+                let i = convert_to_lp(input, lp_arena);
+                LogicalPlan::Distinct {
+                    input: Box::new(i),
+                    options,
+                }
             }
-        }
-        ALogicalPlan::Melt {
-            input,
-            args,
-            schema,
-        } => {
-            let input = node_to_lp(input, expr_arena, lp_arena);
-            LogicalPlan::Melt {
-                input: Box::new(input),
+            ALogicalPlan::Melt {
+                input,
                 args,
                 schema,
+            } => {
+                let input = convert_to_lp(input, lp_arena);
+                LogicalPlan::Melt {
+                    input: Box::new(input),
+                    args,
+                    schema,
+                }
             }
-        }
-        ALogicalPlan::MapFunction { input, function } => {
-            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::MapFunction { input, function }
-        }
-        ALogicalPlan::ExtContext {
-            input,
-            contexts,
-            schema,
-        } => {
-            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            let contexts = contexts
-                .into_iter()
-                .map(|node| node_to_lp(node, expr_arena, lp_arena))
-                .collect();
-            LogicalPlan::ExtContext {
+            ALogicalPlan::MapFunction { input, function } => {
+                let input = Box::new(convert_to_lp(input, lp_arena));
+                LogicalPlan::MapFunction { input, function }
+            }
+            ALogicalPlan::ExtContext {
                 input,
                 contexts,
                 schema,
+            } => {
+                let input = Box::new(convert_to_lp(input, lp_arena));
+                let contexts = contexts
+                    .into_iter()
+                    .map(|node| convert_to_lp(node, lp_arena))
+                    .collect();
+                LogicalPlan::ExtContext {
+                    input,
+                    contexts,
+                    schema,
+                }
             }
         }
     }
+}
+
+pub fn node_to_lp_cloned(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    mut lp_arena: &Arena<ALogicalPlan>,
+) -> LogicalPlan {
+    // we borrow again mutably only to make the types happy
+    // we want to intialize `to_lp` from a mutable and a immutable lp_arena
+    // by borrowing an immutable mutably, we still are immutable down the line.
+    let alp = lp_arena.get(node).clone();
+    alp.into_lp(
+        &|node, lp_arena: &mut &Arena<ALogicalPlan>| lp_arena.get(node).clone(),
+        &mut lp_arena,
+        expr_arena,
+    )
+}
+
+/// converts a node from the ALogicalPlan arena to a LogicalPlan
+pub fn node_to_lp(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    lp_arena: &mut Arena<ALogicalPlan>,
+) -> LogicalPlan {
+    let alp = lp_arena.get_mut(node);
+    let alp = std::mem::take(alp);
+    alp.into_lp(
+        &|node, lp_arena: &mut Arena<ALogicalPlan>| {
+            let lp = lp_arena.get_mut(node);
+            std::mem::take(lp)
+        },
+        lp_arena,
+        expr_arena,
+    )
 }

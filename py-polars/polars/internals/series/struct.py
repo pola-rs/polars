@@ -27,6 +27,9 @@ class StructNameSpace:
         else:
             raise ValueError(f"expected type 'int | str', got {type(item)}")
 
+    def _ipython_key_completions_(self) -> list[str]:
+        return self.fields
+
     def to_frame(self) -> pli.DataFrame:
         """Convert this Struct Series to a DataFrame."""
         return pli.wrap_df(self._s.struct_to_frame())

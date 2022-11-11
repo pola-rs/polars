@@ -91,7 +91,6 @@ impl GenericJoinProbe {
                 .collect::<Vec<_>>();
             df_a = df_a.drop_many(&names)
         }
-        dbg!(&df_a);
 
         GenericJoinProbe {
             df_a: Arc::new(df_a),
@@ -208,7 +207,9 @@ impl GenericJoinProbe {
                 out
             }
             Some(names) => {
-                left_df.hstack_mut(right_df.get_columns()).unwrap();
+                left_df
+                    .get_columns_mut()
+                    .extend_from_slice(right_df.get_columns());
                 left_df
                     .get_columns_mut()
                     .iter_mut()

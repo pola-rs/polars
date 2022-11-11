@@ -79,7 +79,8 @@ impl PyExpr {
 
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        Ok(PyBytes::new(py, &bincode::serialize(&self.inner).unwrap()).to_object(py))
+        let s = serde_json::to_string(&self.inner).unwrap();
+        Ok(PyBytes::new(py, s.as_bytes()).to_object(py))
     }
 
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -93,8 +94,8 @@ impl PyExpr {
                 // PyBytes still has a lifetime. Bit its ok, because we drop it immediately
                 // in this scope
                 let s = unsafe { std::mem::transmute::<&'_ PyBytes, &'static PyBytes>(s) };
+                self.inner = serde_json::from_slice(s.as_bytes()).unwrap();
 
-                self.inner = bincode::deserialize(s.as_bytes()).unwrap();
                 Ok(())
             }
             Err(e) => Err(e),

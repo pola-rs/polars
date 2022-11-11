@@ -1,3 +1,5 @@
+use polars_core::prelude::JoinType::AsOf;
+
 use super::*;
 
 fn get_csv_file() -> LazyFrame {
@@ -117,7 +119,7 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_streaming_slice() -> PolarsResult<()> {
+fn test_streaming_aggregate_slice() -> PolarsResult<()> {
     let q = get_parquet_file();
 
     let q = q
@@ -141,7 +143,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
     let out = q.clone().cross_join(q).with_streaming(true).collect()?;
     assert_eq!(out.shape(), (9, 2));
 
-    let q = get_parquet_file().with_projection_pushdown(false); // ;.slice(3, 3);
+    let q = get_parquet_file().with_projection_pushdown(false);
     let q1 = q
         .clone()
         .select([col("calories")])
@@ -169,7 +171,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_streaming_inner_join() -> PolarsResult<()> {
+fn test_streaming_inner_join3() -> PolarsResult<()> {
     let lf_left = df![
         "col1" => [1, 1, 1],
         "col2" => ["a", "a", "b"],
@@ -233,6 +235,99 @@ fn test_streaming_left_join() -> PolarsResult<()> {
     let out1 = q.clone().with_streaming(false).collect()?;
     let out2 = q.clone().with_streaming(false).collect()?;
     assert!(out1.frame_equal_missing(&out2));
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "cross_join")]
+fn test_streaming_slice() -> PolarsResult<()> {
+    let vals = (0..100).collect::<Vec<_>>();
+    let s = Series::new("", vals);
+    let lf_a = df![
+        "a" => s
+    ]?
+    .lazy();
+
+    let q = lf_a.clone().cross_join(lf_a).slice(10, 20);
+    let a = q.clone().with_streaming(true).collect().unwrap();
+    assert_eq!(a.shape(), (20, 2));
+
+    Ok(())
+}
+
+#[test]
+fn test_streaming_partial() -> PolarsResult<()> {
+    let lf_left = df![
+        "a"=> [0],
+         "b"=> [0],
+    ]?
+    .lazy();
+
+    let lf_right = df![
+        "a"=> [0],
+         "b"=> [0],
+    ]?
+    .lazy();
+
+    let q = lf_left.clone().left_join(lf_right, col("a"), col("a"));
+
+    // we add a join that is not supported streaming (for now)
+    // so we can test if the partial query is executed with out panics
+    let q = q
+        .join_builder()
+        .with(lf_left.clone())
+        .left_on([col("a")])
+        .right_on([col("a")])
+        .suffix("_foo")
+        .how(JoinType::Outer)
+        .finish();
+
+    let q = q.left_join(
+        lf_left.clone().select([all().suffix("_foo")]),
+        col("a"),
+        col("a_foo"),
+    );
+    let out = q.with_streaming(true).collect()?;
+    // simply check if it runs panic free
+    assert_eq!(out.shape(), (1, 5));
+
+    Ok(())
+}
+
+#[test]
+fn test_streaming_aggregate_join() -> PolarsResult<()> {
+    let q = get_parquet_file();
+
+    let q = q
+        .groupby([col("sugars_g")])
+        .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
+        .slice(0, 3);
+
+    let q = q.clone().left_join(q, col("sugars_g"), col("sugars_g"));
+    let q1 = q.clone().with_streaming(true);
+    let out_streaming = q1.collect()?;
+    assert_eq!(out_streaming.shape(), (3, 3));
+    Ok(())
+}
+
+#[test]
+fn test_streaming_inner_join4() -> PolarsResult<()> {
+    let lfa =
+        df!["a" => [1, 3, 4, 8, 9, 12, 13, 18, 18, 21, 22, 24, 28, 28, 32, 35, 35, 36, 39, 39],
+    "b"=> [10, 0, 15, 5, 4, 18, 17, 14, 19, 9, 2, 12, 7, 8, 11, 6, 16, 3, 1, 13]]?
+        .lazy();
+
+    let lfb = df!["a"=> [16, 8, 27, 26, 1, 4, 30, 8, 18, 19, 2, 14, 30, 33, 19, 1, 31, 36, 37, 21],
+        "b" => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]]?
+    .lazy();
+
+    let on = [col("a"), col("b")];
+    let out = lfa
+        .join(lfb, on.clone(), on.clone(), JoinType::Inner)
+        .with_streaming(true)
+        .collect()
+        .unwrap();
 
     Ok(())
 }

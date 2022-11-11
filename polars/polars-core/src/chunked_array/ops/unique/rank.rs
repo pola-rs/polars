@@ -199,7 +199,17 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             // ```
             // INVALID LINT REMOVE LATER
             #[allow(clippy::bool_to_int_with_if)]
-            let mut cumsum: IdxSize = if let RankMethod::Min = method { 0 } else { 1 };
+            let mut cumsum: IdxSize = if let RankMethod::Min = method {
+                0
+            } else {
+                // nulls will be first, rank, but we will replace them (with null)
+                // so this ensures the second rank will be 1
+                if matches!(method, RankMethod::Dense) && s.null_count() > 0 {
+                    0
+                } else {
+                    1
+                }
+            };
 
             dense.push(cumsum);
             obs.values_iter().for_each(|b| {
@@ -215,7 +225,25 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             let dense = unsafe { dense.take_unchecked((&inv_ca).into()) };
 
             if let RankMethod::Dense = method {
-                return dense.into_series();
+                return if s.null_count() == 0 {
+                    dense.into_series()
+                } else {
+                    // null will be the first rank
+                    // we restore original nulls and shift all ranks by one
+                    let validity = s.is_null().rechunk();
+                    let validity = validity.downcast_iter().next().unwrap();
+                    let validity = validity.values().clone();
+
+                    let arr = dense.downcast_iter().next().unwrap();
+                    let arr = arr.with_validity(Some(validity));
+                    let dtype = arr.data_type().clone();
+
+                    // Safety:
+                    // given dtype is correct
+                    unsafe {
+                        Series::try_from_arrow_unchecked(s.name(), vec![arr], &dtype).unwrap()
+                    }
+                };
             }
 
             let bitmap = obs.values();

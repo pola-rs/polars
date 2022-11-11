@@ -13,7 +13,7 @@ use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
-use crate::executors::sinks::joins::inner::GenericJoinProbe;
+use crate::executors::sinks::joins::inner_left::GenericJoinProbe;
 use crate::executors::sinks::utils::{hash_series, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -159,9 +159,12 @@ impl GenericBuild {
     ) {
         buf.clear();
         // get the right columns from the linearly packed buffer
+        let n_keys = self.number_of_keys();
+        let chunk_offset = chunk_idx as usize * n_keys;
+        let chunk_end = chunk_offset + n_keys;
         let join_cols = self
             .materialized_join_cols
-            .get_unchecked_release(chunk_idx as usize..chunk_idx as usize + self.number_of_keys());
+            .get_unchecked_release(chunk_offset..chunk_end);
         buf.extend(
             join_cols
                 .iter()
@@ -172,6 +175,9 @@ impl GenericBuild {
 
 impl Sink for GenericBuild {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if chunk.is_empty() {
+            return Ok(SinkResult::CanHaveMoreInput);
+        }
         let mut hashes = std::mem::take(&mut self.hashes);
         self.set_join_series(context, &chunk)?;
         hash_series(&self.join_series, &mut hashes, &self.hb);
@@ -287,11 +293,15 @@ impl Sink for GenericBuild {
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         match self.join_type {
             JoinType::Inner | JoinType::Left => {
+                let chunks_len = self.chunks.len();
                 let left_df = accumulate_dataframes_vertical_unchecked(
                     std::mem::take(&mut self.chunks)
                         .into_iter()
                         .map(|chunk| chunk.data),
                 );
+                if let Ok(n_chunks) = left_df.n_chunks() {
+                    assert_eq!(n_chunks, chunks_len);
+                }
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));
                 let suffix = self.suffix.clone();

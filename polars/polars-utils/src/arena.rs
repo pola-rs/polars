@@ -71,6 +71,10 @@ impl<T> Arena<T> {
         index_of(&self.items, val).map(Node)
     }
 
+    pub fn swap(&mut self, idx_a: Node, idx_b: Node) {
+        self.items.swap(idx_a.0, idx_b.0)
+    }
+
     #[inline]
     pub fn get(&self, idx: Node) -> &T {
         self.items.get(idx.0).unwrap()

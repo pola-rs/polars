@@ -23,6 +23,7 @@ def test_struct_various() -> None:
     assert s.struct.field("int").to_list() == [1, 2]
 
     assert df.to_struct("my_struct").struct.to_frame().frame_equal(df)
+    assert s.struct._ipython_key_completions_() == s.struct.fields
 
 
 def test_struct_to_list() -> None:
