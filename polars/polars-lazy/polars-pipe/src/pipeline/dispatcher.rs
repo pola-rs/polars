@@ -36,7 +36,7 @@ impl PipeLine {
         // we only do that in the sinks itself.
         let n_threads = POOL.current_num_threads();
 
-        // We split so that every thread get's an operator
+        // We split so that every thread gets an operator
         let sink_nodes = sink_and_nodes.iter().map(|(_, node, _)| *node).collect();
         let sinks = sink_and_nodes
             .into_iter()

@@ -211,6 +211,10 @@ pub enum LogicalPlan {
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
     },
+    FileSink {
+        input: Box<LogicalPlan>,
+        payload: FileSinkOptions,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -261,7 +265,7 @@ impl LogicalPlan {
             Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
             Join { schema, .. } => Ok(Cow::Borrowed(schema)),
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Distinct { input, .. } => input.schema(),
+            Distinct { input, .. } | FileSink { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
             MapFunction {

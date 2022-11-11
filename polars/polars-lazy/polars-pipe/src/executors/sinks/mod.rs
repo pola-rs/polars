@@ -1,6 +1,7 @@
 pub(crate) mod groupby;
 mod joins;
 mod ordered;
+mod parquet_sink;
 mod slice;
 mod utils;
 

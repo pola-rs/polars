@@ -765,7 +765,7 @@ impl ProjectionPushDown {
                 }
             }
             // Slice and Unions have only inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Union { .. } => process_generic(
+            lp @ Slice { .. } | lp @ Union { .. } | lp @ FileSink { .. } => process_generic(
                 self,
                 lp,
                 acc_projections,

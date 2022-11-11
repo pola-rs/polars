@@ -528,7 +528,7 @@ impl PredicatePushDown {
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             // Pushed down passed these nodes
-            lp @ Sort { .. } => {
+            lp @ Sort { .. } |lp @ FileSink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
