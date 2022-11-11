@@ -88,8 +88,8 @@ impl Series {
         let m4 = moment_precomputed_mean(self, 4, mean)?.unwrap();
 
         let out = if !bias {
-            let n = self.len() as f64;
-            1.0 / (n - 2.0) / (n - 3.0)
+            let n = (self.len() - self.null_count()) as f64;
+            3.0 + 1.0 / (n - 2.0) / (n - 3.0)
                 * ((n.powf(2.0) - 1.0) * m4 / m2.powf(2.0) - 3.0 * (n - 1.0).powf(2.0))
         } else {
             m4 / m2.powf(2.0)
