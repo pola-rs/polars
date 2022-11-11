@@ -310,3 +310,24 @@ fn test_streaming_aggregate_join() -> PolarsResult<()> {
     assert_eq!(out_streaming.shape(), (3, 3));
     Ok(())
 }
+
+#[test]
+fn test_streaming_inner_join4() -> PolarsResult<()> {
+    let lfa =
+        df!["a" => [1, 3, 4, 8, 9, 12, 13, 18, 18, 21, 22, 24, 28, 28, 32, 35, 35, 36, 39, 39],
+    "b"=> [10, 0, 15, 5, 4, 18, 17, 14, 19, 9, 2, 12, 7, 8, 11, 6, 16, 3, 1, 13]]?
+        .lazy();
+
+    let lfb = df!["a"=> [16, 8, 27, 26, 1, 4, 30, 8, 18, 19, 2, 14, 30, 33, 19, 1, 31, 36, 37, 21],
+        "b" => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]]?
+    .lazy();
+
+    let on = [col("a"), col("b")];
+    let out = lfa
+        .join(lfb, on.clone(), on.clone(), JoinType::Inner)
+        .with_streaming(true)
+        .collect()
+        .unwrap();
+
+    Ok(())
+}
