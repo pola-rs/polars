@@ -283,6 +283,7 @@ def test_dataframe_membership_operator() -> None:
     df = pl.DataFrame({"name": ["Jane", "John"], "age": [20, 30]})
     assert "name" in df
     assert "phone" not in df
+    assert df._ipython_key_completions_() == ["name", "age"]
 
 
 def test_sort() -> None:
