@@ -767,6 +767,28 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         nulls_last
             Place null values last. Can only be used if sorted by a single column.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> df.sort("foo", reverse=True).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ f64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 3   ┆ 8.0 ┆ c   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7.0 ┆ b   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1   ┆ 6.0 ┆ a   │
+        └─────┴─────┴─────┘
         """
         if type(by) is str:
             return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
@@ -828,6 +850,43 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Returns
         -------
         DataFrame
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... ).lazy()
+        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        ...     "a"
+        ... ).profile()  # doctest: +SKIP
+        (shape: (3, 3)
+         ┌─────┬─────┬─────┐
+         │ a   ┆ b   ┆ c   │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ i64 │
+         ╞═════╪═════╪═════╡
+         │ a   ┆ 4   ┆ 10  │
+         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+         │ b   ┆ 11  ┆ 10  │
+         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+         │ c   ┆ 6   ┆ 1   │
+         └─────┴─────┴─────┘,
+         shape: (3, 3)
+         ┌────────────────────────┬───────┬──────┐
+         │ node                   ┆ start ┆ end  │
+         │ ---                    ┆ ---   ┆ ---  │
+         │ str                    ┆ u64   ┆ u64  │
+         ╞════════════════════════╪═══════╪══════╡
+         │ optimization           ┆ 0     ┆ 5    │
+         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+         │ groupby_partitioned(a) ┆ 5     ┆ 470  │
+         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+         │ sort(a)                ┆ 475   ┆ 1964 │
+         └────────────────────────┴───────┴──────┘)
 
         """
         if no_optimization:
@@ -933,6 +992,28 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         -------
         DataFrame
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... ).lazy()
+        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 11  ┆ 10  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1006,6 +1087,26 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         -------
         DataFrame
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... ).lazy()
+        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 2   ┆ 5   │
+        └─────┴─────┴─────┘
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1034,6 +1135,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Returns
         -------
         LazyFrame
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 2, 3, 4],
+        ...         "b": [0.5, None, 2.5, 13],
+        ...         "c": [True, True, False, None],
+        ...     }
+        ... )
+        >>> df.lazy()  # doctest: +ELLIPSIS
+        <polars.internals.lazyframe.frame.LazyFrame object at ...>
 
         """
         return self
@@ -1081,6 +1194,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         --------
         cleared : Create an empty copy of the current LazyFrame, with identical
             schema but no data.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 2, 3, 4],
+        ...         "b": [0.5, None, 2.5, 13],
+        ...         "c": [True, True, False, None],
+        ...     }
+        ... ).lazy()
+        >>> (df.clone())  # doctest: +ELLIPSIS
+        <polars.internals.lazyframe.frame.LazyFrame object at ...>
 
         """
         return self._from_pyldf(self._ldf.clone())
@@ -1898,7 +2023,28 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         other
-            One or multiple LazyFrames as external context
+
+        Examples
+        --------
+        >>> df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
+        >>> df_other = pl.DataFrame({"c": ["foo", "ham"]})
+        >>> (
+        ...     df_a.with_context(df_other.lazy()).select(
+        ...         [pl.col("b") + pl.col("c").first()]
+        ...     )
+        ... ).collect()
+        shape: (3, 1)
+        ┌──────┐
+        │ b    │
+        │ ---  │
+        │ str  │
+        ╞══════╡
+        │ afoo │
+        ├╌╌╌╌╌╌┤
+        │ cfoo │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        └──────┘
 
         """
         if not isinstance(other, list):
