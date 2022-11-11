@@ -131,20 +131,34 @@ mod test {
     fn test_skew() -> PolarsResult<()> {
         let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
         let s2 = Series::new("", &[Some(1), Some(2), Some(3), None, Some(1)]);
-        assert!(s.skew(false)?.unwrap() - 2.2905330058490514 < 0.0001);
-        assert!(s.skew(true)?.unwrap() - 2.2905330058490514 < 0.0001);
-        
-        assert!(s2.skew(false)?.unwrap() - 0.8545630383279711 < 0.0001);
-        assert!(s2.skew(true)?.unwrap() - 0.49338220021815865 < 0.0001);
-        
+
+        assert!((s.skew(false)?.unwrap() - 2.2905330058490514).abs() < 0.0001);
+        assert!((s.skew(true)?.unwrap() - 1.6727687946848508).abs() < 0.0001);
+
+        assert!((s2.skew(false)?.unwrap() - 0.8545630383279711).abs() < 0.0001);
+        assert!((s2.skew(true)?.unwrap() - 0.49338220021815865).abs() < 0.0001);
+
         Ok(())
     }
 
     #[test]
     fn test_kurtosis() -> PolarsResult<()> {
         let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
-        assert!(s.kurtosis(true, false)?.unwrap() - 5.400820058440946 < 0.0001);
-        assert!(s.kurtosis(true, true)?.unwrap() - 0.9945668771797536 < 0.0001);
+
+        assert!((s.kurtosis(true, true)?.unwrap() - 0.9945668771797536).abs() < 0.0001);
+        assert!((s.kurtosis(true, false)?.unwrap() - 5.400820058440946).abs() < 0.0001);
+        assert!((s.kurtosis(false, true)?.unwrap() - 3.994566877179754).abs() < 0.0001);
+        assert!((s.kurtosis(false, false)?.unwrap() - 8.400820058440946).abs() < 0.0001);
+
+        let s2 = Series::new(
+            "",
+            &[Some(1), Some(2), Some(3), None, Some(1), Some(2), Some(3)],
+        );
+        assert!((s2.kurtosis(true, true)?.unwrap() - (-1.5)).abs() < 0.0001);
+        assert!((s2.kurtosis(true, false)?.unwrap() - (-1.875)).abs() < 0.0001);
+        assert!((s2.kurtosis(false, true)?.unwrap() - 1.5).abs() < 0.0001);
+        assert!((s2.kurtosis(false, false)?.unwrap() - 1.125).abs() < 0.0001);
+
         Ok(())
     }
 }
