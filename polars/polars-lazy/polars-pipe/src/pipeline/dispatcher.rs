@@ -7,6 +7,7 @@ use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
 
+use crate::executors::sources::DataFrameSource;
 use crate::operators::{
     DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult,
     Source, SourceResult,
@@ -16,8 +17,10 @@ pub struct PipeLine {
     sources: Vec<Box<dyn Source>>,
     operators: Vec<Vec<Box<dyn Operator>>>,
     operator_nodes: Vec<Node>,
-    sink: Vec<Box<dyn Sink>>,
-    sink_node: Option<Node>,
+    // offset in the operators vec
+    // node of the sink
+    sinks: Vec<(usize, Vec<Box<dyn Sink>>)>,
+    sink_nodes: Vec<Node>,
     rh_sides: Vec<PipeLine>,
     operator_offset: usize,
 }
@@ -27,8 +30,7 @@ impl PipeLine {
         sources: Vec<Box<dyn Source>>,
         operators: Vec<Box<dyn Operator>>,
         operator_nodes: Vec<Node>,
-        sink: Box<dyn Sink>,
-        sink_node: Option<Node>,
+        sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>)>,
         operator_offset: usize,
     ) -> PipeLine {
         debug_assert_eq!(operators.len(), operator_nodes.len() + operator_offset);
@@ -37,7 +39,11 @@ impl PipeLine {
         let n_threads = POOL.current_num_threads();
 
         // We split so that every thread get's an operator
-        let sink = (0..n_threads).map(|i| sink.split(i)).collect();
+        let sink_nodes = sink_and_nodes.iter().map(|(_, node, _)| *node).collect();
+        let sinks = sink_and_nodes
+            .into_iter()
+            .map(|(offset, _, sink)| (offset, (0..n_threads).map(|i| sink.split(i)).collect()))
+            .collect();
 
         // every index maps to a chain of operators than can be pushed as a pipeline for one thread
         let operators = (0..n_threads)
@@ -48,8 +54,8 @@ impl PipeLine {
             sources,
             operators,
             operator_nodes,
-            sink,
-            sink_node,
+            sinks,
+            sink_nodes,
             rh_sides: vec![],
             operator_offset,
         }
@@ -76,6 +82,8 @@ impl PipeLine {
         chunks: Vec<DataChunk>,
         sink: &mut [Box<dyn Sink>],
         ec: &PExecutionContext,
+        operator_start: usize,
+        operator_end: usize,
     ) -> PolarsResult<Vec<SinkResult>> {
         debug_assert!(chunks.len() <= sink.len());
         let mut operators = std::mem::take(&mut self.operators);
@@ -85,15 +93,19 @@ impl PipeLine {
                 .zip(sink.par_iter_mut())
                 .zip(operators.par_iter_mut())
                 .map(|((chunk, sink), operator_pipe)| {
-                    // operators don't like empty
-                    if chunk.data.height() == 0 {
-                        return Ok(SinkResult::Finished);
+                    // truncate the operators that should run into the current sink.
+                    let operator_pipe = &mut operator_pipe[operator_start..operator_end];
+
+                    if operator_pipe.is_empty() {
+                        sink.sink(ec, chunk)
+                    } else {
+                        match self.push_operators(chunk, ec, operator_pipe)? {
+                            OperatorResult::Finished(chunk) => sink.sink(ec, chunk),
+                            // probably empty chunk?
+                            OperatorResult::NeedsNewData => Ok(SinkResult::CanHaveMoreInput),
+                            _ => todo!(),
+                        }
                     }
-                    let chunk = match self.push_operators(chunk, ec, operator_pipe)? {
-                        OperatorResult::Finished(chunk) => chunk,
-                        _ => todo!(),
-                    };
-                    sink.sink(ec, chunk)
                 })
                 // only collect failed and finished messages as there should be acted upon those
                 // the other ones (e.g. success and can have more input) can be ignored
@@ -114,6 +126,7 @@ impl PipeLine {
         ec: &PExecutionContext,
         operators: &mut [Box<dyn Operator>],
     ) -> PolarsResult<OperatorResult> {
+        debug_assert!(!operators.is_empty());
         let mut in_process = vec![];
         let mut out = vec![];
 
@@ -121,9 +134,6 @@ impl PipeLine {
         in_process.push((operator_offset, chunk));
 
         while let Some((op_i, chunk)) = in_process.pop() {
-            // if chunk.data.height() == 0 {
-            //     continue;
-            // }
             match operators.get_mut(op_i) {
                 None => {
                     if chunk.data.height() > 0 || out.is_empty() {
@@ -151,6 +161,7 @@ impl PipeLine {
             }
         }
         let out = match out.len() {
+            0 => OperatorResult::NeedsNewData,
             1 => OperatorResult::Finished(out.pop().unwrap()),
             _ => {
                 let data = concat_df_unchecked(out.iter().map(|chunk| &chunk.data));
@@ -160,37 +171,68 @@ impl PipeLine {
         Ok(out)
     }
 
+    fn set_sources(&mut self, df: DataFrame) {
+        self.sources.clear();
+        self.sources
+            .push(Box::new(DataFrameSource::from_df(df)) as Box<dyn Source>);
+    }
+
     pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        let mut sink = std::mem::take(&mut self.sink);
+        let mut out = None;
+        let mut operator_start = 0;
+        let last_i = self.sinks.len() - 1;
+        for (i, (operator_end, mut sink)) in std::mem::take(&mut self.sinks).into_iter().enumerate()
+        {
+            for src in &mut std::mem::take(&mut self.sources) {
+                while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
+                    let results = self.par_process_chunks(
+                        chunks,
+                        &mut sink,
+                        ec,
+                        operator_start,
+                        operator_end,
+                    )?;
 
-        for src in &mut std::mem::take(&mut self.sources) {
-            while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
-                let results = self.par_process_chunks(chunks, &mut sink, ec)?;
-
-                if results
-                    .iter()
-                    .any(|sink_result| matches!(sink_result, SinkResult::Finished))
-                {
-                    break;
+                    if results
+                        .iter()
+                        .any(|sink_result| matches!(sink_result, SinkResult::Finished))
+                    {
+                        break;
+                    }
                 }
             }
-        }
 
-        let mut reduced_sink = sink
-            .into_par_iter()
-            .reduce_with(|mut a, b| {
-                a.combine(b);
-                a
-            })
-            .unwrap();
-        reduced_sink.finalize(ec)
+            let mut reduced_sink = sink
+                .into_par_iter()
+                .reduce_with(|mut a, b| {
+                    a.combine(b);
+                    a
+                })
+                .unwrap();
+            let sink_result = reduced_sink.finalize(ec)?;
+            operator_start = operator_end;
+
+            if i != last_i {
+                match sink_result {
+                    // turn this sink an a new source
+                    FinalizedSink::Finished(df) => self.set_sources(df),
+                    // should not happen
+                    FinalizedSink::Operator(_) => {
+                        unreachable!()
+                    }
+                }
+            } else {
+                out = Some(sink_result)
+            }
+        }
+        Ok(out.unwrap())
     }
 
     pub fn execute(&mut self, state: Box<dyn Any + Send + Sync>) -> PolarsResult<DataFrame> {
         let ec = PExecutionContext::new(state);
         let mut sink_out = self.run_pipeline(&ec)?;
         let mut pipelines = self.rh_sides.iter_mut();
-        let mut sink_node = self.sink_node;
+        let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
 
         loop {
             match &mut sink_out {
@@ -207,11 +249,14 @@ impl PipeLine {
                 FinalizedSink::Operator(op) => {
                     // we unwrap, because the latest pipeline should not return an Operator
                     let pipeline = pipelines.next().unwrap();
-                    if let Some(sink_node) = sink_node {
+
+                    // latest sink_node will be the operator, as the left side of the join
+                    // always finishes that branch.
+                    if let Some(sink_node) = sink_nodes.pop() {
                         pipeline.replace_operator(op.as_ref(), sink_node);
-                        sink_out = pipeline.run_pipeline(&ec)?;
                     }
-                    sink_node = pipeline.sink_node;
+                    sink_out = pipeline.run_pipeline(&ec)?;
+                    sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
                 }
             }
         }

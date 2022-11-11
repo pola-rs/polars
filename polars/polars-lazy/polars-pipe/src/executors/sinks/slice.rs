@@ -54,7 +54,7 @@ impl Sink for SliceSink {
 
             chunks.push(chunk);
 
-            if current_len > (self.len - current_offset) {
+            if current_len > (self.len + current_offset) {
                 Ok(SinkResult::Finished)
             } else {
                 Ok(SinkResult::CanHaveMoreInput)

@@ -246,7 +246,7 @@ pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,
     operator_nodes: Vec<Node>,
-    sink_node: Option<Node>,
+    sink_nodes: Vec<(usize, Node)>,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
@@ -308,20 +308,40 @@ where
         };
         source_objects.push(src)
     }
-    let sink = sink_node
-        .map(|node| get_sink(node, lp_arena, expr_arena, &to_physical))
-        .unwrap_or_else(|| Ok(Box::new(OrderedSink::new())))?;
 
     // this offset is because the source might have inserted operators
     let operator_offset = operator_objects.len();
     operator_objects.extend(operators);
 
+    let mut sink_nodes = sink_nodes
+        .into_iter()
+        .map(|(offset, node)| {
+            Ok((
+                offset + operator_offset,
+                node,
+                get_sink(node, lp_arena, expr_arena, &to_physical)?,
+            ))
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    if sink_nodes.is_empty() ||
+        // if this evaluates true
+        // then there are still operators after the last sink
+        // so we add a final sink to make sure the latest operators run
+        sink_nodes[sink_nodes.len() - 1].0 < operator_nodes.len()
+    {
+        sink_nodes.push((
+            operator_objects.len(),
+            Node::default(),
+            Box::new(OrderedSink::new()),
+        ));
+    }
+
     Ok(PipeLine::new(
         source_objects,
         operator_objects,
         operator_nodes,
-        sink,
-        sink_node,
+        sink_nodes,
         operator_offset,
     ))
 }
