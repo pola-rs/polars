@@ -61,7 +61,7 @@ impl Series {
         let out = m3 / m2.powf(1.5);
 
         if !bias {
-            let n = self.len() as f64;
+            let n = (self.len() - self.null_count()) as f64;
             Ok(Some(((n - 1.0) * n).sqrt() / (n - 2.0) * out))
         } else {
             Ok(Some(out))
@@ -130,8 +130,13 @@ mod test {
     #[test]
     fn test_skew() -> PolarsResult<()> {
         let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
+        let s2 = Series::new("", &[Some(1), Some(2), Some(3), None, Some(1)]);
         assert!(s.skew(false)?.unwrap() - 2.2905330058490514 < 0.0001);
         assert!(s.skew(true)?.unwrap() - 2.2905330058490514 < 0.0001);
+        
+        assert!(s2.skew(false)?.unwrap() - 0.8545630383279711 < 0.0001);
+        assert!(s2.skew(true)?.unwrap() - 0.49338220021815865 < 0.0001);
+        
         Ok(())
     }
 
