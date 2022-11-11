@@ -159,9 +159,12 @@ impl GenericBuild {
     ) {
         buf.clear();
         // get the right columns from the linearly packed buffer
+        let n_keys = self.number_of_keys();
+        let chunk_offset = chunk_idx as usize * n_keys;
+        let chunk_end = chunk_offset + n_keys;
         let join_cols = self
             .materialized_join_cols
-            .get_unchecked_release(chunk_idx as usize..chunk_idx as usize + self.number_of_keys());
+            .get_unchecked_release(chunk_offset..chunk_end);
         buf.extend(
             join_cols
                 .iter()
