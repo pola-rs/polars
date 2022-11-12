@@ -3970,9 +3970,9 @@ class Series:
         Parameters
         ----------
         window_size
-            Size of the rolling window
+            Integer size of the rolling window.
         bias
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         Examples
         --------
@@ -4326,7 +4326,7 @@ class Series:
         Parameters
         ----------
         bias : bool, optional
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         Notes
         -----
@@ -4369,7 +4369,7 @@ class Series:
             If True, Fisher's definition is used (normal ==> 0.0). If False,
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         """
         return self._s.kurtosis(fisher, bias)

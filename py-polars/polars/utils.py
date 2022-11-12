@@ -7,7 +7,7 @@ import sys
 import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar, overload
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
@@ -40,8 +40,25 @@ def _process_null_values(
         return null_values
 
 
-def _timedelta_to_pl_duration(td: timedelta) -> str:
-    return f"{td.days}d{td.seconds}s{td.microseconds}us"
+@overload
+def _timedelta_to_pl_duration(td: None) -> None:
+    ...
+
+
+@overload
+def _timedelta_to_pl_duration(td: timedelta | str) -> str:
+    ...
+
+
+def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
+    """Convert python timedelta to a polars duration string."""
+    if td is None or isinstance(td, str):
+        return td
+    else:
+        d = td.days and f"{td.days}d" or ""
+        s = td.seconds and f"{td.seconds}s" or ""
+        us = td.microseconds and f"{td.microseconds}us" or ""
+        return f"{d}{s}{us}"
 
 
 def _datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit | None) -> int:

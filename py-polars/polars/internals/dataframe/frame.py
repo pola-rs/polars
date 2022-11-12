@@ -5,6 +5,7 @@ import math
 import os
 import sys
 from collections.abc import Sized
+from datetime import timedelta
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
@@ -62,6 +63,7 @@ from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
+    _timedelta_to_pl_duration,
     deprecated_alias,
     format_path,
     handle_projection_columns,
@@ -3147,8 +3149,8 @@ class DataFrame:
     def groupby_rolling(
         self: DF,
         index_column: str,
-        period: str,
-        offset: str | None = None,
+        period: str | timedelta,
+        offset: str | timedelta | None = None,
         closed: ClosedWindow = "right",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ) -> RollingGroupBy[DF]:
@@ -3161,8 +3163,8 @@ class DataFrame:
         individual values and are not of constant intervals. For constant intervals use
         *groupby_dynamic*
 
-        The `period` and `offset` arguments are created with
-        the following string language:
+        The `period` and `offset` arguments are created either from a timedelta, or
+        by using the following string language:
 
         - 1ns   (1 nanosecond)
         - 1us   (1 microsecond)
@@ -3257,9 +3259,9 @@ class DataFrame:
     def groupby_dynamic(
         self: DF,
         index_column: str,
-        every: str,
-        period: str | None = None,
-        offset: str | None = None,
+        every: str | timedelta,
+        period: str | timedelta | None = None,
+        offset: str | timedelta | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: ClosedWindow = "left",
@@ -3573,8 +3575,8 @@ class DataFrame:
     def upsample(
         self: DF,
         time_column: str,
-        every: str,
-        offset: str | None = None,
+        every: str | timedelta,
+        offset: str | timedelta | None = None,
         by: str | Sequence[str] | None = None,
         maintain_order: bool = False,
     ) -> DF:
@@ -3595,7 +3597,7 @@ class DataFrame:
         maintain_order
             Keep the ordering predictable. This is slower.
 
-        The `period` and `offset` arguments are created with
+        The `every` and `offset` arguments are created with
         the following string language:
 
         - 1ns   (1 nanosecond)
@@ -3663,6 +3665,9 @@ class DataFrame:
             by = [by]
         if offset is None:
             offset = "0ns"
+
+        every = _timedelta_to_pl_duration(every)
+        offset = _timedelta_to_pl_duration(offset)
 
         return self._from_pydf(
             self._df.upsample(by, time_column, every, offset, maintain_order)
