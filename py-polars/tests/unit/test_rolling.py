@@ -26,7 +26,15 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
             "values": pl.arange(0, 5, eager=True),
         }
     )
-    for period in ["1d", "2d", "3d"]:
+    period: str | timedelta
+    for period in [  # type: ignore[assignment]
+        "1d",
+        "2d",
+        "3d",
+        timedelta(days=1),
+        timedelta(days=2),
+        timedelta(days=3),
+    ]:
         closed_windows: list[ClosedWindow] = ["left", "right", "none", "both"]
         for closed in closed_windows:
 
@@ -47,7 +55,6 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
                     .alias("std"),
                 ]
             )
-
             out2 = df.groupby_rolling("dt", period=period, closed=closed).agg(
                 [
                     pl.col("values").sum().alias("sum"),
@@ -400,13 +407,14 @@ def test_dynamic_groupby_timezone_awareness() -> None:
         )
     )
 
-    assert (
-        df.groupby_dynamic(
-            "datetime",
-            "3d",
-            offset="-1d",
-            closed="right",
-            include_boundaries=True,
-            truncate=False,
-        ).agg(pl.col("value").last())
-    ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
+    for every, offset in (("3d", "-1d"), (timedelta(days=3), timedelta(days=-1))):
+        assert (
+            df.groupby_dynamic(
+                "datetime",
+                every=every,
+                offset=offset,
+                closed="right",
+                include_boundaries=True,
+                truncate=False,
+            ).agg(pl.col("value").last())
+        ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]

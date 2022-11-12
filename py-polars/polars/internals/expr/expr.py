@@ -24,7 +24,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.utils import accessor, deprecated_alias
+from polars.utils import _timedelta_to_pl_duration, accessor, deprecated_alias
 
 try:
     from polars.polars import PyExpr
@@ -3799,7 +3799,7 @@ class Expr:
 
     def rolling_min(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
@@ -3817,7 +3817,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3831,8 +3831,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -3900,7 +3900,7 @@ class Expr:
 
     def rolling_max(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
@@ -3918,7 +3918,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3932,8 +3932,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -3943,7 +3943,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal, for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -4001,7 +4001,7 @@ class Expr:
 
     def rolling_mean(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
@@ -4019,7 +4019,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4033,8 +4033,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4100,7 +4100,7 @@ class Expr:
 
     def rolling_sum(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
@@ -4118,7 +4118,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4132,8 +4132,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
@@ -4201,7 +4201,7 @@ class Expr:
 
     def rolling_std(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
@@ -4219,7 +4219,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4233,8 +4233,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4302,7 +4302,7 @@ class Expr:
 
     def rolling_var(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
@@ -4320,7 +4320,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4334,8 +4334,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4403,7 +4403,7 @@ class Expr:
 
     def rolling_median(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
@@ -4417,7 +4417,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4431,8 +4431,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4502,7 +4502,7 @@ class Expr:
         self,
         quantile: float,
         interpolation: InterpolationMethod = "nearest",
-        window_size: int | str = 2,
+        window_size: int | timedelta | str = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
@@ -4520,7 +4520,7 @@ class Expr:
             Interpolation method.
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4534,8 +4534,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4688,9 +4688,9 @@ class Expr:
         Parameters
         ----------
         window_size
-            Size of the rolling window
+            Integer size of the rolling window.
         bias
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         """
         return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
@@ -4936,7 +4936,7 @@ class Expr:
         Parameters
         ----------
         bias : bool, optional
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         Notes
         -----
@@ -4992,7 +4992,7 @@ class Expr:
             If True, Fisher's definition is used (normal ==> 0.0). If False,
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         Examples
         --------
@@ -6316,13 +6316,15 @@ def _prepare_alpha(
 
 
 def _prepare_rolling_window_args(
-    window_size: int | str,
+    window_size: int | timedelta | str,
     min_periods: int | None = None,
 ) -> tuple[str, int]:
     if isinstance(window_size, int):
         if min_periods is None:
             min_periods = window_size
         window_size = f"{window_size}i"
+    elif isinstance(window_size, timedelta):
+        window_size = _timedelta_to_pl_duration(window_size)
     if min_periods is None:
         min_periods = 1
     return window_size, min_periods
