@@ -10,7 +10,6 @@ from warnings import warn
 from polars import internals as pli
 from polars.datatypes import (
     DataType,
-    Datetime,
     PolarsDataType,
     UInt32,
     is_polars_dtype,
@@ -3527,8 +3526,8 @@ class Expr:
 
     def is_between(
         self,
-        start: Expr | datetime | int,
-        end: Expr | datetime | int,
+        start: Expr | datetime | date | int | float,
+        end: Expr | datetime | date | int | float,
         include_bounds: bool | tuple[bool, bool] = False,
     ) -> Expr:
         """
@@ -3574,17 +3573,6 @@ class Expr:
         └─────┴────────────┘
 
         """
-        cast_to_datetime = False
-        if isinstance(start, datetime):
-            start = pli.lit(start)
-            cast_to_datetime = True
-        if isinstance(end, datetime):
-            end = pli.lit(end)
-            cast_to_datetime = True
-        if cast_to_datetime:
-            expr = self.cast(Datetime)
-        else:
-            expr = self
         if isinstance(include_bounds, list):
             warnings.warn(
                 "include_bounds: list[bool] will not be supported in a future "
@@ -3592,14 +3580,15 @@ class Expr:
                 category=DeprecationWarning,
             )
             include_bounds = tuple(include_bounds)
+
         if include_bounds is False or include_bounds == (False, False):
-            return ((expr > start) & (expr < end)).alias("is_between")
+            return ((self > start) & (self < end)).alias("is_between")
         elif include_bounds is True or include_bounds == (True, True):
-            return ((expr >= start) & (expr <= end)).alias("is_between")
+            return ((self >= start) & (self <= end)).alias("is_between")
         elif include_bounds == (False, True):
-            return ((expr > start) & (expr <= end)).alias("is_between")
+            return ((self > start) & (self <= end)).alias("is_between")
         elif include_bounds == (True, False):
-            return ((expr >= start) & (expr < end)).alias("is_between")
+            return ((self >= start) & (self < end)).alias("is_between")
         else:
             raise ValueError("include_bounds should be a bool or tuple[bool, bool].")
 
