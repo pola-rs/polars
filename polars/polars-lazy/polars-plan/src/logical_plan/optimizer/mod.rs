@@ -113,7 +113,7 @@ pub fn optimize(
     if projection_pushdown {
         rules.push(Box::new(FastProjectionAndCollapse {}));
     }
-    rules.push(Box::new(DelayRechunk {}));
+    rules.push(Box::new(DelayRechunk::new()));
 
     if slice_pushdown {
         let slice_pushdown_opt = SlicePushDown {};

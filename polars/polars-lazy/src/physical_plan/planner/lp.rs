@@ -195,15 +195,14 @@ pub fn create_physical_plan(
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
 
             let phys_keys = create_physical_expressions(&keys, Context::Default, expr_arena)?;
-
             let phys_aggs = create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
 
             let _slice = options.slice;
             #[cfg(feature = "dynamic_groupby")]
             if let Some(options) = options.dynamic {
+                let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 return Ok(Box::new(executors::GroupByDynamicExec {
                     input,
                     keys: phys_keys,
@@ -216,6 +215,7 @@ pub fn create_physical_plan(
 
             #[cfg(feature = "dynamic_groupby")]
             if let Some(options) = options.rolling {
+                let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 return Ok(Box::new(executors::GroupByRollingExec {
                     input,
                     keys: phys_keys,
@@ -250,6 +250,9 @@ pub fn create_physical_plan(
                         let aexpr = expr_arena.get(*agg);
                         let depth = (&*expr_arena).iter(*agg).count();
 
+                        if matches!(aexpr, AExpr::Count) {
+                            continue;
+                        }
                         // col()
                         // lit() etc.
                         if depth == 1 {
@@ -348,6 +351,14 @@ pub fn create_physical_plan(
                 partitionable = false;
             }
             if partitionable {
+                let from_partitioned_ds = (&*lp_arena).iter(input).any(|(_, lp)| {
+                    if let ALogicalPlan::Union { options, .. } = lp {
+                        options.from_partitioned_ds
+                    } else {
+                        false
+                    }
+                });
+                let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(executors::PartitionGroupByExec::new(
                     input,
                     phys_keys,
@@ -355,8 +366,10 @@ pub fn create_physical_plan(
                     maintain_order,
                     options.slice,
                     input_schema,
+                    from_partitioned_ds,
                 )))
             } else {
+                let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(executors::GroupByExec::new(
                     input,
                     phys_keys,

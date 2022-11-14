@@ -8,11 +8,11 @@ use rayon::prelude::*;
 
 use crate::prelude::*;
 
-/// Concat multiple
-pub fn concat<L: AsRef<[LazyFrame]>>(
+pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     inputs: L,
     rechunk: bool,
     parallel: bool,
+    from_partitioned_ds: bool,
 ) -> PolarsResult<LazyFrame> {
     let mut inputs = inputs.as_ref().to_vec();
     let lf = std::mem::take(
@@ -32,6 +32,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(
     }
     let options = UnionOptions {
         parallel,
+        from_partitioned_ds,
         ..Default::default()
     };
 
@@ -47,6 +48,15 @@ pub fn concat<L: AsRef<[LazyFrame]>>(
     } else {
         Ok(lf)
     }
+}
+
+/// Concat multiple
+pub fn concat<L: AsRef<[LazyFrame]>>(
+    inputs: L,
+    rechunk: bool,
+    parallel: bool,
+) -> PolarsResult<LazyFrame> {
+    concat_impl(inputs, rechunk, parallel, false)
 }
 
 /// Collect all `LazyFrame` computations.
