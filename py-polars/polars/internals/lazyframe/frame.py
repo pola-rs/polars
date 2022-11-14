@@ -2259,6 +2259,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         other
+            Lazy DataFrame to join with.
 
         Examples
         --------
