@@ -4,7 +4,6 @@ use polars_core::prelude::*;
 use polars_io::parquet::ParallelStrategy;
 use polars_io::RowCount;
 
-use crate::dsl::functions::concat;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -62,7 +61,7 @@ impl LazyFrame {
     }
 
     fn concat_impl(lfs: Vec<LazyFrame>, args: ScanArgsParquet) -> PolarsResult<LazyFrame> {
-        concat(&lfs, args.rechunk, true).map(|mut lf| {
+        concat_impl(&lfs, args.rechunk, true, true).map(|mut lf| {
             if let Some(n_rows) = args.n_rows {
                 lf = lf.slice(0, n_rows as IdxSize)
             };
@@ -115,7 +114,7 @@ impl LazyFrame {
                         args.cache,
                         ParallelStrategy::None,
                         None,
-                        args.rechunk,
+                        false,
                         args.low_memory,
                     )
                 })

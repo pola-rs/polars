@@ -169,12 +169,16 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Float64(f) => Ok(Self::Float64(f)),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Date(d) => Ok(Self::DateTime(
-                NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 0) + ChronoDuration::days(d as i64),
+                NaiveDate::from_ymd_opt(1970, 1, 1)
+                    .unwrap()
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap()
+                    + ChronoDuration::days(d as i64),
                 TimeUnit::Milliseconds,
             )),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Datetime(epoch, _time_unit, _time_zone) => Ok(Self::DateTime(
-                NaiveDateTime::from_timestamp(epoch, 0),
+                NaiveDateTime::from_timestamp_opt(epoch, 0).unwrap(),
                 TimeUnit::Nanoseconds,
             )),
             #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
@@ -263,7 +267,7 @@ impl Literal for ChronoDuration {
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::DateTime(
-            self.and_hms(0, 0, 0),
+            self.and_hms_opt(0, 0, 0).unwrap(),
             TimeUnit::Milliseconds,
         ))
     }

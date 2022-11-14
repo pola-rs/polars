@@ -48,7 +48,10 @@ impl DatetimeChunked {
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         };
 
-        let dt = NaiveDate::from_ymd(2001, 1, 1).and_hms(0, 0, 0);
+        let dt = NaiveDate::from_ymd_opt(2001, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
         let fmted = format!("{}", dt.format(fmt));
 
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {

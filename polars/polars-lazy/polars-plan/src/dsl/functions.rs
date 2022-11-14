@@ -467,11 +467,9 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
                     (y, m, d, h, mnt, s, us)
                 {
-                    Some(
-                        NaiveDate::from_ymd(y, m, d)
-                            .and_hms_micro(h, mnt, s, us)
-                            .timestamp_micros(),
-                    )
+                    NaiveDate::from_ymd_opt(y, m, d)
+                        .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
+                        .map(|ndt| ndt.timestamp_micros())
                 } else {
                     None
                 }

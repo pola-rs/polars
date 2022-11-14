@@ -7,8 +7,14 @@ use crate::prelude::*;
 #[test]
 fn test_date_range() {
     // Test month as interval in date range
-    let start = NaiveDate::from_ymd(2022, 1, 1).and_hms(0, 0, 0);
-    let end = NaiveDate::from_ymd(2022, 4, 1).and_hms(0, 0, 0);
+    let start = NaiveDate::from_ymd_opt(2022, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let end = NaiveDate::from_ymd_opt(2022, 4, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
     let dates = date_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
@@ -30,8 +36,14 @@ fn test_date_range() {
 
 #[test]
 fn test_feb_date_range() {
-    let start = NaiveDate::from_ymd(2022, 2, 1).and_hms(0, 0, 0);
-    let end = NaiveDate::from_ymd(2022, 3, 1).and_hms(0, 0, 0);
+    let start = NaiveDate::from_ymd_opt(2022, 2, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let end = NaiveDate::from_ymd_opt(2022, 3, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
     let dates = date_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
