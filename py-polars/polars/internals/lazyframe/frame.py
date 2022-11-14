@@ -789,6 +789,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
         │ 1   ┆ 6.0 ┆ a   │
         └─────┴─────┴─────┘
+
         """
         if type(by) is str:
             return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
@@ -1014,6 +1015,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
+
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1107,6 +1109,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
         │ b   ┆ 2   ┆ 5   │
         └─────┴─────┴─────┘
+
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1845,7 +1848,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
-        """
+        """  # noqa: E501
         if offset is None:
             if period is None:
                 offset = f"-{every}"
