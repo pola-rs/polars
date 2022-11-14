@@ -356,7 +356,7 @@ impl BatchedParquetReader {
 
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         // fill up fifo stack
-        if self.row_group_offset < self.n_row_groups && self.chunks_fifo.len() < n {
+        if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
             let dfs = match self.parallel {
                 ParallelStrategy::Columns => {
                     let dfs = rg_to_dfs(
@@ -416,12 +416,11 @@ impl BatchedParquetReader {
             let mut chunks = Vec::with_capacity(n);
             let mut i = 0;
             while let Some(df) = self.chunks_fifo.pop_front() {
+                chunks.push(df);
+                i += 1;
                 if i == n {
                     break;
                 }
-
-                chunks.push(df);
-                i += 1;
             }
 
             Ok(Some(chunks))

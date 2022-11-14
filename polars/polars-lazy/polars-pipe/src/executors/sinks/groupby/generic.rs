@@ -371,7 +371,7 @@ impl Sink for GenericGroupbySink {
                                     )
                                 };
 
-                                // extend the keys buffer with the new keys from othger
+                                // extend the keys buffer with the new keys from other
                                 keys_buffer_self.extend_from_slice(keys_other);
 
                                 // insert the keys and values_offset
