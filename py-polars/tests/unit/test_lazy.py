@@ -1210,6 +1210,44 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
     )
 
 
+def test_is_between_data_types() -> None:
+    df = pl.DataFrame(
+        {
+            "flt": [1.4, 1.2, 2.5],
+            "int": [2, 3, 4],
+            "date": [date(2020, 1, 1), date(2020, 2, 2), date(2020, 3, 3)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 1, 1, 10, 0, 0),
+                datetime(2020, 1, 1, 12, 0, 0),
+            ],
+        }
+    )
+
+    # on purpose, for float and int, we pass in a mixture of bound data types
+    assert_series_equal(
+        df.select(pl.col("flt").is_between(1, 2.3))[:, 0],
+        pl.Series("is_between", [True, True, False]),
+    )
+    assert_series_equal(
+        df.select(pl.col("int").is_between(1.5, 4))[:, 0],
+        pl.Series("is_between", [True, True, False]),
+    )
+
+    assert_series_equal(
+        df.select(pl.col("date").is_between(date(2019, 1, 1), date(2020, 2, 5)))[:, 0],
+        pl.Series("is_between", [True, True, False]),
+    )
+    assert_series_equal(
+        df.select(
+            pl.col("datetime").is_between(
+                datetime(2020, 1, 1, 5, 0, 0), datetime(2020, 1, 1, 11, 0, 0)
+            )
+        )[:, 0],
+        pl.Series("is_between", [False, True, False]),
+    )
+
+
 def test_unique() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 

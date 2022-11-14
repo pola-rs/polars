@@ -50,7 +50,8 @@ Polars is a blazingly fast DataFrames library implemented in Rust using
   * SIMD
   * Query optimization
   * Powerful expression API
-  * Rust | Python | ...
+  * Hybrid Streaming (larger than RAM datasets)
+  * Rust | Python | NodeJS | ...
 
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
@@ -104,6 +105,16 @@ shape: (5, 8)
 Polars is very fast. In fact, it is one of the best performing solutions available.
 See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
 
+In the [TPCH benchmarks](https://www.pola.rs/benchmarks.html) polars is orders of magnitudes faster than pandas, dask, modin and vaex
+on full queries (including IO).
+
+Besides fast, polars is also very lightweight. It comes with zero required dependencies, and this shows in the import times:
+
+### import time measurements:
+- polars: 70ms
+- numpy: 104ms
+- pandas: 520ms
+
 
 ## Python setup
 
@@ -155,6 +166,12 @@ Required Rust version `>=1.58`
 ## Documentation
 
 Want to know about all the features Polars supports? Read the docs!
+
+## Larger than RAM data
+If you have data that does not fit into memory, polars lazy is able to process your query (or parts of your query) in a
+streaming fashion, this drastically reduces memory requirements you might be able to process your 250GB dataset on your
+laptop. Collect with `collect(allow_streaming=True)` to run the query streaming. (This might be a little slower, but
+it is still very fast!)
 
 #### Python
 

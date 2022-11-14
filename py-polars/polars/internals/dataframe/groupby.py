@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import warnings
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterable, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.internals.dataframe.pivot import PivotOps
+from polars.utils import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
     from polars.datatypes import DataType
@@ -834,11 +836,14 @@ class RollingGroupBy(Generic[DF]):
         self,
         df: DF,
         index_column: str,
-        period: str,
-        offset: str | None,
+        period: str | timedelta,
+        offset: str | timedelta | None,
         closed: ClosedWindow = "none",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ):
+        period = _timedelta_to_pl_duration(period)
+        offset = _timedelta_to_pl_duration(offset)
+
         self.df = df
         self.time_column = index_column
         self.period = period
@@ -861,7 +866,7 @@ class DynamicGroupBy(Generic[DF]):
     """
     A dynamic grouper.
 
-    This has an `.agg` method which will allow you to run all polars expressions in a
+    This has an `.agg` method which allows you to run all polars expressions in a
     groupby context.
     """
 
@@ -869,14 +874,19 @@ class DynamicGroupBy(Generic[DF]):
         self,
         df: DF,
         index_column: str,
-        every: str,
-        period: str | None,
-        offset: str | None,
+        every: str | timedelta,
+        period: str | timedelta | None,
+        offset: str | timedelta | None,
         truncate: bool = True,
         include_boundaries: bool = True,
         closed: ClosedWindow = "none",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ):
+
+        period = _timedelta_to_pl_duration(period)
+        offset = _timedelta_to_pl_duration(offset)
+        every = _timedelta_to_pl_duration(every)
+
         self.df = df
         self.time_column = index_column
         self.every = every

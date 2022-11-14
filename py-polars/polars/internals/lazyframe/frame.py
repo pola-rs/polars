@@ -42,6 +42,7 @@ from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
+    _timedelta_to_pl_duration,
     format_path,
 )
 
@@ -1417,8 +1418,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def groupby_rolling(
         self: LDF,
         index_column: str,
-        period: str,
-        offset: str | None = None,
+        period: str | timedelta,
+        offset: str | timedelta | None = None,
         closed: ClosedWindow = "right",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
@@ -1428,11 +1429,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Also works for index values of type Int32 or Int64.
 
         Different from a ``dynamic_groupby`` the windows are now determined by the
-        individual values and are not of constant intervals. For constant intervals use
-        *groupby_dynamic*
+        individual values and are not of constant intervals. For constant intervals
+        use *groupby_dynamic*.
 
-        The `period` and `offset` arguments are created with
-        the following string language:
+        The `period` and `offset` arguments are created either from a timedelta, or
+        by using the following string language:
 
         - 1ns   (1 nanosecond)
         - 1us   (1 microsecond)
@@ -1524,7 +1525,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         if offset is None:
             offset = f"-{period}"
+
         pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
+        period = _timedelta_to_pl_duration(period)
+        offset = _timedelta_to_pl_duration(offset)
 
         lgb = self._ldf.groupby_rolling(
             index_column, period, offset, closed, pyexprs_by
@@ -1534,9 +1538,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def groupby_dynamic(
         self: LDF,
         index_column: str,
-        every: str,
-        period: str | None = None,
-        offset: str | None = None,
+        every: str | timedelta,
+        period: str | timedelta | None = None,
+        offset: str | timedelta | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: ClosedWindow = "left",
@@ -1854,8 +1858,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 offset = f"-{every}"
             else:
                 offset = "0ns"
+
         if period is None:
             period = every
+
+        period = _timedelta_to_pl_duration(period)
+        offset = _timedelta_to_pl_duration(offset)
+        every = _timedelta_to_pl_duration(every)
+
         pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
         lgb = self._ldf.groupby_dynamic(
             index_column,

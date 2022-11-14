@@ -686,16 +686,19 @@ def test_rolling() -> None:
     df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_column(
         pl.col("dt").str.strptime(pl.Datetime)
     )
-    out = df.groupby_rolling(index_column="dt", period="2d").agg(
-        [
-            pl.sum("a").alias("sum_a"),
-            pl.min("a").alias("min_a"),
-            pl.max("a").alias("max_a"),
-        ]
-    )
-    assert out["sum_a"].to_list() == [3, 10, 15, 24, 11, 1]
-    assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
-    assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
+
+    period: str | timedelta
+    for period in ("2d", timedelta(days=2)):  # type: ignore[assignment]
+        out = df.groupby_rolling(index_column="dt", period=period).agg(
+            [
+                pl.sum("a").alias("sum_a"),
+                pl.min("a").alias("min_a"),
+                pl.max("a").alias("max_a"),
+            ]
+        )
+        assert out["sum_a"].to_list() == [3, 10, 15, 24, 11, 1]
+        assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
+        assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
 
 
 def test_upsample() -> None:
@@ -972,26 +975,29 @@ def test_groupby_rolling_mean_3020() -> None:
             "val": range(7),
         }
     ).with_column(pl.col("Date").str.strptime(pl.Date))
-    assert (
-        df.groupby_rolling(index_column="Date", period="1w")
-        .agg(pl.col("val").mean().alias("val_mean"))
-        .frame_equal(
-            pl.DataFrame(
-                {
-                    "Date": [
-                        date(1998, 4, 12),
-                        date(1998, 4, 19),
-                        date(1998, 4, 26),
-                        date(1998, 5, 3),
-                        date(1998, 5, 10),
-                        date(1998, 5, 17),
-                        date(1998, 5, 24),
-                    ],
-                    "val_mean": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-                }
+
+    period: str | timedelta
+    for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
+        assert (
+            df.groupby_rolling(index_column="Date", period=period)
+            .agg(pl.col("val").mean().alias("val_mean"))
+            .frame_equal(
+                pl.DataFrame(
+                    {
+                        "Date": [
+                            date(1998, 4, 12),
+                            date(1998, 4, 19),
+                            date(1998, 4, 26),
+                            date(1998, 5, 3),
+                            date(1998, 5, 10),
+                            date(1998, 5, 17),
+                            date(1998, 5, 24),
+                        ],
+                        "val_mean": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                    }
+                )
             )
         )
-    )
 
 
 def test_asof_join() -> None:
@@ -1444,7 +1450,7 @@ def test_groupby_rolling_by_() -> None:
     )
     out = (
         df.sort("datetime")
-        .groupby_rolling(index_column="datetime", by="group", period="3d")
+        .groupby_rolling(index_column="datetime", by="group", period=timedelta(days=3))
         .agg([pl.count().alias("count")])
     )
 
