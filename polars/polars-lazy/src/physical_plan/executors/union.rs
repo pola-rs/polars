@@ -19,9 +19,9 @@ impl Executor for UnionExec {
 
         let sliced_path = self.options.slice && self.options.slice_offset >= 0;
 
-        if self.options.parallel || sliced_path {
+        if !self.options.parallel || sliced_path {
             if state.verbose() {
-                if self.options.parallel {
+                if !self.options.parallel {
                     println!("UNION: `parallel=false` union is run sequentially")
                 } else {
                     println!("UNION: `slice is set` union is run sequentially")

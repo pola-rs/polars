@@ -91,6 +91,7 @@ pub struct UnionOptions {
     pub parallel: bool,
     // known row_output, estimated row output
     pub rows: (Option<usize>, usize),
+    pub from_partitioned_ds: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

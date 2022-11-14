@@ -98,6 +98,13 @@ def read_csv(
     """
     Read a CSV file into a DataFrame.
 
+    Notes
+    -----
+    This operation defaults to a `rechunk` operation at the end, meaning that
+    all data will be stored continuously in memory.
+    Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
+    an expensive operation.
+
     Parameters
     ----------
     file
@@ -884,6 +891,13 @@ def read_parquet(
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
+
+    Notes
+    -----
+    This operation defaults to a `rechunk` operation at the end, meaning that
+    all data will be stored continuously in memory.
+    Set `rechunk=False` if you are benchmarking the parquet-reader. A `rechunk` is
+    an expensive operation.
 
     Parameters
     ----------

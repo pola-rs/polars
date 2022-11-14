@@ -5,7 +5,6 @@ use polars_io::csv::utils::{get_reader_bytes, infer_file_schema};
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::RowCount;
 
-use crate::dsl::functions::concat;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -285,7 +284,7 @@ impl<'a> LazyCsvReader<'a> {
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
             // set to false, as the csv parser has full thread utilization
-            concat(&lfs, self.rechunk, false)
+            concat_impl(&lfs, self.rechunk, false, true)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|lf| {
                     if self.skip_rows != 0 || self.n_rows.is_some() {

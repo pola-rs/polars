@@ -164,7 +164,7 @@ fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
         Some(out) => Some(out),
         None => NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_ns(nd.and_hms(0, 0, 0))),
+            .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap())),
     }
 }
 
@@ -176,7 +176,7 @@ fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
         Some(out) => Some(out),
         None => NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_us(nd.and_hms(0, 0, 0))),
+            .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap())),
     }
 }
 
@@ -192,7 +192,7 @@ fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
         Some(out) => Some(out),
         None => NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_ms(nd.and_hms(0, 0, 0))),
+            .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap())),
     }
 }
 

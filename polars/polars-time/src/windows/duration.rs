@@ -424,8 +424,8 @@ fn new_datetime(
     sec: u32,
     nano: u32,
 ) -> NaiveDateTime {
-    let date = NaiveDate::from_ymd(year, month, days);
-    let time = NaiveTime::from_hms_nano(hour, min, sec, nano);
+    let date = NaiveDate::from_ymd_opt(year, month, days).unwrap();
+    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano).unwrap();
 
     NaiveDateTime::new(date, time)
 }
