@@ -278,7 +278,7 @@ impl Sink for GenericGroupbySink {
                             NumCast::from(current_key_values.len()).unwrap_unchecked_release(),
                         )
                     };
-                    entry.insert_with_hasher(h, keys_offset, value_offset, |_| h);
+                    entry.insert(keys_offset, value_offset);
 
                     unsafe {
                         current_key_values.extend(
@@ -315,6 +315,7 @@ impl Sink for GenericGroupbySink {
 
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         let n_partitions = self.pre_agg_partitions.len();
+        debug_assert_eq!(n_partitions, other.pre_agg_partitions.len());
         let n_keys = self.number_of_keys();
 
         self.pre_agg_partitions
