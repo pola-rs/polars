@@ -37,9 +37,11 @@ fn test_date_range() {
 #[test]
 fn test_feb_date_range() {
     let start = NaiveDate::from_ymd_opt(2022, 2, 1)
+        .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
     let end = NaiveDate::from_ymd_opt(2022, 3, 1)
+        .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
     let dates = date_range_vec(
