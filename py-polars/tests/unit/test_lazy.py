@@ -1283,6 +1283,14 @@ def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
     assert res.to_series(0).series_equal(pl.Series("min", [1, 2, 3, 2, 1]))
 
 
+def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
+    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min(["*"]))
+    assert res.to_series(0).series_equal(pl.Series("min", [1, 2, 3, 2, 1]))
+
+    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max(["*"]))
+    assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
+
+
 def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select([pl.head("A", 2)])
     res_series = pl.head(fruits_cars["A"], 2)
