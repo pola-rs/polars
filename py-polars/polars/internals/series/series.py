@@ -2724,10 +2724,12 @@ class Series:
         0    1
         1    2
         2    3
-        dtype: int64
+        Name: a, dtype: int64
 
         """
-        return self.to_arrow().to_pandas()
+        pd_series = self.to_arrow().to_pandas()
+        pd_series.name = self.name
+        return pd_series
 
     def set(self, filter: Series, value: int | float | str) -> Series:
         """

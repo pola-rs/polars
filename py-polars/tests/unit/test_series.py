@@ -417,6 +417,27 @@ def test_cast() -> None:
         pl.Series(["1", "2", "3", "4", "foobar"]).cast(int)
 
 
+def test_to_pandas() -> None:
+    for test_data in (
+        [1, None, 2],
+        ["abc", None, "xyz"],
+        [None, datetime.now()],
+        [[1, 2], [3, 4], None],
+    ):
+        a = pl.Series("s", test_data)
+        b = a.to_pandas()
+
+        assert a.name == b.name
+        assert b.isnull().sum() == 1
+
+        if a.dtype == pl.List:
+            cvals = [(None if x is None else x.tolist()) for x in b]
+            assert cvals == test_data
+        else:
+            c = b.replace({np.nan: None})
+            assert c.values.tolist() == test_data  # type: ignore[union-attr]
+
+
 def test_to_python() -> None:
     a = pl.Series("a", range(20))
     b = a.to_list()
