@@ -1598,6 +1598,7 @@ dependencies = [
 name = "polars-sql"
 version = "0.2.1"
 dependencies = [
+ "jemallocator",
  "polars-arrow",
  "polars-core",
  "polars-lazy",
