@@ -44,7 +44,7 @@ pub trait TimeMethods {
 impl TimeMethods for TimeChunked {
     /// Format Date with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     fn strftime(&self, fmt: &str) -> Utf8Chunked {
-        let time = NaiveTime::from_hms(0, 0, 0);
+        let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
         let fmted = format!("{}", time.format(fmt));
 
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {

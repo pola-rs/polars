@@ -3,7 +3,7 @@ use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN
 use super::*;
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
-    let nt = NaiveTime::from_hms(0, 0, 0);
+    let nt = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
     let ndt = NaiveDateTime::new(nd, nt);
     naive_datetime_to_date(ndt)
 }

@@ -27,7 +27,7 @@ pub use time::TimeMethods;
 pub use utf8::Utf8Methods;
 
 pub fn unix_time() -> NaiveDateTime {
-    NaiveDateTime::from_timestamp(0, 0)
+    NaiveDateTime::from_timestamp_opt(0, 0).unwrap()
 }
 
 // a separate function so that it is not compiled twice
