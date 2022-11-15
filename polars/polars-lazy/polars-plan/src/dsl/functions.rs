@@ -898,39 +898,27 @@ pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 
 /// Get the the maximum value per row
 pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let mut exprs = exprs.as_ref().to_vec();
+    let exprs = exprs.as_ref().to_vec();
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
-
     let func = |s1, s2| {
         let df = DataFrame::new_no_checks(vec![s1, s2]);
         df.hmax().map(|s| s.unwrap())
     };
-    let init = match exprs.pop() {
-        Some(e) => e,
-        // use u32 as that is not cast to float as eagerly
-        _ => lit(Series::new_empty("", &DataType::Int32)),
-    };
-    fold_exprs(init, func, exprs).alias("max")
+    reduce_exprs(func, exprs).alias("max")
 }
 
 pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let mut exprs = exprs.as_ref().to_vec();
+    let exprs = exprs.as_ref().to_vec();
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
-
     let func = |s1, s2| {
         let df = DataFrame::new_no_checks(vec![s1, s2]);
         df.hmin().map(|s| s.unwrap())
     };
-    let init = match exprs.pop() {
-        Some(e) => e,
-        // use u32 as that is not cast to float as eagerly
-        _ => lit(Series::new_empty("", &DataType::Int32)),
-    };
-    fold_exprs(init, func, exprs).alias("min")
+    reduce_exprs(func, exprs).alias("min")
 }
 
 /// Evaluate all the expressions with a bitwise or

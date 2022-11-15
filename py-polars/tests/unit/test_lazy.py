@@ -1286,8 +1286,17 @@ def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
 def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min(["*"]))
     assert res.to_series(0).series_equal(pl.Series("min", [1, 2, 3, 2, 1]))
+    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min([pl.all()]))
+    assert res.to_series(0).series_equal(pl.Series("min", [1, 2, 3, 2, 1]))
 
     res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max(["*"]))
+    assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
+    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max([pl.all()]))
+    assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
+
+    res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(
+        pl.max([pl.all(), "A", "*"])
+    )
     assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
 
 
