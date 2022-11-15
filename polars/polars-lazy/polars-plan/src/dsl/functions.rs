@@ -899,7 +899,7 @@ pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 /// Get the the maximum value per row
 pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let mut exprs = exprs.as_ref().to_vec();
-    if exprs.len() == 0 {
+    if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
 
@@ -917,7 +917,7 @@ pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 
 pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let mut exprs = exprs.as_ref().to_vec();
-    if exprs.len() == 0 {
+    if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
 
