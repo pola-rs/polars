@@ -322,3 +322,22 @@ def test_sorted_join_query_5406() -> None:
         pl.exclude(["Datetime_right", "Group_right"])
     )
     assert out["Value_right"].to_list() == [1, None, 2, 1, 2, None]
+
+
+def test_sort_by_in_over_5499() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 2, 2, 2],
+            "idx": pl.arange(0, 6, eager=True),
+            "a": [1, 3, 2, 3, 1, 2],
+        }
+    )
+    assert df.select(
+        [
+            pl.col("idx").sort_by("a").over("group").alias("sorted_1"),
+            pl.col("idx").shift(1).sort_by("a").over("group").alias("sorted_2"),
+        ]
+    ).to_dict(False) == {
+        "sorted_1": [0, 2, 1, 4, 5, 3],
+        "sorted_2": [None, 1, 0, 3, 4, None],
+    }
