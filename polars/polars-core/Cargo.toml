@@ -78,7 +78,7 @@ partition_by = []
 semi_anti_join = []
 chunked_ids = []
 describe = []
-timezones = ["chrono-tz", "arrow/chrono-tz"]
+timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 

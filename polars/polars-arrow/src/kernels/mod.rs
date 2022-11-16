@@ -15,6 +15,10 @@ pub mod sorted_join;
 #[cfg(feature = "strings")]
 pub mod string;
 pub mod take_agg;
+#[cfg(feature = "timezones")]
+mod time;
+#[cfg(feature = "timezones")]
+pub use time::cast_timezone;
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]

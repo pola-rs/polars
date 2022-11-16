@@ -144,34 +144,6 @@ pub trait DatetimeMethods: AsDatetime {
         )
         .into_datetime(tu, None)
     }
-
-    #[cfg(feature = "timezones")]
-    fn apply_tz_offset(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
-        let ca = self.as_datetime();
-        let keep_tz = ca.time_zone().clone();
-        Ok(self.cast_time_zone(tz)?.with_time_zone(keep_tz))
-    }
-
-    #[cfg(feature = "timezones")]
-    fn cast_time_zone(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
-        use chrono_tz::Tz;
-        let ca = self.as_datetime();
-
-        if let Some(from) = ca.time_zone() {
-            let from: Tz = from.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
-            })?;
-            let to: Tz = tz.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
-            })?;
-            let out = ca.apply_kernel(&|arr| kernels::cast_timezone(arr, ca.time_unit(), from, to));
-            Ok(out.into_datetime(ca.time_unit(), Some(tz.to_string())))
-        } else {
-            Err(PolarsError::ComputeError(
-                "Cannot cast Naive Datetime. First set a timezone".into(),
-            ))
-        }
-    }
 }
 
 pub trait AsDatetime {

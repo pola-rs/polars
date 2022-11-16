@@ -1916,3 +1916,37 @@ def test_tz_aware_truncate() -> None:
             ),
         ],
     }
+
+
+def test_tz_aware_strftime() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": pl.date_range(
+                low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="24h"
+            ).dt.tz_localize("America/New_York")
+        }
+    )
+    assert df.with_column(pl.col("dt").dt.strftime("%c").alias("fmt")).to_dict(
+        False
+    ) == {
+        "dt": [
+            datetime(
+                2022, 11, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 3, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 4, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+        ],
+        "fmt": [
+            "Tue Nov  1 00:00:00 2022",
+            "Wed Nov  2 00:00:00 2022",
+            "Thu Nov  3 00:00:00 2022",
+            "Fri Nov  4 00:00:00 2022",
+        ],
+    }
