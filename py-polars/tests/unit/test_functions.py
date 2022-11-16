@@ -248,6 +248,9 @@ def test_coalesce() -> None:
     assert df.select(pl.coalesce(["a", "b", "c", 10])).to_dict(False) == {
         "a": [1.0, 2.0, 3.0, 10.0]
     }
+    assert df.select(pl.coalesce(pl.col(["a", "b", "c"]))).to_dict(False) == {
+        "a": [1.0, 2.0, 3.0, None]
+    }
 
 
 def test_ones_zeros() -> None:
