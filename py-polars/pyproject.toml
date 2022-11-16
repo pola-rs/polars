@@ -38,6 +38,9 @@ enable_error_code = [
   "truthy-bool",
   "ignore-without-code",
 ]
+disable_error_code = [
+  "empty-body",
+]
 
 [[tool.mypy.overrides]]
 module = ["backports", "pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*", "zoneinfo"]

@@ -22,7 +22,7 @@ from typing import (
     Union,
 )
 
-from _ctypes import _SimpleCData  # type: ignore[import]
+from _ctypes import _SimpleCData  # type: ignore[attr-defined]
 
 from polars.dependencies import pyarrow as pa
 
