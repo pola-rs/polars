@@ -268,3 +268,11 @@ def test_categorical_list_concat_4762() -> None:
     q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
     with pl.StringCache():
         assert q.collect().to_dict(False) == expected
+
+
+def test_categorical_max_null_5437() -> None:
+    assert (
+        pl.DataFrame({"strings": ["c", "b", "a", "c"], "values": [0, 1, 2, 3]})
+        .with_column(pl.col("strings").cast(pl.Categorical).alias("cats"))
+        .select(pl.all().max())
+    ).to_dict(False) == {"strings": ["c"], "values": [3], "cats": [None]}

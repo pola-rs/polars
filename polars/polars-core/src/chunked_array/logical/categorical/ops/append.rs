@@ -4,6 +4,12 @@ use crate::series::IsSorted;
 
 impl CategoricalChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        if self.logical.null_count() == self.len() && other.logical.null_count() == other.len() {
+            let len = self.len();
+            self.logical_mut().length += other.len() as IdxSize;
+            new_chunks(&mut self.logical.chunks, &other.logical().chunks, len);
+            return Ok(());
+        }
         let is_local_different_source =
             match (self.get_rev_map().as_ref(), other.get_rev_map().as_ref()) {
                 (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => !std::ptr::eq(arr_l, arr_r),
