@@ -1035,6 +1035,7 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
+            input_wildcard_expansion: true,
             ..Default::default()
         },
     }
