@@ -234,3 +234,26 @@ def test_sorted_window_expression() -> None:
     out2 = df.with_column(expr)
 
     assert out1.frame_equal(out2)
+
+
+def test_nested_aggregation_window_expression() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
+            "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        }
+    )
+
+    assert df.with_columns(
+        [
+            pl.when(pl.col("x") >= pl.col("x").quantile(0.1))
+            .then(1)
+            .otherwise(None)
+            .over("y")
+            .alias("foo")
+        ]
+    ).to_dict(False) == {
+        "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
+        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        "foo": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, None, 1],
+    }

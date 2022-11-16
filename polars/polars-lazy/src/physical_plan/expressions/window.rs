@@ -124,6 +124,41 @@ impl WindowExpr {
         agg_col
     }
 
+    /// check if the the branches have an aggregation
+    /// when(a > sum)
+    /// then (foo)
+    /// otherwise(bar - sum)
+    fn has_different_group_sources(&self) -> bool {
+        let mut has_arity = false;
+        let mut agg_col = false;
+        for e in &self.expr {
+            if let Expr::Window { function, .. } = e {
+                // or list().alias
+                for e in &**function {
+                    match e {
+                        Expr::Ternary { .. } | Expr::BinaryExpr { .. } => {
+                            has_arity = true;
+                        }
+                        Expr::Alias(_, _) => {}
+                        Expr::Agg(_) => {
+                            agg_col = true;
+                        }
+                        Expr::Function { options, .. }
+                        | Expr::AnonymousFunction { options, .. } => {
+                            if options.auto_explode
+                                && matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+                            {
+                                agg_col = true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        has_arity && agg_col
+    }
+
     fn determine_map_strategy(
         &self,
         agg_state: &AggState,
@@ -225,7 +260,7 @@ impl PhysicalExpr for WindowExpr {
         let explicit_list_agg = self.is_explicit_list_agg();
 
         // if we flatten this column we need to make sure the groups are sorted.
-        let sort_groups = self.options.explode ||
+        let mut sort_groups = self.options.explode ||
             // if not
             //      `col().over()`
             // and not
@@ -235,6 +270,12 @@ impl PhysicalExpr for WindowExpr {
             // and keys are sorted
             //  we may optimize with explode call
             (!self.is_simple_column_expr() && !explicit_list_agg && sorted_keys && !self.is_aggregation());
+
+        // overwrite sort_groups for some expressions
+        // TODO: fully understand the rationale is here.
+        if self.has_different_group_sources() {
+            sort_groups = true
+        }
 
         let create_groups = || {
             let gb = df.groupby_with_series(groupby_columns.clone(), true, sort_groups)?;
