@@ -1,6 +1,6 @@
 //! Common Subplan Elimination
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{BuildHasher, Hash, Hasher};
 
 use polars_core::prelude::*;
@@ -50,6 +50,10 @@ pub(super) fn collect_trails(
             collect_trails(*input_right, lp_arena, trails, id, true)?;
         }
         Union { inputs, .. } => {
+            if inputs.len() > 200 {
+                // don't even bother with cse on this many inputs
+                return None;
+            }
             let new_trail = trails.get(id).unwrap().clone();
 
             let last_i = inputs.len() - 1;
@@ -301,13 +305,21 @@ pub(crate) fn elim_cmn_subplans(
 
     // search from the leafs upwards and find the longest shared subplans
     let mut trail_ends = vec![];
+    // if i matches j
+    // we don't need to search with j as they are equal
+    // this is very important as otherwise we get quadratic behavior
+    let mut to_skip = BTreeSet::new();
 
     for i in 0..trails.len() {
+        if to_skip.contains(&i) {
+            continue;
+        }
         let trail_i = &trails[i];
 
         // we only look forwards, then we traverse all combinations
-        for trail_j in trails.iter().skip(i + 1) {
+        for (j, trail_j) in trails.iter().enumerate().skip(i + 1) {
             if let Some(res) = longest_subgraph(trail_i, trail_j, lp_arena, expr_arena) {
+                to_skip.insert(j);
                 trail_ends.push(res)
             }
         }
@@ -359,6 +371,9 @@ pub(crate) fn elim_cmn_subplans(
         let node2 = combination.1 .0;
 
         let cache_id = match (cache_mapping.get(&node1), cache_mapping.get(&node2)) {
+            // (Some(_), Some(_)) => {
+            //     continue
+            // }
             (Some(h), _) => *h,
             (_, Some(h)) => *h,
             _ => {
