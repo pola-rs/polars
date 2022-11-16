@@ -1467,6 +1467,8 @@ name = "polars-arrow"
 version = "0.25.1"
 dependencies = [
  "arrow2",
+ "chrono",
+ "chrono-tz",
  "hashbrown",
  "num",
  "serde",

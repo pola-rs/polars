@@ -3,6 +3,8 @@ use std::fmt::Write;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
+#[cfg(feature = "timezones")]
+use polars_arrow::kernels::cast_timezone;
 
 use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
@@ -40,6 +42,33 @@ impl DatetimeChunked {
         }
     }
 
+    #[cfg(feature = "timezones")]
+    pub fn apply_tz_offset(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
+        let keep_tz = self.time_zone().clone();
+        Ok(self.cast_time_zone(tz)?.with_time_zone(keep_tz))
+    }
+
+    #[cfg(feature = "timezones")]
+    pub fn cast_time_zone(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
+        use chrono_tz::Tz;
+
+        if let Some(from) = self.time_zone() {
+            let from: Tz = from.parse().map_err(|_| {
+                PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
+            })?;
+            let to: Tz = tz.parse().map_err(|_| {
+                PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
+            })?;
+            let out =
+                self.apply_kernel(&|arr| cast_timezone(arr, self.time_unit().to_arrow(), from, to));
+            Ok(out.into_datetime(self.time_unit(), Some(tz.to_string())))
+        } else {
+            Err(PolarsError::ComputeError(
+                "Cannot cast Naive Datetime. First set a timezone".into(),
+            ))
+        }
+    }
+
     /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
         let conversion_f = match self.time_unit() {
@@ -54,7 +83,17 @@ impl DatetimeChunked {
             .unwrap();
         let fmted = format!("{}", dt.format(fmt));
 
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
+        #[allow(unused_mut)]
+        let mut ca = self.clone();
+        #[cfg(feature = "timezones")]
+        if let Some(tz) = self.time_zone() {
+            ca = ca
+                .with_time_zone(Some("UTC".into()))
+                .cast_time_zone(tz)
+                .unwrap();
+        }
+
+        let mut ca: Utf8Chunked = ca.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
             let mut mutarr =
                 MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
