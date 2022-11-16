@@ -250,7 +250,7 @@ fn longest_subgraph(
     trail_b: &Trail,
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
-) -> Option<(Node, Node)> {
+) -> Option<(Node, Node, bool)> {
     if trail_a.is_empty() || trail_b.is_empty() {
         return None;
     }
@@ -258,8 +258,9 @@ fn longest_subgraph(
     let mut prev_node_b = Node(0);
     let mut is_equal;
     let mut i = 0;
+    let mut entirely_equal = trail_a.len() == trail_b.len();
 
-    // iterates from the leafs upwards
+    // iterates from the leaves upwards
     for (node_a, node_b) in trail_a.iter().rev().zip(trail_b.iter().rev()) {
         // we never include the root that splits a trail
         // e.g. don't want to cache the join/union, but
@@ -273,6 +274,7 @@ fn longest_subgraph(
         is_equal = lp_node_equal(a, b, expr_arena);
 
         if !is_equal {
+            entirely_equal = false;
             break;
         }
 
@@ -282,7 +284,7 @@ fn longest_subgraph(
     }
     // previous node was equal
     if i > 0 {
-        Some((prev_node_a, prev_node_b))
+        Some((prev_node_a, prev_node_b, entirely_equal))
     } else {
         None
     }
@@ -318,9 +320,14 @@ pub(crate) fn elim_cmn_subplans(
 
         // we only look forwards, then we traverse all combinations
         for (j, trail_j) in trails.iter().enumerate().skip(i + 1) {
-            if let Some(res) = longest_subgraph(trail_i, trail_j, lp_arena, expr_arena) {
-                to_skip.insert(j);
-                trail_ends.push(res)
+            if let Some((a, b, all_equal)) =
+                longest_subgraph(trail_i, trail_j, lp_arena, expr_arena)
+            {
+                // then we can skip `j` as we already searched with trail `i` which is equal
+                if all_equal {
+                    to_skip.insert(j);
+                }
+                trail_ends.push((a, b))
             }
         }
     }
