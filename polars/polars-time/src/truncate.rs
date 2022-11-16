@@ -20,8 +20,22 @@ impl PolarsTruncate for DatetimeChunked {
             TimeUnit::Milliseconds => Window::truncate_ms,
         };
 
-        self.apply(|t| func(&w, t))
-            .into_datetime(self.time_unit(), self.time_zone().clone())
+        let out = self
+            .apply(|t| func(&w, t))
+            .into_datetime(self.time_unit(), self.time_zone().clone());
+
+        if self.time_zone().is_some() {
+            #[cfg(feature = "timezones")]
+            {
+                out.apply_tz_offset("UTC").unwrap()
+            }
+            #[cfg(not(feature = "timezones"))]
+            {
+                panic!("activate 'timezones' feature")
+            }
+        } else {
+            out
+        }
     }
 }
 

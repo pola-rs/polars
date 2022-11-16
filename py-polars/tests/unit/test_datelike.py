@@ -1856,3 +1856,63 @@ def test_tz_localize() -> None:
             ),
         ]
     }
+
+
+def test_tz_aware_truncate() -> None:
+    test = pl.DataFrame(
+        {
+            "dt": pl.date_range(
+                low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="12h"
+            ).dt.tz_localize("America/New_York")
+        }
+    )
+    assert test.with_column(pl.col("dt").dt.truncate("1d").alias("trunced")).to_dict(
+        False
+    ) == {
+        "dt": [
+            datetime(
+                2022, 11, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 1, 12, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 2, 12, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 3, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 3, 12, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 4, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+        ],
+        "trunced": [
+            datetime(
+                2022, 11, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 3, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 3, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                2022, 11, 4, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+        ],
+    }
