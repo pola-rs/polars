@@ -897,51 +897,26 @@ pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 /// Get the the maximum value per row
 pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
-    max_exprs_impl(exprs)
-}
-
-fn max_exprs_impl(mut exprs: Vec<Expr>) -> Expr {
-    if exprs.len() == 1 {
-        return std::mem::take(&mut exprs[0]);
+    if exprs.is_empty() {
+        return Expr::Columns(Vec::new());
     }
-
-    let first = std::mem::take(&mut exprs[0]);
-    first
-        .map_many(
-            |s| {
-                let s = s.to_vec();
-                let df = DataFrame::new_no_checks(s);
-                df.hmax().map(|s| s.unwrap())
-            },
-            &exprs[1..],
-            GetOutput::super_type(),
-        )
-        .alias("max")
+    let func = |s1, s2| {
+        let df = DataFrame::new_no_checks(vec![s1, s2]);
+        df.hmax().map(|s| s.unwrap())
+    };
+    reduce_exprs(func, exprs).alias("max")
 }
 
-/// Get the the minimum value per row
 pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
-    min_exprs_impl(exprs)
-}
-
-fn min_exprs_impl(mut exprs: Vec<Expr>) -> Expr {
-    if exprs.len() == 1 {
-        return std::mem::take(&mut exprs[0]);
+    if exprs.is_empty() {
+        return Expr::Columns(Vec::new());
     }
-
-    let first = std::mem::take(&mut exprs[0]);
-    first
-        .map_many(
-            |s| {
-                let s = s.to_vec();
-                let df = DataFrame::new_no_checks(s);
-                df.hmin().map(|s| s.unwrap())
-            },
-            &exprs[1..],
-            GetOutput::super_type(),
-        )
-        .alias("min")
+    let func = |s1, s2| {
+        let df = DataFrame::new_no_checks(vec![s1, s2]);
+        df.hmin().map(|s| s.unwrap())
+    };
+    reduce_exprs(func, exprs).alias("min")
 }
 
 /// Evaluate all the expressions with a bitwise or
