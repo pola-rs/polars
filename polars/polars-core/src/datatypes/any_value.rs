@@ -609,7 +609,7 @@ impl<'a> From<AnyValue<'a>> for Option<i64> {
 }
 
 impl PartialEq for AnyValue<'_> {
-    // Everything of Any is slow. Don't use.
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         use AnyValue::*;
         match (self.as_borrowed(), other.as_borrowed()) {

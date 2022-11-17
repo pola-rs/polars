@@ -18,6 +18,7 @@ polars-io = { version = "0.25.1", path = "../../polars-io", default-features = f
 polars-plan = { version = "0.25.1", path = "../polars-plan", default-features = false, features = ["compile"] }
 polars-utils = { version = "0.25.1", path = "../../polars-utils" }
 rayon.workspace = true
+smartstring = { version = "1" }
 
 [features]
 compile = []

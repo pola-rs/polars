@@ -1,11 +1,9 @@
 use std::any::Any;
+use std::sync::atomic::Ordering::{Acquire, SeqCst};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering::SeqCst;
 
-use polars_core::error::{
-    PolarsResult, PolarsError
-};
+use polars_core::error::{PolarsError, PolarsResult};
 use polars_core::frame::DataFrame;
 use polars_core::utils::concat_df_unchecked;
 use polars_core::POOL;
@@ -29,7 +27,7 @@ pub struct PipeLine {
     rh_sides: Vec<PipeLine>,
     operator_offset: usize,
     sink_error: Arc<Mutex<Option<PolarsError>>>,
-    sink_finished: Arc<AtomicBool>
+    sink_finished: Arc<AtomicBool>,
 }
 
 impl PipeLine {
@@ -66,7 +64,7 @@ impl PipeLine {
             rh_sides: vec![],
             operator_offset,
             sink_error: Default::default(),
-            sink_finished: Default::default()
+            sink_finished: Default::default(),
         }
     }
 
@@ -93,7 +91,7 @@ impl PipeLine {
         ec: &PExecutionContext,
         operator_start: usize,
         operator_end: usize,
-    )  {
+    ) {
         debug_assert!(chunks.len() <= sink.len());
         let mut operators = std::mem::take(&mut self.operators);
         POOL.install(|| {
@@ -113,15 +111,17 @@ impl PipeLine {
                                 match result {
                                     OperatorResult::Finished(chunk) => sink.sink(ec, chunk),
                                     // probably empty chunk?
-                                    OperatorResult::NeedsNewData => Ok(SinkResult::CanHaveMoreInput),
+                                    OperatorResult::NeedsNewData => {
+                                        Ok(SinkResult::CanHaveMoreInput)
+                                    }
                                     _ => todo!(),
                                 }
-                            },
+                            }
                             Err(err) => {
                                 self.sink_finished.store(true, SeqCst);
                                 let mut sink_error = self.sink_error.lock().unwrap();
                                 *sink_error = Some(err);
-                                return
+                                return;
                             }
                         }
                     };
@@ -136,7 +136,6 @@ impl PipeLine {
                             self.sink_finished.store(true, SeqCst);
                             let mut sink_error = self.sink_error.lock().unwrap();
                             *sink_error = Some(err);
-
                         }
                     }
                 });
@@ -208,24 +207,44 @@ impl PipeLine {
         for (i, (operator_end, mut sink)) in std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
             for src in &mut std::mem::take(&mut self.sources) {
-                while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
-                    self.par_process_chunks(
-                        chunks,
-                        &mut sink,
-                        ec,
-                        operator_start,
-                        operator_end,
-                    );
-                    let finished = self.sink_finished.load(SeqCst);
-                    if finished {
-                        // check for errors
-                        let mut err = self.sink_error.lock().unwrap();
-                        if let Some(err) = err.take() {
-                            return Err(err)
+                // we allow a single thread to prefetch IO
+                let (sender, receiver) = std::sync::mpsc::sync_channel(2);
+                let finished = AtomicBool::new(false);
+
+                std::thread::scope(|s| {
+                    let _ = s.spawn(|| {
+                        // this will block until the previous message has been received
+                        while let SourceResult::GotMoreData(chunks) = src.get_batches(ec).unwrap() {
+                            if finished.load(Acquire) {
+                                break;
+                            }
+                            sender.send(chunks).unwrap();
                         }
-                        break;
+                        drop(sender);
+                    });
+
+                    while let Ok(chunks) = receiver.recv() {
+                        self.par_process_chunks(
+                            chunks,
+                            &mut sink,
+                            ec,
+                            operator_start,
+                            operator_end,
+                        );
+                        let finished = self.sink_finished.load(SeqCst);
+                        if finished {
+                            // check for errors
+                            let mut err = self.sink_error.lock().unwrap();
+                            if let Some(err) = err.take() {
+                                return Err(err);
+                            }
+                            break;
+                        }
                     }
-                }
+
+                    finished.store(true, Ordering::Release);
+                    Ok(())
+                })?
             }
 
             let mut reduced_sink = sink

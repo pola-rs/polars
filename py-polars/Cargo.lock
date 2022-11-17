@@ -1578,6 +1578,7 @@ dependencies = [
  "polars-plan",
  "polars-utils",
  "rayon",
+ "smartstring",
 ]
 
 [[package]]

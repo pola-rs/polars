@@ -177,6 +177,13 @@ where
                         )) as Box<dyn Sink>
                     })
                 }
+                (DataType::Utf8, 1) => Box::new(groupby::Utf8GroupbySink::new(
+                    key_columns[0].clone(),
+                    aggregation_columns,
+                    agg_fns,
+                    output_schema.clone(),
+                    options.slice,
+                )) as Box<dyn Sink>,
                 _ => Box::new(groupby::GenericGroupbySink::new(
                     key_columns,
                     aggregation_columns,
