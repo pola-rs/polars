@@ -64,11 +64,11 @@ impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
 }
 
 pub trait RenameAliasFn: Send + Sync {
-    fn call(&self, name: &str) -> String;
+    fn call(&self, name: &str) -> PolarsResult<String>;
 }
 
-impl<F: Fn(&str) -> String + Send + Sync> RenameAliasFn for F {
-    fn call(&self, name: &str) -> String {
+impl<F: Fn(&str) -> PolarsResult<String> + Send + Sync> RenameAliasFn for F {
+    fn call(&self, name: &str) -> PolarsResult<String> {
         self(name)
     }
 }

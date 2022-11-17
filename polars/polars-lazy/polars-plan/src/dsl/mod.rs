@@ -1498,7 +1498,7 @@ impl Expr {
     /// Define an alias by mapping a function over the original root column name.
     pub fn map_alias<F>(self, function: F) -> Expr
     where
-        F: Fn(&str) -> String + 'static + Send + Sync,
+        F: Fn(&str) -> PolarsResult<String> + 'static + Send + Sync,
     {
         let function = SpecialEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
         Expr::RenameAlias {
@@ -1510,13 +1510,13 @@ impl Expr {
     /// Add a suffix to the root column name.
     pub fn suffix(self, suffix: &str) -> Expr {
         let suffix = suffix.to_string();
-        self.map_alias(move |name| format!("{}{}", name, suffix))
+        self.map_alias(move |name| Ok(format!("{}{}", name, suffix)))
     }
 
     /// Add a prefix to the root column name.
     pub fn prefix(self, prefix: &str) -> Expr {
         let prefix = prefix.to_string();
-        self.map_alias(move |name| format!("{}{}", prefix, name))
+        self.map_alias(move |name| Ok(format!("{}{}", prefix, name)))
     }
 
     /// Exclude a column from a wildcard/regex selection.
