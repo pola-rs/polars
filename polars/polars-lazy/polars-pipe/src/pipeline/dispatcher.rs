@@ -1,6 +1,11 @@
 use std::any::Any;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::SeqCst;
 
-use polars_core::error::PolarsResult;
+use polars_core::error::{
+    PolarsResult, PolarsError
+};
 use polars_core::frame::DataFrame;
 use polars_core::utils::concat_df_unchecked;
 use polars_core::POOL;
@@ -23,6 +28,8 @@ pub struct PipeLine {
     sink_nodes: Vec<Node>,
     rh_sides: Vec<PipeLine>,
     operator_offset: usize,
+    sink_error: Arc<Mutex<Option<PolarsError>>>,
+    sink_finished: Arc<AtomicBool>
 }
 
 impl PipeLine {
@@ -58,6 +65,8 @@ impl PipeLine {
             sink_nodes,
             rh_sides: vec![],
             operator_offset,
+            sink_error: Default::default(),
+            sink_finished: Default::default()
         }
     }
 
@@ -84,40 +93,55 @@ impl PipeLine {
         ec: &PExecutionContext,
         operator_start: usize,
         operator_end: usize,
-    ) -> PolarsResult<Vec<SinkResult>> {
+    )  {
         debug_assert!(chunks.len() <= sink.len());
         let mut operators = std::mem::take(&mut self.operators);
-        let out = POOL.install(|| {
+        POOL.install(|| {
             chunks
                 .into_par_iter()
                 .zip(sink.par_iter_mut())
                 .zip(operators.par_iter_mut())
-                .map(|((chunk, sink), operator_pipe)| {
+                .for_each(|((chunk, sink), operator_pipe)| {
                     // truncate the operators that should run into the current sink.
                     let operator_pipe = &mut operator_pipe[operator_start..operator_end];
 
-                    if operator_pipe.is_empty() {
+                    let sink_out = if operator_pipe.is_empty() {
                         sink.sink(ec, chunk)
                     } else {
-                        match self.push_operators(chunk, ec, operator_pipe)? {
-                            OperatorResult::Finished(chunk) => sink.sink(ec, chunk),
-                            // probably empty chunk?
-                            OperatorResult::NeedsNewData => Ok(SinkResult::CanHaveMoreInput),
-                            _ => todo!(),
+                        match self.push_operators(chunk, ec, operator_pipe) {
+                            Ok(result) => {
+                                match result {
+                                    OperatorResult::Finished(chunk) => sink.sink(ec, chunk),
+                                    // probably empty chunk?
+                                    OperatorResult::NeedsNewData => Ok(SinkResult::CanHaveMoreInput),
+                                    _ => todo!(),
+                                }
+                            },
+                            Err(err) => {
+                                self.sink_finished.store(true, SeqCst);
+                                let mut sink_error = self.sink_error.lock().unwrap();
+                                *sink_error = Some(err);
+                                return
+                            }
+                        }
+                    };
+                    match sink_out {
+                        Ok(SinkResult::Finished) => {
+                            self.sink_finished.store(true, SeqCst);
+                        }
+                        Ok(SinkResult::CanHaveMoreInput) => {
+                            // pass
+                        }
+                        Err(err) => {
+                            self.sink_finished.store(true, SeqCst);
+                            let mut sink_error = self.sink_error.lock().unwrap();
+                            *sink_error = Some(err);
+
                         }
                     }
-                })
-                // only collect failed and finished messages as there should be acted upon those
-                // the other ones (e.g. success and can have more input) can be ignored
-                // this saves a lot of allocations.
-                .filter(|result| match result {
-                    Ok(sink_result) => matches!(sink_result, SinkResult::Finished),
-                    Err(_) => true,
-                })
-                .collect()
+                });
         });
         self.operators = operators;
-        out
     }
 
     fn push_operators(
@@ -185,18 +209,20 @@ impl PipeLine {
         {
             for src in &mut std::mem::take(&mut self.sources) {
                 while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
-                    let results = self.par_process_chunks(
+                    self.par_process_chunks(
                         chunks,
                         &mut sink,
                         ec,
                         operator_start,
                         operator_end,
-                    )?;
-
-                    if results
-                        .iter()
-                        .any(|sink_result| matches!(sink_result, SinkResult::Finished))
-                    {
+                    );
+                    let finished = self.sink_finished.load(SeqCst);
+                    if finished {
+                        // check for errors
+                        let mut err = self.sink_error.lock().unwrap();
+                        if let Some(err) = err.take() {
+                            return Err(err)
+                        }
                         break;
                     }
                 }
