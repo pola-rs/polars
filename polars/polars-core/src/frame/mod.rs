@@ -1172,6 +1172,19 @@ impl DataFrame {
         Ok(())
     }
 
+    pub fn _add_columns(&mut self, columns: Vec<Series>, schema: &Schema) -> PolarsResult<()> {
+        for (i, s) in columns.into_iter().enumerate() {
+            // we need to branch here
+            // because users can add multiple columns with the same name
+            if i == 0 || schema.get(s.name()).is_some() {
+                self.with_column_and_schema(s, schema)?;
+            } else {
+                self.with_column(s.clone())?;
+            }
+        }
+        Ok(())
+    }
+
     /// Add a new column to this `DataFrame` or replace an existing one.
     /// Uses an existing schema to amortize lookups.
     /// If the schema is incorrect, we will fallback to linear search.
