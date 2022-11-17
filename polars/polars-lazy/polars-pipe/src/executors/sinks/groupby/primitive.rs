@@ -109,7 +109,6 @@ where
     }
 
     fn pre_finalize(&mut self) -> PolarsResult<Vec<DataFrame>> {
-        // TODO! parallel
         let mut aggregators = std::mem::take(&mut self.aggregators);
         let slices = compute_slices(&self.pre_agg_partitions, self.slice);
 

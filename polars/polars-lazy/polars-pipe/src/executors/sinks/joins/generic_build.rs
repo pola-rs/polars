@@ -261,47 +261,50 @@ impl Sink for GenericBuild {
 
         // we combine the other hashtable with ours, but we must offset the chunk_idx
         // values by the number of chunks we already got.
-        for (ht, other_ht) in self.hash_tables.iter_mut().zip(&other.hash_tables) {
-            for (k, val) in other_ht.iter() {
-                // use the indexes to materialize the row
-                for [chunk_idx, df_idx] in val {
-                    unsafe { other.get_tuple(*chunk_idx, *df_idx, &mut tuple_buf) };
-                }
+        self.hash_tables
+            .iter_mut()
+            .zip(&other.hash_tables)
+            .for_each(|(ht, other_ht)| {
+                for (k, val) in other_ht.iter() {
+                    // use the indexes to materialize the row
+                    for [chunk_idx, df_idx] in val {
+                        unsafe { other.get_tuple(*chunk_idx, *df_idx, &mut tuple_buf) };
+                    }
 
-                let h = k.hash;
-                let entry = ht.raw_entry_mut().from_hash(h, |key| {
-                    compare_fn(
-                        key,
-                        h,
-                        &self.materialized_join_cols,
-                        &tuple_buf,
-                        tuple_buf.len(),
-                    )
-                });
+                    let h = k.hash;
+                    let entry = ht.raw_entry_mut().from_hash(h, |key| {
+                        compare_fn(
+                            key,
+                            h,
+                            &self.materialized_join_cols,
+                            &tuple_buf,
+                            tuple_buf.len(),
+                        )
+                    });
 
-                match entry {
-                    RawEntryMut::Vacant(entry) => {
-                        let [chunk_idx, df_idx] = unsafe { val.get_unchecked_release(0) };
-                        let new_chunk_idx = chunk_idx + chunks_offset;
-                        let key = Key::new(h, new_chunk_idx, *df_idx);
-                        let mut payload = vec![[new_chunk_idx, *df_idx]];
-                        if val.len() > 1 {
-                            let iter = val[1..]
+                    match entry {
+                        RawEntryMut::Vacant(entry) => {
+                            let [chunk_idx, df_idx] = unsafe { val.get_unchecked_release(0) };
+                            let new_chunk_idx = chunk_idx + chunks_offset;
+                            let key = Key::new(h, new_chunk_idx, *df_idx);
+                            let mut payload = vec![[new_chunk_idx, *df_idx]];
+                            if val.len() > 1 {
+                                let iter = val[1..].iter().map(|[chunk_idx, val_idx]| {
+                                    [*chunk_idx + chunks_offset, *val_idx]
+                                });
+                                payload.extend(iter);
+                            }
+                            entry.insert(key, payload);
+                        }
+                        RawEntryMut::Occupied(mut entry) => {
+                            let iter = val
                                 .iter()
                                 .map(|[chunk_idx, val_idx]| [*chunk_idx + chunks_offset, *val_idx]);
-                            payload.extend(iter);
+                            entry.get_mut().extend(iter);
                         }
-                        entry.insert(key, payload);
-                    }
-                    RawEntryMut::Occupied(mut entry) => {
-                        let iter = val
-                            .iter()
-                            .map(|[chunk_idx, val_idx]| [*chunk_idx + chunks_offset, *val_idx]);
-                        entry.get_mut().extend(iter);
                     }
                 }
-            }
-        }
+            })
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {

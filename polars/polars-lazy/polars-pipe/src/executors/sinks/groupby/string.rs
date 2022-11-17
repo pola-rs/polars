@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
 use num::NumCast;
@@ -14,40 +13,20 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
+use super::generic::Key;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::utils::compute_slices;
-use crate::executors::sinks::utils::{hash_series, load_vec};
+use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-
-// This is the hash and the Index offset in the linear buffer
-#[derive(Copy, Clone)]
-pub(super) struct Key {
-    pub(super) hash: u64,
-    pub(super) idx: IdxSize,
-}
-
-impl Key {
-    #[inline]
-    pub(super) fn new(hash: u64, idx: IdxSize) -> Self {
-        Self { hash, idx }
-    }
-}
-
-impl Hash for Key {
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
-}
 
 // we store a hashmap per partition (partitioned by hash)
 // the hashmap contains indexes as keys and as values
 // those indexes point into the keys buffer and the values buffer
 // the keys buffer are buffers of AnyValue per partition
 // and the values are buffer of Aggregation functions per partition
-pub struct GenericGroupbySink {
+pub struct Utf8GroupbySink {
     thread_no: usize,
     // idx is the offset in the array with keys
     // idx is the offset in the array with aggregators
@@ -57,11 +36,11 @@ pub struct GenericGroupbySink {
     // by:
     // first get the correct vec by the partition index
     //      * offset = (idx)
-    //      * end = (offset + n_aggs)
-    keys: Vec<Vec<AnyValue<'static>>>,
+    //      * end = (offset + 1)
+    keys: Vec<Vec<Option<smartstring::alias::String>>>,
     aggregators: Vec<Vec<AggregateFunction>>,
-    // the keys that will be aggregated on
-    key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+    // the key that will be aggregated on
+    key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     hb: RandomState,
@@ -72,14 +51,13 @@ pub struct GenericGroupbySink {
     output_schema: SchemaRef,
     // amortize allocations
     aggregation_series: Vec<Series>,
-    keys_series: Vec<Series>,
     hashes: Vec<u64>,
     slice: Option<(i64, usize)>,
 }
 
-impl GenericGroupbySink {
+impl Utf8GroupbySink {
     pub fn new(
-        key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        key_column: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<AggregateFunction>,
         output_schema: SchemaRef,
@@ -89,9 +67,7 @@ impl GenericGroupbySink {
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
-        let keys = load_vec(partitions, || {
-            Vec::with_capacity(HASHMAP_INIT_SIZE * key_columns.len())
-        });
+        let keys = load_vec(partitions, || Vec::with_capacity(HASHMAP_INIT_SIZE));
         let aggregators = load_vec(partitions, || {
             Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len())
         });
@@ -101,13 +77,12 @@ impl GenericGroupbySink {
             pre_agg_partitions: pre_agg,
             keys,
             aggregators,
-            key_columns,
+            key_column,
             aggregation_columns,
             hb,
             agg_fns,
             output_schema,
             aggregation_series: vec![],
-            keys_series: vec![],
             hashes: vec![],
             slice,
         }
@@ -117,14 +92,9 @@ impl GenericGroupbySink {
     fn number_of_aggs(&self) -> usize {
         self.aggregation_columns.len()
     }
-    #[inline]
-    fn number_of_keys(&self) -> usize {
-        self.key_columns.len()
-    }
 
     fn pre_finalize(&mut self) -> PolarsResult<Vec<DataFrame>> {
         let mut aggregators = std::mem::take(&mut self.aggregators);
-        let n_keys = self.number_of_keys();
         let slices = compute_slices(&self.pre_agg_partitions, self.slice);
 
         POOL.install(|| {
@@ -139,12 +109,6 @@ impl GenericGroupbySink {
                         if agg_map.is_empty() {
                             return None;
                         }
-                        let mut key_builders = self
-                            .output_schema
-                            .iter_dtypes()
-                            .take(n_keys)
-                            .map(|dtype| AnyValueBuffer::new(dtype, agg_map.len()))
-                            .collect::<Vec<_>>();
                         let dtypes = agg_fns
                             .iter()
                             .take(self.number_of_aggs())
@@ -156,17 +120,15 @@ impl GenericGroupbySink {
                             .map(|dtype| AnyValueBuffer::new(dtype, slice_len))
                             .collect::<Vec<_>>();
 
+                        let cap = std::cmp::min(slice_len, agg_map.len());
+                        let mut key_builder = Utf8ChunkedBuilder::new("", cap, cap * 8);
                         agg_map.into_iter().skip(offset).take(slice_len).for_each(
                             |(k, &offset)| {
-                                let keys_offset = k.idx as usize;
-                                let keys = unsafe {
-                                    current_keys
-                                        .get_unchecked_release(keys_offset..keys_offset + n_keys)
+                                let key_offset = k.idx as usize;
+                                let key = unsafe {
+                                    current_keys.get_unchecked_release(key_offset).as_deref()
                                 };
-
-                                for (key, key_builder) in keys.iter().zip(key_builders.iter_mut()) {
-                                    key_builder.add(key.as_borrowed());
-                                }
+                                key_builder.append_option(key);
 
                                 for (i, buffer) in (offset as usize
                                     ..offset as usize + self.aggregation_columns.len())
@@ -181,10 +143,8 @@ impl GenericGroupbySink {
                             },
                         );
 
-                        let mut cols = Vec::with_capacity(n_keys + self.number_of_aggs());
-                        for key_builder in key_builders {
-                            cols.push(key_builder.into_series());
-                        }
+                        let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
+                        cols.push(key_builder.finish().into_series());
                         cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
                         for (s, (name, dtype)) in cols.iter_mut().zip(self.output_schema.iter()) {
                             if s.name() != name {
@@ -203,7 +163,7 @@ impl GenericGroupbySink {
     }
 }
 
-impl Sink for GenericGroupbySink {
+impl Sink for Utf8GroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         let num_aggs = self.number_of_aggs();
 
@@ -213,11 +173,14 @@ impl Sink for GenericGroupbySink {
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
-        for phys_e in self.key_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_ref())?;
-            let s = s.to_physical_repr();
-            self.keys_series.push(s.rechunk());
-        }
+        let s = self
+            .key_column
+            .evaluate(&chunk, context.execution_state.as_ref())?;
+        let s = s.rechunk();
+        // write the hashes to self.hashes buffer
+        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // array of the keys
+        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
 
         let mut agg_iters = self
             .aggregation_series
@@ -225,27 +188,7 @@ impl Sink for GenericGroupbySink {
             .map(|s| s.phys_iter())
             .collect::<Vec<_>>();
 
-        // write the hashes to self.hashes buffer
-        hash_series(&self.keys_series, &mut self.hashes, &self.hb);
-
-        // iterators over anyvalues
-        let mut key_iters = self
-            .keys_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
-
-        // a small buffer that holds the current key values
-        // if we groupby 2 keys, this holds 2 anyvalues.
-        let mut current_tuple = Vec::with_capacity(self.keys.len());
-
-        for &h in &self.hashes {
-            // load the keys in the buffer
-            current_tuple.clear();
-            for key_iter in key_iters.iter_mut() {
-                unsafe { current_tuple.push(key_iter.next().unwrap_unchecked_release()) }
-            }
-
+        for (&h, key_val) in self.hashes.iter().zip(keys_arr.iter()) {
             let partition = hash_to_partition(h, self.pre_agg_partitions.len());
             let current_partition =
                 unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
@@ -255,16 +198,7 @@ impl Sink for GenericGroupbySink {
 
             let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
                 let idx = key.idx as usize;
-                if self.keys_series.len() > 1 {
-                    current_tuple.iter().enumerate().all(|(i, key)| unsafe {
-                        current_key_values.get_unchecked_release(i + idx) == key
-                    })
-                } else {
-                    unsafe {
-                        current_key_values.get_unchecked_release(idx)
-                            == current_tuple.get_unchecked_release(0)
-                    }
-                }
+                unsafe { current_key_values.get_unchecked_release(idx).as_deref() == key_val }
             });
 
             let agg_idx = match entry {
@@ -280,13 +214,8 @@ impl Sink for GenericGroupbySink {
                     };
                     entry.insert(keys_offset, value_offset);
 
-                    unsafe {
-                        current_key_values.extend(
-                            current_tuple
-                                .iter()
-                                .map(|av| av.clone().into_static().unwrap_unchecked_release()),
-                        )
-                    };
+                    current_key_values.push(key_val.map(|s| s.into()));
+
                     // initialize the aggregators
                     for agg_fn in &self.agg_fns {
                         current_aggregators.push(agg_fn.split2())
@@ -303,9 +232,7 @@ impl Sink for GenericGroupbySink {
             }
         }
         drop(agg_iters);
-        drop(key_iters);
         self.aggregation_series.clear();
-        self.keys_series.clear();
         self.hashes.clear();
         Ok(SinkResult::CanHaveMoreInput)
     }
@@ -316,7 +243,6 @@ impl Sink for GenericGroupbySink {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         let n_partitions = self.pre_agg_partitions.len();
         debug_assert_eq!(n_partitions, other.pre_agg_partitions.len());
-        let n_keys = self.number_of_keys();
 
         self.pre_agg_partitions
             .iter_mut()
@@ -339,9 +265,8 @@ impl Sink for GenericGroupbySink {
                         // the offset in the keys of other
                         let idx_other = k_other.idx as usize;
                         // slice to the keys of other
-                        let keys_other = unsafe {
-                            keys_buffer_other.get_unchecked_release(idx_other..idx_other + n_keys)
-                        };
+                        let key_other =
+                            unsafe { keys_buffer_other.get_unchecked_release(idx_other) };
 
                         let entry = map_self.raw_entry_mut().from_hash(h, |k_self| {
                             // the offset in the keys of self
@@ -349,11 +274,10 @@ impl Sink for GenericGroupbySink {
                             // slice to the keys of self
                             // safety:
                             // in bounds
-                            let keys_self = unsafe {
-                                keys_buffer_self.get_unchecked_release(idx_self..idx_self + n_keys)
-                            };
+                            let key_self =
+                                unsafe { keys_buffer_self.get_unchecked_release(idx_self) };
                             // compare the keys
-                            keys_self == keys_other
+                            key_self == key_other
                         });
 
                         let agg_idx_self = match entry {
@@ -372,8 +296,8 @@ impl Sink for GenericGroupbySink {
                                     )
                                 };
 
-                                // extend the keys buffer with the new keys from other
-                                keys_buffer_self.extend_from_slice(keys_other);
+                                // extend the keys buffer with the new key from other
+                                keys_buffer_self.push(key_other.clone());
 
                                 // insert the keys and values_offset
                                 entry.insert(key, values_offset);
@@ -403,7 +327,7 @@ impl Sink for GenericGroupbySink {
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
         let mut new = Self::new(
-            self.key_columns.clone(),
+            self.key_column.clone(),
             self.aggregation_columns.clone(),
             self.agg_fns.iter().map(|func| func.split2()).collect(),
             self.output_schema.clone(),
