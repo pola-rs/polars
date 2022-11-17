@@ -94,3 +94,13 @@ def test_unnest_columns_available() -> None:
         "genre3": ["Fantasy", "Thriller", "Drama"],
         "genre4": ["Sci-Fi", None, "Romance"],
     }
+
+
+def test_streaming_duplicate_cols_5537() -> None:
+    assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
+        [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
+    ).collect(allow_streaming=True).to_dict(False) == {
+        "a": [3, 6, 9],
+        "b": [1, 2, 3],
+        "foo": [2, 4, 6],
+    }

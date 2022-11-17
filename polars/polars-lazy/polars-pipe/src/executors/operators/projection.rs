@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_core::schema::SchemaRef;
 
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
@@ -53,6 +54,7 @@ impl Operator for ProjectionOperator {
 #[derive(Clone)]
 pub(crate) struct HstackOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
+    pub(crate) input_schema: SchemaRef,
 }
 
 impl Operator for HstackOperator {
@@ -67,7 +69,9 @@ impl Operator for HstackOperator {
             .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let df = chunk.data.hstack(&projected)?;
+        let mut df = chunk.data.clone();
+        let schema = &*self.input_schema;
+        df._add_columns(projected, schema)?;
 
         let chunk = chunk.with_data(df);
         Ok(OperatorResult::Finished(chunk))

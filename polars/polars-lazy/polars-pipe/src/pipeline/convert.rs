@@ -221,9 +221,10 @@ where
             };
             Box::new(op) as Box<dyn Operator>
         }
-        HStack { exprs, .. } => {
+        HStack { exprs, schema, .. } => {
             let op = operators::HstackOperator {
                 exprs: exprs_to_physical(exprs, expr_arena, &to_physical)?,
+                input_schema: schema.clone(),
             };
             Box::new(op) as Box<dyn Operator>
         }
