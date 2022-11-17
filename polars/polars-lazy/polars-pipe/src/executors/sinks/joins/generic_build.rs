@@ -131,6 +131,14 @@ pub(super) fn compare_fn(
 }
 
 impl GenericBuild {
+    fn is_empty(&self) -> bool {
+        match self.chunks.len() {
+            0 => true,
+            1 => self.chunks[0].data.height() == 0,
+            _ => false,
+        }
+    }
+
     #[inline]
     fn number_of_keys(&self) -> usize {
         self.join_columns_left.len()
@@ -175,6 +183,13 @@ impl GenericBuild {
 
 impl Sink for GenericBuild {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        // we do some juggling here so that we don't
+        // end up with empty chunks
+        // But we always want one empty chunk if all is empty as we need
+        // to finish the join
+        if self.chunks.len() == 1 && self.chunks[0].data.height() == 0 {
+            self.chunks.pop().unwrap();
+        }
         if chunk.is_empty() {
             if self.chunks.is_empty() {
                 self.chunks.push(chunk)
@@ -228,7 +243,15 @@ impl Sink for GenericBuild {
     }
 
     fn combine(&mut self, mut other: Box<dyn Sink>) {
+        if self.is_empty() {
+            let other = other.as_any().downcast_mut::<Self>().unwrap();
+            std::mem::swap(self, other);
+            return;
+        }
         let other = other.as_any().downcast_ref::<Self>().unwrap();
+        if other.is_empty() {
+            return;
+        }
         let mut tuple_buf = Vec::with_capacity(self.number_of_keys());
 
         let chunks_offset = self.chunks.len() as IdxSize;
