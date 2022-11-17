@@ -93,6 +93,7 @@ class LazyFrame:
     """
 
     _ldf: PyLazyFrame
+    _accessors: set[str] = set()
 
     @classmethod
     def _from_pyldf(cls: type[LDF], ldf: PyLazyFrame) -> LDF:
@@ -462,6 +463,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 {self.describe_plan()}\
 """
 
+    def __repr__(self) -> str:
+        # don't expose internal/private classpath
+        return f"<polars.{self.__class__.__name__} object at 0x{id(self):X}>"
+
     def _repr_html_(self) -> str:
         try:
             dot = self._ldf.to_dot(optimized=False)
@@ -550,16 +555,17 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
-        Apply a function on Self.
+        Offers a structured way to apply a sequence of user-defined functions (UDFs).
 
         Parameters
         ----------
         func
-            Callable.
+            Callable; will receive the frame as the first parameter,
+            followed by any given args/kwargs.
         args
-            Arguments.
+            Arguments to pass to the UDF.
         kwargs
-            Keyword arguments.
+            Keyword arguments to pass to the UDF.
 
         Examples
         --------
@@ -730,7 +736,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
-        <polars.internals.lazyframe.frame.LazyFrame object at ...>
+        <polars.LazyFrame object at ...>
 
         """
 
@@ -1150,7 +1156,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     }
         ... )
         >>> df.lazy()  # doctest: +ELLIPSIS
-        <polars.internals.lazyframe.frame.LazyFrame object at ...>
+        <polars.LazyFrame object at ...>
 
         """
         return self
@@ -1209,7 +1215,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     }
         ... ).lazy()
         >>> (df.clone())  # doctest: +ELLIPSIS
-        <polars.internals.lazyframe.frame.LazyFrame object at ...>
+        <polars.LazyFrame object at ...>
 
         """
         return self._from_pyldf(self._ldf.clone())
@@ -3292,6 +3298,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
+
         return self._from_pyldf(
             self._ldf.map(
                 f,

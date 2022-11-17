@@ -431,11 +431,11 @@ def test_to_pandas() -> None:
         assert b.isnull().sum() == 1
 
         if a.dtype == pl.List:
-            cvals = [(None if x is None else x.tolist()) for x in b]
-            assert cvals == test_data
+            vals = [(None if x is None else x.tolist()) for x in b]
         else:
-            c = b.replace({np.nan: None})
-            assert c.values.tolist() == test_data  # type: ignore[union-attr]
+            vals = b.replace({np.nan: None}).values.tolist()  # type: ignore[union-attr]
+
+        assert vals == test_data
 
 
 def test_to_python() -> None:
