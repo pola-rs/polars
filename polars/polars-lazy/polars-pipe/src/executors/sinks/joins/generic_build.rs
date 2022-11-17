@@ -176,6 +176,9 @@ impl GenericBuild {
 impl Sink for GenericBuild {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         if chunk.is_empty() {
+            if self.chunks.is_empty() {
+                self.chunks.push(chunk)
+            }
             return Ok(SinkResult::CanHaveMoreInput);
         }
         let mut hashes = std::mem::take(&mut self.hashes);
@@ -300,7 +303,9 @@ impl Sink for GenericBuild {
                         .map(|chunk| chunk.data),
                 );
                 if let Ok(n_chunks) = left_df.n_chunks() {
-                    assert_eq!(n_chunks, chunks_len);
+                    if left_df.height() > 0 {
+                        assert_eq!(n_chunks, chunks_len);
+                    }
                 }
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));

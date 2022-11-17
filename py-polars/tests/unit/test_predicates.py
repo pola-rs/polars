@@ -93,4 +93,4 @@ def test_streaming_empty_df() -> None:
 
     assert df.lazy().join(df.lazy(), on="a", how="inner").filter(
         2 == 1  # noqa: SIM300
-    ).collect().to_dict(False) == {"a": [], "b": [], "b_right": []}
+    ).collect(allow_streaming=True).to_dict(False) == {"a": [], "b": [], "b_right": []}

@@ -1452,6 +1452,7 @@ dependencies = [
  "polars-ops",
  "polars-sql",
  "polars-time",
+ "version_check",
 ]
 
 [[package]]
