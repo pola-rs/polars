@@ -1802,6 +1802,19 @@ class DataFrame:
         --------
         DataFrame.write_ndjson
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...     }
+        ... )
+        >>> df.write_json()
+        '{"columns":[{"name":"foo","datatype":"Int64","values":[1,2,3]},{"name":"bar","datatype":"Int64","values":[6,7,8]}]}'
+        >>> df.write_json(row_oriented=True)
+        '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
+
         """
         if json_lines is not None:
             warn(
@@ -1858,6 +1871,16 @@ class DataFrame:
             File path to which the result should be written. If set to ``None``
             (default), the output is returned as a string instead.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...     }
+        ... )
+        >>> df.write_ndjson()
+        '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -2027,6 +2050,20 @@ class DataFrame:
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
 
+        Examples
+        --------
+        >>> import pathlib
+        >>>
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> path: pathlib.Path = dirpath / "new_file.avro"
+        >>> df.write_avro(path)
+
         """
         if compression is None:
             compression = "uncompressed"
@@ -2049,6 +2086,20 @@ class DataFrame:
             File path to which the file should be written.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
+
+        Examples
+        --------
+        >>> import pathlib
+        >>>
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> path: pathlib.Path = dirpath / "new_file.arrow"
+        >>> df.write_ipc(path)
 
         """
         if compression is None:
@@ -2101,6 +2152,20 @@ class DataFrame:
             At the moment C++ supports more features.
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
+
+        Examples
+        --------
+        >>> import pathlib
+        >>>
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> path: pathlib.Path = dirpath / "new_file.parquet"
+        >>> df.write_parquet(path)
 
         """
         if compression is None:
@@ -2456,6 +2521,20 @@ class DataFrame:
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6   ┆ a   │
+        └─────┴─────┴─────┘
+
+        Filter on an OR condition:
+
+        >>> df.filter((pl.col("foo") == 1) | (pl.col("ham") == "c"))
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
         """
@@ -3033,6 +3112,30 @@ class DataFrame:
         │ 3   ┆ 30  │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 4   ┆ 40  │
+        └─────┴─────┘
+
+        >>> df = pl.DataFrame({"b": [1, 2], "a": [3,4]})
+        >>> df
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ b   ┆ a   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 4   │
+        └─────┴─────┘
+        >>> df.pipe(lambda tdf: tdf.select(sorted(tdf.columns)))
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 3   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 2   │
         └─────┴─────┘
 
         """
