@@ -31,7 +31,7 @@ pub(crate) fn prepare_projection(
     exprs: Vec<Expr>,
     schema: &Schema,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
-    let exprs = rewrite_projections(exprs, schema, &[]);
+    let exprs = rewrite_projections(exprs, schema, &[])?;
     let schema = utils::expressions_to_schema(&exprs, schema, Context::Default)?;
     Ok((exprs, schema))
 }
@@ -376,7 +376,11 @@ impl LogicalPlanBuilder {
             _ => false,
         }) {
             let schema = try_delayed!(self.0.schema(), &self.0, into);
-            let rewritten = rewrite_projections(vec![predicate], &schema, &[]);
+            let rewritten = try_delayed!(
+                rewrite_projections(vec![predicate], &schema, &[]),
+                &self.0,
+                into
+            );
             combine_predicates_expr(rewritten.into_iter())
         } else {
             predicate
@@ -399,8 +403,16 @@ impl LogicalPlanBuilder {
     ) -> Self {
         let current_schema = try_delayed!(self.0.schema(), &self.0, into);
         let current_schema = current_schema.as_ref();
-        let keys = rewrite_projections(keys, current_schema, &[]);
-        let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
+        let keys = try_delayed!(
+            rewrite_projections(keys, current_schema, &[]),
+            &self.0,
+            into
+        );
+        let aggs = try_delayed!(
+            rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref()),
+            &self.0,
+            into
+        );
 
         let mut schema = try_delayed!(
             utils::expressions_to_schema(&keys, current_schema, Context::Default),
@@ -476,7 +488,7 @@ impl LogicalPlanBuilder {
 
     pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>, null_last: bool) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let by_column = rewrite_projections(by_column, &schema, &[]);
+        let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,
@@ -491,7 +503,7 @@ impl LogicalPlanBuilder {
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let columns = rewrite_projections(columns, &schema, &[]);
+        let columns = try_delayed!(rewrite_projections(columns, &schema, &[]), &self.0, into);
 
         let mut schema = (**schema).clone();
 

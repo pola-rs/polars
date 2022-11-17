@@ -1094,8 +1094,13 @@ impl PyExpr {
         self.inner
             .clone()
             .map_alias(move |name| {
-                let out = Python::with_gil(|py| lambda.call1(py, (name,)).unwrap());
-                out.to_string()
+                let out = Python::with_gil(|py| lambda.call1(py, (name,)));
+                match out {
+                    Ok(out) => Ok(out.to_string()),
+                    Err(e) => Err(PolarsError::ComputeError(
+                        format!("Python function in 'map_alias' produced an error: {}.", e).into(),
+                    )),
+                }
             })
             .into()
     }
