@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import os
 import sys
+import typing
 from collections.abc import Sized
 from datetime import timedelta
 from io import BytesIO, IOBase, StringIO
@@ -6628,6 +6629,28 @@ class DataFrame:
         if isinstance(names, str):
             names = [names]
         return self._from_pydf(self._df.unnest(names))
+
+    @typing.no_type_check
+    def pearson_corr(self, **kwargs: dict[str, Any]) -> DataFrame:
+        """
+        Return Pearson product-moment correlation coefficients.
+
+        See numpy corrcoef for more information.
+
+        Notes
+        -----
+        This functionality requires numpy to be installed.
+
+        Parameters
+        ----------
+        kwargs
+            keyword arguments are passed to numpy corrcoef
+
+        """
+        return DataFrame(
+            np.corrcoef(self, **kwargs),
+            columns=self.columns,
+        )
 
 
 def _prepare_other_arg(other: Any) -> pli.Series:
