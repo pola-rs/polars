@@ -14,6 +14,7 @@ This feature is primarily intended for use by library authors providing
 domain-specific capabilities which may not exist (or belong) in the
 core library.
 
+
 Available registrations
 -----------------------
 
@@ -26,6 +27,16 @@ Available registrations
     register_lazyframe_namespace
     register_series_namespace
 
+.. note::
+
+   You cannot override existing polars namespaces (such as ``.str`` or ``.dt``), and attempting to do so
+   will raise an `AttributeError <https://docs.python.org/3/library/exceptions.html#AttributeError>`_.
+   However, you *can* override other custom namespaces (which will only generate a
+   `UserWarning <https://docs.python.org/3/library/exceptions.html#UserWarning>`_).
+
+
+Examples
+--------
 
 .. tab-set::
 
@@ -117,11 +128,3 @@ Available registrations
 
             s2 = s.math.square().rename("n2", in_place=True)
             s3 = s.math.cube().rename("n3", in_place=True)
-
-
-.. note::
-
-   You cannot override existing polars namespaces (such as ``.str`` or ``.dt``), and attempting to do so
-   will raise an `AttributeError <https://docs.python.org/3/library/exceptions.html#AttributeError>`_.
-   However, you *can* override other custom namespaces (which will only generate a
-   `UserWarning <https://docs.python.org/3/library/exceptions.html#UserWarning>`_).
