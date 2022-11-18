@@ -113,6 +113,12 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 64.001 ┆ 128       ┆ 64        ┆ 64           │
     └────────┴───────────┴───────────┴──────────────┘
 
+    See Also
+    --------
+    register_dataframe_namespace: Register functionality on a DataFrame.
+    register_lazyframe_namespace: Register functionality on a LazyFrame.
+    register_series_namespace: Register functionality on a Series.
+
     """
     return _create_namespace(name, Expr)
 
@@ -217,6 +223,12 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘]
 
+    See Also
+    --------
+    register_expr_namespace: Register functionality on an Expr.
+    register_lazyframe_namespace: Register functionality on a LazyFrame.
+    register_series_namespace: Register functionality on a Series.
+
     """
     return _create_namespace(name, DataFrame)
 
@@ -293,6 +305,12 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┘]
 
+    See Also
+    --------
+    register_expr_namespace: Register functionality on an Expr.
+    register_dataframe_namespace: Register functionality on a DataFrame.
+    register_series_namespace: Register functionality on a Series.
+
     """
     return _create_namespace(name, LazyFrame)
 
@@ -309,12 +327,15 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     Examples
     --------
     >>> @pl.api.register_series_namespace("math")
-    ... class CustomMath:
+    ... class MathShortcuts:
     ...     def __init__(self, s: pl.Series):
     ...         self._s = s
     ...
     ...     def square(self) -> pl.Series:
     ...         return self._s * self._s
+    ...
+    ...     def cube(self) -> pl.Series:
+    ...         return self._s * self._s * self._s
     >>>
     >>> s = pl.Series("n", [1.5, 31.0, 42.0, 64.5])
     >>> s.math.square().alias("s^2")
@@ -326,6 +347,23 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
         1764.0
         4160.25
     ]
+    >>> s = pl.Series("n", [1, 2, 3, 4, 5])
+    >>> s.math.cube().alias("s^3")
+    shape: (5,)
+    Series: 's^3' [i64]
+    [
+        1
+        8
+        27
+        64
+        125
+    ]
+
+    See Also
+    --------
+    register_expr_namespace: Register functionality on an Expr.
+    register_dataframe_namespace: Register functionality on a DataFrame.
+    register_lazyframe_namespace: Register functionality on a LazyFrame.
 
     """
     return _create_namespace(name, Series)
