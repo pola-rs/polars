@@ -125,10 +125,14 @@ impl VecHash for Utf8Chunked {
         buf.reserve(self.len());
         let null_h = get_null_hash_value(random_state.clone());
         self.downcast_iter().for_each(|arr| {
-            buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-                Some(v) => random_state.hash_single(v),
-                None => null_h,
-            }))
+            if arr.null_count() == 0 {
+                buf.extend(arr.values_iter().map(|v| random_state.hash_single(v)))
+            } else {
+                buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+                    Some(v) => random_state.hash_single(v),
+                    None => null_h,
+                }))
+            }
         });
     }
 

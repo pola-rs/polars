@@ -111,7 +111,7 @@ pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<
         (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
             if !l.same_src(r) {
                 return Err(PolarsError::ComputeError("Joins/or comparisons on categorical dtypes can only happen if they are created under the same global string cache.\
-                 Hint: set a global StringCache".into()));
+                  Hint: set a global StringCache".into()));
             }
             Ok(())
         }

@@ -89,7 +89,7 @@ where
 {
     match expr_arena.get(node) {
         AExpr::Alias(input, _) => convert_to_hash_agg(*input, expr_arena, schema, to_physical),
-        AExpr::Count => (
+        AExpr::Count | AExpr::Agg(AAggExpr::Count(_)) => (
             Arc::new(Count {}),
             AggregateFunction::Count(CountAgg::new()),
         ),
@@ -143,7 +143,7 @@ where
                 let dtype = phys_expr.field(schema).unwrap().dtype;
                 (phys_expr, AggregateFunction::Last(LastAgg::new(dtype)))
             }
-            _ => todo!(),
+            agg => panic!("{:?} not yet implemented.", agg),
         },
         _ => todo!(),
     }

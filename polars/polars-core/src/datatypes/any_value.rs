@@ -430,52 +430,62 @@ impl<'a> Hash for AnyValue<'a> {
 impl<'a> Eq for AnyValue<'a> {}
 
 impl From<f64> for AnyValue<'_> {
+    #[inline]
     fn from(a: f64) -> Self {
         AnyValue::Float64(a)
     }
 }
 impl From<f32> for AnyValue<'_> {
+    #[inline]
     fn from(a: f32) -> Self {
         AnyValue::Float32(a)
     }
 }
 impl From<u32> for AnyValue<'_> {
+    #[inline]
     fn from(a: u32) -> Self {
         AnyValue::UInt32(a)
     }
 }
 impl From<u64> for AnyValue<'_> {
+    #[inline]
     fn from(a: u64) -> Self {
         AnyValue::UInt64(a)
     }
 }
 impl From<i64> for AnyValue<'_> {
+    #[inline]
     fn from(a: i64) -> Self {
         AnyValue::Int64(a)
     }
 }
 impl From<i32> for AnyValue<'_> {
+    #[inline]
     fn from(a: i32) -> Self {
         AnyValue::Int32(a)
     }
 }
 impl From<i16> for AnyValue<'_> {
+    #[inline]
     fn from(a: i16) -> Self {
         AnyValue::Int16(a)
     }
 }
 impl From<u16> for AnyValue<'_> {
+    #[inline]
     fn from(a: u16) -> Self {
         AnyValue::UInt16(a)
     }
 }
 
 impl From<i8> for AnyValue<'_> {
+    #[inline]
     fn from(a: i8) -> Self {
         AnyValue::Int8(a)
     }
 }
 impl From<u8> for AnyValue<'_> {
+    #[inline]
     fn from(a: u8) -> Self {
         AnyValue::UInt8(a)
     }
@@ -485,6 +495,7 @@ impl<'a, T> From<Option<T>> for AnyValue<'a>
 where
     T: Into<AnyValue<'a>>,
 {
+    #[inline]
     fn from(a: Option<T>) -> Self {
         match a {
             None => AnyValue::Null,
