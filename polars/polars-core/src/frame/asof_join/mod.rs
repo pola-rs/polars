@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::*;
 use crate::utils::slice_slice;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
@@ -49,6 +49,12 @@ pub enum AsofStrategy {
     Backward,
     /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
     Forward,
+}
+
+impl Default for AsofStrategy {
+    fn default() -> Self {
+        AsofStrategy::Backward
+    }
 }
 
 impl<T> ChunkedArray<T>

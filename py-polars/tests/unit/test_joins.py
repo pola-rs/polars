@@ -670,3 +670,28 @@ def test_streaming_joins() -> None:
         # we cast to integer because pandas joins creates floats
         a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
         pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
+
+
+def test_join_asof_projection() -> None:
+    df1 = pl.DataFrame(
+        {
+            "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
+            "df1_col1": ["foo", "bar", "foo", "bar", "foo"],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "df2_date": [20221012, 20221015, 20221018],
+            "df2_col1": ["1", "2", "3"],
+        }
+    )
+
+    assert (
+        (
+            df1.lazy().join_asof(df2.lazy(), left_on="df1_date", right_on="df2_date")
+        ).select([pl.col("df2_date"), "df1_date"])
+    ).collect().to_dict(False) == {
+        "df2_date": [None, 20221012, 20221012, 20221012, 20221015],
+        "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
+    }

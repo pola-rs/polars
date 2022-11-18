@@ -913,6 +913,24 @@ impl ProjectionPushDown {
                     for proj in acc_projections {
                         let mut add_local = true;
 
+                        // Asof joins don't replace
+                        // the right column name with the left one
+                        // so the two join columns remain
+                        #[cfg(feature = "asof_join")]
+                        if matches!(options.how, JoinType::AsOf(_)) {
+                            let names = aexpr_to_leaf_names(proj, expr_arena);
+                            if names.len() == 1
+                                // we only add to local projection
+                                // if the right join column differs from the left
+                                && names_right.contains(&names[0])
+                                && !names_left.contains(&names[0])
+                                && !local_projection.contains(&proj)
+                            {
+                                local_projection.push(proj);
+                                continue;
+                            }
+                        }
+
                         // if it is an alias we want to project the root column name downwards
                         // but we don't want to project it a this level, otherwise we project both
                         // the root and the alias, hence add_local = false.
