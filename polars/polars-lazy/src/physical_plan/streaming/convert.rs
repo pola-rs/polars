@@ -71,7 +71,7 @@ pub(crate) fn insert_streaming_nodes(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     fmt: bool,
-) -> PolarsResult<()> {
+) -> PolarsResult<bool> {
     // this is needed to determine which side of the joins should be
     // traversed first
     set_estimated_row_counts(root, lp_arena, expr_arena, 0);
@@ -227,11 +227,30 @@ pub(crate) fn insert_streaming_nodes(
                 aggs,
                 maintain_order: false,
                 apply: None,
+                schema,
                 ..
             } => {
+                #[cfg(feature = "dtype-categorical")]
+                let string_cache = polars_core::using_string_cache();
+                #[cfg(not(feature = "dtype-categorical"))]
+                let string_cache = true;
+
+                fn allowed_dtype(dt: &DataType, string_cache: bool) -> bool {
+                    match dt {
+                        #[cfg(feature = "object")]
+                        DataType::Object(_) => false,
+                        #[cfg(feature = "dtype-categorical")]
+                        DataType::Categorical(_) => string_cache,
+                        _ => true,
+                    }
+                }
+
                 if aggs
                     .iter()
                     .all(|node| polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena))
+                    && schema
+                        .iter_dtypes()
+                        .all(|dt| allowed_dtype(dt, string_cache))
                 {
                     state.streamable = true;
                     state.operators_sinks.push((true, false, root));
@@ -253,6 +272,7 @@ pub(crate) fn insert_streaming_nodes(
             }
         }
     }
+    let mut inserted = false;
     for tree in pipeline_trees {
         if !tree.is_empty() {
             let mut pipelines = VecDeque::with_capacity(tree.len());
@@ -355,14 +375,15 @@ pub(crate) fn insert_streaming_nodes(
 
                 // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
                 let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
-                lp_arena.replace(latest, pipeline_node)
+                lp_arena.replace(latest, pipeline_node);
+                inserted = true;
             } else {
                 panic!()
             }
         }
     }
 
-    Ok(())
+    Ok(inserted)
 }
 
 type IsSink = bool;

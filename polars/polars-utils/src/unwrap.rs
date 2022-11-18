@@ -8,6 +8,7 @@ pub trait UnwrapUncheckedRelease<T> {
 }
 
 impl<T> UnwrapUncheckedRelease<T> for Option<T> {
+    #[inline]
     unsafe fn unwrap_unchecked_release(self) -> T {
         if cfg!(debug_assertions) {
             self.unwrap()
@@ -18,6 +19,7 @@ impl<T> UnwrapUncheckedRelease<T> for Option<T> {
 }
 
 impl<T, E: Debug> UnwrapUncheckedRelease<T> for Result<T, E> {
+    #[inline]
     unsafe fn unwrap_unchecked_release(self) -> T {
         if cfg!(debug_assertions) {
             self.unwrap()
