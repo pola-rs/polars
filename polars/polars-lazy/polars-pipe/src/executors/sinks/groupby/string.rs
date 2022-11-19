@@ -38,7 +38,7 @@ pub struct Utf8GroupbySink {
     // first get the correct vec by the partition index
     //      * offset = (idx)
     //      * end = (offset + 1)
-    keys: Vec<Vec<Option<smartstring::alias::String>>>,
+    keys: Vec<Option<smartstring::alias::String>>,
     aggregators: Vec<AggregateFunction>,
     // the key that will be aggregated on
     key_column: Arc<dyn PhysicalPipedExpr>,
@@ -68,7 +68,7 @@ impl Utf8GroupbySink {
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
-        let keys = load_vec(partitions, || Vec::with_capacity(HASHMAP_INIT_SIZE));
+        let keys = Vec::with_capacity(HASHMAP_INIT_SIZE * partitions);
         let aggregators = Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len() * partitions);
 
         Self {
@@ -93,16 +93,25 @@ impl Utf8GroupbySink {
     }
 
     fn pre_finalize(&mut self) -> PolarsResult<Vec<DataFrame>> {
-        let mut aggregators = std::mem::take(&mut self.aggregators);
+        // we create a pointer to the aggregation functions buffer
+        // we will deref *mut on every partition thread
+        // this will be safe, as the partitions guarantee that access don't alias.
+        let aggregators = self.aggregators.as_ptr() as usize;
+        let aggregators_len = self.aggregators.len();
+
         let slices = compute_slices(&self.pre_agg_partitions, self.slice);
 
         POOL.install(|| {
             let dfs =
                 self.pre_agg_partitions
-                    .iter()
-                    .zip(self.keys.iter())
-                    .zip(slices.iter())
-                    .filter_map(|((agg_map,  current_keys), slice)| {
+                    .par_iter()
+                    .zip(slices.par_iter())
+                    .filter_map(|(agg_map,  slice)| {
+                        let ptr = aggregators as *mut AggregateFunction;
+                        // safety:
+                        // we will not alias.
+                        let aggregators = unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
+
                         let (offset, slice_len) = (*slice)?;
                         if agg_map.is_empty() {
                             return None;
@@ -124,7 +133,7 @@ impl Utf8GroupbySink {
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;
                                 let key = unsafe {
-                                    current_keys.get_unchecked_release(key_offset).as_deref()
+                                    self.keys.get_unchecked_release(key_offset).as_deref()
                                 };
                                 key_builder.append_option(key);
 
@@ -190,11 +199,10 @@ impl Sink for Utf8GroupbySink {
             let current_partition =
                 unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
             let current_aggregators = &mut self.aggregators;
-            let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
 
             let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
                 let idx = key.idx as usize;
-                unsafe { current_key_values.get_unchecked_release(idx).as_deref() == key_val }
+                unsafe { self.keys.get_unchecked_release(idx).as_deref() == key_val }
             });
 
             let agg_idx = match entry {
@@ -205,12 +213,12 @@ impl Sink for Utf8GroupbySink {
                     let keys_offset = unsafe {
                         Key::new(
                             h,
-                            NumCast::from(current_key_values.len()).unwrap_unchecked_release(),
+                            NumCast::from(self.keys.len()).unwrap_unchecked_release(),
                         )
                     };
                     entry.insert(keys_offset, value_offset);
 
-                    current_key_values.push(key_val.map(|s| s.into()));
+                    self.keys.push(key_val.map(|s| s.into()));
 
                     // initialize the aggregators
                     for agg_fn in &self.agg_fns {
@@ -261,19 +269,12 @@ impl Sink for Utf8GroupbySink {
                     for (k_other, &agg_idx_other) in map_other.iter() {
                         // the hash value
                         let h = k_other.hash;
-                        // the partition where all keys and maps are located
-                        let partition = hash_to_partition(h, n_partitions);
-                        // get the key buffers
-                        let keys_buffer_self =
-                            unsafe { self.keys.get_unchecked_release_mut(partition) };
-                        let keys_buffer_other =
-                            unsafe { other.keys.get_unchecked_release(partition) };
 
                         // the offset in the keys of other
                         let idx_other = k_other.idx as usize;
                         // slice to the keys of other
                         let key_other =
-                            unsafe { keys_buffer_other.get_unchecked_release(idx_other) };
+                            unsafe { other.keys.get_unchecked_release(idx_other) };
 
                         let entry = map_self.raw_entry_mut().from_hash(h, |k_self| {
                             // the offset in the keys of self
@@ -282,7 +283,7 @@ impl Sink for Utf8GroupbySink {
                             // safety:
                             // in bounds
                             let key_self =
-                                unsafe { keys_buffer_self.get_unchecked_release(idx_self) };
+                                unsafe { self.keys.get_unchecked_release(idx_self) };
                             // compare the keys
                             key_self == key_other
                         });
@@ -298,13 +299,13 @@ impl Sink for Utf8GroupbySink {
                                 let key = unsafe {
                                     Key::new(
                                         h,
-                                        NumCast::from(keys_buffer_self.len())
+                                        NumCast::from(self.keys.len())
                                             .unwrap_unchecked_release(),
                                     )
                                 };
 
                                 // extend the keys buffer with the new key from other
-                                keys_buffer_self.push(key_other.clone());
+                                self.keys.push(key_other.clone());
 
                                 // insert the keys and values_offset
                                 entry.insert(key, values_offset);
