@@ -25,6 +25,20 @@ impl<K: NumericNative> MeanAgg<K> {
 }
 
 impl<K: NumericNative + Add<Output = K> + NumCast> AggregateFn for MeanAgg<K> {
+    fn pre_agg_i32(&mut self, _chunk_idx: IdxSize, item: Option<i32>) {
+        match (item.map(|v| K::from_i32(v).unwrap()), self.sum) {
+            (Some(val), Some(sum)) => {
+                self.sum = Some(sum + val);
+                self.count += 1;
+            }
+            (Some(val), None) => {
+                self.sum = Some(val);
+                self.count += 1;
+            }
+            _ => {}
+        }
+    }
+
     fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
         let item = unsafe { item.next().unwrap_unchecked_release() };
         match (item.extract::<K>(), self.sum) {

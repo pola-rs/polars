@@ -21,6 +21,7 @@ use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
+
 // we store a hashmap per partition (partitioned by hash)
 // the hashmap contains indexes as keys and as values
 // those indexes point into the keys buffer and the values buffer
@@ -38,7 +39,7 @@ pub struct Utf8GroupbySink {
     //      * offset = (idx)
     //      * end = (offset + 1)
     keys: Vec<Vec<Option<smartstring::alias::String>>>,
-    aggregators: Vec<Vec<AggregateFunction>>,
+    aggregators: Vec<AggregateFunction>,
     // the key that will be aggregated on
     key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
@@ -68,9 +69,7 @@ impl Utf8GroupbySink {
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
         let keys = load_vec(partitions, || Vec::with_capacity(HASHMAP_INIT_SIZE));
-        let aggregators = load_vec(partitions, || {
-            Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len())
-        });
+        let aggregators = Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len() * partitions);
 
         Self {
             thread_no: 0,
@@ -100,16 +99,15 @@ impl Utf8GroupbySink {
         POOL.install(|| {
             let dfs =
                 self.pre_agg_partitions
-                    .par_iter()
-                    .zip(aggregators.par_iter_mut())
-                    .zip(self.keys.par_iter())
-                    .zip(slices.par_iter())
-                    .filter_map(|(((agg_map, agg_fns), current_keys), slice)| {
+                    .iter()
+                    .zip(self.keys.iter())
+                    .zip(slices.iter())
+                    .filter_map(|((agg_map,  current_keys), slice)| {
                         let (offset, slice_len) = (*slice)?;
                         if agg_map.is_empty() {
                             return None;
                         }
-                        let dtypes = agg_fns
+                        let dtypes = aggregators
                             .iter()
                             .take(self.number_of_aggs())
                             .map(|func| func.dtype())
@@ -135,7 +133,7 @@ impl Utf8GroupbySink {
                                     .zip(buffers.iter_mut())
                                 {
                                     unsafe {
-                                        let agg_fn = agg_fns.get_unchecked_release_mut(i);
+                                        let agg_fn = aggregators.get_unchecked_release_mut(i);
                                         let av = agg_fn.finalize();
                                         buffer.add(av);
                                     }
@@ -179,21 +177,19 @@ impl Sink for Utf8GroupbySink {
         let s = s.rechunk();
         // write the hashes to self.hashes buffer
         s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // now we have written hashes, we take the pointer to this buffer
+        // we will write the aggregation_function indexes in the same buffer
+        // this is unsafe and we must check that we only write the hashes that
+        // already read/taken. So we write on the slots we just read
+        let agg_idx_ptr = self.hashes.as_ptr() as *mut i64 as *mut IdxSize;
         // array of the keys
         let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
 
-        let mut agg_iters = self
-            .aggregation_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
-
-        for (&h, key_val) in self.hashes.iter().zip(keys_arr.iter()) {
+        for (iteration_idx, (&h, key_val)) in self.hashes.iter().zip(keys_arr.iter()).enumerate() {
             let partition = hash_to_partition(h, self.pre_agg_partitions.len());
             let current_partition =
                 unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
-            let current_aggregators =
-                unsafe { self.aggregators.get_unchecked_release_mut(partition) };
+            let current_aggregators = &mut self.aggregators;
             let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
 
             let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
@@ -224,14 +220,27 @@ impl Sink for Utf8GroupbySink {
                 }
                 RawEntryMut::Occupied(entry) => *entry.get(),
             };
-            for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
-                let i = agg_idx as usize + i;
-                let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
+            // # Safety
+            // we write to the hashes buffer we iterate over at the moment.
+            // this is sound because we writes are trailing from iteration
+            unsafe { write_agg_idx(agg_idx_ptr, iteration_idx, agg_idx) };
 
-                agg_fn.pre_agg(chunk.chunk_index, agg_iter.as_mut())
+        }
+
+        // note that this slice looks into the self.hashes buffer
+        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, keys_arr.len()) };
+
+        for (i, aggregation_s) in (0..num_aggs).zip(&self.aggregation_series) {
+            let s = aggregation_s.i32().unwrap();
+            let arr = s.downcast_iter().next().unwrap();
+            for (&agg_idx, av) in agg_idxs.iter().zip(arr.into_iter()) {
+                let i = agg_idx as usize + i;
+                let agg_fn = unsafe { self.aggregators.get_unchecked_release_mut(i) };
+
+                agg_fn.pre_agg_i32(chunk.chunk_index, av.copied())
             }
         }
-        drop(agg_iters);
+
         self.aggregation_series.clear();
         self.hashes.clear();
         Ok(SinkResult::CanHaveMoreInput)
@@ -247,10 +256,8 @@ impl Sink for Utf8GroupbySink {
         self.pre_agg_partitions
             .iter_mut()
             .zip(other.pre_agg_partitions.iter())
-            .zip(self.aggregators.iter_mut())
-            .zip(other.aggregators.iter())
             .for_each(
-                |(((map_self, map_other), aggregators_self), aggregators_other)| {
+                |(map_self, map_other)| {
                     for (k_other, &agg_idx_other) in map_other.iter() {
                         // the hash value
                         let h = k_other.hash;
@@ -285,7 +292,7 @@ impl Sink for Utf8GroupbySink {
                             RawEntryMut::Vacant(entry) => {
                                 // get the current offset in the values buffer
                                 let values_offset = unsafe {
-                                    NumCast::from(aggregators_self.len()).unwrap_unchecked_release()
+                                    NumCast::from(self.aggregators.len()).unwrap_unchecked_release()
                                 };
                                 // get the key, comprised of the hash and the current offset in the keys buffer
                                 let key = unsafe {
@@ -303,7 +310,7 @@ impl Sink for Utf8GroupbySink {
                                 entry.insert(key, values_offset);
                                 // initialize the new aggregators
                                 for agg_fn in &self.agg_fns {
-                                    aggregators_self.push(agg_fn.split2())
+                                    self.aggregators.push(agg_fn.split2())
                                 }
                                 values_offset
                             }
@@ -313,9 +320,9 @@ impl Sink for Utf8GroupbySink {
                         // combine the aggregation functions
                         for i in 0..self.aggregation_columns.len() {
                             unsafe {
-                                let agg_fn_other = aggregators_other
+                                let agg_fn_other = other.aggregators
                                     .get_unchecked_release(agg_idx_other as usize + i);
-                                let agg_fn_self = aggregators_self
+                                let agg_fn_self = self.aggregators
                                     .get_unchecked_release_mut(agg_idx_self as usize + i);
                                 agg_fn_self.combine(agg_fn_other.as_any())
                             }
@@ -347,4 +354,9 @@ impl Sink for Utf8GroupbySink {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+}
+
+// write agg_idx to the hashes buffer.
+unsafe fn write_agg_idx(h: *mut IdxSize, i: usize, agg_idx: IdxSize) {
+    h.add(i).write(agg_idx)
 }

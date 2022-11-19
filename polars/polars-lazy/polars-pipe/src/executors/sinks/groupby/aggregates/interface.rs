@@ -15,6 +15,13 @@ use crate::operators::IdxSize;
 pub trait AggregateFn: Send + Sync {
     fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>);
 
+    fn pre_agg2(&mut self, _chunk_idx: IdxSize, item: AnyValue) {
+        todo!()
+    }
+    fn pre_agg_i32(&mut self, _chunk_idx: IdxSize, item: Option<i32>) {
+        todo!()
+    }
+
     fn dtype(&self) -> DataType;
 
     fn combine(&mut self, other: &dyn Any);
