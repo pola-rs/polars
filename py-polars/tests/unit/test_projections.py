@@ -41,6 +41,19 @@ def test_double_projection_pushdown() -> None:
     )
 
 
+def test_groupby_projection_pushdown() -> None:
+    assert (
+        "PROJECT 2/3 COLUMNS"
+        in (
+            pl.DataFrame({"c0": [], "c1": [], "c2": []})
+            .lazy()
+            .groupby("c0")
+            .agg(pl.col("*"))
+            .select(["c1"])
+        ).describe_optimized_plan()
+    )
+
+
 def test_unnest_projection_pushdown() -> None:
     lf = pl.DataFrame({"x|y|z": [1, 2], "a|b|c": [2, 3]}).lazy()
 
