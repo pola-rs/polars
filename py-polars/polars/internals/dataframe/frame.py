@@ -6556,7 +6556,7 @@ class DataFrame:
         """
         return self.height == 0
 
-    def to_struct(self, name: str) -> pli.Series:
+    def to_struct(self, name: str = "") -> pli.Series:
         """
         Convert a ``DataFrame`` to a ``Series`` of type ``Struct``.
 
@@ -6587,7 +6587,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.to_struct(name))
 
-    def unnest(self: DF, names: str | Sequence[str]) -> DF:
+    def unnest(self: DF, names: str | Sequence[str] | None = None) -> DF:
         """
         Decompose a struct into its fields.
 
@@ -6597,7 +6597,8 @@ class DataFrame:
         Parameters
         ----------
         names
-           Names of the struct columns that will be decomposed by its fields
+           Names of the struct columns that will be decomposed by its fields. 
+           If None unnest any (if any) struct column.
 
         Examples
         --------
