@@ -740,6 +740,8 @@ impl ProjectionPushDown {
                     let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena);
                     Ok(self.finish_node(acc_projections, builder))
                 } else {
+                    let has_pushed_down = !acc_projections.is_empty();
+
                     // todo! remove unnecessary vec alloc.
                     let (mut acc_projections, _local_projections, mut names) =
                         split_acc_projections(
@@ -749,7 +751,27 @@ impl ProjectionPushDown {
                         );
 
                     // add the columns used in the aggregations to the projection
-                    for agg in &aggs {
+                    let projected_aggs:Vec<Node> = aggs.into_iter().filter(|agg| {
+                        if has_pushed_down {
+                            // remove projections that are not used upstream
+                            if projections_seen > 0 {
+                                let input_schema = lp_arena.get(input).schema(lp_arena);
+                                // don't do projection that is not used in upstream selection
+                                let output_field = expr_arena
+                                    .get(*agg)
+                                    .to_field(input_schema.as_ref(), Context::Default, expr_arena)
+                                    .unwrap();
+                                let output_name = output_field.name();
+                                let is_used_upstream = projected_names.contains(output_name.as_str());
+                                if !is_used_upstream {
+                                    return false;
+                                }
+                            }
+                        }
+                        return true
+                    }).collect();
+
+                    for agg in &*projected_aggs {
                         add_expr_to_accumulated(*agg, &mut acc_projections, &mut names, expr_arena);
                     }
 
@@ -784,7 +806,7 @@ impl ProjectionPushDown {
 
                     let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).groupby(
                         keys,
-                        aggs,
+                        projected_aggs,
                         apply,
                         maintain_order,
                         options,
