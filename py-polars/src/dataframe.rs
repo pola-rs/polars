@@ -1389,11 +1389,8 @@ impl PyDataFrame {
                 .dtypes()
                 .iter()
                 .zip(self.df.get_column_names().iter())
-                .filter(|(dtype, _)| match dtype {
-                    DataType::Struct(_) => true,
-                    _ => false,
-                })
-                .map(|(_, y)| y.to_string())
+                .filter(|(dtype, _)| matches!(dtype, DataType::Struct(_)))
+                .map(|(_, col_name_str)| col_name_str.to_string())
                 .collect::<Vec<String>>()
         };
         let df = self.df.unnest(names).map_err(PyPolarsErr::from)?;
