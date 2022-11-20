@@ -6,6 +6,7 @@ use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::*;
 use crate::utils::{
     aexpr_assign_renamed_root, aexpr_to_leaf_names, aexpr_to_leaf_nodes, check_input_node,
+    expr_is_projected_upstream,
 };
 
 fn init_vec() -> Vec<Node> {
@@ -295,18 +296,16 @@ impl ProjectionPushDown {
                 for e in &expr {
                     if has_pushed_down {
                         // remove projections that are not used upstream
-                        if projections_seen > 0 {
-                            let input_schema = lp_arena.get(input).schema(lp_arena);
-                            // don't do projection that is not used in upstream selection
-                            let output_field = expr_arena
-                                .get(*e)
-                                .to_field(input_schema.as_ref(), Context::Default, expr_arena)
-                                .unwrap();
-                            let output_name = output_field.name();
-                            let is_used_upstream = projected_names.contains(output_name.as_str());
-                            if !is_used_upstream {
-                                continue;
-                            }
+                        if projections_seen > 0
+                            && !expr_is_projected_upstream(
+                                e,
+                                input,
+                                lp_arena,
+                                expr_arena,
+                                &projected_names,
+                            )
+                        {
+                            continue;
                         }
 
                         // in this branch we check a double projection case
@@ -750,28 +749,25 @@ impl ProjectionPushDown {
                             expr_arena,
                         );
 
-                    // add the columns used in the aggregations to the projection
-                    let projected_aggs:Vec<Node> = aggs.into_iter().filter(|agg| {
-                        if has_pushed_down {
-                            // remove projections that are not used upstream
-                            if projections_seen > 0 {
-                                let input_schema = lp_arena.get(input).schema(lp_arena);
-                                // don't do projection that is not used in upstream selection
-                                let output_field = expr_arena
-                                    .get(*agg)
-                                    .to_field(input_schema.as_ref(), Context::Default, expr_arena)
-                                    .unwrap();
-                                let output_name = output_field.name();
-                                let is_used_upstream = projected_names.contains(output_name.as_str());
-                                if !is_used_upstream {
-                                    return false;
-                                }
+                    // add the columns used in the aggregations to the projection only if they are used upstream
+                    let projected_aggs: Vec<Node> = aggs
+                        .into_iter()
+                        .filter(|agg| {
+                            if has_pushed_down && projections_seen > 0 {
+                                expr_is_projected_upstream(
+                                    agg,
+                                    input,
+                                    lp_arena,
+                                    expr_arena,
+                                    &projected_names,
+                                )
+                            } else {
+                                true
                             }
-                        }
-                        return true
-                    }).collect();
+                        })
+                        .collect();
 
-                    for agg in &*projected_aggs {
+                    for agg in &projected_aggs {
                         add_expr_to_accumulated(*agg, &mut acc_projections, &mut names, expr_arena);
                     }
 

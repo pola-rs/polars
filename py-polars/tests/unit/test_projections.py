@@ -48,8 +48,13 @@ def test_groupby_projection_pushdown() -> None:
             pl.DataFrame({"c0": [], "c1": [], "c2": []})
             .lazy()
             .groupby("c0")
-            .agg(pl.col("*"))
-            .select(["c1"])
+            .agg(
+                [
+                    pl.col("c1").sum().alias("sum(c1)"),
+                    pl.col("c2").mean().alias("mean(c2)"),
+                ]
+            )
+            .select(["sum(c1)"])
         ).describe_optimized_plan()
     )
 
