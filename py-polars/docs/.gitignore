@@ -1,5 +1,2 @@
 build/
-pandas/
-source/reference/api/
-source/reference/expressions/api/
-source/reference/series/api/
+source/reference/**/api/
