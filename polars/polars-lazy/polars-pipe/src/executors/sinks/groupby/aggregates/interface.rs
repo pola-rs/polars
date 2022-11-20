@@ -13,13 +13,41 @@ use crate::operators::IdxSize;
 
 #[enum_dispatch(AggregateFunction)]
 pub trait AggregateFn: Send + Sync {
+    fn has_physical_agg(&self) -> bool {
+        false
+    }
     fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>);
 
-    fn pre_agg2(&mut self, _chunk_idx: IdxSize, item: AnyValue) {
-        todo!()
+    fn pre_agg_u8(&mut self, _chunk_idx: IdxSize, _item: Option<u8>) {
+        unimplemented!()
     }
-    fn pre_agg_i32(&mut self, _chunk_idx: IdxSize, item: Option<i32>) {
-        todo!()
+
+    fn pre_agg_u16(&mut self, _chunk_idx: IdxSize, _item: Option<u16>) {
+        unimplemented!()
+    }
+    fn pre_agg_u32(&mut self, _chunk_idx: IdxSize, _item: Option<u32>) {
+        unimplemented!()
+    }
+    fn pre_agg_u64(&mut self, _chunk_idx: IdxSize, _item: Option<u64>) {
+        unimplemented!()
+    }
+    fn pre_agg_i8(&mut self, _chunk_idx: IdxSize, _item: Option<i8>) {
+        unimplemented!()
+    }
+    fn pre_agg_i16(&mut self, _chunk_idx: IdxSize, _item: Option<i16>) {
+        unimplemented!()
+    }
+    fn pre_agg_i32(&mut self, _chunk_idx: IdxSize, _item: Option<i32>) {
+        unimplemented!()
+    }
+    fn pre_agg_i64(&mut self, _chunk_idx: IdxSize, _item: Option<i64>) {
+        unimplemented!()
+    }
+    fn pre_agg_f32(&mut self, _chunk_idx: IdxSize, _item: Option<f32>) {
+        unimplemented!()
+    }
+    fn pre_agg_f64(&mut self, _chunk_idx: IdxSize, _item: Option<f64>) {
+        unimplemented!()
     }
 
     fn dtype(&self) -> DataType;

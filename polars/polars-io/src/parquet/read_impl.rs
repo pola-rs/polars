@@ -34,10 +34,8 @@ fn column_idx_to_series(
     match field.data_type {
         ArrowDataType::Utf8 => {
             field.data_type = ArrowDataType::LargeUtf8;
-        },
-        ArrowDataType::List(fld) => {
-            field.data_type = ArrowDataType::LargeList(fld)
-        },
+        }
+        ArrowDataType::List(fld) => field.data_type = ArrowDataType::LargeList(fld),
         _ => {}
     }
 
