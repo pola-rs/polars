@@ -6597,7 +6597,7 @@ class DataFrame:
         Parameters
         ----------
         names
-           Names of the struct columns that will be decomposed by its fields. 
+           Names of the struct columns that will be decomposed by its fields.
            If None unnest any (if any) struct column.
 
         Examples
