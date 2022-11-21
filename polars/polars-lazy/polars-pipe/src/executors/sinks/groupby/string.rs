@@ -2,6 +2,7 @@ use std::any::Any;
 
 use hashbrown::hash_map::RawEntryMut;
 use num::NumCast;
+use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
@@ -42,8 +43,7 @@ pub struct Utf8GroupbySink {
     key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: fxhash::FxBuildHasher,
-    // hb: RandomState,
+    hb: RandomState,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -63,7 +63,7 @@ impl Utf8GroupbySink {
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let hb = fxhash::FxBuildHasher::default();
+        let hb = Default::default();
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
