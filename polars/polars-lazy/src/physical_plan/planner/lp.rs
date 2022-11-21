@@ -2,6 +2,8 @@ use polars_core::prelude::*;
 
 use super::super::executors::{self, Executor};
 use super::*;
+#[cfg(feature = "streaming")]
+use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::utils::*;
 
 fn partitionable_gb(
@@ -324,7 +326,7 @@ pub fn create_physical_plan(
             keys,
             aggs,
             apply,
-            schema: _,
+            schema: _schema,
             maintain_order,
             options,
         } => {
@@ -362,6 +364,29 @@ pub fn create_physical_plan(
             // We first check if we can partition the groupby on the latest moment.
             let partitionable = partitionable_gb(&keys, &aggs, &input_schema, expr_arena, &apply);
             if partitionable {
+                #[cfg(feature = "streaming")]
+                if !maintain_order
+                    // many aggregations are more expensive
+                    // at a certain point the cost of collecting
+                    // the indices is amortized
+                    && aggs.len() < 10
+                    && std::env::var("POLARS_NO_STREAMING_GROUPBY").is_err()
+                {
+                    let lp = Aggregate {
+                        input,
+                        keys,
+                        aggs,
+                        apply,
+                        schema: _schema,
+                        maintain_order,
+                        options: options.clone(),
+                    };
+                    let root = lp_arena.add(lp);
+                    if insert_streaming_nodes(root, lp_arena, expr_arena, &mut vec![], false)? {
+                        return create_physical_plan(root, lp_arena, expr_arena);
+                    }
+                }
+
                 let from_partitioned_ds = (&*lp_arena).iter(input).any(|(_, lp)| {
                     if let ALogicalPlan::Union { options, .. } = lp {
                         options.from_partitioned_ds
