@@ -6,7 +6,7 @@ BASE ?= master
 
 fmt:
 	cargo fmt --all
-	$(MAKE) -C .. fmt_toml
+	dprint fmt
 
 check:
 	cargo check --all-features \
