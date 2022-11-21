@@ -2378,6 +2378,21 @@ impl DataFrame {
         }
     }
 
+    /// Iterator over the rows in this `DataFrame` as Arrow RecordBatches as physical values.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `DataFrame` that is passed is not rechunked.
+    ///
+    /// This responsibility is left to the caller as we don't want to take mutable references here,
+    /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
+    /// as well.
+    pub fn iter_chunks_physical(&self) -> PhysRecordBatchIter<'_> {
+        PhysRecordBatchIter {
+            iters: self.columns.iter().map(|s| s.chunks().iter()).collect(),
+        }
+    }
+
     /// Get a `DataFrame` with all the columns in reversed order.
     #[must_use]
     pub fn reverse(&self) -> Self {
@@ -3343,6 +3358,22 @@ impl<'a> Iterator for RecordBatchIter<'a> {
 
             Some(ArrowChunk::new(batch_cols))
         }
+    }
+}
+
+pub struct PhysRecordBatchIter<'a> {
+    iters: Vec<std::slice::Iter<'a, ArrayRef>>,
+}
+
+impl Iterator for PhysRecordBatchIter<'_> {
+    type Item = ArrowChunk;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iters
+            .iter_mut()
+            .map(|phys_iter| phys_iter.next().cloned())
+            .collect::<Option<Vec<_>>>()
+            .map(ArrowChunk::new)
     }
 }
 

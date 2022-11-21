@@ -141,7 +141,7 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
 }
 
 fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
-    df.iter_chunks().flat_map(|chunk| {
+    df.iter_chunks_physical().flat_map(|chunk| {
         let df = DataFrame::new_no_checks(
             df.iter()
                 .zip(chunk.into_arrays())
