@@ -6,10 +6,10 @@ use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
-use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_utils::hash_to_partition;
+use polars_core::POOL;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
+use polars_utils::{hash_to_partition, HashSingle};
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -43,6 +43,8 @@ pub struct Utf8GroupbySink {
     key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+    // was a lot faster than ahash.
+    // hb: fxhash::FxBuildHasher,
     hb: RandomState,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
@@ -63,7 +65,8 @@ impl Utf8GroupbySink {
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let hb = RandomState::default();
+        // let hb = fxhash::FxBuildHasher::default();
+        let hb = Default::default();
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
@@ -174,6 +177,7 @@ impl Utf8GroupbySink {
 impl Sink for Utf8GroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         let num_aggs = self.number_of_aggs();
+        self.hashes.reserve(chunk.data.height());
 
         // todo! amortize allocation
         for phys_e in self.aggregation_columns.iter() {
@@ -186,7 +190,7 @@ impl Sink for Utf8GroupbySink {
             .evaluate(&chunk, context.execution_state.as_ref())?;
         let s = s.rechunk();
         // write the hashes to self.hashes buffer
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
@@ -195,7 +199,9 @@ impl Sink for Utf8GroupbySink {
         // array of the keys
         let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
 
-        for (iteration_idx, (&h, key_val)) in self.hashes.iter().zip(keys_arr.iter()).enumerate() {
+        for (iteration_idx, key_val) in keys_arr.iter().enumerate() {
+            let h = self.hb.hash_single(key_val);
+
             let partition = hash_to_partition(h, self.pre_agg_partitions.len());
             let current_partition =
                 unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
@@ -234,7 +240,6 @@ impl Sink for Utf8GroupbySink {
             // this is sound because we writes are trailing from iteration
             unsafe { write_agg_idx(agg_idx_ptr, iteration_idx, agg_idx) };
         }
-
 
         // note that this slice looks into the self.hashes buffer
         let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, keys_arr.len()) };
@@ -395,19 +400,19 @@ fn apply_aggregate(
 
     if has_physical_agg && aggregation_s.dtype().is_numeric() {
         macro_rules! dispatch {
-                    ($ca:expr, $name:ident) => {{
-                        let arr = $ca.downcast_iter().next().unwrap();
+            ($ca:expr, $name:ident) => {{
+                let arr = $ca.downcast_iter().next().unwrap();
 
-                        for (&agg_idx, av) in agg_idxs.iter().zip(arr.into_iter()) {
-                            let i = agg_idx as usize + agg_i;
-                            let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+                for (&agg_idx, av) in agg_idxs.iter().zip(arr.into_iter()) {
+                    let i = agg_idx as usize + agg_i;
+                    let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
 
-                            agg_fn.$name(chunk_idx, av.copied())
-                        }
-                    }};
+                    agg_fn.$name(chunk_idx, av.copied())
                 }
+            }};
+        }
 
-        apply_agg!(&aggregation_s, dispatch);
+        apply_agg!(aggregation_s, dispatch);
     } else {
         let mut iter = aggregation_s.phys_iter();
         for &agg_idx in agg_idxs.iter() {

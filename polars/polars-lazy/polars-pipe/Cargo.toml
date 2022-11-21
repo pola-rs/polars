@@ -10,6 +10,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 enum_dispatch = "0.3"
+fxhash = "0.2.1"
 hashbrown.workspace = true
 num.workspace = true
 polars-arrow = { version = "0.25.1", path = "../../polars-arrow", default-features = false }

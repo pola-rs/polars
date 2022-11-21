@@ -1,6 +1,5 @@
 use std::any::Any;
 
-use num::{FromPrimitive, NumCast};
 use polars_core::datatypes::DataType;
 use polars_core::prelude::AnyValue;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
@@ -21,15 +20,6 @@ impl LastAgg {
             last: AnyValue::Null,
             dtype,
         }
-    }
-
-    fn pre_agg_primitive<K: Into<AnyValue<'static>>>(
-        &mut self,
-        chunk_idx: IdxSize,
-        item: Option<K>,
-    ) {
-        self.chunk_idx = chunk_idx;
-        self.last = item.into();
     }
 }
 
