@@ -1,11 +1,19 @@
 # Compile Custom Rust functions and use in python polars
 
 ## Compile a development binary in your current environment
-`$ pip install -U maturin && maturin develop`
+
+```sh
+pip install -U maturin && maturin develop
+```
 
 ## Run
-`$ python example.py`
 
+```sh
+python example.py
+```
 
 ## Compile a **release** build
-`$ maturin develop --release`
+
+```sh
+maturin develop --release
+```

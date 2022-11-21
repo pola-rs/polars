@@ -42,16 +42,17 @@
 </p>
 
 ## Polars: Blazingly fast DataFrames in Rust, Python & Node.js
+
 Polars is a blazingly fast DataFrames library implemented in Rust using
 [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) as the memory model.
 
-  * Lazy | eager execution
-  * Multi-threaded
-  * SIMD
-  * Query optimization
-  * Powerful expression API
-  * Hybrid Streaming (larger than RAM datasets)
-  * Rust | Python | NodeJS | ...
+- Lazy | eager execution
+- Multi-threaded
+- SIMD
+- Query optimization
+- Powerful expression API
+- Hybrid Streaming (larger than RAM datasets)
+- Rust | Python | NodeJS | ...
 
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
@@ -96,9 +97,7 @@ shape: (5, 8)
 ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
 │ "banana" ┆ "beetle" ┆ "fruits"     ┆ 11  ┆ 4           ┆ 8           ┆ 1           ┆ 1           │
 └──────────┴──────────┴──────────────┴─────┴─────────────┴─────────────┴─────────────┴─────────────┘
-
 ```
-
 
 ## Performance 🚀🚀
 
@@ -111,10 +110,10 @@ on full queries (including IO).
 Besides fast, polars is also very lightweight. It comes with zero required dependencies, and this shows in the import times:
 
 ### import time measurements:
+
 - polars: 70ms
 - numpy: 104ms
 - pandas: 520ms
-
 
 ## Python setup
 
@@ -127,26 +126,26 @@ pip install polars
 We also have a conda package (`conda install polars`), however pip is the preferred way to install Polars.
 
 ### Install Polars with all optional dependencies.
+
 ```sh
 pip install 'polars[all]'
 pip install 'polars[numpy,pandas,pyarrow]'  # install a subset of all optional dependencies
 ```
+
 You can also install the dependencies directly.
 
-| Tag      | Description |
-| ----------- | ----------- |
-| all      | Install all optional dependencies (all of the following)       |
-| pandas   | Install with Pandas for converting data to and from Pandas Dataframes/Series       |
-| numpy   | Install with numpy for converting data to and from numpy arrays      |
-| pyarrow   | Reading data formats using PyArrow    |
-| fsspec   | Support for reading from remote file systems       |
-| connectorx   | Support for reading from SQL databases       |
-| xlsx2csv   | Support for reading from Excel files   |
-| timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed  |
-
+| Tag        | Description                                                                                                                           |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| all        | Install all optional dependencies (all of the following)                                                                              |
+| pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series                                                          |
+| numpy      | Install with numpy for converting data to and from numpy arrays                                                                       |
+| pyarrow    | Reading data formats using PyArrow                                                                                                    |
+| fsspec     | Support for reading from remote file systems                                                                                          |
+| connectorx | Support for reading from SQL databases                                                                                                |
+| xlsx2csv   | Support for reading from Excel files                                                                                                  |
+| timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
-
 
 ## Rust setup
 
@@ -157,17 +156,16 @@ point to the `master` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-
 #### Rust version
 
 Required Rust version `>=1.58`
-
 
 ## Documentation
 
 Want to know about all the features Polars supports? Read the docs!
 
 ## Larger than RAM data
+
 If you have data that does not fit into memory, polars lazy is able to process your query (or parts of your query) in a
 streaming fashion, this drastically reduces memory requirements you might be able to process your 250GB dataset on your
 laptop. Collect with `collect(allow_streaming=True)` to run the query streaming. (This might be a little slower, but
@@ -175,27 +173,25 @@ it is still very fast!)
 
 #### Python
 
-  * Installation guide: `pip install polars`
-  * [Python documentation](https://pola-rs.github.io/polars/py-polars/html/reference/index.html)
-  * [User guide](https://pola-rs.github.io/polars-book/)
+- Installation guide: `pip install polars`
+- [Python documentation](https://pola-rs.github.io/polars/py-polars/html/reference/index.html)
+- [User guide](https://pola-rs.github.io/polars-book/)
 
 #### Rust
 
-  * [Rust documentation (master branch)](https://pola-rs.github.io/polars/polars/index.html)
-  * [User guide](https://pola-rs.github.io/polars-book/)
+- [Rust documentation (master branch)](https://pola-rs.github.io/polars/polars/index.html)
+- [User guide](https://pola-rs.github.io/polars-book/)
 
 #### Node
 
-  * Installation guide: `yarn add nodejs-polars`
-  * [Node documentation](https://pola-rs.github.io/nodejs-polars/index.html)
-  * [User guide](https://pola-rs.github.io/polars-book/)
-  * [Github](https://github.com/pola-rs/nodejs-polars)
-
+- Installation guide: `yarn add nodejs-polars`
+- [Node documentation](https://pola-rs.github.io/nodejs-polars/index.html)
+- [User guide](https://pola-rs.github.io/polars-book/)
+- [Github](https://github.com/pola-rs/nodejs-polars)
 
 ## Contribution
 
 Want to contribute? Read our [contribution guideline](https://github.com/pola-rs/polars/blob/master/CONTRIBUTING.md).
-
 
 ## \[Python\]: compile polars from source
 
@@ -203,22 +199,21 @@ If you want a bleeding edge release or maximal performance you should compile **
 
 This can be done by going through the following steps in sequence:
 
-  1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
-  2. Install [maturin](https://maturin.rs/): `pip install maturin`
-  3. Choose any of:
-      * Fastest binary, very long compile times:
-        ```sh
-        $ cd py-polars && maturin develop --release -- -C target-cpu=native
-        ```
-      * Fast binary, Shorter compile times:
-        ```sh
-        $ cd py-polars && maturin develop --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
-        ```
+1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
+2. Install [maturin](https://maturin.rs/): `pip install maturin`
+3. Choose any of:
+   - Fastest binary, very long compile times:
+     ```sh
+     $ cd py-polars && maturin develop --release -- -C target-cpu=native
+     ```
+   - Fast binary, Shorter compile times:
+     ```sh
+     $ cd py-polars && maturin develop --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
+     ```
 
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
 can `pip install polars` and `import polars`.
-
 
 ## Arrow2
 
@@ -227,9 +222,11 @@ Arrow2 is a faster and safer implementation of the [Apache Arrow Columnar Format
 Arrow2 also has a more granular code base, helping to reduce the compiler bloat.
 
 ## Use custom Rust function in python?
+
 See [this example](./examples/python_rust_compiled_function).
 
 # Going big...
+
 Do you expect more than `2^32` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
 
 Or for python users install `pip install polars-u64-idx`.
@@ -237,16 +234,15 @@ Or for python users install `pip install polars-u64-idx`.
 Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
 
 # Legacy
-Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip polars-lts-cpu`. This polars project is 
+
+Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip polars-lts-cpu`. This polars project is
 compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
 
 ## Acknowledgements
 
 Development of Polars is proudly powered by
 
-
 [![Xomnia](https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png)](https://www.xomnia.com/)
-
 
 ## Sponsors
 
