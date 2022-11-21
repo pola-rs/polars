@@ -1497,7 +1497,6 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table",
- "fxhash",
  "hashbrown 0.13.1",
  "hex",
  "indexmap",
@@ -1580,7 +1579,6 @@ name = "polars-pipe"
 version = "0.25.1"
 dependencies = [
  "enum_dispatch",
- "fxhash",
  "hashbrown 0.13.1",
  "num",
  "polars-arrow",
