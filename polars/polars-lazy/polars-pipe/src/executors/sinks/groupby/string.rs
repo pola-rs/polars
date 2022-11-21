@@ -34,7 +34,6 @@ pub struct Utf8GroupbySink {
     // the aggregations/keys are all tightly packed
     // the aggregation function of a group can be found
     // by:
-    // first get the correct vec by the partition index
     //      * offset = (idx)
     //      * end = (offset + 1)
     keys: Vec<Option<smartstring::alias::String>>,
@@ -361,11 +360,11 @@ impl Sink for Utf8GroupbySink {
 }
 
 // write agg_idx to the hashes buffer.
-unsafe fn write_agg_idx(h: *mut IdxSize, i: usize, agg_idx: IdxSize) {
+pub(super) unsafe fn write_agg_idx(h: *mut IdxSize, i: usize, agg_idx: IdxSize) {
     h.add(i).write(agg_idx)
 }
 
-fn apply_aggregate(
+pub(super) fn apply_aggregate(
     agg_i: usize,
     chunk_idx: IdxSize,
     agg_idxs: &[IdxSize],
