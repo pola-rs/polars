@@ -1417,6 +1417,7 @@ def read_csv_batched(
         If set to ``None``, a full table scan will be done (slow).
     batch_size
         Number of lines to read into the buffer at once.
+        
         Modify this to change performance.
     n_rows
         Stop reading from CSV file after reading ``n_rows``.
