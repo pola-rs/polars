@@ -25,7 +25,7 @@ pub(super) type DfIdx = IdxSize;
 // This is the hash and the Index offset in the chunks and the index offset in the dataframe
 #[derive(Copy, Clone, Debug)]
 pub(super) struct Key {
-    hash: u64,
+    pub(super) hash: u64,
     chunk_idx: ChunkIdx,
     df_idx: DfIdx,
 }
@@ -112,17 +112,18 @@ pub(super) fn compare_fn(
 ) -> bool {
     let key_hash = key.hash;
 
-    let chunk_idx = key.chunk_idx as usize * n_join_cols;
-    let df_idx = key.df_idx as usize;
-
-    // get the right columns from the linearly packed buffer
-    let join_cols = unsafe {
-        join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
-    };
-
-    // we check the hash and
-    // we get the appropriate values from the join columns and compare it with the current row
+    // we check the hash first
+    // as that has no indirection
     key_hash == h && {
+        // we get the appropriate values from the join columns and compare it with the current row
+        let chunk_idx = key.chunk_idx as usize * n_join_cols;
+        let df_idx = key.df_idx as usize;
+
+        // get the right columns from the linearly packed buffer
+        let join_cols = unsafe {
+            join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
+        };
+
         join_cols
             .iter()
             .zip(current_row)

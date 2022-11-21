@@ -755,7 +755,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff8ba437813c5a31783dd9a21ce4f555583dc9b048af6bd2b12217394ed9c199"
 dependencies = [
  "fxhash",
- "hashbrown",
+ "hashbrown 0.12.3",
  "serde",
 ]
 
@@ -772,6 +772,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
  "ahash 0.7.6",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33ff8ae62cd3a9102e5637afc8452c55acf3844001bd5374e0b0bd7b6616c038"
+dependencies = [
+ "ahash 0.8.1",
  "rayon",
 ]
 
@@ -837,7 +846,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10a35a97730320ffe8e2d410b5d3b69279b98d2c14bdb8b70ea89ecf7888d41e"
 dependencies = [
  "autocfg",
- "hashbrown",
+ "hashbrown 0.12.3",
  "serde",
 ]
 
@@ -1470,7 +1479,7 @@ dependencies = [
  "arrow2",
  "chrono",
  "chrono-tz",
- "hashbrown",
+ "hashbrown 0.13.1",
  "num",
  "serde",
  "thiserror",
@@ -1488,7 +1497,8 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table",
- "hashbrown",
+ "fxhash",
+ "hashbrown 0.13.1",
  "hex",
  "indexmap",
  "ndarray",
@@ -1570,7 +1580,8 @@ name = "polars-pipe"
 version = "0.25.1"
 dependencies = [
  "enum_dispatch",
- "hashbrown",
+ "fxhash",
+ "hashbrown 0.13.1",
  "num",
  "polars-arrow",
  "polars-core",

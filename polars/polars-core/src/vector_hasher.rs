@@ -56,7 +56,6 @@ where
         // the only deterministic seed.
         buf.clear();
         buf.reserve(self.len());
-
         self.downcast_iter().for_each(|arr| {
             buf.extend(
                 arr.values()
@@ -71,7 +70,8 @@ where
 
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
-            if let Some(validity) = arr.validity() {
+            if arr.null_count() > 0 {
+                let validity = arr.validity().unwrap();
                 let (slice, byte_offset, _) = validity.as_slice();
                 (0..validity.len())
                     .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
@@ -124,9 +124,11 @@ impl VecHash for Utf8Chunked {
         buf.clear();
         buf.reserve(self.len());
         let null_h = get_null_hash_value(random_state.clone());
+        // for strings we use fxhash
+        let fxh = fxhash::FxBuildHasher::default();
         self.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
-                buf.extend(arr.values_iter().map(|v| random_state.hash_single(v)))
+                buf.extend(arr.values_iter().map(|v| fxh.hash_single(v)))
             } else {
                 buf.extend(arr.into_iter().map(|opt_v| match opt_v {
                     Some(v) => random_state.hash_single(v),
@@ -137,11 +139,13 @@ impl VecHash for Utf8Chunked {
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        let null_h = get_null_hash_value(random_state.clone());
+        let null_h = get_null_hash_value(random_state);
+        // for strings we use fxhash
+        let fxh = fxhash::FxBuildHasher::default();
         self.apply_to_slice(
             |opt_v, h| {
                 let l = match opt_v {
-                    Some(v) => random_state.hash_single(v),
+                    Some(v) => fxh.hash_single(v),
                     None => null_h,
                 };
                 _boost_hash_combine(l, *h)
@@ -418,7 +422,7 @@ pub(crate) struct IdxHash {
     // idx in row of Series, DataFrame
     pub(crate) idx: IdxSize,
     // precomputed hash of T
-    hash: u64,
+    pub(crate) hash: u64,
 }
 
 impl Hash for IdxHash {

@@ -154,6 +154,7 @@ bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.6", optional = true }
 comfy-table = { version = "6.1.1", optional = true }
+fxhash = "0.2.1"
 hashbrown.workspace = true
 hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }

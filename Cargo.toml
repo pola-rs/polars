@@ -26,7 +26,7 @@ num = "0.4"
 ahash = "0.8"
 # todo! remove
 anyhow = "1"
-hashbrown = { version = "0.12", features = ["rayon", "ahash"] }
+hashbrown = { version = "0.13.1", features = ["rayon", "ahash"] }
 bitflags = "1.3"
 
 [workspace.dependencies.arrow]

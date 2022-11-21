@@ -2,14 +2,13 @@ use std::any::Any;
 
 use hashbrown::hash_map::RawEntryMut;
 use num::NumCast;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_core::POOL;
-use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
+use polars_utils::{hash_to_partition, HashSingle};
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -37,13 +36,14 @@ pub struct Utf8GroupbySink {
     // first get the correct vec by the partition index
     //      * offset = (idx)
     //      * end = (offset + 1)
-    keys: Vec<Vec<Option<smartstring::alias::String>>>,
-    aggregators: Vec<Vec<AggregateFunction>>,
+    keys: Vec<Option<smartstring::alias::String>>,
+    aggregators: Vec<AggregateFunction>,
     // the key that will be aggregated on
     key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: fxhash::FxBuildHasher,
+    // hb: RandomState,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -63,14 +63,13 @@ impl Utf8GroupbySink {
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let hb = RandomState::default();
+        let hb = fxhash::FxBuildHasher::default();
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
-        let keys = load_vec(partitions, || Vec::with_capacity(HASHMAP_INIT_SIZE));
-        let aggregators = load_vec(partitions, || {
-            Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len())
-        });
+        let keys = Vec::with_capacity(HASHMAP_INIT_SIZE * partitions);
+        let aggregators =
+            Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len() * partitions);
 
         Self {
             thread_no: 0,
@@ -94,22 +93,31 @@ impl Utf8GroupbySink {
     }
 
     fn pre_finalize(&mut self) -> PolarsResult<Vec<DataFrame>> {
-        let mut aggregators = std::mem::take(&mut self.aggregators);
+        // we create a pointer to the aggregation functions buffer
+        // we will deref *mut on every partition thread
+        // this will be safe, as the partitions guarantee that access don't alias.
+        let aggregators = self.aggregators.as_ptr() as usize;
+        let aggregators_len = self.aggregators.len();
+
         let slices = compute_slices(&self.pre_agg_partitions, self.slice);
 
         POOL.install(|| {
             let dfs =
                 self.pre_agg_partitions
                     .par_iter()
-                    .zip(aggregators.par_iter_mut())
-                    .zip(self.keys.par_iter())
                     .zip(slices.par_iter())
-                    .filter_map(|(((agg_map, agg_fns), current_keys), slice)| {
+                    .filter_map(|(agg_map, slice)| {
+                        let ptr = aggregators as *mut AggregateFunction;
+                        // safety:
+                        // we will not alias.
+                        let aggregators =
+                            unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
+
                         let (offset, slice_len) = (*slice)?;
                         if agg_map.is_empty() {
                             return None;
                         }
-                        let dtypes = agg_fns
+                        let dtypes = aggregators
                             .iter()
                             .take(self.number_of_aggs())
                             .map(|func| func.dtype())
@@ -126,7 +134,7 @@ impl Utf8GroupbySink {
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;
                                 let key = unsafe {
-                                    current_keys.get_unchecked_release(key_offset).as_deref()
+                                    self.keys.get_unchecked_release(key_offset).as_deref()
                                 };
                                 key_builder.append_option(key);
 
@@ -135,7 +143,7 @@ impl Utf8GroupbySink {
                                     .zip(buffers.iter_mut())
                                 {
                                     unsafe {
-                                        let agg_fn = agg_fns.get_unchecked_release_mut(i);
+                                        let agg_fn = aggregators.get_unchecked_release_mut(i);
                                         let av = agg_fn.finalize();
                                         buffer.add(av);
                                     }
@@ -166,6 +174,7 @@ impl Utf8GroupbySink {
 impl Sink for Utf8GroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         let num_aggs = self.number_of_aggs();
+        self.hashes.reserve(chunk.data.height());
 
         // todo! amortize allocation
         for phys_e in self.aggregation_columns.iter() {
@@ -178,27 +187,29 @@ impl Sink for Utf8GroupbySink {
             .evaluate(&chunk, context.execution_state.as_ref())?;
         let s = s.rechunk();
         // write the hashes to self.hashes buffer
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // now we have written hashes, we take the pointer to this buffer
+        // we will write the aggregation_function indexes in the same buffer
+        // this is unsafe and we must check that we only write the hashes that
+        // already read/taken. So we write on the slots we just read
+        let agg_idx_ptr = self.hashes.as_ptr() as *mut i64 as *mut IdxSize;
         // array of the keys
         let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
 
-        let mut agg_iters = self
-            .aggregation_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
+        for (iteration_idx, key_val) in keys_arr.iter().enumerate() {
+            let h = self.hb.hash_single(key_val);
 
-        for (&h, key_val) in self.hashes.iter().zip(keys_arr.iter()) {
             let partition = hash_to_partition(h, self.pre_agg_partitions.len());
             let current_partition =
                 unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
-            let current_aggregators =
-                unsafe { self.aggregators.get_unchecked_release_mut(partition) };
-            let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
+            let current_aggregators = &mut self.aggregators;
 
             let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
-                let idx = key.idx as usize;
-                unsafe { current_key_values.get_unchecked_release(idx).as_deref() == key_val }
+                // first compare the hash before we incur the cache miss
+                key.hash == h && {
+                    let idx = key.idx as usize;
+                    unsafe { self.keys.get_unchecked_release(idx).as_deref() == key_val }
+                }
             });
 
             let agg_idx = match entry {
@@ -207,14 +218,11 @@ impl Sink for Utf8GroupbySink {
                         NumCast::from(current_aggregators.len()).unwrap_unchecked_release()
                     };
                     let keys_offset = unsafe {
-                        Key::new(
-                            h,
-                            NumCast::from(current_key_values.len()).unwrap_unchecked_release(),
-                        )
+                        Key::new(h, NumCast::from(self.keys.len()).unwrap_unchecked_release())
                     };
                     entry.insert(keys_offset, value_offset);
 
-                    current_key_values.push(key_val.map(|s| s.into()));
+                    self.keys.push(key_val.map(|s| s.into()));
 
                     // initialize the aggregators
                     for agg_fn in &self.agg_fns {
@@ -224,14 +232,27 @@ impl Sink for Utf8GroupbySink {
                 }
                 RawEntryMut::Occupied(entry) => *entry.get(),
             };
-            for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
-                let i = agg_idx as usize + i;
-                let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
-
-                agg_fn.pre_agg(chunk.chunk_index, agg_iter.as_mut())
-            }
+            // # Safety
+            // we write to the hashes buffer we iterate over at the moment.
+            // this is sound because we writes are trailing from iteration
+            unsafe { write_agg_idx(agg_idx_ptr, iteration_idx, agg_idx) };
         }
-        drop(agg_iters);
+
+        // note that this slice looks into the self.hashes buffer
+        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, keys_arr.len()) };
+
+        for (agg_i, aggregation_s) in (0..num_aggs).zip(&self.aggregation_series) {
+            let has_physical_agg = self.agg_fns[agg_i].has_physical_agg();
+            apply_aggregate(
+                agg_i,
+                chunk.chunk_index,
+                agg_idxs,
+                aggregation_s,
+                has_physical_agg,
+                &mut self.aggregators,
+            );
+        }
+
         self.aggregation_series.clear();
         self.hashes.clear();
         Ok(SinkResult::CanHaveMoreInput)
@@ -247,82 +268,72 @@ impl Sink for Utf8GroupbySink {
         self.pre_agg_partitions
             .iter_mut()
             .zip(other.pre_agg_partitions.iter())
-            .zip(self.aggregators.iter_mut())
-            .zip(other.aggregators.iter())
-            .for_each(
-                |(((map_self, map_other), aggregators_self), aggregators_other)| {
-                    for (k_other, &agg_idx_other) in map_other.iter() {
-                        // the hash value
-                        let h = k_other.hash;
-                        // the partition where all keys and maps are located
-                        let partition = hash_to_partition(h, n_partitions);
-                        // get the key buffers
-                        let keys_buffer_self =
-                            unsafe { self.keys.get_unchecked_release_mut(partition) };
-                        let keys_buffer_other =
-                            unsafe { other.keys.get_unchecked_release(partition) };
+            .for_each(|(map_self, map_other)| {
+                for (k_other, &agg_idx_other) in map_other.iter() {
+                    // the hash value
+                    let h = k_other.hash;
 
-                        // the offset in the keys of other
-                        let idx_other = k_other.idx as usize;
-                        // slice to the keys of other
-                        let key_other =
-                            unsafe { keys_buffer_other.get_unchecked_release(idx_other) };
+                    // the offset in the keys of other
+                    let idx_other = k_other.idx as usize;
+                    // slice to the keys of other
+                    let key_other = unsafe { other.keys.get_unchecked_release(idx_other) };
 
-                        let entry = map_self.raw_entry_mut().from_hash(h, |k_self| {
+                    let entry = map_self.raw_entry_mut().from_hash(h, |k_self| {
+                        h == k_self.hash && {
                             // the offset in the keys of self
                             let idx_self = k_self.idx as usize;
                             // slice to the keys of self
                             // safety:
                             // in bounds
-                            let key_self =
-                                unsafe { keys_buffer_self.get_unchecked_release(idx_self) };
+                            let key_self = unsafe { self.keys.get_unchecked_release(idx_self) };
                             // compare the keys
                             key_self == key_other
-                        });
+                        }
+                    });
 
-                        let agg_idx_self = match entry {
-                            // the keys of other are not in this table, so we must update this table
-                            RawEntryMut::Vacant(entry) => {
-                                // get the current offset in the values buffer
-                                let values_offset = unsafe {
-                                    NumCast::from(aggregators_self.len()).unwrap_unchecked_release()
-                                };
-                                // get the key, comprised of the hash and the current offset in the keys buffer
-                                let key = unsafe {
-                                    Key::new(
-                                        h,
-                                        NumCast::from(keys_buffer_self.len())
-                                            .unwrap_unchecked_release(),
-                                    )
-                                };
+                    let agg_idx_self = match entry {
+                        // the keys of other are not in this table, so we must update this table
+                        RawEntryMut::Vacant(entry) => {
+                            // get the current offset in the values buffer
+                            let values_offset = unsafe {
+                                NumCast::from(self.aggregators.len()).unwrap_unchecked_release()
+                            };
+                            // get the key, comprised of the hash and the current offset in the keys buffer
+                            let key = unsafe {
+                                Key::new(
+                                    h,
+                                    NumCast::from(self.keys.len()).unwrap_unchecked_release(),
+                                )
+                            };
 
-                                // extend the keys buffer with the new key from other
-                                keys_buffer_self.push(key_other.clone());
+                            // extend the keys buffer with the new key from other
+                            self.keys.push(key_other.clone());
 
-                                // insert the keys and values_offset
-                                entry.insert(key, values_offset);
-                                // initialize the new aggregators
-                                for agg_fn in &self.agg_fns {
-                                    aggregators_self.push(agg_fn.split2())
-                                }
-                                values_offset
+                            // insert the keys and values_offset
+                            entry.insert(key, values_offset);
+                            // initialize the new aggregators
+                            for agg_fn in &self.agg_fns {
+                                self.aggregators.push(agg_fn.split2())
                             }
-                            RawEntryMut::Occupied(entry) => *entry.get(),
-                        };
+                            values_offset
+                        }
+                        RawEntryMut::Occupied(entry) => *entry.get(),
+                    };
 
-                        // combine the aggregation functions
-                        for i in 0..self.aggregation_columns.len() {
-                            unsafe {
-                                let agg_fn_other = aggregators_other
-                                    .get_unchecked_release(agg_idx_other as usize + i);
-                                let agg_fn_self = aggregators_self
-                                    .get_unchecked_release_mut(agg_idx_self as usize + i);
-                                agg_fn_self.combine(agg_fn_other.as_any())
-                            }
+                    // combine the aggregation functions
+                    for i in 0..self.aggregation_columns.len() {
+                        unsafe {
+                            let agg_fn_other = other
+                                .aggregators
+                                .get_unchecked_release(agg_idx_other as usize + i);
+                            let agg_fn_self = self
+                                .aggregators
+                                .get_unchecked_release_mut(agg_idx_self as usize + i);
+                            agg_fn_self.combine(agg_fn_other.as_any())
                         }
                     }
-                },
-            );
+                }
+            });
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
@@ -346,5 +357,65 @@ impl Sink for Utf8GroupbySink {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+// write agg_idx to the hashes buffer.
+unsafe fn write_agg_idx(h: *mut IdxSize, i: usize, agg_idx: IdxSize) {
+    h.add(i).write(agg_idx)
+}
+
+fn apply_aggregate(
+    agg_i: usize,
+    chunk_idx: IdxSize,
+    agg_idxs: &[IdxSize],
+    aggregation_s: &Series,
+    has_physical_agg: bool,
+    aggregators: &mut [AggregateFunction],
+) {
+    macro_rules! apply_agg {
+                ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
+                    match $self.dtype() {
+                        #[cfg(feature = "dtype-u8")]
+                        DataType::UInt8 => $macro!($self.u8().unwrap(), pre_agg_u8 $(, $opt_args)*),
+                        #[cfg(feature = "dtype-u16")]
+                        DataType::UInt16 => $macro!($self.u16().unwrap(), pre_agg_u16 $(, $opt_args)*),
+                        DataType::UInt32 => $macro!($self.u32().unwrap(), pre_agg_u32 $(, $opt_args)*),
+                        DataType::UInt64 => $macro!($self.u64().unwrap(), pre_agg_u64 $(, $opt_args)*),
+                        #[cfg(feature = "dtype-i8")]
+                        DataType::Int8 => $macro!($self.i8().unwrap(), pre_agg_i8 $(, $opt_args)*),
+                        #[cfg(feature = "dtype-i16")]
+                        DataType::Int16 => $macro!($self.i16().unwrap(), pre_agg_i16 $(, $opt_args)*),
+                        DataType::Int32 => $macro!($self.i32().unwrap(), pre_agg_i32 $(, $opt_args)*),
+                        DataType::Int64 => $macro!($self.i64().unwrap(), pre_agg_i64 $(, $opt_args)*),
+                        DataType::Float32 => $macro!($self.f32().unwrap(), pre_agg_f32 $(, $opt_args)*),
+                        DataType::Float64 => $macro!($self.f64().unwrap(), pre_agg_f64 $(, $opt_args)*),
+                        dt => panic!("not implemented for {:?}", dt),
+                    }
+                }};
+            }
+
+    if has_physical_agg && aggregation_s.dtype().is_numeric() {
+        macro_rules! dispatch {
+            ($ca:expr, $name:ident) => {{
+                let arr = $ca.downcast_iter().next().unwrap();
+
+                for (&agg_idx, av) in agg_idxs.iter().zip(arr.into_iter()) {
+                    let i = agg_idx as usize + agg_i;
+                    let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+
+                    agg_fn.$name(chunk_idx, av.copied())
+                }
+            }};
+        }
+
+        apply_agg!(aggregation_s, dispatch);
+    } else {
+        let mut iter = aggregation_s.phys_iter();
+        for &agg_idx in agg_idxs.iter() {
+            let i = agg_idx as usize + agg_i;
+            let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+            agg_fn.pre_agg(chunk_idx, &mut iter)
+        }
     }
 }

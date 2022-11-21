@@ -29,14 +29,23 @@ fn column_idx_to_series(
     bytes: &[u8],
     chunk_size: usize,
 ) -> PolarsResult<Series> {
-    let field = &schema.fields[column_i];
+    let mut field = schema.fields[column_i].clone();
+
+    match field.data_type {
+        ArrowDataType::Utf8 => {
+            field.data_type = ArrowDataType::LargeUtf8;
+        }
+        ArrowDataType::List(fld) => field.data_type = ArrowDataType::LargeList(fld),
+        _ => {}
+    }
+
     let columns = mmap_columns(bytes, md.columns(), &field.name);
     let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
 
     if remaining_rows < md.num_rows() {
-        array_iter_to_series(iter, field, Some(remaining_rows))
+        array_iter_to_series(iter, &field, Some(remaining_rows))
     } else {
-        array_iter_to_series(iter, field, None)
+        array_iter_to_series(iter, &field, None)
     }
 }
 

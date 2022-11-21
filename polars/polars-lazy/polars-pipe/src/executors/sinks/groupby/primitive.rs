@@ -44,7 +44,7 @@ impl<T: Copy + PartialEq> PartialEq for Key<T> {
 pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     thread_no: usize,
     // idx is the offset in the array with aggregators
-    pre_agg_partitions: Vec<PlHashMap<Key<Option<K::Native>>, IdxSize>>,
+    pre_agg_partitions: Vec<PlIdHashMap<Key<Option<K::Native>>, IdxSize>>,
     // the aggregations are all tightly packed
     // the aggregation function of a group can be found
     // by:
@@ -81,9 +81,7 @@ where
         let hb = RandomState::default();
         let partitions = _set_partition_size();
 
-        let pre_agg = load_vec(partitions, || {
-            PlHashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, hb.clone())
-        });
+        let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
         let aggregators = load_vec(partitions, || {
             Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len())
         });
@@ -214,15 +212,17 @@ where
                 unsafe { self.pre_agg_partitions.get_unchecked_release_mut(part) };
             let current_aggregators = unsafe { self.aggregators.get_unchecked_release_mut(part) };
 
-            let key = Key {
-                hash: h,
-                value: opt_v,
-            };
-            let entry = current_partition.raw_entry_mut().from_key(&key);
+            let entry = current_partition
+                .raw_entry_mut()
+                .from_hash(h, |k| k.value == opt_v);
             let agg_idx = match entry {
                 RawEntryMut::Vacant(entry) => {
                     let offset = unsafe {
                         NumCast::from(current_aggregators.len()).unwrap_unchecked_release()
+                    };
+                    let key = Key {
+                        hash: h,
+                        value: opt_v,
                     };
                     entry.insert(key, offset);
                     // initialize the aggregators
