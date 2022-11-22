@@ -880,8 +880,22 @@ impl DataFrame {
     ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
-        let ids = sort_or_hash_left(s_left, s_right, verbose);
-        self.finish_left_join(ids, &other.drop(s_right.name()).unwrap(), suffix, slice)
+
+        // ensure that the chunks are aligned otherwise we go OOB
+        let mut left = self.clone();
+        let mut s_left = s_left.clone();
+        let mut right = other.clone();
+        let mut s_right = s_right.clone();
+        if left.should_rechunk() {
+            left.as_single_chunk_par();
+            s_left = s_left.rechunk();
+        }
+        if right.should_rechunk() {
+            right.as_single_chunk_par();
+            s_right = s_right.rechunk();
+        }
+        let ids = sort_or_hash_left(&s_left, &s_right, verbose);
+        left.finish_left_join(ids, &right.drop(s_right.name()).unwrap(), suffix, slice)
     }
 
     #[cfg(feature = "semi_anti_join")]
