@@ -122,7 +122,7 @@ where
         )?;
 
         let mut df: DataFrame = json_reader.as_df()?;
-        if rechunk && df.n_chunks()? > 1 {
+        if rechunk && df.n_chunks() > 1 {
             df.as_single_chunk_par();
         }
         Ok(df)

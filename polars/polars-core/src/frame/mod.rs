@@ -616,14 +616,11 @@ impl DataFrame {
     }
 
     /// The number of chunks per column
-    pub fn n_chunks(&self) -> PolarsResult<usize> {
-        Ok(self
-            .columns
-            .get(0)
-            .ok_or_else(|| {
-                PolarsError::NoData("Can not determine number of chunks if there is no data".into())
-            })?
-            .n_chunks())
+    pub fn n_chunks(&self) -> usize {
+        match self.columns.get(0) {
+            None => 0,
+            Some(s) => s.n_chunks(),
+        }
     }
 
     /// Get a reference to the schema fields of the `DataFrame`.
@@ -1592,10 +1589,7 @@ impl DataFrame {
             return self.take_unchecked_vectical(&idx_ca.into_inner());
         }
 
-        let n_chunks = match self.n_chunks() {
-            Err(_) => return self.clone(),
-            Ok(n) => n,
-        };
+        let n_chunks = self.n_chunks();
         let has_utf8 = self
             .columns
             .iter()
@@ -1640,10 +1634,7 @@ impl DataFrame {
             return self.take_unchecked_vectical(&idx_ca);
         }
 
-        let n_chunks = match self.n_chunks() {
-            Err(_) => return self.clone(),
-            Ok(n) => n,
-        };
+        let n_chunks = self.n_chunks();
 
         let has_utf8 = self
             .columns
@@ -2374,7 +2365,7 @@ impl DataFrame {
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
-            n_chunks: self.n_chunks().unwrap_or(0),
+            n_chunks: self.n_chunks(),
         }
     }
 
@@ -3529,7 +3520,7 @@ mod test {
         .unwrap();
 
         df.vstack_mut(&df.slice(0, 3)).unwrap();
-        assert_eq!(df.n_chunks().unwrap(), 2)
+        assert_eq!(df.n_chunks(), 2)
     }
 
     #[test]

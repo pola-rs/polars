@@ -329,10 +329,8 @@ impl Sink for GenericBuild {
                         .into_iter()
                         .map(|chunk| chunk.data),
                 );
-                if let Ok(n_chunks) = left_df.n_chunks() {
-                    if left_df.height() > 0 {
-                        assert_eq!(n_chunks, chunks_len);
-                    }
+                if left_df.height() > 0 {
+                    assert_eq!(left_df.n_chunks(), chunks_len);
                 }
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));

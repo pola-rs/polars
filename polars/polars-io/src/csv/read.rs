@@ -527,7 +527,7 @@ where
 
         // Important that this rechunk is never done in parallel.
         // As that leads to great memory overhead.
-        if rechunk && df.n_chunks()? > 1 {
+        if rechunk && df.n_chunks() > 1 {
             if low_memory {
                 df.as_single_chunk();
             } else {
