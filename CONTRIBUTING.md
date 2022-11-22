@@ -10,7 +10,6 @@ If you're unclear on how to proceed after reading this guide, please contact us 
 - [Contributing to the codebase](#contributing-to-the-codebase)
 - [Contributing to documentation](#contributing-to-documentation)
 
-
 ## Reporting bugs
 
 We use [GitHub issues](https://github.com/pola-rs/polars/issues) to track bugs and suggested enhancements.
@@ -22,7 +21,6 @@ If you find a closed issue that seems to report the same bug you're experiencing
 
 Please include as many details as possible in your bug report. The information helps the maintainers resolve the issue faster.
 
-
 ## Suggesting enhancements
 
 We use [GitHub issues](https://github.com/pola-rs/polars/issues) to track bugs and suggested enhancements.
@@ -30,7 +28,6 @@ You can suggest an enhancement by opening a [new feature request](https://github
 Before creating an enhancement suggestion, please check that a similar issue does not already exist.
 
 Please describe the behavior you want and why, and provide examples of how Polars would be used if your feature were added.
-
 
 ## Contributing to the codebase
 
@@ -87,6 +84,7 @@ make test
 ```
 
 This will do a number of things:
+
 - Use Python to create a virtual environment in the `py-polars/venv` folder.
 - Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment.
@@ -147,7 +145,6 @@ Once all issues are resolved, the maintainer will merge your pull request, and y
 
 Keep in mind that your work does not have to be perfect right away!
 If you are stuck or unsure about your solution, feel free to open a draft pull request and ask for help.
-
 
 ## Contributing to documentation
 
