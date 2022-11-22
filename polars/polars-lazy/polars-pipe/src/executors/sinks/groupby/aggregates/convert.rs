@@ -14,6 +14,7 @@ use crate::executors::sinks::groupby::aggregates::count::CountAgg;
 use crate::executors::sinks::groupby::aggregates::first::FirstAgg;
 use crate::executors::sinks::groupby::aggregates::last::LastAgg;
 use crate::executors::sinks::groupby::aggregates::mean::MeanAgg;
+use crate::executors::sinks::groupby::aggregates::null::NullAgg;
 use crate::executors::sinks::groupby::aggregates::{AggregateFunction, SumAgg};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::DataChunk;
@@ -89,14 +90,24 @@ where
 {
     match expr_arena.get(node) {
         AExpr::Alias(input, _) => convert_to_hash_agg(*input, expr_arena, schema, to_physical),
-        AExpr::Count | AExpr::Agg(AAggExpr::Count(_)) => (
+        AExpr::Count => (
             Arc::new(Count {}),
             AggregateFunction::Count(CountAgg::new()),
         ),
         AExpr::Agg(agg) => match agg {
             AAggExpr::Sum(input) => {
                 let phys_expr = to_physical(*input, expr_arena).unwrap();
-                let agg_fn = match phys_expr.field(schema).unwrap().dtype.to_physical() {
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
+
+                #[cfg(feature = "dtype-categorical")]
+                if matches!(logical_dtype, DataType::Categorical(_)) {
+                    return (
+                        phys_expr,
+                        AggregateFunction::Null(NullAgg::new(logical_dtype)),
+                    );
+                }
+
+                let agg_fn = match logical_dtype.to_physical() {
                     // Boolean is aggregated as the IDX type.
                     DataType::Boolean => {
                         if std::mem::size_of::<IdxSize>() == 4 {
@@ -117,19 +128,28 @@ where
                     DataType::Int64 => AggregateFunction::SumI64(SumAgg::<i64>::new()),
                     DataType::Float32 => AggregateFunction::SumF32(SumAgg::<f32>::new()),
                     DataType::Float64 => AggregateFunction::SumF64(SumAgg::<f64>::new()),
-                    _ => unreachable!(),
+                    dt => AggregateFunction::Null(NullAgg::new(dt)),
                 };
                 (phys_expr, agg_fn)
             }
             AAggExpr::Mean(input) => {
                 let phys_expr = to_physical(*input, expr_arena).unwrap();
-                let agg_fn = match phys_expr.field(schema).unwrap().dtype.to_physical() {
+
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
+                #[cfg(feature = "dtype-categorical")]
+                if matches!(logical_dtype, DataType::Categorical(_)) {
+                    return (
+                        phys_expr,
+                        AggregateFunction::Null(NullAgg::new(logical_dtype)),
+                    );
+                }
+                let agg_fn = match logical_dtype.to_physical() {
                     dt if dt.is_integer() => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
                     // Boolean is aggregated as the IDX type.
                     DataType::Boolean => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
                     DataType::Float32 => AggregateFunction::MeanF32(MeanAgg::<f32>::new()),
                     DataType::Float64 => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
-                    _ => unreachable!(),
+                    dt => AggregateFunction::Null(NullAgg::new(dt)),
                 };
                 (phys_expr, agg_fn)
             }
@@ -142,6 +162,10 @@ where
                 let phys_expr = to_physical(*input, expr_arena).unwrap();
                 let dtype = phys_expr.field(schema).unwrap().dtype;
                 (phys_expr, AggregateFunction::Last(LastAgg::new(dtype)))
+            }
+            AAggExpr::Count(input) => {
+                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                (phys_expr, AggregateFunction::Count(CountAgg::new()))
             }
             agg => panic!("{:?} not yet implemented.", agg),
         },

@@ -100,10 +100,6 @@ impl<K: NumericNative + Add<Output = K> + NumCast> AggregateFn for MeanAgg<K> {
         };
     }
 
-    fn split(&self) -> Box<dyn AggregateFn> {
-        Box::new(Self::new())
-    }
-
     fn finalize(&mut self) -> AnyValue<'static> {
         if let Some(val) = self.sum {
             unsafe {

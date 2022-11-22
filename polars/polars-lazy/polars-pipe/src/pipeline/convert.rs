@@ -125,6 +125,12 @@ where
 
                 let swapped = swap_join_order(options);
 
+                let (join_columns_left, join_columns_right) = if swapped {
+                    (join_columns_right, join_columns_left)
+                } else {
+                    (join_columns_left, join_columns_right)
+                };
+
                 Box::new(GenericBuild::new(
                     Arc::from(options.suffix.as_ref()),
                     join_type.clone(),

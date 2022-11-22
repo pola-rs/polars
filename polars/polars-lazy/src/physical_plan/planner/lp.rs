@@ -372,6 +372,11 @@ pub fn create_physical_plan(
                     && aggs.len() < 10
                     && std::env::var("POLARS_NO_STREAMING_GROUPBY").is_err()
                 {
+                    let key_dtype = _schema.get_index(0).unwrap().1.to_physical();
+                    // only on numeric and string keys for now
+                    let allowed_key = keys.len() == 1 && key_dtype.is_numeric()
+                        || matches!(key_dtype, DataType::Utf8);
+
                     let lp = Aggregate {
                         input,
                         keys,
@@ -382,7 +387,16 @@ pub fn create_physical_plan(
                         options: options.clone(),
                     };
                     let root = lp_arena.add(lp);
-                    if insert_streaming_nodes(root, lp_arena, expr_arena, &mut vec![], false)? {
+
+                    // do not jit insert join streaming nodes
+                    // first we have to test them more and ensure solid perf
+                    let has_joins = (&*lp_arena)
+                        .iter(root)
+                        .any(|(_, lp)| matches!(lp, Join { .. }));
+                    if allowed_key
+                        && !has_joins
+                        && insert_streaming_nodes(root, lp_arena, expr_arena, &mut vec![], false)?
+                    {
                         return create_physical_plan(root, lp_arena, expr_arena);
                     }
                 }

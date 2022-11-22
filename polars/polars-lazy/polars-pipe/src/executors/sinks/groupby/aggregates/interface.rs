@@ -8,6 +8,7 @@ use crate::executors::sinks::groupby::aggregates::count::CountAgg;
 use crate::executors::sinks::groupby::aggregates::first::FirstAgg;
 use crate::executors::sinks::groupby::aggregates::last::LastAgg;
 use crate::executors::sinks::groupby::aggregates::mean::MeanAgg;
+use crate::executors::sinks::groupby::aggregates::null::NullAgg;
 use crate::executors::sinks::groupby::aggregates::SumAgg;
 use crate::operators::IdxSize;
 
@@ -54,8 +55,6 @@ pub trait AggregateFn: Send + Sync {
 
     fn combine(&mut self, other: &dyn Any);
 
-    fn split(&self) -> Box<dyn AggregateFn>;
-
     fn finalize(&mut self) -> AnyValue<'static>;
 
     fn as_any(&self) -> &dyn Any;
@@ -76,10 +75,10 @@ pub enum AggregateFunction {
     SumI64(SumAgg<i64>),
     MeanF32(MeanAgg<f32>),
     MeanF64(MeanAgg<f64>),
-    // place holder for any aggregate function
-    // this is not preferred because of the extra
-    // indirection
-    // Other(Box<dyn AggregateFn>)
+    Null(NullAgg), // place holder for any aggregate function
+                   // this is not preferred because of the extra
+                   // indirection
+                   // Other(Box<dyn AggregateFn>)
 }
 
 impl AggregateFunction {
@@ -97,6 +96,7 @@ impl AggregateFunction {
             MeanF32(_) => MeanF32(MeanAgg::new()),
             MeanF64(_) => MeanF64(MeanAgg::new()),
             Count(_) => Count(CountAgg::new()),
+            Null(a) => Null(a.clone()),
         }
     }
 }
