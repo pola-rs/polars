@@ -1907,6 +1907,62 @@ def test_tz_aware_truncate() -> None:
         ],
     }
 
+    # 5507
+    lf = pl.DataFrame(
+        {
+            "naive": pl.date_range(
+                low=datetime(2021, 12, 31, 23),
+                high=datetime(2022, 1, 1, 6),
+                interval="1h",
+            )
+        }
+    ).lazy()
+    lf = lf.with_column(pl.col("naive").dt.tz_localize("UTC").alias("UTC"))
+    lf = lf.with_column(pl.col("UTC").dt.with_time_zone("US/Central").alias("CST"))
+    lf = lf.with_column(pl.col("CST").dt.truncate("1d").alias("CST truncated"))
+    assert lf.collect().to_dict(False) == {
+        "naive": [
+            datetime(2021, 12, 31, 23, 0),
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 1, 1, 1, 0),
+            datetime(2022, 1, 1, 2, 0),
+            datetime(2022, 1, 1, 3, 0),
+            datetime(2022, 1, 1, 4, 0),
+            datetime(2022, 1, 1, 5, 0),
+            datetime(2022, 1, 1, 6, 0),
+        ],
+        "UTC": [
+            datetime(2021, 12, 31, 23, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 1, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 2, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 3, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 4, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 5, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 6, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+        ],
+        "CST": [
+            datetime(2021, 12, 31, 17, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 18, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 19, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 20, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 21, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 22, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 23, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+        ],
+        "CST truncated": [
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+        ],
+    }
+
 
 def test_tz_aware_strftime() -> None:
     df = pl.DataFrame(

@@ -50,6 +50,27 @@ impl DatetimeChunked {
             .cast_time_zone(&keep_tz)
     }
 
+    pub fn apply_on_tz_corrected<F>(&self, mut func: F) -> PolarsResult<DatetimeChunked>
+    where
+        F: FnMut(DatetimeChunked) -> PolarsResult<DatetimeChunked>,
+    {
+        #[allow(unused_mut)]
+        let mut ca = self.clone();
+        #[cfg(feature = "timezones")]
+        if self.time_zone().is_some() {
+            ca = self.cast_time_zone("UTC")?
+        }
+        let out = func(ca)?;
+
+        #[cfg(feature = "timezones")]
+        if let Some(tz) = self.time_zone() {
+            return out
+                .with_time_zone(Some("UTC".to_string()))
+                .cast_time_zone(tz);
+        }
+        Ok(out)
+    }
+
     #[cfg(feature = "timezones")]
     pub fn cast_time_zone(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
         use chrono_tz::Tz;
