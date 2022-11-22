@@ -3,7 +3,8 @@ name: Lint global
 on:
   pull_request:
     paths:
-      - ['**.md', '**.toml']  # This workflow currently only lints markdown and TOML files
+      - '**.md'
+      - '**.toml'
       - '.github/workflows/lint-global.yaml'
 
 concurrency:
