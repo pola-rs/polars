@@ -38,10 +38,6 @@ impl AggregateFn for CountAgg {
         self.count += other.count;
     }
 
-    fn split(&self) -> Box<dyn AggregateFn> {
-        Box::new(Self::new())
-    }
-
     fn finalize(&mut self) -> AnyValue<'static> {
         AnyValue::from(self.count)
     }

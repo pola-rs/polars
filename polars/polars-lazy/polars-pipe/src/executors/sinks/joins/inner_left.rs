@@ -80,13 +80,15 @@ impl GenericJoinProbe {
                 data: df_a.slice(0, 1),
                 chunk_index: 0,
             };
+            // remove duplicate_names caused by joining
+            // on the same column
             let names = join_columns_left
                 .iter()
-                .map(|phys_e| {
-                    let s = phys_e
+                .flat_map(|phys_e| {
+                    phys_e
                         .evaluate(&tmp, context.execution_state.as_ref())
-                        .unwrap();
-                    s.name().to_string()
+                        .ok()
+                        .map(|s| s.name().to_string())
                 })
                 .collect::<Vec<_>>();
             df_a = df_a.drop_many(&names)

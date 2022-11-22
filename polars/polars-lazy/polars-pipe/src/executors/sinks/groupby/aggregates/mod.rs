@@ -4,6 +4,7 @@ mod first;
 mod interface;
 mod last;
 mod mean;
+mod null;
 mod sum;
 
 pub use convert::*;

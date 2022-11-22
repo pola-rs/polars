@@ -15,6 +15,7 @@ use rayon::prelude::*;
 use super::aggregates::AggregateFn;
 use super::generic::Key;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
+use crate::executors::sinks::groupby::physical_agg_to_logical;
 use crate::executors::sinks::groupby::utils::compute_slices;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
@@ -153,14 +154,7 @@ impl Utf8GroupbySink {
                         let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
                         cols.push(key_builder.finish().into_series());
                         cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
-                        for (s, (name, dtype)) in cols.iter_mut().zip(self.output_schema.iter()) {
-                            if s.name() != name {
-                                s.rename(name);
-                            }
-                            if s.dtype() != dtype {
-                                *s = s.cast(dtype).unwrap()
-                            }
-                        }
+                        physical_agg_to_logical(&mut cols, &self.output_schema);
                         Some(DataFrame::new_no_checks(cols))
                     })
                     .collect::<Vec<_>>();
@@ -350,6 +344,11 @@ impl Sink for Utf8GroupbySink {
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
+        if dfs.is_empty() {
+            return Ok(FinalizedSink::Finished(DataFrame::from(
+                self.output_schema.as_ref(),
+            )));
+        }
         let mut df = accumulate_dataframes_vertical_unchecked(dfs);
         DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished)
     }

@@ -961,6 +961,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
+        *,
         simplify_expression: bool = True,
         string_cache: bool = False,
         no_optimization: bool = False,

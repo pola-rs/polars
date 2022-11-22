@@ -44,10 +44,6 @@ impl AggregateFn for FirstAgg {
         };
     }
 
-    fn split(&self) -> Box<dyn AggregateFn> {
-        Box::new(Self::new(self.dtype.clone()))
-    }
-
     fn finalize(&mut self) -> AnyValue<'static> {
         std::mem::take(&mut self.first).unwrap_or(AnyValue::Null)
     }
