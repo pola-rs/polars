@@ -846,7 +846,16 @@ where
     }
 }
 
-impl ArgAgg for BooleanChunked {}
+impl ArgAgg for BooleanChunked {
+    fn arg_min(&self) -> Option<usize> {
+        self.into_iter()
+            .position(|opt_val| matches!(opt_val, Some(false)))
+    }
+    fn arg_max(&self) -> Option<usize> {
+        self.into_iter()
+            .position(|opt_val| matches!(opt_val, Some(true)))
+    }
+}
 impl ArgAgg for Utf8Chunked {}
 #[cfg(feature = "dtype-binary")]
 impl ArgAgg for BinaryChunked {}
