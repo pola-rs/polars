@@ -868,9 +868,8 @@ impl PyDataFrame {
         PyList::new(py, iter).to_object(py)
     }
 
-    pub fn n_chunks(&self) -> PyResult<usize> {
-        let n = self.df.n_chunks().map_err(PyPolarsErr::from)?;
-        Ok(n)
+    pub fn n_chunks(&self) -> usize {
+        self.df.n_chunks()
     }
 
     pub fn shape(&self) -> (usize, usize) {

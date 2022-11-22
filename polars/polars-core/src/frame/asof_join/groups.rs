@@ -554,6 +554,7 @@ impl DataFrame {
         let left_asof = self.column(left_on)?;
         let right_asof = other.column(right_on)?;
         let right_asof_name = right_asof.name();
+        let left_asof_name = left_asof.name();
 
         check_asof_columns(left_asof, right_asof)?;
 
@@ -657,7 +658,9 @@ impl DataFrame {
         };
 
         let mut drop_these = right_by.get_column_names();
-        drop_these.push(right_asof_name);
+        if left_asof_name == right_asof_name {
+            drop_these.push(right_asof_name);
+        }
 
         let cols = other
             .get_columns()
