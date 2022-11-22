@@ -1719,25 +1719,15 @@ def test_invalid_date_parsing_4898() -> None:
 
 
 def test_cast_timezone() -> None:
-    utc = zoneinfo.ZoneInfo("UTC")
     ny = zoneinfo.ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_column(
-        pl.col("a")
-        .dt.with_time_zone("America/New_York")
-        .dt.cast_time_zone("UTC")
-        .alias("b")
-    ).to_dict(False) == {
-        "a": [datetime(2022, 9, 25, 14, 0)],
-        "b": [datetime(2022, 9, 25, 18, 0, tzinfo=utc)],
-    }
-    assert pl.DataFrame({"a": [datetime(2022, 9, 25, 18)]}).with_column(
         pl.col("a")
         .dt.with_time_zone("UTC")
         .dt.cast_time_zone("America/New_York")
         .alias("b")
     ).to_dict(False) == {
-        "a": [datetime(2022, 9, 25, 18, 0)],
-        "b": [datetime(2022, 9, 25, 10, 0, tzinfo=ny)],
+        "a": [datetime(2022, 9, 25, 14, 0)],
+        "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
     }
 
 

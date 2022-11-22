@@ -25,10 +25,9 @@ pub fn date_range_impl(
     #[cfg(feature = "timezones")]
     if let Some(tz) = _tz {
         out = out
-            .with_time_zone(Some(tz.clone()))
-            .cast_time_zone("UTC")
-            .unwrap() // ensure we store them as UTC
-            .with_time_zone(Some(tz))
+            .with_time_zone(Some("UTC".to_string()))
+            .cast_time_zone(&tz)
+            .unwrap()
     }
     out.set_sorted(start > stop);
     out
