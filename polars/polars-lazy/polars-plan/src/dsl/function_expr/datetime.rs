@@ -151,7 +151,7 @@ pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
             Err(PolarsError::ComputeError("Cannot localize a tz-aware datetime. Consider using 'dt.with_time_zone' or 'dt.cast_time_zone'".into()))
         },
         _ => {
-            Ok(ca.with_time_zone(Some(tz.into())).cast_time_zone("UTC")?.with_time_zone(Some(tz.into())).into_series())
+            Ok(ca.with_time_zone(Some("UTC".to_string())).cast_time_zone(tz)?.into_series())
         }
     }
 }

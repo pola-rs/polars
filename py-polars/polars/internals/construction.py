@@ -313,15 +313,7 @@ def sequence_to_pyseries(
             if dtype == Datetime and value.tzinfo is not None:
                 py_series = PySeries.new_from_anyvalues(name, values)
                 tz = str(value.tzinfo)
-                return (
-                    pli.wrap_s(py_series)
-                    .dt.with_time_zone(tz)  # first inform polars of tz
-                    .dt.cast_time_zone("UTC")  # ensure we store them as utc
-                    .dt.with_time_zone(
-                        tz
-                    )  # conversion lead to utc tz, which is not correct.
-                    ._s
-                )
+                return pli.wrap_s(py_series).dt.tz_localize(tz)._s
 
             # TODO: use anyvalues here (no need to require pyarrow for this).
             arrow_dtype = dtype_to_arrow_type(dtype)
