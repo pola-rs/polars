@@ -840,6 +840,23 @@ impl FromPyObject<'_> for Wrap<CategoricalOrdering> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<StartBy> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "window" => StartBy::WindowBound,
+            "datapoint" => StartBy::DataPoint,
+            "monday" => StartBy::Monday,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "closed must be one of {{'window', 'datapoint', 'monday'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<ClosedWindow> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

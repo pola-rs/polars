@@ -109,6 +109,7 @@ if TYPE_CHECKING:
         ParquetCompression,
         PivotAgg,
         SizeUnit,
+        StartBy,
         UniqueKeepStrategy,
         UnstackDirection,
     )
@@ -3152,6 +3153,7 @@ class DataFrame:
     def groupby_rolling(
         self: DF,
         index_column: str,
+        *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedWindow = "right",
@@ -3262,6 +3264,7 @@ class DataFrame:
     def groupby_dynamic(
         self: DF,
         index_column: str,
+        *,
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
@@ -3269,6 +3272,7 @@ class DataFrame:
         include_boundaries: bool = False,
         closed: ClosedWindow = "left",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        start_by: StartBy = "window",
     ) -> DynamicGroupBy[DF]:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -3335,6 +3339,11 @@ class DataFrame:
             Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
+        start_by : {'window', 'datapoint', 'monday'}
+            The strategy to determine the start of the first window by.
+            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'datapoint': Start from the first encountered data point.
+            * 'monday': Start the window on the monday before the first data point.
 
         Examples
         --------
@@ -3573,11 +3582,13 @@ class DataFrame:
             include_boundaries,
             closed,
             by,
+            start_by,
         )
 
     def upsample(
         self: DF,
         time_column: str,
+        *,
         every: str | timedelta,
         offset: str | timedelta | None = None,
         by: str | Sequence[str] | None = None,

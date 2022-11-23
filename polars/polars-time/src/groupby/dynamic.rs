@@ -27,6 +27,22 @@ pub struct DynamicGroupOptions {
     // add the boundaries to the dataframe
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
+    pub start_by: StartBy,
+}
+
+impl Default for DynamicGroupOptions {
+    fn default() -> Self {
+        Self {
+            index_column: "".to_string(),
+            every: Duration::new(1),
+            period: Duration::new(1),
+            offset: Duration::new(1),
+            truncate: true,
+            include_boundaries: false,
+            closed_window: ClosedWindow::Left,
+            start_by: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -241,6 +257,7 @@ impl Wrap<&DataFrame> {
                 tu,
                 include_lower_bound,
                 include_upper_bound,
+                options.start_by,
             );
             update_bounds(lower, upper);
             GroupsProxy::Slice {
@@ -271,6 +288,7 @@ impl Wrap<&DataFrame> {
                                 tu,
                                 include_lower_bound,
                                 include_upper_bound,
+                                options.start_by,
                             );
 
                             (lower, upper, update_subgroups_idx(&sub_groups, base_g))
@@ -300,6 +318,7 @@ impl Wrap<&DataFrame> {
                                 tu,
                                 include_lower_bound,
                                 include_upper_bound,
+                                options.start_by,
                             );
                             update_subgroups_idx(&sub_groups, base_g)
                         })
@@ -583,11 +602,15 @@ mod test {
 
     #[test]
     fn test_dynamic_groupby_window() {
-        let start = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(0, 0, 0)
+        let start = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             .timestamp_millis();
-        let stop = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(3, 0, 0)
+        let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(3, 0, 0)
+            .unwrap()
             .timestamp_millis();
         let range = date_range_impl(
             "date",
@@ -614,6 +637,7 @@ mod test {
                     truncate: true,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
+                    start_by: Default::default(),
                 },
             )
             .unwrap();
@@ -630,11 +654,15 @@ mod test {
         assert_eq!(g, &["a", "a", "a", "a", "b", "b"]);
 
         let upper = out.column("_upper_boundary").unwrap().slice(0, 3);
-        let start = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(1, 0, 0)
+        let start = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(1, 0, 0)
+            .unwrap()
             .timestamp_millis();
-        let stop = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(3, 0, 0)
+        let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(3, 0, 0)
+            .unwrap()
             .timestamp_millis();
         let range = date_range_impl(
             "_upper_boundary",
@@ -649,11 +677,15 @@ mod test {
         assert_eq!(&upper, &range);
 
         let upper = out.column("_lower_boundary").unwrap().slice(0, 3);
-        let start = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(0, 0, 0)
+        let start = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             .timestamp_millis();
-        let stop = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(2, 0, 0)
+        let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap()
             .timestamp_millis();
         let range = date_range_impl(
             "_lower_boundary",
@@ -695,17 +727,22 @@ mod test {
                 truncate: true,
                 include_boundaries: true,
                 closed_window: ClosedWindow::Both,
+                start_by: Default::default(),
             },
         );
     }
 
     #[test]
     fn test_truncate_offset() {
-        let start = NaiveDate::from_ymd(2021, 3, 1)
-            .and_hms(12, 0, 0)
+        let start = NaiveDate::from_ymd_opt(2021, 3, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
             .timestamp_millis();
-        let stop = NaiveDate::from_ymd(2021, 3, 7)
-            .and_hms(12, 0, 0)
+        let stop = NaiveDate::from_ymd_opt(2021, 3, 7)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
             .timestamp_millis();
         let range = date_range_impl(
             "date",
@@ -732,6 +769,7 @@ mod test {
                     truncate: true,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
+                    start_by: Default::default(),
                 },
             )
             .unwrap();
