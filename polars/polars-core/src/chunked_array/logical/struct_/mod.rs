@@ -198,11 +198,26 @@ impl LogicalType for StructChunked {
 
     // in case of a struct, a cast will coerce the inner types
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        let fields = self
-            .fields
-            .iter()
-            .map(|s| s.cast(dtype))
-            .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(Self::new_unchecked(self.field.name(), &fields).into_series())
+        match dtype {
+            DataType::Struct(dtype_fields) => {
+                let mut new_fields = Vec::with_capacity(self.fields().len());
+                for (s_field, fld) in self.fields().iter().zip(dtype_fields) {
+                    let mut new_s = s_field.cast(fld.data_type())?;
+                    if new_s.name() != fld.name {
+                        new_s.rename(&fld.name);
+                    }
+                    new_fields.push(new_s);
+                }
+                StructChunked::new(self.name(), &new_fields).map(|ca| ca.into_series())
+            }
+            _ => {
+                let fields = self
+                    .fields
+                    .iter()
+                    .map(|s| s.cast(dtype))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                Ok(Self::new_unchecked(self.field.name(), &fields).into_series())
+            }
+        }
     }
 }
