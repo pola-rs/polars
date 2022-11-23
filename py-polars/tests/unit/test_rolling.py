@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import typing
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -420,7 +420,8 @@ def test_dynamic_groupby_timezone_awareness() -> None:
         ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
 
 
-def test_groupby_dynamic_startby_datapoint_5599() -> None:
+def test_groupby_dynamic_startby_5599() -> None:
+    # start by datapoint
     start = datetime(2022, 12, 16)
     stop = datetime(2022, 12, 16, hour=3)
     df = pl.DataFrame({"date": pl.date_range(start, stop, "30m")})
@@ -457,4 +458,76 @@ def test_groupby_dynamic_startby_datapoint_5599() -> None:
             datetime(2022, 12, 16, 3, 0),
         ],
         "count": [7, 5, 4, 3, 2, 1],
+    }
+
+    # start by week
+    start = datetime(2022, 1, 1)
+    stop = datetime(2022, 1, 12, 7)
+
+    df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_column(
+        pl.col("date").dt.weekday().alias("day")
+    )
+
+    assert (
+        df.groupby_dynamic(
+            "date",
+            every="1w",
+            include_boundaries=True,
+            start_by="monday",
+            truncate=False,
+        ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    ).with_column(pl.col("date").dt.weekday().alias("truncated_day")).to_dict(
+        False
+    ) == {
+        "_lower_boundary": [
+            datetime(2021, 12, 27, 0, 0),
+            datetime(2022, 1, 3, 0, 0),
+            datetime(2022, 1, 10, 0, 0),
+        ],
+        "_upper_boundary": [
+            datetime(2022, 1, 7, 0, 0, 0, 1),
+            datetime(2022, 1, 14, 0, 0, 0, 1),
+            datetime(2022, 1, 21, 0, 0, 0, 1),
+        ],
+        "date": [
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 1, 3, 0, 0),
+            datetime(2022, 1, 10, 0, 0),
+        ],
+        "count": [13, 19, 5],
+        "data_day": [6, 1, 1],
+        "truncated_day": [6, 1, 1],
+    }
+
+
+def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                "2022-11-01",
+                "2022-11-02",
+                "2022-11-05",
+                "2022-11-08",
+                "2022-11-08",
+                "2022-11-09",
+                "2022-11-10",
+            ],
+            "label": ["a", "b", "a", "a", "b", "a", "b"],
+            "value": [1, 2, 3, 4, 5, 6, 7],
+        }
+    ).with_column(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
+
+    result = df.groupby_dynamic(
+        "date", every="1w", offset="1d", by="label", start_by="monday"
+    ).agg(pl.col("value").sum())
+
+    assert result.to_dict(False) == {
+        "label": ["a", "a", "b", "b"],
+        "date": [
+            date(2022, 11, 1),
+            date(2022, 11, 8),
+            date(2022, 11, 1),
+            date(2022, 11, 8),
+        ],
+        "value": [14, 10, 7, 12],
     }

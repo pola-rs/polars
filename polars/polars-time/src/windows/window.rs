@@ -179,19 +179,26 @@ impl BoundsIter {
                 #[cfg(feature = "timezones")]
                 {
                     #[allow(clippy::type_complexity)]
-                    let (from, to): (
+                    let (from, to, offset): (
                         fn(i64) -> NaiveDateTime,
                         fn(NaiveDateTime) -> i64,
+                        fn(&Duration, i64) -> i64,
                     ) = match tu {
-                        TimeUnit::Nanoseconds => {
-                            (timestamp_ns_to_datetime, datetime_to_timestamp_ns)
-                        }
-                        TimeUnit::Microseconds => {
-                            (timestamp_us_to_datetime, datetime_to_timestamp_us)
-                        }
-                        TimeUnit::Milliseconds => {
-                            (timestamp_ms_to_datetime, datetime_to_timestamp_ms)
-                        }
+                        TimeUnit::Nanoseconds => (
+                            timestamp_ns_to_datetime,
+                            datetime_to_timestamp_ns,
+                            Duration::add_ns,
+                        ),
+                        TimeUnit::Microseconds => (
+                            timestamp_us_to_datetime,
+                            datetime_to_timestamp_us,
+                            Duration::add_us,
+                        ),
+                        TimeUnit::Milliseconds => (
+                            timestamp_ms_to_datetime,
+                            datetime_to_timestamp_ms,
+                            Duration::add_ms,
+                        ),
                     };
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
@@ -200,6 +207,7 @@ impl BoundsIter {
                     let dt = dt.beginning_of_week();
                     let dt = dt.naive_utc();
                     let start = to(dt);
+                    let start = offset(&window.offset, start);
                     let delta = boundary.stop - boundary.start;
                     boundary.start = start;
                     boundary.stop = start + delta;

@@ -9,8 +9,14 @@ use super::*;
     feature = "dynamic_groupby"
 ))]
 fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
-    let start = NaiveDate::from_ymd(2022, 2, 1).and_hms(0, 0, 0);
-    let stop = NaiveDate::from_ymd(2022, 2, 14).and_hms(0, 0, 0);
+    let start = NaiveDate::from_ymd_opt(2022, 2, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let stop = NaiveDate::from_ymd_opt(2022, 2, 14)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
     let range = polars_time::date_range(
         "dt",
         start,
@@ -40,6 +46,7 @@ fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
                 closed_window: ClosedWindow::Left,
                 truncate: false,
                 include_boundaries: true,
+                ..Default::default()
             },
         )
         .agg([col("a").sum()])
