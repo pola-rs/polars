@@ -2352,7 +2352,7 @@ class Series:
         """
 
     def series_equal(
-        self, other: Series, null_equal: bool = False, strict: bool = False
+        self, other: Series, null_equal: bool = True, strict: bool = False
     ) -> bool:
         """
         Check if series is equal with another Series.
