@@ -342,7 +342,7 @@ class DateTimeNameSpace:
 
         Applies to Date and Datetime columns.
 
-        Returns the weekday number where monday = 0 and sunday = 6
+        Returns the ISO weekday number where monday = 1 and sunday = 7
 
         Returns
         -------
@@ -370,13 +370,13 @@ class DateTimeNameSpace:
         shape: (7,)
         Series: '' [u32]
         [
-                0
                 1
                 2
                 3
                 4
                 5
                 6
+                7
         ]
 
         """
