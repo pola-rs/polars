@@ -1606,9 +1606,9 @@ def test_weekday() -> None:
 
     time_units: list[TimeUnit] = ["ns", "us", "ms"]
     for tu in time_units:
-        assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 0
+        assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 1
 
-    assert s.cast(pl.Date).dt.weekday()[0] == 0
+    assert s.cast(pl.Date).dt.weekday()[0] == 1
 
 
 @pytest.mark.skip(reason="from_dicts cannot yet infer timezones")

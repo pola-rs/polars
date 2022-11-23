@@ -66,8 +66,8 @@ pub trait DatetimeMethods: AsDatetime {
         cast_and_apply(self.as_datetime(), temporal::month)
     }
 
-    /// Extract weekday from underlying NaiveDateTime representation.
-    /// Returns the weekday number where monday = 0 and sunday = 6
+    /// Extract ISO weekday from underlying NaiveDateTime representation.
+    /// Returns the weekday number where monday = 1 and sunday = 7
     fn weekday(&self) -> UInt32Chunked {
         let ca = self.as_datetime();
         let f = match ca.time_unit() {
