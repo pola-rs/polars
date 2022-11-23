@@ -732,7 +732,11 @@ def lit(
     tu: TimeUnit
     if isinstance(value, datetime):
         tu = "us"
-        return lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
+        e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
+        if value.tzinfo is not None:
+            return e.dt.tz_localize(str(value.tzinfo))
+        else:
+            return e
 
     elif isinstance(value, timedelta):
         tu = "us"
