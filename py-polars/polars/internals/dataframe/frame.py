@@ -65,7 +65,6 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
-    deprecated_alias,
     format_path,
     handle_projection_columns,
     is_bool_sequence,
@@ -2465,7 +2464,7 @@ class DataFrame:
         return (
             self.lazy()
             .filter(predicate)  # type: ignore[arg-type]
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
 
     def describe(self: DF) -> DF:
@@ -2668,11 +2667,7 @@ class DataFrame:
 
         """
         if not isinstance(by, str) and isinstance(by, (Sequence, pli.Expr)):
-            df = (
-                self.lazy()
-                .sort(by, reverse, nulls_last)
-                .collect(no_optimization=True, string_cache=False)
-            )
+            df = self.lazy().sort(by, reverse, nulls_last).collect(no_optimization=True)
             return df
         return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 
@@ -2782,7 +2777,6 @@ class DataFrame:
             length = self.height - offset + length
         return self._from_pydf(self._df.slice(offset, length))
 
-    @deprecated_alias(length="n")
     def limit(self: DF, n: int = 5) -> DF:
         """
         Get the first `n` rows.
@@ -2818,7 +2812,6 @@ class DataFrame:
         """
         return self.head(n)
 
-    @deprecated_alias(length="n")
     def head(self: DF, n: int = 5) -> DF:
         """
         Get the first `n` rows.
@@ -2854,7 +2847,6 @@ class DataFrame:
         """
         return self._from_pydf(self._df.head(n))
 
-    @deprecated_alias(length="n")
     def tail(self: DF, n: int = 5) -> DF:
         """
         Get the last `n` rows.
@@ -4098,11 +4090,7 @@ class DataFrame:
         └──────┴─────┘
 
         """
-        return (
-            self.lazy()
-            .with_column(column)
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.lazy().with_column(column).collect(no_optimization=True)
 
     def hstack(
         self: DF,
@@ -4254,7 +4242,6 @@ class DataFrame:
         self._df.extend(other._df)
         return self
 
-    @deprecated_alias(name="columns")
     def drop(self: DF, columns: str | Sequence[str]) -> DF:
         """
         Remove column from DataFrame and return as new.
@@ -5234,7 +5221,7 @@ class DataFrame:
         return (
             self.lazy()
             .shift_and_fill(periods, fill_value)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
 
     def is_duplicated(self) -> pli.Series:
@@ -5411,10 +5398,7 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy()
-            .select(exprs)
-            .collect(no_optimization=True, string_cache=False)
-            ._df
+            self.lazy().select(exprs).collect(no_optimization=True)._df
         )
 
     def with_columns(
@@ -5490,9 +5474,7 @@ class DataFrame:
         if exprs is not None and not isinstance(exprs, Sequence):
             exprs = [exprs]
         return (
-            self.lazy()
-            .with_columns(exprs, **named_exprs)
-            .collect(no_optimization=True, string_cache=False)
+            self.lazy().with_columns(exprs, **named_exprs).collect(no_optimization=True)
         )
 
     @overload

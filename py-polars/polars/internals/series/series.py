@@ -76,7 +76,6 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     accessor,
-    deprecated_alias,
     is_bool_sequence,
     is_int_sequence,
     range_to_slice,
@@ -1607,7 +1606,6 @@ class Series:
 
         """
 
-    @deprecated_alias(num_elements="n")
     def limit(self, n: int = 10) -> Series:
         """
         Get the first `n` rows.
@@ -1746,7 +1744,6 @@ class Series:
             predicate = Series("", predicate)
         return wrap_s(self._s.filter(predicate._s))
 
-    @deprecated_alias(length="n")
     def head(self, n: int = 10) -> Series:
         """
         Get the first `n` rows.
@@ -1770,7 +1767,6 @@ class Series:
         """
         return self.to_frame().select(pli.col(self.name).head(n)).to_series()
 
-    @deprecated_alias(length="n")
     def tail(self, n: int = 10) -> Series:
         """
         Get the last `n` rows.

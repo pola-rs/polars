@@ -298,7 +298,7 @@ class GroupBy(Generic[DF]):
             .lazy()
             .groupby(self.by, maintain_order=self.maintain_order)
             .agg(aggs)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
         return self._dataframe_class._from_pydf(df._df)
 
@@ -362,7 +362,7 @@ class GroupBy(Generic[DF]):
             .lazy()
             .groupby(self.by, self.maintain_order)
             .head(n)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
         return self._dataframe_class._from_pydf(df._df)
 
@@ -426,7 +426,7 @@ class GroupBy(Generic[DF]):
             .lazy()
             .groupby(self.by, self.maintain_order)
             .tail(n)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
         return self._dataframe_class._from_pydf(df._df)
 
@@ -858,7 +858,7 @@ class RollingGroupBy(Generic[DF]):
                 self.time_column, self.period, self.offset, self.closed, self.by
             )
             .agg(aggs)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
 
 
@@ -911,7 +911,7 @@ class DynamicGroupBy(Generic[DF]):
                 self.by,
             )
             .agg(aggs)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
 
 
