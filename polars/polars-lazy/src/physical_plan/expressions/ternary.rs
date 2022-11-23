@@ -110,6 +110,9 @@ impl PhysicalExpr for TernaryExpr {
         if falsy.is_empty() {
             return Ok(falsy);
         }
+        if mask.is_empty() {
+            return Ok(Series::new_empty(truthy.name(), truthy.dtype()));
+        }
 
         expand_lengths(&mut truthy, &mut falsy, &mut mask);
 
