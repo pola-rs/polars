@@ -1996,3 +1996,44 @@ def test_tz_aware_strftime() -> None:
             "Fri Nov  4 00:00:00 2022",
         ],
     }
+
+
+def test_tz_aware_filter_lit() -> None:
+    start = datetime(1970, 1, 1)
+    stop = datetime(1970, 1, 1, 7)
+    dt = datetime(1970, 1, 1, 6, tzinfo=zoneinfo.ZoneInfo("America/New_York"))
+
+    assert (
+        pl.DataFrame({"date": pl.date_range(start, stop, "1h")})
+        .with_column(pl.col("date").dt.tz_localize("America/New_York").alias("nyc"))
+        .filter(pl.col("nyc") < dt)
+    ).to_dict(False) == {
+        "date": [
+            datetime(1970, 1, 1, 0, 0),
+            datetime(1970, 1, 1, 1, 0),
+            datetime(1970, 1, 1, 2, 0),
+            datetime(1970, 1, 1, 3, 0),
+            datetime(1970, 1, 1, 4, 0),
+            datetime(1970, 1, 1, 5, 0),
+        ],
+        "nyc": [
+            datetime(
+                1970, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 1, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 2, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 3, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 4, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 5, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+        ],
+    }
