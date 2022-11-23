@@ -106,7 +106,6 @@ def test_shuffle() -> None:
     assert result1.series_equal(result2)
 
 
-@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
     out = pl.select(
@@ -122,6 +121,13 @@ def test_sample() -> None:
     assert out.shape == (10,)
     assert out.to_list() != out.sort().to_list()
     assert out.unique().shape == (10,)
+
+    # Setting random.seed should lead to reproducible results
+    random.seed(1)
+    result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
+    random.seed(1)
+    result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
+    assert result1.series_equal(result2)
 
 
 def test_map_alias() -> None:
