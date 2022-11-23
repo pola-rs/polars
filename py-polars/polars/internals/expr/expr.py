@@ -5,8 +5,8 @@ import random
 import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, cast
-from warnings import warn
 
+from polars import internals as pli
 from polars.datatypes import (
     DataType,
     PolarsDataType,
@@ -23,8 +23,6 @@ from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
 from polars.utils import _timedelta_to_pl_duration, accessor, deprecated_alias
-
-from polars import internals as pli
 
 try:
     from polars.polars import PyExpr
