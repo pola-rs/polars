@@ -22,6 +22,7 @@ ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
+StartBy: TypeAlias = Literal["window", "datapoint", "monday"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"

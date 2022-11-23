@@ -1,4 +1,8 @@
-use polars_arrow::export::arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS};
+#[cfg(feature = "timezones")]
+use chrono::NaiveDateTime;
+#[cfg(feature = "timezones")]
+use now::DateTimeNow;
+use polars_arrow::export::arrow::temporal_conversions::*;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{timeunit_scale, SECONDS_IN_DAY};
 
@@ -144,8 +148,13 @@ impl Window {
             + self.period.duration_ms() / self.every.duration_ms()) as usize
     }
 
-    pub fn get_overlapping_bounds_iter(&self, boundary: Bounds, tu: TimeUnit) -> BoundsIter {
-        BoundsIter::new(*self, boundary, tu)
+    pub fn get_overlapping_bounds_iter(
+        &self,
+        boundary: Bounds,
+        tu: TimeUnit,
+        start_by: StartBy,
+    ) -> BoundsIter {
+        BoundsIter::new(*self, boundary, tu, start_by)
     }
 }
 
@@ -158,11 +167,49 @@ pub struct BoundsIter {
     tu: TimeUnit,
 }
 impl BoundsIter {
-    fn new(window: Window, boundary: Bounds, tu: TimeUnit) -> Self {
-        let bi = match tu {
-            TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start),
-            TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start),
-            TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start),
+    fn new(window: Window, boundary: Bounds, tu: TimeUnit, start_by: StartBy) -> Self {
+        let bi = match start_by {
+            StartBy::DataPoint => boundary,
+            StartBy::WindowBound => match tu {
+                TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start),
+                TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start),
+                TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start),
+            },
+            StartBy::Monday => {
+                #[cfg(feature = "timezones")]
+                {
+                    #[allow(clippy::type_complexity)]
+                    let (from, to): (
+                        fn(i64) -> NaiveDateTime,
+                        fn(NaiveDateTime) -> i64,
+                    ) = match tu {
+                        TimeUnit::Nanoseconds => {
+                            (timestamp_ns_to_datetime, datetime_to_timestamp_ns)
+                        }
+                        TimeUnit::Microseconds => {
+                            (timestamp_us_to_datetime, datetime_to_timestamp_us)
+                        }
+                        TimeUnit::Milliseconds => {
+                            (timestamp_ms_to_datetime, datetime_to_timestamp_ms)
+                        }
+                    };
+                    let mut boundary = boundary;
+                    let dt = from(boundary.start);
+                    let tz = chrono_tz::UTC;
+                    let dt = dt.and_local_timezone(tz).unwrap();
+                    let dt = dt.beginning_of_week();
+                    let dt = dt.naive_utc();
+                    let start = to(dt);
+                    let delta = boundary.stop - boundary.start;
+                    boundary.start = start;
+                    boundary.stop = start + delta;
+                    boundary
+                }
+                #[cfg(not(feature = "timezones"))]
+                {
+                    panic!("activate 'timezones' feature")
+                }
+            }
         };
         Self {
             window,

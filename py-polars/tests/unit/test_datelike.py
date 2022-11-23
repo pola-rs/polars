@@ -934,7 +934,7 @@ def test_duration_function() -> None:
 def test_rolling_groupby_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
-    out = df.groupby_rolling("times", "5i", by=["groups"]).agg(
+    out = df.groupby_rolling("times", period="5i", by=["groups"]).agg(
         pl.col("times").list().alias("agg_list")
     )
 

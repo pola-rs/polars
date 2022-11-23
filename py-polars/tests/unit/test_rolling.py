@@ -418,3 +418,43 @@ def test_dynamic_groupby_timezone_awareness() -> None:
                 truncate=False,
             ).agg(pl.col("value").last())
         ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
+
+
+def test_groupby_dynamic_startby_datapoint_5599() -> None:
+    start = datetime(2022, 12, 16)
+    stop = datetime(2022, 12, 16, hour=3)
+    df = pl.DataFrame({"date": pl.date_range(start, stop, "30m")})
+
+    assert df.groupby_dynamic(
+        "date",
+        every="31m",
+        include_boundaries=True,
+        truncate=False,
+        start_by="datapoint",
+    ).agg(pl.count()).to_dict(False) == {
+        "_lower_boundary": [
+            datetime(2022, 12, 16, 0, 0),
+            datetime(2022, 12, 16, 0, 31),
+            datetime(2022, 12, 16, 1, 2),
+            datetime(2022, 12, 16, 1, 33),
+            datetime(2022, 12, 16, 2, 4),
+            datetime(2022, 12, 16, 2, 35),
+        ],
+        "_upper_boundary": [
+            datetime(2022, 12, 16, 3, 0, 0, 1),
+            datetime(2022, 12, 16, 3, 31, 0, 1),
+            datetime(2022, 12, 16, 4, 2, 0, 1),
+            datetime(2022, 12, 16, 4, 33, 0, 1),
+            datetime(2022, 12, 16, 5, 4, 0, 1),
+            datetime(2022, 12, 16, 5, 35, 0, 1),
+        ],
+        "date": [
+            datetime(2022, 12, 16, 0, 0),
+            datetime(2022, 12, 16, 1, 0),
+            datetime(2022, 12, 16, 1, 30),
+            datetime(2022, 12, 16, 2, 0),
+            datetime(2022, 12, 16, 2, 30),
+            datetime(2022, 12, 16, 3, 0),
+        ],
+        "count": [7, 5, 4, 3, 2, 1],
+    }

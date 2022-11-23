@@ -10,7 +10,7 @@ from polars.utils import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
     from polars.datatypes import DataType
-    from polars.internals.type_aliases import ClosedWindow, InterpolationMethod
+    from polars.internals.type_aliases import ClosedWindow, InterpolationMethod, StartBy
     from polars.polars import PyDataFrame
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
@@ -855,7 +855,11 @@ class RollingGroupBy(Generic[DF]):
         return (
             self.df.lazy()
             .groupby_rolling(
-                self.time_column, self.period, self.offset, self.closed, self.by
+                index_column=self.time_column,
+                period=self.period,
+                offset=self.offset,
+                closed=self.closed,
+                by=self.by,
             )
             .agg(aggs)
             .collect(no_optimization=True)
@@ -881,6 +885,7 @@ class DynamicGroupBy(Generic[DF]):
         include_boundaries: bool = True,
         closed: ClosedWindow = "none",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        start_by: StartBy = "window",
     ):
 
         period = _timedelta_to_pl_duration(period)
@@ -896,19 +901,21 @@ class DynamicGroupBy(Generic[DF]):
         self.include_boundaries = include_boundaries
         self.closed = closed
         self.by = by
+        self.start_by = start_by
 
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         return (
             self.df.lazy()
             .groupby_dynamic(
-                self.time_column,
-                self.every,
-                self.period,
-                self.offset,
-                self.truncate,
-                self.include_boundaries,
-                self.closed,
-                self.by,
+                index_column=self.time_column,
+                every=self.every,
+                period=self.period,
+                offset=self.offset,
+                truncate=self.truncate,
+                include_boundaries=self.include_boundaries,
+                closed=self.closed,
+                by=self.by,
+                start_by=self.start_by,
             )
             .agg(aggs)
             .collect(no_optimization=True)
