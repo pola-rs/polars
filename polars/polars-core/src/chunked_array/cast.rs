@@ -178,17 +178,36 @@ impl ChunkCast for ListChunked {
         match data_type {
             DataType::List(child_type) => {
                 let phys_child = child_type.to_physical();
-                let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical() {
-                    let chunks = self
-                        .downcast_iter()
-                        .map(|list| cast_inner_list_type(list, &phys_child))
-                        .collect::<PolarsResult<_>>()?;
-                    ListChunked::from_chunks(self.name(), chunks)
+
+                if phys_child.is_primitive() {
+                    let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical() {
+                        let chunks = self
+                            .downcast_iter()
+                            .map(|list| cast_inner_list_type(list, &phys_child))
+                            .collect::<PolarsResult<_>>()?;
+                        ListChunked::from_chunks(self.name(), chunks)
+                    } else {
+                        self.clone()
+                    };
+                    ca.set_inner_dtype(*child_type.clone());
+                    Ok(ca.into_series())
                 } else {
-                    self.clone()
-                };
-                ca.set_inner_dtype(*child_type.clone());
-                Ok(ca.into_series())
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_iter().next().unwrap();
+                    let s = Series::try_from(("", arr.values().clone())).unwrap();
+                    let new_inner = s.cast(child_type)?;
+                    let new_values = new_inner.array_ref(0).clone();
+
+                    let data_type =
+                        ListArray::<i64>::default_datatype(new_values.data_type().clone());
+                    let new_arr = ListArray::<i64>::new(
+                        data_type,
+                        arr.offsets().clone(),
+                        new_values,
+                        arr.validity().cloned(),
+                    );
+                    Series::try_from((s.name(), Box::new(new_arr) as ArrayRef))
+                }
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
         }

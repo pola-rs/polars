@@ -134,6 +134,21 @@ impl DataType {
         matches!(self, Date | Datetime(_, _) | Duration(_) | Time)
     }
 
+    /// Check if datatype is a primitive type. By that we mean that
+    /// it is not a container type.
+    pub fn is_primitive(&self) -> bool {
+        #[cfg(feature = "dtype-binary")]
+        {
+            self.is_numeric()
+                | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
+        }
+
+        #[cfg(not(feature = "dtype-binary"))]
+        {
+            self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8)
+        }
+    }
+
     /// Check if this [`DataType`] is a numeric type
     pub fn is_numeric(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated
