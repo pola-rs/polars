@@ -74,9 +74,9 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
 }
 
 impl Series {
-    pub fn from_any_values_and_dtype<'a>(
+    pub fn from_any_values_and_dtype(
         name: &str,
-        av: &[AnyValue<'a>],
+        av: &[AnyValue],
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         let mut s = match dtype {
@@ -166,7 +166,7 @@ impl Series {
         Ok(s)
     }
 
-    pub fn from_any_values<'a>(name: &str, av: &[AnyValue<'a>]) -> PolarsResult<Series> {
+    pub fn from_any_values(name: &str, av: &[AnyValue]) -> PolarsResult<Series> {
         match av.iter().find(|av| !matches!(av, AnyValue::Null)) {
             None => Ok(Series::full_null(name, av.len(), &DataType::Int32)),
             Some(av_) => {

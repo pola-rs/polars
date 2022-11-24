@@ -247,9 +247,9 @@ impl<'a> CoreJsonReader<'a> {
 }
 
 #[inline(always)]
-fn parse_impl<'a>(
+fn parse_impl(
     bytes: &[u8],
-    buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>,
+    buffers: &mut PlIndexMap<BufferKey, Buffer>,
     line: &mut Vec<u8>,
 ) -> PolarsResult<usize> {
     line.clear();
@@ -299,10 +299,7 @@ fn parse_impl<'a>(
     }
 }
 
-fn parse_lines<'a>(
-    bytes: &[u8],
-    buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>,
-) -> PolarsResult<()> {
+fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
     let mut buf = vec![];
 
     let total_bytes = bytes.len();

@@ -548,7 +548,7 @@ impl<'a> AnyValue<'a> {
     }
 
     #[must_use]
-    pub fn add<'b>(&self, rhs: &AnyValue<'b>) -> Self {
+    pub fn add(&self, rhs: &AnyValue) -> Self {
         use AnyValue::*;
         match (self, rhs) {
             (Null, _) => Null,
