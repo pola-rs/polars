@@ -7,6 +7,7 @@ Descriptive
    :toctree: api/
 
     DataFrame.describe
+    DataFrame.glimpse
     DataFrame.estimated_size
     DataFrame.is_duplicated
     DataFrame.is_empty

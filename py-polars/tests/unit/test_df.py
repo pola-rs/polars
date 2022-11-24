@@ -2520,3 +2520,28 @@ def test_init_physical_with_timezone() -> None:
                 datetime(2022, 10, 12, 21, 30, tzinfo=zoneinfo.ZoneInfo(tz_asia)),
             )
         ]
+
+
+def test_glimpse(capsys) -> None:  # type: ignore[no-untyped-def]
+    df = pl.DataFrame(
+        {
+            "a": [1.0, 2.8, 3.0],
+            "b": [4, 5, None],
+            "c": [True, False, True],
+            "d": [None, "b", "c"],
+            "e": ["usd", "eur", None],
+            "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
+        }
+    )
+    df.glimpse()
+    result = capsys.readouterr().out
+
+    expected = """Rows: 3
+Columns: 6
+$ a <Float64> 1.0, 2.8, 3.0                                                                             
+$ b   <Int64> 4, 5, None                                                                                
+$ c <Boolean> True, False, True                                                                         
+$ d    <Utf8> None, b, c                                                                                
+$ e    <Utf8> usd, eur, None                                                                            
+$ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01"""
+    assert result.strip() == expected
