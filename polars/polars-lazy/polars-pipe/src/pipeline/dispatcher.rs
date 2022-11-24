@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::utils::concat_df_unchecked;
@@ -9,8 +7,8 @@ use rayon::prelude::*;
 
 use crate::executors::sources::DataFrameSource;
 use crate::operators::{
-    DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult,
-    Source, SourceResult,
+    DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, SExecutionContext, Sink,
+    SinkResult, Source, SourceResult,
 };
 
 pub struct PipeLine {
@@ -228,7 +226,7 @@ impl PipeLine {
         Ok(out.unwrap())
     }
 
-    pub fn execute(&mut self, state: Box<dyn Any + Send + Sync>) -> PolarsResult<DataFrame> {
+    pub fn execute(&mut self, state: Box<dyn SExecutionContext>) -> PolarsResult<DataFrame> {
         let ec = PExecutionContext::new(state);
         let mut sink_out = self.run_pipeline(&ec)?;
         let mut pipelines = self.rh_sides.iter_mut();

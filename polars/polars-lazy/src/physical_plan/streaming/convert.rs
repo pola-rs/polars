@@ -11,6 +11,7 @@ use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{
     create_pipeline, get_dummy_operator, get_operator, swap_join_order, PipeLine,
 };
+use polars_pipe::SExecutionContext;
 use polars_plan::prelude::*;
 
 use crate::physical_plan::planner::create_physical_expr;
@@ -400,6 +401,24 @@ struct Branch {
     operators_sinks: Vec<(IsSink, IsRhsJoin, Node)>,
 }
 
+impl SExecutionContext for ExecutionState {
+    fn input_schema_is_set(&self) -> bool {
+        self.schema_cache.read().unwrap().is_some()
+    }
+
+    fn set_input_schema(&self, schema: SchemaRef) {
+        self.set_schema(schema);
+    }
+
+    fn clear_input_schema(&self) {
+        self.clear_schema_cache();
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 fn get_pipeline_node(
     lp_arena: &mut Arena<ALogicalPlan>,
     mut pipeline: PipeLine,
@@ -423,7 +442,7 @@ fn get_pipeline_node(
                 if state.verbose() {
                     eprintln!("RUN STREAMING PIPELINE")
                 }
-                let state = Box::new(state) as Box<dyn Any + Send + Sync>;
+                let state = Box::new(state) as Box<dyn SExecutionContext>;
                 pipeline.execute(state)
             }),
             schema,

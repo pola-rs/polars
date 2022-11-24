@@ -152,7 +152,7 @@ impl GenericBuild {
     ) -> PolarsResult<&[Series]> {
         self.join_series.clear();
         for phys_e in self.join_columns_left.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_ref())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             let s = s.rechunk();
             self.materialized_join_cols.push(s.array_ref(0).clone());
