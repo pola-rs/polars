@@ -20,6 +20,12 @@ mimalloc = { version = "*", default-features = false }
 [target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
+[target.'cfg(build_info)'.dependencies]
+pyo3-built = { version = "0.4" }
+
+[target.'cfg(build_info)'.build-dependencies]
+built = { version = "0.5", features = ["chrono", "git2"]}
+
 [dependencies]
 ahash = "0.8"
 bincode = "1.3"
@@ -31,7 +37,6 @@ once_cell = "1"
 polars-core = { path = "../polars/polars-core", default-features = false }
 polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
 pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
-pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
 
@@ -62,7 +67,6 @@ pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
-build_info = ["dep:pyo3-built", "dep:built"]
 
 all = [
   "json",
@@ -86,7 +90,6 @@ all = [
   "object",
   "pivot",
   "top_k",
-  "build_info",
   # we need to add this, as maturin fails if we don't
   # remove this once polars-algo is released
   "polars/algo",
@@ -177,4 +180,3 @@ lto = "fat"
 # target-cpu = "native"
 
 [build-dependencies]
-built = { version = "0.5", features = ["chrono", "git2"], optional = true }

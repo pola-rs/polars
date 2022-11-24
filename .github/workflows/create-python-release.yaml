@@ -27,7 +27,7 @@ jobs:
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma --cfg build_info
         with:
           rust-toolchain: nightly-2022-11-03
           maturin-version: '0.13.5'
@@ -52,6 +52,7 @@ jobs:
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+          RUSTFLAGS: --cfg build_info
         with:
           rust-toolchain: nightly-2022-11-03
           target: aarch64-unknown-linux-gnu
@@ -82,7 +83,7 @@ jobs:
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma --cfg build_info
         with:
           rust-toolchain: nightly-2022-11-03
           maturin-version: '0.13.5'
@@ -109,7 +110,7 @@ jobs:
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc --cfg build_info
         with:
           rust-toolchain: nightly-2022-11-03
           maturin-version: '0.13.5'
@@ -138,7 +139,7 @@ jobs:
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2 --cfg build_info
         with:
           rust-toolchain: nightly-2022-11-03
           maturin-version: '0.13.5'
@@ -170,6 +171,7 @@ jobs:
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+          RUSTFLAGS: --cfg build_info
         with:
           maturin-version: '0.13.5'
           command: publish
