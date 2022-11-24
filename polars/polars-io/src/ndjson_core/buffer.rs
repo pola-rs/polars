@@ -250,7 +250,7 @@ fn value_to_dtype(val: &Value) -> DataType {
     }
 }
 
-fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
+fn deserialize_all<'a>(json: &Value) -> AnyValue<'a> {
     match json {
         Value::Static(StaticNode::Bool(b)) => AnyValue::Boolean(*b),
         Value::Static(StaticNode::I64(i)) => AnyValue::Int64(*i),

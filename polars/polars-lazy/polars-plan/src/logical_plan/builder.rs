@@ -1,4 +1,4 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -194,7 +194,7 @@ impl LogicalPlanBuilder {
                 "cannot scan compressed csv; use read_csv for compressed data".into(),
             ));
         }
-        file.seek(SeekFrom::Start(0))?;
+        file.rewind()?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
         // TODO! delay inferring schema until absolutely necessary

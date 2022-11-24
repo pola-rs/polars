@@ -478,8 +478,7 @@ impl Series {
 
     /// Take by index. This operation is clone.
     ///
-    /// # Safety
-    ///
+    /// # Notes
     /// Out of bounds access doesn't Error but will return a Null value
     pub fn take_threaded(&self, idx: &IdxCa, rechunk: bool) -> PolarsResult<Series> {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
