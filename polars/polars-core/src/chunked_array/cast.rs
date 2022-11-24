@@ -67,8 +67,10 @@ where
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
                 // cast to first field dtype
-                let dtype = &fields[0].dtype;
-                let s = cast_impl_inner(self.name(), &self.chunks, dtype, true)?;
+                let fld = &fields[0];
+                let dtype = &fld.dtype;
+                let name = &fld.name;
+                let s = cast_impl_inner(name, &self.chunks, dtype, true)?;
                 Ok(StructChunked::new_unchecked(self.name(), &[s]).into_series())
             }
             _ => cast_impl_inner(self.name(), &self.chunks, data_type, checked).map(|mut s| {
@@ -206,7 +208,7 @@ impl ChunkCast for ListChunked {
                         new_values,
                         arr.validity().cloned(),
                     );
-                    Series::try_from((s.name(), Box::new(new_arr) as ArrayRef))
+                    Series::try_from((self.name(), Box::new(new_arr) as ArrayRef))
                 }
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),

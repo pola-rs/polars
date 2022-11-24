@@ -458,6 +458,15 @@ def test_from_dicts_list_struct_without_inner_dtype() -> None:
         "days_of_week": [1, 2],
     }
 
+    # 5611
+    df = pl.from_dicts(
+        [
+            {"a": []},
+            {"a": [{"b": 1}]},
+        ]
+    )
+    assert df.to_dict(False) == {"a": [[], [{"b": 1}]]}
+
 
 def test_upcast_primitive_and_strings() -> None:
     assert pl.Series([1, 1.0, 1]).dtype == pl.Float64
