@@ -158,7 +158,7 @@ where
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
             let mut agg_fns = Vec::with_capacity(aggs.len());
 
-            let input_schema = lp_arena.get(*input).schema(lp_arena);
+            let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
 
             for node in aggs {
                 let (index, agg_fn) =
@@ -178,6 +178,7 @@ where
                             key_columns[0].clone(),
                             aggregation_columns,
                             agg_fns,
+                            input_schema,
                             output_schema.clone(),
                             options.slice
                         )) as Box<dyn Sink>
@@ -187,6 +188,7 @@ where
                     key_columns[0].clone(),
                     aggregation_columns,
                     agg_fns,
+                    input_schema,
                     output_schema.clone(),
                     options.slice,
                 )) as Box<dyn Sink>,
@@ -194,6 +196,7 @@ where
                     key_columns,
                     aggregation_columns,
                     agg_fns,
+                    input_schema,
                     output_schema.clone(),
                     options.slice,
                 )) as Box<dyn Sink>,

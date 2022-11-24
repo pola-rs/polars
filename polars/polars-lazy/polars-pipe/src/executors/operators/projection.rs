@@ -40,7 +40,7 @@ impl Operator for ProjectionOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
+            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let chunk = chunk.with_data(DataFrame::new_no_checks(projected));
@@ -66,7 +66,7 @@ impl Operator for HstackOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
+            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = chunk.data.clone();
