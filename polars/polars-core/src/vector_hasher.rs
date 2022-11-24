@@ -8,6 +8,7 @@ use hashbrown::HashMap;
 use polars_arrow::utils::CustomIterTools;
 use polars_utils::HashSingle;
 use rayon::prelude::*;
+use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
@@ -178,13 +179,18 @@ impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         buf.clear();
         buf.reserve(self.len());
-        let null_h = get_null_hash_value(random_state.clone());
+        let null_h = get_null_hash_value(random_state);
+
         self.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
-                buf.extend(arr.values_iter().map(|v| random_state.hash_single(v)))
+                // simply use the null_hash as seed to get a hash determined by `random_state` that is passed
+                buf.extend(
+                    arr.values_iter()
+                        .map(|v| xxh3_64_with_seed(v.as_bytes(), null_h)),
+                )
             } else {
                 buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-                    Some(v) => random_state.hash_single(v),
+                    Some(v) => xxh3_64_with_seed(v.as_bytes(), null_h),
                     None => null_h,
                 }))
             }
@@ -192,11 +198,11 @@ impl VecHash for Utf8Chunked {
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        let null_h = get_null_hash_value(random_state.clone());
+        let null_h = get_null_hash_value(random_state);
         self.apply_to_slice(
             |opt_v, h| {
                 let l = match opt_v {
-                    Some(v) => random_state.hash_single(v),
+                    Some(v) => xxh3_64_with_seed(v.as_bytes(), null_h),
                     None => null_h,
                 };
                 _boost_hash_combine(l, *h)
@@ -211,21 +217,21 @@ impl VecHash for BinaryChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         buf.clear();
         buf.reserve(self.len());
-        let null_h = get_null_hash_value(random_state.clone());
+        let null_h = get_null_hash_value(random_state);
         self.downcast_iter().for_each(|arr| {
             buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-                Some(v) => random_state.hash_single(v),
+                Some(v) => xxh3_64_with_seed(v, null_h),
                 None => null_h,
             }))
         });
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        let null_h = get_null_hash_value(random_state.clone());
+        let null_h = get_null_hash_value(random_state);
         self.apply_to_slice(
             |opt_v, h| {
                 let l = match opt_v {
-                    Some(v) => random_state.hash_single(v),
+                    Some(v) => xxh3_64_with_seed(v, null_h),
                     None => null_h,
                 };
                 _boost_hash_combine(l, *h)
