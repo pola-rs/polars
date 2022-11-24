@@ -171,6 +171,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = { version = "1" }
 thiserror.workspace = true
+xxhash-rust.workspace = true
 
 [dev-dependencies]
 bincode = "1"

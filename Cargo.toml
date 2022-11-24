@@ -24,6 +24,7 @@ rayon = "1.5"
 thiserror = "^1"
 num = "0.4"
 ahash = "0.8"
+xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 # todo! remove
 anyhow = "1"
 hashbrown = { version = "0.13.1", features = ["rayon", "ahash"] }
