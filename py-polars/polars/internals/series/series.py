@@ -659,15 +659,21 @@ class Series:
                             if idxs.dtype in {Int8, Int16, Int32}:
                                 idxs = idxs.cast(Int64)
 
-                        idxs = pli.select(
-                            pli.when(pli.lit(idxs) < 0)
-                            .then(self.len() + pli.lit(idxs))
-                            .otherwise(pli.lit(idxs))
-                        ).to_series()
+                        # Update negative indexes to absolute indexes.
+                        return (
+                            idxs.to_frame()
+                            .select(
+                                pli.when(pli.col(idxs.name) < 0)
+                                .then(self.len() + pli.col(idxs.name))
+                                .otherwise(pli.col(idxs.name))
+                                .cast(idx_type)
+                            )
+                            .to_series(0)
+                        )
 
                 return idxs.cast(idx_type)
 
-        if _NUMPY_TYPE(idxs) and isinstance(idxs, np.ndarray):
+        elif _NUMPY_TYPE(idxs) and isinstance(idxs, np.ndarray):
             if idxs.ndim != 1:
                 raise ValueError("Only 1D numpy array is supported as index.")
             if idxs.dtype.kind in ("i", "u"):
@@ -680,16 +686,25 @@ class Series:
                         raise ValueError(
                             "Index positions should be bigger than -2^32 + 1."
                         )
-                if idxs.dtype.kind == "i" and idxs.min() < 0:
-                    if idx_type == UInt32:
-                        if idxs.dtype in (np.int8, np.int16):
-                            idxs = idxs.astype(np.int32)
-                    else:
-                        if idxs.dtype in (np.int8, np.int16, np.int32):
-                            idxs = idxs.astype(np.int64)
+                if idxs.dtype.kind == "i":
+                    if idxs.min() < 0:
+                        if idx_type == UInt32:
+                            if idxs.dtype in (np.int8, np.int16):
+                                idxs = idxs.astype(np.int32)
+                        else:
+                            if idxs.dtype in (np.int8, np.int16, np.int32):
+                                idxs = idxs.astype(np.int64)
 
-                    # Update negative indexes to absolute indexes.
-                    idxs = np.where(idxs < 0, self.len() + idxs, idxs)
+                        # Update negative indexes to absolute indexes.
+                        idxs = np.where(idxs < 0, self.len() + idxs, idxs)
+
+                    # Cast signed numpy array to unsigned numpy array as all indexes
+                    # are positive and casting signed Polars Series to unsigned
+                    # Polars series is much slower.
+                    if isinstance(idxs, np.ndarray):
+                        idxs = idxs.astype(
+                            np.uint32 if idx_type == UInt32 else np.uint64
+                        )
 
                 return Series("", idxs, dtype=idx_type)
 
@@ -716,21 +731,46 @@ class Series:
         | list[int]
         | list[bool],
     ) -> Any:
-        if (
-            is_bool_sequence(item)
-            or (isinstance(item, Series) and item.dtype == Boolean)
-            or (
-                _NUMPY_TYPE(item)
-                and isinstance(item, np.ndarray)
-                and item.dtype.kind == "b"
-            )
+
+        if isinstance(item, Series) and item.dtype in {
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+        }:
+            # Unsigned or signed Series (ordered from fastest to slowest).
+            #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
+            #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
+            #     or pl.UInt64 (polars_u64_idx).
+            #   - Signed Series indexes are converted pl.UInt32 (polars) or
+            #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
+            #     to absolute indexes.
+            return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
+
+        elif (
+            _NUMPY_TYPE(item)
+            and isinstance(item, np.ndarray)
+            and item.dtype.kind in ("i", "u")
         ):
-            warnings.warn(
-                "passing a boolean mask to Series.__getitem__ is being deprecated; "
-                "instead use Series.filter",
-                category=DeprecationWarning,
-            )
-        if isinstance(item, int):
+            if item.ndim != 1:
+                raise ValueError("Only a 1D-Numpy array is supported as index.")
+
+            # Unsigned or signed Numpy array (ordered from fastest to slowest).
+            #   - np.uint32 (polars) or np.uint64 (polars_u64_idx) numpy array
+            #     indexes.
+            #   - Other unsigned numpy array indexes are converted to pl.UInt32
+            #     (polars) or pl.UInt64 (polars_u64_idx).
+            #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
+            #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
+            #     to absolute indexes.
+            return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
+
+        # Integer.
+        elif isinstance(item, int):
             if item < 0:
                 item = self.len() + item
             if self.dtype in (List, Object):
@@ -746,32 +786,52 @@ class Series:
 
             return self._s.get_idx(item)
 
-        if _NUMPY_TYPE(item) and isinstance(item, np.ndarray):
-            if item.ndim != 1:
-                raise ValueError("Only a 1D-Numpy array is supported as index.")
-            if item.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-                return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
-            if item.dtype == bool:
-                return wrap_s(self._s.filter(pli.Series("", item)._s))
+        # Slice.
+        elif isinstance(item, slice):
+            return PolarsSlice(self).apply(item)
 
-        if is_bool_sequence(item) or is_int_sequence(item):
-            item = Series("", item)  # fall through to next if isinstance
-
-        if isinstance(item, Series):
-            if item.dtype == Boolean:
-                return wrap_s(self._s.filter(item._s))
-            if item.dtype == UInt32:
-                return wrap_s(self._s.take_with_series(item._s))
-            if item.dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
-                return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
-
-        if isinstance(item, range):
+        # Range.
+        elif isinstance(item, range):
             return self[range_to_slice(item)]
 
-        # slice
-        if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
+        # Sequence of integers (slow to check if sequence contains all integers).
+        elif is_int_sequence(item):
+            return wrap_s(self._s.take_with_series(self._pos_idxs(Series("", item))._s))
+
+        # Check for boolean masks last as this is deprecated functionality and
+        # thus can be a slow path.
+
+        elif isinstance(item, Series) and item.dtype == Boolean:
+            warnings.warn(
+                "passing a boolean mask to Series.__getitem__ is being deprecated; "
+                "instead use Series.filter",
+                category=DeprecationWarning,
+            )
+            return wrap_s(self._s.filter(item._s))
+
+        elif (
+            _NUMPY_TYPE(item)
+            and isinstance(item, np.ndarray)
+            and item.dtype.kind == "b"
+        ):
+            if item.ndim != 1:
+                raise ValueError("Only a 1D-Numpy array is supported as index.")
+
+            warnings.warn(
+                "passing a boolean mask to Series.__getitem__ is being deprecated; "
+                "instead use Series.filter",
+                category=DeprecationWarning,
+            )
+            return wrap_s(self._s.filter(Series("", item)._s))
+
+        # Sequence of boolean masks (slow to check if sequence contains all booleans).
+        elif is_bool_sequence(item):
+            warnings.warn(
+                "passing a boolean mask to Series.__getitem__ is being deprecated; "
+                "instead use Series.filter",
+                category=DeprecationWarning,
+            )
+            return wrap_s(self._s.filter(Series("", item)._s))
 
         raise ValueError(
             f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
@@ -1015,10 +1075,9 @@ class Series:
         └─────┘
 
         """
-        df = pli.wrap_df(PyDataFrame([self._s]))
-        if name is not None:
-            return df.rename({self.name: name})
-        return df
+        if isinstance(name, str):
+            return pli.wrap_df(PyDataFrame([self.rename(name)._s]))
+        return pli.wrap_df(PyDataFrame([self._s]))
 
     def describe(self) -> pli.DataFrame:
         """
@@ -2427,6 +2486,9 @@ class Series:
         ]
 
         """
+        # Do not dispatch cast as it is expensive and used in other functions.
+        dtype = py_type_to_dtype(dtype)
+        return wrap_s(self._s.cast(dtype, strict))
 
     def to_physical(self) -> Series:
         """
