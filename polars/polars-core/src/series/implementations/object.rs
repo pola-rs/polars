@@ -68,11 +68,6 @@ impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
 {
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.clone().into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         ObjectChunked::rename(&mut self.0, name)
     }

@@ -48,11 +48,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<ListChunked> {
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.clone().into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }

@@ -187,11 +187,6 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            #[cfg(feature = "interpolate")]
-            fn interpolate(&self) -> Series {
-                self.0.interpolate().$into_logical().into_series()
-            }
-
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);
             }

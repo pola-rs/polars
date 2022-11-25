@@ -98,6 +98,7 @@ if TYPE_CHECKING:
         InterpolationMethod,
         NullBehavior,
         RankMethod,
+        RollingInterpolationMethod,
         SizeUnit,
         TimeUnit,
     )
@@ -1310,7 +1311,7 @@ class Series:
         return self._s.median()
 
     def quantile(
-        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
     ) -> float:
         """
         Get the quantile value of this Series.
@@ -3958,7 +3959,7 @@ class Series:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: InterpolationMethod = "nearest",
+        interpolation: RollingInterpolationMethod = "nearest",
         window_size: int = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
@@ -4213,9 +4214,14 @@ class Series:
 
         """
 
-    def interpolate(self) -> Series:
+    def interpolate(self, method: InterpolationMethod = "linear") -> Series:
         """
         Interpolate intermediate values. The interpolation method is linear.
+
+        Parameters
+        ----------
+        method : {'linear', 'linear'}
+            Interpolation method
 
         Examples
         --------

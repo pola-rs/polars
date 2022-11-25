@@ -221,6 +221,8 @@ impl FunctionExpr {
                 DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
                 dt => dt.clone(),
             }),
+            #[cfg(feature = "interpolate")]
+            Interpolate(_) => same_type(),
             ShrinkType => {
                 // we return the smallest type this can return
                 // this might not be correct once the actual data

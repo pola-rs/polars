@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         InterpolationMethod,
         NullBehavior,
         RankMethod,
+        RollingInterpolationMethod,
     )
 
 
@@ -2906,7 +2907,7 @@ class Expr:
     def quantile(
         self,
         quantile: float,
-        interpolation: InterpolationMethod = "nearest",
+        interpolation: RollingInterpolationMethod = "nearest",
     ) -> Expr:
         """
         Get quantile value.
@@ -3717,11 +3718,16 @@ class Expr:
 
         return self.map(inspect, return_dtype=None, agg_list=True)
 
-    def interpolate(self) -> Expr:
+    def interpolate(self, method: InterpolationMethod = "linear") -> Expr:
         """
         Fill nulls with linear interpolation over missing values.
 
         Can also be used to regrid data to a new grid - see examples below.
+
+        Parameters
+        ----------
+        method : {'linear', 'linear'}
+            Interpolation method
 
         Examples
         --------
@@ -3783,7 +3789,7 @@ class Expr:
         └─────────────┴────────┘
 
         """
-        return wrap_expr(self._pyexpr.interpolate())
+        return wrap_expr(self._pyexpr.interpolate(method))
 
     def rolling_min(
         self,
@@ -4489,7 +4495,7 @@ class Expr:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: InterpolationMethod = "nearest",
+        interpolation: RollingInterpolationMethod = "nearest",
         window_size: int | timedelta | str = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,

@@ -62,7 +62,6 @@ groupby_list = []
 cum_agg = []
 # rolling window functions
 rolling_window = []
-interpolate = []
 rank = []
 diff = []
 pct_change = ["diff"]
@@ -127,7 +126,6 @@ docs-selection = [
   "mode",
   "cum_agg",
   "rolling_window",
-  "interpolate",
   "diff",
   "moment",
   "dtype-categorical",

@@ -225,11 +225,6 @@ macro_rules! impl_dyn_series {
                 ChunkRollApply::rolling_apply(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
-            #[cfg(feature = "interpolate")]
-            fn interpolate(&self) -> Series {
-                self.0.interpolate().into_series()
-            }
-
             fn bitand(&self, other: &Series) -> PolarsResult<Series> {
                 let other = if other.len() == 1 {
                     Cow::Owned(other.cast(self.dtype())?)

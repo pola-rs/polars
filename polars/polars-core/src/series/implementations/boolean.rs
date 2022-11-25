@@ -104,11 +104,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         }
     }
 
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.clone().into_series()
-    }
-
     fn bitxor(&self, other: &Series) -> PolarsResult<Series> {
         let other = self.0.unpack_series_matching_type(other)?;
         Ok((&self.0).bitxor(other).into_series())

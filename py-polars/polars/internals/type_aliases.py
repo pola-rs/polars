@@ -56,7 +56,7 @@ SizeUnit: TypeAlias = Literal[
 
 # The following have a Rust enum equivalent with a different name
 AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
-InterpolationMethod: TypeAlias = Literal[
+RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
 JoinStrategy: TypeAlias = Literal[
@@ -65,6 +65,7 @@ JoinStrategy: TypeAlias = Literal[
 ToStructStrategy: TypeAlias = Literal[
     "first_non_null", "max_width"
 ]  # ListToStructWidthStrategy
+InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 
 # The following have no equivalent on the Rust side
 ConcatMethod = Literal["vertical", "diagonal", "horizontal"]

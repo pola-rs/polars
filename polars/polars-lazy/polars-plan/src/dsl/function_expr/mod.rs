@@ -109,6 +109,8 @@ pub enum FunctionExpr {
     ShrinkType,
     #[cfg(feature = "diff")]
     Diff(usize, NullBehavior),
+    #[cfg(feature = "interpolate")]
+    Interpolate(InterpolationMethod),
 }
 
 impl Display for FunctionExpr {
@@ -164,6 +166,8 @@ impl Display for FunctionExpr {
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_, _) => "diff",
+            #[cfg(feature = "interpolate")]
+            Interpolate(_) => "interpolate",
         };
         write!(f, "{}", s)
     }
@@ -337,6 +341,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
             Diff(n, null_behavior) => map!(dispatch::diff, n, null_behavior),
+            #[cfg(feature = "interpolate")]
+            Interpolate(method) => {
+                map!(dispatch::interpolate, method)
+            }
         }
     }
 }
