@@ -28,7 +28,7 @@ fn _mmap_single_column<'a>(
 }
 
 // similar to arrow2 serializer, except this accepts a slice instead of a vec.
-// this allows use to memory map
+// this allows us to memory map
 pub(super) fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, &'a [u8])>,
     field: Field,

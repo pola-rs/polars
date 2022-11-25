@@ -231,6 +231,8 @@ impl PartitionGroupByExec {
             // of groups.
             let keys = self.keys(&original_df, state)?;
 
+            // set it here, because `self.input.execute` will clear the schema cache.
+            state.set_schema(self.input_schema.clone());
             if !can_run_partitioned(&keys, &original_df, state, self.from_partitioned_ds)? {
                 return groupby_helper(
                     original_df,
@@ -249,8 +251,6 @@ impl PartitionGroupByExec {
             // Run the partitioned aggregations
             let n_threads = POOL.current_num_threads();
 
-            // set it here, because `self.input.execute` will clear the schema cache.
-            state.set_schema(self.input_schema.clone());
             run_partitions(
                 &mut original_df,
                 self,

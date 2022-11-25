@@ -94,3 +94,9 @@ def test_streaming_empty_df() -> None:
     assert df.lazy().join(df.lazy(), on="a", how="inner").filter(
         2 == 1  # noqa: SIM300
     ).collect(allow_streaming=True).to_dict(False) == {"a": [], "b": [], "b_right": []}
+
+
+def test_when_then_empty_list_5547() -> None:
+    out = pl.DataFrame({"a": []}).select([pl.when(pl.col("a") > 1).then([1])])
+    assert out.shape == (0, 1)
+    assert out.dtypes == [pl.List(pl.Int64)]

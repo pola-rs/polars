@@ -5,7 +5,6 @@ import random
 import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, cast
-from warnings import warn
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -3630,11 +3629,11 @@ class Expr:
         │ ---                  ┆ ---                  │
         │ u64                  ┆ u64                  │
         ╞══════════════════════╪══════════════════════╡
-        │ 4629889412789719550  ┆ 6959506404929392568  │
+        │ 9774092659964970114  ┆ 13614470193936745724 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 16386608652769605760 ┆ 11638928888656214026 │
+        │ 1101441246220388612  ┆ 11638928888656214026 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 11638928888656214026 ┆ 11040941213715918520 │
+        │ 11638928888656214026 ┆ 13382926553367784577 │
         └──────────────────────┴──────────────────────┘
 
         """
@@ -5540,20 +5539,22 @@ class Expr:
             seed = random.randint(0, 10000)
         return wrap_expr(self._pyexpr.shuffle(seed))
 
-    @deprecated_alias(fraction="frac")
     def sample(
         self,
+        n: int | None = None,
         frac: float | None = None,
-        with_replacement: bool = True,
+        with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
-        n: int | None = None,
     ) -> Expr:
         """
         Sample from this expression.
 
         Parameters
         ----------
+        n
+            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
+            `frac` is None.
         frac
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
@@ -5562,9 +5563,7 @@ class Expr:
             Shuffle the order of sampled data points.
         seed
             Seed for the random number generator. If set to None (default), a random
-            seed is used.
-        n
-            Number of items to return. Cannot be used with `frac`.
+            seed is generated using the ``random`` module.
 
         Examples
         --------
@@ -5584,25 +5583,20 @@ class Expr:
         └─────┘
 
         """
-        warn(
-            "The function signature for Expr.sample will change in a future"
-            " version. Explicitly set `frac` and `with_replacement` using keyword"
-            " arguments to retain the same behaviour.",
-            FutureWarning,
-            stacklevel=2,
-        )
-
         if n is not None and frac is not None:
             raise ValueError("cannot specify both `n` and `frac`")
 
-        if n is not None and frac is None:
-            return wrap_expr(self._pyexpr.sample_n(n, with_replacement, shuffle, seed))
+        if seed is None:
+            seed = random.randint(0, 10000)
 
-        if frac is None:
-            frac = 1.0
-        return wrap_expr(
-            self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
-        )
+        if frac is not None:
+            return wrap_expr(
+                self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
+            )
+
+        if n is None:
+            n = 1
+        return wrap_expr(self._pyexpr.sample_n(n, with_replacement, shuffle, seed))
 
     def ewm_mean(
         self,

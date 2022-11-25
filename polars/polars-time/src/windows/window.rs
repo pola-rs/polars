@@ -1,4 +1,8 @@
-use polars_arrow::export::arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS};
+#[cfg(feature = "timezones")]
+use chrono::NaiveDateTime;
+#[cfg(feature = "timezones")]
+use now::DateTimeNow;
+use polars_arrow::export::arrow::temporal_conversions::*;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{timeunit_scale, SECONDS_IN_DAY};
 
@@ -144,8 +148,13 @@ impl Window {
             + self.period.duration_ms() / self.every.duration_ms()) as usize
     }
 
-    pub fn get_overlapping_bounds_iter(&self, boundary: Bounds, tu: TimeUnit) -> BoundsIter {
-        BoundsIter::new(*self, boundary, tu)
+    pub fn get_overlapping_bounds_iter(
+        &self,
+        boundary: Bounds,
+        tu: TimeUnit,
+        start_by: StartBy,
+    ) -> BoundsIter {
+        BoundsIter::new(*self, boundary, tu, start_by)
     }
 }
 
@@ -158,11 +167,69 @@ pub struct BoundsIter {
     tu: TimeUnit,
 }
 impl BoundsIter {
-    fn new(window: Window, boundary: Bounds, tu: TimeUnit) -> Self {
-        let bi = match tu {
-            TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start),
-            TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start),
-            TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start),
+    fn new(window: Window, boundary: Bounds, tu: TimeUnit, start_by: StartBy) -> Self {
+        let bi = match start_by {
+            StartBy::DataPoint => {
+                let mut boundary = boundary;
+                let offset_fn = match tu {
+                    TimeUnit::Nanoseconds => Duration::add_ns,
+                    TimeUnit::Microseconds => Duration::add_us,
+                    TimeUnit::Milliseconds => Duration::add_ms,
+                };
+                boundary.stop = offset_fn(&window.period, boundary.start);
+                boundary
+            }
+            StartBy::WindowBound => match tu {
+                TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start),
+                TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start),
+                TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start),
+            },
+            StartBy::Monday => {
+                #[cfg(feature = "timezones")]
+                {
+                    #[allow(clippy::type_complexity)]
+                    let (from, to, offset): (
+                        fn(i64) -> NaiveDateTime,
+                        fn(NaiveDateTime) -> i64,
+                        fn(&Duration, i64) -> i64,
+                    ) = match tu {
+                        TimeUnit::Nanoseconds => (
+                            timestamp_ns_to_datetime,
+                            datetime_to_timestamp_ns,
+                            Duration::add_ns,
+                        ),
+                        TimeUnit::Microseconds => (
+                            timestamp_us_to_datetime,
+                            datetime_to_timestamp_us,
+                            Duration::add_us,
+                        ),
+                        TimeUnit::Milliseconds => (
+                            timestamp_ms_to_datetime,
+                            datetime_to_timestamp_ms,
+                            Duration::add_ms,
+                        ),
+                    };
+                    // find beginning of the week.
+                    let mut boundary = boundary;
+                    let dt = from(boundary.start);
+                    let tz = chrono_tz::UTC;
+                    let dt = dt.and_local_timezone(tz).unwrap();
+                    let dt = dt.beginning_of_week();
+                    let dt = dt.naive_utc();
+                    let start = to(dt);
+                    // apply the 'offset'
+                    let start = offset(&window.offset, start);
+                    // and compute the end of the window defined by the 'period'
+                    let stop = offset(&window.period, start);
+                    boundary.start = start;
+                    boundary.stop = stop;
+                    boundary
+                }
+                #[cfg(not(feature = "timezones"))]
+                {
+                    panic!("activate 'timezones' feature")
+                }
+            }
         };
         Self {
             window,

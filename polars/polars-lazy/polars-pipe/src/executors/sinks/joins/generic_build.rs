@@ -25,7 +25,7 @@ pub(super) type DfIdx = IdxSize;
 // This is the hash and the Index offset in the chunks and the index offset in the dataframe
 #[derive(Copy, Clone, Debug)]
 pub(super) struct Key {
-    hash: u64,
+    pub(super) hash: u64,
     chunk_idx: ChunkIdx,
     df_idx: DfIdx,
 }
@@ -112,17 +112,18 @@ pub(super) fn compare_fn(
 ) -> bool {
     let key_hash = key.hash;
 
-    let chunk_idx = key.chunk_idx as usize * n_join_cols;
-    let df_idx = key.df_idx as usize;
-
-    // get the right columns from the linearly packed buffer
-    let join_cols = unsafe {
-        join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
-    };
-
-    // we check the hash and
-    // we get the appropriate values from the join columns and compare it with the current row
+    // we check the hash first
+    // as that has no indirection
     key_hash == h && {
+        // we get the appropriate values from the join columns and compare it with the current row
+        let chunk_idx = key.chunk_idx as usize * n_join_cols;
+        let df_idx = key.df_idx as usize;
+
+        // get the right columns from the linearly packed buffer
+        let join_cols = unsafe {
+            join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
+        };
+
         join_cols
             .iter()
             .zip(current_row)
@@ -151,7 +152,7 @@ impl GenericBuild {
     ) -> PolarsResult<&[Series]> {
         self.join_series.clear();
         for phys_e in self.join_columns_left.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_ref())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             let s = s.rechunk();
             self.materialized_join_cols.push(s.array_ref(0).clone());
@@ -328,10 +329,8 @@ impl Sink for GenericBuild {
                         .into_iter()
                         .map(|chunk| chunk.data),
                 );
-                if let Ok(n_chunks) = left_df.n_chunks() {
-                    if left_df.height() > 0 {
-                        assert_eq!(n_chunks, chunks_len);
-                    }
+                if left_df.height() > 0 {
+                    assert_eq!(left_df.n_chunks(), chunks_len);
                 }
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));

@@ -36,6 +36,9 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
         let expr2 = expr.clone();
         let func = move |s: Series| {
             let lst = s.list()?;
+            if lst.is_empty() {
+                return Ok(s);
+            }
 
             let phys_expr =
                 prepare_expression_for_context("", &expr, &lst.inner_dtype(), Context::Default)?;

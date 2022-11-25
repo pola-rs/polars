@@ -478,6 +478,7 @@ impl PyLazyFrame {
         include_boundaries: bool,
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
+        start_by: Wrap<StartBy>,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
         let by = by
@@ -495,6 +496,7 @@ impl PyLazyFrame {
                 truncate,
                 include_boundaries,
                 closed_window,
+                start_by: start_by.0,
             },
         );
 

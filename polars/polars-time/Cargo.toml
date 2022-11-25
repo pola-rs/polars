@@ -12,6 +12,7 @@ description = "Time related code for the polars dataframe library"
 chrono = "0.4"
 chrono-tz = { version = "0.6", optional = true }
 lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
+now = "0.1"
 polars-arrow = { version = "0.25.1", path = "../polars-arrow", features = ["compute", "temporal"] }
 polars-core = { version = "0.25.1", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
 polars-utils = { version = "0.25.1", path = "../polars-utils" }
@@ -25,7 +26,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 rolling_window = ["polars-core/rolling_window", "dtype-duration"]
 private = []
 fmt = ["polars-core/fmt"]
-timezones = ["chrono-tz", "dtype-datetime"]
+timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones"]
 
 test = [
   "dtype-date",

@@ -73,6 +73,12 @@ pub struct DotNode<'a> {
 }
 
 impl LogicalPlan {
+    fn write_single_node(&self, acc_str: &mut String, node: DotNode) -> std::fmt::Result {
+        let fmt_node = node.fmt.replace('"', r#"\""#);
+        writeln!(acc_str, "graph  polars_query {{\n\"[{}]\"", fmt_node)?;
+        Ok(())
+    }
+
     fn write_dot(
         &self,
         acc_str: &mut String,
@@ -106,6 +112,10 @@ impl LogicalPlan {
         }
     }
 
+    fn is_single(&self, branch: usize, id: usize) -> bool {
+        id == 0 && branch == 0
+    }
+
     ///
     /// # Arguments
     /// `id` - (branch, id)
@@ -122,6 +132,7 @@ impl LogicalPlan {
     ) -> std::fmt::Result {
         use LogicalPlan::*;
         let (mut branch, id) = id;
+
         match self {
             AnonymousScan { file_info, .. } => {
                 let total_columns = file_info.schema.len();
@@ -195,7 +206,11 @@ impl LogicalPlan {
                     id,
                     fmt: &fmt,
                 };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
+                if self.is_single(branch, id) {
+                    self.write_single_node(acc_str, current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, current_node, id_map)
+                }
             }
             #[cfg(feature = "csv-file")]
             CsvScan {
@@ -224,7 +239,11 @@ impl LogicalPlan {
                     id,
                     fmt: &fmt,
                 };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
+                if self.is_single(branch, id) {
+                    self.write_single_node(acc_str, current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, current_node, id_map)
+                }
             }
             DataFrameScan {
                 schema,
@@ -245,7 +264,11 @@ impl LogicalPlan {
                     id,
                     fmt: &fmt,
                 };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
+                if self.is_single(branch, id) {
+                    self.write_single_node(acc_str, current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, current_node, id_map)
+                }
             }
             Projection { expr, input, .. } => {
                 let schema = input.schema().map_err(|_| {
@@ -406,7 +429,11 @@ impl LogicalPlan {
                     id,
                     fmt: &fmt,
                 };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
+                if self.is_single(branch, id) {
+                    self.write_single_node(acc_str, current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, current_node, id_map)
+                }
             }
             #[cfg(feature = "ipc")]
             IpcScan {
@@ -435,7 +462,11 @@ impl LogicalPlan {
                     id,
                     fmt: &fmt,
                 };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
+                if self.is_single(branch, id) {
+                    self.write_single_node(acc_str, current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, current_node, id_map)
+                }
             }
             Join {
                 input_left,

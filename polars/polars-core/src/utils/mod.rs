@@ -141,7 +141,7 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
 }
 
 fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
-    df.iter_chunks().flat_map(|chunk| {
+    df.iter_chunks_physical().flat_map(|chunk| {
         let df = DataFrame::new_no_checks(
             df.iter()
                 .zip(chunk.into_arrays())
@@ -165,7 +165,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
     let total_len = df.height();
     let chunk_size = total_len / n;
 
-    if df.n_chunks()? == n
+    if df.n_chunks() == n
         && df.get_columns()[0]
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
@@ -183,7 +183,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
             chunk_size
         };
         let df = df.slice((i * chunk_size) as i64, len);
-        if df.n_chunks()? > 1 {
+        if df.n_chunks() > 1 {
             // we add every chunk as separate dataframe. This make sure that every partition
             // deals with it.
             out.extend(flatten_df(&df))
@@ -199,7 +199,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
 #[doc(hidden)]
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
 pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
-    if n == 0 {
+    if n == 0 || df.height() == 0 {
         return Ok(vec![df.clone()]);
     }
     // make sure that chunks are aligned.

@@ -227,11 +227,11 @@ def test_streaming_non_streaming_gb() -> None:
     n = 100
     df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
     q = df.lazy().groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(allow_streaming=True).frame_equal(q.collect())
+    assert q.collect(streaming=True).frame_equal(q.collect())
 
     q = df.lazy().with_column(pl.col("a").cast(pl.Utf8))
     q = q.groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(allow_streaming=True).frame_equal(q.collect())
+    assert q.collect(streaming=True).frame_equal(q.collect())
     q = df.lazy().with_column(pl.col("a").alias("b"))
     q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
-    assert q.collect(allow_streaming=True).frame_equal(q.collect())
+    assert q.collect(streaming=True).frame_equal(q.collect())

@@ -21,6 +21,21 @@ pub enum ClosedWindow {
     None,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum StartBy {
+    WindowBound,
+    DataPoint,
+    /// only useful if periods are weekly
+    Monday,
+}
+
+impl Default for StartBy {
+    fn default() -> Self {
+        Self::WindowBound
+    }
+}
+
 /// Based on the given `Window`, which has an
 /// - every
 /// - period
@@ -38,8 +53,12 @@ pub fn groupby_windows(
     tu: TimeUnit,
     include_lower_bound: bool,
     include_upper_bound: bool,
+    start_by: StartBy,
 ) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
     let start = time[0];
+    // the boundary we define here is not yet correct. It doesn't take 'period' into account
+    // and it doesn't have the proper starting point. This boundary is used as a proxy to find
+    // the proper 'boundary' in  'window.get_overlapping_bounds_iter'.
     let boundary = if time.len() > 1 {
         // +1 because left or closed boundary could match the next window if it is on the boundary
         let stop = time[time.len() - 1] + 1;
@@ -76,7 +95,7 @@ pub fn groupby_windows(
     };
     let mut start_offset = 0;
 
-    for bi in window.get_overlapping_bounds_iter(boundary, tu) {
+    for bi in window.get_overlapping_bounds_iter(boundary, tu, start_by) {
         let mut skip_window = false;
         // find starting point of window
         while start_offset < time.len() {

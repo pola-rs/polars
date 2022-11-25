@@ -50,5 +50,5 @@ shape: (14863778, 18)
 Or pipe your SQL command directly inline:
 
 ```bash
-$ echo "SELECT MIN(Close) as low, MAX(Close) as high from '/home/ritchie46/example/BTUSD.csv' WHERE Date > '2014' AND Date < '2015'" | ./polars-sql 
+$ echo "SELECT MIN(Close) as low, MAX(Close) as high from '/home/ritchie46/example/BTUSD.csv' WHERE Date > '2014' AND Date < '2015'" | ./polars-sql
 ```

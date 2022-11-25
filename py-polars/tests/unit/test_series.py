@@ -1604,6 +1604,13 @@ def test_arg_min_and_arg_max() -> None:
     assert s.arg_min() == 3
     assert s.arg_max() == 0
 
+    s = pl.Series([None, True, False, True])
+    assert s.arg_min() == 2
+    assert s.arg_max() == 1
+    s = pl.Series([None, None], dtype=pl.Boolean)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
 
 def test_is_null_is_not_null() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, None])
@@ -1822,7 +1829,7 @@ def test_dt_year_month_week_day_ordinal_day() -> None:
     verify_series_and_expr_api(a, exp, "dt.year")
 
     verify_series_and_expr_api(a, pl.Series("a", [5, 10, 2], dtype=UInt32), "dt.month")
-    verify_series_and_expr_api(a, pl.Series("a", [0, 4, 1], dtype=UInt32), "dt.weekday")
+    verify_series_and_expr_api(a, pl.Series("a", [1, 5, 2], dtype=UInt32), "dt.weekday")
     verify_series_and_expr_api(a, pl.Series("a", [21, 40, 8], dtype=UInt32), "dt.week")
     verify_series_and_expr_api(a, pl.Series("a", [19, 4, 20], dtype=UInt32), "dt.day")
     verify_series_and_expr_api(

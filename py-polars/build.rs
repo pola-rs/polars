@@ -3,6 +3,7 @@
 fn main() {
     #[cfg(feature = "build_info")]
     {
+        println!("cargo:rerun-if-changed=build.rs");
         extern crate built;
         use std::env;
         use std::path::Path;

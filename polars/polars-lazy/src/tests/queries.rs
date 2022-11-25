@@ -930,7 +930,6 @@ fn test_lazy_groupby_filter() -> PolarsResult<()> {
         )
         .collect()?;
 
-    dbg!(&out);
     assert_eq!(
         Vec::from(out.column("b_sum").unwrap().i32().unwrap()),
         [Some(6), None, None]
@@ -1014,7 +1013,6 @@ fn test_groupby_sort_slice() -> PolarsResult<()> {
         .collect()?;
 
     assert!(out1.column("foo")?.series_equal(out2.column("foo")?));
-    dbg!(out1, out2);
     Ok(())
 }
 
@@ -1031,8 +1029,6 @@ fn test_groupby_cumsum() -> PolarsResult<()> {
         .agg([col("vals").cumsum(false)])
         .sort("groups", Default::default())
         .collect()?;
-
-    dbg!(&out);
 
     assert_eq!(
         Vec::from(out.column("vals")?.explode()?.i32()?),

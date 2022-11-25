@@ -62,6 +62,12 @@ pub enum AnyValue<'a> {
     BinaryOwned(Vec<u8>),
 }
 
+impl Default for AnyValue<'static> {
+    fn default() -> Self {
+        AnyValue::Null
+    }
+}
+
 #[cfg(feature = "serde")]
 impl Serialize for AnyValue<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -542,7 +548,7 @@ impl<'a> AnyValue<'a> {
     }
 
     #[must_use]
-    pub fn add<'b>(&self, rhs: &AnyValue<'b>) -> Self {
+    pub fn add(&self, rhs: &AnyValue) -> Self {
         use AnyValue::*;
         match (self, rhs) {
             (Null, _) => Null,

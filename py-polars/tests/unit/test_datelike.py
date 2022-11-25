@@ -934,7 +934,7 @@ def test_duration_function() -> None:
 def test_rolling_groupby_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
-    out = df.groupby_rolling("times", "5i", by=["groups"]).agg(
+    out = df.groupby_rolling("times", period="5i", by=["groups"]).agg(
         pl.col("times").list().alias("agg_list")
     )
 
@@ -1606,9 +1606,9 @@ def test_weekday() -> None:
 
     time_units: list[TimeUnit] = ["ns", "us", "ms"]
     for tu in time_units:
-        assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 0
+        assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 1
 
-    assert s.cast(pl.Date).dt.weekday()[0] == 0
+    assert s.cast(pl.Date).dt.weekday()[0] == 1
 
 
 @pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
@@ -1719,25 +1719,15 @@ def test_invalid_date_parsing_4898() -> None:
 
 
 def test_cast_timezone() -> None:
-    utc = zoneinfo.ZoneInfo("UTC")
     ny = zoneinfo.ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_column(
-        pl.col("a")
-        .dt.with_time_zone("America/New_York")
-        .dt.cast_time_zone("UTC")
-        .alias("b")
-    ).to_dict(False) == {
-        "a": [datetime(2022, 9, 25, 14, 0)],
-        "b": [datetime(2022, 9, 25, 18, 0, tzinfo=utc)],
-    }
-    assert pl.DataFrame({"a": [datetime(2022, 9, 25, 18)]}).with_column(
         pl.col("a")
         .dt.with_time_zone("UTC")
         .dt.cast_time_zone("America/New_York")
         .alias("b")
     ).to_dict(False) == {
-        "a": [datetime(2022, 9, 25, 18, 0)],
-        "b": [datetime(2022, 9, 25, 10, 0, tzinfo=ny)],
+        "a": [datetime(2022, 9, 25, 14, 0)],
+        "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
     }
 
 
@@ -1917,6 +1907,62 @@ def test_tz_aware_truncate() -> None:
         ],
     }
 
+    # 5507
+    lf = pl.DataFrame(
+        {
+            "naive": pl.date_range(
+                low=datetime(2021, 12, 31, 23),
+                high=datetime(2022, 1, 1, 6),
+                interval="1h",
+            )
+        }
+    ).lazy()
+    lf = lf.with_column(pl.col("naive").dt.tz_localize("UTC").alias("UTC"))
+    lf = lf.with_column(pl.col("UTC").dt.with_time_zone("US/Central").alias("CST"))
+    lf = lf.with_column(pl.col("CST").dt.truncate("1d").alias("CST truncated"))
+    assert lf.collect().to_dict(False) == {
+        "naive": [
+            datetime(2021, 12, 31, 23, 0),
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 1, 1, 1, 0),
+            datetime(2022, 1, 1, 2, 0),
+            datetime(2022, 1, 1, 3, 0),
+            datetime(2022, 1, 1, 4, 0),
+            datetime(2022, 1, 1, 5, 0),
+            datetime(2022, 1, 1, 6, 0),
+        ],
+        "UTC": [
+            datetime(2021, 12, 31, 23, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 1, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 2, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 3, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 4, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 5, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 6, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+        ],
+        "CST": [
+            datetime(2021, 12, 31, 17, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 18, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 19, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 20, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 21, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 22, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 23, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+        ],
+        "CST truncated": [
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+        ],
+    }
+
 
 def test_tz_aware_strftime() -> None:
     df = pl.DataFrame(
@@ -1948,5 +1994,46 @@ def test_tz_aware_strftime() -> None:
             "Wed Nov  2 00:00:00 2022",
             "Thu Nov  3 00:00:00 2022",
             "Fri Nov  4 00:00:00 2022",
+        ],
+    }
+
+
+def test_tz_aware_filter_lit() -> None:
+    start = datetime(1970, 1, 1)
+    stop = datetime(1970, 1, 1, 7)
+    dt = datetime(1970, 1, 1, 6, tzinfo=zoneinfo.ZoneInfo("America/New_York"))
+
+    assert (
+        pl.DataFrame({"date": pl.date_range(start, stop, "1h")})
+        .with_column(pl.col("date").dt.tz_localize("America/New_York").alias("nyc"))
+        .filter(pl.col("nyc") < dt)
+    ).to_dict(False) == {
+        "date": [
+            datetime(1970, 1, 1, 0, 0),
+            datetime(1970, 1, 1, 1, 0),
+            datetime(1970, 1, 1, 2, 0),
+            datetime(1970, 1, 1, 3, 0),
+            datetime(1970, 1, 1, 4, 0),
+            datetime(1970, 1, 1, 5, 0),
+        ],
+        "nyc": [
+            datetime(
+                1970, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 1, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 2, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 3, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 4, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
+            datetime(
+                1970, 1, 1, 5, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
+            ),
         ],
     }

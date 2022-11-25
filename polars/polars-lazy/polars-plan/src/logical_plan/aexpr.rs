@@ -195,7 +195,7 @@ impl AExpr {
         use AExpr::*;
         use DataType::*;
         match self {
-            Count => Ok(Field::new(COUNT, DataType::UInt32)),
+            Count => Ok(Field::new(COUNT, IDX_DTYPE)),
             Window { function, .. } => {
                 let e = arena.get(*function);
                 e.to_field(schema, ctxt, arena)
@@ -333,12 +333,12 @@ impl AExpr {
                     }
                     Count(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::UInt32);
+                        field.coerce(IDX_DTYPE);
                         Ok(field)
                     }
                     AggGroups(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::List(DataType::UInt32.into()));
+                        field.coerce(DataType::List(IDX_DTYPE.into()));
                         Ok(field)
                     }
                     Quantile { expr, .. } => {

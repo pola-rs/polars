@@ -342,7 +342,7 @@ class DateTimeNameSpace:
 
         Applies to Date and Datetime columns.
 
-        Returns the weekday number where monday = 0 and sunday = 6
+        Returns the ISO weekday number where monday = 1 and sunday = 7
 
         Returns
         -------
@@ -370,13 +370,13 @@ class DateTimeNameSpace:
         shape: (7,)
         Series: '' [u32]
         [
-                0
                 1
                 2
                 3
                 4
                 5
                 6
+                7
         ]
 
         """
@@ -998,18 +998,18 @@ class DateTimeNameSpace:
         shape: (3,)
         Series: 'NYC' [datetime[μs, America/New_York]]
         [
-            2020-02-29 14:00:00 EST
-            2020-03-31 15:00:00 EDT
-            2020-04-30 15:00:00 EDT
+            2020-03-01 00:00:00 EST
+            2020-04-01 01:00:00 EDT
+            2020-05-01 01:00:00 EDT
         ]
         >>> # Timestamps have changed after cast_time_zone
         >>> date.dt.epoch(tu="s")
         shape: (3,)
         Series: 'NYC' [i64]
         [
-            1583002800
-            1585681200
-            1588273200
+            1583038800
+            1585717200
+            1588309200
         ]
 
         """

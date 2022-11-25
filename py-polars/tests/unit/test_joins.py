@@ -677,6 +677,7 @@ def test_join_asof_projection() -> None:
         {
             "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
             "df1_col1": ["foo", "bar", "foo", "bar", "foo"],
+            "key": ["a", "b", "b", "a", "b"],
         }
     )
 
@@ -684,6 +685,7 @@ def test_join_asof_projection() -> None:
         {
             "df2_date": [20221012, 20221015, 20221018],
             "df2_col1": ["1", "2", "3"],
+            "key": ["a", "b", "b"],
         }
     )
 
@@ -693,5 +695,13 @@ def test_join_asof_projection() -> None:
         ).select([pl.col("df2_date"), "df1_date"])
     ).collect().to_dict(False) == {
         "df2_date": [None, 20221012, 20221012, 20221012, 20221015],
+        "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
+    }
+    assert (
+        df1.lazy().join_asof(
+            df2.lazy(), by="key", left_on="df1_date", right_on="df2_date"
+        )
+    ).select(["df2_date", "df1_date"]).collect().to_dict(False) == {
+        "df2_date": [None, None, None, 20221012, 20221015],
         "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
     }

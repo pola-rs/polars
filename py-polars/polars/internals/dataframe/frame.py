@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import os
+import random
 import sys
 import typing
 from collections.abc import Sized
@@ -65,7 +66,6 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
-    deprecated_alias,
     format_path,
     handle_projection_columns,
     is_bool_sequence,
@@ -109,6 +109,7 @@ if TYPE_CHECKING:
         ParquetCompression,
         PivotAgg,
         SizeUnit,
+        StartBy,
         UniqueKeepStrategy,
         UnstackDirection,
     )
@@ -2544,7 +2545,7 @@ class DataFrame:
         return (
             self.lazy()
             .filter(predicate)  # type: ignore[arg-type]
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
 
     def describe(self: DF) -> DF:
@@ -2747,11 +2748,7 @@ class DataFrame:
 
         """
         if not isinstance(by, str) and isinstance(by, (Sequence, pli.Expr)):
-            df = (
-                self.lazy()
-                .sort(by, reverse, nulls_last)
-                .collect(no_optimization=True, string_cache=False)
-            )
+            df = self.lazy().sort(by, reverse, nulls_last).collect(no_optimization=True)
             return df
         return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 
@@ -2861,7 +2858,6 @@ class DataFrame:
             length = self.height - offset + length
         return self._from_pydf(self._df.slice(offset, length))
 
-    @deprecated_alias(length="n")
     def limit(self: DF, n: int = 5) -> DF:
         """
         Get the first `n` rows.
@@ -2897,7 +2893,6 @@ class DataFrame:
         """
         return self.head(n)
 
-    @deprecated_alias(length="n")
     def head(self: DF, n: int = 5) -> DF:
         """
         Get the first `n` rows.
@@ -2933,7 +2928,6 @@ class DataFrame:
         """
         return self._from_pydf(self._df.head(n))
 
-    @deprecated_alias(length="n")
     def tail(self: DF, n: int = 5) -> DF:
         """
         Get the last `n` rows.
@@ -3262,6 +3256,7 @@ class DataFrame:
     def groupby_rolling(
         self: DF,
         index_column: str,
+        *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedWindow = "right",
@@ -3372,6 +3367,7 @@ class DataFrame:
     def groupby_dynamic(
         self: DF,
         index_column: str,
+        *,
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
@@ -3379,6 +3375,7 @@ class DataFrame:
         include_boundaries: bool = False,
         closed: ClosedWindow = "left",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        start_by: StartBy = "window",
     ) -> DynamicGroupBy[DF]:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -3445,6 +3442,11 @@ class DataFrame:
             Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
+        start_by : {'window', 'datapoint', 'monday'}
+            The strategy to determine the start of the first window by.
+            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'datapoint': Start from the first encountered data point.
+            * 'monday': Start the window on the monday before the first data point.
 
         Examples
         --------
@@ -3683,11 +3685,13 @@ class DataFrame:
             include_boundaries,
             closed,
             by,
+            start_by,
         )
 
     def upsample(
         self: DF,
         time_column: str,
+        *,
         every: str | timedelta,
         offset: str | timedelta | None = None,
         by: str | Sequence[str] | None = None,
@@ -4201,11 +4205,7 @@ class DataFrame:
         └──────┴─────┘
 
         """
-        return (
-            self.lazy()
-            .with_column(column)
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.lazy().with_column(column).collect(no_optimization=True)
 
     def hstack(
         self: DF,
@@ -4357,7 +4357,6 @@ class DataFrame:
         self._df.extend(other._df)
         return self
 
-    @deprecated_alias(name="columns")
     def drop(self: DF, columns: str | Sequence[str]) -> DF:
         """
         Remove column from DataFrame and return as new.
@@ -5337,7 +5336,7 @@ class DataFrame:
         return (
             self.lazy()
             .shift_and_fill(periods, fill_value)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
 
     def is_duplicated(self) -> pli.Series:
@@ -5514,10 +5513,7 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy()
-            .select(exprs)
-            .collect(no_optimization=True, string_cache=False)
-            ._df
+            self.lazy().select(exprs).collect(no_optimization=True)._df
         )
 
     def with_columns(
@@ -5593,9 +5589,7 @@ class DataFrame:
         if exprs is not None and not isinstance(exprs, Sequence):
             exprs = [exprs]
         return (
-            self.lazy()
-            .with_columns(exprs, **named_exprs)
-            .collect(no_optimization=True, string_cache=False)
+            self.lazy().with_columns(exprs, **named_exprs).collect(no_optimization=True)
         )
 
     @overload
@@ -6317,7 +6311,7 @@ class DataFrame:
             Shuffle the order of sampled data points.
         seed
             Seed for the random number generator. If set to None (default), a random
-            seed is used.
+            seed is generated using the ``random`` module.
 
         Examples
         --------
@@ -6343,6 +6337,9 @@ class DataFrame:
         """
         if n is not None and frac is not None:
             raise ValueError("cannot specify both `n` and `frac`")
+
+        if seed is None:
+            seed = random.randint(0, 10000)
 
         if n is None and frac is not None:
             return self._from_pydf(
@@ -6599,10 +6596,10 @@ class DataFrame:
         shape: (4,)
         Series: '' [u64]
         [
-            4238614331852490969
-            17976148875586754089
-            4702262519505526977
-            18144177983981041107
+            10783150408545073287
+            1438741209321515184
+            10047419486152048166
+            2047317070637311557
         ]
 
         """

@@ -616,14 +616,11 @@ impl DataFrame {
     }
 
     /// The number of chunks per column
-    pub fn n_chunks(&self) -> PolarsResult<usize> {
-        Ok(self
-            .columns
-            .get(0)
-            .ok_or_else(|| {
-                PolarsError::NoData("Can not determine number of chunks if there is no data".into())
-            })?
-            .n_chunks())
+    pub fn n_chunks(&self) -> usize {
+        match self.columns.get(0) {
+            None => 0,
+            Some(s) => s.n_chunks(),
+        }
     }
 
     /// Get a reference to the schema fields of the `DataFrame`.
@@ -1592,10 +1589,7 @@ impl DataFrame {
             return self.take_unchecked_vectical(&idx_ca.into_inner());
         }
 
-        let n_chunks = match self.n_chunks() {
-            Err(_) => return self.clone(),
-            Ok(n) => n,
-        };
+        let n_chunks = self.n_chunks();
         let has_utf8 = self
             .columns
             .iter()
@@ -1640,10 +1634,7 @@ impl DataFrame {
             return self.take_unchecked_vectical(&idx_ca);
         }
 
-        let n_chunks = match self.n_chunks() {
-            Err(_) => return self.clone(),
-            Ok(n) => n,
-        };
+        let n_chunks = self.n_chunks();
 
         let has_utf8 = self
             .columns
@@ -2374,7 +2365,22 @@ impl DataFrame {
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
-            n_chunks: self.n_chunks().unwrap_or(0),
+            n_chunks: self.n_chunks(),
+        }
+    }
+
+    /// Iterator over the rows in this `DataFrame` as Arrow RecordBatches as physical values.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `DataFrame` that is passed is not rechunked.
+    ///
+    /// This responsibility is left to the caller as we don't want to take mutable references here,
+    /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
+    /// as well.
+    pub fn iter_chunks_physical(&self) -> PhysRecordBatchIter<'_> {
+        PhysRecordBatchIter {
+            iters: self.columns.iter().map(|s| s.chunks().iter()).collect(),
         }
     }
 
@@ -3346,6 +3352,22 @@ impl<'a> Iterator for RecordBatchIter<'a> {
     }
 }
 
+pub struct PhysRecordBatchIter<'a> {
+    iters: Vec<std::slice::Iter<'a, ArrayRef>>,
+}
+
+impl Iterator for PhysRecordBatchIter<'_> {
+    type Item = ArrowChunk;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iters
+            .iter_mut()
+            .map(|phys_iter| phys_iter.next().cloned())
+            .collect::<Option<Vec<_>>>()
+            .map(ArrowChunk::new)
+    }
+}
+
 impl Default for DataFrame {
     fn default() -> Self {
         DataFrame::new_no_checks(vec![])
@@ -3498,7 +3520,7 @@ mod test {
         .unwrap();
 
         df.vstack_mut(&df.slice(0, 3)).unwrap();
-        assert_eq!(df.n_chunks().unwrap(), 2)
+        assert_eq!(df.n_chunks(), 2)
     }
 
     #[test]

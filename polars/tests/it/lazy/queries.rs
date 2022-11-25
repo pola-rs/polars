@@ -76,6 +76,7 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
                 truncate: false,
                 include_boundaries: false,
                 closed_window: ClosedWindow::Left,
+                ..Default::default()
             },
         )
         .agg([col("b").sum().alias("sum")])

@@ -44,8 +44,31 @@ impl DatetimeChunked {
 
     #[cfg(feature = "timezones")]
     pub fn apply_tz_offset(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
-        let keep_tz = self.time_zone().clone();
-        Ok(self.cast_time_zone(tz)?.with_time_zone(keep_tz))
+        let keep_tz = self.time_zone().as_deref().unwrap_or("UTC").to_string();
+        self.clone()
+            .with_time_zone(Some(tz.into()))
+            .cast_time_zone(&keep_tz)
+    }
+
+    pub fn apply_on_tz_corrected<F>(&self, mut func: F) -> PolarsResult<DatetimeChunked>
+    where
+        F: FnMut(DatetimeChunked) -> PolarsResult<DatetimeChunked>,
+    {
+        #[allow(unused_mut)]
+        let mut ca = self.clone();
+        #[cfg(feature = "timezones")]
+        if self.time_zone().is_some() {
+            ca = self.cast_time_zone("UTC")?
+        }
+        let out = func(ca)?;
+
+        #[cfg(feature = "timezones")]
+        if let Some(tz) = self.time_zone() {
+            return out
+                .with_time_zone(Some("UTC".to_string()))
+                .cast_time_zone(tz);
+        }
+        Ok(out)
     }
 
     #[cfg(feature = "timezones")]
@@ -53,14 +76,14 @@ impl DatetimeChunked {
         use chrono_tz::Tz;
 
         if let Some(from) = self.time_zone() {
-            let from: Tz = from.parse().map_err(|_| {
+            let old: Tz = from.parse().map_err(|_| {
                 PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
             })?;
-            let to: Tz = tz.parse().map_err(|_| {
+            let new: Tz = tz.parse().map_err(|_| {
                 PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
             })?;
             let out =
-                self.apply_kernel(&|arr| cast_timezone(arr, self.time_unit().to_arrow(), from, to));
+                self.apply_kernel(&|arr| cast_timezone(arr, self.time_unit().to_arrow(), new, old));
             Ok(out.into_datetime(self.time_unit(), Some(tz.to_string())))
         } else {
             Err(PolarsError::ComputeError(
@@ -86,11 +109,8 @@ impl DatetimeChunked {
         #[allow(unused_mut)]
         let mut ca = self.clone();
         #[cfg(feature = "timezones")]
-        if let Some(tz) = self.time_zone() {
-            ca = ca
-                .with_time_zone(Some("UTC".into()))
-                .cast_time_zone(tz)
-                .unwrap();
+        if self.time_zone().is_some() {
+            ca = ca.cast_time_zone("UTC").unwrap();
         }
 
         let mut ca: Utf8Chunked = ca.apply_kernel_cast(&|arr| {
