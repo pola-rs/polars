@@ -56,6 +56,9 @@ pub fn groupby_windows(
     start_by: StartBy,
 ) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
     let start = time[0];
+    // the boundary we define here is not yet correct. It doesn't take 'period' into account
+    // and it doesn't have the proper starting point. This boundary is used as a proxy to find
+    // the proper 'boundary' in  'window.get_overlapping_bounds_iter'.
     let boundary = if time.len() > 1 {
         // +1 because left or closed boundary could match the next window if it is on the boundary
         let stop = time[time.len() - 1] + 1;

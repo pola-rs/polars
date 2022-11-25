@@ -442,12 +442,12 @@ def test_groupby_dynamic_startby_5599() -> None:
             datetime(2022, 12, 16, 2, 35),
         ],
         "_upper_boundary": [
-            datetime(2022, 12, 16, 3, 0, 0, 1),
-            datetime(2022, 12, 16, 3, 31, 0, 1),
-            datetime(2022, 12, 16, 4, 2, 0, 1),
-            datetime(2022, 12, 16, 4, 33, 0, 1),
-            datetime(2022, 12, 16, 5, 4, 0, 1),
-            datetime(2022, 12, 16, 5, 35, 0, 1),
+            datetime(2022, 12, 16, 0, 31),
+            datetime(2022, 12, 16, 1, 2),
+            datetime(2022, 12, 16, 1, 33),
+            datetime(2022, 12, 16, 2, 4),
+            datetime(2022, 12, 16, 2, 35),
+            datetime(2022, 12, 16, 3, 6),
         ],
         "date": [
             datetime(2022, 12, 16, 0, 0),
@@ -457,7 +457,7 @@ def test_groupby_dynamic_startby_5599() -> None:
             datetime(2022, 12, 16, 2, 30),
             datetime(2022, 12, 16, 3, 0),
         ],
-        "count": [7, 5, 4, 3, 2, 1],
+        "count": [2, 1, 1, 1, 1, 1],
     }
 
     # start by week
@@ -468,35 +468,19 @@ def test_groupby_dynamic_startby_5599() -> None:
         pl.col("date").dt.weekday().alias("day")
     )
 
-    assert (
-        df.groupby_dynamic(
-            "date",
-            every="1w",
-            include_boundaries=True,
-            start_by="monday",
-            truncate=False,
-        ).agg([pl.count(), pl.col("day").first().alias("data_day")])
-    ).with_column(pl.col("date").dt.weekday().alias("truncated_day")).to_dict(
-        False
-    ) == {
-        "_lower_boundary": [
-            datetime(2021, 12, 27, 0, 0),
-            datetime(2022, 1, 3, 0, 0),
-            datetime(2022, 1, 10, 0, 0),
-        ],
-        "_upper_boundary": [
-            datetime(2022, 1, 7, 0, 0, 0, 1),
-            datetime(2022, 1, 14, 0, 0, 0, 1),
-            datetime(2022, 1, 21, 0, 0, 0, 1),
-        ],
-        "date": [
-            datetime(2022, 1, 1, 0, 0),
-            datetime(2022, 1, 3, 0, 0),
-            datetime(2022, 1, 10, 0, 0),
-        ],
-        "count": [13, 19, 5],
-        "data_day": [6, 1, 1],
-        "truncated_day": [6, 1, 1],
+    assert df.groupby_dynamic(
+        "date",
+        every="1w",
+        period="3d",
+        include_boundaries=True,
+        start_by="monday",
+        truncate=False,
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")]).to_dict(False) == {
+        "_lower_boundary": [datetime(2022, 1, 3, 0, 0), datetime(2022, 1, 10, 0, 0)],
+        "_upper_boundary": [datetime(2022, 1, 6, 0, 0), datetime(2022, 1, 13, 0, 0)],
+        "date": [datetime(2022, 1, 3, 0, 0), datetime(2022, 1, 10, 0, 0)],
+        "count": [6, 5],
+        "data_day": [1, 1],
     }
 
 
@@ -529,5 +513,5 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
             date(2022, 11, 1),
             date(2022, 11, 8),
         ],
-        "value": [14, 10, 7, 12],
+        "value": [4, 10, 2, 12],
     }

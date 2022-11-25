@@ -169,7 +169,16 @@ pub struct BoundsIter {
 impl BoundsIter {
     fn new(window: Window, boundary: Bounds, tu: TimeUnit, start_by: StartBy) -> Self {
         let bi = match start_by {
-            StartBy::DataPoint => boundary,
+            StartBy::DataPoint => {
+                let mut boundary = boundary;
+                let offset_fn = match tu {
+                    TimeUnit::Nanoseconds => Duration::add_ns,
+                    TimeUnit::Microseconds => Duration::add_us,
+                    TimeUnit::Milliseconds => Duration::add_ms,
+                };
+                boundary.stop = offset_fn(&window.period, boundary.start);
+                boundary
+            }
             StartBy::WindowBound => match tu {
                 TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start),
                 TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start),
@@ -200,6 +209,7 @@ impl BoundsIter {
                             Duration::add_ms,
                         ),
                     };
+                    // find beginning of the week.
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
                     let tz = chrono_tz::UTC;
@@ -207,10 +217,12 @@ impl BoundsIter {
                     let dt = dt.beginning_of_week();
                     let dt = dt.naive_utc();
                     let start = to(dt);
+                    // apply the 'offset'
                     let start = offset(&window.offset, start);
-                    let delta = boundary.stop - boundary.start;
+                    // and compute the end of the window defined by the 'period'
+                    let stop = offset(&window.period, start);
                     boundary.start = start;
-                    boundary.stop = start + delta;
+                    boundary.stop = stop;
                     boundary
                 }
                 #[cfg(not(feature = "timezones"))]
