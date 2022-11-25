@@ -5415,6 +5415,18 @@ class DataFrame:
         -------
         LazyFrame
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 2, 3, 4],
+        ...         "b": [0.5, None, 2.5, 13],
+        ...         "c": [True, True, False, None],
+        ...     }
+        ... )
+        >>> df.lazy()  # doctest: +ELLIPSIS
+        <polars.LazyFrame object at ...>
+
         """
         return pli.wrap_ldf(self._df.lazy())
 
@@ -6755,6 +6767,23 @@ class DataFrame:
         ----------
         kwargs
             keyword arguments are passed to numpy corrcoef
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [3, 2, 1],"ham": [7,8,9]})
+        >>> df.pearson_corr()
+        shape: (3, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ f64  ┆ f64  ┆ f64  │
+        ╞══════╪══════╪══════╡
+        │ 1.0  ┆ -1.0 ┆ 1.0  │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ -1.0 ┆ 1.0  ┆ -1.0 │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 1.0  ┆ -1.0 ┆ 1.0  │
+        └──────┴──────┴──────┘
 
         """
         return DataFrame(
