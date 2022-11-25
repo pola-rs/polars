@@ -197,14 +197,16 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
     let out = match &options.date_dtype {
         DataType::Date => {
             if options.exact {
-                ca.as_date(options.fmt.as_deref())?.into_series()
+                ca.as_date(options.fmt.as_deref(), options.cache)?
+                    .into_series()
             } else {
                 ca.as_date_not_exact(options.fmt.as_deref())?.into_series()
             }
         }
         DataType::Datetime(tu, _) => {
             if options.exact {
-                ca.as_datetime(options.fmt.as_deref(), *tu)?.into_series()
+                ca.as_datetime(options.fmt.as_deref(), *tu, options.cache)?
+                    .into_series()
             } else {
                 ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
                     .into_series()
@@ -212,7 +214,8 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         }
         DataType::Time => {
             if options.exact {
-                ca.as_time(options.fmt.as_deref())?.into_series()
+                ca.as_time(options.fmt.as_deref(), options.cache)?
+                    .into_series()
             } else {
                 return Err(PolarsError::ComputeError(
                     format!("non-exact not implemented for dtype {:?}", DataType::Time).into(),

@@ -27,6 +27,7 @@ class StringNameSpace:
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
+        cache: bool = True,
     ) -> pli.Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
@@ -45,6 +46,8 @@ class StringNameSpace:
         exact
             - If True, require an exact format match.
             - If False, allow the format to match anywhere in the target string.
+        cache
+            Use a cache of unique, converted dates to apply the datetime conversion.
 
         Returns
         -------

@@ -17,6 +17,8 @@ pub struct StrpTimeOptions {
     /// If polars may parse matches that not contain the whole string
     /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
     pub exact: bool,
+    /// use a cache of unique, converted dates to apply the datetime conversion.
+    pub cache: bool,
 }
 
 impl Default for StrpTimeOptions {
@@ -26,6 +28,7 @@ impl Default for StrpTimeOptions {
             fmt: None,
             strict: false,
             exact: false,
+            cache: true,
         }
     }
 }

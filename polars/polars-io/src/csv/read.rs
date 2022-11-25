@@ -569,7 +569,7 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                 }
 
                 #[cfg(feature = "dtype-time")]
-                if let Ok(ca) = ca.as_time(None) {
+                if let Ok(ca) = ca.as_time(None, false) {
                     return ca.into_series();
                 }
                 s

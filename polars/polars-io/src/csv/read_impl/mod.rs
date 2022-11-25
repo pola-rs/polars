@@ -36,12 +36,16 @@ pub(crate) fn cast_columns(
 
     let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
         #[cfg(feature = "temporal")]
-        (Utf8, Date) => s.utf8().unwrap().as_date(None).map(|ca| ca.into_series()),
+        (Utf8, Date) => s
+            .utf8()
+            .unwrap()
+            .as_date(None, false)
+            .map(|ca| ca.into_series()),
         #[cfg(feature = "temporal")]
         (Utf8, Datetime(tu, _)) => s
             .utf8()
             .unwrap()
-            .as_datetime(None, *tu)
+            .as_datetime(None, *tu, false)
             .map(|ca| ca.into_series()),
         (_, dt) => s.cast(dt),
     };
