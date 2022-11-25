@@ -6770,7 +6770,7 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [3, 2, 1],"ham": [7,8,9]})
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [3, 2, 1], "ham": [7, 8, 9]})
         >>> df.pearson_corr()
         shape: (3, 3)
         ┌──────┬──────┬──────┐
