@@ -536,7 +536,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     }
         ... ).lazy()
         >>> df.write_json()
-        r'{"columns":[{"name":"foo","datatype":"Int64","values":[1,2,3]},{"name":"bar","datatype":"Int64","values":[6,7,8]}]}'
+        '{"DataFrameScan":{"df":{"columns":[{"name":"foo","datatype":"Int64","values":[1,2,3]},{"name":"bar","datatype":"Int64","values":[6,7,8]}]},"schema":{"inner":{"foo":"Int64","bar":"Int64"}},"output_schema":null,"projection":null,"selection":null}}'
 
         """
         if to_string is not None:
@@ -881,18 +881,20 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ null ┆ 9.0 ┆ d   │
         └──────┴─────┴─────┘
         >>> df.sort("foo", reverse=True).collect()
-        shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ f64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 3   ┆ 8.0 ┆ c   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 7.0 ┆ b   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 1   ┆ 6.0 ┆ a   │
-        └─────┴─────┴─────┘
+        shape: (4, 3)
+        ┌──────┬─────┬─────┐
+        │ foo  ┆ bar ┆ ham │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ f64 ┆ str │
+        ╞══════╪═════╪═════╡
+        │ 3    ┆ 8.0 ┆ c   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2    ┆ 7.0 ┆ b   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1    ┆ 6.0 ┆ a   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ null ┆ 9.0 ┆ d   │
+        └──────┴─────┴─────┘
 
         **Sort by multiple columns.**
         For multiple columns we can also use expression syntax.
@@ -2482,6 +2484,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ├╌╌╌╌╌╌┤
         │ null │
         └──────┘
+
         Fill nulls with the median from another dataframe
         >>> train_df = pl.DataFrame(
         ...     {"feature_0": [-1.0, 0, 1], "feature_1": [-1.0, 0, 1]}
@@ -2494,6 +2497,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...         pl.col("feature_0").fill_null(pl.col("feature_0_train").median())
         ...     )
         ... ).collect()
+        shape: (3, 1)
+        ┌───────────┐
+        │ feature_0 │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.0       │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0       │
+        └───────────┘
 
         """
         if not isinstance(other, list):
