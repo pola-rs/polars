@@ -1863,7 +1863,7 @@ class DataFrame:
         ...
 
     def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
+        r"""
         Serialize to newline delimited JSON representation.
 
         Parameters
@@ -1882,6 +1882,7 @@ class DataFrame:
         ... )
         >>> df.write_ndjson()
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
+
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -3108,7 +3109,7 @@ class DataFrame:
         │ 4   ┆ 40  │
         └─────┴─────┘
 
-        >>> df = pl.DataFrame({"b": [1, 2], "a": [3,4]})
+        >>> df = pl.DataFrame({"b": [1, 2], "a": [3, 4]})
         >>> df
         shape: (2, 2)
         ┌─────┬─────┐
