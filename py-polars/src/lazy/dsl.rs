@@ -1113,8 +1113,8 @@ impl PyExpr {
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()
     }
-    pub fn interpolate(&self) -> PyExpr {
-        self.inner.clone().interpolate().into()
+    pub fn interpolate(&self, method: Wrap<InterpolationMethod>) -> PyExpr {
+        self.inner.clone().interpolate(method.0).into()
     }
 
     pub fn rolling_sum(

@@ -1581,6 +1581,7 @@ dependencies = [
  "polars-arrow",
  "polars-core",
  "polars-utils",
+ "serde",
  "serde_json",
 ]
 

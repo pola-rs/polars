@@ -164,11 +164,6 @@ macro_rules! impl_dyn_series {
                 ChunkRollApply::rolling_apply(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
-            #[cfg(feature = "interpolate")]
-            fn interpolate(&self) -> Series {
-                self.0.interpolate().into_series()
-            }
-
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);
             }

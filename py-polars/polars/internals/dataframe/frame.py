@@ -100,7 +100,6 @@ if TYPE_CHECKING:
         ComparisonOperator,
         CsvEncoding,
         FillNullStrategy,
-        InterpolationMethod,
         IpcCompression,
         JoinStrategy,
         NullStrategy,
@@ -108,6 +107,7 @@ if TYPE_CHECKING:
         ParallelStrategy,
         ParquetCompression,
         PivotAgg,
+        RollingInterpolationMethod,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -5947,7 +5947,7 @@ class DataFrame:
         return self.select(pli.all().product())
 
     def quantile(
-        self: DF, quantile: float, interpolation: InterpolationMethod = "nearest"
+        self: DF, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
     ) -> DF:
         """
         Aggregate the columns of this DataFrame to their quantile value.

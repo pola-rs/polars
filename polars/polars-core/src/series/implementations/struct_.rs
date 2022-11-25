@@ -66,11 +66,6 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.apply_fields(|s| s.interpolate()).into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name)
     }

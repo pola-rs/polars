@@ -29,7 +29,7 @@ default = [
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
 serde = ["polars-core/serde"]
-serde-lazy = ["polars-core/serde-lazy", "polars-lazy/serde", "polars-time/serde", "polars-io/serde"]
+serde-lazy = ["polars-core/serde-lazy", "polars-lazy/serde", "polars-time/serde", "polars-io/serde", "polars-ops/serde"]
 parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
 lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 # commented out until UB is fixed
@@ -89,7 +89,7 @@ groupby_list = ["polars-core/groupby_list"]
 lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
 rolling_window = ["polars-core/rolling_window", "polars-lazy/rolling_window", "polars-time/rolling_window"]
-interpolate = ["polars-core/interpolate", "polars-lazy/interpolate"]
+interpolate = ["polars-ops/interpolate", "polars-lazy/interpolate"]
 rank = ["polars-core/rank", "polars-lazy/rank"]
 diff = ["polars-core/diff", "polars-lazy/diff", "polars-ops/diff"]
 pct_change = ["polars-core/pct_change", "polars-lazy/pct_change"]
@@ -196,10 +196,10 @@ dtype-duration = [
   "polars-core/dtype-duration",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time", "polars-ops/dtype-time"]
-dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
-dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
+dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8", "polars-ops/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16", "polars-ops/dtype-i16"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8", "polars-ops/dtype-u8"]
-dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
+dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16", "polars-ops/dtype-u16"]
 dtype-categorical = [
   "polars-core/dtype-categorical",
   "polars-io/dtype-categorical",

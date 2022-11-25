@@ -68,7 +68,7 @@ concat_str = ["polars-core/concat_str"]
 arange = []
 mode = ["polars-core/mode"]
 cum_agg = ["polars-core/cum_agg"]
-interpolate = ["polars-core/interpolate"]
+interpolate = ["polars-ops/interpolate"]
 rolling_window = [
   "polars-core/rolling_window",
   "polars-time/rolling_window",

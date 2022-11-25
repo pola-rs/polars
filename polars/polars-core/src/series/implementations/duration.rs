@@ -225,14 +225,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         }
     }
 
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0
-            .interpolate()
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }
