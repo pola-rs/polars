@@ -46,6 +46,27 @@ def get_dummies(
         A subset of columns to convert to dummy variables. ``None`` means
         "all columns".
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [1, 2],
+    ...         "bar": [3, 4],
+    ...         "ham": ["a", "b"],
+    ...     }
+    ... )
+    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])
+    shape: (2, 6)
+    ┌───────┬───────┬───────┬───────┬───────┬───────┐
+    │ foo_1 ┆ foo_2 ┆ bar_3 ┆ bar_4 ┆ ham_a ┆ ham_b │
+    │ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
+    │ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    │
+    ╞═══════╪═══════╪═══════╪═══════╪═══════╪═══════╡
+    │ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     │
+    └───────┴───────┴───────┴───────┴───────┴───────┘
+
     """
     return df.to_dummies(columns=columns)
 
@@ -137,6 +158,67 @@ def concat(
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   │
     └─────┴─────┘
+
+    >>> df_h1 = pl.DataFrame(
+    ...     {
+    ...         "l1": [1, 2],
+    ...         "l2": [3, 4],
+    ...     }
+    ... )
+    >>> df_h2 = pl.DataFrame(
+    ...     {
+    ...         "r1": [5, 6],
+    ...         "r2": [7, 8],
+    ...         "r3": [9, 10],
+    ...     }
+    ... )
+    >>> pl.concat(
+    ...     [
+    ...         df_h1,
+    ...         df_h2,
+    ...     ],
+    ...     how="horizontal",
+    ... )
+    shape: (2, 5)
+    ┌─────┬─────┬─────┬─────┬─────┐
+    │ l1  ┆ l2  ┆ r1  ┆ r2  ┆ r3  │
+    │ --- ┆ --- ┆ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   ┆ 7   ┆ 9   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   ┆ 6   ┆ 8   ┆ 10  │
+    └─────┴─────┴─────┴─────┴─────┘
+
+    >>> df_d1 = pl.DataFrame(
+    ...     {
+    ...         "a": [1],
+    ...         "b": [3],
+    ...     }
+    ... )
+    >>> df_d2 = pl.DataFrame(
+    ...     {
+    ...         "a": [2],
+    ...         "d": [4],
+    ...     }
+    ... )
+    >>> pl.concat(
+    ...     [
+    ...         df_d1,
+    ...         df_d2,
+    ...     ],
+    ...     how="diagonal",
+    ... )
+    shape: (2, 3)
+    ┌─────┬──────┬──────┐
+    │ a   ┆ b    ┆ d    │
+    │ --- ┆ ---  ┆ ---  │
+    │ i64 ┆ i64  ┆ i64  │
+    ╞═════╪══════╪══════╡
+    │ 1   ┆ 3    ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2   ┆ null ┆ 4    │
+    └─────┴──────┴──────┘
 
     """
     if not len(items) > 0:
@@ -328,6 +410,22 @@ def date_range(
         1985-01-10 00:00:00
     ]
 
+    Specify a time zone
+
+    >>> pl.date_range(
+    ...     datetime(2022, 1, 1),
+    ...     datetime(2022, 3, 1),
+    ...     "1mo",
+    ...     time_zone="America/New_York",
+    ... )
+    shape: (3,)
+    Series: '' [datetime[μs, America/New_York]]
+    [
+        2022-01-01 00:00:00 EST
+        2022-02-01 00:00:00 EST
+        2022-03-01 00:00:00 EST
+    ]
+
     """
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
@@ -515,7 +613,7 @@ def align_frames(
     reverse: bool | Sequence[bool] = False,
 ) -> list[pli.DataFrame] | list[pli.LazyFrame]:
     r"""
-    Align a sequence of frames using the uique values from one or more columns as a key.
+    Align a sequence of frames using the unique values from one or more columns as a key.
 
     Frames that do not contain the given key values have rows injected (with nulls
     filling the non-key columns), and each resulting frame is sorted by the key.
@@ -680,6 +778,19 @@ def ones(n: int, dtype: PolarsDataType | None = None) -> pli.Series:
     In the lazy API you should probably not use this, but use ``lit(1)``
     instead.
 
+    Examples
+    --------
+    >>> pl.ones(5, pl.Int64)
+    shape: (5,)
+    Series: '' [i64]
+    [
+        1
+        1
+        1
+        1
+        1
+    ]
+
     """
     s = pli.Series([1.0])
     if dtype:
@@ -702,6 +813,19 @@ def zeros(n: int, dtype: PolarsDataType | None = None) -> pli.Series:
     -----
     In the lazy API you should probably not use this, but use ``lit(0)``
     instead.
+
+    Examples
+    --------
+    >>> pl.zeros(5, pl.Int64)
+    shape: (5,)
+    Series: '' [i64]
+    [
+        0
+        0
+        0
+        0
+        0
+    ]
 
     """
     s = pli.Series([0.0])
