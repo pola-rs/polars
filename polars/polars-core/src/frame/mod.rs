@@ -228,7 +228,7 @@ impl DataFrame {
         let shape_err = |s: &[Series]| {
             let msg = format!(
                 "Could not create a new DataFrame from Series. \
-            The Series have different lengths.\
+            The Series have different lengths. \
             Got {:?}",
                 s
             );
