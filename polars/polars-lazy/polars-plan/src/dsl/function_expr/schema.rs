@@ -25,10 +25,10 @@ impl FunctionExpr {
         };
 
         // map all dtypes
-        let map_dtypes = |func: &dyn Fn(&[&DataType]) -> DataType| {
+        let try_map_dtypes = |func: &dyn Fn(&[&DataType]) -> PolarsResult<DataType>| {
             let mut fld = fields[0].clone();
             let dtypes = fields.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
-            let new_type = func(&dtypes);
+            let new_type = func(&dtypes)?;
             fld.coerce(new_type);
             Ok(fld)
         };
@@ -69,7 +69,7 @@ impl FunctionExpr {
 
         // inner super type of lists
         let inner_super_type_list = || {
-            map_dtypes(&|dts| {
+            try_map_dtypes(&|dts| {
                 let mut super_type_inner = None;
 
                 for dt in dts {
@@ -77,18 +77,18 @@ impl FunctionExpr {
                         DataType::List(inner) => match super_type_inner {
                             None => super_type_inner = Some(*inner.clone()),
                             Some(st_inner) => {
-                                super_type_inner = try_get_supertype(&st_inner, inner).ok()
+                                super_type_inner = Some(try_get_supertype(&st_inner, inner)?)
                             }
                         },
                         dt => match super_type_inner {
                             None => super_type_inner = Some((*dt).clone()),
                             Some(st_inner) => {
-                                super_type_inner = try_get_supertype(&st_inner, dt).ok()
+                                super_type_inner = Some(try_get_supertype(&st_inner, dt)?)
                             }
                         },
                     }
                 }
-                DataType::List(Box::new(super_type_inner.unwrap()))
+                Ok(DataType::List(Box::new(super_type_inner.unwrap())))
             })
         };
 
