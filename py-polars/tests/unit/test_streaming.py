@@ -1,6 +1,7 @@
 from datetime import date
 
 import numpy as np
+import pytest
 
 import polars as pl
 
@@ -70,6 +71,24 @@ def test_streaming_groupby_types() -> None:
             "date_first": [date(2022, 1, 1)],
             "date_last": [date(2022, 1, 1)],
         }
+
+    with pytest.raises(pl.DuplicateError):
+        (
+            df.lazy()
+            .groupby("person_id")
+            .agg(
+                [
+                    pl.col("person_name").first().alias("str_first"),
+                    pl.col("person_name").last().alias("str_last"),
+                    pl.col("person_name").mean().alias("str_mean"),
+                    pl.col("person_name").sum().alias("str_sum"),
+                    pl.col("bool").first().alias("bool_first"),
+                    pl.col("bool").last().alias("bool_first"),
+                ]
+            )
+            .select(pl.all().exclude("person_id"))
+            .collect(streaming=True)
+        )
 
 
 def test_streaming_non_streaming_gb() -> None:
