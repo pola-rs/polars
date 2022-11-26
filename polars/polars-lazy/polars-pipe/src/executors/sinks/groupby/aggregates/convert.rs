@@ -145,8 +145,6 @@ where
                 }
                 let agg_fn = match logical_dtype.to_physical() {
                     dt if dt.is_integer() => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
-                    // Boolean is aggregated as the IDX type.
-                    DataType::Boolean => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
                     DataType::Float32 => AggregateFunction::MeanF32(MeanAgg::<f32>::new()),
                     DataType::Float64 => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
                     dt => AggregateFunction::Null(NullAgg::new(dt)),
@@ -156,12 +154,18 @@ where
             AAggExpr::First(input) => {
                 let phys_expr = to_physical(*input, expr_arena).unwrap();
                 let dtype = phys_expr.field(schema).unwrap().dtype;
-                (phys_expr, AggregateFunction::First(FirstAgg::new(dtype)))
+                (
+                    phys_expr,
+                    AggregateFunction::First(FirstAgg::new(dtype.to_physical())),
+                )
             }
             AAggExpr::Last(input) => {
                 let phys_expr = to_physical(*input, expr_arena).unwrap();
                 let dtype = phys_expr.field(schema).unwrap().dtype;
-                (phys_expr, AggregateFunction::Last(LastAgg::new(dtype)))
+                (
+                    phys_expr,
+                    AggregateFunction::Last(LastAgg::new(dtype.to_physical())),
+                )
             }
             AAggExpr::Count(input) => {
                 let phys_expr = to_physical(*input, expr_arena).unwrap();

@@ -437,13 +437,13 @@ impl<'a> AnyValueBuffer<'a> {
             (Float32(builder), val) => builder.append_value(val.extract()?),
             (Float64(builder), val) => builder.append_value(val.extract()?),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
+            (Utf8(builder), AnyValue::Utf8Owned(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use anyvalues for that
             (All(_, vals), v) => vals.push(v),
 
             // dynamic types
             (Utf8(builder), av) => match av {
-                AnyValue::Utf8(v) => builder.append_value(v),
                 AnyValue::Int64(v) => builder.append_value(&format!("{}", v)),
                 AnyValue::Float64(v) => builder.append_value(&format!("{}", v)),
                 AnyValue::Boolean(true) => builder.append_value("true"),

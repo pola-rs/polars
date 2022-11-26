@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import numpy as np
 import pytest
 
 import polars as pl
@@ -221,17 +220,3 @@ def test_groupby_wildcard() -> None:
     assert df.groupby([pl.col("*")], maintain_order=True).agg(
         [pl.col("a").first().suffix("_agg")]
     ).to_dict(False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}
-
-
-def test_streaming_non_streaming_gb() -> None:
-    n = 100
-    df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
-    q = df.lazy().groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
-
-    q = df.lazy().with_column(pl.col("a").cast(pl.Utf8))
-    q = q.groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
-    q = df.lazy().with_column(pl.col("a").alias("b"))
-    q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())

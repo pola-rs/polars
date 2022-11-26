@@ -649,7 +649,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return self._ldf.describe_plan()
 
-    @deprecated_alias(streaming="allow_streaming")
+    @deprecated_alias(allow_streaming="streaming")
     def describe_optimized_plan(
         self,
         type_coercion: bool = True,
@@ -673,7 +673,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return ldf.describe_optimized_plan()
 
-    @deprecated_alias(streaming="allow_streaming")
+    @deprecated_alias(allow_streaming="streaming")
     def show_graph(
         self,
         optimized: bool = True,
