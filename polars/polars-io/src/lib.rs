@@ -22,11 +22,15 @@ pub mod ndjson_core;
 #[cfg(any(
     feature = "csv-file",
     feature = "parquet",
+    feature = "delta",
     feature = "ipc",
     feature = "json"
 ))]
 pub mod mmap;
 mod options;
+#[cfg(feature = "delta")]
+#[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
+pub mod delta;
 #[cfg(feature = "parquet")]
 #[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;

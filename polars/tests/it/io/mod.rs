@@ -5,6 +5,7 @@ mod json;
 
 #[cfg(feature = "parquet")]
 mod parquet;
+mod delta;
 
 #[cfg(feature = "ipc_streaming")]
 mod ipc_stream;

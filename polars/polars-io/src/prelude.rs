@@ -9,6 +9,8 @@ pub use crate::ipc::*;
 pub use crate::json::*;
 #[cfg(feature = "json")]
 pub use crate::ndjson_core::ndjson::*;
+#[cfg(feature = "delta")]
+pub use crate::delta::*;
 #[cfg(feature = "parquet")]
 pub use crate::parquet::*;
 pub use crate::utils::*;

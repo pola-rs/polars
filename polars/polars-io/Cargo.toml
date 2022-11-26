@@ -31,6 +31,7 @@ dtype-binary = ["polars-core/dtype-binary"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
+delta = ["parquet"]
 partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 # don't use this
@@ -41,6 +42,7 @@ ahash.workspace = true
 anyhow.workspace = true
 arrow.workspace = true
 csv-core = { version = "0.1.10", optional = true }
+deltalake = { version = "0.4.1", default-features = false, features = ["parquet2"], git = "https://github.com/delta-io/delta.rs" }
 dirs = "4.0"
 flate2 = { version = "1", optional = true, default-features = false }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-floats", "parse-integers"] }
