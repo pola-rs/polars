@@ -65,23 +65,19 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
         .map(|lf| Ok(lf.schema()?))
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let upper_bound_width = schemas
-        .iter()
-        .map(|sch| sch.len())
-        .sum();
+    let upper_bound_width = schemas.iter().map(|sch| sch.len()).sum();
 
     // Use Vec to preserve order
     let mut column_names = Vec::with_capacity(upper_bound_width);
     let mut total_schema = Vec::with_capacity(upper_bound_width);
 
     for sch in schemas.iter() {
-        sch.iter()
-            .for_each(|(name, dtype)|{
-                if !column_names.contains(name) {
-                    column_names.push(name.clone());
-                    total_schema.push((name.clone(), dtype.clone()));
-                }
-            });
+        sch.iter().for_each(|(name, dtype)| {
+            if !column_names.contains(name) {
+                column_names.push(name.clone());
+                total_schema.push((name.clone(), dtype.clone()));
+            }
+        });
     }
 
     let lfs_with_all_columns = lfs
@@ -89,7 +85,6 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
         // Zip Frames with their Schemas
         .zip(schemas.into_iter())
         .map(|(mut lf, lf_schema)| {
-
             for (name, dtype) in total_schema.iter() {
                 // If a name from Total Schema is not present - append
                 if lf_schema.get_field(name).is_none() {
@@ -111,7 +106,6 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
 
     concat(lfs_with_all_columns, rechunk, parallel)
 }
-
 
 /// Concat multiple
 pub fn concat<L: AsRef<[LazyFrame]>>(
@@ -155,8 +149,7 @@ mod test {
             "d" => [1, 2]
         ]?;
 
-        let out = diag_concat_lf(&[a.lazy(), b.lazy(), c.lazy()], false, false)?
-            .collect()?;
+        let out = diag_concat_lf(&[a.lazy(), b.lazy(), c.lazy()], false, false)?.collect()?;
 
         let expected = df![
             "a" => [Some(1), Some(2), None, None, Some(5), Some(7)],
