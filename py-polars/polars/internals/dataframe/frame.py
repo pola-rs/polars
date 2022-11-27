@@ -5606,15 +5606,11 @@ class DataFrame:
         )
 
     @overload
-    def n_chunks(self, strategy: Literal["first"]) -> int:
+    def n_chunks(self, strategy: Literal["first"] = ...) -> int:
         ...
 
     @overload
     def n_chunks(self, strategy: Literal["all"]) -> list[int]:
-        ...
-
-    @overload
-    def n_chunks(self, strategy: str = "first") -> int | list[int]:
         ...
 
     def n_chunks(self, strategy: str = "first") -> int | list[int]:
