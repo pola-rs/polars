@@ -84,7 +84,7 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
             });
     }
 
-    let dfs = lfs
+    let lfs_with_all_columns = lfs
         .into_iter()
         // Zip Frames with their Schemas
         .zip(schemas.into_iter())
@@ -109,7 +109,7 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    concat(dfs, rechunk, parallel)
+    concat(lfs_with_all_columns, rechunk, parallel)
 }
 
 
