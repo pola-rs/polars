@@ -101,21 +101,28 @@ shape: (5, 8)
 
 ## Performance 🚀🚀
 
+### Blazingly fast
 Polars is very fast. In fact, it is one of the best performing solutions available.
 See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
 
 In the [TPCH benchmarks](https://www.pola.rs/benchmarks.html) polars is orders of magnitudes faster than pandas, dask, modin and vaex
 on full queries (including IO).
 
-Besides fast, polars is also very lightweight. It comes with zero required dependencies, and this shows in the import times:
-
-### import time measurements:
-
+### Lightweight
+Polars is also very lightweight. It comes with zero required dependencies, and this shows in the import times:
 - polars: 70ms
 - numpy: 104ms
 - pandas: 520ms
 
-## Python setup
+### Handles larger than RAM data
+If you have data that does not fit into memory, polars lazy is able to process your query (or parts of your query) in a
+streaming fashion, this drastically reduces memory requirements you might be able to process your 250GB dataset on your
+laptop. Collect with `collect(allow_streaming=True)` to run the query streaming. (This might be a little slower, but
+it is still very fast!)
+
+## Setup
+
+### Python
 
 Install the latest polars version with:
 
@@ -125,7 +132,7 @@ pip install polars
 
 We also have a conda package (`conda install polars`), however pip is the preferred way to install Polars.
 
-### Install Polars with all optional dependencies.
+Install Polars with all optional dependencies.
 
 ```sh
 pip install 'polars[all]'
@@ -147,7 +154,7 @@ You can also install the dependencies directly.
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
 
-## Rust setup
+### Rust
 
 You can take latest release from `crates.io`, or if you want to use the latest features / performance improvements
 point to the `master` branch of this repo.
@@ -156,44 +163,23 @@ point to the `master` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-#### Rust version
-
 Required Rust version `>=1.58`
 
-## Documentation
 
-Want to know about all the features Polars supports? Read the docs!
+### Node.js
 
-## Larger than RAM data
+Install:
+```sh
+yarn add nodejs-polars
+```
 
-If you have data that does not fit into memory, polars lazy is able to process your query (or parts of your query) in a
-streaming fashion, this drastically reduces memory requirements you might be able to process your 250GB dataset on your
-laptop. Collect with `collect(allow_streaming=True)` to run the query streaming. (This might be a little slower, but
-it is still very fast!)
+The Node.js code is hosted in a [separate Github repository](https://github.com/pola-rs/nodejs-polars).
 
-#### Python
-
-- Installation guide: `pip install polars`
-- [Python documentation](https://pola-rs.github.io/polars/py-polars/html/reference/index.html)
-- [User guide](https://pola-rs.github.io/polars-book/)
-
-#### Rust
-
-- [Rust documentation (master branch)](https://pola-rs.github.io/polars/polars/index.html)
-- [User guide](https://pola-rs.github.io/polars-book/)
-
-#### Node
-
-- Installation guide: `yarn add nodejs-polars`
-- [Node documentation](https://pola-rs.github.io/nodejs-polars/index.html)
-- [User guide](https://pola-rs.github.io/polars-book/)
-- [Github](https://github.com/pola-rs/nodejs-polars)
-
-## Contribution
+## Contributing
 
 Want to contribute? Read our [contribution guideline](https://github.com/pola-rs/polars/blob/master/CONTRIBUTING.md).
 
-## \[Python\]: compile polars from source
+### Python: compile polars from source
 
 If you want a bleeding edge release or maximal performance you should compile **polars** from source.
 
@@ -225,7 +211,7 @@ Arrow2 also has a more granular code base, helping to reduce the compiler bloat.
 
 See [this example](./examples/python_rust_compiled_function).
 
-# Going big...
+## Going big...
 
 Do you expect more than `2^32` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
 
@@ -233,7 +219,7 @@ Or for python users install `pip install polars-u64-idx`.
 
 Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
 
-# Legacy
+## Legacy
 
 Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip polars-lts-cpu`. This polars project is
 compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
