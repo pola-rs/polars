@@ -105,6 +105,9 @@ else:
     from typing_extensions import Concatenate, ParamSpec, TypeAlias
 
 if TYPE_CHECKING:
+    from polars.internals.interchange.dataframe_protocol import (
+        DataFrame as DataFrameXchg,
+    )
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -1125,6 +1128,39 @@ class DataFrame:
 
         """
         return dict(zip(self.columns, self.dtypes))
+
+    def __dataframe__(
+        self, nan_as_null: bool = False, allow_copy: bool = True
+    ) -> DataFrameXchg:
+        """
+        Return the dataframe interchange object implementing the interchange protocol.
+
+        Parameters
+        ----------
+        nan_as_null
+            Whether to tell the DataFrame to overwrite null values in the data
+            with ``NaN``.
+        allow_copy
+            Whether to allow memory copying when exporting. If set to False
+            it would cause non-zero-copy exports to fail.
+
+        Returns
+        -------
+        DataFrame interchange object which consuming library can use to ingress the
+        dataframe.
+
+        Notes
+        -----
+        Details on the interchange protocol:
+        https://data-apis.org/dataframe-protocol/latest/index.html
+
+        `nan_as_null` currently has no effect; once support for nullable extension
+        dtypes is added, this value should be propagated to columns.
+        """
+
+        from polars.internals.interchange.dataframe import PolarsDataFrameXchg
+
+        return PolarsDataFrameXchg(self, nan_as_null, allow_copy)
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
@@ -2375,6 +2411,10 @@ class DataFrame:
             self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
             )
+
+    def get_chunks(self) -> Iterable[DataFrame]:
+        """Return an iteratable yielding the chunks of this DataFrame."""
+        pass
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
