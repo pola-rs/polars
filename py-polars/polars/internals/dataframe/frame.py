@@ -2557,7 +2557,7 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
-    def glimpse(self: DF) -> None:
+    def glimpse(self: DF) -> str:
         """
         Print a dense preview of the dataframe.
 
@@ -2616,16 +2616,17 @@ class DataFrame:
         max_col_values = 100 - max_col_name - max_col_dtype
 
         # print header
-        print(f"Rows: {self.height}")
-        print(f"Columns: {self.width}")
+        output = f"Rows: {self.height}\nColumns: {self.width}\n"
 
         # print individual columns: one row per column
         for col_name, dtype_str, val_str in data:
-            print(
+            output += (
                 f"$ {col_name:<{max_col_name}}"
                 f" {dtype_str:>{max_col_dtype}}"
-                f" {val_str:<{max_col_values}}"
+                f" {val_str:<{max_col_values}}\n"
             )
+
+        return output
 
     def describe(self: DF) -> DF:
         """

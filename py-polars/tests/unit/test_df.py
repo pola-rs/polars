@@ -1,3 +1,4 @@
+# flake8: noqa: W291
 from __future__ import annotations
 
 import sys
@@ -2522,7 +2523,7 @@ def test_init_physical_with_timezone() -> None:
         ]
 
 
-def test_glimpse(capsys) -> None:  # type: ignore[no-untyped-def]
+def test_glimpse() -> None:
     df = pl.DataFrame(
         {
             "a": [1.0, 2.8, 3.0],
@@ -2533,8 +2534,7 @@ def test_glimpse(capsys) -> None:  # type: ignore[no-untyped-def]
             "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
         }
     )
-    df.glimpse()
-    result = capsys.readouterr().out
+    result = df.glimpse()
 
     expected = """Rows: 3
 Columns: 6
