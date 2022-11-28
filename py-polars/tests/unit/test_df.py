@@ -1182,8 +1182,9 @@ def test_literal_series() -> None:
 
 
 def test_to_html(df: pl.DataFrame) -> None:
-    # check if it does not panic/ error
-    df._repr_html_()
+    # check it does not panic/error, and appears to contain a table
+    html = df._repr_html_()
+    assert "<table" in html
 
 
 def test_rows() -> None:
