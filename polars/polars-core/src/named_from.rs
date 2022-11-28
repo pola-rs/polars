@@ -468,8 +468,8 @@ mod test {
             "datetime" => [NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0)],
             "optional_date" => [Some(NaiveDate::from_ymd(2021, 1, 1))],
             "optional_datetime" => [Some(NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0))],
-            "time" => [NaiveTime::from_hms(23, 23, 23)],
-            "optional_time" => [Some(NaiveTime::from_hms(23, 23, 23))],
+            "time" => [NaiveTime::from_hms_opt(23, 23, 23).unwrap()],
+            "optional_time" => [Some(NaiveTime::from_hms_opt(23, 23, 23).unwrap())],
             "duration" => [ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap()],
             "optional_duration" => [Some(ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap())],
         ].unwrap();
