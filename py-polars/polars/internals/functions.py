@@ -298,9 +298,9 @@ def date_range(
     Using polars duration string to specify the interval:
 
     >>> from datetime import date
-    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="drange")
+    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="dtrange")
     shape: (3,)
-    Series: 'drange' [date]
+    Series: 'dtrange' [date]
     [
         2022-01-01
         2022-02-01
@@ -329,14 +329,16 @@ def date_range(
     ]
 
     """
+    if name is None:
+        name = ""
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
     elif " " in interval:
         interval = interval.replace(" ", "")
 
     if isinstance(low, pli.Expr) or isinstance(high, pli.Expr) or lazy:
-        low = pli.expr_to_lit_or_expr(low, str_to_lit=True)
-        high = pli.expr_to_lit_or_expr(high, str_to_lit=True)
+        low = pli.expr_to_lit_or_expr(low, str_to_lit=True)._pyexpr
+        high = pli.expr_to_lit_or_expr(high, str_to_lit=True)._pyexpr
         return pli.wrap_expr(
             _py_date_range_lazy(low, high, interval, closed, name, time_zone)
         )
@@ -370,9 +372,6 @@ def date_range(
 
     start = _datetime_to_pl_timestamp(low, tu)
     stop = _datetime_to_pl_timestamp(high, tu)
-    if name is None:
-        name = ""
-
     dt_range = pli.wrap_s(
         _py_date_range(start, stop, interval, closed, name, tu, time_zone)
     )
