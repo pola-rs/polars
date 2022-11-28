@@ -516,6 +516,72 @@ def test_date_range() -> None:
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
 
+def test_date_range_lazy() -> None:
+    # lazy date range with literals
+    df = pl.DataFrame({"misc": ["x"]}).with_columns(
+        pl.date_range(
+            date(2000, 1, 1),
+            date(2023, 8, 31),
+            interval="987d",
+            lazy=True,
+        )
+        .list()
+        .alias("dts")
+    )
+    assert df.rows() == [
+        (
+            "x",
+            [
+                date(2000, 1, 1),
+                date(2002, 9, 14),
+                date(2005, 5, 28),
+                date(2008, 2, 9),
+                date(2010, 10, 23),
+                date(2013, 7, 6),
+                date(2016, 3, 19),
+                date(2018, 12, 1),
+                date(2021, 8, 14),
+            ],
+        )
+    ]
+    assert (
+        df.rows()[0][1]
+        == pd.date_range(
+            date(2000, 1, 1), date(2023, 12, 31), freq="987d"
+        ).date.tolist()
+    )
+
+    # lazy date range with expressions
+    ldf = (
+        pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
+        .with_columns(
+            pl.date_range(
+                pl.col("start"),
+                pl.col("stop"),
+                interval="678d",
+                lazy=True,
+            )
+            .list()
+            .alias("dts")
+        )
+        .lazy()
+    )
+
+    assert ldf.collect().rows() == [
+        (
+            date(2015, 6, 30),
+            date(2022, 12, 31),
+            [
+                date(2015, 6, 30),
+                date(2017, 5, 8),
+                date(2019, 3, 17),
+                date(2021, 1, 23),
+                date(2022, 12, 2),
+            ],
+        )
+    ]
+
+
 @pytest.mark.parametrize(
     "one,two",
     [
