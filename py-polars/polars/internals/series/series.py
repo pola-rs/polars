@@ -950,6 +950,10 @@ class Series:
                 f" `{method}`."
             )
 
+    def _repr_html_(self) -> str:
+        """Format output data in HTML for display in Jupyter Notebooks."""
+        return self.to_frame()._repr_html_(from_series=True)
+
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
         Return an estimation of the total (heap) allocated size of the Series.

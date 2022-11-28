@@ -1471,7 +1471,7 @@ class DataFrame:
     def _ipython_key_completions_(self) -> list[str]:
         return self.columns
 
-    def _repr_html_(self) -> str:
+    def _repr_html_(self, **kwargs: Any) -> str:
         """
         Format output data in HTML for display in Jupyter Notebooks.
 
@@ -1489,7 +1489,15 @@ class DataFrame:
         if max_rows < 0:
             max_rows = self.shape[0]
 
-        return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
+        from_series = kwargs.get("from_series", False)
+        return "\n".join(
+            NotebookFormatter(
+                self,
+                max_cols=max_cols,
+                max_rows=max_rows,
+                from_series=from_series,
+            ).render()
+        )
 
     def to_arrow(self) -> pa.Table:
         """
