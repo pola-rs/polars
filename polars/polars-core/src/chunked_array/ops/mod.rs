@@ -58,12 +58,6 @@ pub trait ToList<T: PolarsDataType> {
     }
 }
 
-#[cfg(feature = "interpolate")]
-pub trait Interpolate {
-    #[must_use]
-    fn interpolate(&self) -> Self;
-}
-
 #[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
     fn reinterpret_signed(&self) -> Series {

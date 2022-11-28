@@ -31,6 +31,7 @@ class ExprStringNameSpace:
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
+        cache: bool = True,
     ) -> pli.Expr:
         """
         Parse a Utf8 expression to a Date/Datetime/Time type.
@@ -48,6 +49,8 @@ class ExprStringNameSpace:
         exact
             - If True, require an exact format match.
             - If False, allow the format to match anywhere in the target string.
+        cache
+            Use a cache of unique, converted dates to apply the datetime conversion.
 
         Notes
         -----
@@ -99,13 +102,15 @@ class ExprStringNameSpace:
             raise ValueError(f"expected: {DataType} got: {datatype}")
 
         if datatype == Date:
-            return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
+            return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
-            dtcol = pli.wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
+            dtcol = pli.wrap_expr(
+                self._pyexpr.str_parse_datetime(fmt, strict, exact, cache)
+            )
             return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
         elif datatype == Time:
-            return pli.wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact))
+            return pli.wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact, cache))
         else:  # pragma: no cover
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
 

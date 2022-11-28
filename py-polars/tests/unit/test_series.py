@@ -2395,6 +2395,12 @@ def test_repr() -> None:
         assert str(n) in x_repr
 
 
+def test_repr_html(df: pl.DataFrame) -> None:
+    # check it does not panic/error, and appears to contain a table
+    html = pl.Series("misc", [123, 456, 789])._repr_html_()
+    assert "<table" in html
+
+
 def test_builtin_abs() -> None:
     s = pl.Series("s", [-1, 0, 1, None])
     assert abs(s).to_list() == [1, 0, 1, None]

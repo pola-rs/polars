@@ -156,11 +156,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         }
     }
 
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.clone().into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.logical_mut().rename(name);
     }

@@ -68,7 +68,11 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import InterpolationMethod, IntoExpr, TimeUnit
+    from polars.internals.type_aliases import (
+        IntoExpr,
+        RollingInterpolationMethod,
+        TimeUnit,
+    )
 
 
 def col(
@@ -1308,7 +1312,7 @@ def groups(column: str) -> pli.Expr:
 
 
 def quantile(
-    column: str, quantile: float, interpolation: InterpolationMethod = "nearest"
+    column: str, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
 ) -> pli.Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.

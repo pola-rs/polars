@@ -32,11 +32,11 @@ bitflags = "1.3"
 
 [workspace.dependencies.arrow]
 package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-git = "https://github.com/ritchie46/arrow2"
-# rev = "e106cff24dc0c8942603712d7332a97871dce44e"
+git = "https://github.com/jorgecarleitao/arrow2"
+# git = "https://github.com/ritchie46/arrow2"
+rev = "368aacc173a27e2a763d2c6396682a688e5a2707"
 # path = "../../../arrow2"
-branch = "2022_11_06"
+# branch = "2022_11_06"
 version = "0.14.1"
 default-features = false
 features = [

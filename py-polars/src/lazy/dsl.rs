@@ -511,7 +511,13 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    pub fn str_parse_date(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
+    pub fn str_parse_date(
+        &self,
+        fmt: Option<String>,
+        strict: bool,
+        exact: bool,
+        cache: bool,
+    ) -> PyExpr {
         self.inner
             .clone()
             .str()
@@ -520,11 +526,18 @@ impl PyExpr {
                 fmt,
                 strict,
                 exact,
+                cache,
             })
             .into()
     }
 
-    pub fn str_parse_datetime(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
+    pub fn str_parse_datetime(
+        &self,
+        fmt: Option<String>,
+        strict: bool,
+        exact: bool,
+        cache: bool,
+    ) -> PyExpr {
         let tu = match fmt {
             Some(ref fmt) => {
                 if fmt.contains("%.9f")
@@ -549,11 +562,18 @@ impl PyExpr {
                 fmt,
                 strict,
                 exact,
+                cache,
             })
             .into()
     }
 
-    pub fn str_parse_time(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
+    pub fn str_parse_time(
+        &self,
+        fmt: Option<String>,
+        strict: bool,
+        exact: bool,
+        cache: bool,
+    ) -> PyExpr {
         self.inner
             .clone()
             .str()
@@ -562,6 +582,7 @@ impl PyExpr {
                 fmt,
                 strict,
                 exact,
+                cache,
             })
             .into()
     }
@@ -1113,8 +1134,8 @@ impl PyExpr {
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()
     }
-    pub fn interpolate(&self) -> PyExpr {
-        self.inner.clone().interpolate().into()
+    pub fn interpolate(&self, method: Wrap<InterpolationMethod>) -> PyExpr {
+        self.inner.clone().interpolate(method.0).into()
     }
 
     pub fn rolling_sum(

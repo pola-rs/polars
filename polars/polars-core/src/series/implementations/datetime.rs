@@ -197,14 +197,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         }
     }
 
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0
-            .interpolate()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }

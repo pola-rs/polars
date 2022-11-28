@@ -79,6 +79,7 @@ where
             write_statistics: self.statistics,
             compression: self.compression,
             version: write::Version::V2,
+            data_pagesize_limit: None,
         };
         let schema = ArrowSchema::from(fields);
         let parquet_schema = write::to_parquet_schema(&schema)?;

@@ -136,7 +136,7 @@ pub struct DataFrame {
     pub(crate) columns: Vec<Series>,
 }
 
-fn duplicate_err(name: &str) -> PolarsResult<()> {
+pub fn _duplicate_err(name: &str) -> PolarsResult<()> {
     Err(PolarsError::Duplicate(
         format!("Column with name: '{}' has more than one occurrences", name).into(),
     ))
@@ -228,7 +228,7 @@ impl DataFrame {
         let shape_err = |s: &[Series]| {
             let msg = format!(
                 "Could not create a new DataFrame from Series. \
-            The Series have different lengths.\
+            The Series have different lengths. \
             Got {:?}",
                 s
             );
@@ -254,7 +254,7 @@ impl DataFrame {
                 let name = s.name();
 
                 if names.contains(name) {
-                    duplicate_err(name)?
+                    _duplicate_err(name)?
                 }
 
                 names.insert(name);
@@ -282,7 +282,7 @@ impl DataFrame {
                 let name = series.name().to_string();
 
                 if names.contains(&name) {
-                    duplicate_err(&name)?
+                    _duplicate_err(&name)?
                 }
 
                 series_cols.push(series);
@@ -1425,7 +1425,7 @@ impl DataFrame {
             let mut names = PlHashSet::with_capacity(cols.len());
             for name in cols {
                 if !names.insert(name.as_str()) {
-                    duplicate_err(name)?
+                    _duplicate_err(name)?
                 }
             }
         }

@@ -806,6 +806,22 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<InterpolationMethod> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "linear" => InterpolationMethod::Linear,
+            "nearest" => InterpolationMethod::Nearest,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "method must be one of {{'linear', 'nearest'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "avro")]
 impl FromPyObject<'_> for Wrap<Option<AvroCompression>> {
     fn extract(ob: &PyAny) -> PyResult<Self> {

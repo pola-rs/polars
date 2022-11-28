@@ -10,7 +10,11 @@ from polars.utils import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
     from polars.datatypes import DataType
-    from polars.internals.type_aliases import ClosedWindow, InterpolationMethod, StartBy
+    from polars.internals.type_aliases import (
+        ClosedWindow,
+        RollingInterpolationMethod,
+        StartBy,
+    )
     from polars.polars import PyDataFrame
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
@@ -735,7 +739,7 @@ class GroupBy(Generic[DF]):
         return self.agg(pli.all().n_unique())
 
     def quantile(
-        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
     ) -> pli.DataFrame:
         """
         Compute the quantile per group.
@@ -1011,7 +1015,7 @@ class GBSelection(Generic[DF]):
         )
 
     def quantile(
-        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
     ) -> DF:
         """
         Compute the quantile per group.

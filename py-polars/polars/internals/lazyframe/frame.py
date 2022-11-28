@@ -61,9 +61,9 @@ if TYPE_CHECKING:
         ClosedWindow,
         CsvEncoding,
         FillNullStrategy,
-        InterpolationMethod,
         JoinStrategy,
         ParallelStrategy,
+        RollingInterpolationMethod,
         StartBy,
         UniqueKeepStrategy,
     )
@@ -649,7 +649,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return self._ldf.describe_plan()
 
-    @deprecated_alias(streaming="allow_streaming")
+    @deprecated_alias(allow_streaming="streaming")
     def describe_optimized_plan(
         self,
         type_coercion: bool = True,
@@ -673,7 +673,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return ldf.describe_optimized_plan()
 
-    @deprecated_alias(streaming="allow_streaming")
+    @deprecated_alias(allow_streaming="streaming")
     def show_graph(
         self,
         optimized: bool = True,
@@ -3431,7 +3431,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         return self._from_pyldf(self._ldf.median())
 
     def quantile(
-        self: LDF, quantile: float, interpolation: InterpolationMethod = "nearest"
+        self: LDF,
+        quantile: float,
+        interpolation: RollingInterpolationMethod = "nearest",
     ) -> LDF:
         """
         Aggregate the columns in the DataFrame to their quantile value.

@@ -1182,8 +1182,9 @@ def test_literal_series() -> None:
 
 
 def test_to_html(df: pl.DataFrame) -> None:
-    # check if it does not panic/ error
-    df._repr_html_()
+    # check it does not panic/error, and appears to contain a table
+    html = df._repr_html_()
+    assert "<table" in html
 
 
 def test_rows() -> None:
@@ -1387,10 +1388,10 @@ def test_reproducible_hash_with_seeds() -> None:
     seeds = (11, 22, 33, 44)
 
     # TODO: introduce a platform-stable string hash...
-    #  in the meantime, account for arm64 (mac) hash values to reduce noise
+    #  in the meantime, try to account for arm64 (mac) hash values to reduce noise
     expected = pl.Series(
         "s",
-        [8823051245921001677, 988796329533502010, 7528667241828618484]
+        [6629530352159708028,15496313222292466864,6048298245521876612]
         if platform.mac_ver()[-1] == "arm64"
         else [6629530352159708028, 988796329533502010, 6048298245521876612],
         dtype=pl.UInt64,

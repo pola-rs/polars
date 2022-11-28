@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use polars_core::frame::_duplicate_err;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
@@ -425,6 +426,20 @@ impl LogicalPlanBuilder {
             into
         );
         schema.merge(other);
+
+        if schema.len() < keys.len() + aggs.len() {
+            let check_names = || {
+                let mut names = PlHashSet::with_capacity(schema.len());
+                for expr in aggs.iter().chain(keys.iter()) {
+                    let name = expr_output_name(expr)?;
+                    if !names.insert(name.clone()) {
+                        return _duplicate_err(name.as_ref());
+                    }
+                }
+                Ok(())
+            };
+            try_delayed!(check_names(), &self.0, into)
+        }
 
         #[cfg(feature = "dynamic_groupby")]
         {

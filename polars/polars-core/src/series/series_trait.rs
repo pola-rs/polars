@@ -198,10 +198,6 @@ pub trait SeriesTrait:
         IsSorted::Not
     }
 
-    #[cfg(feature = "interpolate")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
-    fn interpolate(&self) -> Series;
-
     /// Rename the Series.
     fn rename(&mut self, name: &str);
 

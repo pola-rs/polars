@@ -628,6 +628,10 @@ def test_fill_nan() -> None:
     assert df.select(pl.col("a").fill_nan(2))["a"].series_equal(
         pl.Series("a", [1.0, 2.0, 3.0])
     )
+    # nearest
+    assert pl.Series([None, 1, None, None, None, -8, None, None, 10]).interpolate(
+        method="nearest"
+    ).to_list() == [None, 1, 1, -8, -8, -8, -8, 10, 10]
 
 
 def test_fill_null() -> None:

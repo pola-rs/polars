@@ -1558,9 +1558,8 @@ impl Expr {
     // Interpolate None values
     #[cfg(feature = "interpolate")]
     #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
-    pub fn interpolate(self) -> Expr {
-        self.apply(|s| Ok(s.interpolate()), GetOutput::same_type())
-            .with_fmt("interpolate")
+    pub fn interpolate(self, method: InterpolationMethod) -> Expr {
+        self.apply_private(FunctionExpr::Interpolate(method))
     }
 
     #[cfg(feature = "rolling_window")]
