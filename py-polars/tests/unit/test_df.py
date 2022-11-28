@@ -1391,7 +1391,7 @@ def test_reproducible_hash_with_seeds() -> None:
     #  in the meantime, try to account for arm64 (mac) hash values to reduce noise
     expected = pl.Series(
         "s",
-        [6629530352159708028,15496313222292466864,6048298245521876612]
+        [6629530352159708028, 15496313222292466864, 6048298245521876612]
         if platform.mac_ver()[-1] == "arm64"
         else [6629530352159708028, 988796329533502010, 6048298245521876612],
         dtype=pl.UInt64,
