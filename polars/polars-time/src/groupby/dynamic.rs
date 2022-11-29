@@ -758,7 +758,7 @@ mod test {
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
         let df = DataFrame::new(vec![range, groups.clone()]).unwrap();
 
-        let (mut time_key, mut keys, groups) = df
+        let (mut time_key, keys, _groups) = df
             .groupby_dynamic(
                 vec![groups],
                 &DynamicGroupOptions {

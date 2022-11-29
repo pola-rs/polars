@@ -1,5 +1,3 @@
-use polars_core::prelude::JoinType::AsOf;
-
 use super::*;
 
 fn get_csv_file() -> LazyFrame {

@@ -1287,7 +1287,6 @@ mod test {
             .unwrap();
         // create a new cache
         reset_string_cache();
-        let sc = IUseStringCache::new();
 
         df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
