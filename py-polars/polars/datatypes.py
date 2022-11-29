@@ -242,6 +242,7 @@ class Datetime(DataType):
             ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
+        # TODO: Remove the `or "us"` part, since time_unit cannot be None.
         self.tu = time_unit or "us"
         self.tz = time_zone
 
