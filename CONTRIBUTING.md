@@ -146,6 +146,11 @@ Once all issues are resolved, the maintainer will merge your pull request, and y
 Keep in mind that your work does not have to be perfect right away!
 If you are stuck or unsure about your solution, feel free to open a draft pull request and ask for help.
 
+## Any contributions you make will be under the MIT Software License
+
+In short, when you submit code changes, your submissions are understood to be under the same
+[MIT License](https://choosealicense.com/licenses/mit/) that covers the project.
+
 ## Contributing to documentation
 
 The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars-book/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
