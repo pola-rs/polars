@@ -226,10 +226,10 @@ class Date(DataType):
 class Datetime(DataType):
     """Calendar date and time type."""
 
-    tu: TimeUnit | None = None
+    tu: TimeUnit
     tz: str | None = None
 
-    def __init__(self, time_unit: TimeUnit | None = "us", time_zone: str | None = None):
+    def __init__(self, time_unit: TimeUnit = "us", time_zone: str | None = None):
         """
         Calendar date and time type.
 
@@ -261,7 +261,7 @@ class Datetime(DataType):
 class Duration(DataType):
     """Time duration/delta type."""
 
-    tu: TimeUnit | None = None
+    tu: TimeUnit
 
     def __init__(self, time_unit: TimeUnit = "us"):
         """

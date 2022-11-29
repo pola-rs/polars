@@ -2482,7 +2482,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_europe = "Europe/Amsterdam"
 
     dtm = datetime(2022, 10, 12, 12, 30, tzinfo=zoneinfo.ZoneInfo("UTC"))
-    for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
+    for tu in DTYPE_TEMPORAL_UNITS:
         df = pl.DataFrame(
             data={"d1": [dtm], "d2": [dtm]},
             columns=[
@@ -2504,7 +2504,7 @@ def test_init_physical_with_timezone() -> None:
     tz_asia = "Asia/Tokyo"
 
     dtm_us = 1665577800000000
-    for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
+    for tu in DTYPE_TEMPORAL_UNITS:
         dtm = {"ms": dtm_us // 1_000, "ns": dtm_us * 1_000}.get(str(tu), dtm_us)
         df = pl.DataFrame(
             data={"d1": [dtm], "d2": [dtm]},
