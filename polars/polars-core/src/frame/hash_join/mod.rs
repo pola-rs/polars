@@ -1288,6 +1288,9 @@ mod test {
         // create a new cache
         reset_string_cache();
 
+        // _sc is needed to ensure we hold the string cache.
+        let _sc = IUseStringCache::new();
+
         df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
         let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left, None);
