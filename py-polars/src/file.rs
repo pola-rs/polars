@@ -251,14 +251,14 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
     }
     // a normal python file: with open(...) as f:.
     else if py_f.getattr("read").is_ok() {
-        // we can still get a file name so open the file instead of go through read
-        if let Ok(filename) = py_f.getattr("name") {
-            let filename = filename.downcast::<PyString>()?;
-            let f = File::open(filename.to_str()?)?;
-            Ok(Box::new(f))
+        // we can still get a file name, inform the user of possibly wrong API usage.
+        if py_f.getattr("name").is_ok() {
+            eprint!("Polars found a filename. \
+            Ensure you pass a path to the file instead of a python file object when possible for best \
+            performance.")
         }
         // a bytesIO
-        else if let Ok(bytes) = py_f.call_method0("getvalue") {
+        if let Ok(bytes) = py_f.call_method0("getvalue") {
             let bytes = bytes.downcast::<PyBytes>()?;
             Ok(Box::new(Cursor::new(bytes.as_bytes())))
         }
