@@ -496,6 +496,7 @@ pub fn get_list_builder(
 pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
+    fast_explode: bool,
     pub dtype: Option<DataType>,
 }
 
@@ -510,6 +511,7 @@ impl<'a> AnonymousListBuilder<'a> {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
+            fast_explode: true,
             dtype: inner_dtype,
         }
     }
@@ -543,6 +545,7 @@ impl<'a> AnonymousListBuilder<'a> {
 
     #[inline]
     pub fn append_empty(&mut self) {
+        self.fast_explode = false;
         self.builder.push_empty()
     }
 
@@ -550,7 +553,7 @@ impl<'a> AnonymousListBuilder<'a> {
         // empty arrays tend to be null type and thus differ
         // if we would push it the concat would fail.
         if s.is_empty() && matches!(s.dtype(), DataType::Null) {
-            self.builder.push_empty()
+            self.append_empty();
         } else {
             match s.dtype() {
                 #[cfg(feature = "dtype-struct")]
@@ -575,6 +578,10 @@ impl<'a> AnonymousListBuilder<'a> {
             let dtype = DataType::from(arr.data_type());
             let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
 
+            if self.fast_explode {
+                ca.set_fast_explode();
+            }
+
             ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca
         }
@@ -586,6 +593,7 @@ pub struct AnonymousOwnedListBuilder {
     builder: AnonymousBuilder<'static>,
     owned: Vec<Series>,
     inner_dtype: Option<DataType>,
+    fast_explode: bool,
 }
 
 impl Default for AnonymousOwnedListBuilder {
@@ -597,7 +605,7 @@ impl Default for AnonymousOwnedListBuilder {
 impl ListBuilderTrait for AnonymousOwnedListBuilder {
     fn append_series(&mut self, s: &Series) {
         if s.is_empty() {
-            self.builder.push_empty()
+            self.append_empty();
         } else {
             // Safety
             // we deref a raw pointer with a lifetime that is not static
@@ -651,6 +659,10 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             let dtype = DataType::from(arr.data_type());
             let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
 
+            if self.fast_explode {
+                ca.set_fast_explode();
+            }
+
             ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca
         }
@@ -664,11 +676,13 @@ impl AnonymousOwnedListBuilder {
             builder: AnonymousBuilder::new(capacity),
             owned: Vec::with_capacity(capacity),
             inner_dtype,
+            fast_explode: true,
         }
     }
 
     #[inline]
     pub fn append_empty(&mut self) {
+        self.fast_explode = false;
         self.builder.push_empty()
     }
 }

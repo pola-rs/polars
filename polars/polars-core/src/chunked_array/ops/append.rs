@@ -65,6 +65,9 @@ impl ListChunked {
         self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted2(IsSorted::Not);
+        if !other._can_fast_explode() {
+            self.unset_fast_explode()
+        }
         Ok(())
     }
 }

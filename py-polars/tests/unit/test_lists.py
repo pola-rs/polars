@@ -559,3 +559,8 @@ def test_empty_eval_dtype_5546() -> None:
             .alias("a_filtered")
         )
     ).dtypes == [dtype, dtype]
+
+
+def test_fast_explode_flag() -> None:
+    df1 = pl.DataFrame({"values": [[[1, 2]]]})
+    assert df1.clone().vstack(df1)["values"].flags["FAST_EXPLODE"]

@@ -9,8 +9,11 @@ impl ListChunked {
     pub fn set_fast_explode(&mut self) {
         self.bit_settings.insert(Settings::FAST_EXPLODE_LIST)
     }
+    pub(crate) fn unset_fast_explode(&mut self) {
+        self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
+    }
 
-    pub(crate) fn can_fast_explode(&self) -> bool {
+    pub fn _can_fast_explode(&self) -> bool {
         self.bit_settings.contains(Settings::FAST_EXPLODE_LIST)
     }
 
