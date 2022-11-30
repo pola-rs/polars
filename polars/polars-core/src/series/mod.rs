@@ -198,12 +198,6 @@ impl Series {
         self._get_inner_mut().shrink_to_fit()
     }
 
-    /// Append arrow array of same datatype.
-    pub fn append_array(&mut self, other: ArrayRef) -> PolarsResult<&mut Self> {
-        self._get_inner_mut().append_array(other)?;
-        Ok(self)
-    }
-
     /// Append in place. This is done by adding the chunks of `other` to this [`Series`].
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].

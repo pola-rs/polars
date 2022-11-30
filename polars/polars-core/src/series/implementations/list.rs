@@ -66,10 +66,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
-        self.0.append_array(other)
-    }
-
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_series()
     }
