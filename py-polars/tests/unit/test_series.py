@@ -1610,6 +1610,12 @@ def test_arg_min_and_arg_max() -> None:
     s = pl.Series([None, None], dtype=pl.Boolean)
     assert s.arg_min() is None
     assert s.arg_max() is None
+    s = pl.Series([True, True])
+    assert s.arg_min() == 0
+    assert s.arg_max() == 0
+    s = pl.Series([False, False])
+    assert s.arg_min() == 0
+    assert s.arg_max() == 0
 
 
 def test_is_null_is_not_null() -> None:
