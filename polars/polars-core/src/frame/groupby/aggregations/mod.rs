@@ -161,6 +161,14 @@ where
     ca.into_series()
 }
 
+pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
+where
+    F: Fn((IdxSize, &Vec<IdxSize>)) -> Option<bool> + Send + Sync,
+{
+    let ca: BooleanChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    ca.into_series()
+}
+
 // helper that iterates on the `all: Vec<Vec<u32>` collection
 // this doesn't have traverse the `first: Vec<u32>` memory and is therefore faster
 fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
@@ -183,12 +191,97 @@ where
     ca.into_series()
 }
 
+pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
+{
+    let ca: BooleanChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    ca.into_series()
+}
+
 impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
-        self.cast(&IDX_DTYPE).unwrap().agg_min(groups)
+        // faster paths
+        match (self.is_sorted2(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_first(groups);
+            }
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_last(groups);
+            }
+            _ => {}
+        }
+        match groups {
+            GroupsProxy::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
+                debug_assert!(idx.len() <= self.len());
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    self.get(first as usize)
+                } else {
+                    // TODO! optimize this
+                    // can just check if any is false and early stop
+                    let take = { self.take_unchecked(idx.into()) };
+                    take.min().map(|v| v == 1)
+                }
+            }),
+            GroupsProxy::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice_bool(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => self.get(first as usize),
+                    _ => {
+                        let arr_group = _slice_from_offsets(self, first, len);
+                        arr_group.min().map(|v| v == 1)
+                    }
+                }
+            }),
+        }
     }
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
-        self.cast(&IDX_DTYPE).unwrap().agg_max(groups)
+        // faster paths
+        match (self.is_sorted2(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_last(groups);
+            }
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_first(groups);
+            }
+            _ => {}
+        }
+
+        match groups {
+            GroupsProxy::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
+                debug_assert!(idx.len() <= self.len());
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    self.get(first as usize)
+                } else {
+                    // TODO! optimize this
+                    // can just check if any is true and early stop
+                    let take = { self.take_unchecked(idx.into()) };
+                    take.max().map(|v| v == 1)
+                }
+            }),
+            GroupsProxy::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice_bool(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => self.get(first as usize),
+                    _ => {
+                        let arr_group = _slice_from_offsets(self, first, len);
+                        arr_group.max().map(|v| v == 1)
+                    }
+                }
+            }),
+        }
     }
     pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.cast(&IDX_DTYPE).unwrap().agg_sum(groups)
