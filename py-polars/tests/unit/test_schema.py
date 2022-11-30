@@ -249,3 +249,21 @@ def test_diff_duration_dtype() -> None:
         False,
         True,
     ]
+
+
+def test_boolean_agg_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 1, 1],
+            "y": [False, True, False],
+        }
+    ).lazy()
+
+    agg_df = df.groupby("x").agg(pl.col("y").max().alias("max_y"))
+
+    for streaming in [True, False]:
+        assert (
+            agg_df.collect(streaming=streaming).schema
+            == agg_df.schema
+            == {"x": pl.Int64, "max_y": pl.Boolean}
+        )

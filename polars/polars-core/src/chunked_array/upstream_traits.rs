@@ -435,6 +435,21 @@ impl FromParallelIterator<bool> for BooleanChunked {
     }
 }
 
+impl FromParallelIterator<Option<bool>> for BooleanChunked {
+    fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
+        let vectors = collect_into_linked_list(iter);
+
+        let capacity: usize = get_capacity_from_par_results(&vectors);
+
+        let arr = unsafe {
+            BooleanArray::from_trusted_len_iter(
+                vectors.into_iter().flatten().trust_my_length(capacity),
+            )
+        };
+        Self::from_chunks("", vec![Box::new(arr)])
+    }
+}
+
 impl<Ptr> FromParallelIterator<Ptr> for Utf8Chunked
 where
     Ptr: PolarsAsRef<str> + Send + Sync,
