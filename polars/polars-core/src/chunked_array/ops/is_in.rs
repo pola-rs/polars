@@ -329,6 +329,12 @@ impl IsIn for BooleanChunked {
                 ca.rename(self.name());
                 Ok(ca)
             }
+            DataType::Boolean => {
+                let other = other.bool().unwrap();
+                let has_true = other.any();
+                let has_false = !other.all();
+                Ok(self.apply(|v| if v { has_true } else { has_false }))
+            }
             _ => Err(PolarsError::SchemaMisMatch(
                 format!(
                     "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
