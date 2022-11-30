@@ -256,6 +256,9 @@ def test_init_series() -> None:
     assert df.rows() == [(1,), (2,), (3,)]
     assert df.schema == {"a": pl.UInt32}
 
+    # nested list
+    assert pl.Series([[[2, 2]]]).dtype == pl.List(pl.List(pl.Int64))
+
 
 def test_init_seq_of_seq() -> None:
     # List of lists

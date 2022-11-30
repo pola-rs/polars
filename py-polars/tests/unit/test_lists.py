@@ -562,6 +562,5 @@ def test_empty_eval_dtype_5546() -> None:
 
 
 def test_fast_explode_flag() -> None:
-    n = 2
-    df1 = pl.from_dicts([dict(values=[list(range(n))])])
+    df1 = pl.DataFrame({"values": [[[1, 2]]]})
     assert df1.clone().vstack(df1)["values"].flags["FAST_EXPLODE"]
