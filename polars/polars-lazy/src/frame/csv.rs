@@ -203,7 +203,27 @@ impl<'a> LazyCsvReader<'a> {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut file = std::fs::File::open(&self.path)?;
+        let path;
+        let path_str = self.path.to_string_lossy();
+
+        let mut file = if path_str.contains('*') {
+            let glob_err = || PolarsError::ComputeError("invalid glob pattern given".into());
+            let mut paths = glob::glob(&path_str).map_err(|_| glob_err())?;
+
+            match paths.next() {
+                Some(globresult) => {
+                    path = globresult.map_err(|_| glob_err())?;
+                }
+                None => {
+                    return Err(PolarsError::ComputeError(
+                        "globbing pattern did not match any files".into(),
+                    ));
+                }
+            }
+            std::fs::File::open(&path)
+        } else {
+            std::fs::File::open(&self.path)
+        }?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;
 

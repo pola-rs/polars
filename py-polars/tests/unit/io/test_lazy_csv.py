@@ -55,16 +55,22 @@ def test_row_count(foods_csv: str) -> None:
     assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
 
 
-def test_scan_csv_schema_overwrite_and_dtypes_overwrite(foods_csv: str) -> None:
-    assert (
-        pl.scan_csv(
-            foods_csv,
+def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
+    foods_csv: str, foods_csv_glob: str
+) -> None:
+    for fn in [foods_csv, foods_csv_glob]:
+        df = pl.scan_csv(
+            fn,
             dtypes={"calories_foo": pl.Utf8, "fats_g_foo": pl.Float32},
             with_column_names=lambda names: [f"{a}_foo" for a in names],
-        )
-        .collect()
-        .dtypes
-    ) == [pl.Utf8, pl.Utf8, pl.Float32, pl.Int64]
+        ).collect()
+        assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Float32, pl.Int64]
+        assert df.columns == [
+            "category_foo",
+            "calories_foo",
+            "fats_g_foo",
+            "sugars_g_foo",
+        ]
 
 
 def test_lazy_n_rows(foods_csv: str) -> None:

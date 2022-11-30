@@ -24,6 +24,12 @@ FOODS_CSV = os.path.join(
     "foods1.csv",
 )
 
+
+FOODS_CSV_GLOB = os.path.join(
+    EXAMPLES_DIR,
+    "foods*.csv",
+)
+
 FOODS_PARQUET = os.path.join(
     EXAMPLES_DIR,
     "foods1.parquet",
@@ -52,6 +58,11 @@ def examples_dir() -> str:
 
 @pytest.fixture
 def foods_csv() -> str:
+    return FOODS_CSV
+
+
+@pytest.fixture
+def foods_csv_glob() -> str:
     return FOODS_CSV
 
 
