@@ -267,3 +267,14 @@ def test_boolean_agg_schema() -> None:
             == agg_df.schema
             == {"x": pl.Int64, "max_y": pl.Boolean}
         )
+
+
+def test_schema_owned_arithmetic_5669() -> None:
+    df = (
+        pl.DataFrame({"A": [1, 2, 3]})
+        .lazy()
+        .filter(pl.col("A") >= 3)
+        .with_column(-pl.col("A").alias("B"))
+        .collect()
+    )
+    assert df.columns == ["A", "literal"], df.columns

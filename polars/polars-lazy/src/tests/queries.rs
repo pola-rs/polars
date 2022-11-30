@@ -425,7 +425,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
 ))]
 fn test_lazy_query_10() {
     use polars_core::export::chrono::Duration as ChronoDuration;
-    let date = NaiveDate::from_ymd(2021, 3, 5);
+    let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
     let x: Series = DatetimeChunked::from_naive_datetime(
         "x",
         [
@@ -502,7 +502,7 @@ fn test_lazy_query_10() {
     feature = "dtype-datetime"
 ))]
 fn test_lazy_query_7() {
-    let date = NaiveDate::from_ymd(2021, 3, 5);
+    let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
     let dates = [
         NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap()),
         NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 1, 0).unwrap()),
