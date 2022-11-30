@@ -390,7 +390,7 @@ impl ChunkExplode for ListChunked {
             ));
         }
 
-        let mut s = if ca.can_fast_explode() {
+        let mut s = if ca._can_fast_explode() {
             // ensure that the value array is sliced
             // as a list only slices its offsets on a slice operation
 
@@ -579,7 +579,7 @@ mod test {
         builder.append_series(&Series::new("", &[2]));
 
         let ca = builder.finish();
-        assert!(ca.can_fast_explode());
+        assert!(ca._can_fast_explode());
 
         // normal explode
         let exploded = ca.explode()?;

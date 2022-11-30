@@ -163,7 +163,7 @@ bitflags! {
     pub(crate) struct Settings: u8 {
     const SORTED_ASC = 0x01;
     const SORTED_DSC = 0x02;
-    const FAST_EXPLODE_LIST = 0x03;
+    const FAST_EXPLODE_LIST = 0x04;
 }}
 
 impl<T: PolarsDataType> ChunkedArray<T> {

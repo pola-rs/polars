@@ -119,6 +119,12 @@ impl PySeries {
     pub fn is_sorted_reverse_flag(&self) -> bool {
         matches!(self.series.is_sorted(), IsSorted::Descending)
     }
+    pub fn can_fast_explode_flag(&self) -> bool {
+        match self.series.list() {
+            Err(_) => false,
+            Ok(list) => list._can_fast_explode(),
+        }
+    }
 
     #[staticmethod]
     pub fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {

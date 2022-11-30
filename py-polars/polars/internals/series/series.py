@@ -324,10 +324,13 @@ class Series:
         Dictionary containing the flag name and the value
 
         """
-        return {
+        out = {
             "SORTED_ASC": self._s.is_sorted_flag(),
             "SORTED_DESC": self._s.is_sorted_reverse_flag(),
         }
+        if self.dtype == List:
+            out["FAST_EXPLODE"] = self._s.can_fast_explode_flag()
+        return out
 
     @property
     def inner_dtype(self) -> type[DataType] | None:
