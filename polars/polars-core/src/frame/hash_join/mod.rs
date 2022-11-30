@@ -294,6 +294,10 @@ impl ZipOuterJoinColumn for Float64Chunked {
     }
 }
 
+pub fn _join_suffix_name(name: &str, suffix: &str) -> String {
+    format!("{}{}", name, suffix)
+}
+
 /// Utility method to finish a join.
 #[doc(hidden)]
 pub fn _finish_join(
@@ -317,7 +321,7 @@ pub fn _finish_join(
     let suffix = suffix.unwrap_or("_right");
 
     for name in rename_strs {
-        df_right.rename(&name, &format!("{}{}", name, suffix))?;
+        df_right.rename(&name, &_join_suffix_name(&name, suffix))?;
     }
 
     drop(left_names);

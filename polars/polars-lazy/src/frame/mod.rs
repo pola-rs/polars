@@ -1351,6 +1351,14 @@ impl JoinBuilder {
         self
     }
 
+    /// The columns you want to join both tables on.
+    pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
+        let on = on.as_ref().to_vec();
+        self.left_on = on.clone();
+        self.right_on = on;
+        self
+    }
+
     /// The columns you want to join the left table on.
     pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.left_on = on.as_ref().to_vec();

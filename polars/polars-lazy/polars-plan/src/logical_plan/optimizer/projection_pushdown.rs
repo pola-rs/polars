@@ -949,7 +949,7 @@ impl ProjectionPushDown {
                             }
                         }
 
-                        // if it is an alias we want to project the root column name downwards
+                        // if it is an alias we want to project the leaf column name downwards
                         // but we don't want to project it a this level, otherwise we project both
                         // the root and the alias, hence add_local = false.
                         if let AExpr::Alias(expr, name) = expr_arena.get(proj).clone() {
@@ -976,16 +976,16 @@ impl ProjectionPushDown {
                             expr_arena,
                         ) {
                             // Column name of the projection without any alias.
-                            let root_column_name =
+                            let leaf_column_name =
                                 aexpr_to_leaf_names(proj, expr_arena).pop().unwrap();
 
                             let suffix = options.suffix.as_ref();
                             // If _right suffix exists we need to push a projection down without this
                             // suffix.
-                            if root_column_name.ends_with(suffix) {
+                            if leaf_column_name.ends_with(suffix) {
                                 // downwards name is the name without the _right i.e. "foo".
-                                let (downwards_name, _) = root_column_name
-                                    .split_at(root_column_name.len() - suffix.len());
+                                let (downwards_name, _) = leaf_column_name
+                                    .split_at(leaf_column_name.len() - suffix.len());
 
                                 let downwards_name_column =
                                     expr_arena.add(AExpr::Column(Arc::from(downwards_name)));
