@@ -624,6 +624,40 @@ def test_asof_join_schema_5211() -> None:
     ) == {"today": pl.Int64, "next_friday": pl.Int64}
 
 
+def test_asof_join_schema_5684() -> None:
+    df_a = pl.DataFrame(
+        {
+            "id": [1],
+            "a": [1],
+            "b": [1],
+        }
+    ).lazy()
+
+    df_b = pl.DataFrame(
+        {
+            "id": [1, 1, 2],
+            "b": [3, -3, 6],
+        }
+    ).lazy()
+
+    q = (
+        df_a.join_asof(df_b, by="id", left_on="a", right_on="b")
+        .drop("b")
+        .join_asof(df_b, by="id", left_on="a", right_on="b")
+        .drop("b")
+    )
+
+    projected_result = q.select(pl.all()).collect()
+    result = q.collect()
+
+    assert projected_result.frame_equal(result)
+    assert (
+        q.schema
+        == projected_result.schema
+        == {"id": pl.Int64, "a": pl.Int64, "b_right": pl.Int64}
+    )
+
+
 @typing.no_type_check
 def test_streaming_joins() -> None:
     n = 100

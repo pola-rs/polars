@@ -139,6 +139,10 @@ impl Schema {
         self.inner.get_index(index)
     }
 
+    pub fn contains(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
+
     pub fn get_index_mut(&mut self, index: usize) -> Option<(&mut String, &mut DataType)> {
         self.inner.get_index_mut(index)
     }
