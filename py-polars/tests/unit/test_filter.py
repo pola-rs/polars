@@ -69,3 +69,11 @@ def test_filter_aggregation_any() -> None:
         "any": [[False, True, True], [True]],
         "filtered": [[3, 4], [2]],
     }
+
+
+def test_is_in_bool() -> None:
+    bool_value_to_filter_on = [True, None]
+    df = pl.DataFrame({"A": [True, False, None]})
+    assert df.filter(pl.col("A").is_in(bool_value_to_filter_on)).to_dict(False) == {
+        "A": [True, False]
+    }
