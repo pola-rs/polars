@@ -88,10 +88,6 @@ where
         ObjectChunked::chunks(&self.0)
     }
 
-    fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
-        ObjectChunked::append_array(&mut self.0, other)
-    }
-
     fn slice(&self, offset: i64, length: usize) -> Series {
         ObjectChunked::slice(&self.0, offset, length).into_series()
     }

@@ -263,11 +263,6 @@ pub trait SeriesTrait:
         panic!("shrink to fit not supported for dtype {:?}", self.dtype())
     }
 
-    /// Append Arrow array of same dtype to this Series.
-    fn append_array(&mut self, _other: ArrayRef) -> PolarsResult<()> {
-        invalid_operation_panic!(self)
-    }
-
     /// Take `num_elements` from the top as a zero copy view.
     fn limit(&self, num_elements: usize) -> Series {
         self.slice(0, num_elements)
