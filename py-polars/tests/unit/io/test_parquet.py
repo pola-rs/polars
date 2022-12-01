@@ -14,10 +14,20 @@ from polars.testing import assert_frame_equal_local_categoricals
 if TYPE_CHECKING:
     from polars.internals.type_aliases import ParquetCompression
 
+COMPRESSIONS: list[ParquetCompression] = [
+    "lz4",
+    "uncompressed",
+    "snappy",
+    "gzip",
+    "lzo",
+    "brotli",
+    "zstd",
+]
+
 
 @pytest.fixture
 def compressions() -> list[ParquetCompression]:
-    return ["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
+    return COMPRESSIONS
 
 
 def test_to_from_buffer(
@@ -119,7 +129,12 @@ def test_parquet_chunks() -> None:
         assert pl.DataFrame(df).frame_equal(polars_df)
 
 
-def test_parquet_datetime() -> None:
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_parquet_datetime(compression: ParquetCompression) -> None:
+    if compression == "lzo":
+        pytest.skip(
+            "LZO compression is not currently not supported by the C++ implementation"
+        )
     # This failed because parquet writers cast datetime to Date
     f = io.BytesIO()
     data = {
@@ -136,8 +151,7 @@ def test_parquet_datetime() -> None:
     df = pl.DataFrame(data)
     df = df.with_column(df["datetime"].cast(pl.Datetime))
 
-    # todo! test all compressions here
-    df.write_parquet(f, use_pyarrow=True, compression="snappy")
+    df.write_parquet(f, use_pyarrow=True, compression=compression)
     f.seek(0)
     read = pl.read_parquet(f)
     assert read.frame_equal(df)
