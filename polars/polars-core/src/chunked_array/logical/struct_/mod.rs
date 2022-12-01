@@ -1,5 +1,7 @@
 mod from;
 
+use std::collections::BTreeMap;
+
 use super::*;
 use crate::datatypes::*;
 
@@ -200,14 +202,19 @@ impl LogicalType for StructChunked {
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         match dtype {
             DataType::Struct(dtype_fields) => {
-                let mut new_fields = Vec::with_capacity(self.fields().len());
-                for (s_field, fld) in self.fields().iter().zip(dtype_fields) {
-                    let mut new_s = s_field.cast(fld.data_type())?;
-                    if new_s.name() != fld.name {
-                        new_s.rename(&fld.name);
-                    }
-                    new_fields.push(new_s);
-                }
+                let map = BTreeMap::from_iter(self.fields().iter().map(|s| (s.name(), s)));
+                let struct_len = self.len();
+                let new_fields = dtype_fields
+                    .iter()
+                    .map(|new_field| match map.get(new_field.name().as_str()) {
+                        Some(s) => s.cast(&new_field.dtype),
+                        None => Ok(Series::full_null(
+                            new_field.name(),
+                            struct_len,
+                            &new_field.dtype,
+                        )),
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 StructChunked::new(self.name(), &new_fields).map(|ca| ca.into_series())
             }
             _ => {

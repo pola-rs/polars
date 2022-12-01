@@ -11,6 +11,7 @@ use polars::io::avro::AvroCompression;
 use polars::io::ipc::IpcCompression;
 use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
+use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::basic::CompareOp;
@@ -573,8 +574,15 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             if ob.is_empty()? {
                 Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
             } else {
-                let avs = ob.extract::<Wrap<Row>>()?.0;
-                let s = Series::new("", &avs.0);
+                let avs = ob.extract::<Wrap<Row>>()?.0 .0;
+                // use first `n` values to infer datatype
+                // this value is not too large as this will be done with every
+                // anyvalue that has to be converted, which can be many
+                let n = 25;
+                let dtype = any_values_to_dtype(&avs[..std::cmp::min(avs.len(), n)])
+                    .map_err(PyPolarsErr::from)?;
+                let s = Series::from_any_values_and_dtype("", &avs, &dtype)
+                    .map_err(PyPolarsErr::from)?;
                 Ok(Wrap(AnyValue::List(s)))
             }
         } else if ob.hasattr("_s")? {

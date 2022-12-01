@@ -267,6 +267,14 @@ def test_from_dicts_struct() -> None:
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
 
+    # 5649
+    assert pl.from_dicts([{"a": [{"x": 1}]}, {"a": [{"y": 1}]}]).to_dict(False) == {
+        "a": [[{"y": None, "x": 1}], [{"y": 1, "x": None}]]
+    }
+    assert pl.from_dicts([{"a": [{"x": 1}, {"y": 2}]}, {"a": [{"y": 1}]}]).to_dict(
+        False
+    ) == {"a": [[{"y": None, "x": 1}, {"y": 2, "x": None}], [{"y": 1, "x": None}]]}
+
 
 def test_from_records() -> None:
     data = [[1, 2, 3], [4, 5, 6]]
