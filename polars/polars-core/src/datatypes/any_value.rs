@@ -1,3 +1,4 @@
+use arrow::types::PrimitiveType;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
@@ -434,68 +435,6 @@ impl<'a> Hash for AnyValue<'a> {
 }
 
 impl<'a> Eq for AnyValue<'a> {}
-
-impl From<f64> for AnyValue<'_> {
-    #[inline]
-    fn from(a: f64) -> Self {
-        AnyValue::Float64(a)
-    }
-}
-impl From<f32> for AnyValue<'_> {
-    #[inline]
-    fn from(a: f32) -> Self {
-        AnyValue::Float32(a)
-    }
-}
-impl From<u32> for AnyValue<'_> {
-    #[inline]
-    fn from(a: u32) -> Self {
-        AnyValue::UInt32(a)
-    }
-}
-impl From<u64> for AnyValue<'_> {
-    #[inline]
-    fn from(a: u64) -> Self {
-        AnyValue::UInt64(a)
-    }
-}
-impl From<i64> for AnyValue<'_> {
-    #[inline]
-    fn from(a: i64) -> Self {
-        AnyValue::Int64(a)
-    }
-}
-impl From<i32> for AnyValue<'_> {
-    #[inline]
-    fn from(a: i32) -> Self {
-        AnyValue::Int32(a)
-    }
-}
-impl From<i16> for AnyValue<'_> {
-    #[inline]
-    fn from(a: i16) -> Self {
-        AnyValue::Int16(a)
-    }
-}
-impl From<u16> for AnyValue<'_> {
-    #[inline]
-    fn from(a: u16) -> Self {
-        AnyValue::UInt16(a)
-    }
-}
-
-impl From<i8> for AnyValue<'_> {
-    #[inline]
-    fn from(a: i8) -> Self {
-        AnyValue::Int8(a)
-    }
-}
-impl From<u8> for AnyValue<'_> {
-    #[inline]
-    fn from(a: u8) -> Self {
-        AnyValue::UInt8(a)
-    }
-}
 
 impl<'a, T> From<Option<T>> for AnyValue<'a>
 where
@@ -945,6 +884,47 @@ impl GetAnyValue for ArrayRef {
                 }
             }
             _ => unimplemented!(),
+        }
+    }
+}
+
+impl<K: NumericNative> From<K> for AnyValue<'static> {
+    fn from(value: K) -> Self {
+        unsafe {
+            match K::PRIMITIVE {
+                PrimitiveType::Int8 => {
+                    AnyValue::Int8(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::Int16 => {
+                    AnyValue::Int16(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::Int32 => {
+                    AnyValue::Int32(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::Int64 => {
+                    AnyValue::Int64(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::UInt8 => {
+                    AnyValue::UInt8(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::UInt16 => {
+                    AnyValue::UInt16(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::UInt32 => {
+                    AnyValue::UInt32(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::UInt64 => {
+                    AnyValue::UInt64(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::Float32 => {
+                    AnyValue::Float32(NumCast::from(value).unwrap_unchecked_release())
+                }
+                PrimitiveType::Float64 => {
+                    AnyValue::Float64(NumCast::from(value).unwrap_unchecked_release())
+                }
+                // not supported by polars
+                _ => unreachable!(),
+            }
         }
     }
 }

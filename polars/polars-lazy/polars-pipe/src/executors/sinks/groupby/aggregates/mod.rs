@@ -4,6 +4,7 @@ mod first;
 mod interface;
 mod last;
 mod mean;
+mod min_max;
 mod null;
 mod sum;
 

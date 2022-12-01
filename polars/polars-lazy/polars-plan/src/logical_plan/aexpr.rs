@@ -186,7 +186,7 @@ impl AExpr {
     }
 
     /// Get Field result of the expression. The schema is the input data.
-    pub(crate) fn to_field(
+    pub fn to_field(
         &self,
         schema: &Schema,
         ctxt: Context,
