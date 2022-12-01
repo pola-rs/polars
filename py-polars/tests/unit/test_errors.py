@@ -293,15 +293,3 @@ def test_invalid_sort_by() -> None:
         match="The sortby operation produced a different length than the Series that has to be sorted.",  # noqa: E501
     ):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", True))
-
-
-def test_concat_list_err_supertype() -> None:
-    df = pl.DataFrame({"nums": [1, 2, 3, 4], "letters": ["a", "b", "c", "d"]}).select(
-        [
-            pl.col("nums"),
-            pl.struct(["letters", "nums"]).alias("combo"),
-            pl.struct(["nums", "letters"]).alias("reverse_combo"),
-        ]
-    )
-    with pytest.raises(pl.ComputeError, match="Failed to determine supertype"):
-        df.select(pl.concat_list(["combo", "reverse_combo"]))

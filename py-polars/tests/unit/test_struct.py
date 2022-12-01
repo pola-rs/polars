@@ -677,3 +677,16 @@ def test_suffix_in_struct_creation() -> None:
             }
         ).select(pl.struct(pl.col(["a", "c"]).suffix("_foo")).alias("bar"))
     ).unnest("bar").to_dict(False) == {"a_foo": [1, 2], "c_foo": [5, 6]}
+
+
+def test_concat_list_reverse_struct_fields() -> None:
+    df = pl.DataFrame({"nums": [1, 2, 3, 4], "letters": ["a", "b", "c", "d"]}).select(
+        [
+            pl.col("nums"),
+            pl.struct(["letters", "nums"]).alias("combo"),
+            pl.struct(["nums", "letters"]).alias("reverse_combo"),
+        ]
+    )
+    assert df.select(pl.concat_list(["combo", "reverse_combo"])).frame_equal(
+        df.select(pl.concat_list(["combo", "combo"]))
+    )

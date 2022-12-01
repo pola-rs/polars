@@ -116,25 +116,47 @@ impl Series {
                 .into_series(),
             DataType::List(inner) => any_values_to_list(av, inner).into_series(),
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => {
-                // the fields of the struct
-                let mut series_fields = Vec::with_capacity(fields.len());
-                for (i, field) in fields.iter().enumerate() {
+            DataType::Struct(dtype_fields) => {
+                // the physical series fields of the struct
+                let mut series_fields = Vec::with_capacity(dtype_fields.len());
+                for (i, field) in dtype_fields.iter().enumerate() {
                     let mut field_avs = Vec::with_capacity(av.len());
 
                     for av in av.iter() {
                         match av {
                             AnyValue::StructOwned(payload) => {
-                                for (l, r) in fields.iter().zip(payload.1.iter()) {
-                                    if l.name() != r.name() {
-                                        return Err(PolarsError::ComputeError(
-                                            "struct orders must remain the same".into(),
-                                        ));
+                                let av_fields = &payload.1;
+                                let av_values = &payload.0;
+
+                                // all fields are available in this single value
+                                // we can use the index to get value
+                                if dtype_fields.len() == av_fields.len() {
+                                    for (l, r) in dtype_fields.iter().zip(av_fields.iter()) {
+                                        if l.name() != r.name() {
+                                            return Err(PolarsError::ComputeError(
+                                                "struct orders must remain the same".into(),
+                                            ));
+                                        }
+                                    }
+                                    let av_val =
+                                        av_values.get(i).cloned().unwrap_or(AnyValue::Null);
+                                    field_avs.push(av_val)
+                                }
+                                // not all fields are available, we search the proper field
+                                else {
+                                    // search for the name
+                                    let mut pushed = false;
+                                    for (av_fld, av_val) in av_fields.iter().zip(av_values) {
+                                        if av_fld.name == field.name {
+                                            field_avs.push(av_val.clone());
+                                            pushed = true;
+                                            break;
+                                        }
+                                    }
+                                    if !pushed {
+                                        field_avs.push(AnyValue::Null)
                                     }
                                 }
-
-                                let av_val = payload.0[i].clone();
-                                field_avs.push(av_val)
                             }
                             _ => field_avs.push(AnyValue::Null),
                         }
@@ -159,6 +181,11 @@ impl Series {
                     }
                 }
                 return Ok(builder.to_series());
+            }
+            DataType::Null => {
+                // TODO!
+                // use null dtype here and fix tests
+                Series::full_null(name, av.len(), &DataType::Int32)
             }
             dt => panic!("{:?} not supported", dt),
         };
