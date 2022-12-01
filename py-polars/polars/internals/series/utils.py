@@ -72,7 +72,10 @@ def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str,
     lookup = set()
     for name in dir(expr):
         if not name.startswith("_"):
-            m = getattr(expr, name)
+            try:
+                m = getattr(expr, name)
+            except AttributeError:  # May be raised for @property methods
+                continue
             if callable(m):
                 # add function signature (argument names only) to the lookup
                 # as a _possible_ candidate for expression-dispatch
