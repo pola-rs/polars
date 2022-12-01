@@ -129,12 +129,16 @@ def test_parquet_chunks() -> None:
         assert pl.DataFrame(df).frame_equal(polars_df)
 
 
+@pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("compression", COMPRESSIONS)
-def test_parquet_datetime(compression: ParquetCompression) -> None:
+def test_parquet_datetime(use_pyarrow, compression: ParquetCompression) -> None:
     if compression == "lzo":
+        back_end = "C++" if use_pyarrow else "Rust"
         pytest.skip(
-            "LZO compression is not currently not supported by the C++ implementation"
+            f"LZO compression is not currently not supported by the {back_end}"
+            f"implementation of Arrow."
         )
+
     # This failed because parquet writers cast datetime to Date
     f = io.BytesIO()
     data = {
@@ -151,7 +155,7 @@ def test_parquet_datetime(compression: ParquetCompression) -> None:
     df = pl.DataFrame(data)
     df = df.with_column(df["datetime"].cast(pl.Datetime))
 
-    df.write_parquet(f, use_pyarrow=True, compression=compression)
+    df.write_parquet(f, use_pyarrow=use_pyarrow, compression=compression)
     f.seek(0)
     read = pl.read_parquet(f)
     assert read.frame_equal(df)
