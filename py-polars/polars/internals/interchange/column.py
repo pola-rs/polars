@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from pandas._libs.tslibs import iNaT
 from pandas.errors import NoBufferPresent
-
 from polars.internals.interchange.buffer import PolarsBuffer
 from polars.internals.interchange.dataframe_protocol import (
     CategoricalDescription,
@@ -18,8 +17,9 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from typing import Any
 
-    import polars as pl
     from polars.internals.interchange.dataframe_protocol import Dtype
+
+    import polars as pl
 
 
 _NO_VALIDITY_BUFFER = {
@@ -47,12 +47,10 @@ class PolarsColumn(Column):
 
     def size(self) -> int:
         """Size of the column, in elements."""
-        # TODO: Handle chunks
         return len(self._col)
 
     @property
     def offset(self) -> int:
-        # TODO: Handle chunks
         return 0
 
     @property
