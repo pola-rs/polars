@@ -83,7 +83,8 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
 }
 
 static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|[-+]?inf|[-+]?NaN|\d+[eE][-+]\d+)$").unwrap()
+    Regex::new(r"^(\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|[-+]?inf|[-+]?NaN|[-+]?\d+[eE][-+]\d+)$")
+        .unwrap()
 });
 
 static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
@@ -624,6 +625,9 @@ mod test {
         assert!(FLOAT_RE.is_match("-NaN"));
         assert!(FLOAT_RE.is_match("-inf"));
         assert!(FLOAT_RE.is_match("inf"));
+        assert!(FLOAT_RE.is_match("-7e-05"));
+        assert!(FLOAT_RE.is_match("7e-05"));
+        assert!(FLOAT_RE.is_match("+7e+05"));
     }
 
     #[test]
