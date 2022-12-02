@@ -20,7 +20,7 @@ use crate::prelude::NullValues;
 
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
-    n_threads: usize,
+    n_chunks: usize,
     expected_fields: usize,
     delimiter: u8,
     quote_char: Option<u8>,
@@ -28,9 +28,9 @@ pub(crate) fn get_file_chunks(
 ) -> Vec<(usize, usize)> {
     let mut last_pos = 0;
     let total_len = bytes.len();
-    let chunk_size = total_len / n_threads;
-    let mut offsets = Vec::with_capacity(n_threads);
-    for _ in 0..n_threads {
+    let chunk_size = total_len / n_chunks;
+    let mut offsets = Vec::with_capacity(n_chunks);
+    for _ in 0..n_chunks {
         let search_pos = last_pos + chunk_size;
 
         if search_pos >= bytes.len() {

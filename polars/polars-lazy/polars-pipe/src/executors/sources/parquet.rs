@@ -9,6 +9,7 @@ use polars_plan::prelude::ParquetOptions;
 use polars_utils::IdxSize;
 
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
+use crate::CHUNK_SIZE;
 
 pub struct ParquetSource {
     batched_reader: BatchedParquetReader,
@@ -30,11 +31,15 @@ impl ParquetSource {
         });
 
         let file = std::fs::File::open(path).unwrap();
+
+        // inversely scale the chunk size by the number of threads so that we reduce memory pressure
+        // in streaming
+        let chunk_size = std::cmp::max(CHUNK_SIZE * 12 / POOL.current_num_threads(), 10_000);
         let batched_reader = ParquetReader::new(file)
             .with_n_rows(options.n_rows)
             .with_row_count(options.row_count)
             .with_projection(projection)
-            .batched()?;
+            .batched(chunk_size)?;
 
         Ok(ParquetSource {
             batched_reader,

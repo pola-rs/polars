@@ -138,12 +138,13 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 }
 
 impl<R: MmapBytesReader + 'static> ParquetReader<R> {
-    pub fn batched(self) -> PolarsResult<BatchedParquetReader> {
+    pub fn batched(self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         BatchedParquetReader::new(
             Box::new(self.reader),
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
             self.row_count,
+            chunk_size,
         )
     }
 }
