@@ -320,10 +320,41 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
 #[cfg(feature = "arange")]
 #[cfg_attr(docsrs, doc(cfg(feature = "arange")))]
 pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
-    if (matches!(low, Expr::Literal(_)) && !matches!(low, Expr::Literal(LiteralValue::Series(_))))
-        || matches!(high, Expr::Literal(_))
-            && !matches!(high, Expr::Literal(LiteralValue::Series(_)))
-    {
+    let has_col_without_agg = |e: &Expr| {
+        has_expr(e, |ae| matches!(ae, Expr::Column(_)))
+            &&
+            // check if there is no aggregation
+            !has_expr(e, |ae| {
+                matches!(
+                    ae,
+                    Expr::Agg(_)
+                        | Expr::Count
+                        | Expr::AnonymousFunction {
+                            options: FunctionOptions {
+                                collect_groups: ApplyOptions::ApplyGroups,
+                                ..
+                            },
+                            ..
+                        }
+                        | Expr::Function {
+                            options: FunctionOptions {
+                                collect_groups: ApplyOptions::ApplyGroups,
+                                ..
+                            },
+                            ..
+                        },
+                )
+            })
+    };
+    let has_lit = |e: &Expr| {
+        (matches!(e, Expr::Literal(_)) && !matches!(e, Expr::Literal(LiteralValue::Series(_))))
+    };
+
+    let any_column_no_agg = has_col_without_agg(&low) || has_col_without_agg(&high);
+    let literal_low = has_lit(&low);
+    let literal_high = has_lit(&high);
+
+    if (literal_low || literal_high) && !any_column_no_agg {
         let f = move |sa: Series, sb: Series| {
             let sa = sa.cast(&DataType::Int64)?;
             let sb = sb.cast(&DataType::Int64)?;
@@ -354,8 +385,21 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
         )
     } else {
         let f = move |sa: Series, sb: Series| {
-            let sa = sa.cast(&DataType::Int64)?;
-            let sb = sb.cast(&DataType::Int64)?;
+            let mut sa = sa.cast(&DataType::Int64)?;
+            let mut sb = sb.cast(&DataType::Int64)?;
+
+            if sa.len() != sb.len() {
+                if sa.len() == 1 {
+                    sa = sa.new_from_index(0, sb.len())
+                } else if sb.len() == 1 {
+                    sb = sb.new_from_index(0, sa.len())
+                } else {
+                    let msg = format!("The length of the 'low' and 'high' arguments cannot be matched in the 'arange' expression.. \
+                    Length of 'low': {}, length of 'high': {}", sa.len(), sb.len());
+                    return Err(PolarsError::ComputeError(msg.into()));
+                }
+            }
+
             let low = sa.i64()?;
             let high = sb.i64()?;
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
