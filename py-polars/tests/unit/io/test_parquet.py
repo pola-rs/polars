@@ -131,7 +131,7 @@ def test_parquet_chunks() -> None:
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("compression", COMPRESSIONS)
-def test_parquet_datetime(use_pyarrow, compression: ParquetCompression) -> None:
+def test_parquet_datetime(use_pyarrow: bool, compression: ParquetCompression) -> None:
     if compression == "lzo":
         back_end = "C++" if use_pyarrow else "Rust"
         pytest.skip(
