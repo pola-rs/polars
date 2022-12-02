@@ -36,6 +36,8 @@ def test_streaming_groupby_types() -> None:
                         pl.col("date").mean().alias("date_mean"),
                         pl.col("date").first().alias("date_first"),
                         pl.col("date").last().alias("date_last"),
+                        pl.col("date").min().alias("date_min"),
+                        pl.col("date").max().alias("date_max"),
                     ]
                 )
             )
@@ -55,6 +57,8 @@ def test_streaming_groupby_types() -> None:
             "date_mean": pl.Date,
             "date_first": pl.Date,
             "date_last": pl.Date,
+            "date_min": pl.Date,
+            "date_max": pl.Date,
         }
 
         assert out.to_dict(False) == {
@@ -70,6 +74,8 @@ def test_streaming_groupby_types() -> None:
             "date_mean": [date(2022, 1, 1)],
             "date_first": [date(2022, 1, 1)],
             "date_last": [date(2022, 1, 1)],
+            "date_min": [date(2022, 1, 1)],
+            "date_max": [date(2022, 1, 1)],
         }
 
     with pytest.raises(pl.DuplicateError):
@@ -89,6 +95,24 @@ def test_streaming_groupby_types() -> None:
             .select(pl.all().exclude("person_id"))
             .collect(streaming=True)
         )
+
+
+def test_streaming_groupby_min_max() -> None:
+    df = pl.DataFrame(
+        {
+            "person_id": [1, 2, 3, 4, 5, 6],
+            "year": [1995, 1995, 1995, 2, 2, 2],
+        }
+    )
+    out = (
+        df.lazy()
+        .groupby("year")
+        .agg([pl.min("person_id").alias("min"), pl.max("person_id").alias("max")])
+        .collect()
+        .sort("year")
+    )
+    assert out["min"].to_list() == [4, 1]
+    assert out["max"].to_list() == [6, 3]
 
 
 def test_streaming_non_streaming_gb() -> None:

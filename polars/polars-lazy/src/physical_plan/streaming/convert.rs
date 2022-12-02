@@ -245,13 +245,13 @@ pub(crate) fn insert_streaming_nodes(
                         _ => true,
                     }
                 }
+                let input_schema = lp_arena.get(*input).schema(lp_arena);
 
-                if aggs
-                    .iter()
-                    .all(|node| polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena))
-                    && schema
-                        .iter_dtypes()
-                        .all(|dt| allowed_dtype(dt, string_cache))
+                if aggs.iter().all(|node| {
+                    polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena, &input_schema)
+                }) && schema
+                    .iter_dtypes()
+                    .all(|dt| allowed_dtype(dt, string_cache))
                 {
                     state.streamable = true;
                     state.operators_sinks.push((true, false, root));
