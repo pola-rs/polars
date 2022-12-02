@@ -2440,3 +2440,11 @@ def test_from_epoch_expr(
 
     expected = pl.Series("timestamp", [exp, None]).cast(exp_type)
     assert_series_equal(result, expected)
+
+
+def test_get_chunks() -> None:
+    a = pl.Series("a", [1, 2])
+    b = pl.Series("a", [3, 4])
+    chunks = pl.concat([a, b], rechunk=False).get_chunks()
+    assert chunks[0].series_equal(a)
+    assert chunks[1].series_equal(b)
