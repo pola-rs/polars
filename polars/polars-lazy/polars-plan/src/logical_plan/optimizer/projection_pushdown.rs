@@ -296,15 +296,13 @@ impl ProjectionPushDown {
                 for e in &expr {
                     if has_pushed_down {
                         // remove projections that are not used upstream
-                        if projections_seen > 0
-                            && !expr_is_projected_upstream(
-                                e,
-                                input,
-                                lp_arena,
-                                expr_arena,
-                                &projected_names,
-                            )
-                        {
+                        if !expr_is_projected_upstream(
+                            e,
+                            input,
+                            lp_arena,
+                            expr_arena,
+                            &projected_names,
+                        ) {
                             continue;
                         }
 
