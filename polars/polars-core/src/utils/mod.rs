@@ -161,6 +161,18 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
         }
     })
 }
+
+pub fn flatten_series(s: &Series) -> Vec<Series> {
+    let name = s.name();
+    let dtype = s.dtype();
+    unsafe {
+        s.chunks()
+            .iter()
+            .map(|arr| Series::from_chunks_and_dtype_unchecked(name, vec![arr.clone()], dtype))
+            .collect()
+    }
+}
+
 pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
     let chunk_size = total_len / n;

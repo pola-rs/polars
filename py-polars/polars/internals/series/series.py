@@ -4800,6 +4800,10 @@ class Series:
         This can be used to reduce memory pressure.
         """
 
+    def get_chunks(self) -> list[Series]:
+        """Get the chunks of this Series as a list of Series."""
+        return self._s.get_chunks()
+
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the
     # namespace `str`

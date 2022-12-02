@@ -1,7 +1,7 @@
 use numpy::PyArray1;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
-use polars_core::utils::CustomIterTools;
+use polars_core::utils::{flatten_series, CustomIterTools};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyTuple};
@@ -1098,6 +1098,15 @@ impl PySeries {
             }
             Err(e) => Err(PyErr::from(PyPolarsErr::from(e))),
         }
+    }
+    pub fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
+        Python::with_gil(|py| {
+            let wrap_s = py_modules::POLARS.getattr(py, "wrap_s").unwrap();
+            flatten_series(&self.series)
+                .into_iter()
+                .map(|s| wrap_s.call1(py, (Self::new(s),)))
+                .collect()
+        })
     }
 }
 
