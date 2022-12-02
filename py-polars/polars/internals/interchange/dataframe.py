@@ -140,4 +140,5 @@ class PolarsDataFrameXchg(DataFrameXchg):
                     chunk = chunk.rechunk()
                 else:
                     raise RuntimeError("Columns not chunked the same, copy not allowed")
-                yield chunk
+
+            yield chunk

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import re
-from typing import Any
+from typing import TYPE_CHECKING
 
 import polars as pl
 from polars.dependencies import _PANDAS_TYPE
@@ -12,10 +12,16 @@ from polars.internals.interchange.dataframe_protocol import (
     Buffer,
     Column,
     ColumnNullType,
+    DtypeKind,
 )
-from polars.internals.interchange.dataframe_protocol import DataFrame as DataFrameXchg
-from polars.internals.interchange.dataframe_protocol import DtypeKind
-from polars.internals.interchange.utils import ArrowCTypes, Endianness
+
+if TYPE_CHECKING:
+    from typing import Any
+
+    from polars.internals.interchange.dataframe_protocol import (
+        DataFrame as DataFrameXchg,
+    )
+    from polars.internals.interchange.dataframe_protocol import Dtype
 
 _NP_DTYPES: dict[DtypeKind, dict[int, Any]] = {
     DtypeKind.INT: {8: np.int8, 16: np.int16, 32: np.int32, 64: np.int64},
@@ -25,7 +31,7 @@ _NP_DTYPES: dict[DtypeKind, dict[int, Any]] = {
 }
 
 
-def from_dataframe(df: Any, allow_copy: bool = True) -> pl.DataFrame:
+def from_dataframe(df: DataFrameXchg, allow_copy: bool = True) -> pl.DataFrame:
     """
     Build a ``pd.DataFrame`` from any DataFrame supporting the interchange protocol.
 
@@ -52,7 +58,7 @@ def from_dataframe(df: Any, allow_copy: bool = True) -> pl.DataFrame:
     return _from_dataframe(df.__dataframe__(allow_copy=allow_copy))
 
 
-def _from_dataframe(df: DataFrameXchg, allow_copy: bool = True):
+def _from_dataframe(df: DataFrameXchg) -> pl.DataFrame:
     """
     Build a ``pl.DataFrame`` from the DataFrame interchange object.
 
@@ -66,76 +72,45 @@ def _from_dataframe(df: DataFrameXchg, allow_copy: bool = True):
 
     Returns
     -------
-    pd.DataFrame
+    pl.DataFrame
     """
-    pandas_dfs = []
-    for chunk in df.get_chunks():
-        pandas_df = protocol_df_chunk_to_pandas(chunk)
-        pandas_dfs.append(pandas_df)
-
-    if not allow_copy and len(pandas_dfs) > 1:
-        raise RuntimeError(
-            "To join chunks a copy is required which is forbidden by allow_copy=False"
-        )
-    if len(pandas_dfs) == 1:
-        pandas_df = pandas_dfs[0]
-    else:
-        pandas_df = pd.concat(pandas_dfs, axis=0, ignore_index=True, copy=False)
-
-    index_obj = df.metadata.get("pandas.index", None)
-    if index_obj is not None:
-        pandas_df.index = index_obj
-
-    return pandas_df
+    polars_series = [protocol_column_to_polars(column) for column in df.get_columns()]
+    return pl.DataFrame(polars_series)
 
 
-def protocol_df_chunk_to_pandas(df: DataFrameXchg) -> pd.DataFrame:
-    """
-    Convert interchange protocol chunk to ``pd.DataFrame``.
+def protocol_column_to_polars(col: Column) -> pl.Series:
+    """Convert interchange protocol column to ``pl.Series``."""
+    series_chunks = []
+    buffers = []  # Hold on to buffers, keeps memory alive
 
-    Parameters
-    ----------
-    df : DataFrameXchg
+    for chunk in col.get_chunks():
 
-    Returns
-    -------
-    pd.DataFrame
-    """
-    # We need a dict of columns here, with each column being a NumPy array (at
-    # least for now, deal with non-NumPy dtypes later).
-    columns: dict[str, Any] = {}
-    buffers = []  # hold on to buffers, keeps memory alive
-    for name in df.column_names():
-        if not isinstance(name, str):
-            raise ValueError(f"Column {name} is not a string")
-        if name in columns:
-            raise ValueError(f"Column {name} is not unique")
-        col = df.get_column_by_name(name)
-        dtype = col.dtype[0]
+        dtype = chunk.dtype[0]
         if dtype in (
             DtypeKind.INT,
             DtypeKind.UINT,
             DtypeKind.FLOAT,
             DtypeKind.BOOL,
         ):
-            columns[name], buf = primitive_column_to_ndarray(col)
+            s, buf = primitive_column_to_series(col)
         elif dtype == DtypeKind.CATEGORICAL:
-            columns[name], buf = categorical_column_to_series(col)
+            s, buf = categorical_column_to_series(col)
         elif dtype == DtypeKind.STRING:
-            columns[name], buf = string_column_to_ndarray(col)
+            s, buf = string_column_to_series(col)
         elif dtype == DtypeKind.DATETIME:
-            columns[name], buf = datetime_column_to_ndarray(col)
+            s, buf = datetime_column_to_series(col)
         else:
             raise NotImplementedError(f"Data type {dtype} not handled yet")
 
+        series_chunks.append(s)
         buffers.append(buf)
 
-    pandas_df = pd.DataFrame(columns)
-    pandas_df.attrs["_INTERCHANGE_PROTOCOL_BUFFERS"] = buffers
-    return pandas_df
+    series = pl.concat(series_chunks, rechunk=False)
+    series.attrs["_INTERCHANGE_PROTOCOL_BUFFERS"] = buffers
+    return series
 
 
-def primitive_column_to_ndarray(col: Column) -> tuple[np.ndarray, Any]:
+def primitive_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     """
     Convert a column holding one of the primitive dtypes to a NumPy array.
 
@@ -160,7 +135,7 @@ def primitive_column_to_ndarray(col: Column) -> tuple[np.ndarray, Any]:
     return data, buffers
 
 
-def categorical_column_to_series(col: Column) -> tuple[pd.Series, Any]:
+def categorical_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     """
     Convert a column holding categorical data to a pandas Series.
 
@@ -201,7 +176,7 @@ def categorical_column_to_series(col: Column) -> tuple[pd.Series, Any]:
     return data, buffers
 
 
-def string_column_to_ndarray(col: Column) -> tuple[np.ndarray, Any]:
+def string_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     """
     Convert a column holding string data to a NumPy array.
 
@@ -320,7 +295,7 @@ def parse_datetime_format_str(format_str, data):
     raise NotImplementedError(f"DateTime kind is not supported: {format_str}")
 
 
-def datetime_column_to_ndarray(col: Column) -> tuple[np.ndarray, Any]:
+def datetime_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     """
     Convert a column holding DateTime data to a NumPy array.
 
@@ -358,7 +333,7 @@ def datetime_column_to_ndarray(col: Column) -> tuple[np.ndarray, Any]:
 
 def buffer_to_ndarray(
     buffer: Buffer,
-    dtype: tuple[DtypeKind, int, str, str],
+    dtype: Dtype,
     offset: int = 0,
     length: int | None = None,
 ) -> np.ndarray:
@@ -466,9 +441,9 @@ def bitmask_to_bool_ndarray(
 
 
 def set_nulls(
-    data: np.ndarray | pd.Series,
+    data: pl.Series,
     col: Column,
-    validity: tuple[Buffer, tuple[DtypeKind, int, str, str]] | None,
+    validity: tuple[Buffer, Dtype] | None,
     allow_modify_inplace: bool = True,
 ):
     """
@@ -496,7 +471,7 @@ def set_nulls(
     null_pos = None
 
     if null_kind == ColumnNullType.USE_SENTINEL:
-        null_pos = pd.Series(data) == sentinel_val
+        null_pos = data == sentinel_val
     elif null_kind in (ColumnNullType.USE_BITMASK, ColumnNullType.USE_BYTEMASK):
         assert validity, "Expected to have a validity buffer for the mask"
         valid_buff, valid_dtype = validity

@@ -19,13 +19,6 @@ if TYPE_CHECKING:
     from polars.internals.interchange.dataframe_protocol import Dtype
 
 
-_NO_VALIDITY_BUFFER = {
-    ColumnNullType.NON_NULLABLE: "This column is non-nullable",
-    ColumnNullType.USE_NAN: "This column uses NaN as null",
-    ColumnNullType.USE_SENTINEL: "This column uses a sentinel value",
-}
-
-
 class PolarsColumn(Column):
     """
     A column object, with only the methods and properties required by the
@@ -102,10 +95,11 @@ class PolarsColumn(Column):
                 "describe_categorical only works on a column with categorical dtype!"
             )
 
+        categories = self._col.unique().cat.set_ordering("physical").sort()
         return {
             "is_ordered": self._col.cat.ordered,  # TODO: Implement
             "is_dictionary": True,
-            "categories": PolarsColumn(self._col.cat.categories),  # TODO: Implement
+            "categories": PolarsColumn(categories),
         }
 
     @property
