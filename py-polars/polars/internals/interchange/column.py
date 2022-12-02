@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pandas._libs.tslibs import iNaT
-from pandas.errors import NoBufferPresent
 from polars.internals.interchange.buffer import PolarsBuffer
 from polars.internals.interchange.dataframe_protocol import (
     CategoricalDescription,
@@ -17,9 +15,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from typing import Any
 
-    from polars.internals.interchange.dataframe_protocol import Dtype
-
     import polars as pl
+    from polars.internals.interchange.dataframe_protocol import Dtype
 
 
 _NO_VALIDITY_BUFFER = {
@@ -94,7 +91,7 @@ class PolarsColumn(Column):
             arrow_c_type = f"tD{tu}"
             return DtypeKind.DATETIME, 64, arrow_c_type, "="
         elif dtype == pl.Categorical:
-            return DtypeKind.INT, 32, "I", "="
+            return DtypeKind.CATEGORICAL, 32, "I", "="
         else:
             raise ValueError(f"Data type {dtype} not supported by interchange protocol")
 
@@ -171,7 +168,7 @@ class PolarsColumn(Column):
         if self.dtype[0] == DtypeKind.CATEGORICAL:
             codes = self._col.to_physical()
             buffer = PolarsBuffer(codes, allow_copy=self._allow_copy)
-            dtype = self.dtype
+            dtype = (DtypeKind.UINT, 32, "I", "=")
         elif self.dtype[0] == DtypeKind.STRING:
             # TODO
             # Marshal the strings from a NumPy object array into a byte array

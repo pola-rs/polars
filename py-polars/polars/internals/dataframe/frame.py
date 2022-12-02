@@ -2412,10 +2412,6 @@ class DataFrame:
                 file, compression, compression_level, statistics, row_group_size
             )
 
-    def get_chunks(self) -> Iterable[DataFrame]:
-        """Return an iteratable yielding the chunks of this DataFrame."""
-        pass
-
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
         Return an estimation of the total (heap) allocated size of the `DataFrame`.

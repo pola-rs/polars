@@ -4,13 +4,18 @@ import ctypes
 import re
 from typing import Any
 
-import numpy as np
-import pandas as pd
-from pandas.core.interchange.column import PandasColumn
-from pandas.core.interchange.dataframe_protocol import Buffer, Column, ColumnNullType
-from pandas.core.interchange.dataframe_protocol import DataFrame as DataFrameXchg
-from pandas.core.interchange.dataframe_protocol import DtypeKind
-from pandas.core.interchange.utils import ArrowCTypes, Endianness
+import polars as pl
+from polars.dependencies import _PANDAS_TYPE
+from polars.dependencies import pandas as pd
+from polars.internals.interchange.column import PandasColumn
+from polars.internals.interchange.dataframe_protocol import (
+    Buffer,
+    Column,
+    ColumnNullType,
+)
+from polars.internals.interchange.dataframe_protocol import DataFrame as DataFrameXchg
+from polars.internals.interchange.dataframe_protocol import DtypeKind
+from polars.internals.interchange.utils import ArrowCTypes, Endianness
 
 _NP_DTYPES: dict[DtypeKind, dict[int, Any]] = {
     DtypeKind.INT: {8: np.int8, 16: np.int16, 32: np.int32, 64: np.int64},
@@ -20,7 +25,7 @@ _NP_DTYPES: dict[DtypeKind, dict[int, Any]] = {
 }
 
 
-def from_dataframe(df, allow_copy: bool = True) -> pd.DataFrame:
+def from_dataframe(df: Any, allow_copy: bool = True) -> pl.DataFrame:
     """
     Build a ``pd.DataFrame`` from any DataFrame supporting the interchange protocol.
 
@@ -34,10 +39,12 @@ def from_dataframe(df, allow_copy: bool = True) -> pd.DataFrame:
 
     Returns
     -------
-    pd.DataFrame
+    Polars DataFrame
     """
-    if isinstance(df, pd.DataFrame):
+    if isinstance(df, pl.DataFrame):
         return df
+    elif _PANDAS_TYPE(df) and isinstance(df, pd.DataFrame):
+        return pl.from_pandas(df, rechunk=allow_copy)
 
     if not hasattr(df, "__dataframe__"):
         raise ValueError("`df` does not support __dataframe__")
@@ -47,7 +54,7 @@ def from_dataframe(df, allow_copy: bool = True) -> pd.DataFrame:
 
 def _from_dataframe(df: DataFrameXchg, allow_copy: bool = True):
     """
-    Build a ``pd.DataFrame`` from the DataFrame interchange object.
+    Build a ``pl.DataFrame`` from the DataFrame interchange object.
 
     Parameters
     ----------
