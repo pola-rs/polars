@@ -316,6 +316,7 @@ pub struct BatchedParquetReader {
     n_row_groups: usize,
     chunks_fifo: VecDeque<DataFrame>,
     parallel: ParallelStrategy,
+    chunk_size: usize,
 }
 
 impl BatchedParquetReader {
@@ -324,6 +325,7 @@ impl BatchedParquetReader {
         limit: usize,
         projection: Option<Vec<usize>>,
         row_count: Option<RowCount>,
+        chunk_size: usize,
     ) -> PolarsResult<Self> {
         let metadata = read::read_metadata(&mut reader)?;
         let schema = read::schema::infer_schema(&metadata)?;
@@ -360,6 +362,7 @@ impl BatchedParquetReader {
             n_row_groups,
             chunks_fifo: VecDeque::with_capacity(POOL.current_num_threads()),
             parallel,
+            chunk_size,
         })
     }
 
@@ -408,7 +411,7 @@ impl BatchedParquetReader {
 
             for mut df in dfs {
                 // make sure that the chunks are not too large
-                let n = df.shape().0 / 50_000;
+                let n = df.shape().0 / self.chunk_size;
                 if n > 1 {
                     for df in split_df(&mut df, n)? {
                         self.chunks_fifo.push_back(df)
