@@ -888,7 +888,7 @@ impl GetAnyValue for ArrayRef {
     }
 }
 
-impl<K: NumericNative> From<K> for AnyValue<'static> {
+impl<K: NumericNative> From<K> for AnyValue<'_> {
     fn from(value: K) -> Self {
         unsafe {
             match K::PRIMITIVE {

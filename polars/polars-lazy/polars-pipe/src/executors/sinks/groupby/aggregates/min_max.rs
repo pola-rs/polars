@@ -10,12 +10,18 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 use super::*;
 use crate::operators::{ArrowDataType, IdxSize};
 
+#[inline]
+fn compare_fn_min<T: NumericNative>(a: &T, b: &T) -> Ordering {
+    // reverse the ordering
+    compare_fn_nan_max(b, a)
+}
+
 pub(super) fn new_min<K: NumericNative>() -> MinMaxAgg<K, fn(&K, &K) -> Ordering> {
-    MinMaxAgg::new(compare_fn_nan_min)
+    MinMaxAgg::new(compare_fn_min)
 }
 
 pub(super) fn new_max<K: NumericNative>() -> MinMaxAgg<K, fn(&K, &K) -> Ordering> {
-    MinMaxAgg::new(compare_fn_nan_max)
+    MinMaxAgg::new(compare_fn_nan_min)
 }
 
 pub struct MinMaxAgg<K: NumericNative, F: Fn(&K, &K) -> Ordering> {
@@ -43,8 +49,10 @@ impl<K: NumericNative, F: Fn(&K, &K) -> Ordering> MinMaxAgg<K, F> {
     fn pre_agg_primitive<T: NumCast>(&mut self, item: Option<T>) {
         match (item.map(|v| K::from(v).unwrap()), self.agg) {
             (Some(val), Some(current_agg)) => {
+                // The ordering is static, we swap the arguments in the compare fn to minic
+                // min/max behavior.
                 if (self.cmp_fn)(&current_agg, &val) == Ordering::Less {
-                    self.agg = Some(current_agg);
+                    self.agg = Some(val);
                 }
             }
             (Some(val), None) => self.agg = Some(val),
