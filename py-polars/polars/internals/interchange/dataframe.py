@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from itertools import accumulate
 from typing import TYPE_CHECKING
 
 from polars.internals.interchange.column import PolarsColumn
@@ -96,7 +97,7 @@ class PolarsDataFrameXchg(DataFrameXchg):
 
     def get_chunks(self, n_chunks: int | None = None) -> Iterable[PolarsDataFrameXchg]:
         total_n_chunks = self.num_chunks()
-        chunks = self._df.get_chunks()  # TODO: Implement
+        chunks = self._get_chunks_from_col_chunks()
 
         if (n_chunks is None) or (n_chunks == total_n_chunks):
             for chunk in chunks:
@@ -119,3 +120,24 @@ class PolarsDataFrameXchg(DataFrameXchg):
                     yield PolarsDataFrameXchg(
                         chunk[start : start + step, :], self._allow_copy
                     )
+
+    def _get_chunks_from_col_chunks(self) -> Iterable[pl.DataFrame]:
+        """Return chunks of this dataframe according to the chunks of the first column.
+
+        If columns are not all chunked identically, they will be rechunked like the
+        first column. If copy is not allowed, raises RuntimeError.
+        """
+        col_chunks = self.get_column(0).get_chunks()
+        chunk_sizes = [len(chunk) for chunk in col_chunks]
+        starts = [0] + list(accumulate(chunk_sizes))
+
+        for i in range(len(starts) - 1):
+            start, end = starts[i : i + 2]
+            chunk = self._df[start:end, :]
+
+            if not all(x == 1 for x in chunk.n_chunks("all")):
+                if self._allow_copy:
+                    chunk = chunk.rechunk()
+                else:
+                    raise RuntimeError("Columns not chunked the same, copy not allowed")
+                yield chunk
