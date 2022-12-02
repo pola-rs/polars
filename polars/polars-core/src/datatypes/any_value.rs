@@ -423,6 +423,8 @@ impl<'a> Hash for AnyValue<'a> {
             UInt64(v) => state.write_u64(*v),
             Utf8(v) => state.write(v.as_bytes()),
             Utf8Owned(v) => state.write(v.as_bytes()),
+            Float32(v) => state.write_u32(v.to_bits()),
+            Float64(v) => state.write_u64(v.to_bits()),
             #[cfg(feature = "dtype-binary")]
             Binary(v) => state.write(v),
             #[cfg(feature = "dtype-binary")]

@@ -389,7 +389,7 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
     fn unique(&self) -> PolarsResult<ChunkedArray<Float32Type>> {
         let ca = self.bit_repr_small();
         let ca = ca.unique()?;
-        Ok(ca.reinterpret_float())
+        Ok(ca._reinterpret_float())
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
@@ -408,7 +408,7 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
     fn unique(&self) -> PolarsResult<ChunkedArray<Float64Type>> {
         let ca = self.bit_repr_large();
         let ca = ca.unique()?;
-        Ok(ca.reinterpret_float())
+        Ok(ca._reinterpret_float())
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {

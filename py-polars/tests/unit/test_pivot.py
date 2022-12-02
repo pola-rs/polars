@@ -142,3 +142,36 @@ def test_pivot_multiple_values_column_names_5116() -> None:
         "x2_C": [8, 7],
         "x2_D": [6, 5],
     }
+
+
+def test_pivot_floats() -> None:
+
+    df = pl.DataFrame(
+        {
+            "article": ["a", "a", "a", "b", "b", "b"],
+            "weight": [1.0, 1.0, 4.4, 1.0, 8.8, 1.0],
+            "quantity": [1.0, 5.0, 1.0, 1.0, 1.0, 7.5],
+            "price": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    )
+
+    assert df.pivot(values="price", index="weight", columns="quantity",).to_dict(
+        False
+    ) == {
+        "weight": [1.0, 4.4, 8.8],
+        "1.0": [1.0, 3.0, 5.0],
+        "5.0": [2.0, None, None],
+        "7.5": [6.0, None, None],
+    }
+
+    assert df.pivot(
+        values="price",
+        index=["article", "weight"],
+        columns="quantity",
+    ).to_dict(False) == {
+        "article": ["a", "a", "b", "b"],
+        "weight": [1.0, 4.4, 1.0, 8.8],
+        "1.0": [1.0, 3.0, 4.0, 5.0],
+        "5.0": [2.0, None, None, None],
+        "7.5": [None, None, 6.0, None],
+    }
