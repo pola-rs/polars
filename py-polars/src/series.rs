@@ -1108,6 +1108,11 @@ impl PySeries {
                 .collect()
         })
     }
+
+    pub fn cat_is_ordered(&self) -> PyResult<bool> {
+        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
+        Ok(ca.uses_lexical_sort())
+    }
 }
 
 macro_rules! impl_ufuncs {

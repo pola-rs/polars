@@ -72,7 +72,9 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn use_lexical_sort(&self) -> bool {
+    /// If sorting the [`CategoricalChunked`] uses the categories or the lexical order of
+    /// the string values.
+    pub fn uses_lexical_sort(&self) -> bool {
         self.bit_settings & 1 << 1 != 0
     }
 

@@ -9,4 +9,5 @@ The following methods are available under the `Series.cat` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Series.cat.ordered
     Series.cat.set_ordering

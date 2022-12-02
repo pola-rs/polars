@@ -276,3 +276,11 @@ def test_categorical_max_null_5437() -> None:
         .with_column(pl.col("strings").cast(pl.Categorical).alias("cats"))
         .select(pl.all().max())
     ).to_dict(False) == {"strings": ["c"], "values": [3], "cats": [None]}
+
+
+def test_ordered_flag() -> None:
+    s = pl.Series(["a", "b", None, "b"]).cast(pl.Categorical)
+    assert not s.cat.ordered
+
+    s = s.cat.set_ordering("lexical")
+    assert s.cat.ordered

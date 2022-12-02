@@ -29,7 +29,7 @@ impl CategoricalChunked {
             "null last not yet supported for categorical dtype"
         );
 
-        if self.use_lexical_sort() {
+        if self.uses_lexical_sort() {
             match &**self.get_rev_map() {
                 RevMapping::Local(arr) => {
                     // we don't use arrow2 sort here because its not activated
@@ -99,7 +99,7 @@ impl CategoricalChunked {
 
     /// Retrieve the indexes needed to sort this array.
     pub fn argsort(&self, options: SortOptions) -> IdxCa {
-        if self.use_lexical_sort() {
+        if self.uses_lexical_sort() {
             let iters = [self.iter_str()];
             argsort::argsort(
                 self.name(),
@@ -120,7 +120,7 @@ impl CategoricalChunked {
         other: &[Series],
         reverse: &[bool],
     ) -> PolarsResult<IdxCa> {
-        if self.use_lexical_sort() {
+        if self.uses_lexical_sort() {
             args_validate(self.logical(), other, reverse)?;
             let mut count: IdxSize = 0;
             let vals: Vec<_> = self

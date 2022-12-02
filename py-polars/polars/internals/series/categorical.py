@@ -19,6 +19,11 @@ class CatNameSpace:
     def __init__(self, series: pli.Series):
         self._s: PySeries = series._s
 
+    @property
+    def ordered(self) -> bool:
+        """Return if sorting uses the categories or the lexical order of the string values."""  # noqa: E501
+        return self._s.cat_is_ordered()
+
     def set_ordering(self, ordering: CategoricalOrdering) -> pli.Series:
         """
         Determine how this categorical series should be sorted.
