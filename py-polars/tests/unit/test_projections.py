@@ -122,3 +122,35 @@ def test_streaming_duplicate_cols_5537() -> None:
         "b": [1, 2, 3],
         "foo": [2, 4, 6],
     }
+
+
+def test_double_projection_union() -> None:
+    lf1 = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4],
+            "b": [2, 3, 4, 5],
+            "c": [1, 1, 2, 2],
+            "d": [1, 2, 2, 1],
+        }
+    ).lazy()
+
+    lf2 = pl.DataFrame(
+        {
+            "a": [5, 6, 7, 8],
+            "b": [6, 7, 8, 9],
+            "c": [1, 2, 1, 3],
+        }
+    ).lazy()
+
+    # in this query the groupby projects only 2 columns, that's one
+    # less than the upstream projection so the union will fail if
+    # the select node does not prune one column
+    q = lf1.select(["a", "b", "c"])
+
+    q = pl.concat([q, lf2])
+
+    q = q.groupby("c", maintain_order=True).agg([pl.col("a")])
+    assert q.collect().to_dict(False) == {
+        "c": [1, 2, 3],
+        "a": [[1, 2, 5, 7], [3, 4, 6], [8]],
+    }
