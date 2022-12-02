@@ -97,7 +97,7 @@ pub enum UniqueKeepStrategy {
 /// ```rust
 /// # use polars_core::prelude::*;
 /// let df: PolarsResult<DataFrame> = df!("Fruit" => &["Apple", "Apple", "Pear"],
-///                                 "Color" => &["Red", "Yellow", "Green"]);
+///                                       "Color" => &["Red", "Yellow", "Green"]);
 /// ```
 ///
 /// ## Using a CSV file
