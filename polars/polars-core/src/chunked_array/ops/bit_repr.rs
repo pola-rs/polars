@@ -192,7 +192,8 @@ impl Reinterpret for Int64Chunked {
 }
 
 impl UInt64Chunked {
-    pub(crate) fn reinterpret_float(&self) -> Float64Chunked {
+    #[doc(hidden)]
+    pub fn _reinterpret_float(&self) -> Float64Chunked {
         let chunks = self
             .downcast_iter()
             .map(|array| {
@@ -220,7 +221,8 @@ impl UInt64Chunked {
     }
 }
 impl UInt32Chunked {
-    pub(crate) fn reinterpret_float(&self) -> Float32Chunked {
+    #[doc(hidden)]
+    pub fn _reinterpret_float(&self) -> Float32Chunked {
         let chunks = self
             .downcast_iter()
             .map(|array| {
@@ -258,7 +260,7 @@ impl Float32Chunked {
         let s = self.bit_repr_small().into_series();
         let out = f(&s);
         let out = out.u32().unwrap();
-        out.reinterpret_float().into()
+        out._reinterpret_float().into()
     }
 }
 impl Float64Chunked {
@@ -269,6 +271,6 @@ impl Float64Chunked {
         let s = self.bit_repr_large().into_series();
         let out = f(&s);
         let out = out.u64().unwrap();
-        out.reinterpret_float().into()
+        out._reinterpret_float().into()
     }
 }

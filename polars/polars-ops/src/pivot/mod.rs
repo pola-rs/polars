@@ -36,6 +36,14 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
                     .into_series()
             }
         }
+        DataType::Float32 if matches!(s.dtype(), DataType::UInt32) => {
+            let ca = s.u32().unwrap();
+            ca._reinterpret_float().into_series()
+        }
+        DataType::Float64 if matches!(s.dtype(), DataType::UInt64) => {
+            let ca = s.u64().unwrap();
+            ca._reinterpret_float().into_series()
+        }
         _ => s.cast(logical_type).unwrap(),
     }
 }
