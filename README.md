@@ -169,16 +169,6 @@ polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>"
 
 Required Rust version `>=1.58`
 
-### Node.js
-
-Install:
-
-```sh
-yarn add nodejs-polars
-```
-
-The Node.js code is hosted in a [separate Github repository](https://github.com/pola-rs/nodejs-polars).
-
 ## Contributing
 
 Want to contribute? Read our [contribution guideline](https://github.com/pola-rs/polars/blob/master/CONTRIBUTING.md).
