@@ -417,12 +417,12 @@ pub fn groupby_values(
 
     // we have a (partial) lookbehind window
     if offset.negative {
-        if offset.nanoseconds() >= period.nanoseconds() {
+        if offset.duration_ns() >= period.duration_ns() {
             // lookbehind
             // window is within 2 periods length of t
             // ------t---
             // [------]
-            if offset.nanoseconds() < period.nanoseconds() * 2 {
+            if offset.duration_ns() < period.duration_ns() * 2 {
                 let vals = thread_offsets
                     .par_iter()
                     .copied()
