@@ -12,10 +12,12 @@ pub struct PartitionGroupByExec {
     maintain_order: bool,
     slice: Option<(i64, usize)>,
     input_schema: SchemaRef,
+    output_schema: SchemaRef,
     from_partitioned_ds: bool,
 }
 
 impl PartitionGroupByExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
@@ -23,6 +25,7 @@ impl PartitionGroupByExec {
         maintain_order: bool,
         slice: Option<(i64, usize)>,
         input_schema: SchemaRef,
+        output_schema: SchemaRef,
         from_partitioned_ds: bool,
     ) -> Self {
         Self {
@@ -32,6 +35,7 @@ impl PartitionGroupByExec {
             maintain_order,
             slice,
             input_schema,
+            output_schema,
             from_partitioned_ds,
         }
     }
@@ -258,6 +262,7 @@ impl PartitionGroupByExec {
             )?
         };
 
+        state.set_schema(self.output_schema.clone());
         // MERGE phase
         // merge and hash aggregate again
         let df = accumulate_dataframes_vertical(dfs)?;
@@ -296,6 +301,7 @@ impl PartitionGroupByExec {
             POOL.install(|| rayon::join(get_columns, get_agg));
 
         columns.extend(agg_columns?);
+        state.clear_schema_cache();
 
         Ok(DataFrame::new(columns).unwrap())
     }

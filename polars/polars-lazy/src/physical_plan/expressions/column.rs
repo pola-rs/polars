@@ -42,6 +42,75 @@ impl ColumnExpr {
             }
         }
     }
+
+    fn process_by_idx(
+        &self,
+        out: &Series,
+        _state: &ExecutionState,
+        _schema: &Schema,
+        df: &DataFrame,
+        check_state_schema: bool,
+    ) -> PolarsResult<Series> {
+        if out.name() != &*self.name {
+            if check_state_schema {
+                if let Some(schema) = _state.get_schema() {
+                    return self.process_from_state_schema(df, _state, &schema);
+                }
+            }
+
+            // this path should not happen
+            #[cfg(feature = "panic_on_schema")]
+            {
+                if _state.ext_contexts.is_empty() {
+                    panic!(
+                        "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
+                        out.name(),
+                        &*self.name,
+                        _schema,
+                        df
+                    )
+                }
+            }
+            // in release we fallback to linear search
+            #[allow(unreachable_code)]
+            {
+                df.column(&self.name).map(|s| s.clone())
+            }
+        } else {
+            Ok(out.clone())
+        }
+    }
+    fn process_by_linear_search(
+        &self,
+        df: &DataFrame,
+        _state: &ExecutionState,
+        _panic_during_test: bool,
+    ) -> PolarsResult<Series> {
+        #[cfg(feature = "panic_on_schema")]
+        {
+            if _panic_during_test && _state.ext_contexts.is_empty() {
+                panic!("invalid schema")
+            }
+        }
+        // in release we fallback to linear search
+        #[allow(unreachable_code)]
+        df.column(&self.name).map(|s| s.clone())
+    }
+
+    fn process_from_state_schema(
+        &self,
+        df: &DataFrame,
+        state: &ExecutionState,
+        schema: &Schema,
+    ) -> PolarsResult<Series> {
+        match schema.get_full(&self.name) {
+            None => self.process_by_linear_search(df, state, true),
+            Some((idx, _, _)) => match df.get_columns().get(idx) {
+                Some(out) => self.process_by_idx(out, state, schema, df, false),
+                None => self.process_by_linear_search(df, state, true),
+            },
+        }
+    }
 }
 
 impl PhysicalExpr for ColumnExpr {
@@ -50,70 +119,28 @@ impl PhysicalExpr for ColumnExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let out = match &self.schema {
-            None => df.column(&self.name).map(|s| s.clone()),
+            None => self.process_by_linear_search(df, state, false),
             Some(schema) => {
                 match schema.get_full(&self.name) {
                     Some((idx, _, _)) => {
                         // check if the schema was correct
                         // if not do O(n) search
-                        let out = match df.get_columns().get(idx) {
-                            Some(out) => out,
+                        match df.get_columns().get(idx) {
+                            Some(out) => self.process_by_idx(out, state, schema, df, true),
                             None => {
-                                // this path should not happen
-                                #[cfg(feature = "panic_on_schema")]
-                                {
-                                    if state.ext_contexts.is_empty() {
-                                        panic!("invalid schema")
-                                    }
-                                }
-                                // in release we fallback to linear search
-                                #[allow(unreachable_code)]
-                                {
-                                    return self.check_external_context(
-                                        df.column(&self.name).map(|s| s.clone()),
-                                        state,
-                                    );
+                                // partitioned groupby special case
+                                if let Some(schema) = state.get_schema() {
+                                    self.process_from_state_schema(df, state, &schema)
+                                } else {
+                                    self.process_by_linear_search(df, state, true)
                                 }
                             }
-                        };
-
-                        if out.name() != &*self.name {
-                            // this path should not happen
-                            #[cfg(feature = "panic_on_schema")]
-                            {
-                                if state.ext_contexts.is_empty() {
-                                    panic!(
-                                        "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
-                                        out.name(),
-                                        &*self.name,
-                                        &schema,
-                                        &df
-                                    )
-                                }
-                            }
-                            // in release we fallback to linear search
-                            #[allow(unreachable_code)]
-                            {
-                                df.column(&self.name).map(|s| s.clone())
-                            }
-                        } else {
-                            Ok(out.clone())
                         }
                     }
                     // in the future we will throw an error here
                     // now we do a linear search first as the lazy reported schema may still be incorrect
                     // in debug builds we panic so that it can be fixed when occurring
-                    None => {
-                        #[cfg(feature = "panic_on_schema")]
-                        {
-                            if state.ext_contexts.is_empty() {
-                                panic!("invalid schema")
-                            }
-                        }
-                        // in release we fallback to linear search
-                        #[allow(unreachable_code)]
-                        df.column(&self.name).map(|s| s.clone())
-                    }
+                    None => self.process_by_linear_search(df, state, true),
                 }
             }
         };

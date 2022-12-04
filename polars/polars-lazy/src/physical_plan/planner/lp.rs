@@ -235,42 +235,50 @@ pub fn create_physical_plan(
         Projection {
             expr,
             input,
-            schema,
+            schema: _schema,
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let phys_expr =
-                create_physical_expressions(&expr, Context::Default, expr_arena, Some(&schema))?;
+            let phys_expr = create_physical_expressions(
+                &expr,
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+            )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
                 expr: phys_expr,
                 has_windows,
                 input_schema,
                 #[cfg(test)]
-                schema,
+                schema: _schema,
             }))
         }
         LocalProjection {
             expr,
             input,
-            schema,
+            schema: _schema,
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
 
             let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let phys_expr =
-                create_physical_expressions(&expr, Context::Default, expr_arena, Some(&schema))?;
+            let phys_expr = create_physical_expressions(
+                &expr,
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+            )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
                 expr: phys_expr,
                 has_windows,
                 input_schema,
                 #[cfg(test)]
-                schema,
+                schema: _schema,
             }))
         }
         DataFrameScan {
@@ -312,9 +320,14 @@ pub fn create_physical_plan(
             by_column,
             args,
         } => {
+            let input_schema = lp_arena.get(input).schema(lp_arena);
+            let by_column = create_physical_expressions(
+                &by_column,
+                Context::Default,
+                expr_arena,
+                Some(input_schema.as_ref()),
+            )?;
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let by_column =
-                create_physical_expressions(&by_column, Context::Default, expr_arena, None)?;
             Ok(Box::new(executors::SortExec {
                 input,
                 by_column,
@@ -343,13 +356,17 @@ pub fn create_physical_plan(
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let phys_keys =
-                create_physical_expressions(&keys, Context::Default, expr_arena, Some(&schema))?;
+            let phys_keys = create_physical_expressions(
+                &keys,
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+            )?;
             let phys_aggs = create_physical_expressions(
                 &aggs,
                 Context::Aggregation,
                 expr_arena,
-                Some(&schema),
+                Some(&input_schema),
             )?;
 
             let _slice = options.slice;
@@ -404,7 +421,7 @@ pub fn create_physical_plan(
                         keys,
                         aggs,
                         apply,
-                        schema,
+                        schema: schema.clone(),
                         maintain_order,
                         options: options.clone(),
                     };
@@ -439,6 +456,7 @@ pub fn create_physical_plan(
                     maintain_order,
                     options.slice,
                     input_schema,
+                    schema,
                     from_partitioned_ds,
                 )))
             } else {
@@ -460,7 +478,6 @@ pub fn create_physical_plan(
             left_on,
             right_on,
             options,
-            schema,
             ..
         } => {
             let parallel = if options.force_parallel {
@@ -481,13 +498,9 @@ pub fn create_physical_plan(
             let input_left = create_physical_plan(input_left, lp_arena, expr_arena)?;
             let input_right = create_physical_plan(input_right, lp_arena, expr_arena)?;
             let left_on =
-                create_physical_expressions(&left_on, Context::Default, expr_arena, Some(&schema))?;
-            let right_on = create_physical_expressions(
-                &right_on,
-                Context::Default,
-                expr_arena,
-                Some(&schema),
-            )?;
+                create_physical_expressions(&left_on, Context::Default, expr_arena, None)?;
+            let right_on =
+                create_physical_expressions(&right_on, Context::Default, expr_arena, None)?;
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,
@@ -499,16 +512,16 @@ pub fn create_physical_plan(
                 options.slice,
             )))
         }
-        HStack {
-            input,
-            exprs,
-            schema,
-        } => {
+        HStack { input, exprs, .. } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let has_windows = exprs.iter().any(|node| has_aexpr_window(*node, expr_arena));
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let phys_expr =
-                create_physical_expressions(&exprs, Context::Default, expr_arena, Some(&schema))?;
+            let phys_expr = create_physical_expressions(
+                &exprs,
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+            )?;
             Ok(Box::new(executors::StackExec {
                 input,
                 has_windows,
