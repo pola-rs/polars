@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_core::datatypes::Field;
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{DataType, Series, IDX_DTYPE, SchemaRef};
+use polars_core::prelude::{DataType, SchemaRef, Series, IDX_DTYPE};
 use polars_core::schema::Schema;
 use polars_plan::logical_plan::{ArenaExprIter, Context};
 use polars_plan::prelude::{AAggExpr, AExpr};

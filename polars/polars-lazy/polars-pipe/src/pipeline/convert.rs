@@ -15,7 +15,7 @@ fn exprs_to_physical<F>(
     exprs: &[Node],
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
-    schema: Option<&SchemaRef>
+    schema: Option<&SchemaRef>,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalPipedExpr>>>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -123,10 +123,18 @@ where
             #[cfg(feature = "cross_join")]
             JoinType::Cross => Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>,
             join_type @ JoinType::Inner | join_type @ JoinType::Left => {
-                let join_columns_left =
-                    Arc::new(exprs_to_physical(left_on, expr_arena, to_physical, Some(schema))?);
-                let join_columns_right =
-                    Arc::new(exprs_to_physical(right_on, expr_arena, to_physical, Some(schema))?);
+                let join_columns_left = Arc::new(exprs_to_physical(
+                    left_on,
+                    expr_arena,
+                    to_physical,
+                    Some(schema),
+                )?);
+                let join_columns_right = Arc::new(exprs_to_physical(
+                    right_on,
+                    expr_arena,
+                    to_physical,
+                    Some(schema),
+                )?);
 
                 let swapped = swap_join_order(options);
 
@@ -158,7 +166,12 @@ where
             options,
             ..
         } => {
-            let key_columns = Arc::new(exprs_to_physical(keys, expr_arena, to_physical, Some(output_schema))?);
+            let key_columns = Arc::new(exprs_to_physical(
+                keys,
+                expr_arena,
+                to_physical,
+                Some(output_schema),
+            )?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
             let mut agg_fns = Vec::with_capacity(aggs.len());

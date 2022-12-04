@@ -10,7 +10,7 @@ pub(crate) fn create_physical_expressions(
     exprs: &[Node],
     context: Context,
     expr_arena: &Arena<AExpr>,
-    schema: Option<&SchemaRef>
+    schema: Option<&SchemaRef>,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
     exprs
         .iter()
@@ -22,7 +22,7 @@ pub(crate) fn create_physical_expr(
     expression: Node,
     ctxt: Context,
     expr_arena: &Arena<AExpr>,
-    schema: Option<&SchemaRef>
+    schema: Option<&SchemaRef>,
 ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
     use AExpr::*;
 
@@ -37,7 +37,8 @@ pub(crate) fn create_physical_expr(
             // TODO! Order by
             let group_by =
                 create_physical_expressions(&partition_by, Context::Default, expr_arena, schema)?;
-            let phys_function = create_physical_expr(function, Context::Aggregation, expr_arena, schema)?;
+            let phys_function =
+                create_physical_expr(function, Context::Aggregation, expr_arena, schema)?;
             let mut out_name = None;
             let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
             // sort and then dedup removes consecutive duplicates == all duplicates
@@ -95,6 +96,7 @@ pub(crate) fn create_physical_expr(
         Column(column) => Ok(Arc::new(ColumnExpr::new(
             column,
             node_to_expr(expression, expr_arena),
+            schema.cloned(),
         ))),
         Sort { expr, options } => {
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema)?;

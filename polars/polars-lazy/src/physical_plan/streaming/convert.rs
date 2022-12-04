@@ -33,7 +33,7 @@ impl PhysicalPipedExpr for Wrap {
 fn to_physical_piped_expr(
     node: Node,
     expr_arena: &Arena<AExpr>,
-    schema: Option<&SchemaRef>
+    schema: Option<&SchemaRef>,
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
     create_physical_expr(node, Context::Default, expr_arena, schema)
@@ -403,18 +403,6 @@ struct Branch {
 }
 
 impl SExecutionContext for ExecutionState {
-    fn input_schema_is_set(&self) -> bool {
-        self.schema_cache.read().unwrap().is_some()
-    }
-
-    fn set_input_schema(&self, schema: SchemaRef) {
-        self.set_schema(schema);
-    }
-
-    fn clear_input_schema(&self) {
-        self.clear_schema_cache();
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }

@@ -202,10 +202,6 @@ impl GenericGroupbySink {
 
 impl Sink for GenericGroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        let state = context.execution_state.as_ref();
-        if !state.input_schema_is_set() {
-            state.set_input_schema(self.input_schema.clone())
-        }
         let num_aggs = self.number_of_aggs();
 
         // todo! amortize allocation
@@ -416,8 +412,7 @@ impl Sink for GenericGroupbySink {
         Box::new(new)
     }
 
-    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        context.execution_state.clear_input_schema();
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
         if dfs.is_empty() {
             return Ok(FinalizedSink::Finished(DataFrame::from(

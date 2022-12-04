@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::{Mutex, RwLock};
+use std::sync::Mutex;
 
 use bitflags::bitflags;
 use polars_core::frame::groupby::GroupsProxy;
@@ -52,7 +52,6 @@ pub struct ExecutionState {
     // cache file reads until all branches got there file, then we delete it
     #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
     pub(crate) file_cache: FileCache,
-    pub(super) schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expression to prevent redundant grouping
     pub(super) group_tuples: GroupsProxyCache,
     /// Used by Window Expression to prevent redundant joins
@@ -97,7 +96,6 @@ impl ExecutionState {
             df_cache: self.df_cache.clone(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             file_cache: self.file_cache.clone(),
-            schema_cache: Default::default(),
             group_tuples: Default::default(),
             join_tuples: Default::default(),
             branch_idx: self.branch_idx,
@@ -113,7 +111,6 @@ impl ExecutionState {
             df_cache: self.df_cache.clone(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             file_cache: self.file_cache.clone(),
-            schema_cache: self.schema_cache.read().unwrap().clone().into(),
             group_tuples: self.group_tuples.clone(),
             join_tuples: self.join_tuples.clone(),
             branch_idx: self.branch_idx,
@@ -131,7 +128,6 @@ impl ExecutionState {
     pub(crate) fn with_finger_prints(finger_prints: Option<Vec<FileFingerPrint>>) -> Self {
         Self {
             df_cache: Arc::new(Mutex::new(PlHashMap::default())),
-            schema_cache: Default::default(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             file_cache: FileCache::new(finger_prints),
             group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
@@ -151,7 +147,6 @@ impl ExecutionState {
         }
         Self {
             df_cache: Default::default(),
-            schema_cache: Default::default(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             file_cache: FileCache::new(None),
             group_tuples: Default::default(),
@@ -161,30 +156,6 @@ impl ExecutionState {
             ext_contexts: Default::default(),
             node_timer: None,
         }
-    }
-    pub(crate) fn set_schema(&self, schema: SchemaRef) {
-        let mut lock = self.schema_cache.write().unwrap();
-        *lock = Some(schema);
-    }
-
-    /// Set the schema. Typically at the start of a projection.
-    pub(crate) fn may_set_schema(&mut self, df: &DataFrame, exprs_len: usize) {
-        if exprs_len > 1 && df.get_columns().len() > 10 {
-            let schema = Arc::new(df.schema());
-            self.set_schema(schema);
-        }
-    }
-
-    /// Clear the schema. Typically at the end of a projection.
-    pub(crate) fn clear_schema_cache(&self) {
-        let mut lock = self.schema_cache.write().unwrap();
-        *lock = None;
-    }
-
-    /// Get the schema.
-    pub(crate) fn get_schema(&self) -> Option<SchemaRef> {
-        let lock = self.schema_cache.read().unwrap();
-        lock.clone()
     }
 
     /// Check if we have DataFrame in cache

@@ -231,8 +231,6 @@ impl PartitionGroupByExec {
             // of groups.
             let keys = self.keys(&original_df, state)?;
 
-            // set it here, because `self.input.execute` will clear the schema cache.
-            state.set_schema(self.input_schema.clone());
             if !can_run_partitioned(&keys, &original_df, state, self.from_partitioned_ds)? {
                 return groupby_helper(
                     original_df,
@@ -259,7 +257,6 @@ impl PartitionGroupByExec {
                 self.maintain_order,
             )?
         };
-        state.clear_schema_cache();
 
         // MERGE phase
         // merge and hash aggregate again
@@ -299,7 +296,6 @@ impl PartitionGroupByExec {
             POOL.install(|| rayon::join(get_columns, get_agg));
 
         columns.extend(agg_columns?);
-        state.clear_schema_cache();
 
         Ok(DataFrame::new(columns).unwrap())
     }

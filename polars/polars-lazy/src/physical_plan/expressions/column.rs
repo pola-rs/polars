@@ -7,11 +7,15 @@ use polars_core::prelude::*;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
-pub struct ColumnExpr(Arc<str>, Expr);
+pub struct ColumnExpr {
+    name: Arc<str>,
+    expr: Expr,
+    schema: Option<SchemaRef>,
+}
 
 impl ColumnExpr {
-    pub fn new(name: Arc<str>, expr: Expr) -> Self {
-        Self(name, expr)
+    pub fn new(name: Arc<str>, expr: Expr, schema: Option<SchemaRef>) -> Self {
+        Self { name, expr, schema }
     }
 }
 
@@ -28,7 +32,7 @@ impl ColumnExpr {
                     Err(e)
                 } else {
                     for df in state.ext_contexts.as_ref() {
-                        let out = df.column(&self.0);
+                        let out = df.column(&self.name);
                         if out.is_ok() {
                             return out.cloned();
                         }
@@ -42,13 +46,13 @@ impl ColumnExpr {
 
 impl PhysicalExpr for ColumnExpr {
     fn as_expression(&self) -> Option<&Expr> {
-        Some(&self.1)
+        Some(&self.expr)
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
-        let out = match state.get_schema() {
-            None => df.column(&self.0).map(|s| s.clone()),
+        let out = match &self.schema {
+            None => df.column(&self.name).map(|s| s.clone()),
             Some(schema) => {
-                match schema.get_full(&self.0) {
+                match schema.get_full(&self.name) {
                     Some((idx, _, _)) => {
                         // check if the schema was correct
                         // if not do O(n) search
@@ -66,14 +70,14 @@ impl PhysicalExpr for ColumnExpr {
                                 #[allow(unreachable_code)]
                                 {
                                     return self.check_external_context(
-                                        df.column(&self.0).map(|s| s.clone()),
+                                        df.column(&self.name).map(|s| s.clone()),
                                         state,
                                     );
                                 }
                             }
                         };
 
-                        if out.name() != &*self.0 {
+                        if out.name() != &*self.name {
                             // this path should not happen
                             #[cfg(feature = "panic_on_schema")]
                             {
@@ -81,7 +85,7 @@ impl PhysicalExpr for ColumnExpr {
                                     panic!(
                                         "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
                                         out.name(),
-                                        &*self.0,
+                                        &*self.name,
                                         &schema,
                                         &df
                                     )
@@ -90,7 +94,7 @@ impl PhysicalExpr for ColumnExpr {
                             // in release we fallback to linear search
                             #[allow(unreachable_code)]
                             {
-                                df.column(&self.0).map(|s| s.clone())
+                                df.column(&self.name).map(|s| s.clone())
                             }
                         } else {
                             Ok(out.clone())
@@ -108,7 +112,7 @@ impl PhysicalExpr for ColumnExpr {
                         }
                         // in release we fallback to linear search
                         #[allow(unreachable_code)]
-                        df.column(&self.0).map(|s| s.clone())
+                        df.column(&self.name).map(|s| s.clone())
                     }
                 }
             }
@@ -132,11 +136,11 @@ impl PhysicalExpr for ColumnExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        let field = input_schema.get_field(&self.0).ok_or_else(|| {
+        let field = input_schema.get_field(&self.name).ok_or_else(|| {
             PolarsError::NotFound(
                 format!(
                     "could not find column: {} in schema: {:?}",
-                    self.0, &input_schema
+                    self.name, &input_schema
                 )
                 .into(),
             )
