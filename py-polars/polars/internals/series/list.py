@@ -312,6 +312,18 @@ class ListNameSpace:
         {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
 
         """
+        # We set the upper bound to 0.
+        # No need to create the proper schema in eager mode.
+        s = pli.wrap_s(self)
+        return (
+            s.to_frame()
+            .select(
+                pli.col(s.name).arr.to_struct(
+                    n_field_strategy, name_generator, upper_bound=0
+                )
+            )
+            .to_series()
+        )
 
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Series:
         """

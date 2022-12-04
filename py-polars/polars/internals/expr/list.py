@@ -594,6 +594,7 @@ class ExprListNameSpace:
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
         name_generator: Callable[[int], str] | None = None,
+        upper_bound: int = 0,
     ) -> pli.Expr:
         """
         Convert the series of type ``List`` to a series of type ``Struct``.
@@ -605,6 +606,14 @@ class ExprListNameSpace:
         name_generator
             A custom function that can be used to generate the field names.
             Default field names are `field_0, field_1 .. field_n`
+        upper_bound
+            A polars `LazyFrame` needs to know the schema at all time.
+            The caller therefore must provide an `upper_bound` of
+            struct fields that will be set.
+            If this is incorrectly downstream operation may fail.
+            For instance an `all().sum()` expression will look in
+            the current schema to determine which columns to select.
+            It is adviced to set this value in a lazy query.
 
         Examples
         --------
@@ -632,7 +641,7 @@ class ExprListNameSpace:
 
         """
         return pli.wrap_expr(
-            self._pyexpr.lst_to_struct(n_field_strategy, name_generator)
+            self._pyexpr.lst_to_struct(n_field_strategy, name_generator, upper_bound)
         )
 
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Expr:

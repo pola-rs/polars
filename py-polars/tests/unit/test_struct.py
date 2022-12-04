@@ -277,6 +277,12 @@ def test_list_to_struct() -> None:
         {"field_0": 1, "field_1": 2, "field_2": 3},
     ]
 
+    # set upper bound
+    df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
+    assert df.lazy().select(pl.col("lists").arr.to_struct(upper_bound=3)).unnest(
+        "lists"
+    ).sum().collect().columns == ["field_0", "field_1", "field_2"]
+
 
 def test_sort_df_with_list_struct() -> None:
     assert pl.DataFrame([{"a": 1, "b": [{"c": 1}]}]).sort("a").to_dict(False) == {
