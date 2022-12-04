@@ -21,7 +21,6 @@ from typing import (
     Mapping,
     NoReturn,
     Sequence,
-    TextIO,
     TypeVar,
     overload,
 )
@@ -1928,7 +1927,7 @@ class DataFrame:
     @overload
     def write_csv(
         self,
-        file: TextIO | BytesIO | str | Path,
+        file: BytesIO | str | Path,
         has_header: bool = ...,
         sep: str = ...,
         quote: str = ...,
@@ -1943,7 +1942,7 @@ class DataFrame:
 
     def write_csv(
         self,
-        file: TextIO | BytesIO | str | Path | None = None,
+        file: BytesIO | str | Path | None = None,
         has_header: bool = True,
         sep: str = ",",
         quote: str = '"',
