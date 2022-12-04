@@ -2149,6 +2149,7 @@ class DataFrame:
             - "gzip" : min-level: 0, max-level: 10.
             - "brotli" : min-level: 0, max-level: 11.
             - "zstd" : min-level: 1, max-level: 22.
+
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
