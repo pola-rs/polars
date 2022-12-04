@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_core::datatypes::Field;
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{DataType, Series, IDX_DTYPE};
+use polars_core::prelude::{DataType, Series, IDX_DTYPE, SchemaRef};
 use polars_core::schema::Schema;
 use polars_plan::logical_plan::{ArenaExprIter, Context};
 use polars_plan::prelude::{AAggExpr, AExpr};
@@ -102,11 +102,11 @@ pub fn can_convert_to_hash_agg(
 pub fn convert_to_hash_agg<F>(
     node: Node,
     expr_arena: &Arena<AExpr>,
-    schema: &Schema,
+    schema: &SchemaRef,
     to_physical: &F,
 ) -> (Arc<dyn PhysicalPipedExpr>, AggregateFunction)
 where
-    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     match expr_arena.get(node) {
         AExpr::Alias(input, _) => convert_to_hash_agg(*input, expr_arena, schema, to_physical),
@@ -116,7 +116,7 @@ where
         ),
         AExpr::Agg(agg) => match agg {
             AAggExpr::Min { input, .. } => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
 
                 let agg_fn = match logical_dtype.to_physical() {
@@ -135,7 +135,7 @@ where
                 (phys_expr, agg_fn)
             }
             AAggExpr::Max { input, .. } => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
 
                 let agg_fn = match logical_dtype.to_physical() {
@@ -154,7 +154,7 @@ where
                 (phys_expr, agg_fn)
             }
             AAggExpr::Sum(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
 
                 #[cfg(feature = "dtype-categorical")]
@@ -191,7 +191,7 @@ where
                 (phys_expr, agg_fn)
             }
             AAggExpr::Mean(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
 
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 #[cfg(feature = "dtype-categorical")]
@@ -210,7 +210,7 @@ where
                 (phys_expr, agg_fn)
             }
             AAggExpr::First(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let dtype = phys_expr.field(schema).unwrap().dtype;
                 (
                     phys_expr,
@@ -218,7 +218,7 @@ where
                 )
             }
             AAggExpr::Last(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let dtype = phys_expr.field(schema).unwrap().dtype;
                 (
                     phys_expr,
@@ -226,7 +226,7 @@ where
                 )
             }
             AAggExpr::Count(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 (phys_expr, AggregateFunction::Count(CountAgg::new()))
             }
             agg => panic!("{:?} not yet implemented.", agg),

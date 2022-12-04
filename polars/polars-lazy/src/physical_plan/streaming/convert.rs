@@ -33,9 +33,10 @@ impl PhysicalPipedExpr for Wrap {
 fn to_physical_piped_expr(
     node: Node,
     expr_arena: &Arena<AExpr>,
+    schema: Option<&SchemaRef>
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
-    create_physical_expr(node, Context::Default, expr_arena)
+    create_physical_expr(node, Context::Default, expr_arena, schema)
         .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
 

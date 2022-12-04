@@ -15,13 +15,14 @@ fn exprs_to_physical<F>(
     exprs: &[Node],
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
+    schema: Option<&SchemaRef>
 ) -> PolarsResult<Vec<Arc<dyn PhysicalPipedExpr>>>
 where
-    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     exprs
         .iter()
-        .map(|node| to_physical(*node, expr_arena))
+        .map(|node| to_physical(*node, expr_arena, schema))
         .collect()
 }
 
@@ -33,7 +34,7 @@ fn get_source<F>(
     push_predicate: bool,
 ) -> PolarsResult<Box<dyn Source>>
 where
-    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     match source {
@@ -41,12 +42,13 @@ where
             df,
             projection,
             selection,
+            output_schema,
             ..
         } => {
             let mut df = (*df).clone();
             if push_predicate {
                 if let Some(predicate) = selection {
-                    let predicate = to_physical(predicate, expr_arena)?;
+                    let predicate = to_physical(predicate, expr_arena, output_schema.as_ref())?;
                     let op = operators::FilterOperator { predicate };
                     let op = Box::new(op) as Box<dyn Operator>;
                     operator_objects.push(op)
@@ -64,11 +66,12 @@ where
             file_info,
             options,
             predicate,
+            output_schema,
             ..
         } => {
             // add predicate to operators
             if let (true, Some(predicate)) = (push_predicate, predicate) {
-                let predicate = to_physical(predicate, expr_arena)?;
+                let predicate = to_physical(predicate, expr_arena, output_schema.as_ref())?;
                 let op = operators::FilterOperator { predicate };
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
@@ -82,11 +85,12 @@ where
             file_info,
             options,
             predicate,
+            output_schema,
             ..
         } => {
             // add predicate to operators
             if let (true, Some(predicate)) = (push_predicate, predicate) {
-                let predicate = to_physical(predicate, expr_arena)?;
+                let predicate = to_physical(predicate, expr_arena, output_schema.as_ref())?;
                 let op = operators::FilterOperator { predicate };
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
@@ -105,7 +109,7 @@ pub fn get_sink<F>(
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Sink>>
 where
-    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
@@ -113,15 +117,16 @@ where
             options,
             left_on,
             right_on,
+            schema,
             ..
         } => match &options.how {
             #[cfg(feature = "cross_join")]
             JoinType::Cross => Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>,
             join_type @ JoinType::Inner | join_type @ JoinType::Left => {
                 let join_columns_left =
-                    Arc::new(exprs_to_physical(left_on, expr_arena, to_physical)?);
+                    Arc::new(exprs_to_physical(left_on, expr_arena, to_physical, Some(schema))?);
                 let join_columns_right =
-                    Arc::new(exprs_to_physical(right_on, expr_arena, to_physical)?);
+                    Arc::new(exprs_to_physical(right_on, expr_arena, to_physical, Some(schema))?);
 
                 let swapped = swap_join_order(options);
 
@@ -153,7 +158,7 @@ where
             options,
             ..
         } => {
-            let key_columns = Arc::new(exprs_to_physical(keys, expr_arena, to_physical)?);
+            let key_columns = Arc::new(exprs_to_physical(keys, expr_arena, to_physical, Some(output_schema))?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
             let mut agg_fns = Vec::with_capacity(aggs.len());
@@ -220,25 +225,26 @@ pub fn get_operator<F>(
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Operator>>
 where
-    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     let op = match lp_arena.get(node) {
-        Projection { expr, .. } => {
+        Projection { expr, schema, .. } => {
             let op = operators::ProjectionOperator {
-                exprs: exprs_to_physical(expr, expr_arena, &to_physical)?,
+                exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(schema))?,
             };
             Box::new(op) as Box<dyn Operator>
         }
         HStack { exprs, schema, .. } => {
             let op = operators::HstackOperator {
-                exprs: exprs_to_physical(exprs, expr_arena, &to_physical)?,
+                exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(schema))?,
                 input_schema: schema.clone(),
             };
             Box::new(op) as Box<dyn Operator>
         }
         Selection { predicate, .. } => {
-            let predicate = to_physical(*predicate, expr_arena)?;
+            let schema = lp_arena.get(*predicate).schema(lp_arena);
+            let predicate = to_physical(*predicate, expr_arena, Some(schema.as_ref()))?;
             let op = operators::FilterOperator { predicate };
             Box::new(op) as Box<dyn Operator>
         }
@@ -269,7 +275,7 @@ pub fn create_pipeline<F>(
     to_physical: F,
 ) -> PolarsResult<PipeLine>
 where
-    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
 
