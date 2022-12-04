@@ -1415,6 +1415,7 @@ impl PyExpr {
         &self,
         width_strat: Wrap<ListToStructWidthStrategy>,
         name_gen: Option<PyObject>,
+        upper_bound: usize,
     ) -> PyResult<Self> {
         let name_gen = name_gen.map(|lambda| {
             Arc::new(move |idx: usize| {
@@ -1429,7 +1430,7 @@ impl PyExpr {
             .inner
             .clone()
             .arr()
-            .to_struct(width_strat.0, name_gen)
+            .to_struct(width_strat.0, name_gen, upper_bound)
             .into())
     }
 

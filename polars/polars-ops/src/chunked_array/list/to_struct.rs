@@ -47,6 +47,10 @@ fn det_n_fields(ca: &ListChunked, n_fields: ListToStructWidthStrategy) -> usize 
 
 pub type NameGenerator = Arc<dyn Fn(usize) -> String + Send + Sync>;
 
+pub fn _default_struct_name_gen(idx: usize) -> String {
+    format!("field_{idx}")
+}
+
 pub trait ToStruct: AsList {
     fn to_struct(
         &self,
@@ -56,9 +60,9 @@ pub trait ToStruct: AsList {
         let ca = self.as_list();
         let n_fields = det_n_fields(ca, n_fields);
 
-        let default_name_gen = |idx| format!("field_{idx}");
-
-        let name_generator = name_generator.as_deref().unwrap_or(&default_name_gen);
+        let name_generator = name_generator
+            .as_deref()
+            .unwrap_or(&_default_struct_name_gen);
 
         if n_fields == 0 {
             Err(PolarsError::ComputeError(
