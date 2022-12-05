@@ -61,6 +61,7 @@ performant = ["polars-core/performant", "chunked_ids", "dtype-u8", "dtype-u16", 
 
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]
+fmt_no_tty = ["polars-core/fmt_no_tty"]
 
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
