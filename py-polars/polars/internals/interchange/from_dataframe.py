@@ -336,7 +336,7 @@ def buffer_to_series(
     dtype: Dtype,
     offset: int = 0,
     length: int | None = None,
-) -> np.ndarray:
+) -> pl.Series:
     """
     Build a NumPy array from the passed buffer.
 
