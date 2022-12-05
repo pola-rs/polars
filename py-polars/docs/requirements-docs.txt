@@ -1,6 +1,3 @@
-# for PyArrow, as PyArrow 10.0.0 does not have wheels for Python 3.11
---extra-index-url https://pypi.fury.io/arrow-nightlies/
---pre
 --prefer-binary
 
 numpy
