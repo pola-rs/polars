@@ -114,26 +114,29 @@ where
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
         Join {
+            input_left,
+            input_right,
             options,
             left_on,
             right_on,
-            schema,
             ..
         } => match &options.how {
             #[cfg(feature = "cross_join")]
             JoinType::Cross => Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>,
             join_type @ JoinType::Inner | join_type @ JoinType::Left => {
+                let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
                 let join_columns_left = Arc::new(exprs_to_physical(
                     left_on,
                     expr_arena,
                     to_physical,
-                    Some(schema),
+                    Some(input_schema_left.as_ref()),
                 )?);
+                let input_schema_right = lp_arena.get(*input_right).schema(lp_arena);
                 let join_columns_right = Arc::new(exprs_to_physical(
                     right_on,
                     expr_arena,
                     to_physical,
-                    Some(schema),
+                    Some(input_schema_right.as_ref()),
                 )?);
 
                 let swapped = swap_join_order(options);
@@ -166,17 +169,16 @@ where
             options,
             ..
         } => {
+            let input_schema = lp_arena.get(*input).schema(lp_arena).as_ref().clone();
             let key_columns = Arc::new(exprs_to_physical(
                 keys,
                 expr_arena,
                 to_physical,
-                Some(output_schema),
+                Some(&input_schema),
             )?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
             let mut agg_fns = Vec::with_capacity(aggs.len());
-
-            let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
 
             for node in aggs {
                 let (index, agg_fn) =
@@ -242,22 +244,24 @@ where
 {
     use ALogicalPlan::*;
     let op = match lp_arena.get(node) {
-        Projection { expr, schema, .. } => {
+        Projection { expr, input, .. } => {
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
             let op = operators::ProjectionOperator {
-                exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(schema))?,
+                exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(&input_schema))?,
             };
             Box::new(op) as Box<dyn Operator>
         }
-        HStack { exprs, schema, .. } => {
+        HStack { exprs, input, .. } => {
+            let input_schema = (*lp_arena.get(*input).schema(lp_arena)).clone();
             let op = operators::HstackOperator {
-                exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(schema))?,
-                input_schema: schema.clone(),
+                exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
+                input_schema,
             };
             Box::new(op) as Box<dyn Operator>
         }
-        Selection { predicate, .. } => {
-            let schema = lp_arena.get(*predicate).schema(lp_arena);
-            let predicate = to_physical(*predicate, expr_arena, Some(schema.as_ref()))?;
+        Selection { predicate, input } => {
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
+            let predicate = to_physical(*predicate, expr_arena, Some(input_schema.as_ref()))?;
             let op = operators::FilterOperator { predicate };
             Box::new(op) as Box<dyn Operator>
         }
@@ -265,6 +269,8 @@ where
             function: FunctionNode::FastProjection { columns },
             ..
         } => {
+            // TODO! pass schema to FastProjection so that
+            // projection can be based on already known schema.
             let op = operators::FastProjectionOperator {
                 columns: columns.clone(),
             };
