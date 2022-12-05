@@ -22,6 +22,7 @@ try:
     from polars.polars import py_date_range as _py_date_range
     from polars.polars import py_date_range_lazy as _py_date_range_lazy
     from polars.polars import py_diag_concat_df as _diag_concat_df
+    from polars.polars import py_diag_concat_lf as _diag_concat_lf
     from polars.polars import py_hor_concat_df as _hor_concat_df
 
     _DOCUMENTING = False
@@ -235,13 +236,18 @@ def concat(
             out = pli.wrap_df(_hor_concat_df(items))
         else:
             raise ValueError(
-                f"how must be one of {{'vertical', 'diagonal'}}, got {how}"
+                f"how must be one of {{'vertical', 'diagonal', 'horizontal'}}, "
+                f"got {how}"
             )
     elif isinstance(first, pli.LazyFrame):
         if how == "vertical":
             return pli.wrap_ldf(_concat_lf(items, rechunk, parallel))
+        if how == "diagonal":
+            return pli.wrap_ldf(_diag_concat_lf(items, rechunk, parallel))
         else:
-            raise ValueError("Lazy only allows 'vertical' concat strategy.")
+            raise ValueError(
+                "Lazy only allows {{'vertical', 'diagonal'}} concat strategy."
+            )
     elif isinstance(first, pli.Series):
         out = pli.wrap_s(_concat_series(items))
     elif isinstance(first, pli.Expr):

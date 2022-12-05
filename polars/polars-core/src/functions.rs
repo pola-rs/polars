@@ -256,6 +256,7 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
 #[cfg_attr(docsrs, doc(cfg(feature = "diagonal_concat")))]
 /// Concat diagonally thereby combining different schemas.
 pub fn diag_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
+    // TODO! replace with lazy only?
     let upper_bound_width = dfs.iter().map(|df| df.width()).sum();
     let mut column_names = AHashSet::with_capacity(upper_bound_width);
     let mut schema = Vec::with_capacity(upper_bound_width);

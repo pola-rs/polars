@@ -271,9 +271,10 @@ def test_lazy_concat_err() -> None:
         }
     )
 
-    for how in ["horizontal", "diagonal"]:
+    for how in ["horizontal"]:
         with pytest.raises(
-            ValueError, match="Lazy only allows 'vertical' concat strategy."
+            ValueError,
+            match="Lazy only allows {{'vertical', 'diagonal'}} concat strategy.",
         ):
             pl.concat([df1.lazy(), df2.lazy()], how=how).collect()
 
