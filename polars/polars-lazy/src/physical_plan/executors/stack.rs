@@ -13,7 +13,6 @@ impl StackExec {
         state: &mut ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        state.set_schema(self.input_schema.clone());
         let res = if self.has_windows {
             // we have a different run here
             // to ensure the window functions run sequential and share caches
@@ -26,7 +25,6 @@ impl StackExec {
                     .collect::<PolarsResult<Vec<_>>>()
             })?
         };
-        state.clear_schema_cache();
         state.clear_expr_cache();
 
         let schema = &*self.input_schema;

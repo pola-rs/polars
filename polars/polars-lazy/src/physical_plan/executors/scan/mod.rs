@@ -79,7 +79,6 @@ impl Executor for DataFrameExec {
         // projection should be before selection as those are free
         // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
-            state.may_set_schema(&df, projection.len());
             df = df.select(projection.as_ref())?;
         }
 
@@ -90,7 +89,6 @@ impl Executor for DataFrameExec {
             })?;
             df = df.filter(mask)?;
         }
-        state.clear_schema_cache();
 
         if let Some(limit) = _set_n_rows_for_scan(None) {
             Ok(df.head(Some(limit)))

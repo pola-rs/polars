@@ -167,14 +167,6 @@ impl ExecutionState {
         *lock = Some(schema);
     }
 
-    /// Set the schema. Typically at the start of a projection.
-    pub(crate) fn may_set_schema(&mut self, df: &DataFrame, exprs_len: usize) {
-        if exprs_len > 1 && df.get_columns().len() > 10 {
-            let schema = Arc::new(df.schema());
-            self.set_schema(schema);
-        }
-    }
-
     /// Clear the schema. Typically at the end of a projection.
     pub(crate) fn clear_schema_cache(&self) {
         let mut lock = self.schema_cache.write().unwrap();

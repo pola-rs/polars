@@ -114,7 +114,6 @@ fn execute_projection_cached_window_fns(
     for mut partition in windows {
         // clear the cache for every partitioned group
         let mut state = state.split();
-        state.clear_expr_cache();
 
         // don't bother caching if we only have a single window function in this partition
         if partition.1.len() == 1 {
@@ -172,7 +171,6 @@ pub(crate) fn evaluate_physical_expressions(
                 .collect::<PolarsResult<_>>()
         })?
     };
-    state.clear_schema_cache();
 
     check_expand_literals(selected_columns, zero_length)
 }

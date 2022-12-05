@@ -12,10 +12,12 @@ pub struct PartitionGroupByExec {
     maintain_order: bool,
     slice: Option<(i64, usize)>,
     input_schema: SchemaRef,
+    output_schema: SchemaRef,
     from_partitioned_ds: bool,
 }
 
 impl PartitionGroupByExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
@@ -23,6 +25,7 @@ impl PartitionGroupByExec {
         maintain_order: bool,
         slice: Option<(i64, usize)>,
         input_schema: SchemaRef,
+        output_schema: SchemaRef,
         from_partitioned_ds: bool,
     ) -> Self {
         Self {
@@ -32,6 +35,7 @@ impl PartitionGroupByExec {
             maintain_order,
             slice,
             input_schema,
+            output_schema,
             from_partitioned_ds,
         }
     }
@@ -231,8 +235,6 @@ impl PartitionGroupByExec {
             // of groups.
             let keys = self.keys(&original_df, state)?;
 
-            // set it here, because `self.input.execute` will clear the schema cache.
-            state.set_schema(self.input_schema.clone());
             if !can_run_partitioned(&keys, &original_df, state, self.from_partitioned_ds)? {
                 return groupby_helper(
                     original_df,
@@ -259,8 +261,8 @@ impl PartitionGroupByExec {
                 self.maintain_order,
             )?
         };
-        state.clear_schema_cache();
 
+        state.set_schema(self.output_schema.clone());
         // MERGE phase
         // merge and hash aggregate again
         let df = accumulate_dataframes_vertical(dfs)?;
