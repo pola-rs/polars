@@ -24,7 +24,6 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
             field: Arc::new(Field::new("default", DataType::Null)),
             chunks: Default::default(),
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length: 0,
         }
@@ -341,7 +340,6 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             field: Arc::new(Field::new("", DataType::Object(T::type_name()))),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length: 0,
         };

@@ -53,7 +53,6 @@ macro_rules! finish_list_builder {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             ..Default::default()
         };
         ca.compute_len();

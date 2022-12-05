@@ -30,7 +30,7 @@ where
 {
     // set group size hint
     #[cfg(feature = "dtype-categorical")]
-    let group_size_hint = if let Some(m) = &ca.categorical_map {
+    let group_size_hint = if let DataType::Categorical(Some(m)) = ca.dtype() {
         ca.len() / m.len()
     } else {
         0
