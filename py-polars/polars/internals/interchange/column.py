@@ -10,6 +10,7 @@ from polars.internals.interchange.dataframe_protocol import (
     ColumnNullType,
     DtypeKind,
 )
+from polars.internals.interchange.utils import polars_dtype_to_dtype
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -45,48 +46,8 @@ class PolarsColumn(Column):
 
     @property
     def dtype(self) -> Dtype:
-        dtype = self._col.dtype
-        if dtype == pl.Int8:
-            return DtypeKind.INT, 8, "c", "="
-        elif dtype == pl.Int16:
-            return DtypeKind.INT, 16, "s", "="
-        elif dtype == pl.Int32:
-            return DtypeKind.INT, 32, "i", "="
-        elif dtype == pl.Int64:
-            return DtypeKind.INT, 64, "l", "="
-        elif dtype == pl.UInt8:
-            return DtypeKind.UINT, 8, "C", "="
-        elif dtype == pl.UInt16:
-            return DtypeKind.UINT, 16, "S", "="
-        elif dtype == pl.UInt32:
-            return DtypeKind.UINT, 32, "I", "="
-        elif dtype == pl.UInt64:
-            return DtypeKind.UINT, 64, "L", "="
-        elif dtype == pl.Float32:
-            return DtypeKind.FLOAT, 32, "f", "="
-        elif dtype == pl.Float64:
-            return DtypeKind.FLOAT, 64, "g", "="
-        elif dtype == pl.Boolean:
-            return DtypeKind.BOOL, 8, "b", "="
-        elif dtype == pl.Utf8:
-            return DtypeKind.STRING, 64, "U", "="
-        elif dtype == pl.Date:
-            return DtypeKind.DATETIME, 32, "tdD", "="
-        elif dtype == pl.Time:
-            return DtypeKind.DATETIME, 64, "ttu", "="
-        elif dtype == pl.Datetime:
-            tu = dtype.tu[0] if dtype.tu is not None else "u"
-            tz = dtype.tz if dtype.tz is not None else ""
-            arrow_c_type = f"ts{tu}:{tz}"
-            return DtypeKind.DATETIME, 64, arrow_c_type, "="
-        elif dtype == pl.Duration:
-            tu = dtype.tu[0] if dtype.tu is not None else "u"
-            arrow_c_type = f"tD{tu}"
-            return DtypeKind.DATETIME, 64, arrow_c_type, "="
-        elif dtype == pl.Categorical:
-            return DtypeKind.CATEGORICAL, 32, "I", "="
-        else:
-            raise ValueError(f"Data type {dtype} not supported by interchange protocol")
+        pl_dtype = self._col.dtype
+        return polars_dtype_to_dtype(pl_dtype)
 
     @property
     def describe_categorical(self) -> CategoricalDescription:
@@ -141,7 +102,6 @@ class PolarsColumn(Column):
                     yield PolarsColumn(chunk[start : start + step], self._allow_copy)
 
     def get_buffers(self) -> ColumnBuffers:
-        # TODO
         buffers: ColumnBuffers = {
             "data": self._get_data_buffer(),
             "validity": self._get_validity_buffer(),
@@ -159,35 +119,22 @@ class PolarsColumn(Column):
         """
         Return the buffer containing the data and the buffer's associated dtype.
         """
-        if self.dtype[0] == DtypeKind.CATEGORICAL:
-            codes = self._col.to_physical()
-            buffer = PolarsBuffer(codes, allow_copy=self._allow_copy)
-            dtype = (DtypeKind.UINT, 32, "I", "=")
-        elif self.dtype[0] == DtypeKind.STRING:
-            # TODO
-            # Marshal the strings from a NumPy object array into a byte array
-            buf = self._col.to_numpy()
-            b = bytearray()
-
-            # TODO: this for-loop is slow; can be implemented in Cython/C/C++ later
-            for obj in buf:
-                if isinstance(obj, str):
-                    b.extend(obj.encode(encoding="utf-8"))
-
-            # Convert the byte array to a Pandas "buffer" using
-            # a NumPy array as the backing store
-            buffer = PolarsBuffer(np.frombuffer(b, dtype="uint8"))
-
-            # Define the dtype for the returned buffer
-            dtype = (
-                DtypeKind.STRING,
-                8,
-                ArrowCTypes.STRING,
-                Endianness.NATIVE,
-            )
-        else:
+        if self.dtype[0] in {
+            DtypeKind.INT,
+            DtypeKind.UINT,
+            DtypeKind.FLOAT,
+            DtypeKind.BOOL,
+            DtypeKind.DATETIME,
+            DtypeKind.STRING,
+        }:
             buffer = PolarsBuffer(self._col, allow_copy=self._allow_copy)
             dtype = self.dtype
+        elif self.dtype[0] == DtypeKind.CATEGORICAL:
+            codes = self._col.to_physical()
+            buffer = PolarsBuffer(codes, allow_copy=self._allow_copy)
+            dtype = polars_dtype_to_dtype(pl.UInt32)
+        else:
+            raise NotImplementedError(f"Data type {self._col.dtype} not handled yet")
 
         return buffer, dtype
 
@@ -197,7 +144,7 @@ class PolarsColumn(Column):
         the buffer's associated dtype.
         """
         buffer = PolarsBuffer(self._col.is_not_null(), self._allow_copy)
-        dtype = (DtypeKind.BOOL, 8, "b", "=")
+        dtype = polars_dtype_to_dtype(pl.Boolean)
         return buffer, dtype
 
     def _get_offsets_buffer(self) -> tuple[PolarsBuffer, Dtype]:
@@ -213,29 +160,16 @@ class PolarsColumn(Column):
                 "it does not have an offsets buffer"
             )
 
-        # For each string, we need to manually determine the next offset
-        values = self._col.to_numpy()
-        ptr = 0
-        offsets = np.zeros(shape=(len(values) + 1,), dtype=np.int64)
-        for i, v in enumerate(values):
-            # For missing values (in this case, `np.nan` values)
-            # we don't increment the pointer
-            if isinstance(v, str):
-                b = v.encode(encoding="utf-8")
-                ptr += len(b)
+        offsets = (
+            self._col.str.n_chars()
+            .fill_null(0)
+            .cumsum()
+            .extend_constant(None, 1)
+            .shift_and_fill(1, 0)
+            .rechunk()
+        )
 
-            offsets[i + 1] = ptr
-
-        # Convert the offsets to a Pandas "buffer" using
-        # the NumPy array as the backing store
-        buffer = PolarsBuffer(offsets)
-
-        # Assemble the buffer dtype info
-        dtype = (
-            DtypeKind.INT,
-            64,
-            ArrowCTypes.INT64,
-            Endianness.NATIVE,
-        )  # note: currently only support native endianness
+        buffer = PolarsBuffer(offsets, allow_copy=self._allow_copy)
+        dtype = polars_dtype_to_dtype(pl.UInt32)
 
         return buffer, dtype

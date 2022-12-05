@@ -129,7 +129,7 @@ def primitive_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     buffers = col.get_buffers()
 
     data_buff, data_dtype = buffers["data"]
-    data = buffer_to_ndarray(data_buff, data_dtype, col.offset, col.size)
+    data = buffer_to_series(data_buff, data_dtype, col.offset, col.size)
 
     data = set_nulls(data, col, buffers["validity"])
     return data, buffers
@@ -161,7 +161,7 @@ def categorical_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     buffers = col.get_buffers()
 
     codes_buff, codes_dtype = buffers["data"]
-    codes = buffer_to_ndarray(codes_buff, codes_dtype, col.offset, col.size)
+    codes = buffer_to_series(codes_buff, codes_dtype, col.offset, col.size)
 
     # Doing module in order to not get ``IndexError`` for
     # out-of-bounds sentinel values in `codes`
@@ -218,7 +218,7 @@ def string_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
         Endianness.NATIVE,
     )
     # Specify zero offset as we don't want to chunk the string data
-    data = buffer_to_ndarray(data_buff, data_dtype, offset=0, length=col.size)
+    data = buffer_to_series(data_buff, data_dtype, offset=0, length=col.size)
 
     # Retrieve the offsets buffer containing the index offsets demarcating
     # the beginning and the ending of each string
@@ -226,7 +226,7 @@ def string_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     # Offsets buffer contains start-stop positions of strings in the data buffer,
     # meaning that it has more elements than in the data buffer, do `col.size + 1` here
     # to pass a proper offsets buffer size
-    offsets = buffer_to_ndarray(
+    offsets = buffer_to_series(
         offset_buff, offset_dtype, col.offset, length=col.size + 1
     )
 
@@ -234,7 +234,7 @@ def string_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     if null_kind in (ColumnNullType.USE_BITMASK, ColumnNullType.USE_BYTEMASK):
         assert buffers["validity"], "Validity buffers cannot be empty for masks"
         valid_buff, valid_dtype = buffers["validity"]
-        null_pos = buffer_to_ndarray(valid_buff, valid_dtype, col.offset, col.size)
+        null_pos = buffer_to_series(valid_buff, valid_dtype, col.offset, col.size)
         if sentinel_val == 0:
             null_pos = ~null_pos
 
@@ -314,7 +314,7 @@ def datetime_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     _, _, format_str, _ = col.dtype
     dbuf, dtype = buffers["data"]
     # Consider dtype being `uint` to get number of units passed since the 01.01.1970
-    data = buffer_to_ndarray(
+    data = buffer_to_series(
         dbuf,
         (
             DtypeKind.UINT,
@@ -331,7 +331,7 @@ def datetime_column_to_series(col: Column) -> tuple[pl.Series, Buffer]:
     return data, buffers
 
 
-def buffer_to_ndarray(
+def buffer_to_series(
     buffer: Buffer,
     dtype: Dtype,
     offset: int = 0,
@@ -475,7 +475,7 @@ def set_nulls(
     elif null_kind in (ColumnNullType.USE_BITMASK, ColumnNullType.USE_BYTEMASK):
         assert validity, "Expected to have a validity buffer for the mask"
         valid_buff, valid_dtype = validity
-        null_pos = buffer_to_ndarray(valid_buff, valid_dtype, col.offset, col.size)
+        null_pos = buffer_to_series(valid_buff, valid_dtype, col.offset, col.size)
         if sentinel_val == 0:
             null_pos = ~null_pos
     elif null_kind in (ColumnNullType.NON_NULLABLE, ColumnNullType.USE_NAN):

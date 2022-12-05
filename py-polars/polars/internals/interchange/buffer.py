@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import polars as pl
 from polars.internals.interchange.dataframe_protocol import Buffer, DlpackDeviceType
+from polars.internals.interchange.utils import polars_dtype_to_dtype
 
 
 class PolarsBuffer(Buffer):
@@ -26,16 +27,17 @@ class PolarsBuffer(Buffer):
         """
         Buffer size in bytes.
         """
-        # TODO
-        return self._data.size * self._x.dtype.itemsize
+        dtype = polars_dtype_to_dtype(self._data.dtype)
+        bytes_per_element = dtype[1] // 8
+        return len(self._data) * bytes_per_element
 
     @property
     def ptr(self) -> int:
         """
         Pointer to start of the buffer as an integer.
         """
-        # TODO
-        return self._data.__array_interface__["data"][0]
+        # TODO: Get pointer to start of buffer
+        return 0
 
     def __dlpack__(self):
         """Represent this structure as DLPack interface."""
