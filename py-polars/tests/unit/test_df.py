@@ -2544,4 +2544,4 @@ $ c <Boolean> True, False, True
 $ d    <Utf8> None, b, c                                                                                
 $ e    <Utf8> usd, eur, None                                                                            
 $ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01"""
-    assert result.strip() == expected
+    assert result.strip().splitlines() == expected.splitlines()
