@@ -367,6 +367,23 @@ fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
+fn py_diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+    let (seq, _len) = get_pyseq(lfs)?;
+    let iter = seq.iter()?;
+
+    let lfs = iter
+        .map(|item| {
+            let item = item?;
+            get_lf(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let lf =
+        polars::lazy::dsl::functions::concat(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
+    Ok(lf.into())
+}
+
+#[pyfunction]
 fn py_hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let (seq, _len) = get_pyseq(dfs)?;
     let iter = seq.iter()?;
@@ -629,6 +646,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_diag_concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_duration)).unwrap();
