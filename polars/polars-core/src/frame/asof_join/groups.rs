@@ -155,6 +155,7 @@ fn process_group<K, T>(
     left_asof: &[T],
     right_asof: &[T],
     results: &mut Vec<Option<IdxSize>>,
+    forward: bool,
 ) where
     K: Hash + PartialEq + Eq,
     T: NativeType + Sub<Output = T> + PartialOrd + num::Zero,
@@ -175,6 +176,9 @@ fn process_group<K, T>(
             right_tbl_offsets.insert(k, (offset_slice, join_idx));
         }
         None => {
+            if forward {
+                previous_join_idx = None;
+            }
             if tolerance > num::zero() {
                 if let Some(idx) = previous_join_idx {
                     debug_assert!((idx as usize) < right_asof.len());
@@ -204,20 +208,31 @@ where
     S::Native: Hash + Eq + AsU64,
 {
     #[allow(clippy::type_complexity)]
-    let (join_asof_fn, tolerance): (
+    let (join_asof_fn, tolerance, forward): (
         unsafe fn(T::Native, &[T::Native], &[IdxSize], T::Native) -> (Option<IdxSize>, usize),
+        _,
         _,
     ) = match (tolerance, strategy) {
         (Some(tolerance), AsofStrategy::Backward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
-            (join_asof_backward_with_indirection_and_tolerance, tol)
+            (
+                join_asof_backward_with_indirection_and_tolerance,
+                tol,
+                false,
+            )
         }
-        (None, AsofStrategy::Backward) => (join_asof_backward_with_indirection, T::Native::zero()),
+        (None, AsofStrategy::Backward) => (
+            join_asof_backward_with_indirection,
+            T::Native::zero(),
+            false,
+        ),
         (Some(tolerance), AsofStrategy::Forward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
-            (join_asof_forward_with_indirection_and_tolerance, tol)
+            (join_asof_forward_with_indirection_and_tolerance, tol, true)
         }
-        (None, AsofStrategy::Forward) => (join_asof_forward_with_indirection, T::Native::zero()),
+        (None, AsofStrategy::Forward) => {
+            (join_asof_forward_with_indirection, T::Native::zero(), true)
+        }
     };
 
     let left_asof = left_asof.rechunk();
@@ -297,6 +312,7 @@ where
                                 left_asof,
                                 right_asof,
                                 &mut results,
+                                forward,
                             );
                         }
                         // only left values, right = null
@@ -322,20 +338,31 @@ where
     T: PolarsNumericType,
 {
     #[allow(clippy::type_complexity)]
-    let (join_asof_fn, tolerance): (
+    let (join_asof_fn, tolerance, forward): (
         unsafe fn(T::Native, &[T::Native], &[IdxSize], T::Native) -> (Option<IdxSize>, usize),
+        _,
         _,
     ) = match (tolerance, strategy) {
         (Some(tolerance), AsofStrategy::Backward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
-            (join_asof_backward_with_indirection_and_tolerance, tol)
+            (
+                join_asof_backward_with_indirection_and_tolerance,
+                tol,
+                false,
+            )
         }
-        (None, AsofStrategy::Backward) => (join_asof_backward_with_indirection, T::Native::zero()),
+        (None, AsofStrategy::Backward) => (
+            join_asof_backward_with_indirection,
+            T::Native::zero(),
+            false,
+        ),
         (Some(tolerance), AsofStrategy::Forward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
-            (join_asof_forward_with_indirection_and_tolerance, tol)
+            (join_asof_forward_with_indirection_and_tolerance, tol, true)
         }
-        (None, AsofStrategy::Forward) => (join_asof_forward_with_indirection, T::Native::zero()),
+        (None, AsofStrategy::Forward) => {
+            (join_asof_forward_with_indirection, T::Native::zero(), true)
+        }
     };
 
     let left_asof = left_asof.rechunk();
@@ -407,6 +434,7 @@ where
                                 left_asof,
                                 right_asof,
                                 &mut results,
+                                forward,
                             );
                         }
                         // only left values, right = null
@@ -434,20 +462,31 @@ where
     T: PolarsNumericType,
 {
     #[allow(clippy::type_complexity)]
-    let (join_asof_fn, tolerance): (
+    let (join_asof_fn, tolerance, forward): (
         unsafe fn(T::Native, &[T::Native], &[IdxSize], T::Native) -> (Option<IdxSize>, usize),
+        _,
         _,
     ) = match (tolerance, strategy) {
         (Some(tolerance), AsofStrategy::Backward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
-            (join_asof_backward_with_indirection_and_tolerance, tol)
+            (
+                join_asof_backward_with_indirection_and_tolerance,
+                tol,
+                false,
+            )
         }
-        (None, AsofStrategy::Backward) => (join_asof_backward_with_indirection, T::Native::zero()),
+        (None, AsofStrategy::Backward) => (
+            join_asof_backward_with_indirection,
+            T::Native::zero(),
+            false,
+        ),
         (Some(tolerance), AsofStrategy::Forward) => {
             let tol = tolerance.extract::<T::Native>().unwrap();
-            (join_asof_forward_with_indirection_and_tolerance, tol)
+            (join_asof_forward_with_indirection_and_tolerance, tol, true)
         }
-        (None, AsofStrategy::Forward) => (join_asof_forward_with_indirection, T::Native::zero()),
+        (None, AsofStrategy::Forward) => {
+            (join_asof_forward_with_indirection, T::Native::zero(), true)
+        }
     };
     let left_asof = left_asof.rechunk();
     let left_asof = left_asof.cont_slice().unwrap();
@@ -515,6 +554,7 @@ where
                                     left_asof,
                                     right_asof,
                                     &mut results,
+                                    forward,
                                 );
                             }
                             // only left values, right = null

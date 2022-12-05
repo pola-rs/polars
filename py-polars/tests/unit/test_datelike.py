@@ -2103,3 +2103,23 @@ def test_tz_aware_filter_lit() -> None:
             ),
         ],
     }
+
+
+def test_asof_join_by_forward() -> None:
+    dfa = pl.DataFrame(
+        {"category": ["a", "a", "a", "a", "a"], "value_one": [1, 2, 3, 5, 12]}
+    )
+
+    dfb = pl.DataFrame({"category": ["a"], "value_two": [3]})
+
+    assert dfa.join_asof(
+        dfb,
+        left_on="value_one",
+        right_on="value_two",
+        by="category",
+        strategy="forward",
+    ).to_dict(False) == {
+        "category": ["a", "a", "a", "a", "a"],
+        "value_one": [1, 2, 3, 5, 12],
+        "value_two": [3, 3, 3, None, None],
+    }
