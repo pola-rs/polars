@@ -74,7 +74,6 @@ where
             field: Arc::new(self.field),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length: len as IdxSize,
         }
@@ -139,7 +138,6 @@ where
             field,
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length: len as IdxSize,
         }

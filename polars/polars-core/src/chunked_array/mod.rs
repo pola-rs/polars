@@ -50,8 +50,6 @@ use std::slice::Iter;
 use bitflags::bitflags;
 use polars_arrow::prelude::*;
 
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null, CustomIterTools};
 
@@ -151,9 +149,6 @@ pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
     phantom: PhantomData<T>,
-    /// TODO! remove this. Should be in the DataType
-    /// maps categorical u32 indexes to String values
-    pub(crate) categorical_map: Option<Arc<RevMapping>>,
     pub(crate) bit_settings: Settings,
     length: IdxSize,
 }
@@ -337,7 +332,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             field: self.field.clone(),
             chunks,
             phantom: PhantomData,
-            categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
             length: 0,
         };
@@ -546,7 +540,6 @@ impl<T: PolarsDataType> Clone for ChunkedArray<T> {
             field: self.field.clone(),
             chunks: self.chunks.clone(),
             phantom: PhantomData,
-            categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
             length: self.length,
         }

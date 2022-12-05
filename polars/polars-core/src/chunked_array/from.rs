@@ -62,7 +62,6 @@ where
             field,
             chunks,
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length: 0,
         };
@@ -81,7 +80,6 @@ impl Int32Chunked {
             field,
             chunks,
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length: 0,
         };
@@ -111,7 +109,6 @@ where
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             ..Default::default()
         };
         out.compute_len();
