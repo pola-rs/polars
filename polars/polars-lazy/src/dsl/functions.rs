@@ -62,7 +62,7 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
     let lfs = lfs.as_ref().to_vec();
     let schemas = lfs
         .iter()
-        .map(|lf| Ok(lf.schema()?))
+        .map(|lf| lf.schema())
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let upper_bound_width = schemas.iter().map(|sch| sch.len()).sum();

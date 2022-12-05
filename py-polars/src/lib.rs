@@ -378,8 +378,8 @@ fn py_diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyL
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let lf =
-        polars::lazy::dsl::functions::concat(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
+    let lf = polars::lazy::dsl::functions::diag_concat_lf(lfs, rechunk, parallel)
+        .map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
