@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import polars as pl
 from polars.internals.interchange.dataframe_protocol import DtypeKind
 
 if TYPE_CHECKING:
-    import polars as pl
     from polars.internals.interchange.dataframe_protocol import Dtype
 
 NATIVE_ENDIANNESS = "="
