@@ -617,26 +617,34 @@ where
     T: PolarsNumericType,
 {
     fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
-        impl_chunk_expand!(self, length, index)
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted(false);
+        out
     }
 }
 
 impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BooleanChunked {
-        impl_chunk_expand!(self, length, index)
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted(false);
+        out
     }
 }
 
 impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     fn new_from_index(&self, index: usize, length: usize) -> Utf8Chunked {
-        impl_chunk_expand!(self, length, index)
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted(false);
+        out
     }
 }
 
 #[cfg(feature = "dtype-binary")]
 impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BinaryChunked {
-        impl_chunk_expand!(self, length, index)
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted(false);
+        out
     }
 }
 
