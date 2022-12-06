@@ -1,13 +1,13 @@
 use std::any::Any;
 
 use polars_core::datatypes::DataType;
-use polars_core::prelude::AnyValue;
+use polars_core::prelude::{AnyValue, Series};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::groupby::aggregates::AggregateFn;
 use crate::operators::IdxSize;
 
-pub struct FirstAgg {
+pub(crate) struct FirstAgg {
     chunk_idx: IdxSize,
     first: Option<AnyValue<'static>>,
     pub(crate) dtype: DataType,
@@ -29,6 +29,22 @@ impl AggregateFn for FirstAgg {
         if self.first.is_none() {
             self.chunk_idx = chunk_idx;
             self.first = Some(item.into_static().unwrap())
+        }
+    }
+    fn pre_agg_ordered(
+        &mut self,
+        chunk_idx: IdxSize,
+        offset: IdxSize,
+        _length: IdxSize,
+        values: &Series,
+    ) {
+        if self.first.is_none() {
+            self.chunk_idx = chunk_idx;
+            self.first = Some(
+                unsafe { values.get_unchecked(offset as usize) }
+                    .into_static()
+                    .unwrap(),
+            )
         }
     }
 

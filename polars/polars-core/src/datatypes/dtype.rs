@@ -198,6 +198,7 @@ impl DataType {
     }
 
     /// Convert to an Arrow data type.
+    #[inline]
     pub fn to_arrow(&self) -> ArrowDataType {
         use DataType::*;
         match self {

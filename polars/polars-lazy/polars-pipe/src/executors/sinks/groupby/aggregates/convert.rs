@@ -99,7 +99,7 @@ pub fn can_convert_to_hash_agg(
     }
 }
 
-pub fn convert_to_hash_agg<F>(
+pub(crate) fn convert_to_hash_agg<F>(
     node: Node,
     expr_arena: &Arena<AExpr>,
     schema: &SchemaRef,

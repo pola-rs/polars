@@ -4,9 +4,11 @@ use std::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
 use num::NumCast;
+use polars_arrow::kernels::sort_partition::partition_to_groups_amortized;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_core::POOL;
 use polars_utils::hash_to_partition;
@@ -67,13 +69,16 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     aggregation_series: Vec<Series>,
     hashes: Vec<u64>,
     slice: Option<(i64, usize)>,
+    // for sorted fast paths
+    sort_partitions: Vec<[IdxSize; 2]>,
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
+    K::Native: VecHashSingle,
 {
-    pub fn new(
+    pub(crate) fn new(
         key: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<AggregateFunction>,
@@ -101,6 +106,7 @@ where
             aggregation_series: vec![],
             hashes: vec![],
             slice,
+            sort_partitions: vec![],
         }
     }
 
@@ -174,26 +180,75 @@ where
             Ok(dfs)
         })
     }
+
+    fn sink_sorted(&mut self, ca: &ChunkedArray<K>, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        dbg!("sink_sorted");
+        let arr = ca.downcast_iter().next().unwrap();
+        let values = arr.values().as_slice();
+        partition_to_groups_amortized(values, 0, false, 0, &mut self.sort_partitions);
+
+        let k = K::Native::get_k(self.hb.clone());
+        let pre_agg_len = self.pre_agg_partitions.len();
+        let num_aggs = self.number_of_aggs() as IdxSize;
+
+        for group in &self.sort_partitions {
+            let [offset, length] = group;
+            let first_g_value = unsafe { *values.get_unchecked_release(*offset as usize) };
+            let h = first_g_value._vec_hash_single(k);
+
+            let agg_idx = insert_and_get(
+                h,
+                Some(first_g_value),
+                pre_agg_len,
+                &mut self.pre_agg_partitions,
+                &mut self.aggregators,
+                &self.agg_fns,
+            );
+
+            for (i, aggregation_s) in (0..num_aggs).zip(&self.aggregation_series) {
+                let agg_fn = unsafe {
+                    self.aggregators
+                        .get_unchecked_release_mut((agg_idx + i) as usize)
+                };
+                agg_fn.pre_agg_ordered(chunk.chunk_index, *offset, *length, aggregation_s)
+            }
+        }
+        self.aggregation_series.clear();
+        Ok(SinkResult::CanHaveMoreInput)
+    }
 }
 
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
-    K::Native: Hash + Eq + Debug,
+    K::Native: Hash + Eq + Debug + VecHashSingle,
     ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        let num_aggs = self.number_of_aggs();
-
         let s = self
             .key
             .evaluate(&chunk, context.execution_state.as_any())?;
         let s = s.to_physical_repr();
         let s = s.rechunk();
 
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
-
         // cow -> &series -> &dyn series_trait -> &chunkedarray
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
+
+        // todo! ammortize allocation
+        for phys_e in self.aggregation_columns.iter() {
+            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
+            let s = s.to_physical_repr();
+            self.aggregation_series.push(s.rechunk());
+        }
+
+        // sorted fast path
+        dbg!(ca.is_sorted2());
+        if matches!(ca.is_sorted2(), IsSorted::Ascending) && ca.null_count() == 0 {
+            return self.sink_sorted(ca, chunk);
+        }
+
+        let num_aggs = self.number_of_aggs();
+
+        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
 
         // write the hashes to self.hashes buffer
         // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
@@ -203,42 +258,18 @@ where
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = self.hashes.as_ptr() as *mut i64 as *mut IdxSize;
 
-        // todo! ammortize allocation
-        for phys_e in self.aggregation_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
-            let s = s.to_physical_repr();
-            self.aggregation_series.push(s.rechunk());
-        }
-
         let arr = ca.downcast_iter().next().unwrap();
+        let pre_agg_len = self.pre_agg_partitions.len();
         for (iteration_idx, (opt_v, &h)) in arr.iter().zip(self.hashes.iter()).enumerate() {
             let opt_v = opt_v.copied();
-            let part = hash_to_partition(h, self.pre_agg_partitions.len());
-            let current_partition =
-                unsafe { self.pre_agg_partitions.get_unchecked_release_mut(part) };
-            let current_aggregators = &mut self.aggregators;
-
-            let entry = current_partition
-                .raw_entry_mut()
-                .from_hash(h, |k| k.value == opt_v);
-            let agg_idx = match entry {
-                RawEntryMut::Vacant(entry) => {
-                    let offset = unsafe {
-                        NumCast::from(current_aggregators.len()).unwrap_unchecked_release()
-                    };
-                    let key = Key {
-                        hash: h,
-                        value: opt_v,
-                    };
-                    entry.insert(key, offset);
-                    // initialize the aggregators
-                    for agg_fn in &self.agg_fns {
-                        current_aggregators.push(agg_fn.split2())
-                    }
-                    offset
-                }
-                RawEntryMut::Occupied(entry) => *entry.get(),
-            };
+            let agg_idx = insert_and_get(
+                h,
+                opt_v,
+                pre_agg_len,
+                &mut self.pre_agg_partitions,
+                &mut self.aggregators,
+                &self.agg_fns,
+            );
             // # Safety
             // we write to the hashes buffer we iterate over at the moment.
             // this is sound because we writes are trailing from iteration
@@ -332,3 +363,98 @@ where
         self
     }
 }
+
+fn insert_and_get<T>(
+    h: u64,
+    opt_v: Option<T>,
+    pre_agg_len: usize,
+    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    current_aggregators: &mut Vec<AggregateFunction>,
+    agg_fns: &Vec<AggregateFunction>,
+) -> IdxSize
+where
+    T: NumericNative + VecHashSingle,
+{
+    let part = hash_to_partition(h, pre_agg_len);
+    let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
+
+    let entry = current_partition
+        .raw_entry_mut()
+        .from_hash(h, |k| k.value == opt_v);
+    match entry {
+        RawEntryMut::Vacant(entry) => {
+            let offset =
+                unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked_release() };
+            let key = Key {
+                hash: h,
+                value: opt_v,
+            };
+            entry.insert(key, offset);
+            // initialize the aggregators
+            for agg_fn in agg_fns {
+                current_aggregators.push(agg_fn.split2())
+            }
+            offset
+        }
+        RawEntryMut::Occupied(entry) => *entry.get(),
+    }
+}
+
+// pub fn apply_aggregate_sorted(
+//     agg_i: usize,
+//     offset: IdxSize,
+//     len: IdxSize,
+//     aggregation_s: &Series,
+//     has_physical_agg: bool,
+//     aggregators: &mut [AggregateFunction],
+// ) {
+//     macro_rules! apply_agg {
+//                 ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
+//                     match $self.dtype() {
+//                         #[cfg(feature = "dtype-u8")]
+//                         DataType::UInt8 => $macro!($self.u8().unwrap(), pre_agg_u8 $(, $opt_args)*),
+//                         #[cfg(feature = "dtype-u16")]
+//                         DataType::UInt16 => $macro!($self.u16().unwrap(), pre_agg_u16 $(, $opt_args)*),
+//                         DataType::UInt32 => $macro!($self.u32().unwrap(), pre_agg_u32 $(, $opt_args)*),
+//                         DataType::UInt64 => $macro!($self.u64().unwrap(), pre_agg_u64 $(, $opt_args)*),
+//                         #[cfg(feature = "dtype-i8")]
+//                         DataType::Int8 => $macro!($self.i8().unwrap(), pre_agg_i8 $(, $opt_args)*),
+//                         #[cfg(feature = "dtype-i16")]
+//                         DataType::Int16 => $macro!($self.i16().unwrap(), pre_agg_i16 $(, $opt_args)*),
+//                         DataType::Int32 => $macro!($self.i32().unwrap(), pre_agg_i32 $(, $opt_args)*),
+//                         DataType::Int64 => $macro!($self.i64().unwrap(), pre_agg_i64 $(, $opt_args)*),
+//                         DataType::Float32 => $macro!($self.f32().unwrap(), pre_agg_f32 $(, $opt_args)*),
+//                         DataType::Float64 => $macro!($self.f64().unwrap(), pre_agg_f64 $(, $opt_args)*),
+//                         dt => panic!("not implemented for {:?}", dt),
+//                     }
+//                 }};
+//             }
+//
+//     if has_physical_agg && aggregation_s.dtype().is_numeric() {
+//         macro_rules! dispatch {
+//             ($ca:expr, $name:ident) => {{
+//                 let arr = $ca.downcast_iter().next().unwrap();
+//
+//                 for (&agg_idx, av) in agg_idxs.iter().zip(arr.into_iter()) {
+//                     let i = agg_idx as usize + agg_i;
+//                     let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+//
+//                     agg_fn.$name(chunk_idx, av.copied())
+//                 }
+//             }};
+//         }
+//
+//         apply_agg!(aggregation_s, dispatch);
+//     } else {
+//         let agg_s = aggregation_s.slice(offset as i64, len as usize);
+//         for agg_fn in aggregators {
+//             let mut iter = agg_s.phys_iter();
+//             aggregator.pre_agg(chunk_idx, &mut iter);
+//         }
+//         for &agg_idx in agg_idxs.iter() {
+//             let i = agg_idx as usize + agg_i;
+//             let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+//             agg_fn.pre_agg(chunk_idx, &mut iter)
+//         }
+//     }
+// }

@@ -68,6 +68,53 @@ where
     out
 }
 
+pub fn partition_to_groups_amortized<T>(
+    values: &[T],
+    first_group_offset: IdxSize,
+    nulls_first: bool,
+    offset: IdxSize,
+    out: &mut Vec<[IdxSize; 2]>,
+) where
+    T: Debug + NativeType + PartialOrd,
+{
+    if let Some(mut first) = values.get(0) {
+        out.clear();
+        if nulls_first && first_group_offset > 0 {
+            out.push([0, first_group_offset])
+        }
+
+        let mut first_idx = if nulls_first { first_group_offset } else { 0 } + offset;
+
+        for val in values {
+            // new group reached
+            if val != first {
+                let val_ptr = val as *const T;
+                let first_ptr = first as *const T;
+
+                // Safety
+                // all pointers suffice the invariants
+                let len = unsafe { val_ptr.offset_from(first_ptr) } as IdxSize;
+                out.push([first_idx, len]);
+                first_idx += len;
+                first = val;
+            }
+        }
+        // add last group
+        if nulls_first {
+            out.push([
+                first_idx,
+                values.len() as IdxSize + first_group_offset - first_idx,
+            ]);
+        } else {
+            out.push([first_idx, values.len() as IdxSize - (first_idx - offset)]);
+        }
+
+        if !nulls_first && first_group_offset > 0 {
+            out.push([values.len() as IdxSize + offset, first_group_offset])
+        }
+    }
+}
+
 /// Take a clean-partitioned slice and return the groups slices
 /// With clean-partitioned we mean that the slice contains all groups and are not spilled to another partition.
 ///
@@ -84,43 +131,8 @@ where
     if values.is_empty() {
         return vec![];
     }
-    let mut first = values.get(0).unwrap();
     let mut out = Vec::with_capacity(values.len() / 10);
-
-    if nulls_first && first_group_offset > 0 {
-        out.push([0, first_group_offset])
-    }
-
-    let mut first_idx = if nulls_first { first_group_offset } else { 0 } + offset;
-
-    for val in values {
-        // new group reached
-        if val != first {
-            let val_ptr = val as *const T;
-            let first_ptr = first as *const T;
-
-            // Safety
-            // all pointers suffice the invariants
-            let len = unsafe { val_ptr.offset_from(first_ptr) } as IdxSize;
-            out.push([first_idx, len]);
-            first_idx += len;
-            first = val;
-        }
-    }
-    // add last group
-    if nulls_first {
-        out.push([
-            first_idx,
-            values.len() as IdxSize + first_group_offset - first_idx,
-        ]);
-    } else {
-        out.push([first_idx, values.len() as IdxSize - (first_idx - offset)]);
-    }
-
-    if !nulls_first && first_group_offset > 0 {
-        out.push([values.len() as IdxSize + offset, first_group_offset])
-    }
-
+    partition_to_groups_amortized(values, first_group_offset, nulls_first, offset, &mut out);
     out
 }
 
