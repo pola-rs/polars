@@ -66,6 +66,7 @@ macro_rules! fx_hash_64_bit {
         ($val as u64).wrapping_mul($k)
     }};
 }
+const FXHASH_K: u64 = 0x517cc1b727220a95;
 
 fn finish_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
 where
@@ -142,8 +143,7 @@ macro_rules! vec_hash_int {
                 buf.clear();
                 buf.reserve(self.len());
 
-                let k: u64 = 0x517cc1b727220a95;
-                let k = random_state.hash_one(k);
+                let k = random_state.hash_one(FXHASH_K);
 
                 #[allow(unused_unsafe)]
                 #[allow(clippy::useless_transmute)]
@@ -174,6 +174,72 @@ vec_hash_int!(UInt64Chunked, fx_hash_64_bit);
 vec_hash_int!(UInt32Chunked, fx_hash_32_bit);
 vec_hash_int!(UInt16Chunked, fx_hash_16_bit);
 vec_hash_int!(UInt8Chunked, fx_hash_8_bit);
+
+/// Ensure that the same hash is used as with `VecHash`.
+pub trait VecHashSingle {
+    fn get_k(random_state: RandomState) -> u64 {
+        random_state.hash_one(FXHASH_K)
+    }
+    fn _vec_hash_single(self, k: u64) -> u64;
+}
+impl VecHashSingle for i8 {
+    #[inline]
+    fn _vec_hash_single(self, k: u64) -> u64 {
+        unsafe { fx_hash_8_bit!(self, k) }
+    }
+}
+impl VecHashSingle for u8 {
+    #[inline]
+    fn _vec_hash_single(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_8_bit!(self, k)
+        }
+    }
+}
+impl VecHashSingle for i16 {
+    #[inline]
+    fn _vec_hash_single(self, k: u64) -> u64 {
+        unsafe { fx_hash_16_bit!(self, k) }
+    }
+}
+impl VecHashSingle for u16 {
+    #[inline]
+    fn _vec_hash_single(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_16_bit!(self, k)
+        }
+    }
+}
+
+impl VecHashSingle for i32 {
+    #[inline]
+    fn _vec_hash_single(self, k: u64) -> u64 {
+        unsafe { fx_hash_32_bit!(self, k) }
+    }
+}
+impl VecHashSingle for u32 {
+    #[inline]
+    fn _vec_hash_single(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_32_bit!(self, k)
+        }
+    }
+}
+impl VecHashSingle for i64 {
+    #[inline]
+    fn _vec_hash_single(self, k: u64) -> u64 {
+        fx_hash_64_bit!(self, k)
+    }
+}
+impl VecHashSingle for u64 {
+    #[inline]
+    fn _vec_hash_single(self, k: u64) -> u64 {
+        fx_hash_64_bit!(self, k)
+    }
+}
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {

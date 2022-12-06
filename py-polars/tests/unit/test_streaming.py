@@ -127,3 +127,39 @@ def test_streaming_non_streaming_gb() -> None:
     q = df.lazy().with_column(pl.col("a").alias("b"))
     q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
     assert q.collect(streaming=True).frame_equal(q.collect())
+
+
+def streaming_groupby_sorted_fast_path() -> None:
+    a = np.random.randint(0, 20, 80)
+    df = pl.DataFrame(
+        {
+            # test on int8 as that also tests proper conversions
+            "a": pl.Series(np.sort(a), dtype=pl.Int8)
+        }
+    ).with_row_count()
+
+    df_sorted = df.with_column(pl.col("a").set_sorted())
+
+    for streaming in [True, False]:
+        results = []
+        for df_ in [df, df_sorted]:
+            out = (
+                df_.lazy()
+                .groupby("a")
+                .agg(
+                    [
+                        pl.first("a").alias("first"),
+                        pl.last("a").alias("last"),
+                        pl.sum("a").alias("sum"),
+                        pl.mean("a").alias("mean"),
+                        pl.count("a").alias("count"),
+                        pl.min("a").alias("min"),
+                        pl.max("a").alias("max"),
+                    ]
+                )
+                .sort("a")
+                .collect(streaming=streaming)
+            )
+            results.append(out)
+
+        assert results[0].frame_equal(results[1])

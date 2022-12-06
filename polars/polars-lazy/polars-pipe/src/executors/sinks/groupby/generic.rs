@@ -80,7 +80,7 @@ pub struct GenericGroupbySink {
 }
 
 impl GenericGroupbySink {
-    pub fn new(
+    pub(crate) fn new(
         key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<AggregateFunction>,

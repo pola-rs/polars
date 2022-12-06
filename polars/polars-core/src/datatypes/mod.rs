@@ -66,6 +66,7 @@ macro_rules! impl_polars_datatype {
         pub struct $ca {}
 
         impl PolarsDataType for $ca {
+            #[inline]
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
@@ -178,8 +179,9 @@ pub trait NumericNative:
     + IsFloat
     + NativeArithmetics
 {
-    type POLARSTYPE;
+    type POLARSTYPE: PolarsNumericType;
 }
+
 impl NumericNative for i8 {
     type POLARSTYPE = Int8Type;
 }

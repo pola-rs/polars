@@ -57,7 +57,7 @@ pub struct Utf8GroupbySink {
 }
 
 impl Utf8GroupbySink {
-    pub fn new(
+    pub(crate) fn new(
         key_column: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<AggregateFunction>,

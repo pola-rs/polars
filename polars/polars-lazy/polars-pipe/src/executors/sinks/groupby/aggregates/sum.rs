@@ -1,9 +1,12 @@
 use std::any::Any;
 use std::ops::Add;
 
-use polars_core::datatypes::{AnyValue, DataType};
+use polars_arrow::export::arrow::array::PrimitiveArray;
+use polars_arrow::export::arrow::compute::aggregate::Sum;
+use polars_arrow::export::arrow::types::simd::Simd;
 use polars_core::export::num::NumCast;
-use polars_core::prelude::NumericNative;
+use polars_core::prelude::*;
+use polars_core::utils::arrow::compute::aggregate::sum_primitive;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
@@ -29,7 +32,12 @@ impl<K: NumericNative + Add<Output = K> + NumCast> SumAgg<K> {
     }
 }
 
-impl<K: NumericNative + Add<Output = K> + NumCast> AggregateFn for SumAgg<K> {
+impl<K> AggregateFn for SumAgg<K>
+where
+    K::POLARSTYPE: PolarsNumericType,
+    K: NumericNative + Add<Output = K>,
+    <K as Simd>::Simd: Add<Output = <K as Simd>::Simd> + Sum<K>,
+{
     fn has_physical_agg(&self) -> bool {
         true
     }
@@ -37,6 +45,12 @@ impl<K: NumericNative + Add<Output = K> + NumCast> AggregateFn for SumAgg<K> {
     fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
         let item = unsafe { item.next().unwrap_unchecked_release() };
         self.pre_agg_primitive(item.extract::<K>())
+    }
+    fn pre_agg_i8(&mut self, _chunk_idx: IdxSize, item: Option<i8>) {
+        self.pre_agg_primitive(item)
+    }
+    fn pre_agg_u8(&mut self, _chunk_idx: IdxSize, item: Option<u8>) {
+        self.pre_agg_primitive(item)
     }
     fn pre_agg_i16(&mut self, _chunk_idx: IdxSize, item: Option<i16>) {
         self.pre_agg_primitive(item)
@@ -61,6 +75,36 @@ impl<K: NumericNative + Add<Output = K> + NumCast> AggregateFn for SumAgg<K> {
     }
     fn pre_agg_f64(&mut self, _chunk_idx: IdxSize, item: Option<f64>) {
         self.pre_agg_primitive(item)
+    }
+
+    fn pre_agg_ordered(
+        &mut self,
+        _chunk_idx: IdxSize,
+        offset: IdxSize,
+        length: IdxSize,
+        values: &Series,
+    ) {
+        // we must cast because sum output type might be different than input type.
+        let arr = unsafe {
+            let arr = values.chunks().get_unchecked(0);
+            arr.slice_unchecked(offset as usize, length as usize)
+        };
+        let dtype = K::POLARSTYPE::get_dtype().to_arrow();
+        let arr = polars_arrow::compute::cast::cast(arr.as_ref(), &dtype).unwrap();
+        let arr = unsafe {
+            arr.as_any()
+                .downcast_ref::<PrimitiveArray<K>>()
+                .unwrap_unchecked_release()
+        };
+        match (sum_primitive(arr), self.sum) {
+            (Some(val), Some(sum)) => {
+                self.sum = Some(sum + val);
+            }
+            (Some(val), None) => {
+                self.sum = Some(val);
+            }
+            _ => {}
+        }
     }
 
     fn dtype(&self) -> DataType {
