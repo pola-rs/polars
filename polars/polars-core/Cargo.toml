@@ -29,7 +29,8 @@ string_encoding = ["base64", "hex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
-fmt = ["comfy-table"]
+fmt = ["comfy-table/tty"]
+fmt_no_tty = ["comfy-table"]
 
 # opt-in features
 # sort by multiple columns
@@ -151,7 +152,7 @@ base64 = { version = "0.13", optional = true }
 bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.6", optional = true }
-comfy-table = { version = "6.1.1", optional = true }
+comfy-table = { version = "6.1.1", optional = true, default_features = false }
 hashbrown.workspace = true
 hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }
