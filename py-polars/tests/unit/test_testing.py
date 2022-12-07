@@ -20,17 +20,49 @@ def test_compare_series_empty_equal() -> None:
 
 
 def test_compare_series_nans_assert_equal() -> None:
-    # NaN values do not _compare_ equal, but should _assert_ as equal here
+    # note: NaN values do not _compare_ equal, but should _assert_ equal (by default)
     nan = float("NaN")
 
-    srs1 = pl.Series([1.0, 2.0, nan])
-    srs2 = pl.Series([1.0, 2.0, nan])
-    assert_series_equal(srs1, srs2)
+    srs1 = pl.Series([1.0, 2.0, nan, 4.0, None, 6.0])
+    srs2 = pl.Series([1.0, nan, 3.0, 4.0, None, 6.0])
+    srs3 = pl.Series([1.0, 2.0, 3.0, 4.0, None, 6.0])
 
-    srs1 = pl.Series([1.0, 2.0, nan])
-    srs2 = pl.Series([1.0, nan, 3.0])
+    for srs in (srs1, srs2, srs3):
+        assert_series_equal(srs, srs)
+        assert_series_equal(srs, srs, check_exact=True)
+
     with pytest.raises(AssertionError):
-        assert_series_equal(srs1, srs2, check_exact=True)
+        assert_series_equal(srs1, srs1, nans_compare_equal=False)
+    with pytest.raises(AssertionError):
+        assert_series_equal(srs1, srs1, nans_compare_equal=False, check_exact=True)
+
+    for check_exact, nans_equal in (
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ):
+        if check_exact:
+            check_msg = "Exact value mismatch"
+        else:
+            check_msg = f"Value mismatch.*nans_compare_equal={nans_equal}"
+
+        with pytest.raises(AssertionError, match=check_msg):
+            assert_series_equal(
+                srs1, srs2, check_exact=check_exact, nans_compare_equal=nans_equal
+            )
+        with pytest.raises(AssertionError, match=check_msg):
+            assert_series_equal(
+                srs1, srs3, check_exact=check_exact, nans_compare_equal=nans_equal
+            )
+
+    srs4 = pl.Series([1.0, 2.0, 3.0, 4.0, None, 6.0])
+    srs5 = pl.Series([1.0, 2.0, 3.0, 4.0, nan, 6.0])
+    srs6 = pl.Series([1, 2, 3, 4, None, 6])
+
+    assert_series_equal(srs4, srs6, check_dtype=False)
+    with pytest.raises(AssertionError):
+        assert_series_equal(srs5, srs6, check_dtype=False)
 
 
 def test_compare_series_nulls() -> None:
