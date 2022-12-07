@@ -256,13 +256,41 @@ def _to_python_datetime(
         raise NotImplementedError  # pragma: no cover
 
 
+# cache here as we have a single tz per column
+# and this function will be called on every conversion
+@functools.lru_cache(16)
+def _localize_offset(dt: datetime, offset: str) -> datetime:
+    try:
+        import pytz
+    except ImportError:
+        raise ImportError("pytz needs to be installed to handle datetimes with offsets")
+    import re
+
+    if offset.startswith("-"):
+        g = re.search(r"-(\d\d):(\d\d)", offset)
+        if g is None:
+            raise ValueError(f"Offset: {offset} not understood.")
+        hours = -int(g.group(1))
+        minutes = -int(g.group(2))
+    elif offset.startswith("+"):
+        g = re.search(r"\+(\d\d):(\d\d)", offset)
+        if g is None:
+            raise ValueError(f"Offset: {offset} not understood.")
+        hours = int(g.group(1))
+        minutes = int(g.group(2))
+    else:
+        raise ValueError(f"Offset: {offset} not understood.")
+
+    tz = pytz.FixedOffset(hours * 60 + minutes)
+    return dt.astimezone(tz)
+
+
 def _localize(dt: datetime, tz: str) -> datetime:
-    if not _ZONEINFO_AVAILABLE:
-        raise ImportError(
-            "backports.zoneinfo is not installed. Please run "
-            "`pip install backports.zoneinfo`."
-        )
-    return dt.astimezone(zoneinfo.ZoneInfo(tz))
+    # zone info installation should already be checked
+    try:
+        return dt.astimezone(zoneinfo.ZoneInfo(tz))
+    except zoneinfo.ZoneInfoNotFoundError:
+        return _localize_offset(dt, tz)
 
 
 def _in_notebook() -> bool:

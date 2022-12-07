@@ -699,10 +699,20 @@ impl Display for AnyValue<'_> {
                     Some(_tz) => {
                         #[cfg(feature = "timezones")]
                         {
-                            let tz = _tz.parse::<chrono_tz::Tz>().unwrap();
-                            let dt_utc = chrono::Utc.from_local_datetime(&ndt).unwrap();
-                            let dt_tz_aware = dt_utc.with_timezone(&tz);
-                            write!(f, "{}", dt_tz_aware)
+                            match _tz.parse::<chrono_tz::Tz>() {
+                                Ok(tz) => {
+                                    let dt_utc = chrono::Utc.from_local_datetime(&ndt).unwrap();
+                                    let dt_tz_aware = dt_utc.with_timezone(&tz);
+                                    write!(f, "{}", dt_tz_aware)
+                                }
+                                Err(_) => match parse_offset(_tz) {
+                                    Ok(offset) => {
+                                        let dt_tz_aware = offset.from_utc_datetime(&ndt);
+                                        write!(f, "{}", dt_tz_aware)
+                                    }
+                                    Err(_) => write!(f, "invalid timezone"),
+                                },
+                            }
                         }
                         #[cfg(not(feature = "timezones"))]
                         {
