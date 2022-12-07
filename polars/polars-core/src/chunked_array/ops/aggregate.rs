@@ -746,35 +746,38 @@ impl ChunkAggSeries for BooleanChunked {
     }
 }
 
+impl Utf8Chunked {
+    pub(crate) fn max_str(&self) -> Option<&str> {
+        match self.is_sorted2() {
+            IsSorted::Ascending => self.get(self.len() - 1),
+            IsSorted::Descending => self.get(0),
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(compute::aggregate::max_string)
+                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+        }
+    }
+    pub(crate) fn min_str(&self) -> Option<&str> {
+        match self.is_sorted2() {
+            IsSorted::Ascending => self.get(0),
+            IsSorted::Descending => self.get(self.len() - 1),
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(compute::aggregate::min_string)
+                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+        }
+    }
+}
+
 impl ChunkAggSeries for Utf8Chunked {
     fn sum_as_series(&self) -> Series {
         Utf8Chunked::full_null(self.name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {
-        match self.is_sorted2() {
-            IsSorted::Ascending => Series::new(self.name(), &[self.get(self.len() - 1)]),
-            IsSorted::Descending => Series::new(self.name(), &[self.get(0)]),
-            IsSorted::Not => Series::new(
-                self.name(),
-                &[self
-                    .downcast_iter()
-                    .filter_map(compute::aggregate::max_string)
-                    .fold_first_(|acc, v| if acc > v { acc } else { v })],
-            ),
-        }
+        Series::new(self.name(), &[self.max_str()])
     }
     fn min_as_series(&self) -> Series {
-        match self.is_sorted2() {
-            IsSorted::Ascending => Series::new(self.name(), &[self.get(0)]),
-            IsSorted::Descending => Series::new(self.name(), &[self.get(self.len() - 1)]),
-            IsSorted::Not => Series::new(
-                self.name(),
-                &[self
-                    .downcast_iter()
-                    .filter_map(compute::aggregate::min_string)
-                    .fold_first_(|acc, v| if acc < v { acc } else { v })],
-            ),
-        }
+        Series::new(self.name(), &[self.min_str()])
     }
 }
 
