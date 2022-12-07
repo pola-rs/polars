@@ -220,3 +220,17 @@ def test_groupby_wildcard() -> None:
     assert df.groupby([pl.col("*")], maintain_order=True).agg(
         [pl.col("a").first().suffix("_agg")]
     ).to_dict(False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}
+
+
+def test_groupby_all_masked_out() -> None:
+    df = pl.DataFrame(
+        {
+            "val": pl.Series(
+                [None, None, None, None], dtype=pl.Categorical, nan_to_null=True
+            ).set_sorted(),
+            "col": [4, 4, 4, 4],
+        }
+    )
+    parts = df.partition_by("val")
+    assert len(parts) == 1
+    assert parts[0].frame_equal(df)

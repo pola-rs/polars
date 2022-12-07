@@ -83,6 +83,12 @@ where
         }
         let mut values = arr.values().as_slice();
         let null_count = arr.null_count();
+        let length = values.len();
+
+        // all nulls
+        if null_count == length {
+            return vec![[0, length as IdxSize]];
+        }
 
         let mut nulls_first = false;
         if null_count > 0 {
@@ -92,8 +98,8 @@ where
         if nulls_first {
             values = &values[null_count..];
         } else {
-            values = &values[..values.len() - null_count];
-        }
+            values = &values[..length - null_count];
+        };
 
         let n_threads = POOL.current_num_threads();
         let groups = if multithreaded && n_threads > 1 {
