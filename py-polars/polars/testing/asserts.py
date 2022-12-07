@@ -167,9 +167,14 @@ def _assert_series_inner(
         if left.dtype != right.dtype:
             raise_assert_detail(obj, "Dtype mismatch", left.dtype, right.dtype)
 
+    # confirm that we can call 'is_nan' on both sides
+    left_is_float = left.dtype in (Float32, Float64)
+    right_is_float = right.dtype in (Float32, Float64)
+    comparing_float_dtypes = left_is_float and right_is_float
+
     # create mask of which (if any) values are unequal
     unequal = left != right
-    if unequal.any() and nans_compare_equal and left.dtype in (Float32, Float64):
+    if unequal.any() and nans_compare_equal and comparing_float_dtypes:
         # handle NaN values (which compare unequal to themselves)
         unequal = unequal & ~(
             (left.is_nan() & right.is_nan()).fill_null(pli.lit(False))
@@ -182,13 +187,25 @@ def _assert_series_inner(
                 obj, "Exact value mismatch", left=list(left), right=list(right)
             )
         else:
-            # apply check with tolerance, but only to the known-unequal matches
+            # apply check with tolerance (to the known-unequal matches).
             left, right = left.filter(unequal), right.filter(unequal)
+            mismatch, nan_info = False, ""
             if (((left - right).abs() > (atol + rtol * right.abs())).sum() != 0) or (
-                (left.is_null() != right.is_null()).any()
-            ):
+                left.is_null() != right.is_null()
+            ).any():
+                mismatch = True
+            elif comparing_float_dtypes:
+                # note: take special care with NaN values.
+                if not nans_compare_equal and (left.is_nan() == right.is_nan()).any():
+                    nan_info = " (nans_compare_equal=False)"
+                    mismatch = True
+                elif (left.is_nan() != right.is_nan()).any():
+                    nan_info = f" (nans_compare_equal={nans_compare_equal})"
+                    mismatch = True
+
+            if mismatch:
                 raise_assert_detail(
-                    obj, "Value mismatch", left=list(left), right=list(right)
+                    obj, f"Value mismatch{nan_info}", left=list(left), right=list(right)
                 )
 
 
