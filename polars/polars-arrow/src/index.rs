@@ -33,3 +33,7 @@ pub type IdxSize = u64;
 pub type IdxArr = UInt32Array;
 #[cfg(feature = "bigidx")]
 pub type IdxArr = UInt64Array;
+
+pub fn indexes_to_usizes(idx: &[IdxSize]) -> impl Iterator<Item = usize> + '_ {
+    idx.iter().map(|idx| *idx as usize)
+}
