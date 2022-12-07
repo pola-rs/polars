@@ -182,7 +182,6 @@ where
     }
 
     fn sink_sorted(&mut self, ca: &ChunkedArray<K>, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        dbg!("sink_sorted");
         let arr = ca.downcast_iter().next().unwrap();
         let values = arr.values().as_slice();
         partition_to_groups_amortized(values, 0, false, 0, &mut self.sort_partitions);
@@ -241,7 +240,6 @@ where
         }
 
         // sorted fast path
-        dbg!(ca.is_sorted2());
         if matches!(ca.is_sorted2(), IsSorted::Ascending) && ca.null_count() == 0 {
             return self.sink_sorted(ca, chunk);
         }
@@ -399,62 +397,3 @@ where
         RawEntryMut::Occupied(entry) => *entry.get(),
     }
 }
-
-// pub fn apply_aggregate_sorted(
-//     agg_i: usize,
-//     offset: IdxSize,
-//     len: IdxSize,
-//     aggregation_s: &Series,
-//     has_physical_agg: bool,
-//     aggregators: &mut [AggregateFunction],
-// ) {
-//     macro_rules! apply_agg {
-//                 ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
-//                     match $self.dtype() {
-//                         #[cfg(feature = "dtype-u8")]
-//                         DataType::UInt8 => $macro!($self.u8().unwrap(), pre_agg_u8 $(, $opt_args)*),
-//                         #[cfg(feature = "dtype-u16")]
-//                         DataType::UInt16 => $macro!($self.u16().unwrap(), pre_agg_u16 $(, $opt_args)*),
-//                         DataType::UInt32 => $macro!($self.u32().unwrap(), pre_agg_u32 $(, $opt_args)*),
-//                         DataType::UInt64 => $macro!($self.u64().unwrap(), pre_agg_u64 $(, $opt_args)*),
-//                         #[cfg(feature = "dtype-i8")]
-//                         DataType::Int8 => $macro!($self.i8().unwrap(), pre_agg_i8 $(, $opt_args)*),
-//                         #[cfg(feature = "dtype-i16")]
-//                         DataType::Int16 => $macro!($self.i16().unwrap(), pre_agg_i16 $(, $opt_args)*),
-//                         DataType::Int32 => $macro!($self.i32().unwrap(), pre_agg_i32 $(, $opt_args)*),
-//                         DataType::Int64 => $macro!($self.i64().unwrap(), pre_agg_i64 $(, $opt_args)*),
-//                         DataType::Float32 => $macro!($self.f32().unwrap(), pre_agg_f32 $(, $opt_args)*),
-//                         DataType::Float64 => $macro!($self.f64().unwrap(), pre_agg_f64 $(, $opt_args)*),
-//                         dt => panic!("not implemented for {:?}", dt),
-//                     }
-//                 }};
-//             }
-//
-//     if has_physical_agg && aggregation_s.dtype().is_numeric() {
-//         macro_rules! dispatch {
-//             ($ca:expr, $name:ident) => {{
-//                 let arr = $ca.downcast_iter().next().unwrap();
-//
-//                 for (&agg_idx, av) in agg_idxs.iter().zip(arr.into_iter()) {
-//                     let i = agg_idx as usize + agg_i;
-//                     let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
-//
-//                     agg_fn.$name(chunk_idx, av.copied())
-//                 }
-//             }};
-//         }
-//
-//         apply_agg!(aggregation_s, dispatch);
-//     } else {
-//         let agg_s = aggregation_s.slice(offset as i64, len as usize);
-//         for agg_fn in aggregators {
-//             let mut iter = agg_s.phys_iter();
-//             aggregator.pre_agg(chunk_idx, &mut iter);
-//         }
-//         for &agg_idx in agg_idxs.iter() {
-//             let i = agg_idx as usize + agg_i;
-//             let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
-//             agg_fn.pre_agg(chunk_idx, &mut iter)
-//         }
-//     }
-// }
