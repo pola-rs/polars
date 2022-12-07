@@ -234,3 +234,20 @@ def test_groupby_all_masked_out() -> None:
     parts = df.partition_by("val")
     assert len(parts) == 1
     assert parts[0].frame_equal(df)
+
+
+def test_groupby_min_max_string_type() -> None:
+    table = pl.from_dict({"a": [1, 1, 2, 2, 2], "b": ["a", "b", "c", "d", None]})
+
+    expected = {"a": [1, 2], "min": ["a", "c"], "max": ["b", "d"]}
+
+    for streaming in [True, False]:
+        assert (
+            table.lazy()
+            .groupby("a")
+            .agg([pl.min("b").alias("min"), pl.max("b").alias("max")])
+            .collect(streaming=streaming)
+            .sort("a")
+            .to_dict(False)
+            == expected
+        )

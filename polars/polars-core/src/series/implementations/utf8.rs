@@ -62,6 +62,14 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         self.0.agg_list(groups)
     }
 
+    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_min(groups)
+    }
+
+    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_max(groups)
+    }
+
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
