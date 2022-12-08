@@ -26,6 +26,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    deprecated_alias,
 )
 
 try:
@@ -2184,6 +2185,7 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
     return pli.wrap_expr(_concat_lst(exprs))
 
 
+@deprecated_alias(allow_streaming="streaming")
 def collect_all(
     lazy_frames: Sequence[pli.LazyFrame],
     type_coercion: bool = True,
@@ -2194,7 +2196,7 @@ def collect_all(
     no_optimization: bool = False,
     slice_pushdown: bool = True,
     common_subplan_elimination: bool = True,
-    allow_streaming: bool = False,
+    streaming: bool = False,
 ) -> list[pli.DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
@@ -2221,7 +2223,7 @@ def collect_all(
         Slice pushdown optimization.
     common_subplan_elimination
         Will try to cache branching subplans that occur on self-joins or unions.
-    allow_streaming
+    streaming
         Run parts of the query in a streaming fashion (this is in an alpha state)
 
     Returns
@@ -2245,7 +2247,7 @@ def collect_all(
             simplify_expression,
             slice_pushdown,
             common_subplan_elimination,
-            allow_streaming,
+            streaming,
         )
         prepared.append(ldf)
 

@@ -350,7 +350,7 @@ impl PyLazyFrame {
         simplify_expr: bool,
         slice_pushdown: bool,
         cse: bool,
-        allow_streaming: bool,
+        streaming: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
@@ -359,7 +359,7 @@ impl PyLazyFrame {
             .with_simplify_expr(simplify_expr)
             .with_slice_pushdown(slice_pushdown)
             .with_common_subplan_elimination(cse)
-            .with_streaming(allow_streaming)
+            .with_streaming(streaming)
             .with_projection_pushdown(projection_pushdown);
         ldf.into()
     }

@@ -927,6 +927,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by = pli.selection_to_pyexpr_list(by)
         return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
 
+    @deprecated_alias(allow_streaming="streaming")
     def profile(
         self,
         type_coercion: bool = True,
@@ -939,7 +940,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
-        allow_streaming: bool = False,
+        streaming: bool = False,
     ) -> tuple[pli.DataFrame, pli.DataFrame]:
         """
         Profile a LazyFrame.
@@ -973,7 +974,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             characters.
         figsize
             matplotlib figsize of the profiling plot
-        allow_streaming
+        streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
         Returns
@@ -1029,7 +1030,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             simplify_expression,
             slice_pushdown,
             common_subplan_elimination,
-            allow_streaming,
+            streaming,
         )
         df, timings = ldf.profile()
         (df, timings) = pli.wrap_df(df), pli.wrap_df(timings)
@@ -1163,6 +1164,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         )
         return pli.wrap_df(ldf.collect())
 
+    @deprecated_alias(allow_streaming="streaming")
     def fetch(
         self,
         n_rows: int = 500,
@@ -1174,7 +1176,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         no_optimization: bool = False,
         slice_pushdown: bool = True,
         common_subplan_elimination: bool = True,
-        allow_streaming: bool = False,
+        streaming: bool = False,
     ) -> pli.DataFrame:
         """
         Collect a small number of rows for debugging purposes.
@@ -1205,7 +1207,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Slice pushdown optimization
         common_subplan_elimination
             Will try to cache branching subplans that occur on self-joins or unions.
-        allow_streaming
+        streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
         Returns
@@ -1247,7 +1249,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             simplify_expression,
             slice_pushdown,
             common_subplan_elimination,
-            allow_streaming,
+            streaming,
         )
         return pli.wrap_df(ldf.fetch(n_rows))
 
