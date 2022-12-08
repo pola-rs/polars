@@ -120,8 +120,8 @@ Polars is also very lightweight. It comes with zero required dependencies, and t
 ### Handles larger than RAM data
 
 If you have data that does not fit into memory, polars lazy is able to process your query (or parts of your query) in a
-streaming fashion, this drastically reduces memory requirements you might be able to process your 250GB dataset on your
-laptop. Collect with `collect(allow_streaming=True)` to run the query streaming. (This might be a little slower, but
+streaming fashion, this drastically reduces memory requirements so you might be able to process your 250GB dataset on your
+laptop. Collect with `collect(streaming=True)` to run the query streaming. (This might be a little slower, but
 it is still very fast!)
 
 ## Setup
