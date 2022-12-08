@@ -372,11 +372,11 @@ where
     let right_asof = right_asof.cont_slice().unwrap();
 
     let n_threads = POOL.current_num_threads();
-    let splitted_left = split_ca(by_left, n_threads).unwrap();
+    let splitted_by_left = split_ca(by_left, n_threads).unwrap();
     let splitted_right = split_ca(by_right, n_threads).unwrap();
 
     let hb = RandomState::default();
-    let vals_left = prepare_strs(&splitted_left, &hb);
+    let vals_left = prepare_strs(&splitted_by_left, &hb);
     let vals_right = prepare_strs(&splitted_right, &hb);
 
     let hash_tbls = create_probe_table(vals_right);
@@ -571,131 +571,99 @@ where
     })
 }
 
+#[allow(clippy::too_many_arguments)]
+fn dispatch_join<T: PolarsNumericType>(
+    left_asof: &ChunkedArray<T>,
+    right_asof: &ChunkedArray<T>,
+    left_by_s: &Series,
+    right_by_s: &Series,
+    left_by: &mut DataFrame,
+    right_by: &mut DataFrame,
+    strategy: AsofStrategy,
+    tolerance: Option<AnyValue<'static>>,
+) -> PolarsResult<Vec<Option<IdxSize>>> {
+    let out = if left_by.width() == 1 {
+        match left_by_s.dtype() {
+            DataType::Utf8 => asof_join_by_utf8(
+                left_by_s.utf8().unwrap(),
+                right_by_s.utf8().unwrap(),
+                left_asof,
+                right_asof,
+                tolerance,
+                strategy,
+            ),
+            _ => {
+                if left_by_s.bit_repr_is_large() {
+                    let left_by = left_by_s.bit_repr_large();
+                    let right_by = right_by_s.bit_repr_large();
+                    asof_join_by_numeric(
+                        &left_by, &right_by, left_asof, right_asof, tolerance, strategy,
+                    )?
+                } else {
+                    let left_by = left_by_s.bit_repr_small();
+                    let right_by = right_by_s.bit_repr_small();
+                    asof_join_by_numeric(
+                        &left_by, &right_by, left_asof, right_asof, tolerance, strategy,
+                    )?
+                }
+            }
+        }
+    } else {
+        for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
+            check_asof_columns(lhs, rhs)?;
+            #[cfg(feature = "dtype-categorical")]
+            check_categorical_src(lhs.dtype(), rhs.dtype())?;
+        }
+        asof_join_by_multiple(
+            left_by, right_by, left_asof, right_asof, tolerance, strategy,
+        )
+    };
+    Ok(out)
+}
+
 impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
     #[allow(clippy::too_many_arguments)]
     #[doc(hidden)]
-    pub fn _join_asof_by<I, S>(
+    pub fn _join_asof_by(
         &self,
         other: &DataFrame,
         left_on: &str,
         right_on: &str,
-        left_by: I,
-        right_by: I,
+        left_by: Vec<String>,
+        right_by: Vec<String>,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         slice: Option<(i64, usize)>,
-    ) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        use DataType::*;
-        let left_asof = self.column(left_on)?;
-        let right_asof = other.column(right_on)?;
+    ) -> PolarsResult<DataFrame> {
+        let left_asof = self.column(left_on)?.to_physical_repr();
+        let right_asof = other.column(right_on)?.to_physical_repr();
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
 
-        check_asof_columns(left_asof, right_asof)?;
+        check_asof_columns(&left_asof, &right_asof)?;
 
         let mut left_by = self.select(left_by)?;
         let mut right_by = other.select(right_by)?;
 
-        let left_by_s = &left_by.get_columns()[0];
-        let right_by_s = &right_by.get_columns()[0];
+        let left_by_s = left_by.get_columns()[0].to_physical_repr().into_owned();
+        let right_by_s = right_by.get_columns()[0].to_physical_repr().into_owned();
 
-        let right_join_tuples = if left_asof.bit_repr_is_large() {
-            // we cannot use bit repr as that loses ordering
-            let left_asof = left_asof.cast(&DataType::Int64)?;
-            let right_asof = right_asof.cast(&DataType::Int64)?;
-            let left_asof = left_asof.i64().unwrap();
-            let right_asof = right_asof.i64().unwrap();
+        let right_join_tuples = with_match_physical_numeric_polars_type!(left_asof.dtype(), |$T| {
+            let left_asof: &ChunkedArray<$T> = left_asof.as_ref().as_ref().as_ref();
+            let right_asof: &ChunkedArray<$T> = right_asof.as_ref().as_ref().as_ref();
 
-            if left_by.width() == 1 {
-                match left_by_s.dtype() {
-                    Utf8 => asof_join_by_utf8(
-                        left_by_s.utf8().unwrap(),
-                        right_by_s.utf8().unwrap(),
-                        left_asof,
-                        right_asof,
-                        tolerance,
-                        strategy,
-                    ),
-                    _ => {
-                        if left_by_s.bit_repr_is_large() {
-                            let left_by = left_by_s.bit_repr_large();
-                            let right_by = right_by_s.bit_repr_large();
-                            asof_join_by_numeric(
-                                &left_by, &right_by, left_asof, right_asof, tolerance, strategy,
-                            )?
-                        } else {
-                            let left_by = left_by_s.bit_repr_small();
-                            let right_by = right_by_s.bit_repr_small();
-                            asof_join_by_numeric(
-                                &left_by, &right_by, left_asof, right_asof, tolerance, strategy,
-                            )?
-                        }
-                    }
-                }
-            } else {
-                for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
-                    check_asof_columns(lhs, rhs)?;
-                    #[cfg(feature = "dtype-categorical")]
-                    check_categorical_src(lhs.dtype(), rhs.dtype())?;
-                }
-                asof_join_by_multiple(
-                    &mut left_by,
-                    &mut right_by,
-                    left_asof,
-                    right_asof,
-                    tolerance,
-                    strategy,
-                )
-            }
-        } else {
-            // we cannot use bit repr as that loses ordering
-            let left_asof = left_asof.cast(&DataType::Int32)?;
-            let right_asof = right_asof.cast(&DataType::Int32)?;
-            let left_asof = left_asof.i32().unwrap();
-            let right_asof = right_asof.i32().unwrap();
-
-            if left_by.width() == 1 {
-                match left_by_s.dtype() {
-                    Utf8 => asof_join_by_utf8(
-                        left_by_s.utf8().unwrap(),
-                        right_by_s.utf8().unwrap(),
-                        left_asof,
-                        right_asof,
-                        tolerance,
-                        strategy,
-                    ),
-                    _ => {
-                        if left_by_s.bit_repr_is_large() {
-                            let left_by = left_by_s.bit_repr_large();
-                            let right_by = right_by_s.bit_repr_large();
-                            asof_join_by_numeric(
-                                &left_by, &right_by, left_asof, right_asof, tolerance, strategy,
-                            )?
-                        } else {
-                            let left_by = left_by_s.bit_repr_small();
-                            let right_by = right_by_s.bit_repr_small();
-                            asof_join_by_numeric(
-                                &left_by, &right_by, left_asof, right_asof, tolerance, strategy,
-                            )?
-                        }
-                    }
-                }
-            } else {
-                asof_join_by_multiple(
-                    &mut left_by,
-                    &mut right_by,
-                    left_asof,
-                    right_asof,
-                    tolerance,
-                    strategy,
-                )
-            }
-        };
+            dispatch_join(
+                left_asof,
+                right_asof,
+                &left_by_s,
+                &right_by_s,
+                &mut left_by,
+                &mut right_by,
+                strategy,
+                tolerance
+            )
+        })?;
 
         let mut drop_these = right_by.get_column_names();
         if left_asof_name == right_asof_name {
@@ -755,6 +723,14 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        let left_by = left_by
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect();
+        let right_by = right_by
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect();
         self._join_asof_by(
             other, left_on, right_on, left_by, right_by, strategy, tolerance, None,
         )

@@ -142,6 +142,31 @@ def test_join_asof_floats() -> None:
         "b_right": ["rrow1", "rrow2", "rrow3"],
     }
 
+    # with by argument
+    # 5740
+    df1 = pl.DataFrame(
+        {"b": np.linspace(0, 5, 7), "c": ["x" if i < 4 else "y" for i in range(7)]}
+    )
+    df2 = pl.DataFrame(
+        {
+            "val": [0, 2.5, 2.6, 2.7, 3.4, 4, 5],
+            "c": ["x", "x", "x", "y", "y", "y", "y"],
+        }
+    ).with_column(pl.col("val").alias("b"))
+    assert df1.join_asof(df2, on="b", by="c").to_dict(False) == {
+        "b": [
+            0.0,
+            0.8333333333333334,
+            1.6666666666666667,
+            2.5,
+            3.3333333333333335,
+            4.166666666666667,
+            5.0,
+        ],
+        "c": ["x", "x", "x", "x", "y", "y", "y"],
+        "val": [0.0, 0.0, 0.0, 2.5, 2.7, 4.0, 5.0],
+    }
+
 
 def test_join_asof_tolerance() -> None:
     df_trades = pl.DataFrame(
