@@ -77,9 +77,9 @@ impl StringNameSpace {
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
-    pub fn extract_all(self, pat: &str) -> Expr {
-        let pat = pat.to_string();
-        self.0.map_private(StringFunction::ExtractAll(pat).into())
+    pub fn extract_all(self, pat: Expr) -> Expr {
+        self.0
+            .map_many_private(StringFunction::ExtractAll.into(), &[pat], false)
     }
 
     /// Count all successive non-overlapping regex matches.

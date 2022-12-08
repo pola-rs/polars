@@ -793,7 +793,7 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
-    def extract_all(self, pattern: str) -> pli.Expr:
+    def extract_all(self, pattern: str | pli.Expr) -> pli.Expr:
         r"""
         Extracts all matches for the given regex pattern.
 
@@ -830,7 +830,8 @@ class ExprStringNameSpace:
         └────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_extract_all(pattern))
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
+        return pli.wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
 
     def count_match(self, pattern: str) -> pli.Expr:
         r"""
