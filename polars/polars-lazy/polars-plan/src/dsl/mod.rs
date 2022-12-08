@@ -368,10 +368,10 @@ impl Expr {
     }
 
     /// Compute the quantile per group.
-    pub fn quantile(self, quantile: f64, interpol: QuantileInterpolOptions) -> Self {
+    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> Self {
         AggExpr::Quantile {
             expr: Box::new(self),
-            quantile,
+            quantile: Box::new(quantile),
             interpol,
         }
         .into()

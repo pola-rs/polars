@@ -684,7 +684,7 @@ impl LazyFrame {
     ///        .agg([
     ///            col("rain").min(),
     ///            col("rain").sum(),
-    ///            col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
+    ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
     /// }
     /// ```
@@ -982,7 +982,7 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their quantile values.
-    pub fn quantile(self, quantile: f64, interpol: QuantileInterpolOptions) -> LazyFrame {
+    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> LazyFrame {
         self.select_local(vec![col("*").quantile(quantile, interpol)])
     }
 
@@ -1237,7 +1237,7 @@ impl LazyGroupBy {
     ///        .agg([
     ///            col("rain").min(),
     ///            col("rain").sum(),
-    ///            col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
+    ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
     /// }
     /// ```

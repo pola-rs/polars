@@ -65,36 +65,6 @@ fn test_lazy_agg_scan() {
 }
 
 #[test]
-fn test_lazy_df_aggregations() {
-    let df = load_df();
-
-    assert!(df
-        .clone()
-        .lazy()
-        .min()
-        .collect()
-        .unwrap()
-        .frame_equal_missing(&df.min()));
-    assert!(df
-        .clone()
-        .lazy()
-        .median()
-        .collect()
-        .unwrap()
-        .frame_equal_missing(&df.median()));
-    assert!(df
-        .clone()
-        .lazy()
-        .quantile(0.5, QuantileInterpolOptions::default())
-        .collect()
-        .unwrap()
-        .frame_equal_missing(
-            &df.quantile(0.5, QuantileInterpolOptions::default())
-                .unwrap()
-        ));
-}
-
-#[test]
 fn test_cumsum_agg_as_key() -> PolarsResult<()> {
     let df = df![
         "depth" => &[0i32, 1, 2, 3, 4, 5, 6, 7, 8, 9],

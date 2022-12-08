@@ -452,24 +452,28 @@ pub(crate) fn create_physical_expr(
                 } => {
                     // todo! add schema to get correct output type
                     let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)))
-                        }
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                s.quantile_as_series(quantile, interpol)
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
+                    let quantile = create_physical_expr(quantile, ctxt, expr_arena, schema)?;
+                    Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)))
+                    //
+                    // match ctxt {
+                    //     Context::Aggregation => {
+                    //
+                    //         Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)))
+                    //     }
+                    //     Context::Default => {
+                    //         let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                    //             let s = std::mem::take(&mut s[0]);
+                    //             s.quantile_as_series(quantile, interpol)
+                    //         })
+                    //             as Arc<dyn SeriesUdf>);
+                    //         Ok(Arc::new(ApplyExpr::new_minimal(
+                    //             vec![input],
+                    //             function,
+                    //             node_to_expr(expression, expr_arena),
+                    //             ApplyOptions::ApplyFlat,
+                    //         )))
+                    //     }
+                    // }
                 }
                 AAggExpr::AggGroups(expr) => {
                     if let Context::Default = ctxt {
