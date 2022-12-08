@@ -268,13 +268,13 @@ impl PhysicalExpr for BinaryExpr {
             // when groups overlap, step 2 creates more values than rows
             // and the original group lengths will be incorrect
             (
-                AggState::AggregatedList(_),
+                AggState::AggregatedList(_) | AggState::AggregatedFlat(_),
                 AggState::NotAggregated(_) | AggState::Literal(_),
                 false,
             )
             | (
                 AggState::NotAggregated(_) | AggState::Literal(_),
-                AggState::AggregatedList(_),
+                AggState::AggregatedList(_) | AggState::AggregatedFlat(_),
                 false,
             ) => {
                 ac_l.sort_by_groups();
