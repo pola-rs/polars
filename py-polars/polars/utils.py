@@ -10,7 +10,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar, overload
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
+from polars.datatypes import (
+    Categorical,
+    DataType,
+    Date,
+    Datetime,
+    List,
+    PolarsDataType,
+    Utf8,
+    is_polars_dtype,
+)
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 try:
@@ -342,17 +351,27 @@ def _rename_kwargs(
 
 if not os.getenv("BUILDING_SPHINX_DOCS"):
     # if NOT building docs we use a simple @property decorator for namespace accessors,
-    # which plays much better with mypy, pylint, and the various IDEs' autocomplete.
+    # which plays nicely with mypy, pylint, and the various IDEs' autocomplete.
     accessor = property
 else:
-    # however, when building docs (with Sphinx) we need access to the functions
-    # associated with the namespaces from the class, as we don't have an instance.
+    # however, when building docs (with Sphinx) we still need access to the functions
+    # and attributes associated with the namespaces, despite not having an instance.
+    _associated_dtype = {
+        "Series.arr": List,
+        "Series.cat": Categorical,
+        "Series.dt": Datetime,
+        "Series.str": Utf8,
+    }
     NS = TypeVar("NS")
 
     class accessor(property):  # type: ignore[no-redef]
         def __get__(self, instance: Any, cls: type[NS]) -> NS:  # type: ignore[override]
-            return self.fget(  # type: ignore[misc]
-                instance if isinstance(instance, cls) else cls
+            obj = self.fget
+            dtype = _associated_dtype.get(obj.__qualname__)  # type: ignore[union-attr]
+            return obj(
+                cls
+                if dtype is None
+                else cls(dtype=dtype)  # type: ignore[misc, call-arg]
             )
 
 
