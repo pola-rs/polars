@@ -84,17 +84,19 @@ where
         }
     }
 
-    pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
-        match opt_v {
-            Some(items) => {
-                let values = self.builder.mut_values();
-                values.extend_from_slice(items);
-                self.builder.try_push_valid().unwrap();
+    pub fn append_slice(&mut self, items: &[T::Native]) {
+        let values = self.builder.mut_values();
+        values.extend_from_slice(items);
+        self.builder.try_push_valid().unwrap();
 
-                if items.is_empty() {
-                    self.fast_explode = false;
-                }
-            }
+        if items.is_empty() {
+            self.fast_explode = false;
+        }
+    }
+
+    pub fn append_opt_slice(&mut self, opt_v: Option<&[T::Native]>) {
+        match opt_v {
+            Some(items) => self.append_slice(items),
             None => {
                 self.builder.push_null();
             }

@@ -884,8 +884,8 @@ mod test {
     fn test_fmt_list() {
         let mut builder =
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
-        builder.append_slice(Some(&[1, 2, 3]));
-        builder.append_slice(None);
+        builder.append_opt_slice(Some(&[1, 2, 3]));
+        builder.append_opt_slice(None);
         let list = builder.finish().into_series();
 
         assert_eq!(
