@@ -1,3 +1,4 @@
+mod aggregation;
 mod explodes;
 mod expressions;
 mod functions;
