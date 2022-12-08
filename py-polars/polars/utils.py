@@ -21,7 +21,16 @@ from typing import (
 )
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
+from polars.datatypes import (
+    Categorical,
+    DataType,
+    Date,
+    Datetime,
+    List,
+    PolarsDataType,
+    Utf8,
+    is_polars_dtype,
+)
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 try:
@@ -404,19 +413,32 @@ def _rename_kwargs(
 # when building docs (with Sphinx) we need access to the functions
 # associated with the namespaces from the class, as we don't have
 # an instance; @sphinx_accessor is a @property that allows this.
+_series_dtype = {
+    "Series.arr": List,
+    "Series.cat": Categorical,
+    "Series.dt": Datetime,
+    "Series.str": Utf8,
+}
 NS = TypeVar("NS")
 
-
-class sphinx_accessor(property):
+class sphinx_accessor(property):  # type: ignore[no-redef]
     def __get__(  # type: ignore[override]
         self,
         instance: Any,
         cls: type[NS],
     ) -> NS:
         try:
-            return self.fget(  # type: ignore[misc]
-                instance if isinstance(instance, cls) else cls
-            )
+            obj = self.fget
+            if isinstance(instance, cls):
+                return obj(instance)  # type:ignore [misc]
+            else:
+                lookup = getattr(obj, "__qualname__")  # noqa: B009
+                dtype = _series_dtype.get(lookup)
+                return (
+                    obj(cls)  # type:ignore [misc]
+                    if dtype is None
+                    else obj(cls(dtype=dtype))  # type:ignore [misc,call-arg]
+                )
         except AttributeError:
             return None  # type: ignore[return-value]
 
