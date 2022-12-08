@@ -26,6 +26,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    deprecated_alias,
 )
 
 try:
