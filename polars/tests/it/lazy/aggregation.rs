@@ -25,7 +25,7 @@ fn test_lazy_df_aggregations() {
         .collect()
         .unwrap()
         .frame_equal_missing(
-            &df.quantile(lit(0.5), QuantileInterpolOptions::default())
+            &df.quantile(0.5, QuantileInterpolOptions::default())
                 .unwrap()
         ));
 }
