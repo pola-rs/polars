@@ -406,7 +406,7 @@ class StringNameSpace:
 
         """
 
-    def extract_all(self, pattern: str) -> pli.Series:
+    def extract_all(self, pattern: str | pli.Series) -> pli.Series:
         r"""
         Extracts all matches for the given regex pattern.
 
