@@ -349,3 +349,31 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_binary_group_consistency() -> PolarsResult<()> {
+    let lf = df![
+        "name" => ["a", "b", "c", "d"],
+        "category" => [1, 2, 3, 4],
+        "score" => [3, 5, 1, 2],
+    ]?
+    .lazy();
+
+    let out = lf
+        .groupby([col("category")])
+        .agg([col("name").filter(col("score").eq(col("score").max()))])
+        .sort("category", Default::default())
+        .collect()?;
+    let out = out.column("name")?;
+
+    assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::Utf8)));
+    assert_eq!(
+        out.explode()?
+            .utf8()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &["a", "b", "c", "d"]
+    );
+
+    Ok(())
+}
