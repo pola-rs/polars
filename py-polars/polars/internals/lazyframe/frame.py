@@ -927,6 +927,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by = pli.selection_to_pyexpr_list(by)
         return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
 
+    @deprecated_alias(allow_streaming="streaming")
     def profile(
         self,
         type_coercion: bool = True,
@@ -939,7 +940,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
-        allow_streaming: bool = False,
+        streaming: bool = False,
     ) -> tuple[pli.DataFrame, pli.DataFrame]:
         """
         Profile a LazyFrame.
@@ -973,7 +974,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             characters.
         figsize
             matplotlib figsize of the profiling plot
-        allow_streaming
+        streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
         Returns
@@ -1029,7 +1030,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             simplify_expression,
             slice_pushdown,
             common_subplan_elimination,
-            allow_streaming,
+            streaming,
         )
         df, timings = ldf.profile()
         (df, timings) = pli.wrap_df(df), pli.wrap_df(timings)

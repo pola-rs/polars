@@ -686,7 +686,7 @@ def test_streaming_joins() -> None:
             dfa_pl.lazy()
             .join(dfb_pl.lazy(), on="a", how=how)
             .sort(["a", "b"])
-            .collect(allow_streaming=True)
+            .collect(streaming=True)
         )
 
         a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
@@ -698,7 +698,7 @@ def test_streaming_joins() -> None:
             dfa_pl.lazy()
             .join(dfb_pl.lazy(), on=["a", "b"], how=how)
             .sort(["a", "b"])
-            .collect(allow_streaming=True)
+            .collect(streaming=True)
         )
 
         # we cast to integer because pandas joins creates floats
