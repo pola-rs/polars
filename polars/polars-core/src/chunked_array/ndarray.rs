@@ -175,9 +175,9 @@ mod test {
 
         let mut builder =
             ListPrimitiveChunkedBuilder::<Float64Type>::new("", 10, 10, DataType::Float64);
-        builder.append_slice(Some(&[1.0, 2.0, 3.0]));
-        builder.append_slice(Some(&[2.0, 4.0, 5.0]));
-        builder.append_slice(Some(&[6.0, 7.0, 8.0]));
+        builder.append_opt_slice(Some(&[1.0, 2.0, 3.0]));
+        builder.append_opt_slice(Some(&[2.0, 4.0, 5.0]));
+        builder.append_opt_slice(Some(&[6.0, 7.0, 8.0]));
         let list = builder.finish();
 
         let ndarr = list.to_ndarray::<Float64Type>()?;
@@ -187,9 +187,9 @@ mod test {
         // test list array that is not square
         let mut builder =
             ListPrimitiveChunkedBuilder::<Float64Type>::new("", 10, 10, DataType::Float64);
-        builder.append_slice(Some(&[1.0, 2.0, 3.0]));
-        builder.append_slice(Some(&[2.0]));
-        builder.append_slice(Some(&[6.0, 7.0, 8.0]));
+        builder.append_opt_slice(Some(&[1.0, 2.0, 3.0]));
+        builder.append_opt_slice(Some(&[2.0]));
+        builder.append_opt_slice(Some(&[6.0, 7.0, 8.0]));
         let list = builder.finish();
         assert!(list.to_ndarray::<Float64Type>().is_err());
         Ok(())

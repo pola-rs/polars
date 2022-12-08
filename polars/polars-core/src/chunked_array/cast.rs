@@ -228,8 +228,8 @@ mod test {
     fn test_cast_list() -> PolarsResult<()> {
         let mut builder =
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
-        builder.append_slice(Some(&[1i32, 2, 3]));
-        builder.append_slice(Some(&[1i32, 2, 3]));
+        builder.append_opt_slice(Some(&[1i32, 2, 3]));
+        builder.append_opt_slice(Some(&[1i32, 2, 3]));
         let ca = builder.finish();
 
         let new = ca.cast(&DataType::List(DataType::Float64.into()))?;

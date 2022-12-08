@@ -166,25 +166,112 @@ pub(super) fn date_range_dispatch(
     let start = &s[0];
     let stop = &s[1];
 
-    match start.dtype() {
-        DataType::Date => {
-            let start = start.to_physical_repr();
-            let stop = stop.to_physical_repr();
-            // to milliseconds
-            let start = start.get(0).extract::<i64>().unwrap() * SECONDS_IN_DAY * 1000;
-            let stop = stop.get(0).extract::<i64>().unwrap() * SECONDS_IN_DAY * 1000;
+    if start.len() != stop.len() {
+        return Err(PolarsError::ComputeError(
+            "'start' and 'stop' should have the same length.".into(),
+        ));
+    }
+    const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
-            date_range_impl(name, start, stop, every, closed, TimeUnit::Milliseconds, tz)
+    if start.len() == 1 && stop.len() == 1 {
+        match start.dtype() {
+            DataType::Date => {
+                let start = start.to_physical_repr();
+                let stop = stop.to_physical_repr();
+                // to milliseconds
+                let start = start.get(0).extract::<i64>().unwrap() * TO_MS;
+                let stop = stop.get(0).extract::<i64>().unwrap() * TO_MS;
+
+                date_range_impl(
+                    name,
+                    start,
+                    stop,
+                    every,
+                    closed,
+                    TimeUnit::Milliseconds,
+                    tz.as_ref(),
+                )
                 .cast(&DataType::Date)
-        }
-        DataType::Datetime(tu, _) => {
-            let start = start.to_physical_repr();
-            let stop = stop.to_physical_repr();
-            let start = start.get(0).extract::<i64>().unwrap();
-            let stop = stop.get(0).extract::<i64>().unwrap();
+            }
+            DataType::Datetime(tu, _) => {
+                let start = start.to_physical_repr();
+                let stop = stop.to_physical_repr();
+                let start = start.get(0).extract::<i64>().unwrap();
+                let stop = stop.get(0).extract::<i64>().unwrap();
 
-            Ok(date_range_impl(name, start, stop, every, closed, *tu, tz).into_series())
+                Ok(
+                    date_range_impl(name, start, stop, every, closed, *tu, tz.as_ref())
+                        .into_series(),
+                )
+            }
+            _ => unimplemented!(),
         }
-        _ => todo!(),
+    } else {
+        let dtype = start.dtype();
+
+        let mut start = start.to_physical_repr().cast(&DataType::Int64)?;
+        let mut stop = stop.to_physical_repr().cast(&DataType::Int64)?;
+
+        let (tu, tz) = match dtype {
+            DataType::Date => {
+                start = &start * TO_MS;
+                stop = &stop * TO_MS;
+                (TimeUnit::Milliseconds, None)
+            }
+            DataType::Datetime(tu, tz) => (*tu, tz.as_ref()),
+            _ => unimplemented!(),
+        };
+
+        let start = start.i64().unwrap();
+        let stop = stop.i64().unwrap();
+
+        let list = match dtype {
+            DataType::Date => {
+                let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+                    name,
+                    start.len(),
+                    start.len() * 5,
+                    DataType::Int32,
+                );
+                for (start, stop) in start.into_iter().zip(stop.into_iter()) {
+                    match (start, stop) {
+                        (Some(start), Some(stop)) => {
+                            let date_range =
+                                date_range_impl("", start, stop, every, closed, tu, tz);
+                            let date_range = date_range.cast(&DataType::Date).unwrap();
+                            let date_range = date_range.to_physical_repr();
+                            let date_range = date_range.i32().unwrap();
+                            builder.append_slice(date_range.cont_slice().unwrap())
+                        }
+                        _ => builder.append_null(),
+                    }
+                }
+                builder.finish().into_series()
+            }
+            DataType::Datetime(_, _) => {
+                let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
+                    name,
+                    start.len(),
+                    start.len() * 5,
+                    DataType::Int64,
+                );
+
+                for (start, stop) in start.into_iter().zip(stop.into_iter()) {
+                    match (start, stop) {
+                        (Some(start), Some(stop)) => {
+                            let date_range =
+                                date_range_impl("", start, stop, every, closed, tu, tz);
+                            builder.append_slice(date_range.cont_slice().unwrap())
+                        }
+                        _ => builder.append_null(),
+                    }
+                }
+                builder.finish().into_series()
+            }
+            _ => unimplemented!(),
+        };
+
+        let to_type = DataType::List(Box::new(dtype.clone()));
+        list.cast(&to_type)
     }
 }
