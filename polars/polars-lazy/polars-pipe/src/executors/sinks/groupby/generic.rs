@@ -147,7 +147,7 @@ impl GenericGroupbySink {
                             .output_schema
                             .iter_dtypes()
                             .take(n_keys)
-                            .map(|dtype| AnyValueBuffer::new(dtype, agg_map.len()))
+                            .map(|dtype| AnyValueBuffer::new(&dtype.to_physical(), agg_map.len()))
                             .collect::<Vec<_>>();
                         let dtypes = agg_fns
                             .iter()
@@ -251,15 +251,17 @@ impl Sink for GenericGroupbySink {
             let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
 
             let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
-                let idx = key.idx as usize;
-                if self.keys_series.len() > 1 {
-                    current_tuple.iter().enumerate().all(|(i, key)| unsafe {
-                        current_key_values.get_unchecked_release(i + idx) == key
-                    })
-                } else {
-                    unsafe {
-                        current_key_values.get_unchecked_release(idx)
-                            == current_tuple.get_unchecked_release(0)
+                key.hash == h && {
+                    let idx = key.idx as usize;
+                    if self.keys_series.len() > 1 {
+                        current_tuple.iter().enumerate().all(|(i, key)| unsafe {
+                            current_key_values.get_unchecked_release(i + idx) == key
+                        })
+                    } else {
+                        unsafe {
+                            current_key_values.get_unchecked_release(idx)
+                                == current_tuple.get_unchecked_release(0)
+                        }
                     }
                 }
             });

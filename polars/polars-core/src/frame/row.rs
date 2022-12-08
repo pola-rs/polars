@@ -500,7 +500,7 @@ impl<'a> AnyValueBuffer<'a> {
         }
     }
 
-    pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'_> {
+    pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'a> {
         (dtype, capacity).into()
     }
 }
