@@ -366,8 +366,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Extract { pat, group_index } => {
                 map!(strings::extract, &pat, group_index)
             }
-            ExtractAll(pat) => {
-                map!(strings::extract_all, &pat)
+            ExtractAll => {
+                map_as_slice!(strings::extract_all)
             }
             CountMatch(pat) => {
                 map!(strings::count_match, &pat)

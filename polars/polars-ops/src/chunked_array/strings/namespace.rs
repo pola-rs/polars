@@ -215,6 +215,34 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(builder.finish())
     }
 
+    /// Extract each successive non-overlapping regex match in an individual string as an array
+    fn extract_all_many(&self, pat: &Utf8Chunked) -> PolarsResult<ListChunked> {
+        let ca = self.as_utf8();
+        if ca.len() != pat.len() {
+            return Err(PolarsError::ComputeError(
+                "pattern's length does not match that of the argument Series".into(),
+            ));
+        }
+
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        for (opt_s, opt_pat) in ca.into_iter().zip(pat.into_iter()) {
+            match (opt_s, opt_pat) {
+                (_, None) | (None, _) => builder.append_null(),
+                (Some(s), Some(pat)) => {
+                    let reg = Regex::new(pat)?;
+                    let mut iter = reg.find_iter(s).map(|m| m.as_str()).peekable();
+                    if iter.peek().is_some() {
+                        builder.append_values_iter(iter);
+                    } else {
+                        builder.append_null()
+                    }
+                }
+            }
+        }
+        Ok(builder.finish())
+    }
+
     /// Count all successive non-overlapping regex matches.
     fn count_match(&self, pat: &str) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_utf8();

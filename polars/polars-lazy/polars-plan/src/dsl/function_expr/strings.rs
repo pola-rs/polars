@@ -33,7 +33,7 @@ pub enum StringFunction {
         width: usize,
         fillchar: char,
     },
-    ExtractAll(String),
+    ExtractAll,
     CountMatch(String),
     #[cfg(feature = "temporal")]
     Strptime(StrpTimeOptions),
@@ -68,7 +68,7 @@ impl Display for StringFunction {
             StringFunction::LJust { .. } => "str.ljust",
             #[cfg(feature = "string_justify")]
             StringFunction::RJust { .. } => "rjust",
-            StringFunction::ExtractAll(_) => "extract_all",
+            StringFunction::ExtractAll => "extract_all",
             StringFunction::CountMatch(_) => "count_match",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_) => "strptime",
@@ -176,11 +176,21 @@ pub(super) fn rstrip(s: &Series, matches: Option<char>) -> PolarsResult<Series> 
     }
 }
 
-pub(super) fn extract_all(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let pat = pat.to_string();
+pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let pat = &args[1];
 
     let ca = s.utf8()?;
-    ca.extract_all(&pat).map(|ca| ca.into_series())
+    let pat = pat.utf8()?;
+
+    if pat.len() == 1 {
+        let pat = pat
+            .get(0)
+            .ok_or_else(|| PolarsError::ComputeError("Expected a pattern got null".into()))?;
+        ca.extract_all(pat).map(|ca| ca.into_series())
+    } else {
+        ca.extract_all_many(pat).map(|ca| ca.into_series())
+    }
 }
 
 pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {

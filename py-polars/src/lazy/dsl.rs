@@ -751,8 +751,8 @@ impl PyExpr {
         self.inner.clone().str().extract(pat, group_index).into()
     }
 
-    pub fn str_extract_all(&self, pat: &str) -> PyExpr {
-        self.inner.clone().str().extract_all(pat).into()
+    pub fn str_extract_all(&self, pat: PyExpr) -> PyExpr {
+        self.inner.clone().str().extract_all(pat.inner).into()
     }
 
     pub fn count_match(&self, pat: &str) -> PyExpr {

@@ -160,6 +160,11 @@ def test_extract_all_count() -> None:
     assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
 
 
+def test_extract_all_many() -> None:
+    df = pl.DataFrame({"foo": ["ab", "abc", "abcd"], "re": ["a", "bc", "a.c"]})
+    assert df["foo"].str.extract_all(df["re"]).to_list() == [["a"], ["bc"], ["abc"]]
+
+
 def test_zfill() -> None:
     df = pl.DataFrame(
         {

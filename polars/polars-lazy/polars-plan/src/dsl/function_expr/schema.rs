@@ -124,7 +124,7 @@ impl FunctionExpr {
                 match s {
                     Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
                     Extract { .. } => same_type(),
-                    ExtractAll(_) => with_dtype(DataType::List(Box::new(DataType::Utf8))),
+                    ExtractAll => with_dtype(DataType::List(Box::new(DataType::Utf8))),
                     CountMatch(_) => with_dtype(DataType::UInt32),
                     #[cfg(feature = "string_justify")]
                     Zfill { .. } | LJust { .. } | RJust { .. } => same_type(),
