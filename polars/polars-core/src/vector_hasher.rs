@@ -591,6 +591,7 @@ impl<'a> BytesHash<'a> {
 }
 
 impl<'a> PartialEq for BytesHash<'a> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         (self.hash == other.hash) && (self.payload == other.payload)
     }
