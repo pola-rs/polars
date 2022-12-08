@@ -457,22 +457,34 @@ impl PartitionedAggregation for AggregationExpr {
 }
 
 pub struct AggQuantileExpr {
-    pub(crate) expr: Arc<dyn PhysicalExpr>,
-    pub(crate) quantile: f64,
+    pub(crate) input: Arc<dyn PhysicalExpr>,
+    pub(crate) quantile: Arc<dyn PhysicalExpr>,
     pub(crate) interpol: QuantileInterpolOptions,
 }
 
 impl AggQuantileExpr {
     pub fn new(
-        expr: Arc<dyn PhysicalExpr>,
-        quantile: f64,
+        input: Arc<dyn PhysicalExpr>,
+        quantile: Arc<dyn PhysicalExpr>,
         interpol: QuantileInterpolOptions,
     ) -> Self {
         Self {
-            expr,
+            input,
             quantile,
             interpol,
         }
+    }
+
+    fn get_quantile(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<f64> {
+        let quantile = self.quantile.evaluate(df, state)?;
+        if quantile.len() > 1 {
+            return Err(PolarsError::ComputeError(
+                "Polars only supports computing a single quantile. \
+            Make sure the 'quantile' expression input produces a single quantile."
+                    .into(),
+            ));
+        }
+        quantile.get(0).try_extract::<f64>()
     }
 }
 
@@ -481,8 +493,10 @@ impl PhysicalExpr for AggQuantileExpr {
         None
     }
 
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
-        unimplemented!()
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+        let input = self.input.evaluate(df, state)?;
+        let quantile = self.get_quantile(df, state)?;
+        input.quantile_as_series(quantile, self.interpol)
     }
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
@@ -491,23 +505,25 @@ impl PhysicalExpr for AggQuantileExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
+
+        let quantile = self.get_quantile(df, state)?;
 
         // safety:
         // groups are in bounds
         let mut agg = unsafe {
             ac.flat_naive()
                 .into_owned()
-                .agg_quantile(ac.groups(), self.quantile, self.interpol)
+                .agg_quantile(ac.groups(), quantile, self.interpol)
         };
         agg.rename(&keep_name);
         Ok(AggregationContext::new(agg, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema)
+        self.input.to_field(input_schema)
     }
 
     fn is_valid_aggregation(&self) -> bool {

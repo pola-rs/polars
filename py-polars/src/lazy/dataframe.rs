@@ -652,9 +652,9 @@ impl PyLazyFrame {
         ldf.median().into()
     }
 
-    pub fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    pub fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.quantile(quantile, interpolation.0).into()
+        ldf.quantile(quantile.inner, interpolation.0).into()
     }
 
     pub fn explode(&self, column: Vec<PyExpr>) -> Self {

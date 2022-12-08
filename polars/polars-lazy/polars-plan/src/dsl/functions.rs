@@ -711,7 +711,7 @@ pub fn median(name: &str) -> Expr {
 }
 
 /// Find a specific quantile of all the values in this Expression.
-pub fn quantile(name: &str, quantile: f64, interpol: QuantileInterpolOptions) -> Expr {
+pub fn quantile(name: &str, quantile: Expr, interpol: QuantileInterpolOptions) -> Expr {
     col(name).quantile(quantile, interpol)
 }
 

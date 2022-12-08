@@ -982,7 +982,7 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their quantile values.
-    pub fn quantile(self, quantile: f64, interpol: QuantileInterpolOptions) -> LazyFrame {
+    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> LazyFrame {
         self.select_local(vec![col("*").quantile(quantile, interpol)])
     }
 

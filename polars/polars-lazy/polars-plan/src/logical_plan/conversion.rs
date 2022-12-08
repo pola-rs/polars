@@ -77,7 +77,7 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                     interpol,
                 } => AAggExpr::Quantile {
                     expr: to_aexpr(*expr, arena),
-                    quantile,
+                    quantile: to_aexpr(*quantile, arena),
                     interpol,
                 },
                 AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr(*expr, arena)),
@@ -540,10 +540,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 quantile,
                 interpol,
             } => {
-                let exp = node_to_expr(expr, expr_arena);
+                let expr = node_to_expr(expr, expr_arena);
+                let quantile = node_to_expr(quantile, expr_arena);
                 AggExpr::Quantile {
-                    expr: Box::new(exp),
-                    quantile,
+                    expr: Box::new(expr),
+                    quantile: Box::new(quantile),
                     interpol,
                 }
                 .into()
