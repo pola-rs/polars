@@ -581,6 +581,50 @@ def test_date_range_lazy() -> None:
         )
     ]
 
+    assert pl.DataFrame(
+        {
+            "start": [date(2000, 1, 1), date(2022, 6, 1)],
+            "stop": [date(2000, 1, 2), date(2022, 6, 2)],
+        }
+    ).with_columns(
+        pl.date_range(
+            pl.col("start"),
+            pl.col("stop"),
+            interval="1d",
+        ).alias("dts")
+    ).to_dict(
+        False
+    ) == {
+        "start": [date(2000, 1, 1), date(2022, 6, 1)],
+        "stop": [date(2000, 1, 2), date(2022, 6, 2)],
+        "dts": [
+            [date(2000, 1, 1), date(2000, 1, 2)],
+            [date(2022, 6, 1), date(2022, 6, 2)],
+        ],
+    }
+
+    assert pl.DataFrame(
+        {
+            "start": [datetime(2000, 1, 1), datetime(2022, 6, 1)],
+            "stop": [datetime(2000, 1, 2), datetime(2022, 6, 2)],
+        }
+    ).with_columns(
+        pl.date_range(
+            pl.col("start"),
+            pl.col("stop"),
+            interval="1d",
+        ).alias("dts")
+    ).to_dict(
+        False
+    ) == {
+        "start": [datetime(2000, 1, 1, 0, 0), datetime(2022, 6, 1, 0, 0)],
+        "stop": [datetime(2000, 1, 2, 0, 0), datetime(2022, 6, 2, 0, 0)],
+        "dts": [
+            [datetime(2000, 1, 1, 0, 0), datetime(2000, 1, 2, 0, 0)],
+            [datetime(2022, 6, 1, 0, 0), datetime(2022, 6, 2, 0, 0)],
+        ],
+    }
+
 
 @pytest.mark.parametrize(
     "one,two",

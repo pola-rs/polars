@@ -508,7 +508,7 @@ fn py_date_range(
         Duration::parse(every),
         closed.0,
         tu.0,
-        tz,
+        tz.as_ref(),
     )
     .into_series()
     .into()
