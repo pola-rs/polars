@@ -175,10 +175,14 @@ impl PyExpr {
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    pub fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> PyExpr {
+    pub fn quantile(
+        &self,
+        quantile: PyExpr,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> PyExpr {
         self.clone()
             .inner
-            .quantile(quantile, interpolation.0)
+            .quantile(quantile.inner, interpolation.0)
             .into()
     }
     pub fn agg_groups(&self) -> PyExpr {

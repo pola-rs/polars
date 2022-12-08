@@ -28,7 +28,7 @@ pub enum AAggExpr {
     List(Node),
     Quantile {
         expr: Node,
-        quantile: f64,
+        quantile: Node,
         interpol: QuantileInterpolOptions,
     },
     Sum(Node),

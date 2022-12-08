@@ -1730,7 +1730,9 @@ def groups(column: str) -> pli.Expr:
 
 
 def quantile(
-    column: str, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+    column: str,
+    quantile: float | pli.Expr,
+    interpolation: RollingInterpolationMethod = "nearest",
 ) -> pli.Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.

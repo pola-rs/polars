@@ -240,7 +240,7 @@ pub enum AggExpr {
     Count(Box<Expr>),
     Quantile {
         expr: Box<Expr>,
-        quantile: f64,
+        quantile: Box<Expr>,
         interpol: QuantileInterpolOptions,
     },
     Sum(Box<Expr>),

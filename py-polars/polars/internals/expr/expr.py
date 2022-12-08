@@ -2906,7 +2906,7 @@ class Expr:
 
     def quantile(
         self,
-        quantile: float,
+        quantile: float | Expr,
         interpolation: RollingInterpolationMethod = "nearest",
     ) -> Expr:
         """
@@ -2969,7 +2969,8 @@ class Expr:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.quantile(quantile, interpolation))
+        quantile = expr_to_lit_or_expr(quantile, str_to_lit=False)
+        return wrap_expr(self._pyexpr.quantile(quantile._pyexpr, interpolation))
 
     def filter(self, predicate: Expr) -> Expr:
         """

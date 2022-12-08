@@ -3434,7 +3434,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def quantile(
         self: LDF,
-        quantile: float,
+        quantile: float | pli.Expr,
         interpolation: RollingInterpolationMethod = "nearest",
     ) -> LDF:
         """
@@ -3461,7 +3461,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┘
 
         """
-        return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
+        quantile = pli.expr_to_lit_or_expr(quantile, str_to_lit=False)
+        return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
 
     def explode(
         self: LDF,
