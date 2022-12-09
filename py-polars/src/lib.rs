@@ -189,7 +189,14 @@ fn spearman_rank_corr(
     ddof: u8,
     propagate_nans: bool,
 ) -> dsl::PyExpr {
-    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+    #[cfg(feature = "propagate_nans")]
+    {
+        polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+    }
+    #[cfg(not(feature = "propagate_nans"))]
+    {
+        panic!("activate 'popagate_nans'")
+    }
 }
 
 #[pyfunction]

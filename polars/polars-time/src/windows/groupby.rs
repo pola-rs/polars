@@ -366,7 +366,7 @@ fn partially_check_sorted(time: &[i64]) {
         assert!(time[..std::cmp::min(time.len(), 10)].windows(2).filter_map(|w| match w[0].cmp(&w[1]) {
             Ordering::Equal => None,
             t => Some(t)
-        }).all_equal(), "subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.");
+        }).all_equal(), "Subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.");
     }
 }
 
