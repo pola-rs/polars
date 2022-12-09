@@ -79,6 +79,7 @@ jobs:
           "backports.zoneinfo"
           "connectorx"
           "xlsx2csv"
+          "deltalake"
           )
           for d in "${deps[@]}"
           do

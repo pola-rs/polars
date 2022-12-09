@@ -16,6 +16,8 @@ from typing import (
 )
 from warnings import warn
 
+import pyarrow.fs
+
 from polars import BatchedCsvReader
 
 if sys.version_info >= (3, 8):
@@ -38,6 +40,13 @@ try:
     _WITH_CX = True
 except ImportError:
     _WITH_CX = False
+
+try:
+    import deltalake
+
+    _WITH_DELTA = True
+except ImportError:
+    _WITH_DELTA = False
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
@@ -1279,6 +1288,175 @@ def _read_excel_sheet(
 
     # Parse CSV output.
     return read_csv(csv_buffer, **read_csv_options)  # type: ignore[arg-type]
+
+
+def _get_delta_lake_table(
+    table_path: str,
+    version: int | None = None,
+    storage_options: dict[str, object] | None = None,
+    delta_table_options: dict[str, object] | None = None,
+) -> deltalake.DeltaTable:
+    """
+    Initialise a Delta lake table for use in read and scan operations.
+
+    Returns
+    -------
+    DeltaTable
+
+    """
+    if _WITH_DELTA:
+        if delta_table_options is None:
+            delta_table_options = {}
+
+        dl_tbl = deltalake.DeltaTable(
+            table_uri=table_path,
+            version=version,
+            storage_options=storage_options,
+            **delta_table_options,
+        )
+
+        return dl_tbl
+    else:
+        raise ImportError(
+            "deltalake is not installed. Please run `pip install deltalake>=0.6.0`."
+        )
+
+
+def scan_delta_lake(
+    table_uri: str,
+    version: int | None = None,
+    raw_filesystem: pyarrow.fs.FileSystem | None = None,
+    storage_options: dict[str, object] | None = None,
+    delta_table_options: dict[str, object] | None = None,
+    pyarrow_options: dict[str, object] | None = None,
+) -> LazyFrame:
+    """
+    Lazily read from a Delta lake table backed by different storage backends.
+
+    Parameters
+    ----------
+    table_uri
+        Path to the root directory of the Delta lake Table.
+    version
+        Optional version of the Delta lake Table. If version is not provided, latest
+        version of the delta lake table is read.
+    raw_filesystem
+        Optional `pyarrow.fs.FileSystem` to read files from.
+        Note: The root of the filesystem has to be adjusted to point at the root of the
+        Delta lake table. The provided filesystem is wrapped into a
+        `pyarrow.fs.SubTreeFileSystem`
+        More info: https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends
+    storage_options
+        Extra options for the storage backends supported by `deltalake`.
+        For cloud storages, this may include configurations for authentication etc.
+        More info: https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table
+    delta_table_options
+        Additional keyword arguments while reading a Delta lake Table.
+    pyarrow_options
+        Keyword arguments while converting a Delta lake Table to pyarrow table.
+
+    Returns
+    -------
+    LazyFrame
+
+    """
+    if delta_table_options is None:
+        delta_table_options = {}
+
+    if pyarrow_options is None:
+        pyarrow_options = {}
+
+    import pyarrow.fs as pa_fs
+
+    if raw_filesystem is None:
+        raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(table_uri)
+    else:
+        raw_filesystem, normalized_path = raw_filesystem.from_uri(table_uri)
+
+    filesystem = pa_fs.SubTreeFileSystem(normalized_path, raw_filesystem)
+
+    dl_tbl = _get_delta_lake_table(
+        table_path=normalized_path,
+        version=version,
+        storage_options=storage_options,
+        **delta_table_options,
+    )
+
+    ldf = scan_ds(dl_tbl.to_pyarrow_dataset(filesystem=filesystem, **pyarrow_options))
+    return ldf
+
+
+def read_delta_lake(
+    table_uri: str,
+    version: int | None = None,
+    raw_filesystem: pyarrow.fs.FileSystem | None = None,
+    columns: list[str] | None = None,
+    storage_options: dict[str, object] | None = None,
+    delta_table_options: dict[str, object] | None = None,
+    pyarrow_options: dict[str, object] | None = None,
+) -> DataFrame:
+    """
+    Reads into a DataFrame from a Delta lake table.
+
+    Parameters
+    ----------
+    table_uri
+        Path to the root directory of the Delta lake Table.
+    version
+        Optional version of the Delta lake Table. If version is not provided, latest
+        version of the delta lake table is read.
+    raw_filesystem
+        Optional `pyarrow.fs.FileSystem` to read files from.
+        Note: The root of the filesystem has to be adjusted to point at the root of the
+        Delta lake table. The provided filesystem is wrapped into a
+        `pyarrow.fs.SubTreeFileSystem`
+        More info: https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends
+    columns
+        Columns to select. Accepts a list of column names.
+    storage_options
+        Extra options for the storage backends supported by `deltalake`.
+        For cloud storages, this may include configurations for authentication etc.
+        More info: https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table
+    delta_table_options
+        Additional keyword arguments while reading a Delta lake Table.
+    pyarrow_options
+        Keyword arguments while converting a Delta lake Table to pyarrow table.
+
+    Returns
+    -------
+    DataFrame
+
+    """
+    if delta_table_options is None:
+        delta_table_options = {}
+
+    if pyarrow_options is None:
+        pyarrow_options = {}
+
+    import pyarrow.fs as pa_fs
+
+    if raw_filesystem is None:
+        raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(table_uri)
+    else:
+        raw_filesystem, normalized_path = raw_filesystem.from_uri(table_uri)
+
+    filesystem = pa_fs.SubTreeFileSystem(normalized_path, raw_filesystem)
+
+    dl_tbl = _get_delta_lake_table(
+        table_path=normalized_path,
+        version=version,
+        storage_options=storage_options,
+        **delta_table_options,
+    )
+
+    return cast(
+        DataFrame,
+        from_arrow(
+            dl_tbl.to_pyarrow_table(
+                columns=columns, filesystem=filesystem, **pyarrow_options
+            )
+        ),
+    )
 
 
 def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:

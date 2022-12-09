@@ -68,6 +68,14 @@ Excel
 
    read_excel
 
+Delta Lake
+~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_delta_lake
+   read_delta_lake
+
 Datasets
 ~~~~~~~~
 Connect to pyarrow datasets.
