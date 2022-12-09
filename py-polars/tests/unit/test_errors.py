@@ -218,7 +218,7 @@ def test_err_asof_join_null_values() -> None:
         }
     )
     with pytest.raises(
-        pl.ComputeError, match="Keys are not allowed to have null values in asof join."
+        pl.ComputeError, match=".sof join must not have null values in 'on' argument"
     ):
         (
             df_coor.sort("timestamp").join_asof(

@@ -29,17 +29,21 @@ pub struct AsOfOptions {
 
 fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
     if a.dtype() != b.dtype() {
-        return Err(PolarsError::ComputeError(
+        Err(PolarsError::ComputeError(
             format!(
                 "keys used in asof-join must have equal dtypes. We got: left: {:?}\tright: {:?}",
                 a.dtype(),
                 b.dtype()
             )
             .into(),
-        ));
+        ))
+    } else if a.null_count() > 0 || b.null_count() > 0 {
+        Err(PolarsError::ComputeError(
+            "asof join must not have null values in 'on' arguments".into(),
+        ))
+    } else {
+        Ok(())
     }
-
-    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,11 +74,6 @@ where
     ) -> PolarsResult<Vec<Option<IdxSize>>> {
         let other = self.unpack_series_matching_type(other)?;
 
-        if self.null_count() > 0 || other.null_count() > 0 {
-            return Err(PolarsError::ComputeError(
-                "asof join must not have null values in 'on' arguments".into(),
-            ));
-        }
         // cont_slice requires a single chunk
         let ca = self.rechunk();
         let other = other.rechunk();

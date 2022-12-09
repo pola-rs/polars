@@ -63,6 +63,9 @@ top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
 build_info = ["dep:pyo3-built", "dep:built"]
+performant = ["polars/performant"]
+timezones = ["polars/timezones"]
+cse = ["polars/cse"]
 
 all = [
   "json",
@@ -82,7 +85,7 @@ all = [
   "lazy_regex",
   "csv-file",
   "extract_jsonpath",
-  "polars/timezones",
+  "timezones",
   "object",
   "pivot",
   "top_k",
@@ -90,11 +93,13 @@ all = [
   # we need to add this, as maturin fails if we don't
   # remove this once polars-algo is released
   "polars/algo",
-  "polars/cse",
+  "cse",
   "propagate_nans",
   "polars/groupby_list",
   "sql",
   "polars/dtype-binary",
+  "streaming",
+  "performant",
 ]
 
 # we cannot conditionaly activate simd
@@ -104,7 +109,6 @@ all = [
 default = [
   "all",
   "nightly",
-  "streaming",
 ]
 
 [dependencies.polars]
@@ -118,7 +122,6 @@ features = [
   "temporal",
   "random",
   "fmt",
-  "performant",
   "dtype-full",
   "rows",
   "private",

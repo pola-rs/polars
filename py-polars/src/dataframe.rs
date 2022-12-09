@@ -17,6 +17,7 @@ use polars_core::frame::*;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
+#[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};

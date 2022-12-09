@@ -79,12 +79,20 @@ impl PyExpr {
 
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        let s = serde_json::to_string(&self.inner).unwrap();
-        Ok(PyBytes::new(py, s.as_bytes()).to_object(py))
+        #[cfg(feature = "json")]
+        {
+            let s = serde_json::to_string(&self.inner).unwrap();
+            Ok(PyBytes::new(py, s.as_bytes()).to_object(py))
+        }
+        #[cfg(not(feature = "json"))]
+        {
+            panic!("activate 'json' feature")
+        }
     }
 
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
+        #[cfg(feature = "json")]
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 // Safety
@@ -99,6 +107,11 @@ impl PyExpr {
                 Ok(())
             }
             Err(e) => Err(e),
+        }
+
+        #[cfg(not(feature = "json"))]
+        {
+            panic!("activate 'json' feature")
         }
     }
 
@@ -651,6 +664,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "lazy_regex")]
     pub fn str_replace(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
         self.inner
             .clone()
@@ -659,6 +673,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "lazy_regex")]
     pub fn str_replace_all(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
         self.inner
             .clone()
@@ -924,6 +939,7 @@ impl PyExpr {
         self.inner.clone().dt().with_time_unit(tu.0).into()
     }
 
+    #[cfg(feature = "timezones")]
     pub fn dt_with_time_zone(&self, tz: Option<TimeZone>) -> PyExpr {
         self.inner.clone().dt().with_time_zone(tz).into()
     }
@@ -932,10 +948,12 @@ impl PyExpr {
         self.inner.clone().dt().cast_time_unit(tu.0).into()
     }
 
+    #[cfg(feature = "timezones")]
     pub fn dt_cast_time_zone(&self, tz: String) -> PyExpr {
         self.inner.clone().dt().cast_time_zone(tz).into()
     }
 
+    #[cfg(feature = "timezones")]
     pub fn dt_tz_localize(&self, tz: String) -> PyExpr {
         self.inner.clone().dt().tz_localize(tz).into()
     }
