@@ -16,8 +16,6 @@ from typing import (
 )
 from warnings import warn
 
-import pyarrow.fs
-
 from polars import BatchedCsvReader
 
 if sys.version_info >= (3, 8):
@@ -1351,12 +1349,12 @@ def scan_delta_lake(
         Delta lake table. The provided filesystem is wrapped into a
         `pyarrow.fs.SubTreeFileSystem`
         More info: `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`_.
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`__.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
         More info: `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`_.
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
@@ -1425,7 +1423,7 @@ def read_delta_lake(
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
         More info: `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`_.
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
