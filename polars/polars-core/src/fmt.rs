@@ -741,7 +741,11 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{}", v),
             #[cfg(feature = "dtype-struct")]
-            AnyValue::Struct(vals, _) => fmt_struct(f, vals),
+            av @ AnyValue::Struct(_, _, _) => {
+                let mut avs = vec![];
+                av._materialize_struct_av(&mut avs);
+                fmt_struct(f, &avs)
+            }
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
         }

@@ -192,7 +192,13 @@ impl LogicalType for StructChunked {
     /// Gets AnyValue from LogicalType
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
         if let DataType::Struct(flds) = self.dtype() {
-            AnyValue::Struct(self.fields.iter().map(|s| s.get(i)).collect(), flds)
+            // safety: we already have a single chunk and we are
+            // guarded by the type system.
+            unsafe {
+                let arr = &**self.chunks.get_unchecked(0);
+                let arr = &*(arr as *const dyn Array as *const StructArray);
+                AnyValue::Struct(i, arr, flds)
+            }
         } else {
             unreachable!()
         }

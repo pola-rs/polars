@@ -171,7 +171,11 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     }
 }
 
-fn struct_dict(py: Python, vals: Vec<AnyValue>, flds: &[Field]) -> PyObject {
+fn struct_dict<'a>(
+    py: Python,
+    vals: impl Iterator<Item = AnyValue<'a>>,
+    flds: &[Field],
+) -> PyObject {
     let dict = PyDict::new(py);
     for (fld, val) in flds.iter().zip(vals) {
         dict.set_item(fld.name(), Wrap(val)).unwrap()
@@ -239,8 +243,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 convert.call1((v,)).unwrap().into_py(py)
             }
             AnyValue::List(v) => PySeries::new(v).to_list(),
-            AnyValue::Struct(vals, flds) => struct_dict(py, vals, flds),
-            AnyValue::StructOwned(payload) => struct_dict(py, payload.0, &payload.1),
+            ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
+            AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => {
                 let s = format!("{}", v);
@@ -435,8 +439,8 @@ impl ToPyObject for Wrap<&StructChunked> {
         // make series::iter() accept a chunk index.
         let s = s.rechunk();
         let iter = s.iter().map(|av| {
-            if let AnyValue::Struct(vals, flds) = av {
-                struct_dict(py, vals, flds)
+            if let AnyValue::Struct(_, _, flds) = av {
+                struct_dict(py, av._iter_struct_av(), flds)
             } else {
                 unreachable!()
             }

@@ -229,7 +229,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.to_vec()),
             #[cfg(feature = "dtype-struct")]
-            Struct(_, fields) => DataType::Struct(fields.to_vec()),
+            Struct(_, _, flds) => DataType::Struct(flds.to_vec()),
             #[cfg(feature = "dtype-duration")]
             Duration(_, tu) => DataType::Duration(*tu),
             UInt8(_) => DataType::UInt8,

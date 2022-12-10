@@ -33,8 +33,8 @@ fn iterator_to_struct<'a>(
     capacity: usize,
 ) -> PyResult<PySeries> {
     let (vals, flds) = match &first_value {
-        AnyValue::Struct(vals, flds) => (&**vals, *flds),
-        AnyValue::StructOwned(payload) => (&*payload.0, &*payload.1),
+        av @ AnyValue::Struct(_, _, flds) => (av._iter_struct_av().collect::<Vec<_>>(), &**flds),
+        AnyValue::StructOwned(payload) => (payload.0.clone(), &*payload.1),
         _ => {
             return Err(crate::error::ComputeError::new_err(format!(
                 "expected struct got {:?}",
