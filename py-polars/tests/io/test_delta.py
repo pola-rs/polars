@@ -19,7 +19,7 @@ def test_scan_delta_version() -> None:
     df1 = pl.scan_delta(str(table_path), version=0).collect()
     df2 = pl.scan_delta(str(table_path), version=1).collect()
 
-    assert df1.columns != df2.columns
+    assert not df1.frame_equal(df2)
 
 
 def test_scan_delta_columns() -> None:
@@ -52,7 +52,7 @@ def test_read_delta_version() -> None:
     df1 = pl.read_delta(str(table_path), version=0)
     df2 = pl.read_delta(str(table_path), version=1)
 
-    assert df1.columns != df2.columns
+    assert not df1.frame_equal(df2)
 
 
 def test_read_delta_columns() -> None:
