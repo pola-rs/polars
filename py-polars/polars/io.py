@@ -1325,7 +1325,7 @@ def _get_delta_lake_table(
         )
 
 
-def scan_delta_lake(
+def scan_delta(
     table_uri: str,
     version: int | None = None,
     raw_filesystem: pa.fs.FileSystem | None = None,
@@ -1389,7 +1389,7 @@ def scan_delta_lake(
     return ldf
 
 
-def read_delta_lake(
+def read_delta(
     table_uri: str,
     version: int | None = None,
     raw_filesystem: pa.fs.FileSystem | None = None,
