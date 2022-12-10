@@ -2581,7 +2581,7 @@ class DataFrame:
         ...         "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
         ...     }
         ... )
-        >>> df.glimpse()  +doctest: IGNORE_RESULT
+        >>> df.glimpse()  # doctest: +IGNORE_RESULT
         Rows: 3
         Columns: 6
         $ a <Float64> 1.0, 2.8, 3.0
