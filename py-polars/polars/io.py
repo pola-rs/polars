@@ -1343,7 +1343,8 @@ def scan_delta(
     version
         Version of the Delta lake table.
 
-        Note: If ``version`` is not provided, latest version of delta lake table is read.
+        Note: If ``version`` is not provided, latest version of delta lake
+        table is read.
     raw_filesystem
         A `pyarrow.fs.FileSystem` to read files from.
 
@@ -1449,7 +1450,8 @@ def read_delta(
     version
         Version of the Delta lake table.
 
-        Note: If ``version`` is not provided, latest version of delta lake table is read.
+        Note: If ``version`` is not provided, latest version of delta lake
+        table is read.
     raw_filesystem
         A `pyarrow.fs.FileSystem` to read files from.
 
