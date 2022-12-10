@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pyarrow.fs
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -28,6 +30,15 @@ def test_scan_delta_columns() -> None:
     assert_frame_equal(expected, ldf.collect(), check_dtype=False)
 
 
+def test_scan_delta_filesystem() -> None:
+    table_path = str(Path(__file__).parent.parent / "files" / "delta-table")
+    fs = pyarrow.fs.LocalFileSystem()
+    ldf = pl.scan_delta(table_path, version=0, raw_filesystem=fs)
+
+    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
+    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+
+
 def test_read_delta() -> None:
     table_path = str(Path(__file__).parent.parent / "files" / "delta-table")
     df = pl.read_delta(table_path, version=0)
@@ -49,4 +60,13 @@ def test_read_delta_columns() -> None:
     df = pl.read_delta(table_path, version=0, columns=["name"])
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
+    assert_frame_equal(expected, df, check_dtype=False)
+
+
+def test_read_delta_filesystem() -> None:
+    table_path = str(Path(__file__).parent.parent / "files" / "delta-table")
+    fs = pyarrow.fs.LocalFileSystem()
+    df = pl.read_delta(table_path, version=0, raw_filesystem=fs)
+
+    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
     assert_frame_equal(expected, df, check_dtype=False)

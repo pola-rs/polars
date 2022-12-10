@@ -80,7 +80,6 @@ jobs:
           "connectorx"
           "deltalake"
           "xlsx2csv"
-          "deltalake"
           )
           for d in "${deps[@]}"
           do
