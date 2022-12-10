@@ -2557,9 +2557,84 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
+    def glimpse(self: DF) -> str:
+        """
+        Print a dense preview of the dataframe.
+
+        Printing is done one line per column, so wide dataframes show nicely. Each
+        line will show the column name, the data type and the first few values.
+
+        See Also
+        --------
+        describe, head, tail
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1.0, 2.8, 3.0],
+        ...         "b": [4, 5, None],
+        ...         "c": [True, False, True],
+        ...         "d": [None, "b", "c"],
+        ...         "e": ["usd", "eur", None],
+        ...         "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
+        ...     }
+        ... )
+        >>> df.glimpse()  # doctest: +IGNORE_RESULT
+        Rows: 3
+        Columns: 6
+        $ a <Float64> 1.0, 2.8, 3.0
+        $ b   <Int64> 4, 5, None
+        $ c <Boolean> True, False, True
+        $ d    <Utf8> None, b, c
+        $ e    <Utf8> usd, eur, None
+        $ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01
+
+        """
+        # always print at most this number of values, mainly used to ensure
+        # we do not cast long arrays to strings which would be very slow
+        max_num_values = min(10, self.height)
+
+        def _parse_column(col_name: str) -> tuple[str, str, str]:
+            s = self[col_name]
+            dtype_str = "<" + s.dtype.__name__ + ">"
+            val = s[:max_num_values].to_list()
+            val_str = ", ".join(map(str, val))
+            return col_name, dtype_str, val_str
+
+        data = [_parse_column(s) for s in self.columns]
+
+        # we make the first column as small as possible by taking the longest
+        # column name
+        max_col_name = max((len(col_name) for col_name, _, _ in data))
+
+        # dtype string
+        max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
+
+        # limit the amount of data printed such that total width is fixed
+        max_col_values = 100 - max_col_name - max_col_dtype
+
+        # print header
+        output = f"Rows: {self.height}\nColumns: {self.width}\n"
+
+        # print individual columns: one row per column
+        for col_name, dtype_str, val_str in data:
+            output += (
+                f"$ {col_name:<{max_col_name}}"
+                f" {dtype_str:>{max_col_dtype}}"
+                f" {val_str:<{max_col_values}}\n"
+            )
+
+        return output
+
     def describe(self: DF) -> DF:
         """
         Summary statistics for a DataFrame.
+
+        See Also
+        --------
+        glimpse
 
         Examples
         --------
@@ -2911,6 +2986,10 @@ class DataFrame:
         n
             Number of rows to return.
 
+        See Also
+        --------
+        tail, glimpse
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2945,6 +3024,10 @@ class DataFrame:
         ----------
         n
             Number of rows to return.
+
+        See Also
+        --------
+        head
 
         Examples
         --------
