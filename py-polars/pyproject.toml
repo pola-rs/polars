@@ -51,6 +51,7 @@ module = [
   "matplotlib.*",
   "fsspec.*",
   "connectorx",
+  "deltalake",
   "IPython.*",
   "zoneinfo",
   "pytz",
