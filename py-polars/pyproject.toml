@@ -54,7 +54,6 @@ module = [
   "deltalake",
   "IPython.*",
   "zoneinfo",
-  "pytz",
 ]
 ignore_missing_imports = true
 

@@ -5,7 +5,7 @@ import functools
 import os
 import sys
 import warnings
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar, overload
 
@@ -259,38 +259,29 @@ def _to_python_datetime(
 # cache here as we have a single tz per column
 # and this function will be called on every conversion
 @functools.lru_cache(16)
-def _localize_offset(dt: datetime, offset: str) -> datetime:
+def _parse_fixed_tz_offset(offset: str) -> tzinfo:
     try:
-        import pytz
-    except ImportError:
-        raise ImportError("pytz needs to be installed to handle datetimes with offsets")
-    import re
+        # use fromisoformat to parse the offset
+        dt_offset = datetime.fromisoformat("2000-01-01T00:00:00" + offset)
 
-    if offset.startswith("-"):
-        g = re.search(r"-(\d\d):(\d\d)", offset)
-        if g is None:
-            raise ValueError(f"Offset: {offset} not understood.")
-        hours = -int(g.group(1))
-        minutes = -int(g.group(2))
-    elif offset.startswith("+"):
-        g = re.search(r"\+(\d\d):(\d\d)", offset)
-        if g is None:
-            raise ValueError(f"Offset: {offset} not understood.")
-        hours = int(g.group(1))
-        minutes = int(g.group(2))
-    else:
-        raise ValueError(f"Offset: {offset} not understood.")
+        # alternatively, we parse the offset ourselves extracting hours and
+        # minutes, then we can construct:
+        # tzinfo=timezone(timedelta(hours=..., minutes=...))
+    except ValueError:
+        raise ValueError(f"Offset: {offset} not understood.") from None
 
-    tz = pytz.FixedOffset(hours * 60 + minutes)
-    return dt.astimezone(tz)
+    return dt_offset.tzinfo  # type: ignore[return-value]
 
 
 def _localize(dt: datetime, tz: str) -> datetime:
     # zone info installation should already be checked
     try:
-        return dt.astimezone(zoneinfo.ZoneInfo(tz))
+        tzinfo = zoneinfo.ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
-        return _localize_offset(dt, tz)
+        # try fixed offset, which is not supported by ZoneInfo
+        tzinfo = _parse_fixed_tz_offset(tz)  # type: ignore[assignment]
+
+    return dt.astimezone(tzinfo)
 
 
 def _in_notebook() -> bool:
