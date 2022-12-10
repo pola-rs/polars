@@ -1299,6 +1299,11 @@ def _get_delta_lake_table(
     """
     Initialise a Delta lake table for use in read and scan operations.
 
+    Notes
+    -----
+    Make sure to install deltalake>=0.6.0. Read the documentation
+    `here <https://delta-io.github.io/delta-rs/python/installation.html>`_.
+
     Returns
     -------
     DeltaTable
@@ -1345,11 +1350,13 @@ def scan_delta_lake(
         Note: The root of the filesystem has to be adjusted to point at the root of the
         Delta lake table. The provided filesystem is wrapped into a
         `pyarrow.fs.SubTreeFileSystem`
-        More info: https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends
+        More info: `here
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`_.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
-        More info: https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table
+        More info: `here
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`_.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
@@ -1379,7 +1386,7 @@ def scan_delta_lake(
         table_path=normalized_path,
         version=version,
         storage_options=storage_options,
-        **delta_table_options,
+        delta_table_options=delta_table_options,
     )
 
     ldf = scan_ds(dl_tbl.to_pyarrow_dataset(filesystem=filesystem, **pyarrow_options))
@@ -1410,13 +1417,15 @@ def read_delta_lake(
         Note: The root of the filesystem has to be adjusted to point at the root of the
         Delta lake table. The provided filesystem is wrapped into a
         `pyarrow.fs.SubTreeFileSystem`
-        More info: https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends
+        More info: `here
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`_.
     columns
         Columns to select. Accepts a list of column names.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
-        More info: https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table
+        More info: `here
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`_.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
@@ -1446,7 +1455,7 @@ def read_delta_lake(
         table_path=normalized_path,
         version=version,
         storage_options=storage_options,
-        **delta_table_options,
+        delta_table_options=delta_table_options,
     )
 
     return cast(

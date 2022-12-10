@@ -69,7 +69,7 @@ Excel
    read_excel
 
 Delta Lake
-~~~~~
+~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 
