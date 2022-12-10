@@ -4,6 +4,7 @@ use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::{DataType, PhysicalType};
+use arrow::offset::Offsets;
 use arrow::types::NativeType;
 
 use crate::bit_util::unset_bit_raw;
@@ -696,7 +697,7 @@ pub unsafe fn take_binary_unchecked(
 pub unsafe fn take_value_indices_from_list(
     list: &ListArray<i64>,
     indices: &IdxArr,
-) -> (IdxArr, Vec<i64>) {
+) -> (IdxArr, Offsets<i64>) {
     let offsets = list.offsets().as_slice();
 
     let mut new_offsets = Vec::with_capacity(indices.len());
@@ -749,7 +750,14 @@ pub unsafe fn take_value_indices_from_list(
         }
     }
 
-    (IdxArr::from_data_default(values.into(), None), new_offsets)
+    // Safety:
+    // offsets are monotonically increasing.
+    unsafe {
+        (
+            IdxArr::from_data_default(values.into(), None),
+            Offsets::new_unchecked(new_offsets),
+        )
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use std::marker::Sized;
 
-use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 pub use self::take::*;
@@ -122,7 +122,7 @@ pub trait ChunkExplode {
     fn explode(&self) -> PolarsResult<Series> {
         self.explode_and_offsets().map(|t| t.0)
     }
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)>;
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
 pub trait ChunkBytes {

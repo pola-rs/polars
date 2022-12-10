@@ -3,6 +3,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::compute::concatenate;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
+use arrow::offset::Offsets;
 
 use crate::prelude::*;
 
@@ -37,8 +38,9 @@ impl<'a> AnonymousBuilder<'a> {
         &self.offsets
     }
 
-    pub fn take_offsets(self) -> Vec<i64> {
-        self.offsets
+    pub fn take_offsets(self) -> Offsets<i64> {
+        // safety: offsets are correct
+        unsafe { Offsets::new_unchecked(self.offsets) }
     }
 
     #[inline]
@@ -92,9 +94,9 @@ impl<'a> AnonymousBuilder<'a> {
         // Safety:
         // offsets are monotonically increasing
         unsafe {
-            Ok(ListArray::<i64>::new_unchecked(
+            Ok(ListArray::<i64>::new(
                 dtype,
-                self.offsets.into(),
+                Offsets::new_unchecked(self.offsets).into(),
                 values,
                 self.validity.map(|validity| validity.into()),
             ))

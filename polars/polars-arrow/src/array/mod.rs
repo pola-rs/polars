@@ -1,6 +1,7 @@
 use arrow::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
+use arrow::offset::Offsets;
 use arrow::types::NativeType;
 
 use crate::prelude::*;
@@ -102,9 +103,9 @@ pub trait ListFromIter {
 
         // Safety:
         // offsets are monotonically increasing
-        ListArray::new_unchecked(
+        ListArray::new(
             ListArray::<i64>::default_datatype(data_type.clone()),
-            offsets.into(),
+            Offsets::new_unchecked(offsets).into(),
             Box::new(values.to(data_type)),
             Some(validity.into()),
         )
@@ -132,9 +133,9 @@ pub trait ListFromIter {
 
         // Safety:
         // Offsets are monotonically increasing.
-        ListArray::new_unchecked(
+        ListArray::new(
             ListArray::<i64>::default_datatype(DataType::Boolean),
-            offsets.into(),
+            Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),
         )
@@ -178,9 +179,9 @@ pub trait ListFromIter {
 
         // Safety:
         // offsets are monotonically increasing
-        ListArray::new_unchecked(
+        ListArray::new(
             ListArray::<i64>::default_datatype(DataType::LargeUtf8),
-            offsets.into(),
+            Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),
         )
@@ -224,9 +225,9 @@ pub trait ListFromIter {
 
         // Safety:
         // offsets are monotonically increasing
-        ListArray::new_unchecked(
+        ListArray::new(
             ListArray::<i64>::default_datatype(DataType::LargeBinary),
-            offsets.into(),
+            Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),
         )

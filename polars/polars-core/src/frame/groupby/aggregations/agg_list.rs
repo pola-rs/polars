@@ -1,3 +1,5 @@
+use arrow::offset::Offsets;
+
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::chunked_array::builder::AnonymousOwnedListBuilder;
@@ -75,9 +77,9 @@ where
                 let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
                 // Safety:
                 // offsets are monotonically increasing
-                let arr = ListArray::<i64>::new_unchecked(
+                let arr = ListArray::<i64>::new(
                     data_type,
-                    offsets.into(),
+                    Offsets::new_unchecked(offsets).into(),
                     Box::new(array),
                     None,
                 );
@@ -136,9 +138,9 @@ where
                     validity,
                 );
                 let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
-                let arr = ListArray::<i64>::new_unchecked(
+                let arr = ListArray::<i64>::new(
                     data_type,
-                    offsets.into(),
+                    Offsets::new_unchecked(offsets).into(),
                     Box::new(array),
                     None,
                 );
@@ -256,9 +258,9 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
     // Safety:
     // offsets are monotonically increasing
     let arr = unsafe {
-        Box::new(ListArray::<i64>::new_unchecked(
+        Box::new(ListArray::<i64>::new(
             data_type,
-            offsets.into(),
+            Offsets::new_unchecked(offsets).into(),
             list_values,
             None,
         )) as ArrayRef
@@ -389,9 +391,9 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
         // Safety:
         // offsets are monotonically increasing
-        let arr = Box::new(ListArray::<i64>::new_unchecked(
+        let arr = Box::new(ListArray::<i64>::new(
             data_type,
-            offsets.into(),
+            Offsets::new_unchecked(offsets).into(),
             extension_array,
             None,
         )) as ArrayRef;

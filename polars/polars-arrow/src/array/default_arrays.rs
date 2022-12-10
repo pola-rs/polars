@@ -2,6 +2,7 @@ use arrow::array::{BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
+use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 
 pub trait FromData<T> {
@@ -37,6 +38,7 @@ impl FromDataUtf8 for Utf8Array<i64> {
         values: Buffer<u8>,
         validity: Option<Bitmap>,
     ) -> Self {
+        let offsets = OffsetsBuffer::new_unchecked(offsets);
         Utf8Array::from_data_unchecked(DataType::LargeUtf8, offsets, values, validity)
     }
 }
@@ -57,6 +59,7 @@ impl FromDataBinary for BinaryArray<i64> {
         values: Buffer<u8>,
         validity: Option<Bitmap>,
     ) -> Self {
-        BinaryArray::from_data_unchecked(DataType::LargeBinary, offsets, values, validity)
+        let offsets = OffsetsBuffer::new_unchecked(offsets);
+        BinaryArray::from_data(DataType::LargeBinary, offsets, values, validity)
     }
 }
