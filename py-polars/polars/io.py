@@ -1334,26 +1334,30 @@ def scan_delta(
     pyarrow_options: dict[str, object] | None = None,
 ) -> LazyFrame:
     """
-    Lazily read from a Delta lake table backed by different storage backends.
+    Lazily read from a Delta lake table.
 
     Parameters
     ----------
     table_uri
-        Path to the root directory of the Delta lake Table.
+        Path to the root directory of the Delta lake table.
     version
-        Optional version of the Delta lake Table. If version is not provided, latest
-        version of the delta lake table is read.
+        Version of the Delta lake table.
+
+        Note: If ``version`` is not provided, latest version of delta lake table is read.
     raw_filesystem
-        Optional `pyarrow.fs.FileSystem` to read files from.
+        A `pyarrow.fs.FileSystem` to read files from.
+
         Note: The root of the filesystem has to be adjusted to point at the root of the
-        Delta lake table. The provided filesystem is wrapped into a
+        Delta lake table. The provided ``raw_filesystem`` is wrapped into a
         `pyarrow.fs.SubTreeFileSystem`
-        More info: `here
+
+        More info is available `here
         <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`__.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
-        More info: `here
+
+        More info is available `here
         <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
@@ -1363,6 +1367,43 @@ def scan_delta(
     Returns
     -------
     LazyFrame
+
+    Examples
+    --------
+    Reads a Delta table from local filesystem.
+    Note: Since version is not provided, latest version of the delta table is read.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> pl.scan_delta(table_path).collect()  # doctest: +SKIP
+
+    Reads a specific version of the Delta table from local filesystem.
+    Note: This will fail if the provided version of the delta table does not exist.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> pl.scan_delta(table_path, version=1).collect()  # doctest: +SKIP
+
+    Reads a Delta table from S3 filesystem.
+    See a list of supported storage options for S3 `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L423-L491>`__.
+
+    >>> table_path = "s3://bucket/path/to/delta-table/"
+    >>> storage_options = {
+    ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+    ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+    ... }
+    >>> pl.scan_delta(
+    ...     table_path, storage_options=storage_options
+    ... ).collect()  # doctest: +SKIP
+
+    Reads a Delta table with additional delta specific options. In the below example,
+    `without_files` option is used which loads the table without file tracking
+    information.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> delta_table_options = {"without_files": True}
+    >>> pl.scan_delta(
+    ...     table_path, delta_table_options=delta_table_options
+    ... ).collect()  # doctest: +SKIP
 
     """
     if delta_table_options is None:
@@ -1379,7 +1420,7 @@ def scan_delta(
     filesystem = pa.fs.SubTreeFileSystem(normalized_path, raw_filesystem)
 
     dl_tbl = _get_delta_lake_table(
-        table_path=normalized_path,
+        table_path=table_uri,
         version=version,
         storage_options=storage_options,
         delta_table_options=delta_table_options,
@@ -1404,23 +1445,27 @@ def read_delta(
     Parameters
     ----------
     table_uri
-        Path to the root directory of the Delta lake Table.
+        Path to the root directory of the Delta lake table.
     version
-        Optional version of the Delta lake Table. If version is not provided, latest
-        version of the delta lake table is read.
+        Version of the Delta lake table.
+
+        Note: If ``version`` is not provided, latest version of delta lake table is read.
     raw_filesystem
-        Optional `pyarrow.fs.FileSystem` to read files from.
+        A `pyarrow.fs.FileSystem` to read files from.
+
         Note: The root of the filesystem has to be adjusted to point at the root of the
-        Delta lake table. The provided filesystem is wrapped into a
+        Delta lake table. The provided ``raw_filesystem`` is wrapped into a
         `pyarrow.fs.SubTreeFileSystem`
-        More info: `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`_.
+
+        More info is available `here
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`__.
     columns
         Columns to select. Accepts a list of column names.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
-        More info: `here
+
+        More info is available `here
         <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
@@ -1430,6 +1475,41 @@ def read_delta(
     Returns
     -------
     DataFrame
+
+    Examples
+    --------
+    Reads a Delta table from local filesystem.
+    Note: Since version is not provided, latest version of the delta table is read.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> pl.read_delta(table_path)  # doctest: +SKIP
+
+    Reads a specific version of the Delta table from local filesystem.
+    Note: This will fail if the provided version of the delta table does not exist.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> pl.read_delta(table_path, version=1)  # doctest: +SKIP
+
+    Reads a Delta table from S3 filesystem.
+    See a list of supported storage options for S3 `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L423-L491>`__.
+
+    >>> table_path = "s3://bucket/path/to/delta-table/"
+    >>> storage_options = {
+    ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+    ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+    ... }
+    >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
+
+    Reads a Delta table with additional delta specific options. In the below example,
+    `without_files` option is used which loads the table without file tracking
+    information.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> delta_table_options = {"without_files": True}
+    >>> pl.read_delta(
+    ...     table_path, delta_table_options=delta_table_options
+    ... )  # doctest: +SKIP
 
     """
     if delta_table_options is None:
@@ -1446,7 +1526,7 @@ def read_delta(
     filesystem = pa.fs.SubTreeFileSystem(normalized_path, raw_filesystem)
 
     dl_tbl = _get_delta_lake_table(
-        table_path=normalized_path,
+        table_path=table_uri,
         version=version,
         storage_options=storage_options,
         delta_table_options=delta_table_options,
