@@ -96,7 +96,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.14.2"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2022-11-29#6494e7022b91685e3c9fd538b196425bbc102165"
+source = "git+https://github.com/ritchie46/arrow2?branch=polars_2022-12-10#09c32382fc54e427929228fa551ab6e46578fb22"
 dependencies = [
  "ahash 0.8.1",
  "arrow-format",
@@ -943,9 +943,9 @@ dependencies = [
 
 [[package]]
 name = "json-deserializer"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d784d2d481d0bace3450572391d6076dd6d10c66c0ebc1a0be037b3b420664bd"
+checksum = "5f63b421e16eb4100beb677af56f0b4f3a4f08bab74ef2af079ce5bb92c2683f"
 dependencies = [
  "indexmap",
 ]
@@ -1392,8 +1392,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.16.2"
-source = "git+https://github.com/jorgecarleitao/parquet2?rev=0d0aebe7e29658304f54c6c2d747e8db784c8f12#0d0aebe7e29658304f54c6c2d747e8db784c8f12"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0bbada33c3674484db647d889a581ab1105cafb871ba77be785af2cc44a8747"
 dependencies = [
  "async-stream",
  "brotli",

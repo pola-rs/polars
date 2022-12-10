@@ -28,6 +28,7 @@ pub(crate) use count::*;
 pub(crate) use filter::*;
 pub(crate) use literal::*;
 use polars_arrow::export::arrow::array::ListArray;
+use polars_arrow::export::arrow::offset::Offsets;
 use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
@@ -443,9 +444,9 @@ impl<'a> AggregationContext<'a> {
             // Safety:
             // offsets are monotonically increasing
             let arr = unsafe {
-                ListArray::<i64>::new_unchecked(
+                ListArray::<i64>::new(
                     DataType::List(Box::new(s.dtype().clone())).to_arrow(),
-                    offsets.into(),
+                    Offsets::new_unchecked(offsets).into(),
                     values,
                     None,
                 )
