@@ -6,10 +6,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
-#[derive(PartialEq, Eq, Clone, Default)]
+#[derive(Eq, Clone, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Schema {
     inner: PlIndexMap<String, DataType>,
+}
+
+// IndexMap does not care about order.
+impl PartialEq for Schema {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a == b)
+    }
 }
 
 impl Debug for Schema {
