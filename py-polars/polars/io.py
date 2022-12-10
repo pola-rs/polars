@@ -1328,7 +1328,7 @@ def _get_delta_lake_table(
 def scan_delta_lake(
     table_uri: str,
     version: int | None = None,
-    raw_filesystem: pyarrow.fs.FileSystem | None = None,
+    raw_filesystem: pa.fs.FileSystem | None = None,
     storage_options: dict[str, object] | None = None,
     delta_table_options: dict[str, object] | None = None,
     pyarrow_options: dict[str, object] | None = None,
@@ -1371,14 +1371,12 @@ def scan_delta_lake(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    import pyarrow.fs as pa_fs
-
     if raw_filesystem is None:
-        raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(table_uri)
+        raw_filesystem, normalized_path = pa.fs.FileSystem.from_uri(table_uri)
     else:
         raw_filesystem, normalized_path = raw_filesystem.from_uri(table_uri)
 
-    filesystem = pa_fs.SubTreeFileSystem(normalized_path, raw_filesystem)
+    filesystem = pa.fs.SubTreeFileSystem(normalized_path, raw_filesystem)
 
     dl_tbl = _get_delta_lake_table(
         table_path=normalized_path,
@@ -1394,7 +1392,7 @@ def scan_delta_lake(
 def read_delta_lake(
     table_uri: str,
     version: int | None = None,
-    raw_filesystem: pyarrow.fs.FileSystem | None = None,
+    raw_filesystem: pa.fs.FileSystem | None = None,
     columns: list[str] | None = None,
     storage_options: dict[str, object] | None = None,
     delta_table_options: dict[str, object] | None = None,
@@ -1440,14 +1438,12 @@ def read_delta_lake(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    import pyarrow.fs as pa_fs
-
     if raw_filesystem is None:
-        raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(table_uri)
+        raw_filesystem, normalized_path = pa.fs.FileSystem.from_uri(table_uri)
     else:
         raw_filesystem, normalized_path = raw_filesystem.from_uri(table_uri)
 
-    filesystem = pa_fs.SubTreeFileSystem(normalized_path, raw_filesystem)
+    filesystem = pa.fs.SubTreeFileSystem(normalized_path, raw_filesystem)
 
     dl_tbl = _get_delta_lake_table(
         table_path=normalized_path,
