@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 
 use arrow::array::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
@@ -369,7 +369,7 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
 }
 
 impl ChunkExplode for ListChunked {
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)> {
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -386,7 +386,7 @@ impl ChunkExplode for ListChunked {
         if offsets[offsets.len() - 1] == 0 {
             return Ok((
                 Series::new_empty(self.name(), &self.inner_dtype()),
-                vec![].into(),
+                OffsetsBuffer::new(),
             ));
         }
 
@@ -454,7 +454,7 @@ impl ChunkExplode for ListChunked {
 }
 
 impl ChunkExplode for Utf8Chunked {
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)> {
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -477,7 +477,7 @@ impl ChunkExplode for Utf8Chunked {
             let mut bitmap = MutableBitmap::with_capacity(capacity);
             let values = values.as_slice();
             let mut old_offset = 0i64;
-            for (&offset, valid) in old_offsets[1..].iter().zip(validity) {
+            for (&offset, valid) in old_offsets.as_slice()[1..].iter().zip(validity) {
                 // safety:
                 // new_offsets already has a single value, so -1 is always in bounds
                 let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };
@@ -526,7 +526,7 @@ impl ChunkExplode for Utf8Chunked {
 
             let values = values.as_slice();
             let mut old_offset = 0i64;
-            for &offset in &old_offsets[1..] {
+            for &offset in &old_offsets.as_slice()[1..] {
                 // safety:
                 // new_offsets already has a single value, so -1 is always in bounds
                 let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };

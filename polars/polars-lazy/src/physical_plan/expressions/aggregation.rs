@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_arrow::export::arrow::array::*;
 use polars_arrow::export::arrow::compute::concatenate::concatenate;
+use polars_arrow::export::arrow::offset::Offsets;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
@@ -418,9 +419,9 @@ impl PartitionedAggregation for AggregationExpr {
                 // Safety:
                 // offsets are monotonically increasing
                 let arr = unsafe {
-                    Box::new(ListArray::<i64>::new_unchecked(
+                    Box::new(ListArray::<i64>::new(
                         data_type,
-                        offsets.into(),
+                        Offsets::new_unchecked(offsets).into(),
                         values,
                         None,
                     )) as ArrayRef

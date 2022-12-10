@@ -33,14 +33,12 @@ impl Series {
                 let new_values = s.to_arrow(0);
 
                 let data_type = ListArray::<i64>::default_datatype(inner.to_arrow());
-                let arr = unsafe {
-                    ListArray::<i64>::new_unchecked(
-                        data_type,
-                        arr.offsets().clone(),
-                        new_values,
-                        arr.validity().cloned(),
-                    )
-                };
+                let arr = ListArray::<i64>::new(
+                    data_type,
+                    arr.offsets().clone(),
+                    new_values,
+                    arr.validity().cloned(),
+                );
                 Box::new(arr)
             }
             #[cfg(feature = "dtype-categorical")]

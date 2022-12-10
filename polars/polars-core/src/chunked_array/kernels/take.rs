@@ -80,5 +80,5 @@ pub(crate) unsafe fn take_list_unchecked(
     let dtype = ListArray::<i64>::default_datatype(taken.data_type().clone());
     // Safety:
     // offsets are monotonically increasing
-    ListArray::new_unchecked(dtype, offsets.into(), taken, validity)
+    ListArray::new(dtype, offsets.into(), taken, validity)
 }

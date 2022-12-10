@@ -136,9 +136,8 @@ impl Series {
                         let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
                         // Safety:
                         // offsets are monotonically increasing
-                        Box::new(ListArray::<i64>::new_unchecked(
-                            dtype, offsets, values, validity,
-                        )) as ArrayRef
+                        Box::new(ListArray::<i64>::new(dtype, offsets, values, validity))
+                            as ArrayRef
                     })
                     .collect();
                 Ok(ListChunked::from_chunks(name, chunks).into())
@@ -338,7 +337,7 @@ impl Series {
                 let data_type =
                     ListArray::<i32>::default_datatype(struct_array.data_type().clone());
                 // physical representation of the map
-                let new_arr = ListArray::new_unchecked(
+                let new_arr = ListArray::new(
                     data_type.clone(),
                     arr.offsets().clone(),
                     struct_array,
@@ -412,14 +411,12 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
             let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values = convert_inner_types(arr.values());
             let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
-            unsafe {
-                Box::from(ListArray::<i64>::new_unchecked(
-                    dtype,
-                    arr.offsets().clone(),
-                    values,
-                    arr.validity().cloned(),
-                ))
-            }
+            Box::from(ListArray::<i64>::new(
+                dtype,
+                arr.offsets().clone(),
+                values,
+                arr.validity().cloned(),
+            ))
         }
         ArrowDataType::Struct(fields) => {
             let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();

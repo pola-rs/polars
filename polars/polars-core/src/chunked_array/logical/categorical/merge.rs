@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arrow::bitmap::MutableBitmap;
+use arrow::offset::Offsets;
 
 use super::*;
 
@@ -15,7 +16,9 @@ pub(crate) fn merge_categorical_map(
             }
             let mut new_map = (*l_map).clone();
 
-            let offset_buf = l_slots.offsets().as_slice().to_vec();
+            // safety: invariants don't change, just the type
+            let offset_buf =
+                unsafe { Offsets::new_unchecked(l_slots.offsets().as_slice().to_vec()) };
             let values_buf = l_slots.values().as_slice().to_vec();
 
             let validity_buf = if let Some(validity) = l_slots.validity() {

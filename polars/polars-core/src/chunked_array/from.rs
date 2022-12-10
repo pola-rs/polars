@@ -31,14 +31,12 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             // we nest only the physical representation
             // the mapping is still in our rev-map
             let arrow_dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt32);
-            let new_array = unsafe {
-                ListArray::new_unchecked(
-                    arrow_dtype,
-                    list_arr.offsets().clone(),
-                    cat.array_ref(0).clone(),
-                    list_arr.validity().cloned(),
-                )
-            };
+            let new_array = ListArray::new(
+                arrow_dtype,
+                list_arr.offsets().clone(),
+                cat.array_ref(0).clone(),
+                list_arr.validity().cloned(),
+            );
             chunks.clear();
             chunks.push(Box::new(new_array));
             DataType::List(Box::new(cat.dtype().clone()))
