@@ -254,7 +254,7 @@ fn is_nested_null(av: &AnyValue) -> bool {
         AnyValue::Null => true,
         AnyValue::List(s) => s.null_count() == s.len(),
         #[cfg(feature = "dtype-struct")]
-        AnyValue::Struct(avs, _) => avs.iter().all(is_nested_null),
+        AnyValue::Struct(payload) => payload.0.iter().all(is_nested_null),
         _ => false,
     }
 }
@@ -264,8 +264,10 @@ fn infer_dtype_dynamic(av: &AnyValue) -> DataType {
     match av {
         AnyValue::List(s) if s.null_count() == s.len() => DataType::List(Box::new(DataType::Null)),
         #[cfg(feature = "dtype-struct")]
-        AnyValue::Struct(avs, _) => DataType::Struct(
-            avs.iter()
+        AnyValue::Struct(payload) => DataType::Struct(
+            payload
+                .0
+                .iter()
                 .map(|av| {
                     let dtype = infer_dtype_dynamic(av);
                     Field::new("", dtype)

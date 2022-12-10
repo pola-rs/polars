@@ -78,8 +78,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                 .iter()
                 .zip(flds)
                 .map(|(arr, fld)| arr_to_any_value(&**arr, idx, fld.data_type()))
-                .collect();
-            AnyValue::Struct(vals, flds)
+                .collect::<_>();
+            AnyValue::Struct(Box::new((vals, flds)))
         }
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => {

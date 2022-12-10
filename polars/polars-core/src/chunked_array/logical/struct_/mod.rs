@@ -192,7 +192,10 @@ impl LogicalType for StructChunked {
     /// Gets AnyValue from LogicalType
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
         if let DataType::Struct(flds) = self.dtype() {
-            AnyValue::Struct(self.fields.iter().map(|s| s.get(i)).collect(), flds)
+            AnyValue::Struct(Box::new((
+                self.fields.iter().map(|s| s.get(i)).collect(),
+                flds,
+            )))
         } else {
             unreachable!()
         }

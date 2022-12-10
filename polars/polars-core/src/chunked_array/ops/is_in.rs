@@ -359,8 +359,8 @@ impl IsIn for StructChunked {
                 let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
                     let mut value = vec![];
                     let left = self.clone().into_series();
-                    if let AnyValue::Struct(val, _) = left.get(0) {
-                        value = val
+                    if let AnyValue::Struct(val) = left.get(0) {
+                        value = val.0;
                     }
                     other
                         .list()?

@@ -52,7 +52,7 @@ pub enum AnyValue<'a> {
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "dtype-struct")]
-    Struct(Vec<AnyValue<'a>>, &'a [Field]),
+    Struct(Box<(Vec<AnyValue<'a>>, &'a [Field])>),
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// A UTF8 encoded string type.
@@ -345,7 +345,9 @@ impl<'a> AnyValue<'a> {
             Categorical(_, _) => DataType::Categorical(None),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-struct")]
-            Struct(_, field) => DataType::Struct(field.to_vec()),
+            Struct(payload) => DataType::Struct(payload.1.to_vec()),
+            #[cfg(feature = "dtype-struct")]
+            StructOwned(payload) => DataType::Struct(payload.1.clone()),
             #[cfg(feature = "dtype-binary")]
             Binary(_) => DataType::Binary,
             _ => unimplemented!(),
@@ -520,29 +522,29 @@ impl<'a> AnyValue<'a> {
     pub fn into_static(self) -> PolarsResult<AnyValue<'static>> {
         use AnyValue::*;
         let av = match self {
-            Null => AnyValue::Null,
-            Int8(v) => AnyValue::Int8(v),
-            Int16(v) => AnyValue::Int16(v),
-            Int32(v) => AnyValue::Int32(v),
-            Int64(v) => AnyValue::Int64(v),
-            UInt8(v) => AnyValue::UInt8(v),
-            UInt16(v) => AnyValue::UInt16(v),
-            UInt32(v) => AnyValue::UInt32(v),
-            UInt64(v) => AnyValue::UInt64(v),
-            Boolean(v) => AnyValue::Boolean(v),
-            Float32(v) => AnyValue::Float32(v),
-            Float64(v) => AnyValue::Float64(v),
+            Null => Null,
+            Int8(v) => Int8(v),
+            Int16(v) => Int16(v),
+            Int32(v) => Int32(v),
+            Int64(v) => Int64(v),
+            UInt8(v) => UInt8(v),
+            UInt16(v) => UInt16(v),
+            UInt32(v) => UInt32(v),
+            UInt64(v) => UInt64(v),
+            Boolean(v) => Boolean(v),
+            Float32(v) => Float32(v),
+            Float64(v) => Float64(v),
             #[cfg(feature = "dtype-date")]
-            Date(v) => AnyValue::Date(v),
+            Date(v) => Date(v),
             #[cfg(feature = "dtype-time")]
-            Time(v) => AnyValue::Time(v),
-            List(v) => AnyValue::List(v),
-            Utf8(v) => AnyValue::Utf8Owned(v.into()),
-            Utf8Owned(v) => AnyValue::Utf8Owned(v),
+            Time(v) => Time(v),
+            List(v) => List(v),
+            Utf8(v) => Utf8Owned(v.into()),
+            Utf8Owned(v) => Utf8Owned(v),
             #[cfg(feature = "dtype-binary")]
-            Binary(v) => AnyValue::BinaryOwned(v.to_vec()),
+            Binary(v) => BinaryOwned(v.to_vec()),
             #[cfg(feature = "dtype-binary")]
-            BinaryOwned(v) => AnyValue::BinaryOwned(v),
+            BinaryOwned(v) => BinaryOwned(v),
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!("cannot get static AnyValue from {}", dt).into(),
