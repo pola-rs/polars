@@ -52,10 +52,11 @@ pub enum AnyValue<'a> {
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "dtype-struct")]
-    Struct(Box<(Vec<AnyValue<'a>>, &'a [Field])>),
+    // 3 pointers and thus not larger than string/vec
+    Struct(usize, &'a StructArray, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
-    /// A UTF8 encoded string type.
+    /// An UTF8 encoded string type.
     Utf8Owned(smartstring::alias::String),
     #[cfg(feature = "dtype-binary")]
     Binary(&'a [u8]),
@@ -345,7 +346,7 @@ impl<'a> AnyValue<'a> {
             Categorical(_, _) => DataType::Categorical(None),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-struct")]
-            Struct(payload) => DataType::Struct(payload.1.to_vec()),
+            Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
             #[cfg(feature = "dtype-binary")]

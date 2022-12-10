@@ -73,13 +73,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
             let arr = &*(arr as *const dyn Array as *const StructArray);
-            let vals = arr
-                .values()
-                .iter()
-                .zip(flds)
-                .map(|(arr, fld)| arr_to_any_value(&**arr, idx, fld.data_type()))
-                .collect::<_>();
-            AnyValue::Struct(Box::new((vals, flds)))
+            AnyValue::Struct(idx, arr, flds)
         }
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => {
@@ -108,6 +102,29 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("should not be here"),
         dt => panic!("not implemented for {:?}", dt),
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl<'a> AnyValue<'a> {
+    pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue> {
+        match self {
+            AnyValue::Struct(idx, arr, flds) => {
+                let idx = *idx;
+                unsafe {
+                    arr.values()
+                        .iter()
+                        .zip(*flds)
+                        .map(move |(arr, fld)| arr_to_any_value(&**arr, idx, fld.data_type()))
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn _materialize_struct_av(&'a self, buf: &mut Vec<AnyValue<'a>>) {
+        let iter = self._iter_struct_av();
+        buf.extend(iter)
     }
 }
 
