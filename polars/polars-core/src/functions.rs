@@ -143,7 +143,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
             "expected multiple series in concat_str function".into(),
         ));
     }
-    if s[0].is_empty() {
+    if s.iter().any(|s| s.is_empty()) {
         return Ok(Utf8Chunked::full_null(s[0].name(), 0));
     }
 
@@ -165,7 +165,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
 
     if !s.iter().all(|s| s.len() == 1 || s.len() == len) {
         return Err(PolarsError::ComputeError(
-            "all series in concat_str function should have equal length or unit length".into(),
+            "All series in concat_str function should have equal length or unit length".into(),
         ));
     }
     let mut iters = cas

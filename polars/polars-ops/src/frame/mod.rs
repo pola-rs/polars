@@ -1,3 +1,5 @@
+#[cfg(feature = "pivot")]
+pub mod pivot;
 #[cfg(feature = "to_dummies")]
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
