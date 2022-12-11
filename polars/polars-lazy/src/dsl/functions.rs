@@ -128,6 +128,8 @@ where
 
 #[cfg(test)]
 mod test {
+    // used only if feature="diagonal_concat"
+    #[allow(unused_imports)]
     use super::*;
 
     #[test]

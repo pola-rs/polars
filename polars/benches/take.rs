@@ -34,6 +34,7 @@ fn create_random_idx(size: usize) -> Vec<usize> {
     (0..size).map(|_| rng.gen_range(0..size)).collect()
 }
 
+#[allow(unused_must_use)]
 fn bench_take(ca: &UInt32Chunked, idx: &[usize]) {
     let f = || ca.take(idx.iter().copied().into());
     criterion::black_box(f());

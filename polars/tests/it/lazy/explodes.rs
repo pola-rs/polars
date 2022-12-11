@@ -1,3 +1,5 @@
+// used only if feature="strings"
+#[allow(unused_imports)]
 use super::*;
 
 #[cfg(feature = "strings")]

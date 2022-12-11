@@ -26,6 +26,8 @@ fn test_scan_parquet_files() -> PolarsResult<()> {
         "../examples/datasets/foods2.parquet".to_string(),
     ];
 
+    // Use of deprecated scan_parquet_files() for testing purposes
+    #[allow(deprecated)]
     let df = LazyFrame::scan_parquet_files(files_to_load_set, Default::default())?.collect()?;
     assert_eq!(df.shape(), (54, 4));
     Ok(())

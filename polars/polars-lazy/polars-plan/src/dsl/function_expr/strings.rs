@@ -274,6 +274,8 @@ fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
     })
 }
 
+// used only if feature="regex"
+#[allow(dead_code)]
 fn iter_and_replace<'a, F>(ca: &'a Utf8Chunked, val: &'a Utf8Chunked, f: F) -> Utf8Chunked
 where
     F: Fn(&'a str, &'a str) -> Cow<'a, str>,
