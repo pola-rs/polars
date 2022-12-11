@@ -250,3 +250,17 @@ def test_row_group_size_saturation() -> None:
     df.write_parquet(f, row_group_size=1024)
     f.seek(0)
     assert pl.read_parquet(f).frame_equal(df)
+
+
+def test_nested_sliced() -> None:
+    for df in [
+        pl.Series([[1, 2], [3, 4], [5, 6]]).slice(2, 2).to_frame(),
+        pl.Series([[None, 2], [3, 4], [5, 6]]).to_frame(),
+        pl.Series([[None, 2], [3, 4], [5, 6]]).slice(2, 2).to_frame(),
+        pl.Series([["a", "a"], ["", "a"], ["c", "de"]]).slice(3, 2).to_frame(),
+        pl.Series([[None, True], [False, False], [True, True]]).slice(2, 2).to_frame(),
+    ]:
+        f = io.BytesIO()
+        df.write_parquet(f)
+        f.seek(0)
+        assert pl.read_parquet(f).frame_equal(df)
