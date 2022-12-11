@@ -154,6 +154,7 @@ You can also install the dependencies directly.
 | fsspec     | Support for reading from remote file systems                                                                                          |
 | connectorx | Support for reading from SQL databases                                                                                                |
 | xlsx2csv   | Support for reading from Excel files                                                                                                  |
+| deltalake  | Support for reading from Delta Lake Tables                                                                                            |
 | timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.

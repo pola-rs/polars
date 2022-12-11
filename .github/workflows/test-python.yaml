@@ -78,6 +78,7 @@ jobs:
           "matplotlib"
           "backports.zoneinfo"
           "connectorx"
+          "deltalake"
           "xlsx2csv"
           )
           for d in "${deps[@]}"
