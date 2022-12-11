@@ -26,7 +26,7 @@ else:
 import polars.internals as pli
 from polars.convert import from_arrow
 from polars.datatypes import DataType, PolarsDataType, Utf8
-from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
@@ -38,13 +38,6 @@ try:
     _WITH_CX = True
 except ImportError:
     _WITH_CX = False
-
-try:
-    import deltalake
-
-    _WITH_DELTA = True
-except ImportError:
-    _WITH_DELTA = False
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
@@ -1307,22 +1300,22 @@ def _get_delta_lake_table(
     DeltaTable
 
     """
-    if _WITH_DELTA:
-        if delta_table_options is None:
-            delta_table_options = {}
-
-        dl_tbl = deltalake.DeltaTable(
-            table_uri=table_path,
-            version=version,
-            storage_options=storage_options,
-            **delta_table_options,
-        )
-
-        return dl_tbl
-    else:
+    if not _DELTALAKE_AVAILABLE:
         raise ImportError(
             "deltalake is not installed. Please run `pip install deltalake>=0.6.0`."
         )
+
+    if delta_table_options is None:
+        delta_table_options = {}
+
+    dl_tbl = deltalake.DeltaTable(
+        table_uri=table_path,
+        version=version,
+        storage_options=storage_options,
+        **delta_table_options,
+    )
+
+    return dl_tbl
 
 
 def scan_delta(

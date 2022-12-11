@@ -14,6 +14,7 @@ _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
+_DELTALAKE_AVAILABLE = True
 
 
 class _LazyModule(ModuleType):
@@ -137,6 +138,7 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
 
 
 if TYPE_CHECKING:
+    import deltalake
     import fsspec
     import hypothesis
     import numpy
@@ -153,6 +155,7 @@ else:
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
+    deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
@@ -186,6 +189,7 @@ __all__ = [
     "numpy",
     "pandas",
     "pyarrow",
+    "deltalake",
     "zoneinfo",
     "_LazyModule",
     "_FSSPEC_AVAILABLE",
@@ -197,4 +201,5 @@ __all__ = [
     "_PYARROW_TYPE",
     "_ZONEINFO_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
+    "_DELTALAKE_AVAILABLE",
 ]
