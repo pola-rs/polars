@@ -544,9 +544,28 @@ impl PredicatePushDown {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
             #[cfg(feature = "python")]
-            // python node does not yet support predicates
-             lp @ PythonScan {..} => {
-                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+             PythonScan {mut options, predicate} => {
+                if options.pyarrow {
+                    let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
+
+                    if let Some(predicate) = predicate {
+                        match super::super::pyarrow::predicate_to_pa(predicate, expr_arena) {
+                            // we we able to create a pyarrow string, mutate the options
+                            Some(eval_str) => {
+                                options.predicate = Some(eval_str)
+                            },
+                            // we were not able to translate the predicate
+                            // apply here
+                            None => {
+                                let lp = PythonScan { options, predicate: None };
+                                return Ok(self.optional_apply_predicate(lp, vec![predicate], lp_arena, expr_arena))
+                            }
+                        }
+                    }
+                    Ok(PythonScan {options, predicate})
+                } else {
+                    self.no_pushdown_restart_opt(PythonScan {options, predicate}, acc_predicates, lp_arena, expr_arena)
+                }
             }
 
         }

@@ -1537,7 +1537,7 @@ def read_delta(
     )
 
 
-def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
+def scan_ds(ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True) -> LazyFrame:
     """
     Scan a pyarrow dataset.
 
@@ -1547,6 +1547,10 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
     ----------
     ds
         Pyarrow dataset to scan.
+    allow_pyarrow_filter
+        Allow predicates to be pushed down to pyarrow. This can lead to different
+        results if comparisons are done with null values as pyarrow handles this
+        different than polars does.
 
     Warnings
     --------
@@ -1573,7 +1577,7 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
     └───────┴────────┴────────────┘
 
     """
-    return _scan_ds(ds)
+    return _scan_ds(ds, allow_pyarrow_filter)
 
 
 def read_csv_batched(

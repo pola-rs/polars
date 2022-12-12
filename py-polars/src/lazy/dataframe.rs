@@ -311,18 +311,20 @@ impl PyLazyFrame {
     pub fn scan_from_python_function_arrow_schema(
         schema: &PyList,
         scan_fn: Vec<u8>,
+        pyarrow: bool,
     ) -> PyResult<Self> {
         let schema = pyarrow_schema_to_rust(schema)?;
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn).into())
+        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
     }
 
     #[staticmethod]
     pub fn scan_from_python_function_pl_schema(
         schema: Vec<(&str, Wrap<DataType>)>,
         scan_fn: Vec<u8>,
+        pyarrow: bool,
     ) -> PyResult<Self> {
         let schema = Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(name, dt.0)));
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn).into())
+        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
     }
 
     pub fn describe_plan(&self) -> String {

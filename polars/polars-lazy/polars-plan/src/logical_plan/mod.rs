@@ -24,6 +24,8 @@ mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
 mod projection;
+#[cfg(feature = "python")]
+mod pyarrow;
 mod schema;
 
 pub use aexpr::*;

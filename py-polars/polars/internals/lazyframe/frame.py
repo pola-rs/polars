@@ -339,16 +339,19 @@ class LazyFrame:
 
     @classmethod
     def _scan_python_function(
-        cls, schema: pa.schema | dict[str, type[DataType]], scan_fn: bytes
+        cls,
+        schema: pa.schema | dict[str, type[DataType]],
+        scan_fn: bytes,
+        pyarrow: bool = False,
     ) -> LazyFrame:
         self = cls.__new__(cls)
         if isinstance(schema, dict):
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
-                [(name, dt) for name, dt in schema.items()], scan_fn
+                [(name, dt) for name, dt in schema.items()], scan_fn, pyarrow
             )
         else:
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
-                list(schema), scan_fn
+                list(schema), scan_fn, pyarrow
             )
         return self
 
