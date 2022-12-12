@@ -7,7 +7,10 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::async_impl::read_parquet_async;
 use crate::mmap::MmapBytesReader;
+#[cfg(feature = "parquet-async")]
+use crate::parquet::async_impl::ParquetImpl;
 use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
 use crate::predicates::PhysicalIoExpr;
@@ -192,6 +195,114 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             if self.rechunk {
                 df.rechunk();
             }
+            df
+        })
+    }
+}
+
+#[cfg(feature = "parquet-async")]
+pub struct ParquetAsyncReader {
+    reader: ParquetImpl,
+    rechunk: bool,
+    n_rows: Option<usize>,
+    columns: Option<Vec<String>>,
+    projection: Option<Vec<usize>>,
+    parallel: ParallelStrategy,
+    row_count: Option<RowCount>,
+    low_memory: bool,
+    metadata: Option<FileMetaData>,
+}
+
+#[cfg(feature = "parquet-async")]
+impl ParquetAsyncReader {
+    pub fn from_uri(uri: &str) -> PolarsResult<ParquetAsyncReader> {
+        Ok(ParquetAsyncReader {
+            reader: ParquetImpl::from_s3_path(uri)?,
+            rechunk: false,
+            n_rows: None,
+            columns: None,
+            projection: None,
+            parallel: ParallelStrategy::None,
+            row_count: None,
+            low_memory: false,
+            metadata: None,
+        })
+    }
+
+    pub async fn schema(&mut self) -> PolarsResult<Schema> {
+        self.reader.schema().await
+    }
+    pub async fn num_rows(&mut self) -> PolarsResult<usize> {
+        self.reader.num_rows().await
+    }
+
+    pub fn with_n_rows(mut self, n_rows: Option<usize>) -> Self {
+        self.n_rows = n_rows;
+        self
+    }
+
+    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+        self.row_count = row_count;
+        self
+    }
+
+    pub fn set_rechunk(mut self, rechunk: bool) -> Self {
+        self.rechunk = rechunk;
+        self
+    }
+
+    pub fn set_low_memory(mut self, low_memory: bool) -> Self {
+        self.low_memory = low_memory;
+        self
+    }
+
+    pub async fn read_parquet(
+        &self,
+        limit: usize,
+        projection: Option<&[usize]>,
+        schema: &ArrowSchema,
+        metadata: FileMetaData,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        parallel: ParallelStrategy,
+        row_count: Option<RowCount>,
+    ) -> PolarsResult<DataFrame> {
+        read_parquet_async(
+            &self.reader,
+            limit,
+            projection,
+            schema,
+            metadata,
+            predicate,
+            parallel,
+            row_count,
+        )
+        .await
+    }
+
+    pub async fn _finish_with_scan_ops(
+        self,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        projection: Option<&[usize]>,
+    ) -> PolarsResult<DataFrame> {
+        // this path takes predicates and parallelism into account
+        let metadata = self.reader.fetch_metadata().await?;
+        let schema = read::schema::infer_schema(&metadata)?;
+
+        let rechunk = self.rechunk;
+        self.read_parquet(
+            self.n_rows.unwrap_or(usize::MAX),
+            projection,
+            &schema,
+            metadata,
+            predicate,
+            self.parallel,
+            self.row_count.clone(),
+        )
+        .await
+        .map(|mut df| {
+            if rechunk {
+                df.rechunk();
+            };
             df
         })
     }

@@ -93,6 +93,15 @@ pub enum LogicalPlan {
         /// Filters at the scan level
         predicate: Option<Expr>,
     },
+    #[cfg(feature = "parquet-async")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet-async")))]
+    /// Scan a Parquet file using asynchronous code.
+    ParquetScanAsync {
+        path: PathBuf,
+        file_info: FileInfo,
+        predicate: Option<Expr>,
+        options: ParquetOptions,
+    },
     #[cfg(feature = "parquet")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     /// Scan a Parquet file
@@ -247,6 +256,8 @@ impl LogicalPlan {
             Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
             ParquetScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
+            #[cfg(feature = "parquet-async")]
+            ParquetScanAsync { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             #[cfg(feature = "ipc")]
             IpcScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),

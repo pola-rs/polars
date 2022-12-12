@@ -90,6 +90,29 @@ impl LogicalPlan {
                     predicate,
                 )
             }
+            #[cfg(feature = "parquet-async")]
+            ParquetScanAsync {
+                path,
+                file_info,
+                predicate,
+                options,
+                ..
+            } => {
+                let n_columns = options
+                    .with_columns
+                    .as_ref()
+                    .map(|columns| columns.len() as i64)
+                    .unwrap_or(-1);
+                write_scan(
+                    f,
+                    "PARQUET-ASYNC",
+                    path,
+                    indent,
+                    n_columns,
+                    file_info.schema.len(),
+                    predicate,
+                )
+            }
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,

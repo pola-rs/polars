@@ -423,7 +423,36 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
+            #[cfg(feature = "parquet-async")]
+            ParquetScanAsync {
+                path,
+                file_info,
+                predicate,
+                mut options,
+                ..
+            } => {
+                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let output_schema = if with_columns.is_none() {
+                    None
+                } else {
+                    Some(Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &file_info.schema,
+                        false,
+                    )?))
+                };
+                options.with_columns = with_columns;
 
+                let lp = ParquetScanAsync {
+                    path,
+                    file_info,
+                    output_schema,
+                    predicate,
+                    options,
+                };
+                Ok(lp)
+            }
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,

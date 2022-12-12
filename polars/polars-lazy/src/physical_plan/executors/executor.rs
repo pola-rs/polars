@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use super::*;
 
 // Executor are the executors of the physical plan and produce DataFrames. They
@@ -9,6 +11,12 @@ use super::*;
 /// physical plan until the last executor is evaluated.
 pub trait Executor: Send {
     fn execute(&mut self, cache: &mut ExecutionState) -> PolarsResult<DataFrame>;
+}
+
+/// An Executor that can handle async processing.
+#[async_trait]
+pub trait AsyncExecutor: Send {
+    async fn execute(&mut self, cache: &mut ExecutionState) -> PolarsResult<DataFrame>;
 }
 
 pub struct Dummy {}

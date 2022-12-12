@@ -31,6 +31,12 @@ impl ParquetExec {
             self.options.n_rows,
         );
 
+        #[cfg(feature = "parquet-async")]
+        {
+            ParquetAsyncReader::from_uri("file");
+            Ok(DataFrame::default())
+        }
+        #[cfg(not(feature = "parquet-async"))]
         ParquetReader::new(file)
             .with_n_rows(n_rows)
             .read_parallel(self.options.parallel)

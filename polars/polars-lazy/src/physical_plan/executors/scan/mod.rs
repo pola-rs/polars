@@ -6,6 +6,8 @@ mod ipc;
 mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
+#[cfg(feature = "parquet-async")]
+mod parquet_async;
 
 use std::mem;
 
@@ -15,11 +17,14 @@ pub(crate) use csv::CsvExec;
 pub(crate) use ipc::IpcExec;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::ParquetExec;
+#[cfg(feature = "parquet-async")]
+pub(crate) use parquet_async::ParquetExecAsync;
 use polars_io::csv::CsvEncoding;
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(any(
     feature = "parquet",
+    feature = "parquet-async",
     feature = "csv-file",
     feature = "ipc",
     feature = "cse"
@@ -29,23 +34,21 @@ use polars_plan::logical_plan::FileFingerPrint;
 use super::*;
 use crate::prelude::*;
 
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "parquet-async"))]
 type Projection = Option<Vec<usize>>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "parquet-async"))]
 type StopNRows = Option<usize>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "parquet-async"))]
 type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
-#[cfg(any(feature = "ipc", feature = "parquet"))]
-fn prepare_scan_args(
-    path: &std::path::Path,
+/// Helper function to prepare scan arguments independent of input.
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "parquet-async"))]
+fn prepare_generic_scan_args(
     predicate: &Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
     n_rows: Option<usize>,
-) -> (std::fs::File, Projection, StopNRows, Predicate) {
-    let file = std::fs::File::open(path).unwrap();
-
+) -> (Projection, StopNRows, Predicate) {
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);
 
@@ -60,6 +63,22 @@ fn prepare_scan_args(
     let predicate = predicate
         .clone()
         .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
+
+    (projection, n_rows, predicate)
+}
+
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+fn prepare_scan_args(
+    path: &std::path::Path,
+    predicate: &Option<Arc<dyn PhysicalExpr>>,
+    with_columns: &mut Option<Arc<Vec<String>>>,
+    schema: &mut SchemaRef,
+    n_rows: Option<usize>,
+) -> (std::fs::File, Projection, StopNRows, Predicate) {
+    let file = std::fs::File::open(path).unwrap();
+
+    let (projection, n_rows, predicate) =
+        prepare_generic_scan_args(predicate, with_columns, schema, n_rows);
 
     (file, projection, n_rows, predicate)
 }

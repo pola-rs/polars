@@ -3,6 +3,8 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+#[cfg(feature = "parquet-async")]
+use futures::executor::block_on;
 use polars_core::frame::_duplicate_err;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
@@ -14,6 +16,8 @@ use polars_io::csv::CsvEncoding;
 use polars_io::ipc::IpcReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
+#[cfg(feature = "parquet-async")]
+use polars_io::prelude::ParquetAsyncReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
@@ -95,7 +99,45 @@ impl LogicalPlanBuilder {
         .into())
     }
 
-    #[cfg(feature = "parquet")]
+    #[cfg(feature = "parquet-async")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet-async")))]
+    pub async fn scan_parquet_async<P: Into<PathBuf>>(
+        path: P,
+        n_rows: Option<usize>,
+        cache: bool,
+        parallel: polars_io::parquet::ParallelStrategy,
+        row_count: Option<RowCount>,
+        rechunk: bool,
+        low_memory: bool,
+    ) -> PolarsResult<Self> {
+        let path = path.into();
+        let uri = path.to_string_lossy();
+        let mut reader = ParquetAsyncReader::from_uri(&uri)?;
+        let schema = Arc::new(reader.schema().await?);
+        let num_rows = reader.num_rows().await?;
+        let file_info = FileInfo {
+            schema,
+            row_estimation: (Some(num_rows), num_rows),
+        };
+        Ok(LogicalPlan::ParquetScanAsync {
+            path,
+            file_info,
+            predicate: None,
+            options: ParquetOptions {
+                n_rows,
+                with_columns: None,
+                cache,
+                parallel,
+                row_count,
+                rechunk,
+                file_counter: Default::default(),
+                low_memory,
+            },
+        }
+        .into())
+    }
+
+    #[cfg(any(feature = "parquet", feature = "parquet_async"))]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet<P: Into<PathBuf>>(
         path: P,
@@ -109,6 +151,15 @@ impl LogicalPlanBuilder {
         use polars_io::SerReader as _;
 
         let path = path.into();
+        if path.starts_with("s3://") {
+            #[cfg(feature = "parquet-async")]
+            return block_on(Self::scan_parquet_async(
+                path, n_rows, cache, parallel, row_count, rechunk, low_memory,
+            ));
+
+            #[cfg(not(feature="parquet-async"))]
+            panic!("The feature parquet-async needs to be enabled in order to access parquet on cloud storage.")
+        }
         let file = std::fs::File::open(&path)?;
         let mut reader = ParquetReader::new(file);
         let schema = Arc::new(reader.schema()?);

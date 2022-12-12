@@ -211,6 +211,28 @@ pub fn create_physical_plan(
                 options,
             }))
         }
+        #[cfg(feature = "parquet-async")]
+        ParquetScanAsync {
+            path,
+            file_info,
+            output_schema,
+            predicate,
+            options,
+        } => {
+            let predicate = predicate
+                .map(|pred| {
+                    create_physical_expr(pred, Context::Default, expr_arena, output_schema.as_ref())
+                })
+                .map_or(Ok(None), |v| v.map(Some))?;
+
+            Ok(Box::new(executors::ParquetExecAsync::new(
+                path,
+                file_info.schema,
+                predicate,
+                options,
+
+            )))
+        }
         #[cfg(feature = "parquet")]
         ParquetScan {
             path,
@@ -230,6 +252,7 @@ pub fn create_physical_plan(
                 file_info.schema,
                 predicate,
                 options,
+
             )))
         }
         Projection {

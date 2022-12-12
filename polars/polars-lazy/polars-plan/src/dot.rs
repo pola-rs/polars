@@ -435,6 +435,39 @@ impl LogicalPlan {
                     self.write_dot(acc_str, prev_node, current_node, id_map)
                 }
             }
+            #[cfg(feature = "parquet-async")]
+            ParquetScanAsync {
+                path,
+                file_info,
+                predicate,
+                options,
+                ..
+            } => {
+                let total_columns = file_info.schema.len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                let pred = fmt_predicate(predicate.as_ref());
+                let fmt = format!(
+                    "PARQUET SCAN {};\nπ {}/{};\nσ {}",
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    pred,
+                );
+                let current_node = DotNode {
+                    branch,
+                    id,
+                    fmt: &fmt,
+                };
+                if self.is_single(branch, id) {
+                    self.write_single_node(acc_str, current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, current_node, id_map)
+                }
+            }
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,

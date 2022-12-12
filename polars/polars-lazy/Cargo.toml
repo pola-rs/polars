@@ -14,6 +14,7 @@ serde_json = "1"
 
 [dependencies]
 ahash.workspace = true
+async-trait = "0.1.59"
 bitflags.workspace = true
 glob = "0.3"
 polars-arrow = { version = "0.25.1", path = "../polars-arrow" }
@@ -33,6 +34,7 @@ compile = ["polars-plan/compile"]
 streaming = ["chunked_ids", "polars-pipe/compile", "polars-plan/streaming"]
 default = ["compile", "private"]
 parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
+parquet-async = ["polars-plan/parquet-async"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
 json = ["polars-io/json", "polars-plan/json"]
 csv-file = ["polars-io/csv-file", "polars-plan/csv-file", "polars-pipe/csv-file"]

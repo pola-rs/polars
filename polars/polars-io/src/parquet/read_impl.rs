@@ -49,7 +49,7 @@ fn column_idx_to_series(
     }
 }
 
-fn array_iter_to_series(
+pub(super) fn array_iter_to_series(
     iter: ArrayIter,
     field: &ArrowField,
     num_rows: Option<usize>,

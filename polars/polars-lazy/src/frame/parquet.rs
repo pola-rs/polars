@@ -133,4 +133,52 @@ impl LazyFrame {
             )
         }
     }
+
+    async fn scan_parquet_async_impl(
+        path: impl AsRef<Path>,
+        n_rows: Option<usize>,
+        cache: bool,
+        parallel: ParallelStrategy,
+        row_count: Option<RowCount>,
+        rechunk: bool,
+        low_memory: bool,
+    ) -> PolarsResult<Self> {
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet_async(
+            path.as_ref(),
+            n_rows,
+            cache,
+            parallel,
+            None,
+            rechunk,
+            low_memory,
+        )
+        .await?
+        .build()
+        .into();
+
+        // it is a bit hacky, but this row_count function updates the schema
+        if let Some(row_count) = row_count {
+            lf = lf.with_row_count(&row_count.name, Some(row_count.offset))
+        }
+
+        lf.opt_state.file_caching = true;
+        Ok(lf)
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
+    pub async fn scan_parquet_async(
+        path: impl AsRef<Path>,
+        args: ScanArgsParquet,
+    ) -> PolarsResult<Self> {
+        Self::scan_parquet_async_impl(
+            path,
+            args.n_rows,
+            args.cache,
+            args.parallel,
+            args.row_count,
+            args.rechunk,
+            args.low_memory,
+        )
+        .await
+    }
 }

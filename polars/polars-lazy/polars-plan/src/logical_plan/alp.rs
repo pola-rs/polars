@@ -63,6 +63,15 @@ pub enum ALogicalPlan {
         options: IpcScanOptionsInner,
         predicate: Option<Node>,
     },
+    #[cfg(feature = "parquet-async")]
+    ParquetScanAsync {
+        path: PathBuf,
+        file_info: FileInfo,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
+        predicate: Option<Node>,
+        options: ParquetOptions,
+    },
     #[cfg(feature = "parquet")]
     ParquetScan {
         path: PathBuf,
@@ -186,6 +195,12 @@ impl ALogicalPlan {
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
             Explode { schema, .. } => schema,
+            #[cfg(feature = "parquet-async")]
+            ParquetScanAsync {
+                file_info,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             #[cfg(feature = "parquet")]
             ParquetScan {
                 file_info,
@@ -360,6 +375,28 @@ impl ALogicalPlan {
                 }
             }
 
+            #[cfg(feature = "parquet-async")]
+            ParquetScanAsync {
+                path,
+                file_info,
+                output_schema,
+                predicate,
+                options,
+                ..
+            } => {
+                let mut new_predicate = None;
+                if predicate.is_some() {
+                    new_predicate = exprs.pop()
+                }
+
+                ParquetScanAsync {
+                    path: path.clone(),
+                    file_info: file_info.clone(),
+                    output_schema: output_schema.clone(),
+                    predicate: new_predicate,
+                    options: options.clone(),
+                }
+            }
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
@@ -481,6 +518,12 @@ impl ALogicalPlan {
                 container.extend(iter)
             }
             HStack { exprs, .. } => container.extend_from_slice(exprs),
+            #[cfg(feature = "parquet-async")]
+            ParquetScanAsync { predicate, .. } => {
+                if let Some(node) = predicate {
+                    container.push(*node)
+                }
+            }
             #[cfg(feature = "parquet")]
             ParquetScan { predicate, .. } => {
                 if let Some(node) = predicate {
@@ -566,6 +609,8 @@ impl ALogicalPlan {
                 }
                 *input
             }
+            #[cfg(feature = "parquet-async")]
+            ParquetScanAsync { .. } => return,
             #[cfg(feature = "parquet")]
             ParquetScan { .. } => return,
             #[cfg(feature = "ipc")]
