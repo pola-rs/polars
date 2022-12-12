@@ -1617,19 +1617,27 @@ def test_from_epoch_seq_input() -> None:
     result = pl.from_epoch(seq_input)
     assert_series_equal(result, expected)
 
+
 def test_cumagg_types() -> None:
     lf = pl.DataFrame({"a": [1, 2], "b": [True, False], "c": [1.3, 2.4]}).lazy()
-    cumsum_lf = lf.select([pl.col("a").cumsum(), pl.col("b").cumsum(), pl.col("c").cumsum()])
+    cumsum_lf = lf.select(
+        [pl.col("a").cumsum(), pl.col("b").cumsum(), pl.col("c").cumsum()]
+    )
     assert cumsum_lf.schema["a"] == pl.Int64
     assert cumsum_lf.schema["b"] == pl.UInt32
     assert cumsum_lf.schema["c"] == pl.Float64
     collected_cumsum_lf = cumsum_lf.collect()
     assert collected_cumsum_lf.schema == cumsum_lf.schema
 
-    cumprod_lf = lf.select([pl.col("a").cast(pl.UInt64).cumprod(), pl.col("b").cumprod(), pl.col("c").cumprod()])
+    cumprod_lf = lf.select(
+        [
+            pl.col("a").cast(pl.UInt64).cumprod(),
+            pl.col("b").cumprod(),
+            pl.col("c").cumprod(),
+        ]
+    )
     assert cumprod_lf.schema["a"] == pl.UInt64
     assert cumprod_lf.schema["b"] == pl.UInt32
     assert cumprod_lf.schema["c"] == pl.Float64
     collected_cumprod_lf = cumprod_lf.collect()
     assert collected_cumprod_lf.schema == cumprod_lf.schema
-
