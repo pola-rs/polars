@@ -232,7 +232,8 @@ impl Series {
     }
 
     /// Compute the sum of all values in this Series.
-    /// Returns `None` if the array is empty or only contains null values.
+    /// Returns `Some(0)` if the array is empty, and `None` if the array only
+    /// contains null values.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
@@ -511,11 +512,18 @@ impl Series {
     }
 
     /// Get the sum of the Series as a new Series of length 1.
+    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
     pub fn sum_as_series(&self) -> Series {
         use DataType::*;
+        if self.is_empty() && self.dtype().is_numeric() {
+            return Series::new("", [0])
+                .cast(self.dtype())
+                .unwrap()
+                .sum_as_series();
+        }
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
             _ => self._sum_as_series(),
