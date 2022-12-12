@@ -348,11 +348,16 @@ pub(crate) fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, 
     let n_lines_per_iter = n_lines / 2;
 
     let mut n_read = 0;
+    
+    let bytes_len = bytes.len();
 
     // sample from start and 75% in the file
-    for offset in [0, (bytes.len() as f32 * 0.75) as usize] {
+    for offset in [0, (bytes_len as f32 * 0.75) as usize] {
         bytes_trunc = &bytes[offset..];
         let pos = next_line_position_naive_json(bytes_trunc)?;
+        if pos >= bytes_len {
+            return None;
+        }
         bytes_trunc = &bytes_trunc[pos + 1..];
 
         for _ in offset..(offset + n_lines_per_iter) {
