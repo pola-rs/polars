@@ -85,7 +85,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.14.2"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2022-12-11#8216c755ce7ad13d355fbb02adae4a89767d945e"
+source = "git+https://github.com/ritchie46/arrow2?branch=polars_2022-12-11#dfc7fc262d1ef47e4bd887c063ddee6288ef3440"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1380,8 +1380,7 @@ dependencies = [
 [[package]]
 name = "parquet2"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0bbada33c3674484db647d889a581ab1105cafb871ba77be785af2cc44a8747"
+source = "git+https://github.com/ritchie46/parquet2/?branch=fix_rle_decoding#0f8e1a24c546f07b01167bd415a040a2eb7c5c4c"
 dependencies = [
  "async-stream",
  "brotli",
@@ -1693,7 +1692,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.15.2"
+version = "0.15.3"
 dependencies = [
  "ahash",
  "bincode",
