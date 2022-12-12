@@ -900,6 +900,8 @@ impl Expr {
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
                 match dt {
+                    Boolean => UInt32,
+                    UInt64 => UInt64,
                     Float32 => Float32,
                     Float64 => Float64,
                     _ => Int64,
