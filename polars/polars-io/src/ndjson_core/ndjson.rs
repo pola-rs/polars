@@ -348,7 +348,7 @@ pub(crate) fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, 
     let n_lines_per_iter = n_lines / 2;
 
     let mut n_read = 0;
-    
+
     let bytes_len = bytes.len();
 
     // sample from start and 75% in the file

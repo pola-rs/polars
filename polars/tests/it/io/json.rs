@@ -112,15 +112,16 @@ fn read_unordered_json() {
 #[test]
 fn read_ndjson_with_trailing_newline() {
     let data = r#"{"Column1":"Value1"}\n"#;
-    
+
     let file = Cursor::new(data);
     let df = JsonReader::new(file)
         .with_json_format(JsonFormat::JsonLines)
         .finish()
         .unwrap();
-        
-    let expected = df!{
+
+    let expected = df! {
         "Column1" => ["Value1"]
-    }.unwrap();
+    }
+    .unwrap();
     assert!(expected.frame_equal(&df));
 }
