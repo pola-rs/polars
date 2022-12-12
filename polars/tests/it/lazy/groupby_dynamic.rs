@@ -1,5 +1,9 @@
+// used only if feature="temporal", "dtype-date", "dynamic_groupby"
+#[allow(unused_imports)]
 use polars::export::chrono::prelude::*;
 
+// used only if feature="temporal", "dtype-date", "dynamic_groupby"
+#[allow(unused_imports)]
 use super::*;
 
 #[test]

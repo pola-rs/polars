@@ -1,4 +1,6 @@
 use polars_core::series::ops::NullBehavior;
+// used only if feature="dtype-duration", "dtype-struct"
+#[allow(unused_imports)]
 use polars_core::SINGLE_LOCK;
 
 use super::*;

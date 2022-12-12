@@ -1008,6 +1008,8 @@ mod test {
             &Series::new("temp_count", [2 as IdxSize, 2, 1])
         );
 
+        // Use of deprecated mean() for testing purposes
+        #[allow(deprecated)]
         // Select multiple
         let out = df
             .groupby_stable(["date"])?
@@ -1018,6 +1020,8 @@ mod test {
             &Series::new("temp_mean", [15.0f64, 4.0, 9.0])
         );
 
+        // Use of deprecated `mean()` for testing purposes
+        #[allow(deprecated)]
         // Group by multiple
         let out = df
             .groupby_stable(&["date", "temp"])?
@@ -1025,12 +1029,16 @@ mod test {
             .mean()?;
         assert!(out.column("rain_mean").is_ok());
 
+        // Use of deprecated `sum()` for testing purposes
+        #[allow(deprecated)]
         let out = df.groupby_stable(["date"])?.select(["temp"]).sum()?;
         assert_eq!(
             out.column("temp_sum")?,
             &Series::new("temp_sum", [30, 8, 9])
         );
 
+        // Use of deprecated `n_unique()` for testing purposes
+        #[allow(deprecated)]
         // implicit select all and only aggregate on methods that support that aggregation
         let gb = df.groupby(["date"]).unwrap().n_unique().unwrap();
         // check the group by column is filtered out.
@@ -1059,6 +1067,8 @@ mod test {
         let df =
             DataFrame::new(vec![s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12]).unwrap();
 
+        // Use of deprecated `sum()` for testing purposes
+        #[allow(deprecated)]
         let adf = df
             .groupby(&[
                 "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
@@ -1101,6 +1111,8 @@ mod test {
         // Create the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();
 
+        // Use of deprecated `sum()` for testing purposes
+        #[allow(deprecated)]
         // Compute the aggregated DataFrame by the 13 columns defined in `series_names`.
         let adf = df
             .groupby(&series_names)
@@ -1132,6 +1144,8 @@ mod test {
                     "val" => [1, 1, 1, 1, 1]
         }
         .unwrap();
+        // Use of deprecated `sum()` for testing purposes
+        #[allow(deprecated)]
         let res = df.groupby(["flt"]).unwrap().sum().unwrap();
         let res = res.sort(["flt"], false).unwrap();
         assert_eq!(
@@ -1153,6 +1167,8 @@ mod test {
         df.apply("foo", |s| s.cast(&DataType::Categorical(None)).unwrap())
             .unwrap();
 
+        // Use of deprecated `sum()` for testing purposes
+        #[allow(deprecated)]
         // check multiple keys and categorical
         let res = df
             .groupby_stable(["foo", "ham"])
@@ -1194,6 +1210,8 @@ mod test {
             "a" => ["a", "a", "a", "b", "b"],
             "b" => [Some(1), Some(2), None, None, Some(1)]
         )?;
+        // Use of deprecated `mean()` for testing purposes
+        #[allow(deprecated)]
         let out = df.groupby_stable(["a"])?.mean()?;
 
         assert_eq!(
@@ -1213,9 +1231,13 @@ mod test {
             "int" => [1, 2, 3]
         ]?;
 
+        // Use of deprecated `sum()` for testing purposes
+        #[allow(deprecated)]
         let out = df.groupby_stable(["g"])?.select(["int"]).var(1)?;
 
         assert_eq!(out.column("int_agg_var")?.f64()?.get(0), Some(0.5));
+        // Use of deprecated `std()` for testing purposes
+        #[allow(deprecated)]
         let out = df.groupby_stable(["g"])?.select(["int"]).std(1)?;
         let val = out.column("int_agg_std")?.f64()?.get(0).unwrap();
         let expected = f64::FRAC_1_SQRT_2();
@@ -1236,6 +1258,8 @@ mod test {
 
         df.try_apply("g", |s| s.cast(&DataType::Categorical(None)))?;
 
+        // Use of deprecated `sum()` for testing purposes
+        #[allow(deprecated)]
         let _ = df.groupby(["g"])?.sum()?;
         Ok(())
     }
