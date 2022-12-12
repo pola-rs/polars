@@ -108,3 +108,20 @@ fn read_unordered_json() {
     assert_eq!("d", df.get_columns()[3].name());
     assert_eq!((12, 4), df.shape());
 }
+
+#[test]
+fn read_ndjson_with_trailing_newline() {
+    let data = r#"{"Column1":"Value1"}\n"#;
+
+    let file = Cursor::new(data);
+    let df = JsonReader::new(file)
+        .with_json_format(JsonFormat::JsonLines)
+        .finish()
+        .unwrap();
+
+    let expected = df! {
+        "Column1" => ["Value1"]
+    }
+    .unwrap();
+    assert!(expected.frame_equal(&df));
+}

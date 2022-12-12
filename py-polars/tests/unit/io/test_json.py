@@ -73,3 +73,12 @@ def test_write_json2(df: pl.DataFrame) -> None:
     file.seek(0)
     out = pl.read_json(file)
     assert df.frame_equal(out, null_equal=True)
+
+
+def test_ndjson_with_trailing_newline() -> None:
+
+    input = """{"Column1":"Value1"}\n"""
+
+    df = pl.read_ndjson(io.StringIO(input))
+    expected = pl.DataFrame({"Column1": ["Value1"]})
+    assert df.frame_equal(expected)
