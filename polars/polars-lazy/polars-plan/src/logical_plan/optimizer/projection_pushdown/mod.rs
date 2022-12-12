@@ -455,7 +455,10 @@ impl ProjectionPushDown {
                 Ok(lp)
             }
             #[cfg(feature = "python")]
-            PythonScan { mut options } => {
+            PythonScan {
+                mut options,
+                predicate,
+            } => {
                 options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
 
                 options.output_schema = if options.with_columns.is_none() {
@@ -468,7 +471,7 @@ impl ProjectionPushDown {
                         true,
                     )?))
                 };
-                Ok(PythonScan { options })
+                Ok(PythonScan { options, predicate })
             }
             #[cfg(feature = "csv-file")]
             CsvScan {

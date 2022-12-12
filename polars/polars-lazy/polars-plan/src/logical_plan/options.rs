@@ -219,6 +219,10 @@ pub struct PythonOptions {
     pub schema: SchemaRef,
     pub output_schema: Option<SchemaRef>,
     pub with_columns: Option<Arc<Vec<String>>>,
+    pub pyarrow: bool,
+    // a pyarrow predicate python expression
+    // can be evaluated with python.eval
+    pub predicate: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

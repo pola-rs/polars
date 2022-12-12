@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
@@ -430,6 +430,31 @@ pub enum Operator {
     And,
     Or,
     Xor,
+}
+
+impl Display for Operator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use Operator::*;
+        let tkn = match self {
+            Eq => "==",
+            NotEq => "!=",
+            Lt => "<",
+            LtEq => "<=",
+            Gt => ">",
+            GtEq => ">=",
+            Plus => "+",
+            Minus => "-",
+            Multiply => "*",
+            Divide => "//",
+            TrueDivide => "/",
+            FloorDivide => "floor_div",
+            Modulus => "%",
+            And => "&",
+            Or => "|",
+            Xor => "^",
+        };
+        write!(f, "{}", tkn)
+    }
 }
 
 impl Operator {

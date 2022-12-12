@@ -30,6 +30,7 @@ pub enum ALogicalPlan {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
+        predicate: Option<Node>,
     },
     Melt {
         input: Node,
@@ -164,7 +165,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => &options.schema,
+            PythonScan { options, .. } => &options.schema,
             #[cfg(feature = "csv-file")]
             CsvScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "parquet")]
@@ -181,7 +182,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => &options.schema,
+            PythonScan { options, .. } => &options.schema,
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
@@ -249,8 +250,9 @@ impl ALogicalPlan {
 
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => PythonScan {
+            PythonScan { options, predicate } => PythonScan {
                 options: options.clone(),
+                predicate: *predicate,
             },
             Union { options, .. } => Union {
                 inputs,
