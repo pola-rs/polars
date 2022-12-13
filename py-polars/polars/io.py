@@ -1321,7 +1321,7 @@ def _get_delta_lake_table(
 def scan_delta(
     table_uri: str,
     version: int | None = None,
-    raw_filesystem: pyarrow.fs.FileSystem | None = None,
+    raw_filesystem: pa.fs.FileSystem | None = None,
     storage_options: dict[str, object] | None = None,
     delta_table_options: dict[str, object] | None = None,
     pyarrow_options: dict[str, object] | None = None,
@@ -1400,6 +1400,15 @@ def scan_delta(
     ... ).collect()  # doctest: +SKIP
 
     """
+
+    def resolve_uri(input: str) -> str:
+        from urllib.parse import urlparse
+
+        scheme = urlparse(input).scheme
+        uri = Path(input).expanduser().resolve(True) if scheme == "" else input
+
+        return str(uri)
+
     if delta_table_options is None:
         delta_table_options = {}
 
@@ -1407,15 +1416,17 @@ def scan_delta(
         pyarrow_options = {}
     from pyarrow import fs as pa_fs
 
-    if raw_filesystem is None:
-        raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(table_uri)
-    else:
-        raw_filesystem, normalized_path = raw_filesystem.from_uri(table_uri)
+    resolved_uri = resolve_uri(table_uri)
 
-    filesystem = pa_fs.SubTreeFileSystem(normalized_path, raw_filesystem)
+    if raw_filesystem is None:
+        raw_filesystem, _ = pa_fs.FileSystem.from_uri(resolved_uri)
+    else:
+        raw_filesystem, _ = raw_filesystem.from_uri(resolved_uri)
+
+    filesystem = pa_fs.SubTreeFileSystem(resolved_uri, raw_filesystem)
 
     dl_tbl = _get_delta_lake_table(
-        table_path=table_uri,
+        table_path=resolved_uri,
         version=version,
         storage_options=storage_options,
         delta_table_options=delta_table_options,
