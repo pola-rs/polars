@@ -1318,6 +1318,17 @@ def _get_delta_lake_table(
     return dl_tbl
 
 
+def _resolve_delta_lake_uri(table_uri: str) -> tuple[str, str]:
+    from urllib.parse import urlparse
+
+    scheme = urlparse(table_uri).scheme
+    resolved_uri = str(
+        Path(table_uri).expanduser().resolve(True) if scheme == "" else table_uri
+    )
+
+    return (scheme, resolved_uri)
+
+
 def scan_delta(
     table_uri: str,
     version: int | None = None,
@@ -1400,31 +1411,28 @@ def scan_delta(
     ... ).collect()  # doctest: +SKIP
 
     """
-
-    def resolve_uri(input: str) -> str:
-        from urllib.parse import urlparse
-
-        scheme = urlparse(input).scheme
-        uri = Path(input).expanduser().resolve(True) if scheme == "" else input
-
-        return str(uri)
-
     if delta_table_options is None:
         delta_table_options = {}
 
     if pyarrow_options is None:
         pyarrow_options = {}
+
     import pyarrow.fs as pa_fs
 
-    resolved_uri = resolve_uri(table_uri)
+    # Resolve relative paths if not an object storage
+    scheme, resolved_uri = _resolve_delta_lake_uri(table_uri)
 
+    # Storage Backend
     if raw_filesystem is None:
-        raw_filesystem, _ = pa_fs.FileSystem.from_uri(resolved_uri)
+        raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(resolved_uri)
     else:
-        raw_filesystem, _ = raw_filesystem.from_uri(resolved_uri)
+        raw_filesystem, normalized_path = raw_filesystem.from_uri(resolved_uri)
 
-    filesystem = pa_fs.SubTreeFileSystem(resolved_uri, raw_filesystem)
+    # SubTreeFileSystem requires normalized path
+    subtree_fs_path = resolved_uri if scheme == "" else normalized_path
+    filesystem = pa_fs.SubTreeFileSystem(subtree_fs_path, raw_filesystem)
 
+    # deltalake can work with resolved paths
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
         version=version,
@@ -1432,8 +1440,9 @@ def scan_delta(
         delta_table_options=delta_table_options,
     )
 
-    ldf = scan_ds(dl_tbl.to_pyarrow_dataset(filesystem=filesystem, **pyarrow_options))
-    return ldf
+    # Must provide filesystem as DeltaStorageHandler is not serializable.
+    pa_ds = dl_tbl.to_pyarrow_dataset(filesystem=filesystem, **pyarrow_options)
+    return scan_ds(pa_ds)
 
 
 def read_delta(
@@ -1515,8 +1524,10 @@ def read_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
+    _, resolved_uri = _resolve_delta_lake_uri(table_uri)
+
     dl_tbl = _get_delta_lake_table(
-        table_path=table_uri,
+        table_path=resolved_uri,
         version=version,
         storage_options=storage_options,
         delta_table_options=delta_table_options,
