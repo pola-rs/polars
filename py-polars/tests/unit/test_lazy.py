@@ -1637,7 +1637,7 @@ def test_cumagg_types() -> None:
         ]
     )
     assert cumprod_lf.schema["a"] == pl.UInt64
-    assert cumprod_lf.schema["b"] == pl.UInt32
+    assert cumprod_lf.schema["b"] == pl.Int64
     assert cumprod_lf.schema["c"] == pl.Float64
     collected_cumprod_lf = cumprod_lf.collect()
     assert collected_cumprod_lf.schema == cumprod_lf.schema
