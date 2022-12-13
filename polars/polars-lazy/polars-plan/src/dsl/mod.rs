@@ -876,7 +876,18 @@ impl Expr {
     pub fn cumsum(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cumsum(reverse)),
-            GetOutput::same_type(),
+            GetOutput::map_dtype(|dt| {
+                use DataType::*;
+                match dt {
+                    Boolean => UInt32,
+                    Int32 => Int32,
+                    UInt32 => UInt32,
+                    UInt64 => UInt64,
+                    Float32 => Float32,
+                    Float64 => Float64,
+                    _ => Int64,
+                }
+            }),
         )
         .with_fmt("cumsum")
     }
@@ -889,6 +900,8 @@ impl Expr {
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
                 match dt {
+                    Boolean => Int64,
+                    UInt64 => UInt64,
                     Float32 => Float32,
                     Float64 => Float64,
                     _ => Int64,

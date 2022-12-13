@@ -164,9 +164,6 @@ features = [
   "date_offset",
 ]
 
-[patch.crates-io]
-cmake = { git = "https://github.com/messense/cmake-rs.git", branch = "cross-compile" }
-
 [lib]
 name = "polars"
 crate-type = ["cdylib"]
