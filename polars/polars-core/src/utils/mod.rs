@@ -841,6 +841,22 @@ pub(crate) fn index_to_chunked_index<
     (current_chunk_idx, index_remainder)
 }
 
+#[cfg(feature = "dtype-struct")]
+pub(crate) fn index_to_chunked_index2(chunks: &[ArrayRef], index: usize) -> (usize, usize) {
+    let mut index_remainder = index;
+    let mut current_chunk_idx = 0;
+
+    for chunk in chunks {
+        if chunk.len() > index_remainder {
+            break;
+        } else {
+            index_remainder -= chunk.len();
+            current_chunk_idx += 1;
+        }
+    }
+    (current_chunk_idx, index_remainder)
+}
+
 /// # SAFETY
 /// `dst` must be valid for `dst.len()` elements, and `src` and `dst` may not overlap.
 #[inline]

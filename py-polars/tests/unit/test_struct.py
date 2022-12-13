@@ -696,3 +696,11 @@ def test_concat_list_reverse_struct_fields() -> None:
     assert df.select(pl.concat_list(["combo", "reverse_combo"])).frame_equal(
         df.select(pl.concat_list(["combo", "combo"]))
     )
+
+
+def test_struct_any_value_get_after_append() -> None:
+    a = pl.Series("a", [{"a": 1, "b": 2}])
+    b = pl.Series("a", [{"a": 2, "b": 3}])
+    a = a.append(b)
+    assert a[0] == {"a": 1, "b": 2}
+    assert a[1] == {"a": 2, "b": 3}
