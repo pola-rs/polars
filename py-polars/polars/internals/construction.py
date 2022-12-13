@@ -115,10 +115,15 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
         pys = PySeries.from_arrow(name, array)
     else:
         if array.num_chunks > 1:
-            it = array.iterchunks()
-            pys = PySeries.from_arrow(name, next(it))
-            for a in it:
-                pys.append(PySeries.from_arrow(name, a))
+            # somehow going through ffi with a structarray
+            # returns the first chunk everytime
+            if isinstance(array.type, pa.StructType):
+                pys = PySeries.from_arrow(name, array.combine_chunks())
+            else:
+                it = array.iterchunks()
+                pys = PySeries.from_arrow(name, next(it))
+                for a in it:
+                    pys.append(PySeries.from_arrow(name, a))
         elif array.num_chunks == 0:
             pys = PySeries.from_arrow(name, pa.array([], array.type))
         else:
@@ -816,6 +821,8 @@ def arrow_to_pydf(
     # dictionaries cannot be built in different batches (categorical does not allow
     # that) so we rechunk them and create them separately.
     dictionary_cols = {}
+    # struct columns don't work properly if they contain multiple chunks.
+    struct_cols = {}
     names = []
     for i, column in enumerate(data):
         # extract the name before casting
@@ -829,6 +836,9 @@ def arrow_to_pydf(
         if pa.types.is_dictionary(column.type):
             ps = arrow_to_pyseries(name, column, rechunk)
             dictionary_cols[i] = pli.wrap_s(ps)
+        elif isinstance(column.type, pa.StructType) and column.num_chunks > 1:
+            ps = arrow_to_pyseries(name, column, rechunk)
+            struct_cols[i] = pli.wrap_s(ps)
         else:
             data_dict[name] = column
 
@@ -850,11 +860,20 @@ def arrow_to_pydf(
     if rechunk:
         pydf = pydf.rechunk()
 
+    reset_order = False
     if len(dictionary_cols) > 0:
         df = pli.wrap_df(pydf)
         df = df.with_columns(
             [pli.lit(s).alias(s.name) for s in dictionary_cols.values()]
         )
+        reset_order = True
+
+    if len(struct_cols) > 0:
+        df = pli.wrap_df(pydf)
+        df = df.with_columns([pli.lit(s).alias(s.name) for s in struct_cols.values()])
+        reset_order = True
+
+    if reset_order:
         df = df[names]
         pydf = df._df
 

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use super::*;
 use crate::datatypes::*;
+use crate::utils::index_to_chunked_index2;
 
 /// This is logical type [`StructChunked`] that
 /// dispatches most logic to the `fields` implementations
@@ -191,13 +192,14 @@ impl LogicalType for StructChunked {
 
     /// Gets AnyValue from LogicalType
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
+        let (chunk_idx, idx) = index_to_chunked_index2(&self.chunks, i);
         if let DataType::Struct(flds) = self.dtype() {
             // safety: we already have a single chunk and we are
             // guarded by the type system.
             unsafe {
-                let arr = &**self.chunks.get_unchecked(0);
+                let arr = &**self.chunks.get_unchecked(chunk_idx);
                 let arr = &*(arr as *const dyn Array as *const StructArray);
-                AnyValue::Struct(i, arr, flds)
+                AnyValue::Struct(idx, arr, flds)
             }
         } else {
             unreachable!()
