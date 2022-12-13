@@ -1414,7 +1414,7 @@ def scan_delta(
 
     if pyarrow_options is None:
         pyarrow_options = {}
-    from pyarrow import fs as pa_fs
+    import pyarrow.fs as pa_fs
 
     resolved_uri = resolve_uri(table_uri)
 
