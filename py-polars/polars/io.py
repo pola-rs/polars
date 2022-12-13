@@ -1321,7 +1321,7 @@ def _get_delta_lake_table(
 def scan_delta(
     table_uri: str,
     version: int | None = None,
-    raw_filesystem: pa.fs.FileSystem | None = None,
+    raw_filesystem: pyarrow.fs.FileSystem | None = None,
     storage_options: dict[str, object] | None = None,
     delta_table_options: dict[str, object] | None = None,
     pyarrow_options: dict[str, object] | None = None,
@@ -1405,13 +1405,14 @@ def scan_delta(
 
     if pyarrow_options is None:
         pyarrow_options = {}
+    from pyarrow import fs as pa_fs
 
     if raw_filesystem is None:
-        raw_filesystem, normalized_path = pa.fs.FileSystem.from_uri(table_uri)
+        raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(table_uri)
     else:
         raw_filesystem, normalized_path = raw_filesystem.from_uri(table_uri)
 
-    filesystem = pa.fs.SubTreeFileSystem(normalized_path, raw_filesystem)
+    filesystem = pa_fs.SubTreeFileSystem(normalized_path, raw_filesystem)
 
     dl_tbl = _get_delta_lake_table(
         table_path=table_uri,
