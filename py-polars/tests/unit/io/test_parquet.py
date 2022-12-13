@@ -264,3 +264,36 @@ def test_nested_sliced() -> None:
         df.write_parquet(f)
         f.seek(0)
         assert pl.read_parquet(f).frame_equal(df)
+
+
+def test_parquet_5795() -> None:
+    df_pd = pd.DataFrame(
+        {
+            "a": [
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                "V",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ]
+        }
+    )
+    f = io.BytesIO()
+    df_pd.to_parquet(f)
+    f.seek(0)
+    assert pl.read_parquet(f).frame_equal(pl.from_pandas(df_pd))
