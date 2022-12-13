@@ -1692,7 +1692,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "ahash",
  "bincode",
@@ -2476,8 +2476,3 @@ dependencies = [
  "cc",
  "libc",
 ]
-
-[[patch.unused]]
-name = "cmake"
-version = "0.1.48"
-source = "git+https://github.com/messense/cmake-rs.git?branch=cross-compile#15ab68baca7c44bcf23c5d91a4201f10d40552a1"
