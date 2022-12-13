@@ -1427,7 +1427,6 @@ def scan_delta(
 def read_delta(
     table_uri: str,
     version: int | None = None,
-    raw_filesystem: pa.fs.FileSystem | None = None,
     columns: list[str] | None = None,
     storage_options: dict[str, object] | None = None,
     delta_table_options: dict[str, object] | None = None,
@@ -1445,15 +1444,6 @@ def read_delta(
 
         Note: If ``version`` is not provided, latest version of delta lake
         table is read.
-    raw_filesystem
-        A `pyarrow.fs.FileSystem` to read files from.
-
-        Note: The root of the filesystem has to be adjusted to point at the root of the
-        Delta lake table. The provided ``raw_filesystem`` is wrapped into a
-        `pyarrow.fs.SubTreeFileSystem`
-
-        More info is available `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`__.
     columns
         Columns to select. Accepts a list of column names.
     storage_options
@@ -1513,13 +1503,6 @@ def read_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    if raw_filesystem is None:
-        raw_filesystem, normalized_path = pa.fs.FileSystem.from_uri(table_uri)
-    else:
-        raw_filesystem, normalized_path = raw_filesystem.from_uri(table_uri)
-
-    filesystem = pa.fs.SubTreeFileSystem(normalized_path, raw_filesystem)
-
     dl_tbl = _get_delta_lake_table(
         table_path=table_uri,
         version=version,
@@ -1529,11 +1512,7 @@ def read_delta(
 
     return cast(
         DataFrame,
-        from_arrow(
-            dl_tbl.to_pyarrow_table(
-                columns=columns, filesystem=filesystem, **pyarrow_options
-            )
-        ),
+        from_arrow(dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options)),
     )
 
 
