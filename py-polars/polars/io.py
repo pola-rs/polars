@@ -1346,7 +1346,11 @@ def scan_delta(
     Parameters
     ----------
     table_uri
-        Path to the root directory of the Delta lake table.
+        Path or URI to the root of the Delta lake table.
+
+        Note: For Local filesystem, absolute and relative paths are supported. But
+        for the supported object storages - GCS, Azure and S3, there is no relative
+        path support, and thus full URI must be provided.
     version
         Version of the Delta lake table.
 
@@ -1517,7 +1521,11 @@ def read_delta(
     Parameters
     ----------
     table_uri
-        Path to the root directory of the Delta lake table.
+        Path or URI to the root of the Delta lake table.
+
+        Note: For Local filesystem, absolute and relative paths are supported. But
+        for the supported object storages - GCS, Azure and S3, there is no relative
+        path support, and thus full URI must be provided.
     version
         Version of the Delta lake table.
 
