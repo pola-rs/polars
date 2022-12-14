@@ -1480,7 +1480,6 @@ dependencies = [
 name = "polars"
 version = "0.25.1"
 dependencies = [
- "polars-algo",
  "polars-core",
  "polars-io",
  "polars-lazy",
@@ -1488,14 +1487,6 @@ dependencies = [
  "polars-sql",
  "polars-time",
  "version_check",
-]
-
-[[package]]
-name = "polars-algo"
-version = "0.25.1"
-dependencies = [
- "polars-core",
- "polars-lazy",
 ]
 
 [[package]]
@@ -1659,6 +1650,7 @@ dependencies = [
  "now",
  "polars-arrow",
  "polars-core",
+ "polars-ops",
  "polars-utils",
  "serde",
 ]

@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use super::*;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 #[cfg(feature = "dtype-categorical")]
-use crate::frame::hash_join::check_categorical_src;
+use crate::frame::hash_join::_check_categorical_src;
 use crate::frame::hash_join::{
     create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_strs,
 };
@@ -612,7 +612,7 @@ fn dispatch_join<T: PolarsNumericType>(
         for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
             check_asof_columns(lhs, rhs)?;
             #[cfg(feature = "dtype-categorical")]
-            check_categorical_src(lhs.dtype(), rhs.dtype())?;
+            _check_categorical_src(lhs.dtype(), rhs.dtype())?;
         }
         asof_join_by_multiple(
             left_by, right_by, left_asof, right_asof, tolerance, strategy,

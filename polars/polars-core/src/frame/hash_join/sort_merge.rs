@@ -174,7 +174,7 @@ fn create_reverse_map_from_argsort(mut argsort: IdxCa) -> Vec<IdxSize> {
 }
 
 #[cfg(not(feature = "performant"))]
-pub(super) fn sort_or_hash_inner(
+pub fn _sort_or_hash_inner(
     s_left: &Series,
     s_right: &Series,
     _verbose: bool,
@@ -183,7 +183,7 @@ pub(super) fn sort_or_hash_inner(
 }
 
 #[cfg(feature = "performant")]
-pub(super) fn sort_or_hash_inner(
+pub fn _sort_or_hash_inner(
     s_left: &Series,
     s_right: &Series,
     verbose: bool,

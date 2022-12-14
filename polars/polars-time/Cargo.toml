@@ -15,6 +15,7 @@ lexical = { version = "6", default-features = false, features = ["std", "parse-f
 now = "0.1"
 polars-arrow = { version = "0.25.1", path = "../polars-arrow", features = ["compute", "temporal"] }
 polars-core = { version = "0.25.1", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+polars-ops = { version = "0.25.1", path = "../polars-ops" }
 polars-utils = { version = "0.25.1", path = "../polars-utils" }
 serde = { version = "1", features = ["derive"], optional = true }
 

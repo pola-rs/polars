@@ -90,9 +90,6 @@ all = [
   "pivot",
   "top_k",
   "build_info",
-  # we need to add this, as maturin fails if we don't
-  # remove this once polars-algo is released
-  "polars/algo",
   "cse",
   "propagate_nans",
   "polars/groupby_list",

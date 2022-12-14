@@ -8,7 +8,7 @@ use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };
 use crate::prelude::*;
-use crate::utils::series::to_physical_and_bit_repr;
+use crate::utils::series::_to_physical_and_bit_repr;
 use crate::utils::{_set_partition_size, split_df};
 use crate::vector_hasher::{df_rows_to_hashes_threaded, this_partition, IdBuildHasher, IdxHash};
 use crate::POOL;
@@ -174,7 +174,7 @@ pub(crate) fn get_offsets(probe_hashes: &[UInt64Chunked]) -> Vec<usize> {
         .collect()
 }
 
-pub(crate) fn inner_join_multiple_keys(
+pub fn _inner_join_multiple_keys(
     a: &mut DataFrame,
     b: &mut DataFrame,
     swap: bool,
@@ -248,12 +248,12 @@ pub fn private_left_join_multiple_keys(
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
 ) -> LeftJoinIds {
-    let mut a = DataFrame::new_no_checks(to_physical_and_bit_repr(a.get_columns()));
-    let mut b = DataFrame::new_no_checks(to_physical_and_bit_repr(b.get_columns()));
-    left_join_multiple_keys(&mut a, &mut b, chunk_mapping_left, chunk_mapping_right)
+    let mut a = DataFrame::new_no_checks(_to_physical_and_bit_repr(a.get_columns()));
+    let mut b = DataFrame::new_no_checks(_to_physical_and_bit_repr(b.get_columns()));
+    _left_join_multiple_keys(&mut a, &mut b, chunk_mapping_left, chunk_mapping_right)
 }
 
-pub(crate) fn left_join_multiple_keys(
+pub fn _left_join_multiple_keys(
     a: &mut DataFrame,
     b: &mut DataFrame,
     // map the global indices to [chunk_idx, array_idx]
@@ -454,7 +454,7 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
 }
 
 #[cfg(feature = "semi_anti_join")]
-pub(super) fn left_anti_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<IdxSize> {
+pub fn _left_anti_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<IdxSize> {
     semi_anti_join_multiple_keys_impl(a, b)
         .filter(|tpls| !tpls.1)
         .map(|tpls| tpls.0)
@@ -462,7 +462,7 @@ pub(super) fn left_anti_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> V
 }
 
 #[cfg(feature = "semi_anti_join")]
-pub(super) fn left_semi_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<IdxSize> {
+pub fn _left_semi_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<IdxSize> {
     semi_anti_join_multiple_keys_impl(a, b)
         .filter(|tpls| tpls.1)
         .map(|tpls| tpls.0)
@@ -539,7 +539,7 @@ fn probe_outer<F, G, H>(
     }
 }
 
-pub(crate) fn outer_join_multiple_keys(
+pub fn _outer_join_multiple_keys(
     a: &mut DataFrame,
     b: &mut DataFrame,
     swap: bool,
