@@ -1403,6 +1403,30 @@ def scan_delta(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
+    Creates a scan for a Delta table from Google Cloud storage (GCS).
+
+    Note: This implementation relies on `pyarrow.fs` and thus has to rely on fsspec
+    compatible filesystems as mentioned `here
+    <https://arrow.apache.org/docs/python/filesystems.html#using-fsspec-compatible-filesystems-with-arrow>`__.
+    So please ensure that `pyarrow` ,`fsspec` and `gcsfs` are installed.
+
+    See a list of supported storage options for GCS `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L570-L577>`__.
+
+    >>> import gcsfs  # doctest: +SKIP
+    >>> from pyarrow.fs import PyFileSystem, FSSpecHandler  # doctest: +SKIP
+    >>> storage_options = {"SERVICE_ACCOUNT": "SERVICE_ACCOUNT_JSON_ABSOLUTE_PATH"}
+    >>> fs = gcsfs.GCSFileSystem(
+    ...     project="my-project-id",
+    ...     token=storage_options["SERVICE_ACCOUNT"],
+    ... )  # doctest: +SKIP
+    >>> # this pyarrow fs must be created and passed to scan_delta for GCS
+    >>> pa_fs = PyFileSystem(FSSpecHandler(fs))  # doctest: +SKIP
+    >>> table_path = "gs://bucket/path/to/delta-table/"
+    >>> pl.scan_delta(
+    ...     table_path, storage_options=storage_options, raw_filesystem=pa_fs
+    ... ).collect()  # doctest: +SKIP
+
     Creates a scan for a Delta table from Azure.
 
     Note: This implementation relies on `pyarrow.fs` and thus has to rely on fsspec
@@ -1411,9 +1435,10 @@ def scan_delta(
     So please ensure that `pyarrow` ,`fsspec` and `adlfs` are installed.
 
     Following type of table paths are supported,
-        * az://<container>/<path>
-        * adl://<container>/<path>
-        * abfs://<container>/<path>
+
+    * az://<container>/<path>
+    * adl://<container>/<path>
+    * abfs://<container>/<path>
 
     See a list of supported storage options for Azure `here
     <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L524-L539>`__.
@@ -1551,9 +1576,10 @@ def read_delta(
     Reads a Delta table from Azure.
 
     Following type of table paths are supported,
-        * az://<container>/<path>
-        * adl://<container>/<path>
-        * abfs://<container>/<path>
+
+    * az://<container>/<path>
+    * adl://<container>/<path>
+    * abfs://<container>/<path>
 
     See a list of supported storage options for Azure `here
     <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L524-L539>`__.
