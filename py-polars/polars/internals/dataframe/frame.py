@@ -5962,22 +5962,13 @@ class DataFrame:
         ╞═════╪═════╪══════╪══════╡
         │ 2.0 ┆ 7.0 ┆ null ┆ 0.5  │
         └─────┴─────┴──────┴──────┘
-
-        Note: a PanicException is raised with axis = 1 and a string column.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...     }
-        ... )
         >>> df.mean(axis=1)
         shape: (3,)
         Series: 'foo' [f64]
         [
-                3.5
-                4.5
-                5.5
+            2.666667
+            3.0
+            5.5
         ]
 
         """
