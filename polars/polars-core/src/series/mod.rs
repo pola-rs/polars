@@ -859,6 +859,11 @@ impl Series {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             }
+            dt @ DataType::Duration(_) => {
+                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
+                    .cast(dt)
+                    .unwrap()
+            }
             _ => return Series::full_null(self.name(), 1, self.dtype()),
         }
     }

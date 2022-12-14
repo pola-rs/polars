@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 import polars as pl
 
 
@@ -28,4 +30,27 @@ def test_boolean_aggs() -> None:
         "mean": [0.6666666666666666],
         "std": [0.5773502691896258],
         "var": [0.33333333333333337],
+    }
+
+
+def test_duration_aggs() -> None:
+    df = pl.DataFrame(
+        {
+            "time1": pl.date_range(
+                low=datetime(2022, 12, 12), high=datetime(2022, 12, 18), interval="1d"
+            ),
+            "time2": pl.date_range(
+                low=datetime(2023, 1, 12), high=datetime(2023, 1, 18), interval="1d"
+            ),
+        }
+    )
+
+    df = df.with_column((pl.col("time2") - pl.col("time1")).alias("time_difference"))
+
+    assert df.select("time_difference").mean().to_dict(False) == {
+        "time_difference": [timedelta(days=31)]
+    }
+    assert df.groupby(pl.lit(1)).agg(pl.mean("time_difference")).to_dict(False) == {
+        "literal": [1],
+        "time_difference": [timedelta(days=31)],
     }

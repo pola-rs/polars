@@ -1,12 +1,13 @@
 use super::*;
 
+// implemented on the series because we don't need types
 impl Series {
     fn slice_from_offsets(&self, first: IdxSize, len: IdxSize) -> Self {
         self.slice(first as i64, len as usize)
     }
 
     fn restore_logical(&self, out: Series) -> Series {
-        if self.is_logical() {
+        if self.dtype().is_logical() {
             out.cast(self.dtype()).unwrap()
         } else {
             out
@@ -165,9 +166,7 @@ impl Series {
         use DataType::*;
 
         match self.dtype() {
-            Boolean => {
-                self.cast(&DataType::Float64).unwrap().agg_mean(groups)
-            }
+            Boolean => self.cast(&Float64).unwrap().agg_mean(groups),
             Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_numeric() => {
