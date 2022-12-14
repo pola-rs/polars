@@ -573,6 +573,10 @@ impl ChunkAgg<IdxSize> for BooleanChunked {
             Some(0)
         }
     }
+    fn mean(&self) -> Option<f64> {
+        self.sum()
+            .map(|sum| sum as f64 / (self.len() - self.null_count()) as f64)
+    }
 }
 
 // Needs the same trait bounds as the implementation of ChunkedArray<T> of dyn Series

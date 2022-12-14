@@ -855,7 +855,7 @@ impl Series {
                 let val = &[self.mean().map(|m| m as f32)];
                 Series::new(self.name(), val)
             }
-            dt if dt.is_numeric() => {
+            dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             }

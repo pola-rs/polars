@@ -165,6 +165,9 @@ impl Series {
         use DataType::*;
 
         match self.dtype() {
+            Boolean => {
+                self.cast(&DataType::Float64).unwrap().agg_mean(groups)
+            }
             Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_numeric() => {
