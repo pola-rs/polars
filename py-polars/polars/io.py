@@ -1529,7 +1529,7 @@ def read_delta(
     >>> table_path = "/path/to/delta-table/"
     >>> pl.read_delta(table_path, version=1)  # doctest: +SKIP
 
-    Reads a Delta table from S3 filesystem.
+    Reads a Delta table from AWS S3.
     See a list of supported storage options for S3 `here
     <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L423-L491>`__.
 
@@ -1538,6 +1538,14 @@ def read_delta(
     ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
     ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
     ... }
+    >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
+
+    Reads a Delta table from Google Cloud storage (GCS).
+    See a list of supported storage options for GCS `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L570-L577>`__.
+
+    >>> table_path = "gs://bucket/path/to/delta-table/"
+    >>> storage_options = {"SERVICE_ACCOUNT": "SERVICE_ACCOUNT_JSON_ABSOLUTE_PATH"}
     >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
 
     Reads a Delta table from Azure.
