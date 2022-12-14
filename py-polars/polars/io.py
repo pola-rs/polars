@@ -1318,15 +1318,18 @@ def _get_delta_lake_table(
     return dl_tbl
 
 
-def _resolve_delta_lake_uri(table_uri: str) -> tuple[str, str]:
-    from urllib.parse import urlparse
+def _resolve_delta_lake_uri(table_uri: str) -> tuple[str, str, str]:
+    from urllib.parse import ParseResult, urlparse
 
-    scheme = urlparse(table_uri).scheme
+    parsed_result = urlparse(table_uri)
+    scheme = parsed_result.scheme
+
     resolved_uri = str(
         Path(table_uri).expanduser().resolve(True) if scheme == "" else table_uri
     )
 
-    return (scheme, resolved_uri)
+    normalized_path = str(ParseResult("", *parsed_result[1:]).geturl())
+    return (scheme, resolved_uri, normalized_path)
 
 
 def scan_delta(
@@ -1352,8 +1355,8 @@ def scan_delta(
     raw_filesystem
         A `pyarrow.fs.FileSystem` to read files from.
 
-        Note: The root of the filesystem has to be adjusted to point at the root of the
-        Delta lake table. The provided ``raw_filesystem`` is wrapped into a
+        Note: The root of the filesystem has to be adjusted to point at the root of
+        the Delta lake table. The provided ``raw_filesystem`` is wrapped into a
         `pyarrow.fs.SubTreeFileSystem`
 
         More info is available `here
@@ -1375,19 +1378,19 @@ def scan_delta(
 
     Examples
     --------
-    Reads a Delta table from local filesystem.
+    Creates a scan for a Delta table from local filesystem.
     Note: Since version is not provided, latest version of the delta table is read.
 
     >>> table_path = "/path/to/delta-table/"
     >>> pl.scan_delta(table_path).collect()  # doctest: +SKIP
 
-    Reads a specific version of the Delta table from local filesystem.
+    Creates a scan for a specific version of the Delta table from local filesystem.
     Note: This will fail if the provided version of the delta table does not exist.
 
     >>> table_path = "/path/to/delta-table/"
     >>> pl.scan_delta(table_path, version=1).collect()  # doctest: +SKIP
 
-    Reads a Delta table from S3 filesystem.
+    Creates a scan for a Delta table from AWS S3.
     See a list of supported storage options for S3 `here
     <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L423-L491>`__.
 
@@ -1400,9 +1403,41 @@ def scan_delta(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Reads a Delta table with additional delta specific options. In the below example,
-    `without_files` option is used which loads the table without file tracking
-    information.
+    Creates a scan for a Delta table from Azure.
+
+    Note: This implementation relies on `pyarrow.fs` and thus has to rely on fsspec
+    compatible filesystems as mentioned `here
+    <https://arrow.apache.org/docs/python/filesystems.html#using-fsspec-compatible-filesystems-with-arrow>`__.
+    So please ensure that `pyarrow` ,`fsspec` and `adlfs` are installed.
+
+    Following type of table paths are supported,
+        * az://<container>/<path>
+        * adl://<container>/<path>
+        * abfs://<container>/<path>
+
+    See a list of supported storage options for Azure `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L524-L539>`__.
+
+    >>> import adlfs
+    >>> from pyarrow.fs import PyFileSystem, FSSpecHandler
+    >>> storage_options = {
+    ...     "AZURE_STORAGE_ACCOUNT_NAME": "AZURE_STORAGE_ACCOUNT_NAME",
+    ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
+    ... }
+    >>> fs = adlfs.AzureBlobFileSystem(
+    ...     account_name=storage_options["AZURE_STORAGE_ACCOUNT_NAME"],
+    ...     account_key=storage_options["AZURE_STORAGE_ACCOUNT_KEY"],
+    ... )
+    >>> # this pyarrow fs must be created and passed to scan_delta for Azure
+    >>> pa_fs = PyFileSystem(FSSpecHandler(fs))
+    >>> table_path = "az://container/path/to/delta-table/"
+    >>> pl.scan_delta(
+    ...     table_path, storage_options=storage_options, raw_filesystem=pa_fs
+    ... ).collect()  # doctest: +SKIP
+
+    Creates a scan for a Delta table with additional delta specific options.
+    In the below example, `without_files` option is used which loads the table without
+    file tracking information.
 
     >>> table_path = "/path/to/delta-table/"
     >>> delta_table_options = {"without_files": True}
@@ -1420,13 +1455,11 @@ def scan_delta(
     import pyarrow.fs as pa_fs
 
     # Resolve relative paths if not an object storage
-    scheme, resolved_uri = _resolve_delta_lake_uri(table_uri)
+    scheme, resolved_uri, normalized_path = _resolve_delta_lake_uri(table_uri)
 
     # Storage Backend
     if raw_filesystem is None:
         raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(resolved_uri)
-    else:
-        raw_filesystem, normalized_path = raw_filesystem.from_uri(resolved_uri)
 
     # SubTreeFileSystem requires normalized path
     subtree_fs_path = resolved_uri if scheme == "" else normalized_path
@@ -1507,6 +1540,23 @@ def read_delta(
     ... }
     >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
 
+    Reads a Delta table from Azure.
+
+    Following type of table paths are supported,
+        * az://<container>/<path>
+        * adl://<container>/<path>
+        * abfs://<container>/<path>
+
+    See a list of supported storage options for Azure `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L524-L539>`__.
+
+    >>> table_path = "az://container/path/to/delta-table/"
+    >>> storage_options = {
+    ...     "AZURE_STORAGE_ACCOUNT_NAME": "AZURE_STORAGE_ACCOUNT_NAME",
+    ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
+    ... }
+    >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
+
     Reads a Delta table with additional delta specific options. In the below example,
     `without_files` option is used which loads the table without file tracking
     information.
@@ -1524,7 +1574,7 @@ def read_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    _, resolved_uri = _resolve_delta_lake_uri(table_uri)
+    _, resolved_uri, _ = _resolve_delta_lake_uri(table_uri)
 
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
