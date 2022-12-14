@@ -1,3 +1,4 @@
+#[cfg(feature = "lazy")]
 use polars::prelude::*;
 
 #[test]

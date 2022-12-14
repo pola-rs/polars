@@ -11,6 +11,7 @@ description = "Algorithms built upon Polars primitives"
 
 [dependencies]
 polars-core = { version = "0.25.1", path = "../polars-core", features = ["private", "dtype-categorical", "asof_join"], default-features = false }
+polars-ops = { version = "0.25.1", path = "../polars-ops", features = ["dtype-categorical", "asof_join"], default-features = false }
 polars-lazy = { version = "0.25.1", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }
 
 [package.metadata.docs.rs]
