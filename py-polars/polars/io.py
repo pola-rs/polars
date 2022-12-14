@@ -1418,8 +1418,8 @@ def scan_delta(
     See a list of supported storage options for Azure `here
     <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L524-L539>`__.
 
-    >>> import adlfs
-    >>> from pyarrow.fs import PyFileSystem, FSSpecHandler
+    >>> import adlfs  # doctest: +SKIP
+    >>> from pyarrow.fs import PyFileSystem, FSSpecHandler  # doctest: +SKIP
     >>> storage_options = {
     ...     "AZURE_STORAGE_ACCOUNT_NAME": "AZURE_STORAGE_ACCOUNT_NAME",
     ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
@@ -1427,9 +1427,9 @@ def scan_delta(
     >>> fs = adlfs.AzureBlobFileSystem(
     ...     account_name=storage_options["AZURE_STORAGE_ACCOUNT_NAME"],
     ...     account_key=storage_options["AZURE_STORAGE_ACCOUNT_KEY"],
-    ... )
+    ... )  # doctest: +SKIP
     >>> # this pyarrow fs must be created and passed to scan_delta for Azure
-    >>> pa_fs = PyFileSystem(FSSpecHandler(fs))
+    >>> pa_fs = PyFileSystem(FSSpecHandler(fs))  # doctest: +SKIP
     >>> table_path = "az://container/path/to/delta-table/"
     >>> pl.scan_delta(
     ...     table_path, storage_options=storage_options, raw_filesystem=pa_fs
