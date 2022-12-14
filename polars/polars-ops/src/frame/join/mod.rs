@@ -438,6 +438,42 @@ trait DataFrameJoinOpsPrivate: IntoDf {
     fn len(&self) -> usize {
         self.to_df().height()
     }
+
+    fn _inner_join_from_series(
+        &self,
+        other: &DataFrame,
+        s_left: &Series,
+        s_right: &Series,
+        suffix: Option<String>,
+        slice: Option<(i64, usize)>,
+        verbose: bool,
+    ) -> PolarsResult<DataFrame> {
+        let left_df = self.to_df();
+        #[cfg(feature = "dtype-categorical")]
+        _check_categorical_src(s_left.dtype(), s_right.dtype())?;
+        let ((join_tuples_left, join_tuples_right), sorted) =
+            _sort_or_hash_inner(s_left, s_right, verbose);
+
+        let mut join_tuples_left = &*join_tuples_left;
+        let mut join_tuples_right = &*join_tuples_right;
+
+        if let Some((offset, len)) = slice {
+            join_tuples_left = slice_slice(join_tuples_left, offset, len);
+            join_tuples_right = slice_slice(join_tuples_right, offset, len);
+        }
+
+        let (df_left, df_right) = POOL.join(
+            // safety: join indices are known to be in bounds
+            || unsafe { left_df._create_left_df_from_slice(join_tuples_left, false, sorted) },
+            || unsafe {
+                other
+                    .drop(s_right.name())
+                    .unwrap()
+                    ._take_unchecked_slice(join_tuples_right, true)
+            },
+        );
+        _finish_join(df_left, df_right, suffix.as_deref())
+    }
 }
 
 impl DataFrameJoinOps for DataFrame {}

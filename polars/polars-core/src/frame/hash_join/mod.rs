@@ -30,7 +30,7 @@ use single_keys_left::*;
 use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
-use sort_merge::*;
+pub use sort_merge::*;
 
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
@@ -366,41 +366,6 @@ impl DataFrame {
             // left join tuples are always in ascending order
             self._take_unchecked_slice2(join_tuples, true, sorted)
         }
-    }
-
-    pub fn _inner_join_from_series(
-        &self,
-        other: &DataFrame,
-        s_left: &Series,
-        s_right: &Series,
-        suffix: Option<String>,
-        slice: Option<(i64, usize)>,
-        verbose: bool,
-    ) -> PolarsResult<DataFrame> {
-        #[cfg(feature = "dtype-categorical")]
-        _check_categorical_src(s_left.dtype(), s_right.dtype())?;
-        let ((join_tuples_left, join_tuples_right), sorted) =
-            sort_or_hash_inner(s_left, s_right, verbose);
-
-        let mut join_tuples_left = &*join_tuples_left;
-        let mut join_tuples_right = &*join_tuples_right;
-
-        if let Some((offset, len)) = slice {
-            join_tuples_left = slice_slice(join_tuples_left, offset, len);
-            join_tuples_right = slice_slice(join_tuples_right, offset, len);
-        }
-
-        let (df_left, df_right) = POOL.join(
-            // safety: join indices are known to be in bounds
-            || unsafe { self._create_left_df_from_slice(join_tuples_left, false, sorted) },
-            || unsafe {
-                other
-                    .drop(s_right.name())
-                    .unwrap()
-                    ._take_unchecked_slice(join_tuples_right, true)
-            },
-        );
-        _finish_join(df_left, df_right, suffix.as_deref())
     }
 
     #[cfg(not(feature = "chunked_ids"))]

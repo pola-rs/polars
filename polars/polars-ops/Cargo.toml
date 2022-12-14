@@ -33,6 +33,7 @@ dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 object = ["polars-core/object"]
 propagate_nans = []
+performant = ["polars-core/performant"]
 
 # ops
 to_dummies = []

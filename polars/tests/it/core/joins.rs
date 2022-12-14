@@ -2,7 +2,6 @@ use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 #[cfg(feature = "dtype-categorical")]
 use polars_core::{reset_string_cache, IUseStringCache};
 
-
 use super::*;
 
 #[test]
@@ -64,7 +63,7 @@ fn test_inner_join() {
             join_col_rain,
             join_col_rain_right,
         ])
-            .unwrap();
+        .unwrap();
 
         println!("{}", joined);
         assert!(joined.frame_equal(&true_df));
@@ -120,15 +119,15 @@ fn test_outer_join() -> PolarsResult<()> {
     assert_eq!(joined.column("days")?.sum::<i32>(), Some(7));
 
     let df_left = df!(
-                "a"=> ["a", "b", "a", "z"],
-                "b"=>[1, 2, 3, 4],
-                "c"=>[6, 5, 4, 3]
-        )?;
+            "a"=> ["a", "b", "a", "z"],
+            "b"=>[1, 2, 3, 4],
+            "c"=>[6, 5, 4, 3]
+    )?;
     let df_right = df!(
-                "a"=> ["b", "c", "b", "a"],
-                "k"=> [0, 3, 9, 6],
-                "c"=> [1, 0, 2, 1]
-        )?;
+            "a"=> ["b", "c", "b", "a"],
+            "k"=> [0, 3, 9, 6],
+            "c"=> [1, 0, 2, 1]
+    )?;
 
     let out = df_left.outer_join(&df_right, ["a"], ["a"])?;
     assert_eq!(out.column("c_right")?.null_count(), 1);
@@ -148,7 +147,7 @@ fn test_join_with_nulls() {
         Series::new("date", &dts[3..]),
         Series::new("val2", vals2),
     ])
-        .unwrap();
+    .unwrap();
 
     let joined = df.left_join(&df2, ["date"], ["date"]).unwrap();
     assert_eq!(
@@ -164,18 +163,18 @@ fn test_join_with_nulls() {
 
 fn get_dfs() -> (DataFrame, DataFrame) {
     let df_a = df! {
-            "a" => &[1, 2, 1, 1],
-            "b" => &["a", "b", "c", "c"],
-            "c" => &[0, 1, 2, 3]
-        }
-        .unwrap();
+        "a" => &[1, 2, 1, 1],
+        "b" => &["a", "b", "c", "c"],
+        "c" => &[0, 1, 2, 3]
+    }
+    .unwrap();
 
     let df_b = df! {
-            "foo" => &[1, 1, 1],
-            "bar" => &["a", "c", "c"],
-            "ham" => &["let", "var", "const"]
-        }
-        .unwrap();
+        "foo" => &[1, 1, 1],
+        "bar" => &["a", "c", "c"],
+        "ham" => &["let", "var", "const"]
+    }
+    .unwrap();
     (df_a, df_b)
 }
 
@@ -252,9 +251,9 @@ fn test_join_multiple_columns() {
 #[cfg_attr(miri, ignore)]
 #[cfg(feature = "dtype-categorical")]
 fn test_join_categorical() {
-    use crate::toggle_string_cache;
-    let _lock = crate::SINGLE_LOCK.lock();
-    toggle_string_cache(true);
+    use polars::toggle_string_cache;
+    let _lock = IUseStringCache::new();
+    let _lock = polars_core::SINGLE_LOCK.lock();
 
     let (mut df_a, mut df_b) = get_dfs();
 
@@ -311,13 +310,13 @@ fn empty_df_join() -> PolarsResult<()> {
         Series::new("key", &empty),
         Series::new("eval", &empty),
     ])
-        .unwrap();
+    .unwrap();
 
     let df = DataFrame::new(vec![
         Series::new("key", &["foo"]),
         Series::new("aval", &[4]),
     ])
-        .unwrap();
+    .unwrap();
 
     let out = empty_df.inner_join(&df, ["key"], ["key"]).unwrap();
     assert_eq!(out.height(), 0);
@@ -334,12 +333,12 @@ fn empty_df_join() -> PolarsResult<()> {
         Series::new("key", &empty),
         Series::new("eval", &empty),
     ])
-        .unwrap();
+    .unwrap();
 
     let df = df![
-            "key" => [1i32, 2],
-            "vals" => [1, 2],
-        ]?;
+        "key" => [1i32, 2],
+        "vals" => [1, 2],
+    ]?;
 
     // https://github.com/pola-rs/polars/issues/1824
     let empty: Vec<i32> = vec![];
@@ -359,21 +358,21 @@ fn empty_df_join() -> PolarsResult<()> {
 #[cfg_attr(miri, ignore)]
 fn unit_df_join() -> PolarsResult<()> {
     let df1 = df![
-            "a" => [1],
-            "b" => [2]
-        ]?;
+        "a" => [1],
+        "b" => [2]
+    ]?;
 
     let df2 = df![
-            "a" => [1, 2, 3, 4],
-            "b" => [Some(1), None, Some(3), Some(4)]
-        ]?;
+        "a" => [1, 2, 3, 4],
+        "b" => [Some(1), None, Some(3), Some(4)]
+    ]?;
 
     let out = df1.left_join(&df2, ["a"], ["a"])?;
     let expected = df![
-            "a" => [1],
-            "b" => [2],
-            "b_right" => [1]
-        ]?;
+        "a" => [1],
+        "b" => [2],
+        "b_right" => [1]
+    ]?;
     assert!(out.frame_equal(&expected));
     Ok(())
 }
@@ -382,14 +381,14 @@ fn unit_df_join() -> PolarsResult<()> {
 #[cfg_attr(miri, ignore)]
 fn test_join_err() -> PolarsResult<()> {
     let df1 = df![
-            "a" => [1, 2],
-            "b" => ["foo", "bar"]
-        ]?;
+        "a" => [1, 2],
+        "b" => ["foo", "bar"]
+    ]?;
 
     let df2 = df![
-            "a" => [1, 2, 3, 4],
-            "b" => [true, true, true, false]
-        ]?;
+        "a" => [1, 2, 3, 4],
+        "b" => [true, true, true, false]
+    ]?;
 
     // dtypes don't match, error
     assert!(df1
@@ -408,16 +407,16 @@ fn test_joins_with_duplicates() -> PolarsResult<()> {
     // test joins with duplicates in both dataframes
 
     let df_left = df![
-            "col1" => [1, 1, 2],
-            "int_col" => [1, 2, 3]
-        ]
-        .unwrap();
+        "col1" => [1, 1, 2],
+        "int_col" => [1, 2, 3]
+    ]
+    .unwrap();
 
     let df_right = df![
-            "join_col1" => [1, 1, 1, 1, 1, 3],
-            "dbl_col" => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
-        ]
-        .unwrap();
+        "join_col1" => [1, 1, 1, 1, 1, 3],
+        "dbl_col" => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+    ]
+    .unwrap();
 
     let df_inner_join = df_left
         .inner_join(&df_right, ["col1"], ["join_col1"])
@@ -461,18 +460,18 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
     // dataframes
 
     let df_left = df![
-            "col1" => [1, 1, 1],
-            "join_col2" => ["a", "a", "b"],
-            "int_col" => [1, 2, 3]
-        ]
-        .unwrap();
+        "col1" => [1, 1, 1],
+        "join_col2" => ["a", "a", "b"],
+        "int_col" => [1, 2, 3]
+    ]
+    .unwrap();
 
     let df_right = df![
-            "join_col1" => [1, 1, 1, 1, 1, 2],
-            "col2" => ["a", "a", "a", "a", "a", "c"],
-            "dbl_col" => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
-        ]
-        .unwrap();
+        "join_col1" => [1, 1, 1, 1, 1, 2],
+        "col2" => ["a", "a", "a", "a", "a", "c"],
+        "dbl_col" => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+    ]
+    .unwrap();
 
     let df_inner_join = df_left
         .join(
@@ -529,16 +528,16 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
 #[cfg_attr(miri, ignore)]
 fn test_join_floats() -> PolarsResult<()> {
     let df_a = df! {
-            "a" => &[1.0, 2.0, 1.0, 1.0],
-            "b" => &["a", "b", "c", "c"],
-            "c" => &[0.0, 1.0, 2.0, 3.0]
-        }?;
+        "a" => &[1.0, 2.0, 1.0, 1.0],
+        "b" => &["a", "b", "c", "c"],
+        "c" => &[0.0, 1.0, 2.0, 3.0]
+    }?;
 
     let df_b = df! {
-            "foo" => &[1.0, 2.0, 1.0],
-            "bar" => &[1.0, 1.0, 1.0],
-            "ham" => &["let", "var", "const"]
-        }?;
+        "foo" => &[1.0, 2.0, 1.0],
+        "bar" => &[1.0, 1.0, 1.0],
+        "ham" => &["let", "var", "const"]
+    }?;
 
     let out = df_a.join(
         &df_b,
@@ -575,11 +574,11 @@ fn test_join_floats() -> PolarsResult<()> {
 #[cfg_attr(miri, ignore)]
 fn test_join_nulls() -> PolarsResult<()> {
     let a = df![
-            "a" => [Some(1), None, None]
-        ]?;
+        "a" => [Some(1), None, None]
+    ]?;
     let b = df![
-            "a" => [Some(1), None, None, None, None]
-        ]?;
+        "a" => [Some(1), None, None, None, None]
+    ]?;
 
     let out = a.inner_join(&b, ["a"], ["a"])?;
 
