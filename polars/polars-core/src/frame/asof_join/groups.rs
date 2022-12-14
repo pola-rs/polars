@@ -643,8 +643,8 @@ impl DataFrame {
 
         check_asof_columns(&left_asof, &right_asof)?;
 
-        let mut left_by = self.select(left_by)?;
-        let mut right_by = other.select(right_by)?;
+        let mut left_by = self.select_physical(left_by)?;
+        let mut right_by = other.select_physical(right_by)?;
 
         let left_by_s = left_by.get_columns()[0].to_physical_repr().into_owned();
         let right_by_s = right_by.get_columns()[0].to_physical_repr().into_owned();

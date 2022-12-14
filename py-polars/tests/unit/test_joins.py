@@ -764,3 +764,27 @@ def test_join_asof_projection() -> None:
         "df2_date": [None, None, None, 20221012, 20221015],
         "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
     }
+
+
+def test_asof_join_by_logical_types() -> None:
+    dates = (
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 1, 2), interval="2h")
+        .cast(pl.Datetime("ns"))
+        .head(9)
+    )
+    x = pl.DataFrame({"a": dates, "b": map(float, range(9)), "c": ["1", "2", "3"] * 3})
+    assert x.join_asof(x, on="b", by=["c", "a"]).to_dict(False) == {
+        "a": [
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 1, 1, 2, 0),
+            datetime(2022, 1, 1, 4, 0),
+            datetime(2022, 1, 1, 6, 0),
+            datetime(2022, 1, 1, 8, 0),
+            datetime(2022, 1, 1, 10, 0),
+            datetime(2022, 1, 1, 12, 0),
+            datetime(2022, 1, 1, 14, 0),
+            datetime(2022, 1, 1, 16, 0),
+        ],
+        "b": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        "c": ["1", "2", "3", "1", "2", "3", "1", "2", "3"],
+    }
