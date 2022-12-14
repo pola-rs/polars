@@ -1421,16 +1421,37 @@ impl DataFrame {
     }
 
     fn select_impl(&self, cols: &[String]) -> PolarsResult<Self> {
-        {
-            let mut names = PlHashSet::with_capacity(cols.len());
-            for name in cols {
-                if !names.insert(name.as_str()) {
-                    _duplicate_err(name)?
-                }
-            }
-        }
+        self.select_check_duplicates(cols)?;
         let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
+    }
+
+    pub fn select_physical<I, S>(&self, selection: I) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let cols = selection
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        self.select_physical_impl(&cols)
+    }
+
+    fn select_physical_impl(&self, cols: &[String]) -> PolarsResult<Self> {
+        self.select_check_duplicates(cols)?;
+        let selected = self.select_series_physical_impl(cols)?;
+        Ok(DataFrame::new_no_checks(selected))
+    }
+
+    fn select_check_duplicates(&self, cols: &[String]) -> PolarsResult<()> {
+        let mut names = PlHashSet::with_capacity(cols.len());
+        for name in cols {
+            if !names.insert(name.as_str()) {
+                _duplicate_err(name)?
+            }
+        }
+        Ok(())
     }
 
     /// Select column(s) from this `DataFrame` and return them into a `Vec`.
@@ -1453,17 +1474,46 @@ impl DataFrame {
         self.select_series_impl(&cols)
     }
 
+    fn _names_to_idx_map(&self) -> PlHashMap<&str, usize> {
+        self.columns
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.name(), i))
+            .collect()
+    }
+
+    /// A non generic implementation to reduce compiler bloat.
+    fn select_series_physical_impl(&self, cols: &[String]) -> PolarsResult<Vec<Series>> {
+        let selected = if cols.len() > 1 && self.columns.len() > 10 {
+            let name_to_idx = self._names_to_idx_map();
+            cols.iter()
+                .map(|name| {
+                    let idx = *name_to_idx
+                        .get(name.as_str())
+                        .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))?;
+                    Ok(self
+                        .select_at_idx(idx)
+                        .unwrap()
+                        .to_physical_repr()
+                        .into_owned())
+                })
+                .collect::<PolarsResult<Vec<_>>>()?
+        } else {
+            cols.iter()
+                .map(|c| self.column(c).map(|s| s.to_physical_repr().into_owned()))
+                .collect::<PolarsResult<Vec<_>>>()?
+        };
+
+        Ok(selected)
+    }
+
     /// A non generic implementation to reduce compiler bloat.
     fn select_series_impl(&self, cols: &[String]) -> PolarsResult<Vec<Series>> {
         let selected = if cols.len() > 1 && self.columns.len() > 10 {
             // we hash, because there are user that having millions of columns.
             // # https://github.com/pola-rs/polars/issues/1023
-            let name_to_idx: PlHashMap<&str, usize> = self
-                .columns
-                .iter()
-                .enumerate()
-                .map(|(i, s)| (s.name(), i))
-                .collect();
+            let name_to_idx = self._names_to_idx_map();
+
             cols.iter()
                 .map(|name| {
                     let idx = *name_to_idx
