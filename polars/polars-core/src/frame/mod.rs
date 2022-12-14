@@ -2917,10 +2917,22 @@ impl DataFrame {
             0 => Ok(None),
             1 => Ok(Some(self.columns[0].clone())),
             _ => {
-                let sum = || self.hsum(none_strategy);
+                let columns = self
+                    .columns
+                    .iter()
+                    .cloned()
+                    .filter(|s| {
+                        let dtype = s.dtype();
+                        dtype.is_numeric() || matches!(dtype, DataType::Boolean)
+                    })
+                    .collect();
+                let numeric_df = DataFrame::new_no_checks(columns);
+
+                let sum = || numeric_df.hsum(none_strategy);
 
                 let null_count = || {
-                    self.columns
+                    numeric_df
+                        .columns
                         .par_iter()
                         .map(|s| s.is_null().cast(&DataType::UInt32).unwrap())
                         .reduce_with(|l, r| &l + &r)
@@ -2934,7 +2946,7 @@ impl DataFrame {
 
                 // value lengths: len - null_count
                 let value_length: UInt32Chunked =
-                    (self.width().sub(&null_count)).u32().unwrap().clone();
+                    (numeric_df.width().sub(&null_count)).u32().unwrap().clone();
 
                 // make sure that we do not divide by zero
                 // by replacing with None
