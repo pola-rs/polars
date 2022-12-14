@@ -49,7 +49,7 @@ fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
 impl DataFrame {
     pub fn groupby_with_series(
         &self,
-        by: Vec<Series>,
+        mut by: Vec<Series>,
         multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupBy> {
@@ -92,12 +92,18 @@ impl DataFrame {
             }};
         }
 
+        let by_len = by[0].len();
+
         // we only throw this error if self.width > 0
         // so that we can still call this on a dummy dataframe where we provide the keys
-        if by.is_empty() || (by[0].len() != (self.height()) && (self.width() > 0)) {
-            return Err(PolarsError::ShapeMisMatch(
-                "the Series used as keys should have the same length as the DataFrame".into(),
-            ));
+        if (by_len != self.height()) && (self.width() > 0) {
+            if by_len == 1 {
+                by[0] = by[0].new_from_index(0, self.height())
+            } else {
+                return Err(PolarsError::ShapeMisMatch(
+                    "the Series used as keys should have the same length as the DataFrame".into(),
+                ));
+            }
         };
 
         let n_partitions = _set_partition_size();

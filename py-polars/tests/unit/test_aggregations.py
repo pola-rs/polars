@@ -7,3 +7,25 @@ def test_quantile_expr_input() -> None:
     assert df.select([pl.col("a").quantile(pl.col("b").sum() + 0.1)]).frame_equal(
         df.select(pl.col("a").quantile(0.6))
     )
+
+
+def test_boolean_aggs() -> None:
+    df = pl.DataFrame({"bool": [True, False, None, True]})
+
+    aggs = [
+        pl.mean("bool").alias("mean"),
+        pl.std("bool").alias("std"),
+        pl.var("bool").alias("var"),
+    ]
+    assert df.select(aggs).to_dict(False) == {
+        "mean": [0.6666666666666666],
+        "std": [0.5773502588272095],
+        "var": [0.3333333432674408],
+    }
+
+    assert df.groupby(pl.lit(1)).agg(aggs).to_dict(False) == {
+        "literal": [1],
+        "mean": [0.6666666666666666],
+        "std": [0.5773502691896258],
+        "var": [0.33333333333333337],
+    }
