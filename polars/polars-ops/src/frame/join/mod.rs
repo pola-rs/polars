@@ -1,3 +1,5 @@
+mod merge_sorted;
+
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 
