@@ -10,6 +10,7 @@ use crate::operators::{
     DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, SExecutionContext, Sink,
     SinkResult, Source, SourceResult,
 };
+use crate::pipeline::morsels_per_sink;
 
 pub struct PipeLine {
     sources: Vec<Box<dyn Source>>,
@@ -34,7 +35,7 @@ impl PipeLine {
         debug_assert_eq!(operators.len(), operator_nodes.len() + operator_offset);
         // we don't use the power of two partition size here
         // we only do that in the sinks itself.
-        let n_threads = POOL.current_num_threads();
+        let n_threads = morsels_per_sink();
 
         // We split so that every thread gets an operator
         let sink_nodes = sink_and_nodes.iter().map(|(_, node, _)| *node).collect();

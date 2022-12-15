@@ -1,20 +1,38 @@
 use std::any::Any;
+use std::sync::atomic::{AtomicU16, Ordering};
 
 use polars_core::error::PolarsResult;
 
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
 };
+use crate::pipeline::morsels_per_sink;
 
 // Ensure the data is return in the order it was streamed
-#[derive(Clone)]
 pub struct ParquetSink {
     chunks: Vec<DataChunk>,
+    morsels_per_sink: u16,
+    morsels_processed: AtomicU16,
+}
+
+impl Clone for ParquetSink {
+    fn clone(&self) -> Self {
+        Self {
+            chunks: self.chunks.clone(),
+            morsels_per_sink: self.morsels_per_sink,
+            morsels_processed: AtomicU16::new(self.morsels_processed.load(Ordering::Acquire)),
+        }
+    }
 }
 
 impl ParquetSink {
     pub fn new() -> Self {
-        ParquetSink { chunks: vec![] }
+        let morsels_per_sink = morsels_per_sink() as u16;
+        ParquetSink {
+            chunks: vec![],
+            morsels_per_sink,
+            morsels_processed: AtomicU16::new(0),
+        }
     }
 
     fn sort(&mut self) {

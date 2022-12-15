@@ -9,20 +9,30 @@ use crate::operators::{
 };
 
 // Ensure the data is return in the order it was streamed
-#[derive(Clone)]
 pub struct SliceSink {
-    offset: Arc<AtomicU64>,
-    current_len: Arc<AtomicU64>,
+    offset: AtomicU64,
+    current_len: AtomicU64,
     len: usize,
     chunks: Arc<Mutex<Vec<DataChunk>>>,
 }
 
+impl Clone for SliceSink {
+    fn clone(&self) -> Self {
+        Self {
+            offset: AtomicU64::new(self.offset.load(Ordering::Acquire)),
+            current_len: AtomicU64::new(self.current_len.load(Ordering::Acquire)),
+            len: self.len,
+            chunks: self.chunks.clone(),
+        }
+    }
+}
+
 impl SliceSink {
     pub fn new(offset: u64, len: usize) -> SliceSink {
-        let offset = Arc::new(AtomicU64::new(offset));
+        let offset = AtomicU64::new(offset);
         SliceSink {
             offset,
-            current_len: Arc::new(AtomicU64::new(0)),
+            current_len: AtomicU64::new(0),
             len,
             chunks: Default::default(),
         }
