@@ -1,12 +1,14 @@
 pub(crate) mod groupby;
 mod joins;
 mod ordered;
+#[cfg(feature = "parquet")]
 mod parquet_sink;
 mod slice;
 mod utils;
 
 pub(crate) use joins::*;
 pub(crate) use ordered::*;
+#[cfg(feature = "parquet")]
 pub(crate) use parquet_sink::ParquetSink;
 pub(crate) use slice::*;
 

@@ -113,6 +113,7 @@ where
 {
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
+        #[cfg(feature = "parquet")]
         FileSink { input, payload } => {
             let path = payload.path.as_ref().as_path();
             let input_schema = lp_arena.get(*input).schema(lp_arena);
