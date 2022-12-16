@@ -30,7 +30,7 @@ def test_struct_pyarrow_dataset_5796() -> None:
 
 def test_sink_parquet(io_test_dir: str) -> None:
     if os.name != "nt":
-        file = os.path.join(io_test_dir, "books.parquet")
+        file = os.path.join(io_test_dir, "..", "files", "small.parquet")
 
         dst = "/tmp/test_sink.parquet"
         pl.scan_parquet(file).sink_parquet(dst)
