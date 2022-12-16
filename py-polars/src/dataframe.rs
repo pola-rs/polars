@@ -514,20 +514,22 @@ impl PyDataFrame {
         let null = null_value.unwrap_or_default();
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
-            // no need for a buffered writer, because the csv writer does internal buffering
-            CsvWriter::new(f)
-                .has_header(has_header)
-                .with_delimiter(sep)
-                .with_quoting_char(quote)
-                .with_batch_size(batch_size)
-                .with_datetime_format(datetime_format)
-                .with_date_format(date_format)
-                .with_time_format(time_format)
-                .with_float_precision(float_precision)
-                .with_null_value(null)
-                .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
+            py.allow_threads(|| {
+                let f = std::fs::File::create(s).unwrap();
+                // no need for a buffered writer, because the csv writer does internal buffering
+                CsvWriter::new(f)
+                    .has_header(has_header)
+                    .with_delimiter(sep)
+                    .with_quoting_char(quote)
+                    .with_batch_size(batch_size)
+                    .with_datetime_format(datetime_format)
+                    .with_date_format(date_format)
+                    .with_time_format(time_format)
+                    .with_float_precision(float_precision)
+                    .with_null_value(null)
+                    .finish(&mut self.df)
+                    .map_err(PyPolarsErr::from)
+            })?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
@@ -555,11 +557,13 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
-            IpcWriter::new(f)
-                .with_compression(compression.0)
-                .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
+            py.allow_threads(|| {
+                let f = std::fs::File::create(s).unwrap();
+                IpcWriter::new(f)
+                    .with_compression(compression.0)
+                    .finish(&mut self.df)
+                    .map_err(PyPolarsErr::from)
+            })?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
 
@@ -679,12 +683,14 @@ impl PyDataFrame {
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
-            ParquetWriter::new(f)
-                .with_compression(compression)
-                .with_statistics(statistics)
-                .with_row_group_size(row_group_size)
-                .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
+            py.allow_threads(|| {
+                ParquetWriter::new(f)
+                    .with_compression(compression)
+                    .with_statistics(statistics)
+                    .with_row_group_size(row_group_size)
+                    .finish(&mut self.df)
+                    .map_err(PyPolarsErr::from)
+            })?;
         } else {
             let buf = get_file_like(py_f, true)?;
             ParquetWriter::new(buf)
