@@ -2411,7 +2411,7 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self) -> impl Iterator<Item = ArrowChunk> + '_ {
+    pub fn iter_chunks(&self) -> RecordBatchIter {
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
@@ -3412,6 +3412,11 @@ impl<'a> Iterator for RecordBatchIter<'a> {
             Some(ArrowChunk::new(batch_cols))
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.n_chunks - self.idx;
+        (n, Some(n))
+    }
 }
 
 pub struct PhysRecordBatchIter<'a> {
@@ -3427,6 +3432,14 @@ impl Iterator for PhysRecordBatchIter<'_> {
             .map(|phys_iter| phys_iter.next().cloned())
             .collect::<Option<Vec<_>>>()
             .map(ArrowChunk::new)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if let Some(iter) = self.iters.first() {
+            iter.size_hint()
+        } else {
+            (0, None)
+        }
     }
 }
 

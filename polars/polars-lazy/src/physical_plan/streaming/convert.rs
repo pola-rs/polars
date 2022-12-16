@@ -123,6 +123,11 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push((true, false, root));
                 stack.push((*input, state, current_idx))
             }
+            FileSink { input, .. } => {
+                state.streamable = true;
+                state.operators_sinks.push((true, false, root));
+                stack.push((*input, state, current_idx))
+            }
             MapFunction {
                 input,
                 function: FunctionNode::FastProjection { .. },

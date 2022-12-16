@@ -21,7 +21,7 @@ mod read_impl;
 mod write;
 
 pub use read::*;
-pub use write::*;
+pub use write::{BrotliLevel, GzipLevel, ZstdLevel, *};
 
 use super::*;
 

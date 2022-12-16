@@ -150,6 +150,9 @@ pub fn create_physical_plan(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
+        FileSink { .. } => panic!(
+            "sink_parquet not yet supported in standard engine. Use 'collect().write_parquet()'"
+        ),
         Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()

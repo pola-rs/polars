@@ -1,5 +1,9 @@
+use std::path::PathBuf;
+
 use polars_core::prelude::*;
 use polars_io::csv::{CsvEncoding, NullValues};
+#[cfg(feature = "parquet")]
+use polars_io::parquet::ParquetCompression;
 use polars_io::RowCount;
 #[cfg(feature = "dynamic_groupby")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
@@ -31,6 +35,7 @@ pub struct CsvParserOptions {
     pub parse_dates: bool,
     pub file_counter: FileCount,
 }
+
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -43,6 +48,22 @@ pub struct ParquetOptions {
     pub row_count: Option<RowCount>,
     pub file_counter: FileCount,
     pub low_memory: bool,
+}
+
+#[cfg(feature = "parquet")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ParquetWriteOptions {
+    /// Data page compression
+    pub compression: ParquetCompression,
+    /// Compute and write column statistics.
+    pub statistics: bool,
+    /// If `None` will be all written to a single row group.
+    pub row_group_size: Option<usize>,
+    /// if `None` will be 1024^2 bytes
+    pub data_pagesize_limit: Option<usize>,
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -236,3 +257,20 @@ pub struct AnonymousScanOptions {
     pub predicate: Option<Expr>,
     pub fmt_str: &'static str,
 }
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
+pub struct FileSinkOptions {
+    pub path: Arc<PathBuf>,
+    pub file_type: FileType,
+}
+
+#[cfg(feature = "parquet")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
+pub enum FileType {
+    Parquet(ParquetWriteOptions),
+}
+
+#[cfg(not(feature = "parquet"))]
+pub type FileType = ();

@@ -236,6 +236,10 @@ impl LogicalPlan {
                 writeln!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
                 input._format(f, indent)
             }
+            FileSink { input, .. } => {
+                writeln!(f, "{:indent$}FILE_SINK", "")?;
+                input._format(f, indent)
+            }
         }
     }
 }
