@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import typing
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 import numpy as np
 import pytest
@@ -294,3 +294,10 @@ def test_invalid_sort_by() -> None:
         match="The sortby operation produced a different length than the Series that has to be sorted.",  # noqa: E501
     ):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", True))
+
+
+def test_epoch_time_type() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="Cannot compute timestamp of a series with dtype 'Time'"
+    ):
+        pl.Series([time(0, 0, 1)]).dt.epoch("s")
