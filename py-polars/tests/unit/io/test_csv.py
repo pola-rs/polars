@@ -110,6 +110,37 @@ def test_csv_null_values() -> None:
     assert df.rows() == [(None, "b", "c"), ("a", None, "c")]
 
 
+def test_csv_float_parsing() -> None:
+    lines_with_floats = [
+        "123.86,+123.86,-123.86\n",
+        ".987,+.987,-.987\n",
+        "5.,+5.,-5.\n",
+        "inf,+inf,-inf\n",
+        "NaN,+NaN,-NaN\n",
+    ]
+
+    for line_with_floats in lines_with_floats:
+        f = io.StringIO(line_with_floats)
+        df = pl.read_csv(f, has_header=False, new_columns=["a", "b", "c"])
+        assert df.dtypes == [pl.Float64, pl.Float64, pl.Float64]
+
+    lines_with_scientific_numbers = [
+        "1e27,1E65,1e-28,1E-9\n",
+        "+1e27,+1E65,+1e-28,+1E-9\n",
+        "1e+27,1E+65,1e-28,1E-9\n",
+        "+1e+27,+1E+65,+1e-28,+1E-9\n",
+        "-1e+27,-1E+65,-1e-28,-1E-9\n",
+        #        "e27,E65,e-28,E-9\n",
+        #        "+e27,+E65,+e-28,+E-9\n",
+        #        "-e27,-E65,-e-28,-E-9\n",
+    ]
+
+    for line_with_scientific_numbers in lines_with_scientific_numbers:
+        f = io.StringIO(line_with_scientific_numbers)
+        df = pl.read_csv(f, has_header=False, new_columns=["a", "b", "c", "d"])
+        assert df.dtypes == [pl.Float64, pl.Float64, pl.Float64, pl.Float64]
+
+
 def test_datetime_parsing() -> None:
     csv = textwrap.dedent(
         """\
