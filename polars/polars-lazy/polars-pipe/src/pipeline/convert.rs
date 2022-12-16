@@ -113,6 +113,15 @@ where
 {
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
+        FileSink { input, payload } => {
+            let path = payload.path.as_ref().as_path();
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
+            match &payload.file_type {
+                FileType::Parquet(options) => {
+                    Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
+                }
+            }
+        }
         Join {
             input_left,
             input_right,

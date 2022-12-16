@@ -420,10 +420,7 @@ pub fn to_alp(
         }
         LogicalPlan::FileSink { input, payload } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::FileSink {
-                input,
-                payload: payload.clone(),
-            }
+            ALogicalPlan::FileSink { input, payload }
         }
     };
     Ok(lp_arena.add(v))

@@ -2,6 +2,7 @@
 #![cfg_attr(feature = "nightly", feature(build_hasher_simple_hash_one))]
 
 pub mod arena;
+pub mod cell;
 pub mod contention_pool;
 mod error;
 mod functions;

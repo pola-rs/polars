@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::io::BufWriter;
+use std::path::PathBuf;
 
 use polars::io::RowCount;
 #[cfg(feature = "csv-file")]
@@ -416,6 +417,37 @@ impl PyLazyFrame {
             ldf.collect().map_err(PyPolarsErr::from)
         })?;
         Ok(df.into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn sink_parquet(
+        &self,
+        py: Python,
+        path: PathBuf,
+        compression: &str,
+        compression_level: Option<i32>,
+        statistics: bool,
+        row_group_size: Option<usize>,
+        data_pagesize_limit: Option<usize>,
+        maintain_order: bool,
+    ) -> PyResult<()> {
+        let compression = parse_parquet_compression(compression, compression_level)?;
+
+        let options = ParquetWriteOptions {
+            compression,
+            statistics,
+            row_group_size,
+            data_pagesize_limit,
+            maintain_order,
+        };
+
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_parquet(path, options).map_err(PyPolarsErr::from)
+        })?;
+        Ok(())
     }
 
     pub fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {

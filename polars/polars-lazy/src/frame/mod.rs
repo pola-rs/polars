@@ -15,6 +15,8 @@ mod anonymous_scan;
 pub mod pivot;
 
 use std::borrow::Cow;
+#[cfg(feature = "parquet")]
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use anonymous_scan::*;
@@ -537,7 +539,10 @@ impl LazyFrame {
     }
 
     #[allow(unused_mut)]
-    fn prepare_collect(mut self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
+    fn prepare_collect(
+        mut self,
+        check_sink: bool,
+    ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
         let file_caching = self.opt_state.file_caching;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
@@ -559,13 +564,20 @@ impl LazyFrame {
         } else {
             None
         };
+
+        // file sink should be replaced
+        let no_file_sink = if check_sink {
+            !matches!(lp_arena.get(lp_top), ALogicalPlan::FileSink { .. })
+        } else {
+            true
+        };
         let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::with_finger_prints(finger_prints);
-        Ok((state, physical_plan))
+        Ok((state, physical_plan, no_file_sink))
     }
 
-    /// Execute all the lazy operations and collect them into a [DataFrame](polars_core::frame::DataFrame).
+    /// Execute all the lazy operations and collect them into a [`DataFrame`].
     /// Before execution the query is being optimized.
     ///
     /// # Example
@@ -582,7 +594,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        let (mut state, mut physical_plan) = self.prepare_collect()?;
+        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {
@@ -600,11 +612,33 @@ impl LazyFrame {
     ////
     //// The units of the timings are microseconds.
     pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
-        let (mut state, mut physical_plan) = self.prepare_collect()?;
+        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
         state.time_nodes();
         let out = physical_plan.execute(&mut state)?;
         let timer_df = state.finish_timer()?;
         Ok((out, timer_df))
+    }
+
+    //// Stream a query result into a parquet file. This is useful if the final result doesn't fit
+    /// into memory. This methods will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(feature = "parquet")]
+    pub fn sink_parquet(mut self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
+        self.logical_plan = LogicalPlan::FileSink {
+            input: Box::new(self.logical_plan),
+            payload: FileSinkOptions {
+                path: Arc::new(path),
+                file_type: FileType::Parquet(options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+
+        if is_streaming {
+            let _ = physical_plan.execute(&mut state)?;
+            Ok(())
+        } else {
+            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
+        }
     }
 
     /// Filter by some predicate expression.
