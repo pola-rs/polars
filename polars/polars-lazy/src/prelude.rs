@@ -2,6 +2,7 @@ pub(crate) use polars_ops::prelude::*;
 pub use polars_plan::logical_plan::{
     AnonymousScan, AnonymousScanOptions, Literal, LiteralValue, LogicalPlan, Null, NULL,
 };
+#[cfg(feature = "parquet")]
 pub use polars_plan::prelude::ParquetWriteOptions;
 pub(crate) use polars_plan::prelude::*;
 #[cfg(feature = "rolling_window")]
