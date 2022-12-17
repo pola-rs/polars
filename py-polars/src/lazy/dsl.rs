@@ -1760,14 +1760,14 @@ pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: 
     let exprs = py_exprs_to_exprs(exprs);
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    polars::lazy::dsl::cumfold_exprs(acc.inner, func, exprs, include_init).into()
+    cumfold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
 pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = py_exprs_to_exprs(exprs);
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    polars::lazy::dsl::cumreduce_exprs(func, exprs).into()
+    cumreduce_exprs(func, exprs).into()
 }
 
 pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
@@ -1777,7 +1777,7 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
     } else if let Ok(int) = value.downcast::<PyInt>() {
         match int.extract::<i64>() {
             Ok(val) => {
-                if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
+                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
                     Ok(dsl::lit(val as i32).into())
                 } else {
                     Ok(dsl::lit(val).into())

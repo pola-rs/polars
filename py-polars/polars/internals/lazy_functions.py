@@ -1164,7 +1164,6 @@ def lit(
 
     except AttributeError:
         item = value
-
     return pli.wrap_expr(pylit(item, allow_object))
 
 

@@ -278,3 +278,9 @@ def test_schema_owned_arithmetic_5669() -> None:
         .collect()
     )
     assert df.columns == ["A", "literal"], df.columns
+
+
+def test_fill_null_f32_with_lit() -> None:
+    # ensure the literal integer does not upcast the f32 to an f64
+    df = pl.DataFrame({"a": [1.1, 1.2]}, columns=[("a", pl.Float32)])
+    assert df.fill_null(value=0).dtypes == [pl.Float32]
