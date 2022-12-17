@@ -1097,7 +1097,7 @@ def read_sql(
 
     """
     try:
-        import connectorx as cx  # type: ignore[import]
+        import connectorx as cx
     except ImportError:
         raise ImportError(
             "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
