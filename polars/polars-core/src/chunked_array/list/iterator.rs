@@ -129,7 +129,7 @@ impl ListChunked {
         if self.is_empty() {
             return self.clone();
         }
-        let mut fast_explode = true;
+        let mut fast_explode = self.null_count() == 0;
         let mut ca: ListChunked = self
             .amortized_iter()
             .map(|opt_v| {
@@ -157,7 +157,7 @@ impl ListChunked {
         if self.is_empty() {
             return Ok(self.clone());
         }
-        let mut fast_explode = true;
+        let mut fast_explode = self.null_count() == 0;
         let mut ca: ListChunked = self
             .amortized_iter()
             .map(|opt_v| {
