@@ -32,13 +32,6 @@ from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
-try:
-    import connectorx as cx
-
-    _WITH_CX = True
-except ImportError:
-    _WITH_CX = False
-
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
 
@@ -1103,21 +1096,24 @@ def read_sql(
     >>> pl.read_sql(queries, uri)  # doctest: +SKIP
 
     """
-    if _WITH_CX:
-        tbl = cx.read_sql(
-            conn=connection_uri,
-            query=sql,
-            return_type="arrow2",
-            partition_on=partition_on,
-            partition_range=partition_range,
-            partition_num=partition_num,
-            protocol=protocol,
-        )
-        return cast(DataFrame, from_arrow(tbl))
-    else:
+    try:
+        import connectorx as cx  # type: ignore[import]
+    except ImportError:
         raise ImportError(
             "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
-        )
+        ) from None
+
+    tbl = cx.read_sql(
+        conn=connection_uri,
+        query=sql,
+        return_type="arrow2",
+        partition_on=partition_on,
+        partition_range=partition_range,
+        partition_num=partition_num,
+        protocol=protocol,
+    )
+
+    return cast(DataFrame, from_arrow(tbl))
 
 
 @overload
