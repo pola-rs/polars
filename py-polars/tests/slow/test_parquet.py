@@ -36,3 +36,22 @@ def test_sink_parquet(io_test_dir: str) -> None:
         pl.scan_parquet(file).sink_parquet(dst)
         with pl.StringCache():
             assert pl.read_parquet(dst).frame_equal(pl.read_parquet(file))
+
+
+def test_fetch_union() -> None:
+    if os.name != "nt":
+        pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]}).write_parquet(
+            "/tmp/df_fetch_1.parquet"
+        )
+        pl.DataFrame({"a": [3, 4, 5], "b": [4, 5, 6]}).write_parquet(
+            "/tmp/df_fetch_2.parquet"
+        )
+
+        assert pl.scan_parquet("/tmp/df_fetch_1.parquet").fetch(1).to_dict(False) == {
+            "a": [0],
+            "b": [1],
+        }
+        assert pl.scan_parquet("/tmp/df_fetch_*.parquet").fetch(1).to_dict(False) == {
+            "a": [0, 3],
+            "b": [1, 4],
+        }

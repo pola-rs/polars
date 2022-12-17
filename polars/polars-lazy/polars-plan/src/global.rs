@@ -10,3 +10,7 @@ pub fn _set_n_rows_for_scan(n_rows: Option<usize>) -> Option<usize> {
         Some(n) => Some(n),
     }
 }
+
+pub fn _is_fetch_query() -> bool {
+    FETCH_ROWS.with(|fetch_rows| fetch_rows.get().is_some())
+}
