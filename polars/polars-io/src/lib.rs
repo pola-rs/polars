@@ -18,6 +18,8 @@ pub mod json;
 #[cfg(feature = "json")]
 #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod ndjson_core;
+#[cfg(feature = "object_store")]
+mod object_store;
 
 #[cfg(any(
     feature = "csv-file",
@@ -43,7 +45,7 @@ pub(crate) mod utils;
 pub mod partition;
 
 use std::io::{Read, Seek, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
 use arrow::array::new_empty_array;
@@ -56,7 +58,8 @@ use polars_core::prelude::*;
     feature = "ipc",
     feature = "json",
     feature = "avro",
-    feature = "ipc_streaming"
+    feature = "ipc_streaming",
+    feature = "parquet-async"
 ))]
 use crate::predicates::PhysicalIoExpr;
 
@@ -102,7 +105,8 @@ pub trait ArrowReader {
     feature = "ipc",
     feature = "json",
     feature = "avro",
-    feature = "ipc_streaming"
+    feature = "ipc_streaming",
+    feature = "parquet-async"
 ))]
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
@@ -169,4 +173,11 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         true => Ok(df.agg_chunks()),
         false => Ok(df),
     }
+}
+
+/// Check if the path is a cloud url.
+pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
+    p.as_ref().starts_with("s3://")
+        || p.as_ref().starts_with("file://")
+        || p.as_ref().starts_with("gcs://")
 }

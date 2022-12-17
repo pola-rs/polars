@@ -1,3 +1,5 @@
+#[cfg(feature = "parquet-async")]
+use ahash::HashMap;
 use arrow::datatypes::Field;
 use arrow::io::parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
@@ -6,24 +8,49 @@ use arrow::io::parquet::read::{
 
 use super::*;
 
+/// Store colums data in two scenarios:
+/// 1. a local memory mapped file
+/// 2. data fetched from cloud storage on demand. The intent is to enable a two phase approach:
+///    a. identify all the needed columns
+///    b. asynchronously fetch them in parallel, for example using object_store
+///    c. store the data in this data structure
+///    d. when all the data is available deserialize on multiple threads, for example using rayon
+pub(crate) enum ColumnStore<'a> {
+    Local(&'a [u8]),
+    #[cfg(feature = "parquet-async")]
+    Fetched(&'a HashMap<u64, Vec<u8>>),
+}
+
 /// memory maps all columns that are part of the parquet field `field_name`
 pub(super) fn mmap_columns<'a>(
-    file: &'a [u8],
+    store: &'a ColumnStore,
     columns: &'a [ColumnChunkMetaData],
     field_name: &str,
 ) -> Vec<(&'a ColumnChunkMetaData, &'a [u8])> {
     get_field_columns(columns, field_name)
         .into_iter()
-        .map(|meta| _mmap_single_column(file, meta))
+        .map(|meta| _mmap_single_column(store, meta))
         .collect()
 }
 
 fn _mmap_single_column<'a>(
-    file: &'a [u8],
+    store: &'a ColumnStore,
     meta: &'a ColumnChunkMetaData,
 ) -> (&'a ColumnChunkMetaData, &'a [u8]) {
     let (start, len) = meta.byte_range();
-    let chunk = &file[start as usize..(start + len) as usize];
+    let chunk = match store {
+        ColumnStore::Local(file) => &file[start as usize..(start + len) as usize],
+        #[cfg(feature = "parquet-async")]
+        ColumnStore::Fetched(fetched) => {
+            let entry = fetched.get(&start).unwrap_or_else(|| {
+                panic!(
+                    "mmap_columns: column with start {} must be prefetched in ColumnStore.\n",
+                    start
+                )
+            });
+            entry.as_slice()
+        }
+    };
     (meta, chunk)
 }
 

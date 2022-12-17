@@ -59,6 +59,8 @@ pub enum PolarsError {
     Io(#[from] std::io::Error),
     #[error("DuplicateError: {0}")]
     Duplicate(ErrString),
+    #[error("External: {0}")]
+    External(String, Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<ArrowError> for PolarsError {

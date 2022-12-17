@@ -14,6 +14,8 @@ use polars_io::csv::CsvEncoding;
 use polars_io::ipc::IpcReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
+#[cfg(feature = "parquet-async")]
+use polars_io::prelude::ParquetAsyncReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
@@ -95,7 +97,7 @@ impl LogicalPlanBuilder {
         .into())
     }
 
-    #[cfg(feature = "parquet")]
+    #[cfg(any(feature = "parquet", feature = "parquet_async"))]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet<P: Into<PathBuf>>(
         path: P,
@@ -106,17 +108,33 @@ impl LogicalPlanBuilder {
         rechunk: bool,
         low_memory: bool,
     ) -> PolarsResult<Self> {
-        use polars_io::SerReader as _;
+        use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
-        let file = std::fs::File::open(&path)?;
-        let mut reader = ParquetReader::new(file);
-        let schema = Arc::new(reader.schema()?);
-        let num_rows = reader.num_rows()?;
-        let file_info = FileInfo {
-            schema,
-            row_estimation: (Some(num_rows), num_rows),
+        let file_info: PolarsResult<FileInfo> = if is_cloud_url(&path) {
+            #[cfg(not(feature = "parquet-async"))]
+            panic!("The feature parquet-async needs to be enabled in order to access parquet on cloud storage.");
+
+            #[cfg(feature = "parquet-async")]
+            {
+                let uri = path.to_string_lossy();
+                let (schema, num_rows) = ParquetAsyncReader::file_info(&uri)?;
+                Ok(FileInfo {
+                    schema: Arc::new(schema),
+                    row_estimation: (Some(num_rows), num_rows),
+                })
+            }
+        } else {
+            let file = std::fs::File::open(&path)?;
+            let mut reader = ParquetReader::new(file);
+            let schema = Arc::new(reader.schema()?);
+            let num_rows = reader.num_rows()?;
+            Ok(FileInfo {
+                schema,
+                row_estimation: (Some(num_rows), num_rows),
+            })
         };
+        let file_info = file_info?;
 
         Ok(LogicalPlan::ParquetScan {
             path,

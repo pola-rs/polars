@@ -42,6 +42,9 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 PolarsError::InvalidOperation(err) => {
                     InvalidOperationError::new_err(err.to_string())
                 }
+                PolarsError::External(scope, err) => {
+                    InvalidOperationError::new_err(format!("External {} {:?}", scope, err))
+                }
             },
             Arrow(err) => ArrowErrorException::new_err(format!("{err:?}")),
             _ => default(),

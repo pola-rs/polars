@@ -8,6 +8,10 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::mmap::MmapBytesReader;
+#[cfg(feature = "parquet-async")]
+use crate::parquet::async_impl::BatchedParquetReader as BatchedParquetReaderAsync;
+#[cfg(feature = "parquet-async")]
+use crate::parquet::async_impl::ParquetObjectStore;
 use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
 use crate::predicates::PhysicalIoExpr;
@@ -194,5 +198,87 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             }
             df
         })
+    }
+}
+
+/// A Parquet reader on top of the async object_store API. Only the batch reader is implemented since
+/// parquet files on cloud storage tend to be big and slow to access.
+#[cfg(feature = "parquet-async")]
+pub struct ParquetAsyncReader {
+    reader: ParquetObjectStore,
+    rechunk: bool,
+    n_rows: Option<usize>,
+    projection: Option<Vec<usize>>,
+    row_count: Option<RowCount>,
+    low_memory: bool,
+}
+
+#[cfg(feature = "parquet-async")]
+impl ParquetAsyncReader {
+    pub fn from_uri(uri: &str) -> PolarsResult<ParquetAsyncReader> {
+        Ok(ParquetAsyncReader {
+            reader: ParquetObjectStore::from_uri(uri)?,
+            rechunk: false,
+            n_rows: None,
+            projection: None,
+            row_count: None,
+            low_memory: false,
+        })
+    }
+
+    /// Fetch the file info in a synchronous way to for the query planning phase.
+    #[tokio::main(flavor = "current_thread")]
+    pub async fn file_info(uri: &str) -> PolarsResult<(Schema, usize)> {
+        let mut reader = ParquetAsyncReader::from_uri(uri)?;
+        let schema = reader.schema().await?;
+        let num_rows = reader.num_rows().await?;
+        Ok((schema, num_rows))
+    }
+
+    pub async fn schema(&mut self) -> PolarsResult<Schema> {
+        self.reader.schema().await
+    }
+    pub async fn num_rows(&mut self) -> PolarsResult<usize> {
+        self.reader.num_rows().await
+    }
+
+    pub fn with_n_rows(mut self, n_rows: Option<usize>) -> Self {
+        self.n_rows = n_rows;
+        self
+    }
+
+    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+        self.row_count = row_count;
+        self
+    }
+
+    pub fn set_rechunk(mut self, rechunk: bool) -> Self {
+        self.rechunk = rechunk;
+        self
+    }
+
+    pub fn set_low_memory(mut self, low_memory: bool) -> Self {
+        self.low_memory = low_memory;
+        self
+    }
+
+    pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
+        self.projection = projection;
+        self
+    }
+
+    #[tokio::main(flavor = "current_thread")]
+    pub async fn batched(mut self, batch_size: usize) -> PolarsResult<BatchedParquetReaderAsync> {
+        let logging = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
+        let metadata = self.reader.fetch_metadata().await?;
+        BatchedParquetReaderAsync::new(
+            self.reader,
+            metadata,
+            self.n_rows.unwrap_or(usize::MAX),
+            self.projection,
+            self.row_count,
+            batch_size,
+            logging,
+        )
     }
 }

@@ -26,7 +26,7 @@ fn column_idx_to_series(
     md: &RowGroupMetaData,
     remaining_rows: usize,
     schema: &ArrowSchema,
-    bytes: &[u8],
+    store: &mmap::ColumnStore,
     chunk_size: usize,
 ) -> PolarsResult<Series> {
     let mut field = schema.fields[column_i].clone();
@@ -39,7 +39,7 @@ fn column_idx_to_series(
         _ => {}
     }
 
-    let columns = mmap_columns(bytes, md.columns(), &field.name);
+    let columns = mmap_columns(store, md.columns(), &field.name);
     let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
 
     if remaining_rows < md.num_rows() {
@@ -49,7 +49,7 @@ fn column_idx_to_series(
     }
 }
 
-fn array_iter_to_series(
+pub(super) fn array_iter_to_series(
     iter: ArrayIter,
     field: &ArrowField,
     num_rows: Option<usize>,
@@ -83,8 +83,8 @@ fn array_iter_to_series(
 
 #[allow(clippy::too_many_arguments)]
 // might parallelize over columns
-fn rg_to_dfs(
-    bytes: &[u8],
+pub(super) fn rg_to_dfs(
+    store: &mmap::ColumnStore,
     previous_row_count: &mut IdxSize,
     row_group_start: usize,
     row_group_end: usize,
@@ -123,7 +123,7 @@ fn rg_to_dfs(
                             md,
                             *remaining_rows,
                             schema,
-                            bytes,
+                            store,
                             chunk_size,
                         )
                     })
@@ -133,7 +133,7 @@ fn rg_to_dfs(
             projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(*column_i, md, *remaining_rows, schema, bytes, chunk_size)
+                    column_idx_to_series(*column_i, md, *remaining_rows, schema, store, chunk_size)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
@@ -159,8 +159,8 @@ fn rg_to_dfs(
 
 #[allow(clippy::too_many_arguments)]
 // parallelizes over row groups
-fn rg_to_dfs_par(
-    bytes: &[u8],
+pub(super) fn rg_to_dfs_par(
+    store: &mmap::ColumnStore,
     row_group_start: usize,
     row_group_end: usize,
     previous_row_count: &mut IdxSize,
@@ -207,7 +207,7 @@ fn rg_to_dfs_par(
             let columns = projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(*column_i, md, local_limit, schema, bytes, chunk_size)
+                    column_idx_to_series(*column_i, md, local_limit, schema, store, chunk_size)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -259,9 +259,10 @@ pub fn read_parquet<R: MmapBytesReader>(
 
     let reader = ReaderBytes::from(&reader);
     let bytes = reader.deref();
+    let store = mmap::ColumnStore::Local(bytes);
     let dfs = match parallel {
         ParallelStrategy::Columns | ParallelStrategy::None => rg_to_dfs(
-            bytes,
+            &store,
             &mut 0,
             0,
             row_group_len,
@@ -274,7 +275,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             &projection,
         )?,
         ParallelStrategy::RowGroups => rg_to_dfs_par(
-            bytes,
+            &store,
             0,
             file_metadata.row_groups.len(),
             &mut 0,
@@ -301,6 +302,9 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 }
 
+pub trait HasNextBatches: Sync + Send {
+    fn next_batches(&mut self, chunk_size: usize) -> PolarsResult<Option<Vec<DataFrame>>>;
+}
 pub struct BatchedParquetReader {
     // use to keep ownership
     #[allow(dead_code)]
@@ -365,14 +369,17 @@ impl BatchedParquetReader {
             chunk_size,
         })
     }
+}
 
-    pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
+impl HasNextBatches for BatchedParquetReader {
+    fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         // fill up fifo stack
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
+            let store = mmap::ColumnStore::Local(self.reader_bytes.deref());
             let dfs = match self.parallel {
                 ParallelStrategy::Columns => {
                     let dfs = rg_to_dfs(
-                        self.reader_bytes.deref(),
+                        &store,
                         &mut self.rows_read,
                         self.row_group_offset,
                         std::cmp::min(self.row_group_offset + n, self.n_row_groups),
@@ -389,7 +396,7 @@ impl BatchedParquetReader {
                 }
                 ParallelStrategy::RowGroups => {
                     let dfs = rg_to_dfs_par(
-                        self.reader_bytes.deref(),
+                        &store,
                         self.row_group_offset,
                         std::cmp::min(self.row_group_offset + n, self.n_row_groups),
                         &mut self.rows_read,
