@@ -1586,7 +1586,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ┌─────────┐
         │ literal │
         │ ---     │
-        │ i64     │
+        │ i32     │
         ╞═════════╡
         │ 0       │
         ├╌╌╌╌╌╌╌╌╌┤
