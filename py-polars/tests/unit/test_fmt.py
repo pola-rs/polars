@@ -98,3 +98,21 @@ Series: 'foo' [f64]
 ]
 """  # noqa: E101, W191
     assert out == expected
+
+
+def test_duration_smallest_units() -> None:
+    s = pl.Series(range(6), dtype=pl.Duration("us"))
+    assert (
+        str(s)
+        == "shape: (6,)\nSeries: '' [duration[μs]]\n[\n\t0µs\n\t1µs\n\t2µs\n\t3µs\n\t4µs\n\t5µs\n]"  # noqa: E501
+    )
+    s = pl.Series(range(6), dtype=pl.Duration("ms"))
+    assert (
+        str(s)
+        == "shape: (6,)\nSeries: '' [duration[ms]]\n[\n\t0ms\n\t1ms\n\t2ms\n\t3ms\n\t4ms\n\t5ms\n]"  # noqa: E501
+    )
+    s = pl.Series(range(6), dtype=pl.Duration("ns"))
+    assert (
+        str(s)
+        == "shape: (6,)\nSeries: '' [duration[ns]]\n[\n\t0ns\n\t1ns\n\t2ns\n\t3ns\n\t4ns\n\t5ns\n]"  # noqa: E501
+    )

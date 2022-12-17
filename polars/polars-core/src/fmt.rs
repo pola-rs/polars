@@ -630,9 +630,9 @@ fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     }
     format_duration(f, v, SIZES_US.as_slice(), NAMES.as_slice())?;
     if v % 1000 != 0 {
-        write!(f, "{}µs", (v % 1_000_000_000) / 1000)?;
+        write!(f, "{}µs", (v % 1_000_000))?;
     } else if v % 1_000_000 != 0 {
-        write!(f, "{}ms", (v % 1_000_000_000) / 1_000_000)?;
+        write!(f, "{}ms", (v % 1_000_000) / 1_000)?;
     }
     Ok(())
 }
@@ -643,7 +643,7 @@ fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     }
     format_duration(f, v, SIZES_MS.as_slice(), NAMES.as_slice())?;
     if v % 1_000 != 0 {
-        write!(f, "{}ms", (v % 1_000_000_000) / 1_000_000)?;
+        write!(f, "{}ms", (v % 1_000))?;
     }
     Ok(())
 }
