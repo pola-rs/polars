@@ -151,7 +151,7 @@ impl PhysicalExpr for TakeExpr {
                                 };
                                 let taken = ac.flat_naive().take(&idx.into_inner())?;
                                 ac.with_series(taken, true);
-                                ac.with_update_groups(UpdateGroups::WithSeriesLen);
+                                ac.with_update_groups(UpdateGroups::WithGroupsLen);
                                 Ok(ac)
                             }
                         }

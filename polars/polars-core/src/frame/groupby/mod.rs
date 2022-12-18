@@ -318,6 +318,10 @@ impl<'df> GroupBy<'df> {
         self.groups
     }
 
+    pub fn take_groups_mut(&mut self) -> GroupsProxy {
+        std::mem::take(&mut self.groups)
+    }
+
     pub fn keys_sliced(&self, slice: Option<(i64, usize)>) -> Vec<Series> {
         #[allow(unused_assignments)]
         // needed to keep the lifetimes valid for this scope

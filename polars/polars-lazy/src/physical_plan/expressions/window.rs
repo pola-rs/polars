@@ -1,13 +1,15 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
+use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
     default_join_ids, private_left_join_multiple_keys, JoinOptIds,
 };
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::POOL;
+use polars_core::utils::arrow::bitmap::MutableBitmap;
+use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_utils::sort::perfect_sort;
 
 use super::*;
@@ -30,16 +32,172 @@ pub struct WindowExpr {
 
 #[cfg_attr(debug_assertions, derive(Debug))]
 enum MapStrategy {
+    // Join by key, this the most expensive
+    // for reduced aggregations
     Join,
     // explode now
     Explode,
     // will be exploded by subsequent `.flatten()` call
     ExplodeLater,
+    // Use an argsort to map the values back
     Map,
     Nothing,
 }
 
 impl WindowExpr {
+    fn map_list_agg_by_argsort(
+        &self,
+        out_column: Series,
+        flattened: Series,
+        mut ac: AggregationContext,
+        gb: GroupBy,
+        state: &ExecutionState,
+        cache_key: &str,
+    ) -> PolarsResult<Series> {
+        // idx (new-idx, original-idx)
+        let mut idx_mapping = Vec::with_capacity(out_column.len());
+
+        // we already set this buffer so we can reuse the `original_idx` buffer
+        // that saves an allocation
+        let mut take_idx = vec![];
+
+        // groups are not changed, we can map by doing a standard argsort.
+        if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
+            let mut iter = 0..flattened.len() as IdxSize;
+            match ac.groups().as_ref() {
+                GroupsProxy::Idx(groups) => {
+                    for g in groups.all() {
+                        idx_mapping.extend(g.iter().copied().zip(&mut iter));
+                    }
+                }
+                GroupsProxy::Slice { groups, .. } => {
+                    for &[first, len] in groups {
+                        idx_mapping.extend((first..first + len).zip(&mut iter));
+                    }
+                }
+            }
+        }
+        // groups are changed, we use the new group indexes as arguments of the argsort
+        // and sort by the old indexes
+        else {
+            let mut original_idx = Vec::with_capacity(out_column.len());
+            match gb.get_groups() {
+                GroupsProxy::Idx(groups) => {
+                    for g in groups.all() {
+                        original_idx.extend_from_slice(g)
+                    }
+                }
+                GroupsProxy::Slice { groups, .. } => {
+                    for &[first, len] in groups {
+                        original_idx.extend(first..first + len)
+                    }
+                }
+            };
+
+            let mut original_idx_iter = original_idx.iter().copied();
+
+            match ac.groups().as_ref() {
+                GroupsProxy::Idx(groups) => {
+                    for g in groups.all() {
+                        idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
+                    }
+                }
+                GroupsProxy::Slice { groups, .. } => {
+                    for &[first, len] in groups {
+                        idx_mapping.extend((first..first + len).zip(&mut original_idx_iter));
+                    }
+                }
+            }
+            original_idx.clear();
+            take_idx = original_idx;
+        }
+        cache_gb(gb, state, cache_key);
+        // Safety:
+        // we only have unique indices ranging from 0..len
+        unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
+        let idx = IdxCa::from_vec("", take_idx);
+
+        // Safety:
+        // groups should always be in bounds.
+        unsafe { flattened.take_unchecked(&idx) }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn map_by_argsort(
+        &self,
+        df: &DataFrame,
+        out_column: Series,
+        flattened: Series,
+        mut ac: AggregationContext,
+        groupby_columns: &[Series],
+        gb: GroupBy,
+        state: &ExecutionState,
+        cache_key: &str,
+    ) -> PolarsResult<Series> {
+        // we use an argsort to map the values back
+
+        // This is a bit more complicated because the final group tuples may differ from the original
+        // so we use the original indices as idx values to argsort the original column
+        //
+        // The example below shows the naive version without group tuple mapping
+
+        // columns
+        // a b a a
+        //
+        // agg list
+        // [0, 2, 3]
+        // [1]
+        //
+        // flatten
+        //
+        // [0, 2, 3, 1]
+        //
+        // argsort
+        //
+        // [0, 3, 1, 2]
+        //
+        // take by argsorted indexes and voila groups mapped
+        // [0, 1, 2, 3]
+
+        if flattened.len() != df.height() {
+            let ca = out_column.list().unwrap();
+            let non_matching_group =
+                ca.into_iter()
+                    .zip(ac.groups().iter())
+                    .find(|(output, group)| {
+                        if let Some(output) = output {
+                            output.as_ref().len() != group.len()
+                        } else {
+                            false
+                        }
+                    });
+
+            return if let Some((output, group)) = non_matching_group {
+                let first = group.first();
+                let group = groupby_columns
+                    .iter()
+                    .map(|s| format!("{}", s.get(first as usize)))
+                    .collect::<Vec<_>>();
+                let err_msg = format!(
+                    "{}\n> Group: ",
+                    "The length of the window expression did not match that of the group."
+                );
+                let err_msg = column_delimited(err_msg, &group);
+                let err_msg = format!(
+                    "{}\n> Group length: {}\n> Output: '{:?}'",
+                    err_msg,
+                    group.len(),
+                    output.unwrap()
+                );
+                Err(expression_err!(err_msg, self.expr, ComputeError))
+            } else {
+                let msg = "The length of the window expression did not match that of the group.";
+                Err(expression_err!(msg, self.expr, ComputeError))
+            };
+        }
+        self.map_list_agg_by_argsort(out_column, flattened, ac, gb, state, cache_key)
+    }
+
     fn run_aggregation<'a>(
         &self,
         df: &DataFrame,
@@ -324,22 +482,11 @@ impl PhysicalExpr for WindowExpr {
 
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
-        let cache_gb = |gb: GroupBy| {
-            if state.cache_window() {
-                let groups = gb.take_groups();
-                let mut gt_map = state.group_tuples.lock().unwrap();
-                gt_map.insert(cache_key.clone(), groups);
-            } else {
-                // drop the group tuples to reduce allocated memory.
-                drop(gb);
-            }
-        };
-
         use MapStrategy::*;
         match self.determine_map_strategy(ac.agg_state(), sorted_keys, explicit_list_agg, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
-                cache_gb(gb);
+                cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.as_ref());
                 }
@@ -347,7 +494,7 @@ impl PhysicalExpr for WindowExpr {
             }
             Explode => {
                 let mut out = ac.aggregated().explode()?;
-                cache_gb(gb);
+                cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.as_ref());
                 }
@@ -355,192 +502,93 @@ impl PhysicalExpr for WindowExpr {
             }
             ExplodeLater => {
                 let mut out = ac.aggregated();
-                cache_gb(gb);
+                cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.as_ref());
                 }
                 Ok(out)
             }
             Map => {
-                // we use an argsort to map the values back
-
-                // This is a bit more complicated because the final group tuples may differ from the original
-                // so we use the original indices as idx values to argsort the original column
-                //
-                // The example below shows the naive version without group tuple mapping
-
-                // columns
-                // a b a a
-                //
-                // agg list
-                // [0, 2, 3]
-                // [1]
-                //
-                // flatten
-                //
-                // [0, 2, 3, 1]
-                //
-                // argsort
-                //
-                // [0, 3, 1, 2]
-                //
-                // take by argsorted indexes and voila groups mapped
-                // [0, 1, 2, 3]
-
                 // TODO!
                 // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
                 let flattened = out_column.explode()?;
-                if flattened.len() != df.height() {
-                    let ca = out_column.list().unwrap();
-                    let non_matching_group =
-                        ca.into_iter()
-                            .zip(ac.groups().iter())
-                            .find(|(output, group)| {
-                                if let Some(output) = output {
-                                    output.as_ref().len() != group.len()
-                                } else {
-                                    false
-                                }
-                            });
-
-                    return if let Some((output, group)) = non_matching_group {
-                        let first = group.first();
-                        let group = groupby_columns
-                            .iter()
-                            .map(|s| format!("{}", s.get(first as usize)))
-                            .collect::<Vec<_>>();
-                        let err_msg = format!(
-                            "{}\n> Group: ",
-                            "The length of the window expression did not match that of the group."
-                        );
-                        let err_msg = column_delimited(err_msg, &group);
-                        let err_msg = format!(
-                            "{}\n> Group length: {}\n> Output: '{:?}'",
-                            err_msg,
-                            group.len(),
-                            output.unwrap()
-                        );
-                        Err(expression_err!(err_msg, self.expr, ComputeError))
-                    } else {
-                        let msg =
-                            "The length of the window expression did not match that of the group.";
-                        Err(expression_err!(msg, self.expr, ComputeError))
-                    };
-                }
-
-                // idx (new-idx, original-idx)
-                let mut idx_mapping = Vec::with_capacity(out_column.len());
-
-                // we already set this buffer so we can reuse the `original_idx` buffer
-                // that saves an allocation
-                let mut take_idx = vec![];
-
-                // groups are not changed, we can map by doing a standard argsort.
-                if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
-                    let mut iter = 0..flattened.len() as IdxSize;
-                    match ac.groups().as_ref() {
-                        GroupsProxy::Idx(groups) => {
-                            for g in groups.all() {
-                                idx_mapping.extend(g.iter().copied().zip(&mut iter));
-                            }
-                        }
-                        GroupsProxy::Slice { groups, .. } => {
-                            for &[first, len] in groups {
-                                idx_mapping.extend((first..first + len).zip(&mut iter));
-                            }
-                        }
-                    }
-                }
-                // groups are changed, we use the new group indexes as arguments of the argsort
-                // and sort by the old indexes
-                else {
-                    let mut original_idx = Vec::with_capacity(out_column.len());
-                    match gb.get_groups() {
-                        GroupsProxy::Idx(groups) => {
-                            for g in groups.all() {
-                                original_idx.extend_from_slice(g)
-                            }
-                        }
-                        GroupsProxy::Slice { groups, .. } => {
-                            for &[first, len] in groups {
-                                original_idx.extend(first..first + len)
-                            }
-                        }
-                    };
-
-                    let mut original_idx_iter = original_idx.iter().copied();
-
-                    match ac.groups().as_ref() {
-                        GroupsProxy::Idx(groups) => {
-                            for g in groups.all() {
-                                idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
-                            }
-                        }
-                        GroupsProxy::Slice { groups, .. } => {
-                            for &[first, len] in groups {
-                                idx_mapping
-                                    .extend((first..first + len).zip(&mut original_idx_iter));
-                            }
-                        }
-                    }
-                    original_idx.clear();
-                    take_idx = original_idx;
-                }
-                cache_gb(gb);
-                // Safety:
-                // we only have unique indices ranging from 0..len
-                unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
-                let idx = IdxCa::from_vec("", take_idx);
-
-                // Safety:
-                // groups should always be in bounds.
-                unsafe { flattened.take_unchecked(&idx) }
+                // we extend the lifetime as we must convince the compiler that ac lives
+                // long enough. We drop `GrouBy` when we are done with `ac`.
+                let ac = unsafe {
+                    std::mem::transmute::<AggregationContext<'_>, AggregationContext<'static>>(ac)
+                };
+                self.map_by_argsort(
+                    df,
+                    out_column,
+                    flattened,
+                    ac,
+                    &groupby_columns,
+                    gb,
+                    state,
+                    &cache_key,
+                )
             }
             Join => {
                 let out_column = ac.aggregated();
-                let keys = gb.keys();
-                cache_gb(gb);
-
-                let get_join_tuples = || {
-                    if groupby_columns.len() == 1 {
-                        // group key from right column
-                        let right = &keys[0];
-                        groupby_columns[0].hash_join_left(right).1
-                    } else {
-                        let df_right = DataFrame::new_no_checks(keys);
-                        let df_left = DataFrame::new_no_checks(groupby_columns);
-                        private_left_join_multiple_keys(&df_left, &df_right, None, None).1
+                // we try to flatten/extend the array by repeating the aggregated value n times
+                // where n is the number of members in that group. That way we can try to reuse
+                // the same map by argsort logic as done for listed aggregations
+                match (
+                    &ac.update_groups,
+                    set_by_groups(&out_column, &ac.groups, df.height()),
+                ) {
+                    // for aggregations that reduce like sum, mean, first and are numeric
+                    // we take the group locations to directly map them to the right place
+                    (UpdateGroups::No, Some(out)) => {
+                        cache_gb(gb, state, &cache_key);
+                        Ok(out)
                     }
-                };
+                    (_, _) => {
+                        let keys = gb.keys();
+                        cache_gb(gb, state, &cache_key);
 
-                // try to get cached join_tuples
-                let join_opt_ids = if state.cache_window() {
-                    let mut jt_map = state.join_tuples.lock().unwrap();
-                    // we run sequential and partitioned
-                    // and every partition run the cache should be empty so we expect a max of 1.
-                    debug_assert!(jt_map.len() <= 1);
-                    if let Some(opt_join_tuples) = jt_map.get_mut(&cache_key) {
-                        std::mem::replace(opt_join_tuples, default_join_ids())
-                    } else {
-                        get_join_tuples()
+                        let get_join_tuples = || {
+                            if groupby_columns.len() == 1 {
+                                // group key from right column
+                                let right = &keys[0];
+                                groupby_columns[0].hash_join_left(right).1
+                            } else {
+                                let df_right = DataFrame::new_no_checks(keys);
+                                let df_left = DataFrame::new_no_checks(groupby_columns);
+                                private_left_join_multiple_keys(&df_left, &df_right, None, None).1
+                            }
+                        };
+
+                        // try to get cached join_tuples
+                        let join_opt_ids = if state.cache_window() {
+                            let mut jt_map = state.join_tuples.lock().unwrap();
+                            // we run sequential and partitioned
+                            // and every partition run the cache should be empty so we expect a max of 1.
+                            debug_assert!(jt_map.len() <= 1);
+                            if let Some(opt_join_tuples) = jt_map.get_mut(&cache_key) {
+                                std::mem::replace(opt_join_tuples, default_join_ids())
+                            } else {
+                                get_join_tuples()
+                            }
+                        } else {
+                            get_join_tuples()
+                        };
+
+                        let mut out = materialize_column(&join_opt_ids, &out_column);
+
+                        if let Some(name) = &self.out_name {
+                            out.rename(name.as_ref());
+                        }
+
+                        if state.cache_window() {
+                            let mut jt_map = state.join_tuples.lock().unwrap();
+                            jt_map.insert(cache_key, join_opt_ids);
+                        }
+
+                        Ok(out)
                     }
-                } else {
-                    get_join_tuples()
-                };
-
-                let mut out = materialize_column(&join_opt_ids, &out_column);
-
-                if let Some(name) = &self.out_name {
-                    out.rename(name.as_ref());
                 }
-
-                if state.cache_window() {
-                    let mut jt_map = state.join_tuples.lock().unwrap();
-                    jt_map.insert(cache_key, join_opt_ids);
-                }
-
-                Ok(out)
             }
         }
     }
@@ -590,5 +638,142 @@ fn materialize_column(join_opt_ids: &JoinOptIds, out_column: &Series) -> Series 
         out_column.take_opt_iter_unchecked(
             &mut join_opt_ids.iter().map(|&opt_i| opt_i.map(|i| i as usize)),
         )
+    }
+}
+
+fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
+    if state.cache_window() {
+        let groups = gb.take_groups();
+        let mut gt_map = state.group_tuples.lock().unwrap();
+        gt_map.insert(cache_key.to_string(), groups);
+    }
+}
+
+/// Simple reducing aggregation can be set by the groups
+fn set_by_groups(s: &Series, groups: &GroupsProxy, len: usize) -> Option<Series> {
+    if s.dtype().to_physical().is_numeric() {
+        let dtype = s.dtype();
+        let s = s.to_physical_repr();
+
+        macro_rules! dispatch {
+            ($ca:expr) => {{
+                set_numeric($ca, groups, len)
+            }};
+        }
+        downcast_as_macro_arg_physical!(&s, dispatch).map(|s| s.cast(dtype).unwrap())
+    } else {
+        None
+    }
+}
+
+fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy, len: usize) -> Option<Series>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+{
+    let mut idx_mapping = Vec::with_capacity(len);
+    let mut iter = 0..len as IdxSize;
+    match groups {
+        GroupsProxy::Idx(groups) => {
+            for g in groups.all() {
+                idx_mapping.extend((&mut iter).take(g.len()).zip(g.iter().copied()));
+            }
+        }
+        GroupsProxy::Slice { groups, .. } => {
+            for &[first, len] in groups {
+                idx_mapping.extend((&mut iter).take(len as usize).zip(first..first + len));
+            }
+        }
+    }
+
+    if ca.null_count() == 0 {
+        let mut values = Vec::with_capacity(len);
+        let ptr = values.as_mut_ptr() as *mut T::Native;
+
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                // this should always succeed as we don't expect any chunks after an aggregation
+                let agg_vals = ca.cont_slice().ok()?;
+                agg_vals.iter().zip(groups.all().iter()).for_each(|(v, g)| {
+                    for idx in g {
+                        debug_assert!((*idx as usize) < len);
+                        unsafe { *ptr.add(*idx as usize) = *v }
+                    }
+                })
+            }
+            GroupsProxy::Slice { groups, .. } => {
+                // this should always succeed as we don't expect any chunks after an aggregation
+                let agg_vals = ca.cont_slice().ok()?;
+                for (v, [start, g_len]) in agg_vals.iter().zip(groups.iter()) {
+                    let start = *start as usize;
+                    let end = start + *g_len as usize;
+                    for idx in start..end {
+                        debug_assert!(idx < len);
+                        unsafe { *ptr.add(idx) = *v }
+                    }
+                }
+            }
+        }
+
+        // safety: we have written all slots
+        unsafe { values.set_len(len) }
+        Some(ChunkedArray::new_vec(ca.name(), values).into_series())
+    } else {
+        let mut values = Vec::with_capacity(len);
+        let mut validity = MutableBitmap::with_capacity(len);
+        let ptr = values.as_mut_ptr() as *mut T::Native;
+
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                ca.into_iter()
+                    .zip(groups.all().iter())
+                    .for_each(|(opt_v, g)| {
+                        for idx in g {
+                            debug_assert!((*idx as usize) < len);
+                            unsafe {
+                                let valid = match opt_v {
+                                    Some(v) => {
+                                        *ptr.add(*idx as usize) = v;
+                                        true
+                                    }
+                                    None => {
+                                        *ptr.add(*idx as usize) = T::Native::default();
+                                        false
+                                    }
+                                };
+                                validity.push_unchecked(valid)
+                            }
+                        }
+                    })
+            }
+            GroupsProxy::Slice { groups, .. } => {
+                for (opt_v, [start, g_len]) in ca.into_iter().zip(groups.iter()) {
+                    let start = *start as usize;
+                    let end = start + *g_len as usize;
+                    for idx in start..end {
+                        debug_assert!(idx < len);
+                        unsafe {
+                            let valid = match opt_v {
+                                Some(v) => {
+                                    *ptr.add(idx) = v;
+                                    true
+                                }
+                                None => {
+                                    *ptr.add(idx) = T::Native::default();
+                                    false
+                                }
+                            };
+                            validity.push_unchecked(valid)
+                        }
+                    }
+                }
+            }
+        }
+        let arr = PrimitiveArray::new(
+            T::get_dtype().to_physical().to_arrow(),
+            values.into(),
+            Some(validity.into()),
+        );
+        Some(Series::try_from((ca.name(), arr.boxed())).unwrap())
     }
 }
