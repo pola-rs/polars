@@ -112,10 +112,16 @@ impl<'a> AnyValue<'a> {
             AnyValue::Struct(idx, arr, flds) => {
                 let idx = *idx;
                 unsafe {
-                    arr.values()
-                        .iter()
-                        .zip(*flds)
-                        .map(move |(arr, fld)| arr_to_any_value(&**arr, idx, fld.data_type()))
+                    arr.values().iter().zip(*flds).map(move |(arr, fld)| {
+                        // TODO! this is hacky. Investigate if we only should put physical types
+                        // into structs
+                        if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
+                            let keys = arr.keys();
+                            arr_to_any_value(keys, idx, fld.data_type())
+                        } else {
+                            arr_to_any_value(&**arr, idx, fld.data_type())
+                        }
+                    })
                 }
             }
             _ => unreachable!(),
