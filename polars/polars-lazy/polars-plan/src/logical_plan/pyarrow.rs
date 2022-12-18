@@ -1,3 +1,5 @@
+use polars_core::datatypes::{AnyValue, DataType};
+
 use crate::prelude::*;
 
 // convert to a pyarrow expression that can be evaluated with pythons eval
@@ -23,6 +25,24 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             } else if dtype.is_integer() {
                 let val = av.extract::<i64>()?;
                 Some(format!("{}", val))
+            } else if matches!(dtype, DataType::Utf8) {
+                let val = match &av {
+                    AnyValue::Utf8(s) => s,
+                    AnyValue::Utf8Owned(s) => s.as_str(),
+                    _ => unreachable!(),
+                };
+                Some(val.to_string())
+            } else if matches!(dtype, DataType::Boolean) {
+                if let AnyValue::Boolean(val) = av {
+                    // python bools are capitalized
+                    if val {
+                        Some("True".to_string())
+                    } else {
+                        Some("False".to_string())
+                    }
+                } else {
+                    None
+                }
             } else {
                 None
             }
