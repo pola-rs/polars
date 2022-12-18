@@ -253,7 +253,7 @@ impl Duration {
         self.weeks
     }
 
-    /// Returns the nanoseconds from the `Duration` without the weeks or months part
+    /// Returns the nanoseconds from the `Duration` without the weeks or months part.
     pub fn nanoseconds(&self) -> i64 {
         self.nsecs
     }
@@ -425,7 +425,8 @@ impl Duration {
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
             new_t = datetime_to_timestamp(dt);
         } else if d.weeks > 0 {
-            new_t += nsecs_to_unit(self.weeks * NS_WEEK);
+            let nsecs = nsecs_to_unit(self.weeks * NS_WEEK);
+            new_t += if d.negative { -nsecs } else { nsecs };
         }
         new_t
     }
@@ -516,5 +517,19 @@ mod test {
         assert!(out.negative);
         let out = Duration::parse("5w");
         assert_eq!(out.weeks(), 5);
+    }
+
+    #[test]
+    fn test_add_ns() {
+        let t = 1;
+        let seven_days = Duration::parse("7d");
+        let one_week = Duration::parse("1w");
+
+        assert_eq!(seven_days.add_ns(t), one_week.add_ns(t));
+
+        let seven_days_negative = Duration::parse("-7d");
+        let one_week_negative = Duration::parse("-1w");
+
+        assert_eq!(seven_days_negative.add_ns(t), one_week_negative.add_ns(t));
     }
 }

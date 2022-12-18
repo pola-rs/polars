@@ -170,7 +170,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
     tu: TimeUnit,
     start_offset: usize,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
-    debug_assert!(offset.nanoseconds() >= period.nanoseconds());
+    debug_assert!(offset.duration_ns() >= period.duration_ns());
     debug_assert!(offset.negative);
 
     let add = match tu {
