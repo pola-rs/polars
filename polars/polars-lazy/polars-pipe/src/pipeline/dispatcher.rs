@@ -1,6 +1,5 @@
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::utils::concat_df_unchecked;
 use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
@@ -98,12 +97,7 @@ impl PipeLine {
                     if operator_pipe.is_empty() {
                         sink.sink(ec, chunk)
                     } else {
-                        match self.push_operators(chunk, ec, operator_pipe)? {
-                            OperatorResult::Finished(chunk) => sink.sink(ec, chunk),
-                            // probably empty chunk?
-                            OperatorResult::NeedsNewData => Ok(SinkResult::CanHaveMoreInput),
-                            _ => todo!(),
-                        }
+                        self.push_operators(chunk, ec, operator_pipe, sink)
                     }
                 })
                 // only collect failed and finished messages as there should be acted upon those
@@ -124,10 +118,10 @@ impl PipeLine {
         chunk: DataChunk,
         ec: &PExecutionContext,
         operators: &mut [Box<dyn Operator>],
-    ) -> PolarsResult<OperatorResult> {
+        sink: &mut Box<dyn Sink>,
+    ) -> PolarsResult<SinkResult> {
         debug_assert!(!operators.is_empty());
         let mut in_process = vec![];
-        let mut out = vec![];
 
         let operator_offset = 0usize;
         in_process.push((operator_offset, chunk));
@@ -135,9 +129,8 @@ impl PipeLine {
         while let Some((op_i, chunk)) = in_process.pop() {
             match operators.get_mut(op_i) {
                 None => {
-                    if chunk.data.height() > 0 || out.is_empty() {
-                        // final chunk of the pipeline
-                        out.push(chunk)
+                    if let SinkResult::Finished = sink.sink(ec, chunk)? {
+                        return Ok(SinkResult::Finished);
                     }
                 }
                 Some(op) => {
@@ -150,6 +143,8 @@ impl PipeLine {
                             // but first push the output in the next operator
                             // is a join can produce many rows, we want the filter to
                             // be executed in between.
+                            // or sink into a slice so that we get sink::finished
+                            // before we grow the stack with ever more coming chunks
                             in_process.push((op_i + 1, output_chunk));
                         }
                         OperatorResult::NeedsNewData => {
@@ -159,15 +154,7 @@ impl PipeLine {
                 }
             }
         }
-        let out = match out.len() {
-            0 => OperatorResult::NeedsNewData,
-            1 => OperatorResult::Finished(out.pop().unwrap()),
-            _ => {
-                let data = concat_df_unchecked(out.iter().map(|chunk| &chunk.data));
-                OperatorResult::Finished(out[out.len() - 1].with_data(data))
-            }
-        };
-        Ok(out)
+        Ok(SinkResult::CanHaveMoreInput)
     }
 
     fn set_sources(&mut self, df: DataFrame) {
