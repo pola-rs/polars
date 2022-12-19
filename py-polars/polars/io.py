@@ -880,7 +880,7 @@ def read_parquet(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     low_memory: bool = False,
-    pyarrow_options: dict[str, object] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -1121,8 +1121,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: Literal[None],
     sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, object] | None,
-    read_csv_options: dict[str, object] | None,
+    xlsx2csv_options: dict[str, Any] | None,
+    read_csv_options: dict[str, Any] | None,
 ) -> dict[str, DataFrame]:
     ...
 
@@ -1132,8 +1132,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: Literal[None],
     sheet_name: str,
-    xlsx2csv_options: dict[str, object] | None = None,
-    read_csv_options: dict[str, object] | None = None,
+    xlsx2csv_options: dict[str, Any] | None = None,
+    read_csv_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     ...
 
@@ -1143,8 +1143,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int,
     sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, object] | None = None,
-    read_csv_options: dict[str, object] | None = None,
+    xlsx2csv_options: dict[str, Any] | None = None,
+    read_csv_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     ...
 
@@ -1153,8 +1153,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
-    xlsx2csv_options: dict[str, object] | None = None,
-    read_csv_options: dict[str, object] | None = None,
+    xlsx2csv_options: dict[str, Any] | None = None,
+    read_csv_options: dict[str, Any] | None = None,
 ) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
@@ -1263,7 +1263,7 @@ def _read_excel_sheet(
     parser: Any,
     sheet_id: int | None,
     sheet_name: str | None,
-    read_csv_options: dict[str, object] | None,
+    read_csv_options: dict[str, Any] | None,
 ) -> DataFrame:
     csv_buffer = StringIO()
 
@@ -1281,7 +1281,7 @@ def _get_delta_lake_table(
     table_path: str,
     version: int | None = None,
     storage_options: dict[str, Any] | None = None,
-    delta_table_options: dict[str, object] | None = None,
+    delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
     """
     Initialise a Delta lake table for use in read and scan operations.
@@ -1333,8 +1333,8 @@ def scan_delta(
     version: int | None = None,
     raw_filesystem: pa.fs.FileSystem | None = None,
     storage_options: dict[str, Any] | None = None,
-    delta_table_options: dict[str, object] | None = None,
-    pyarrow_options: dict[str, object] | None = None,
+    delta_table_options: dict[str, Any] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -1508,8 +1508,8 @@ def read_delta(
     version: int | None = None,
     columns: list[str] | None = None,
     storage_options: dict[str, Any] | None = None,
-    delta_table_options: dict[str, object] | None = None,
-    pyarrow_options: dict[str, object] | None = None,
+    delta_table_options: dict[str, Any] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Reads into a DataFrame from a Delta lake table.
