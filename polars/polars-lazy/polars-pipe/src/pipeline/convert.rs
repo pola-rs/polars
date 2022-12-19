@@ -130,43 +130,50 @@ where
             left_on,
             right_on,
             ..
-        } => match &options.how {
-            #[cfg(feature = "cross_join")]
-            JoinType::Cross => Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>,
-            join_type @ JoinType::Inner | join_type @ JoinType::Left => {
-                let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
-                let join_columns_left = Arc::new(exprs_to_physical(
-                    left_on,
-                    expr_arena,
-                    to_physical,
-                    Some(input_schema_left.as_ref()),
-                )?);
-                let input_schema_right = lp_arena.get(*input_right).schema(lp_arena);
-                let join_columns_right = Arc::new(exprs_to_physical(
-                    right_on,
-                    expr_arena,
-                    to_physical,
-                    Some(input_schema_right.as_ref()),
-                )?);
+        } => {
+            // slice pushdown optimization should not set this one in a streaming query.
+            assert!(options.slice.is_none());
 
-                let swapped = swap_join_order(options);
+            match &options.how {
+                #[cfg(feature = "cross_join")]
+                JoinType::Cross => {
+                    Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>
+                }
+                join_type @ JoinType::Inner | join_type @ JoinType::Left => {
+                    let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
+                    let join_columns_left = Arc::new(exprs_to_physical(
+                        left_on,
+                        expr_arena,
+                        to_physical,
+                        Some(input_schema_left.as_ref()),
+                    )?);
+                    let input_schema_right = lp_arena.get(*input_right).schema(lp_arena);
+                    let join_columns_right = Arc::new(exprs_to_physical(
+                        right_on,
+                        expr_arena,
+                        to_physical,
+                        Some(input_schema_right.as_ref()),
+                    )?);
 
-                let (join_columns_left, join_columns_right) = if swapped {
-                    (join_columns_right, join_columns_left)
-                } else {
-                    (join_columns_left, join_columns_right)
-                };
+                    let swapped = swap_join_order(options);
 
-                Box::new(GenericBuild::new(
-                    Arc::from(options.suffix.as_ref()),
-                    join_type.clone(),
-                    swapped,
-                    join_columns_left,
-                    join_columns_right,
-                ))
+                    let (join_columns_left, join_columns_right) = if swapped {
+                        (join_columns_right, join_columns_left)
+                    } else {
+                        (join_columns_left, join_columns_right)
+                    };
+
+                    Box::new(GenericBuild::new(
+                        Arc::from(options.suffix.as_ref()),
+                        join_type.clone(),
+                        swapped,
+                        join_columns_left,
+                        join_columns_right,
+                    ))
+                }
+                _ => unimplemented!(),
             }
-            _ => unimplemented!(),
-        },
+        }
         Slice { offset, len, .. } => {
             let slice = SliceSink::new(*offset as u64, *len as usize);
             Box::new(slice) as Box<dyn Sink>

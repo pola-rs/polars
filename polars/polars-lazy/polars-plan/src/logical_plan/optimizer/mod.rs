@@ -62,6 +62,7 @@ pub fn optimize(
     let type_coercion = opt_state.type_coercion;
     let simplify_expr = opt_state.simplify_expr;
     let slice_pushdown = opt_state.slice_pushdown;
+    let streaming = opt_state.streaming;
     #[cfg(feature = "cse")]
     let cse = opt_state.common_subplan_elimination;
 
@@ -116,7 +117,7 @@ pub fn optimize(
     rules.push(Box::new(DelayRechunk::new()));
 
     if slice_pushdown {
-        let slice_pushdown_opt = SlicePushDown {};
+        let slice_pushdown_opt = SlicePushDown::new(streaming);
         let alp = lp_arena.take(lp_top);
         let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
 
