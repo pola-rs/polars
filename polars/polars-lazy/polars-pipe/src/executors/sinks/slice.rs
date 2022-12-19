@@ -1,8 +1,9 @@
 use std::any::Any;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use polars_core::error::PolarsResult;
+use polars_utils::atomic::SyncCounter;
 
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
@@ -10,8 +11,8 @@ use crate::operators::{
 
 // Ensure the data is return in the order it was streamed
 pub struct SliceSink {
-    offset: AtomicU64,
-    current_len: AtomicU64,
+    offset: SyncCounter,
+    current_len: SyncCounter,
     len: usize,
     chunks: Arc<Mutex<Vec<DataChunk>>>,
 }
@@ -19,8 +20,8 @@ pub struct SliceSink {
 impl Clone for SliceSink {
     fn clone(&self) -> Self {
         Self {
-            offset: AtomicU64::new(self.offset.load(Ordering::Acquire)),
-            current_len: AtomicU64::new(self.current_len.load(Ordering::Acquire)),
+            offset: self.offset.clone(),
+            current_len: self.current_len.clone(),
             len: self.len,
             chunks: self.chunks.clone(),
         }
@@ -29,10 +30,10 @@ impl Clone for SliceSink {
 
 impl SliceSink {
     pub fn new(offset: u64, len: usize) -> SliceSink {
-        let offset = AtomicU64::new(offset);
+        let offset = SyncCounter::new(offset as usize);
         SliceSink {
             offset,
-            current_len: AtomicU64::new(0),
+            current_len: SyncCounter::new(0),
             len,
             chunks: Default::default(),
         }
@@ -57,8 +58,8 @@ impl Sink for SliceSink {
 
             // we are under a mutex lock here
             // so ordering doesn't seem too important
-            let current_offset = self.offset.load(Ordering::Acquire) as usize;
-            let current_len = self.current_len.fetch_add(height as u64, Ordering::Acquire) as usize;
+            let current_offset = self.offset.load(Ordering::Acquire);
+            let current_len = self.current_len.fetch_add(height, Ordering::Acquire);
 
             // always push as they come in random order
 
@@ -89,6 +90,13 @@ impl Sink for SliceSink {
         let chunks = std::mem::take(chunks.as_mut());
         let df = chunks_to_df_unchecked(chunks);
         let offset = self.offset.load(Ordering::Acquire) as i64;
+
+        // drop the counters
+        unsafe {
+            self.offset.manual_drop();
+            self.current_len.manual_drop();
+        }
+
         Ok(FinalizedSink::Finished(df.slice(offset, self.len)))
     }
     fn as_any(&mut self) -> &mut dyn Any {

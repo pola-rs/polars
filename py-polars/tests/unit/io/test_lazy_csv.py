@@ -86,3 +86,8 @@ def test_lazy_n_rows(foods_csv: str) -> None:
         "fats_g": [0.0],
         "sugars_g": [11],
     }
+
+
+def test_scan_slice_streaming(foods_csv: str) -> None:
+    df = pl.scan_csv(foods_csv).head(5).collect(streaming=True)
+    assert df.shape == (5, 4)

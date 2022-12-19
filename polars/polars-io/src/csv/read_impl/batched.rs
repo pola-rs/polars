@@ -88,7 +88,7 @@ impl<'a> BatchedCsvReader<'a> {
             return Ok(None);
         }
         if let Some(n_rows) = self.n_rows {
-            if n_rows as IdxSize >= self.rows_read {
+            if self.rows_read >= n_rows as IdxSize {
                 return Ok(None);
             }
         }
