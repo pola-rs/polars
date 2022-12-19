@@ -2236,3 +2236,29 @@ def test_truncate_by_multiple_weeks() -> None:
         "5w": [date(2022, 3, 21), date(2022, 10, 31)],
         "17w": [date(2021, 12, 27), date(2022, 8, 8)],
     }
+
+
+def test_round_by_week() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.Series(
+                [
+                    # Sunday and Monday
+                    "1998-04-12",
+                    "2022-11-28",
+                ]
+            ).str.strptime(pl.Date, "%Y-%m-%d")
+        }
+    )
+
+    assert (
+        df.select(
+            [
+                pl.col("date").dt.round("7d").alias("7d"),
+                pl.col("date").dt.round("1w").alias("1w"),
+            ]
+        )
+    ).to_dict(False) == {
+        "7d": [date(1998, 4, 9), date(2022, 12, 1)],
+        "1w": [date(1998, 4, 13), date(2022, 11, 28)],
+    }
