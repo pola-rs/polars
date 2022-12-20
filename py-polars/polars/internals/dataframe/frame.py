@@ -170,7 +170,7 @@ class DataFrame:
     Notice that the dtype is automatically inferred as a polars Int64:
 
     >>> df.dtypes
-    [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Int64'>]
+    [Int64, Int64]
 
     In order to specify dtypes for your columns, initialize the DataFrame with a list
     of typed Series:
@@ -944,7 +944,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.dtypes
-        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
+        [Int64, Float64, Utf8]
         >>> df
         shape: (3, 3)
         ┌─────┬─────┬─────┐
@@ -981,7 +981,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.schema
-        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
+        {'foo': Int64, 'bar': Float64, 'ham': Utf8}
 
         """  # noqa: E501
         return dict(zip(self.columns, self.dtypes))

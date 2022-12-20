@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Sequence, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     DataType,
+    DataTypeClass,
     Date,
     Datetime,
     Duration,
@@ -202,11 +202,8 @@ def col(
     if isinstance(name, pli.Series):
         name = name.to_list()  # type: ignore[assignment]
 
-    # note: we need the typing.cast call here twice to make mypy happy under Python 3.7
-    # On Python 3.10, it is not needed. We use cast as it works across versions,
-    # ignoring the typing error would lead to unneeded ignores under Python 3.10.
-    if isclass(name) and issubclass(cast(type, name), DataType):
-        name = [cast(type, name)]
+    if isinstance(name, DataTypeClass):
+        name = [name]
 
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))

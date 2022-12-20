@@ -135,7 +135,7 @@ def test_getitem_errs() -> None:
     with pytest.raises(
         ValueError,
         match=r"Cannot __getitem__ on Series of dtype: "
-        r"'<class 'polars.datatypes.Int64'>' with argument: "
+        r"'Int64' with argument: "
         r"'{'strange'}' of type: '<class 'set'>'.",
     ):
         df["a"][{"strange"}]

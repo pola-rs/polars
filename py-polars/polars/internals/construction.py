@@ -81,7 +81,7 @@ def include_unknowns(
     schema: dict[str, PolarsDataType], cols: Sequence[str]
 ) -> dict[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
-    return {col: (schema.get(col, Unknown) or Unknown) for col in cols}
+    return {col: schema.get(col, Unknown) for col in cols}
 
 
 ################################
@@ -364,14 +364,14 @@ def sequence_to_pyseries(
                 # pass; we create an object if we get here
             else:
                 try:
-                    to_arrow_type = (
-                        dtype_to_arrow_type
-                        if is_polars_dtype(nested_dtype)
-                        else py_type_to_arrow_type
-                    )
-                    nested_arrow_dtype = to_arrow_type(
-                        nested_dtype  # type: ignore[arg-type]
-                    )
+                    if is_polars_dtype(nested_dtype):
+                        nested_arrow_dtype = dtype_to_arrow_type(
+                            nested_dtype  # type: ignore[arg-type]
+                        )
+                    else:
+                        nested_arrow_dtype = py_type_to_arrow_type(
+                            nested_dtype  # type: ignore[arg-type]
+                        )
                 except ValueError:  # pragma: no cover
                     return sequence_from_anyvalue_or_object(name, values)
                 try:
@@ -550,7 +550,7 @@ def _unpack_columns(
     return (
         column_names or None,  # type: ignore[return-value]
         {
-            lookup.get(col[0], col[0]): col[1]
+            lookup.get(col[0], col[0]): col[1]  # type: ignore[misc]
             for col in (columns or [])
             if not isinstance(col, str) and col[1]
         },

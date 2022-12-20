@@ -160,7 +160,7 @@ class Series:
     Notice that the dtype is automatically inferred as a polars Int64:
 
     >>> s.dtype
-    <class 'polars.datatypes.Int64'>
+    Int64
 
     Constructing a Series with a specific dtype:
 
@@ -197,10 +197,10 @@ class Series:
         self,
         name: str | ArrayLike | None = None,
         values: ArrayLike | None = None,
-        dtype: type[DataType] | DataType | None = None,
+        dtype: PolarsDataType | None = None,
         strict: bool = True,
         nan_to_null: bool = False,
-        dtype_if_empty: type[DataType] | DataType | None = None,
+        dtype_if_empty: PolarsDataType | None = None,
     ):
 
         # Handle case where values are passed as the first argument
@@ -309,7 +309,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.dtype
-        <class 'polars.datatypes.Int64'>
+        Int64
 
         """
         return self._s.dtype()
@@ -2457,9 +2457,7 @@ class Series:
 
     def cast(
         self,
-        dtype: (
-            type[DataType] | type[int] | type[float] | type[str] | type[bool] | DataType
-        ),
+        dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
         strict: bool = True,
     ) -> Series:
         """

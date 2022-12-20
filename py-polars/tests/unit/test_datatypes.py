@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import inspect
 import pickle
 from datetime import datetime, timedelta
+
+import pytest
 
 import polars as pl
 from polars import datatypes
@@ -13,10 +14,10 @@ def test_dtype_init_equivalence() -> None:
     all_datatypes = {
         dtype
         for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
-        if inspect.isclass(dtype) and issubclass(dtype, datatypes.DataType)
+        if isinstance(dtype, datatypes.DataTypeClass)
     }
     for dtype in all_datatypes:
-        assert dtype == dtype()  # type: ignore[comparison-overlap]
+        assert dtype == dtype()
 
 
 def test_dtype_temporal_units() -> None:
@@ -63,3 +64,25 @@ def test_dtypes_hashable() -> None:
     assert len(set(all_dtypes + all_dtypes)) == len(all_dtypes)
     assert len({pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")}) == 3
     assert len({pl.List, pl.List(pl.Int16), pl.List(pl.Int32), pl.List(pl.Int64)}) == 4
+
+
+@pytest.mark.parametrize(
+    ["dtype", "representation"],
+    [
+        (pl.Boolean, "Boolean"),
+        (pl.Datetime, "Datetime"),
+        (
+            pl.Datetime(time_zone="Europe/Amsterdam"),
+            "Datetime(tu='us', tz='Europe/Amsterdam')",
+        ),
+        (pl.List(pl.Int8), "List(Int8)"),
+        (pl.List(pl.Duration(time_unit="ns")), "List(Duration(tu='ns'))"),
+        (pl.Struct, "Struct"),
+        (
+            pl.Struct({"name": pl.Utf8, "ids": pl.List(pl.UInt32)}),
+            "Struct([Field('name': Utf8), Field('ids': List(UInt32))])",
+        ),
+    ],
+)
+def test_repr(dtype: pl.PolarsDataType, representation: str) -> None:
+    assert repr(dtype) == representation

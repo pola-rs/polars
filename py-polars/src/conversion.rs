@@ -325,7 +325,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
         let type_name = ob.get_type().name()?;
 
         let dtype = match type_name {
-            "type" => {
+            "DataTypeClass" => {
                 // just the class, not an object
                 let name = ob.getattr("__name__")?.str()?.to_str()?;
                 match name {

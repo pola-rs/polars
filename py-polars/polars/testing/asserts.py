@@ -4,7 +4,14 @@ from functools import reduce
 from typing import Any
 
 import polars.internals as pli
-from polars.datatypes import Boolean, Categorical, Float32, Float64, dtype_to_py_type
+from polars.datatypes import (
+    Boolean,
+    Categorical,
+    DataTypeClass,
+    Float32,
+    Float64,
+    dtype_to_py_type,
+)
 
 
 def assert_frame_equal(
@@ -243,7 +250,7 @@ def _getattr_multi(obj: object, op: str) -> Any:
 def is_categorical_dtype(data_type: Any) -> bool:
     """Check if the input is a polars Categorical dtype."""
     return (
-        type(data_type) is type
+        type(data_type) is DataTypeClass
         and issubclass(data_type, Categorical)
         or isinstance(data_type, Categorical)
     )

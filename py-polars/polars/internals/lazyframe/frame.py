@@ -395,7 +395,7 @@ class LazyFrame:
         ...     }
         ... ).lazy()
         >>> lf.dtypes
-        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
+        [Int64, Float64, Utf8]
 
         See Also
         --------
@@ -419,9 +419,9 @@ class LazyFrame:
         ...     }
         ... ).lazy()
         >>> lf.schema
-        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
+        {'foo': Int64, 'bar': Float64, 'ham': Utf8}
 
-        """  # noqa: E501
+        """
         return self._ldf.schema()
 
     @property
