@@ -93,7 +93,7 @@ where
                     assert_eq!(reinterpreted_buf.len(), len);
                     assert_eq!(reinterpreted_buf.offset(), offset);
                     assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
-                    Box::new(PrimitiveArray::from_data(
+                    Box::new(PrimitiveArray::new(
                         ArrowDataType::UInt64,
                         reinterpreted_buf,
                         array.validity().cloned(),
@@ -129,7 +129,7 @@ where
                     assert_eq!(reinterpreted_buf.len(), len);
                     assert_eq!(reinterpreted_buf.offset(), offset);
                     assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
-                    Box::new(PrimitiveArray::from_data(
+                    Box::new(PrimitiveArray::new(
                         ArrowDataType::UInt32,
                         reinterpreted_buf,
                         array.validity().cloned(),
@@ -210,7 +210,7 @@ impl UInt64Chunked {
                 assert_eq!(reinterpreted_buf.len(), len);
                 assert_eq!(reinterpreted_buf.offset(), offset);
                 assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
-                Box::new(PrimitiveArray::from_data(
+                Box::new(PrimitiveArray::new(
                     ArrowDataType::Float64,
                     reinterpreted_buf,
                     array.validity().cloned(),
@@ -239,7 +239,7 @@ impl UInt32Chunked {
                 assert_eq!(reinterpreted_buf.len(), len);
                 assert_eq!(reinterpreted_buf.offset(), offset);
                 assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
-                Box::new(PrimitiveArray::from_data(
+                Box::new(PrimitiveArray::new(
                     ArrowDataType::Float32,
                     reinterpreted_buf,
                     array.validity().cloned(),

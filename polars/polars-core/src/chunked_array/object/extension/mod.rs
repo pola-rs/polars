@@ -130,7 +130,7 @@ pub(crate) fn create_extension<
         None
     };
 
-    let array = FixedSizeBinaryArray::from_data(extension_type, buf, validity);
+    let array = FixedSizeBinaryArray::new(extension_type, buf, validity);
 
     // Safety:
     // we just heap allocated the ExtensionSentinel, so its alive.

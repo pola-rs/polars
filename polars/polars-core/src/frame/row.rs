@@ -621,7 +621,7 @@ where
                     None
                 };
 
-                let arr = PrimitiveArray::<T::Native>::from_data(
+                let arr = PrimitiveArray::<T::Native>::new(
                     T::get_dtype().to_arrow(),
                     values.into(),
                     validity,

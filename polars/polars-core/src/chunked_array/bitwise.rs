@@ -28,7 +28,7 @@ where
                     .map(|(l, r)| *l & *r)
                     .collect_trusted::<Vec<_>>();
 
-                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
+                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
                 Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
@@ -60,7 +60,7 @@ where
                     .map(|(l, r)| *l | *r)
                     .collect_trusted::<Vec<_>>();
 
-                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
+                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
                 Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
@@ -92,7 +92,7 @@ where
                     .map(|(l, r)| l.bitxor(*r))
                     .collect_trusted::<Vec<_>>();
 
-                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
+                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
                 Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();

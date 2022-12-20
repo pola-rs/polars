@@ -35,7 +35,7 @@ where
             }
         });
 
-    PrimitiveArray::from_data(array.data_type().clone(), av.into(), None)
+    PrimitiveArray::new(array.data_type().clone(), av.into(), None)
 }
 
 /// Set values in a primitive array based on a mask array. This is fast when large chunks of bits are set or unset.
@@ -64,7 +64,7 @@ pub fn set_with_mask<T: NativeType>(
         valid.bitor(mask_bitmap)
     });
 
-    PrimitiveArray::from_data(data_type, buf.into(), validity)
+    PrimitiveArray::new(data_type, buf.into(), validity)
 }
 
 /// Efficiently sets value at the indices from the iterator to `set_value`.
@@ -91,7 +91,7 @@ where
         Ok(())
     })?;
 
-    Ok(PrimitiveArray::from_data(
+    Ok(PrimitiveArray::new(
         data_type,
         buf.into(),
         array.validity().cloned(),

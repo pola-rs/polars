@@ -32,7 +32,7 @@ where
     fn from_iter_trusted_length<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let values = unsafe { Vec::from_trusted_len_iter_unchecked(iter) }.into();
-        let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), values, None);
+        let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), values, None);
 
         NoNull::new(ChunkedArray::from_chunks("", vec![Box::new(arr)]))
     }
@@ -69,7 +69,7 @@ where
             });
             vals.set_len(size)
         }
-        let arr = PrimitiveArray::from_data(
+        let arr = PrimitiveArray::new(
             T::get_dtype().to_arrow(),
             vals.into(),
             Some(validity.into()),
@@ -107,8 +107,7 @@ impl FromIteratorReversed<Option<bool>> for BooleanChunked {
                 }
             });
         }
-        let arr =
-            BooleanArray::from_data(ArrowDataType::Boolean, vals.into(), Some(validity.into()));
+        let arr = BooleanArray::new(ArrowDataType::Boolean, vals.into(), Some(validity.into()));
         ChunkedArray::from_chunks("", vec![Box::new(arr)])
     }
 }
@@ -131,7 +130,7 @@ where
             });
             vals.set_len(size)
         }
-        let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), vals.into(), None);
+        let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), vals.into(), None);
         NoNull::new(ChunkedArray::from_chunks("", vec![Box::new(arr)]))
     }
 }

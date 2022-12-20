@@ -58,11 +58,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::from_data(
-            T::PRIMITIVE.into(),
-            out.into(),
-            None,
-        ));
+        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
     }
 
     // This iterators length can be trusted
@@ -101,7 +97,7 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
@@ -118,11 +114,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::from_data(
-            T::PRIMITIVE.into(),
-            out.into(),
-            None,
-        ));
+        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
     }
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0);
