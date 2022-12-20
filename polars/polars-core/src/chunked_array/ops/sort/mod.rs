@@ -196,7 +196,7 @@ where
 
             (
                 ca.name(),
-                PrimitiveArray::from_data(
+                PrimitiveArray::new(
                     T::get_dtype().to_arrow(),
                     vals.into(),
                     Some(validity.into()),
@@ -210,7 +210,7 @@ where
 
             (
                 ca.name(),
-                PrimitiveArray::from_data(
+                PrimitiveArray::new(
                     T::get_dtype().to_arrow(),
                     vals.into(),
                     Some(validity.into()),

@@ -108,7 +108,7 @@ mod test {
         let offsets = OffsetsBuffer::try_from(vec![0i64, 3, 5, 6]).unwrap();
 
         let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
-        ListArray::<i64>::from_data(dtype, offsets, Box::new(values), None)
+        ListArray::<i64>::new(dtype, offsets, Box::new(values), None)
     }
 
     #[test]
@@ -137,7 +137,7 @@ mod test {
         let offsets = OffsetsBuffer::try_from(vec![0i64, 1, 2, 3, 6, 9, 11]).unwrap();
 
         let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
-        let arr = ListArray::<i64>::from_data(dtype, offsets, Box::new(values), None);
+        let arr = ListArray::<i64>::new(dtype, offsets, Box::new(values), None);
 
         let out = sublist_get_indexes(&arr, 1);
         assert_eq!(

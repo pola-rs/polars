@@ -11,14 +11,14 @@ pub trait FromData<T> {
 
 impl FromData<Bitmap> for BooleanArray {
     fn from_data_default(values: Bitmap, validity: Option<Bitmap>) -> BooleanArray {
-        BooleanArray::from_data(DataType::Boolean, values, validity)
+        BooleanArray::new(DataType::Boolean, values, validity)
     }
 }
 
 impl<T: NativeType> FromData<Buffer<T>> for PrimitiveArray<T> {
     fn from_data_default(values: Buffer<T>, validity: Option<Bitmap>) -> Self {
         let dt = T::PRIMITIVE;
-        PrimitiveArray::from_data(dt.into(), values, validity)
+        PrimitiveArray::new(dt.into(), values, validity)
     }
 }
 
@@ -39,7 +39,7 @@ impl FromDataUtf8 for Utf8Array<i64> {
         validity: Option<Bitmap>,
     ) -> Self {
         let offsets = OffsetsBuffer::new_unchecked(offsets);
-        Utf8Array::from_data_unchecked(DataType::LargeUtf8, offsets, values, validity)
+        Utf8Array::new_unchecked(DataType::LargeUtf8, offsets, values, validity)
     }
 }
 
@@ -60,6 +60,6 @@ impl FromDataBinary for BinaryArray<i64> {
         validity: Option<Bitmap>,
     ) -> Self {
         let offsets = OffsetsBuffer::new_unchecked(offsets);
-        BinaryArray::from_data(DataType::LargeBinary, offsets, values, validity)
+        BinaryArray::new(DataType::LargeBinary, offsets, values, validity)
     }
 }

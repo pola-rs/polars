@@ -33,7 +33,7 @@ pub(crate) fn merge_categorical_map(
             // Safety
             // all offsets are valid and the u8 data is valid utf8
             let mut new_slots = unsafe {
-                MutableUtf8Array::from_data_unchecked(
+                MutableUtf8Array::new_unchecked(
                     DataType::Utf8.to_arrow(),
                     offset_buf,
                     values_buf,

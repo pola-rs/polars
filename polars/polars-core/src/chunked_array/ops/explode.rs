@@ -145,7 +145,7 @@ where
         for i in nulls {
             unsafe { unset_bit_raw(validity_slice, i) }
         }
-        let arr = PrimitiveArray::from_data(
+        let arr = PrimitiveArray::new(
             T::get_dtype().to_arrow(),
             new_values.into(),
             Some(validity.into()),
