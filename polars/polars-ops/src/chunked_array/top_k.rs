@@ -60,6 +60,9 @@ where
 }
 
 pub fn top_k(s: &Series, k: usize, reverse: bool) -> PolarsResult<Series> {
+    if s.is_empty() {
+        return Ok(s.clone());
+    }
     let dtype = s.dtype();
 
     let s = s.to_physical_repr();

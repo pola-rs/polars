@@ -8,3 +8,9 @@ def test_empty_str_concat_lit() -> None:
         "b": pl.Utf8,
         "literal": pl.Utf8,
     }
+
+
+def test_top_k_empty() -> None:
+    df = pl.DataFrame({"test": []})
+
+    assert df.select([pl.col("test").top_k(2)]).frame_equal(df)
