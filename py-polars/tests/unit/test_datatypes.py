@@ -4,6 +4,8 @@ import inspect
 import pickle
 from datetime import datetime, timedelta
 
+import pytest
+
 import polars as pl
 from polars import datatypes
 
@@ -63,3 +65,24 @@ def test_dtypes_hashable() -> None:
     assert len(set(all_dtypes + all_dtypes)) == len(all_dtypes)
     assert len({pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")}) == 3
     assert len({pl.List, pl.List(pl.Int16), pl.List(pl.Int32), pl.List(pl.Int64)}) == 4
+
+
+@pytest.mark.parametrize(
+    ["dtype", "representation"],
+    [
+        (pl.Boolean, "Boolean"),
+        (pl.Datetime, "Datetime"),
+        (
+            pl.Datetime(time_zone="Europe/Amsterdam"),
+            "Datetime(tu='us', tz='Europe/Amsterdam')",
+        ),
+        (pl.List(pl.Int8), "List(Int8)"),
+        (pl.List(pl.Duration(time_unit="ns")), "List(Duration(tu='ns'))"),
+        (
+            pl.Struct({"name": pl.Utf8, "ids": pl.List(pl.UInt32)}),
+            "Struct([Field('name': Utf8), Field('ids': List(UInt32))])",
+        ),
+    ],
+)
+def test_repr(dtype, representation) -> None:
+    assert repr(dtype) == representation

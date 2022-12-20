@@ -86,7 +86,14 @@ def _custom_reconstruct(cls: type[Any], base: type[Any], state: Any) -> PolarsDa
     return obj
 
 
-class DataType:
+class DataTypeClass(type):
+    """Metaclass for nicely printing DataType classes."""
+
+    def __repr__(cls) -> str:
+        return cls.__name__
+
+
+class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
 
     def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]
@@ -103,13 +110,10 @@ class DataType:
     def string_repr(cls) -> str:
         return dtype_str_repr(cls)
 
-    def __repr__(self) -> str:
-        return dtype_str_repr(self)
-
 
 # note: defined this way as some types can have instances that
 # act as specialisations (eg: "List" and "List[Int32]")
-PolarsDataType = Union[Type[DataType], DataType]
+PolarsDataType = Union[DataTypeClass, DataType]
 
 ColumnsType = Union[
     Sequence[str],
@@ -205,7 +209,7 @@ class List(DataType):
         # List[i64] == List[f32] == False
 
         # allow comparing object instances to class
-        if type(other) is type and issubclass(other, List):
+        if type(other) is DataTypeClass and issubclass(other, List):
             return True
         if isinstance(other, List):
             if self.inner is None or other.inner is None:
@@ -217,6 +221,10 @@ class List(DataType):
 
     def __hash__(self) -> int:
         return hash((List, self.inner))
+
+    def __repr__(self) -> str:
+        name = self.__class__.__name__
+        return f"{name}({self.inner!r})"
 
 
 class Date(DataType):
@@ -247,7 +255,7 @@ class Datetime(DataType):
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
-        if type(other) is type and issubclass(other, Datetime):
+        if type(other) is DataTypeClass and issubclass(other, Datetime):
             return True
         elif isinstance(other, Datetime):
             return self.tu == other.tu and self.tz == other.tz
@@ -256,6 +264,10 @@ class Datetime(DataType):
 
     def __hash__(self) -> int:
         return hash((Datetime, self.tu))
+
+    def __repr__(self) -> str:
+        name = self.__class__.__name__
+        return f"{name}(tu={self.tu!r}, tz={self.tz!r})"
 
 
 class Duration(DataType):
@@ -277,7 +289,7 @@ class Duration(DataType):
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
-        if type(other) is type and issubclass(other, Duration):
+        if type(other) is DataTypeClass and issubclass(other, Duration):
             return True
         elif isinstance(other, Duration):
             return self.tu == other.tu
@@ -286,6 +298,10 @@ class Duration(DataType):
 
     def __hash__(self) -> int:
         return hash((Duration, self.tu))
+
+    def __repr__(self) -> str:
+        name = self.__class__.__name__
+        return f"{name}(tu={self.tu!r})"
 
 
 class Time(DataType):
@@ -320,11 +336,8 @@ class Field:
         return (self.name == other.name) & (self.dtype == other.dtype)
 
     def __repr__(self) -> str:
-        if isinstance(self.dtype, type):
-            dtype_str = self.dtype.string_repr()
-        else:
-            dtype_str = repr(self.dtype)
-        return f'Field("{self.name}": {dtype_str})'
+        class_name = self.__class__.__name__
+        return f"{class_name}({self.name!r}: {self.dtype})"
 
 
 class Struct(DataType):
@@ -362,6 +375,10 @@ class Struct(DataType):
 
     def __hash__(self) -> int:
         return hash(Struct)
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}({self.fields})"
 
 
 TemporalDataType = Union[Type[Datetime], Datetime, Type[Date], Date, Type[Time], Time]
@@ -581,7 +598,7 @@ def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
         return include_unknown
     else:
         return isinstance(data_type, DataType) or (
-            type(data_type) is type and issubclass(data_type, DataType)
+            type(data_type) is DataTypeClass and issubclass(data_type, DataType)
         )
 
 
@@ -661,7 +678,7 @@ def numpy_char_code_to_dtype(dtype: str) -> PolarsDataType:
 
 
 def maybe_cast(
-    el: PolarsDataType, dtype: type, time_unit: TimeUnit | None = None
+    el: PolarsDataType, dtype: PolarsDataType, time_unit: TimeUnit | None = None
 ) -> PolarsDataType:
     # cast el if it doesn't match
     from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta

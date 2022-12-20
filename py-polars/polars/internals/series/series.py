@@ -160,7 +160,7 @@ class Series:
     Notice that the dtype is automatically inferred as a polars Int64:
 
     >>> s.dtype
-    <class 'polars.datatypes.Int64'>
+    Int64
 
     Constructing a Series with a specific dtype:
 
@@ -309,7 +309,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.dtype
-        <class 'polars.datatypes.Int64'>
+        Int64
 
         """
         return self._s.dtype()
