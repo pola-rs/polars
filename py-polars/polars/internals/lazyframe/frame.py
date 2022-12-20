@@ -421,7 +421,7 @@ class LazyFrame:
         >>> lf.schema
         {'foo': Int64, 'bar': Float64, 'ham': Utf8}
 
-        """  # noqa: E501
+        """
         return self._ldf.schema()
 
     @property

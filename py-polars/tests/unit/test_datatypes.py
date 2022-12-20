@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import pickle
 from datetime import datetime, timedelta
 
@@ -78,6 +77,7 @@ def test_dtypes_hashable() -> None:
         ),
         (pl.List(pl.Int8), "List(Int8)"),
         (pl.List(pl.Duration(time_unit="ns")), "List(Duration(tu='ns'))"),
+        (pl.Struct, "Struct"),
         (
             pl.Struct({"name": pl.Utf8, "ids": pl.List(pl.UInt32)}),
             "Struct([Field('name': Utf8), Field('ids': List(UInt32))])",

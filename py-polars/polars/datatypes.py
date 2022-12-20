@@ -206,7 +206,7 @@ class Unknown(DataType):
 class List(DataType):
     inner: PolarsDataType | None = None
 
-    def __init__(self, inner: PolarsDataType | type):
+    def __init__(self, inner: PolarsDataType | PythonDataType):
         """
         Nested list/array type.
 
@@ -243,8 +243,8 @@ class List(DataType):
         return hash((List, self.inner))
 
     def __repr__(self) -> str:
-        name = self.__class__.__name__
-        return f"{name}({self.inner!r})"
+        class_name = self.__class__.__name__
+        return f"{class_name}({self.inner!r})"
 
 
 class Date(DataType):
@@ -286,8 +286,8 @@ class Datetime(DataType):
         return hash((Datetime, self.tu))
 
     def __repr__(self) -> str:
-        name = self.__class__.__name__
-        return f"{name}(tu={self.tu!r}, tz={self.tz!r})"
+        class_name = self.__class__.__name__
+        return f"{class_name}(tu={self.tu!r}, tz={self.tz!r})"
 
 
 class Duration(DataType):
@@ -320,8 +320,8 @@ class Duration(DataType):
         return hash((Duration, self.tu))
 
     def __repr__(self) -> str:
-        name = self.__class__.__name__
-        return f"{name}(tu={self.tu!r})"
+        class_name = self.__class__.__name__
+        return f"{class_name}(tu={self.tu!r})"
 
 
 class Time(DataType):
@@ -617,7 +617,7 @@ def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
         # does not represent a realisable dtype, so ignore by default
         return include_unknown
     else:
-        return isinstance(data_type, DataType) or isinstance(data_type, DataTypeClass)
+        return isinstance(data_type, (DataType, DataTypeClass))
 
 
 @overload

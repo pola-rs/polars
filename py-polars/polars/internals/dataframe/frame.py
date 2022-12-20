@@ -2585,7 +2585,7 @@ class DataFrame:
         Rows: 3
         Columns: 6
         $ a <Float64> 1.0, 2.8, 3.0
-        $ b   <Int64 4, 5, None
+        $ b   <Int64> 4, 5, None
         $ c <Boolean> True, False, True
         $ d    <Utf8> None, b, c
         $ e    <Utf8> usd, eur, None
