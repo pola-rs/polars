@@ -265,8 +265,7 @@ def test_cast_inner() -> None:
     # this creates an inner null type
     df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
     assert (
-        df["A"].cast(pl.List(int)).dtype.inner  # type: ignore[arg-type, attr-defined]
-        == pl.Int64
+        df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[attr-defined]
     )
 
 

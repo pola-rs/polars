@@ -20,6 +20,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    overload,
 )
 
 from _ctypes import _SimpleCData  # type: ignore[attr-defined]
@@ -36,6 +37,11 @@ except ImportError:
 
 UnionType: type
 OptionType = type(Optional[type])
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 if sys.version_info >= (3, 10):
     from types import UnionType
@@ -76,7 +82,9 @@ def get_idx_type() -> PolarsDataType:
     return _get_idx_type()
 
 
-def _custom_reconstruct(cls: type[Any], base: type[Any], state: Any) -> PolarsDataType:
+def _custom_reconstruct(
+    cls: type[Any], base: type[Any], state: Any
+) -> PolarsDataType | type:
     if state:
         obj = base.__new__(cls, state)
         if base.__init__ != object.__init__:
@@ -114,11 +122,23 @@ class DataType(metaclass=DataTypeClass):
 # note: defined this way as some types can have instances that
 # act as specialisations (eg: "List" and "List[Int32]")
 PolarsDataType = Union[DataTypeClass, DataType]
+PythonDataType = Union[
+    Type[int],
+    Type[float],
+    Type[bool],
+    Type[date],
+    Type[time],
+    Type[datetime],
+    Type[timedelta],
+    Type[list],
+    Type[bytes],
+]
+
 
 ColumnsType = Union[
     Sequence[str],
-    Mapping[str, PolarsDataType],
-    Sequence[Tuple[str, Optional[PolarsDataType]]],
+    Mapping[str, Union[PolarsDataType, PythonDataType]],
+    Sequence[Tuple[str, Union[PolarsDataType, PythonDataType, None]]],
 ]
 NoneType = type(None)
 
@@ -186,7 +206,7 @@ class Unknown(DataType):
 class List(DataType):
     inner: PolarsDataType | None = None
 
-    def __init__(self, inner: PolarsDataType):
+    def __init__(self, inner: PolarsDataType | type):
         """
         Nested list/array type.
 
@@ -551,7 +571,7 @@ class _DataTypeMappings:
 DataTypeMappings = _DataTypeMappings()
 
 
-def _base_type(dtype: PolarsDataType) -> type[DataType]:
+def _base_type(dtype: PolarsDataType) -> DataTypeClass:
     """Ensure return of the DataType base dtype/class."""
     if isinstance(dtype, DataType):
         return type(dtype)
@@ -597,12 +617,26 @@ def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
         # does not represent a realisable dtype, so ignore by default
         return include_unknown
     else:
-        return isinstance(data_type, DataType) or (
-            type(data_type) is DataTypeClass and issubclass(data_type, DataType)
-        )
+        return isinstance(data_type, DataType) or isinstance(data_type, DataTypeClass)
 
 
-def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsDataType:
+@overload
+def py_type_to_dtype(
+    data_type: Any, raise_unmatched: Literal[True] = True
+) -> PolarsDataType:
+    ...
+
+
+@overload
+def py_type_to_dtype(
+    data_type: Any, raise_unmatched: Literal[False]
+) -> PolarsDataType | None:
+    ...
+
+
+def py_type_to_dtype(
+    data_type: Any, raise_unmatched: bool = True
+) -> PolarsDataType | None:
     """Convert a Python dtype (or type annotation) to a Polars dtype."""
     if isinstance(data_type, ForwardRef):
         annotation = data_type.__forward_arg__
@@ -627,7 +661,7 @@ def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsData
         return DataTypeMappings.PY_TYPE_TO_DTYPE[data_type]
     except KeyError:  # pragma: no cover
         if not raise_unmatched:
-            return None  # type: ignore[return-value]
+            return None
         raise NotImplementedError(
             f"Conversion of Python data type {data_type} to Polars data type not"
             " implemented."
@@ -679,7 +713,7 @@ def numpy_char_code_to_dtype(dtype: str) -> PolarsDataType:
 
 def maybe_cast(
     el: PolarsDataType, dtype: PolarsDataType, time_unit: TimeUnit | None = None
-) -> PolarsDataType:
+) -> PolarsDataType | int:
     # cast el if it doesn't match
     from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
 

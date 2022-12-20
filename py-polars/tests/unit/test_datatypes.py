@@ -15,10 +15,10 @@ def test_dtype_init_equivalence() -> None:
     all_datatypes = {
         dtype
         for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
-        if inspect.isclass(dtype) and issubclass(dtype, datatypes.DataType)
+        if isinstance(dtype, datatypes.DataTypeClass)
     }
     for dtype in all_datatypes:
-        assert dtype == dtype()  # type: ignore[comparison-overlap]
+        assert dtype == dtype()
 
 
 def test_dtype_temporal_units() -> None:
@@ -84,5 +84,5 @@ def test_dtypes_hashable() -> None:
         ),
     ],
 )
-def test_repr(dtype, representation) -> None:
+def test_repr(dtype: pl.PolarsDataType, representation: str) -> None:
     assert repr(dtype) == representation

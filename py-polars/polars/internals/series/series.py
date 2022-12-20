@@ -197,10 +197,10 @@ class Series:
         self,
         name: str | ArrayLike | None = None,
         values: ArrayLike | None = None,
-        dtype: type[DataType] | DataType | None = None,
+        dtype: PolarsDataType | None = None,
         strict: bool = True,
         nan_to_null: bool = False,
-        dtype_if_empty: type[DataType] | DataType | None = None,
+        dtype_if_empty: PolarsDataType | None = None,
     ):
 
         # Handle case where values are passed as the first argument
@@ -2457,9 +2457,7 @@ class Series:
 
     def cast(
         self,
-        dtype: (
-            type[DataType] | type[int] | type[float] | type[str] | type[bool] | DataType
-        ),
+        dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
         strict: bool = True,
     ) -> Series:
         """
