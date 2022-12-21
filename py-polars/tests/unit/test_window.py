@@ -257,3 +257,12 @@ def test_nested_aggregation_window_expression() -> None:
         "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         "foo": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, None, 1],
     }
+
+
+def test_window_5868() -> None:
+    df = pl.DataFrame({"value": [None, 2], "id": [None, 1]})
+
+    assert df.with_column(pl.col("value").max().over("id")).to_dict(False) == {
+        "value": [None, 2],
+        "id": [None, 1],
+    }
