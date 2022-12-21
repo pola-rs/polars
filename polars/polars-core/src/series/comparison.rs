@@ -129,50 +129,6 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
 impl ChunkCompare<&Series> for Series {
     type Item = PolarsResult<BooleanChunked>;
 
-    fn eq_missing(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        validate_types(self.dtype(), rhs.dtype())?;
-        #[cfg(feature = "dtype-categorical")]
-        use DataType::*;
-        let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(_), Utf8, _, 1) => {
-                return compare_cat_to_str_series(
-                    self,
-                    rhs,
-                    self.name(),
-                    |s, idx| s.eq_missing(idx),
-                    false,
-                );
-            }
-            #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_), 1, _) => {
-                return compare_cat_to_str_series(
-                    rhs,
-                    self,
-                    self.name(),
-                    |s, idx| s.eq_missing(idx),
-                    false,
-                );
-            }
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
-                if rev_map_l.same_src(rev_map_r) {
-                    self.categorical()
-                        .unwrap()
-                        .logical()
-                        .eq_missing(rhs.categorical().unwrap().logical())
-                } else {
-                    return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
-                }
-            }
-            _ => {
-                impl_compare!(self, rhs, eq_missing)
-            }
-        };
-        out.rename(self.name());
-        Ok(out)
-    }
-
     /// Create a boolean mask by checking for equality.
     fn equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
@@ -302,12 +258,6 @@ where
 {
     type Item = PolarsResult<BooleanChunked>;
 
-    fn eq_missing(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
-        // just take any numeric dtype for rhs
-        validate_types(self.dtype(), &DataType::Int8)?;
-        self.equal(rhs)
-    }
-
     fn equal(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
         let s = self.to_physical_repr();
@@ -347,11 +297,6 @@ where
 
 impl ChunkCompare<&str> for Series {
     type Item = PolarsResult<BooleanChunked>;
-    fn eq_missing(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
-        validate_types(self.dtype(), &DataType::Utf8)?;
-        self.equal(rhs)
-    }
-
     fn equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         use DataType::*;
