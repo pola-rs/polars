@@ -1038,9 +1038,9 @@ mod test {
         let slice_2 = series.slice(-5, 5);
         let slice_3 = series.slice(0, 5);
 
-        assert_eq!(slice_1.get(0), AnyValue::Int64(3));
-        assert_eq!(slice_2.get(0), AnyValue::Int64(1));
-        assert_eq!(slice_3.get(0), AnyValue::Int64(1));
+        assert_eq!(slice_1.get(0).unwrap(), AnyValue::Int64(3));
+        assert_eq!(slice_2.get(0).unwrap(), AnyValue::Int64(1));
+        assert_eq!(slice_3.get(0).unwrap(), AnyValue::Int64(1));
     }
 
     #[test]

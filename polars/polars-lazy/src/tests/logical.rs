@@ -38,13 +38,16 @@ fn test_duration() -> PolarsResult<()> {
             DataType::Duration(TimeUnit::Milliseconds)
         ));
 
-        assert_eq!(column.get(0), AnyValue::Duration(0, TimeUnit::Milliseconds));
         assert_eq!(
-            column.get(1),
+            column.get(0)?,
+            AnyValue::Duration(0, TimeUnit::Milliseconds)
+        );
+        assert_eq!(
+            column.get(1)?,
             AnyValue::Duration(MILLISECONDS_IN_DAY, TimeUnit::Milliseconds)
         );
         assert_eq!(
-            column.get(2),
+            column.get(2)?,
             AnyValue::Duration(2 * MILLISECONDS_IN_DAY, TimeUnit::Milliseconds)
         );
     }

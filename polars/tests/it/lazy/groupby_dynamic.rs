@@ -56,7 +56,7 @@ fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
         .agg([col("a").sum()])
         .collect()?;
     let a = out.column("a")?;
-    assert_eq!(a.get(0), AnyValue::Int32(7));
-    assert_eq!(a.get(1), AnyValue::Int32(6));
+    assert_eq!(a.get(0)?, AnyValue::Int32(7));
+    assert_eq!(a.get(1)?, AnyValue::Int32(6));
     Ok(())
 }

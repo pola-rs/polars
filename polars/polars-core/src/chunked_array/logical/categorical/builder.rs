@@ -507,14 +507,14 @@ mod test {
             builder2.drain_iter(vec![Some("hello"), None, Some("world")].into_iter());
 
             let s = builder1.finish().into_series();
-            assert_eq!(s.str_value(0), "null");
-            assert_eq!(s.str_value(1), "hello");
-            assert_eq!(s.str_value(2), "vietnam");
+            assert_eq!(s.str_value(0).unwrap(), "null");
+            assert_eq!(s.str_value(1).unwrap(), "hello");
+            assert_eq!(s.str_value(2).unwrap(), "vietnam");
 
             let s = builder2.finish().into_series();
-            assert_eq!(s.str_value(0), "hello");
-            assert_eq!(s.str_value(1), "null");
-            assert_eq!(s.str_value(2), "world");
+            assert_eq!(s.str_value(0).unwrap(), "hello");
+            assert_eq!(s.str_value(1).unwrap(), "null");
+            assert_eq!(s.str_value(2).unwrap(), "world");
         }
     }
 }

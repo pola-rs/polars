@@ -234,13 +234,13 @@ mod test {
         builder.append_series(&s1);
         builder.append_series(&s2);
         let ls = builder.finish();
-        if let AnyValue::List(s) = ls.get_any_value(0) {
+        if let AnyValue::List(s) = ls.get_any_value(0).unwrap() {
             // many chunks are aggregated to one in the ListArray
             assert_eq!(s.len(), 6)
         } else {
             panic!()
         }
-        if let AnyValue::List(s) = ls.get_any_value(1) {
+        if let AnyValue::List(s) = ls.get_any_value(1).unwrap() {
             assert_eq!(s.len(), 3)
         } else {
             panic!()
@@ -258,23 +258,6 @@ mod test {
         let out = builder.finish();
         let out = out.explode().unwrap();
         assert_eq!(out.len(), 7);
-        assert_eq!(out.get(6), AnyValue::Null);
-    }
-
-    #[test]
-    fn test_list_str_builder() {
-        let mut builder = ListUtf8ChunkedBuilder::new("a", 10, 10);
-        builder.append_series(&Series::new("", &["foo", "bar"]));
-        let ca = builder.finish();
-        dbg!(ca);
-    }
-
-    #[cfg(feature = "dtype-binary")]
-    #[test]
-    fn test_list_binary_builder() {
-        let mut builder = ListBinaryChunkedBuilder::new("a", 10, 10);
-        builder.append_series(&Series::new("", &["foo".as_bytes(), "bar".as_bytes()]));
-        let ca = builder.finish();
-        dbg!(ca);
+        assert_eq!(out.get(6).unwrap(), AnyValue::Null);
     }
 }

@@ -138,9 +138,10 @@ impl LogicalType for CategoricalChunked {
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        match self.logical.0.get(i) {
-            Some(i) => Ok(AnyValue::Categorical(i, self.get_rev_map())),
-            None => Err(PolarsError::ComputeError("index is out of bounds".into())),
+        if i < self.len() {
+            Ok(unsafe { self.get_any_value_unchecked(i) })
+        } else {
+            Err(PolarsError::ComputeError("Index is out of bounds.".into()))
         }
     }
 
@@ -258,10 +259,10 @@ mod test {
             .cast(&DataType::Categorical(None))
             .unwrap();
         let appended = s1.append(&s2).unwrap();
-        assert_eq!(appended.str_value(0), "a");
-        assert_eq!(appended.str_value(1), "b");
-        assert_eq!(appended.str_value(4), "x");
-        assert_eq!(appended.str_value(5), "y");
+        assert_eq!(appended.str_value(0).unwrap(), "a");
+        assert_eq!(appended.str_value(1).unwrap(), "b");
+        assert_eq!(appended.str_value(4).unwrap(), "x");
+        assert_eq!(appended.str_value(5).unwrap(), "y");
     }
 
     #[test]
@@ -293,17 +294,17 @@ mod test {
             Field::new("a", DataType::Categorical(None))
         );
         assert!(matches!(
-            s.get(0),
+            s.get(0)?,
             AnyValue::Categorical(0, RevMapping::Local(_))
         ));
 
         let groups = s.group_tuples(false, true);
         let aggregated = unsafe { s.agg_list(&groups?) };
-        match aggregated.get(0) {
+        match aggregated.get(0)? {
             AnyValue::List(s) => {
                 assert!(matches!(s.dtype(), DataType::Categorical(_)));
                 let str_s = s.cast(&DataType::Utf8).unwrap();
-                assert_eq!(str_s.get(0), AnyValue::Utf8("a"));
+                assert_eq!(str_s.get(0)?, AnyValue::Utf8("a"));
                 assert_eq!(s.len(), 1);
             }
             _ => panic!(),

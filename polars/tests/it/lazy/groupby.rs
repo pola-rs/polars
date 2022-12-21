@@ -177,7 +177,7 @@ fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
     let duration = out.column("duration")?;
 
     assert_eq!(
-        duration.get(0),
+        duration.get(0)?,
         AnyValue::Duration(1500, TimeUnit::Microseconds)
     );
 

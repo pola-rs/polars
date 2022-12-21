@@ -449,7 +449,7 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
 
     let out = q.collect()?;
     let s = out.column("literal")?;
-    assert_eq!(s.get(0), AnyValue::Utf8("fooabbar"));
+    assert_eq!(s.get(0)?, AnyValue::Utf8("fooabbar"));
 
     Ok(())
 }
