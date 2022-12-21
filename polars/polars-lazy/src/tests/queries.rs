@@ -146,7 +146,7 @@ fn test_lazy_pushdown_through_agg() {
 
     assert_eq!(new.shape(), (1, 1));
     let bar = new.column("bar").unwrap();
-    assert_eq!(bar.get(0), AnyValue::Float64(1.3));
+    assert_eq!(bar.get(0).unwrap(), AnyValue::Float64(1.3));
 }
 
 #[test]
@@ -1830,8 +1830,8 @@ fn test_apply_flatten() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("A_sum")?;
-    assert_eq!(out.get(0), AnyValue::Float64(6.71462));
-    assert_eq!(out.get(1), AnyValue::Float64(7.039156));
+    assert_eq!(out.get(0)?, AnyValue::Float64(6.71462));
+    assert_eq!(out.get(1)?, AnyValue::Float64(7.039156));
 
     Ok(())
 }
@@ -1941,9 +1941,9 @@ fn test_partitioned_gb_mean() -> PolarsResult<()> {
 
     assert_eq!(out.shape(), (1, 3));
     let str_col = out.column("mean_str")?;
-    assert_eq!(str_col.get(0), AnyValue::Null);
+    assert_eq!(str_col.get(0)?, AnyValue::Null);
     let int_col = out.column("mean_int")?;
-    assert_eq!(int_col.get(0), AnyValue::Float64(1.0));
+    assert_eq!(int_col.get(0)?, AnyValue::Float64(1.0));
 
     Ok(())
 }

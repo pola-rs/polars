@@ -77,7 +77,10 @@ fn read_json_with_escapes() {
         .finish()
         .unwrap();
     assert_eq!("id", df.get_columns()[0].name());
-    assert_eq!(AnyValue::Utf8("\""), df.column("text").unwrap().get(0));
+    assert_eq!(
+        AnyValue::Utf8("\""),
+        df.column("text").unwrap().get(0).unwrap()
+    );
     assert_eq!("text", df.get_columns()[1].name());
     assert_eq!((10, 3), df.shape());
 }

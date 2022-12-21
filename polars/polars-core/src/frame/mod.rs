@@ -1237,7 +1237,8 @@ impl DataFrame {
             }
             None => return None,
         }
-        Some(self.columns.iter().map(|s| s.get(idx)).collect())
+        // safety: we just checked bounds
+        unsafe { Some(self.columns.iter().map(|s| s.get_unchecked(idx)).collect()) }
     }
 
     /// Select a `Series` by index.

@@ -240,8 +240,12 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.cast(dtype)
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         self.0.get_any_value(index)
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+        self.0.get_any_value_unchecked(index)
     }
 
     /// Count the null values.

@@ -174,7 +174,7 @@ where
         ))
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         ObjectChunked::get_any_value(&self.0, index)
     }
     fn null_count(&self) -> usize {

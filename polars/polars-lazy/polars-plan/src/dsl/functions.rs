@@ -188,7 +188,13 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         let name = "spearman_rank_correlation";
         if propagate_nans && a.dtype().is_float() {
             for s in [&a, &b] {
-                if nan_max_s(s, "").get(0).extract::<f64>().unwrap().is_nan() {
+                if nan_max_s(s, "")
+                    .get(0)
+                    .unwrap()
+                    .extract::<f64>()
+                    .unwrap()
+                    .is_nan()
+                {
                     return Ok(Series::new(name, &[f64::NAN]));
                 }
             }
@@ -574,7 +580,7 @@ pub fn duration(args: DurationArgs) -> Expr {
 
         let condition = |s: &Series| {
             // check if not literal 0 || full column
-            (s.len() != max_len && s.get(0) != AnyValue::Int64(0)) || s.len() == max_len
+            (s.len() != max_len && s.get(0).unwrap() != AnyValue::Int64(0)) || s.len() == max_len
         };
 
         if nanoseconds.len() != max_len {
@@ -1046,7 +1052,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
 /// Repeat a literal `value` `n` times.
 pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
     let function = |s: Series, n: Series| {
-        let n = n.get(0).extract::<usize>().ok_or_else(|| {
+        let n = n.get(0).unwrap().extract::<usize>().ok_or_else(|| {
             PolarsError::ComputeError(format!("could not extract a size from {:?}", n).into())
         })?;
         Ok(s.new_from_index(0, n))

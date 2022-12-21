@@ -36,7 +36,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                         .into(),
                     ))
                 } else {
-                    Ok(out.get(0).into_static().unwrap())
+                    Ok(out.get(0).unwrap().into_static().unwrap())
                 }
             };
 

@@ -46,15 +46,15 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
 
     let mut out: ListChunked = match (offset_s.len(), length_s.len()) {
         (1, 1) => {
-            let offset = offset_s.get(0).try_extract::<i64>()?;
-            let slice_len = length_s.get(0).try_extract::<usize>()?;
+            let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
+            let slice_len = length_s.get(0).unwrap().try_extract::<usize>()?;
             return Ok(list_ca.lst_slice(offset, slice_len).into_series());
         }
         (1, length_slice_len) => {
             if length_slice_len != list_ca.len() {
                 return Err(PolarsError::ComputeError("the length of the slice 'length' argument does not match that of the list column".into()));
             }
-            let offset = offset_s.get(0).try_extract::<i64>()?;
+            let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
             // cast to i64 as it is more likely that it is that dtype
             // instead of usize/u64 (we never need that max length)
             let length_ca = length_s.cast(&DataType::Int64)?;
@@ -73,7 +73,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
             if offset_len != list_ca.len() {
                 return Err(PolarsError::ComputeError("the length of the slice 'offset' argument does not match that of the list column".into()));
             }
-            let length_slice = length_s.get(0).try_extract::<usize>()?;
+            let length_slice = length_s.get(0).unwrap().try_extract::<usize>()?;
             let offset_ca = offset_s.cast(&DataType::Int64)?;
             let offset_ca = offset_ca.i64().unwrap();
             list_ca

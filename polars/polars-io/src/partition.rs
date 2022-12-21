@@ -19,7 +19,7 @@ where
     path.push(resolve_homedir(rootdir));
 
     for key in by.into_iter() {
-        let value = partition_df[key.as_ref()].get(0).to_string();
+        let value = partition_df[key.as_ref()].get(0).unwrap().to_string();
         path.push(format!("{}={}", key.as_ref(), value))
     }
     path

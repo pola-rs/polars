@@ -59,7 +59,7 @@ pub trait LogSeries: SeriesSealed {
                 let pk = if normalize {
                     let sum = pk.sum_as_series();
 
-                    if sum.get(0).extract::<f64>()? != 1.0 {
+                    if sum.get(0).unwrap().extract::<f64>()? != 1.0 {
                         pk / &sum
                     } else {
                         pk.clone()

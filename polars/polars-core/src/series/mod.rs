@@ -823,14 +823,15 @@ impl Series {
 
     #[cfg(feature = "private")]
     // used for formatting
-    pub fn str_value(&self, index: usize) -> Cow<str> {
-        match self.0.get(index) {
+    pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
+        let out = match self.0.get(index)? {
             AnyValue::Utf8(s) => Cow::Borrowed(s),
             AnyValue::Null => Cow::Borrowed("null"),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev) => Cow::Borrowed(rev.get(idx)),
             av => Cow::Owned(format!("{}", av)),
-        }
+        };
+        Ok(out)
     }
     /// Get the head of the Series.
     pub fn head(&self, length: Option<usize>) -> Series {
@@ -1037,9 +1038,9 @@ mod test {
         let slice_2 = series.slice(-5, 5);
         let slice_3 = series.slice(0, 5);
 
-        assert_eq!(slice_1.get(0), AnyValue::Int64(3));
-        assert_eq!(slice_2.get(0), AnyValue::Int64(1));
-        assert_eq!(slice_3.get(0), AnyValue::Int64(1));
+        assert_eq!(slice_1.get(0).unwrap(), AnyValue::Int64(3));
+        assert_eq!(slice_2.get(0).unwrap(), AnyValue::Int64(1));
+        assert_eq!(slice_3.get(0).unwrap(), AnyValue::Int64(1));
     }
 
     #[test]

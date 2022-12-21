@@ -11,7 +11,7 @@ fn test_sum_after_filter() -> PolarsResult<()> {
     .select([col("values").sum()])
     .collect()?;
 
-    assert_eq!(df.column("values")?.get(0), AnyValue::Int32(130));
+    assert_eq!(df.column("values")?.get(0)?, AnyValue::Int32(130));
     Ok(())
 }
 

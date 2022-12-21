@@ -485,7 +485,7 @@ impl AggQuantileExpr {
                     .into(),
             ));
         }
-        quantile.get(0).try_extract::<f64>()
+        quantile.get(0).unwrap().try_extract::<f64>()
     }
 }
 
