@@ -721,6 +721,7 @@ where
     } else {
         let mut values = Vec::with_capacity(len);
         let mut validity = MutableBitmap::with_capacity(len);
+        validity.extend_constant(len, true);
         let ptr = values.as_mut_ptr() as *mut T::Native;
 
         match groups {
@@ -729,19 +730,18 @@ where
                     .zip(groups.all().iter())
                     .for_each(|(opt_v, g)| {
                         for idx in g {
-                            debug_assert!((*idx as usize) < len);
+                            let idx = *idx as usize;
+                            debug_assert!(idx < len);
                             unsafe {
-                                let valid = match opt_v {
+                                match opt_v {
                                     Some(v) => {
-                                        *ptr.add(*idx as usize) = v;
-                                        true
+                                        *ptr.add(idx) = v;
                                     }
                                     None => {
-                                        *ptr.add(*idx as usize) = T::Native::default();
-                                        false
+                                        *ptr.add(idx) = T::Native::default();
+                                        validity.set_unchecked(idx, false);
                                     }
                                 };
-                                validity.push_unchecked(valid)
                             }
                         }
                     })
@@ -753,22 +753,22 @@ where
                     for idx in start..end {
                         debug_assert!(idx < len);
                         unsafe {
-                            let valid = match opt_v {
+                            match opt_v {
                                 Some(v) => {
                                     *ptr.add(idx) = v;
-                                    true
                                 }
                                 None => {
                                     *ptr.add(idx) = T::Native::default();
-                                    false
+                                    validity.set_unchecked(idx, false);
                                 }
                             };
-                            validity.push_unchecked(valid)
                         }
                     }
                 }
             }
         }
+        // safety: we have written all slots
+        unsafe { values.set_len(len) }
         let arr = PrimitiveArray::new(
             T::get_dtype().to_physical().to_arrow(),
             values.into(),
