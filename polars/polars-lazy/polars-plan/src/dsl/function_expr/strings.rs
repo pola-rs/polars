@@ -85,7 +85,7 @@ impl Display for StringFunction {
             StringFunction::RStrip(_) => "rstrip",
         };
 
-        write!(f, "str.{}", s)
+        write!(f, "str.{s}")
     }
 }
 
@@ -234,7 +234,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         }
         dt => {
             return Err(PolarsError::ComputeError(
-                format!("not implemented for dtype {:?}", dt).into(),
+                format!("not implemented for dtype {dt:?}").into(),
             ))
         }
     };

@@ -129,13 +129,13 @@ impl Display for FunctionExpr {
             #[cfg(feature = "search_sorted")]
             SearchSorted => "search_sorted",
             #[cfg(feature = "strings")]
-            StringExpr(s) => return write!(f, "{}", s),
+            StringExpr(s) => return write!(f, "{s}"),
             #[cfg(feature = "temporal")]
-            TemporalExpr(fun) => return write!(f, "{}", fun),
+            TemporalExpr(fun) => return write!(f, "{fun}"),
             #[cfg(feature = "date_offset")]
             DateOffset(_) => "dt.offset_by",
             #[cfg(feature = "trigonometry")]
-            Trigonometry(func) => return write!(f, "{}", func),
+            Trigonometry(func) => return write!(f, "{func}"),
             #[cfg(feature = "sign")]
             Sign => "sign",
             FillNull { .. } => "fill_null",
@@ -150,9 +150,9 @@ impl Display for FunctionExpr {
                 (Some(_), None) => "clip_min",
                 _ => unreachable!(),
             },
-            ListExpr(func) => return write!(f, "{}", func),
+            ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
-            StructExpr(func) => return write!(f, "{}", func),
+            StructExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
@@ -169,7 +169,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

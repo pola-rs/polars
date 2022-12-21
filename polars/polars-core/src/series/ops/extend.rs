@@ -14,7 +14,7 @@ impl Series {
             Utf8(v) => Series::new("", vec![v]),
             Boolean(v) => Series::new("", vec![v]),
             Null => BooleanChunked::full_null("", 1).into_series(),
-            dt => panic!("{:?} not supported", dt),
+            dt => panic!("{dt:?} not supported"),
         };
         let s = s.cast(self.dtype())?;
         let to_append = s.new_from_index(0, n);

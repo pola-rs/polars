@@ -274,15 +274,14 @@ fn create_serializer<'a>(
                             encoded_pages.map(|result| {
                                 result.map_err(|e| {
                                     ParquetError::FeatureNotSupported(format!(
-                                        "reraised in polars: {}",
-                                        e
+                                        "reraised in polars: {e}",
                                     ))
                                 })
                             }),
                             options.compression,
                             vec![],
                         )
-                        .map_err(|e| ArrowError::External(format!("{}", e), Box::new(e))),
+                        .map_err(|e| ArrowError::External(format!("{e}"), Box::new(e))),
                     );
 
                     Ok(pages)

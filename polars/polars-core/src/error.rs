@@ -35,7 +35,7 @@ impl Display for ErrString {
             ErrString::Owned(msg) => msg.as_str(),
             ErrString::Borrowed(msg) => msg,
         };
-        write!(f, "{}", msg)
+        write!(f, "{msg}")
     }
 }
 
@@ -69,20 +69,20 @@ impl From<ArrowError> for PolarsError {
 
 impl From<anyhow::Error> for PolarsError {
     fn from(err: Error) -> Self {
-        PolarsError::ComputeError(format!("{:?}", err).into())
+        PolarsError::ComputeError(format!("{err:?}").into())
     }
 }
 
 impl From<polars_arrow::error::PolarsError> for PolarsError {
     fn from(err: polars_arrow::error::PolarsError) -> Self {
-        PolarsError::ComputeError(format!("{:?}", err).into())
+        PolarsError::ComputeError(format!("{err:?}").into())
     }
 }
 
 #[cfg(any(feature = "strings", feature = "temporal"))]
 impl From<regex::Error> for PolarsError {
     fn from(err: regex::Error) -> Self {
-        PolarsError::ComputeError(format!("regex error: {:?}", err).into())
+        PolarsError::ComputeError(format!("regex error: {err:?}").into())
     }
 }
 

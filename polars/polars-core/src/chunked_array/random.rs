@@ -209,7 +209,7 @@ where
     pub fn rand_normal(name: &str, length: usize, mean: f64, std_dev: f64) -> PolarsResult<Self> {
         let normal = match Normal::new(mean, std_dev) {
             Ok(dist) => dist,
-            Err(e) => return Err(PolarsError::ComputeError(format!("{:?}", e).into())),
+            Err(e) => return Err(PolarsError::ComputeError(format!("{e:?}").into())),
         };
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
         let mut rng = rand::thread_rng();
@@ -252,7 +252,7 @@ impl BooleanChunked {
     pub fn rand_bernoulli(name: &str, length: usize, p: f64) -> PolarsResult<Self> {
         let dist = match Bernoulli::new(p) {
             Ok(dist) => dist,
-            Err(e) => return Err(PolarsError::ComputeError(format!("{:?}", e).into())),
+            Err(e) => return Err(PolarsError::ComputeError(format!("{e:?}").into())),
         };
         let mut rng = rand::thread_rng();
         let mut builder = BooleanChunkedBuilder::new(name, length);

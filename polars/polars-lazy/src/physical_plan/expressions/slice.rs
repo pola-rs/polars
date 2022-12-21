@@ -27,7 +27,7 @@ fn extract_offset(offset: &Series, expr: &Expr) -> PolarsResult<i64> {
         return Err(expression_err!(msg, expr, ComputeError));
     }
     offset.get(0).unwrap().extract::<i64>().ok_or_else(|| {
-        PolarsError::ComputeError(format!("could not get an offset from {:?}", offset).into())
+        PolarsError::ComputeError(format!("could not get an offset from {offset:?}").into())
     })
 }
 
@@ -42,7 +42,7 @@ fn extract_length(length: &Series, expr: &Expr) -> PolarsResult<usize> {
     match length.get(0).unwrap() {
         Null => Ok(usize::MAX),
         v => v.extract::<usize>().ok_or_else(|| {
-            let msg = format!("Could not get a length from {:?}.", length);
+            let msg = format!("Could not get a length from {length:?}.");
             expression_err!(msg, expr, ComputeError)
         }),
     }
@@ -54,19 +54,14 @@ fn extract_args(offset: &Series, length: &Series, expr: &Expr) -> PolarsResult<(
 
 fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str, expr: &Expr) -> PolarsResult<()> {
     if let DataType::List(_) = arg.dtype() {
-        let msg = format!(
-            "Invalid slice argument: cannot use an array as {} argument.",
-            name
-        );
+        let msg = format!("Invalid slice argument: cannot use an array as {name} argument.",);
         Err(expression_err!(msg, expr, ComputeError))
     } else if arg.len() != groups.len() {
-        let msg = format!("Invalid slice argument: the evaluated length expression was of different {} than the number of groups.", name);
+        let msg = format!("Invalid slice argument: the evaluated length expression was of different {name} than the number of groups.");
         Err(expression_err!(msg, expr, ComputeError))
     } else if arg.null_count() > 0 {
-        let msg = format!(
-            "Invalid slice argument: the {} expression should not have null values.",
-            name
-        );
+        let msg =
+            format!("Invalid slice argument: the {name} expression should not have null values.",);
         Err(expression_err!(msg, expr, ComputeError))
     } else {
         Ok(())

@@ -372,7 +372,7 @@ pub enum Expr {
 #[allow(clippy::derive_hash_xor_eq)]
 impl Hash for Expr {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let s = format!("{:?}", self);
+        let s = format!("{self:?}");
         s.hash(state)
     }
 }
@@ -453,7 +453,7 @@ impl Display for Operator {
             Or => "|",
             Xor => "^",
         };
-        write!(f, "{}", tkn)
+        write!(f, "{tkn}")
     }
 }
 

@@ -278,7 +278,7 @@ fn parse_impl(
         n => {
             let value: simd_json::BorrowedValue =
                 simd_json::to_borrowed_value(line).map_err(|e| {
-                    PolarsError::ComputeError(format!("Error parsing line: {}", e).into())
+                    PolarsError::ComputeError(format!("Error parsing line: {e}").into())
                 })?;
 
             match value {
@@ -316,7 +316,7 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
 
     if offset != total_bytes {
         return Err(PolarsError::ComputeError(
-            format!("Expected {} bytes, but only parsed {}", total_bytes, offset).into(),
+            format!("Expected {total_bytes} bytes, but only parsed {offset}").into(),
         ));
     };
 

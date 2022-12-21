@@ -99,7 +99,7 @@ impl FunctionExpr {
                     Ok(DataType::Datetime(*tu, Some(tz.clone())))
                 } else {
                     Err(PolarsError::SchemaMisMatch(
-                        format!("expected Datetime got {:?}", dt).into(),
+                        format!("expected Datetime got {dt:?}").into(),
                     ))
                 }
             })

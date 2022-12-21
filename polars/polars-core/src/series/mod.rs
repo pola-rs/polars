@@ -596,7 +596,7 @@ impl Series {
                     let ca = self.f64().unwrap();
                     ca.cumsum(reverse).into_series()
                 }
-                dt => panic!("cumsum not supported for dtype: {:?}", dt),
+                dt => panic!("cumsum not supported for dtype: {dt:?}"),
             }
         }
         #[cfg(not(feature = "cum_agg"))]
@@ -637,7 +637,7 @@ impl Series {
                     let ca = self.f64().unwrap();
                     ca.cumprod(reverse).into_series()
                 }
-                dt => panic!("cumprod not supported for dtype: {:?}", dt),
+                dt => panic!("cumprod not supported for dtype: {dt:?}"),
             }
         }
         #[cfg(not(feature = "cum_agg"))]
@@ -673,7 +673,7 @@ impl Series {
                     let ca = self.f64().unwrap();
                     ca.prod_as_series()
                 }
-                dt => panic!("cumprod not supported for dtype: {:?}", dt),
+                dt => panic!("cumprod not supported for dtype: {dt:?}"),
             }
         }
         #[cfg(not(feature = "product"))]
@@ -725,7 +725,7 @@ impl Series {
                 .clone()
                 .into_time()
                 .into_series(),
-            dt => panic!("date not implemented for {:?}", dt),
+            dt => panic!("date not implemented for {dt:?}"),
         }
     }
 
@@ -744,7 +744,7 @@ impl Series {
                 .clone()
                 .into_date()
                 .into_series(),
-            dt => panic!("date not implemented for {:?}", dt),
+            dt => panic!("date not implemented for {dt:?}"),
         }
     }
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
@@ -768,7 +768,7 @@ impl Series {
                 .clone()
                 .into_datetime(timeunit, tz)
                 .into_series(),
-            dt => panic!("into_datetime not implemented for {:?}", dt),
+            dt => panic!("into_datetime not implemented for {dt:?}"),
         }
     }
 
@@ -792,7 +792,7 @@ impl Series {
                 .clone()
                 .into_duration(timeunit)
                 .into_series(),
-            dt => panic!("into_duration not implemented for {:?}", dt),
+            dt => panic!("into_duration not implemented for {dt:?}"),
         }
     }
 
@@ -814,7 +814,7 @@ impl Series {
             Float64 => a.f64().unwrap().abs().into_series(),
             dt => {
                 return Err(PolarsError::InvalidOperation(
-                    format!("abs not supported for series of type {:?}", dt).into(),
+                    format!("abs not supported for series of type {dt:?}").into(),
                 ));
             }
         };
@@ -829,7 +829,7 @@ impl Series {
             AnyValue::Null => Cow::Borrowed("null"),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev) => Cow::Borrowed(rev.get(idx)),
-            av => Cow::Owned(format!("{}", av)),
+            av => Cow::Owned(format!("{av}")),
         };
         Ok(out)
     }

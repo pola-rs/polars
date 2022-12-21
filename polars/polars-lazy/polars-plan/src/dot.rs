@@ -48,9 +48,8 @@ impl Expr {
                 let current_node = format!(
                     r#"BINARY
                     left _;
-                    op {:?},
-                    right: _ [{},{}]"#,
-                    op, branch, id
+                    op {op:?},
+                    right: _ [{branch},{id}]"#,
                 );
 
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -60,7 +59,7 @@ impl Expr {
                 }
                 Ok(())
             }
-            _ => self.write_dot(acc_str, prev_node, &format!("{}{}", branch, id), id),
+            _ => self.write_dot(acc_str, prev_node, &format!("{branch}{id}"), id),
         }
     }
 }
@@ -75,7 +74,7 @@ pub struct DotNode<'a> {
 impl LogicalPlan {
     fn write_single_node(&self, acc_str: &mut String, node: DotNode) -> std::fmt::Result {
         let fmt_node = node.fmt.replace('"', r#"\""#);
-        writeln!(acc_str, "graph  polars_query {{\n\"[{}]\"", fmt_node)?;
+        writeln!(acc_str, "graph  polars_query {{\n\"[{fmt_node}]\"")?;
         Ok(())
     }
 
@@ -137,7 +136,7 @@ impl LogicalPlan {
             AnonymousScan { file_info, .. } => {
                 let total_columns = file_info.schema.len();
 
-                let fmt = format!("ANONYMOUS SCAN;\nπ {}", total_columns);
+                let fmt = format!("ANONYMOUS SCAN;\nπ {total_columns}");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -258,7 +257,7 @@ impl LogicalPlan {
                 }
 
                 let pred = fmt_predicate(selection.as_ref());
-                let fmt = format!("TABLE\nπ {}/{};\nσ {};", n_columns, total_columns, pred,);
+                let fmt = format!("TABLE\nπ {n_columns}/{total_columns};\nσ {pred};");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -289,7 +288,7 @@ impl LogicalPlan {
             Sort {
                 input, by_column, ..
             } => {
-                let fmt = format!("SORT BY {:?}", by_column);
+                let fmt = format!("SORT BY {by_column:?}");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -314,7 +313,7 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
             Explode { input, columns, .. } => {
-                let fmt = format!("EXPLODE {:?}", columns);
+                let fmt = format!("EXPLODE {columns:?}");
 
                 let current_node = DotNode {
                     branch,
@@ -339,7 +338,7 @@ impl LogicalPlan {
                 let mut s_keys = String::with_capacity(128);
                 s_keys.push('[');
                 for key in keys.iter() {
-                    write!(s_keys, "{:?},", key)?
+                    write!(s_keys, "{key:?},")?
                 }
                 s_keys.pop();
                 s_keys.push(']');
@@ -357,10 +356,10 @@ impl LogicalPlan {
                 fmt.push_str("WITH COLUMNS [");
                 for e in exprs {
                     if let Expr::Alias(_, name) = e {
-                        write!(fmt, "\"{}\",", name)?
+                        write!(fmt, "\"{name}\",")?
                     } else {
                         for name in expr_to_leaf_column_names(e).iter().take(1) {
-                            write!(fmt, "\"{}\",", name)?
+                            write!(fmt, "\"{name}\",")?
                         }
                     }
                 }
@@ -375,7 +374,7 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
             Slice { input, offset, len } => {
-                let fmt = format!("SLICE offset: {}; len: {}", offset, len,);
+                let fmt = format!("SLICE offset: {offset}; len: {len}");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -390,7 +389,7 @@ impl LogicalPlan {
                 if let Some(subset) = &options.subset {
                     fmt.push_str(" BY ");
                     for name in subset.iter() {
-                        write!(fmt, "{}", name)?
+                        write!(fmt, "{name}")?
                     }
                 }
                 let current_node = DotNode {
@@ -494,7 +493,7 @@ impl LogicalPlan {
             MapFunction {
                 input, function, ..
             } => {
-                let fmt = format!("{}", function);
+                let fmt = format!("{function}");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -537,7 +536,7 @@ impl LogicalPlan {
 fn fmt_predicate(predicate: Option<&Expr>) -> String {
     if let Some(predicate) = predicate {
         let n = 25;
-        let mut pred_fmt = format!("{:?}", predicate);
+        let mut pred_fmt = format!("{predicate:?}");
         pred_fmt = pred_fmt.replace('[', "");
         pred_fmt = pred_fmt.replace(']', "");
         if pred_fmt.len() > n {

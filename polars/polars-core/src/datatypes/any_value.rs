@@ -160,7 +160,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             type Value = AvField;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                write!(formatter, "an integer between 0-{}", LAST)
+                write!(formatter, "an integer between 0-{LAST}")
             }
 
             fn visit_i64<E>(self, v: i64) -> std::result::Result<Self::Value, E>
@@ -387,7 +387,7 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(0)
                 }
             }
-            dt => panic!("dtype {:?} not implemented", dt),
+            dt => panic!("dtype {dt:?} not implemented"),
         }
     }
 
@@ -461,7 +461,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Int32(v) => AnyValue::Date(v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {}", dt),
+            dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
     #[cfg(feature = "dtype-datetime")]
@@ -469,7 +469,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Datetime(v, tu, tz),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {}", dt),
+            dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
@@ -478,7 +478,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Duration(v, tu),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {}", dt),
+            dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
@@ -487,7 +487,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Time(v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {}", dt),
+            dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
@@ -548,7 +548,7 @@ impl<'a> AnyValue<'a> {
             BinaryOwned(v) => BinaryOwned(v),
             dt => {
                 return Err(PolarsError::ComputeError(
-                    format!("cannot get static AnyValue from {}", dt).into(),
+                    format!("cannot get static AnyValue from {dt}").into(),
                 ))
             }
         };

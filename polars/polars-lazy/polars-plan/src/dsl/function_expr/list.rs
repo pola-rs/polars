@@ -23,7 +23,7 @@ impl Display for ListFunction {
             Slice => "slice",
             Get => "get",
         };
-        write!(f, "{}", name)
+        write!(f, "{name}")
     }
 }
 

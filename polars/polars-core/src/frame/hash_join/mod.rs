@@ -148,13 +148,13 @@ impl Display for JoinType {
             #[cfg(feature = "semi_anti_join")]
             Anti => "ANTI",
         };
-        write!(f, "{}", val)
+        write!(f, "{val}")
     }
 }
 
 impl Debug for JoinType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -294,7 +294,7 @@ impl ZipOuterJoinColumn for Float64Chunked {
 }
 
 pub fn _join_suffix_name(name: &str, suffix: &str) -> String {
-    format!("{}{}", name, suffix)
+    format!("{name}{suffix}")
 }
 
 /// Utility method to finish a join.

@@ -97,7 +97,7 @@ impl PhysicalExpr for LiteralExpr {
                         None => {
                             // Overflow
                             return Err(PolarsError::InvalidOperation(
-                                format!("cannot represent {:?} as {:?}", v, tu).into(),
+                                format!("cannot represent {v:?} as {tu:?}").into(),
                             ));
                         }
                     },
@@ -107,7 +107,7 @@ impl PhysicalExpr for LiteralExpr {
                             None => {
                                 // Overflow
                                 return Err(PolarsError::InvalidOperation(
-                                    format!("cannot represent {:?} as {:?}", v, tu).into(),
+                                    format!("cannot represent {v:?} as {tu:?}").into(),
                                 ));
                             }
                         }

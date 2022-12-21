@@ -23,7 +23,7 @@ impl Debug for Schema {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Schema:")?;
         for (name, dtype) in self.inner.iter() {
-            writeln!(f, "name: {}, data type: {:?}", name, dtype)?;
+            writeln!(f, "name: {name}, data type: {dtype:?}")?;
         }
         Ok(())
     }
@@ -219,11 +219,7 @@ pub trait IndexOfSchema: Debug {
     fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
             PolarsError::SchemaMisMatch(
-                format!(
-                    "Unable to get field named \"{}\" from schema: {:?}",
-                    name, self
-                )
-                .into(),
+                format!("Unable to get field named \"{name}\" from schema: {self:?}",).into(),
             )
         })
     }

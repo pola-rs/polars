@@ -193,7 +193,7 @@ fn check_expand_literals(
             let name = s.name();
             if !names.insert(name) {
                 return Err(PolarsError::Duplicate(
-                    format!("Column with name: '{}' has more than one occurrences", name).into(),
+                    format!("Column with name: '{name}' has more than one occurrences").into(),
                 ));
             }
         }
@@ -210,8 +210,7 @@ fn check_expand_literals(
                 } else {
                     Err(PolarsError::ComputeError(
                         format!(
-                            "Series {:?} does not match the DataFrame height of {}",
-                            series, df_height
+                            "Series {series:?} does not match the DataFrame height of {df_height}",
                         )
                         .into(),
                     ))

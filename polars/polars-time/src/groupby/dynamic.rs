@@ -130,8 +130,7 @@ impl Wrap<&DataFrame> {
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
-                    dt
+                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
                 )
                     .into(),
                 ))
@@ -198,8 +197,7 @@ impl Wrap<&DataFrame> {
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
-                    dt
+                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
                 )
                     .into(),
                 ))

@@ -272,14 +272,14 @@ impl Display for DataType {
             DataType::Date => "date",
             DataType::Datetime(tu, tz) => {
                 let s = match tz {
-                    None => format!("datetime[{}]", tu),
-                    Some(tz) => format!("datetime[{}, {}]", tu, tz),
+                    None => format!("datetime[{tu}]"),
+                    Some(tz) => format!("datetime[{tu}, {tz}]"),
                 };
                 return f.write_str(&s);
             }
-            DataType::Duration(tu) => return write!(f, "duration[{}]", tu),
+            DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
-            DataType::List(tp) => return write!(f, "list[{}]", tp),
+            DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
             #[cfg(feature = "dtype-categorical")]

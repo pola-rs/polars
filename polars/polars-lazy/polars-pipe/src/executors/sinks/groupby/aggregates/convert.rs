@@ -130,7 +130,7 @@ where
                     DataType::UInt64 => AggregateFunction::MinMaxU64(new_min()),
                     DataType::Float32 => AggregateFunction::MinMaxF32(new_min()),
                     DataType::Float64 => AggregateFunction::MinMaxF64(new_min()),
-                    dt => panic!("{} unexpected", dt),
+                    dt => panic!("{dt} unexpected"),
                 };
                 (phys_expr, agg_fn)
             }
@@ -149,7 +149,7 @@ where
                     DataType::UInt64 => AggregateFunction::MinMaxU64(new_max()),
                     DataType::Float32 => AggregateFunction::MinMaxF32(new_max()),
                     DataType::Float64 => AggregateFunction::MinMaxF64(new_max()),
-                    dt => panic!("{} unexpected", dt),
+                    dt => panic!("{dt} unexpected"),
                 };
                 (phys_expr, agg_fn)
             }
@@ -229,7 +229,7 @@ where
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 (phys_expr, AggregateFunction::Count(CountAgg::new()))
             }
-            agg => panic!("{:?} not yet implemented.", agg),
+            agg => panic!("{agg:?} not yet implemented."),
         },
         _ => todo!(),
     }

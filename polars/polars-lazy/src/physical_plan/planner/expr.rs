@@ -55,8 +55,7 @@ pub(crate) fn create_physical_expr(
                     return Err(PolarsError::ComputeError(
                         format!(
                             "Cannot apply a window function, did not find a root column. \
-                        This is likely due to a syntax error in this expression: {:?}",
-                            e
+                        This is likely due to a syntax error in this expression: {e:?}",
                         )
                         .into(),
                     ));

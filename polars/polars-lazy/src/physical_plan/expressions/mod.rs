@@ -572,7 +572,7 @@ impl Display for &dyn PhysicalExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.as_expression() {
             None => Ok(()),
-            Some(e) => write!(f, "{}", e),
+            Some(e) => write!(f, "{e}"),
         }
     }
 }

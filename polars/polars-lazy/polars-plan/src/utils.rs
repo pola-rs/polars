@@ -29,14 +29,14 @@ pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
     container_start: &str,
     container_end: &str,
 ) -> std::fmt::Result {
-    write!(f, "{}", container_start)?;
+    write!(f, "{container_start}")?;
     for (i, c) in items.iter().enumerate() {
         write!(f, "{}", c.as_ref())?;
         if i != (items.len() - 1) {
             write!(f, ", ")?;
         }
     }
-    write!(f, "{}", container_end)
+    write!(f, "{container_end}")
 }
 
 pub trait PushNode {
@@ -313,7 +313,7 @@ pub fn aexpr_to_leaf_names_iter(
         // expecting only columns here, wildcards and dtypes should already be replaced
         AExpr::Column(name) => name.clone(),
         e => {
-            panic!("{:?} not expected", e)
+            panic!("{e:?} not expected")
         }
     })
 }

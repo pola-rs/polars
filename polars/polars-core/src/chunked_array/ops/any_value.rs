@@ -101,7 +101,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         }
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("should not be here"),
-        dt => panic!("not implemented for {:?}", dt),
+        dt => panic!("not implemented for {dt:?}"),
     }
 }
 

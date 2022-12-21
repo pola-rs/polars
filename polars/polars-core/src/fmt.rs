@@ -180,21 +180,21 @@ where
             for i in 0..limit / 2 {
                 match taker.get(i) {
                     None => writeln!(f, "\tnull")?,
-                    Some(val) => writeln!(f, "\t{}", val)?,
+                    Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
             writeln!(f, "\t...")?;
             for i in (0..limit / 2).rev() {
                 match taker.get(self.len() - i - 1) {
                     None => writeln!(f, "\tnull")?,
-                    Some(val) => writeln!(f, "\t{}", val)?,
+                    Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
         } else {
             for i in 0..limit {
                 match taker.get(i) {
                     None => writeln!(f, "\tnull")?,
-                    Some(val) => writeln!(f, "\t{}", val)?,
+                    Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
         }
@@ -268,7 +268,7 @@ impl Debug for Series {
             dt @ DataType::Struct(_) => format_array!(
                 f,
                 self.struct_().unwrap(),
-                format!("{}", dt),
+                format!("{dt}"),
                 self.name(),
                 "Series"
             ),
@@ -279,7 +279,7 @@ impl Debug for Series {
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
             }
-            dt => panic!("{:?} not impl", dt),
+            dt => panic!("{dt:?} not impl"),
         }
     }
 }
@@ -306,7 +306,7 @@ fn make_str_val(v: &str, truncate: usize) -> String {
     if v == v_trunc {
         v.to_string()
     } else {
-        format!("{}...", v_trunc)
+        format!("{v_trunc}...")
     }
 }
 
@@ -396,9 +396,9 @@ impl Display for DataFrame {
                 let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
                     & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
                 {
-                    format!("{} ({})", column_name, column_data_type)
+                    format!("{column_name} ({column_data_type})")
                 } else {
-                    format!("{}{}{}", column_name, column_separator, column_data_type)
+                    format!("{column_name}{column_separator}{column_data_type}")
                 };
                 (s, lower_bounds)
             };
@@ -540,9 +540,9 @@ impl Display for DataFrame {
 
             // establish 'shape' information (above/below/hidden)
             if env_is_true(FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION) {
-                write!(f, "{}", table)?;
+                write!(f, "{table}")?;
             } else if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
-                write!(f, "{}\nshape: {:?}", table, self.shape())?;
+                write!(f, "{table}\nshape: {:?}", self.shape())?;
             } else {
                 write!(f, "shape: {:?}\n{}", self.shape(), table)?;
             }
@@ -566,7 +566,7 @@ fn fmt_integer<T: Num + NumCast + Display>(
     width: usize,
     v: T,
 ) -> fmt::Result {
-    write!(f, "{:>width$}", v, width = width)
+    write!(f, "{v:>width$}")
 }
 
 const SCIENTIFIC_BOUND: f64 = 999999.0;
@@ -574,15 +574,15 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     let v: f64 = NumCast::from(v).unwrap();
     // show integers as 0.0, 1.0 ... 101.0
     if v.fract() == 0.0 && v.abs() < SCIENTIFIC_BOUND {
-        write!(f, "{:>width$.1}", v, width = width)
-    } else if format!("{}", v).len() > 9 {
+        write!(f, "{v:>width$.1}")
+    } else if format!("{v}").len() > 9 {
         // large and small floats in scientific notation
         if !(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND) {
-            write!(f, "{:>width$.4e}", v, width = width)
+            write!(f, "{v:>width$.4e}")
         } else {
             // this makes sure we don't write 12.00000 in case of a long flt that is 12.0000000001
             // instead we write 12.0
-            let s = format!("{:>width$.6}", v, width = width);
+            let s = format!("{v:>width$.6}");
 
             if s.ends_with('0') {
                 let mut s = s.as_str();
@@ -593,21 +593,21 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
                     len -= 1;
                 }
                 if s.ends_with('.') {
-                    write!(f, "{}0", s)
+                    write!(f, "{s}0")
                 } else {
-                    write!(f, "{}", s)
+                    write!(f, "{s}")
                 }
             } else {
                 // 12.0934509341243124
                 // written as
                 // 12.09345
-                write!(f, "{:>width$.6}", v, width = width)
+                write!(f, "{v:>width$.6}")
             }
         }
     } else if v.fract() == 0.0 {
-        write!(f, "{:>width$e}", v, width = width)
+        write!(f, "{v:>width$e}")
     } else {
-        write!(f, "{:>width$}", v, width = width)
+        write!(f, "{v:>width$}")
     }
 }
 
@@ -682,10 +682,10 @@ impl Display for AnyValue<'_> {
         let width = 0;
         match self {
             AnyValue::Null => write!(f, "null"),
-            AnyValue::UInt8(v) => write!(f, "{}", v),
-            AnyValue::UInt16(v) => write!(f, "{}", v),
-            AnyValue::UInt32(v) => write!(f, "{}", v),
-            AnyValue::UInt64(v) => write!(f, "{}", v),
+            AnyValue::UInt8(v) => write!(f, "{v}"),
+            AnyValue::UInt16(v) => write!(f, "{v}"),
+            AnyValue::UInt32(v) => write!(f, "{v}"),
+            AnyValue::UInt64(v) => write!(f, "{v}"),
             AnyValue::Int8(v) => fmt_integer(f, width, *v),
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
@@ -693,8 +693,8 @@ impl Display for AnyValue<'_> {
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
-            AnyValue::Utf8(v) => write!(f, "{}", format_args!("\"{}\"", v)),
-            AnyValue::Utf8Owned(v) => write!(f, "{}", format_args!("\"{}\"", v)),
+            AnyValue::Utf8(v) => write!(f, "{}", format_args!("\"{v}\"")),
+            AnyValue::Utf8Owned(v) => write!(f, "{}", format_args!("\"{v}\"")),
             #[cfg(feature = "dtype-binary")]
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => write!(f, "[binary data]"),
             #[cfg(feature = "dtype-date")]
@@ -707,7 +707,7 @@ impl Display for AnyValue<'_> {
                     TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
                 };
                 match tz {
-                    None => write!(f, "{}", ndt),
+                    None => write!(f, "{ndt}"),
                     Some(_tz) => {
                         #[cfg(feature = "timezones")]
                         {
@@ -715,12 +715,12 @@ impl Display for AnyValue<'_> {
                                 Ok(tz) => {
                                     let dt_utc = chrono::Utc.from_local_datetime(&ndt).unwrap();
                                     let dt_tz_aware = dt_utc.with_timezone(&tz);
-                                    write!(f, "{}", dt_tz_aware)
+                                    write!(f, "{dt_tz_aware}")
                                 }
                                 Err(_) => match parse_offset(_tz) {
                                     Ok(offset) => {
                                         let dt_tz_aware = offset.from_utc_datetime(&ndt);
-                                        write!(f, "{}", dt_tz_aware)
+                                        write!(f, "{dt_tz_aware}")
                                     }
                                     Err(_) => write!(f, "invalid timezone"),
                                 },
@@ -742,16 +742,16 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: chrono::NaiveTime = self.into();
-                write!(f, "{}", nt)
+                write!(f, "{nt}")
             }
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev) => {
                 let s = rev.get(*idx);
-                write!(f, "\"{}\"", s)
+                write!(f, "\"{s}\"")
             }
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
-            AnyValue::Object(v) => write!(f, "{}", v),
+            AnyValue::Object(v) => write!(f, "{v}"),
             #[cfg(feature = "dtype-struct")]
             av @ AnyValue::Struct(_, _, _) => {
                 let mut avs = vec![];
@@ -769,7 +769,7 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
     write!(f, "{{")?;
     if !vals.is_empty() {
         for v in &vals[..vals.len() - 1] {
-            write!(f, "{},", v)?;
+            write!(f, "{v},")?;
         }
         // last value has no trailing comma
         write!(f, "{}", vals[vals.len() - 1])?;

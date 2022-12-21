@@ -1523,13 +1523,13 @@ impl Expr {
     /// Add a suffix to the root column name.
     pub fn suffix(self, suffix: &str) -> Expr {
         let suffix = suffix.to_string();
-        self.map_alias(move |name| Ok(format!("{}{}", name, suffix)))
+        self.map_alias(move |name| Ok(format!("{name}{suffix}")))
     }
 
     /// Add a prefix to the root column name.
     pub fn prefix(self, prefix: &str) -> Expr {
         let prefix = prefix.to_string();
-        self.map_alias(move |name| Ok(format!("{}{}", prefix, name)))
+        self.map_alias(move |name| Ok(format!("{prefix}{name}")))
     }
 
     /// Exclude a column from a wildcard/regex selection.
@@ -1906,7 +1906,7 @@ impl Expr {
                     Float64 => Series::new(name, &[f64::INFINITY]),
                     dt => {
                         return Err(PolarsError::ComputeError(
-                            format!("cannot determine upper bound of dtype {}", dt).into(),
+                            format!("cannot determine upper bound of dtype {dt}").into(),
                         ))
                     }
                 };
@@ -1940,7 +1940,7 @@ impl Expr {
                     Float64 => Series::new(name, &[f64::NEG_INFINITY]),
                     dt => {
                         return Err(PolarsError::ComputeError(
-                            format!("cannot determine lower bound of dtype {}", dt).into(),
+                            format!("cannot determine lower bound of dtype {dt}").into(),
                         ))
                     }
                 };

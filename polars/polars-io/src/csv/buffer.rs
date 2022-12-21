@@ -524,7 +524,7 @@ pub(crate) fn init_buffers<'a>(
                 }
                 other => {
                     return Err(PolarsError::ComputeError(
-                        format!("Unsupported data type {:?} when reading a csv", other).into(),
+                        format!("Unsupported data type {other:?} when reading a csv").into(),
                     ))
                 }
             };

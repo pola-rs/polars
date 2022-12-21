@@ -58,7 +58,7 @@ impl TimeMethods for TimeChunked {
                     Some(v) => {
                         buf.clear();
                         let timefmt = time64ns_to_time(*v).format(fmt);
-                        write!(buf, "{}", timefmt).unwrap();
+                        write!(buf, "{timefmt}").unwrap();
                         mutarr.push(Some(&buf))
                     }
                 }

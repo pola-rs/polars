@@ -319,7 +319,7 @@ pub fn rows_to_schema_supertypes(
         .enumerate()
         .map(|(i, types_set)| {
             let dtype = types_set_to_dtype(types_set)?;
-            Ok(Field::new(format!("column_{}", i).as_ref(), dtype))
+            Ok(Field::new(format!("column_{i}").as_ref(), dtype))
         })
         .collect::<PolarsResult<_>>()
 }
@@ -375,7 +375,7 @@ impl From<&Row<'_>> for Schema {
     fn from(row: &Row) -> Self {
         let fields = row.0.iter().enumerate().map(|(i, av)| {
             let dtype = av.into();
-            Field::new(format!("column_{}", i).as_ref(), dtype)
+            Field::new(format!("column_{i}").as_ref(), dtype)
         });
 
         Schema::from(fields)
@@ -461,8 +461,8 @@ impl<'a> AnyValueBuffer<'a> {
 
             // dynamic types
             (Utf8(builder), av) => match av {
-                AnyValue::Int64(v) => builder.append_value(&format!("{}", v)),
-                AnyValue::Float64(v) => builder.append_value(&format!("{}", v)),
+                AnyValue::Int64(v) => builder.append_value(&format!("{v}")),
+                AnyValue::Float64(v) => builder.append_value(&format!("{v}")),
                 AnyValue::Boolean(true) => builder.append_value("true"),
                 AnyValue::Boolean(false) => builder.append_value("false"),
                 _ => return None,
@@ -474,8 +474,8 @@ impl<'a> AnyValueBuffer<'a> {
 
     pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
         self.add(val.clone()).ok_or_else(|| {
-            PolarsError::ComputeError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.\n\
-            Or consider increasing the the 'schema_inference_length' argument.", val).into())
+            PolarsError::ComputeError(format!("Could not append {val:?} to builder; make sure that all rows have the same schema.\n\
+            Or consider increasing the the 'schema_inference_length' argument.").into())
         })
     }
 
@@ -641,7 +641,7 @@ where
                     values.into(),
                     validity,
                 );
-                let name = format!("column_{}", i);
+                let name = format!("column_{i}");
                 ChunkedArray::<T>::from_chunks(&name, vec![Box::new(arr) as ArrayRef]).into_series()
             })
             .collect()

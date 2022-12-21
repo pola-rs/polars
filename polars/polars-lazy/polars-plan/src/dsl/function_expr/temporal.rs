@@ -29,7 +29,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
             Ok(ca.into_series())
         }
         dt => Err(PolarsError::ComputeError(
-            format!("cannot use 'date_offset' on Series of dtype: {:?}", dt).into(),
+            format!("cannot use 'date_offset' on Series of dtype: {dt:?}").into(),
         )),
     }
 }

@@ -177,7 +177,7 @@ fn upsample_single_impl(
             }
         }
         dt => Err(PolarsError::ComputeError(
-            format!("upsample not allowed for index_column of dtype {:?}", dt).into(),
+            format!("upsample not allowed for index_column of dtype {dt:?}").into(),
         )),
     }
 }

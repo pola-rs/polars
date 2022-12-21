@@ -550,7 +550,7 @@ mod stats {
                     (DataType::Utf8, DataType::Categorical(_)) => {}
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::Categorical(_), DataType::Utf8) => {}
-                    (l, r) if l != r => panic!("implementation error: {:?}, {:?}", l, r),
+                    (l, r) if l != r => panic!("implementation error: {l:?}, {r:?}"),
                     _ => {}
                 }
             }

@@ -31,7 +31,7 @@ impl DateLikeNameSpace {
                     Ok(ca.cast_time_unit(tu).into_series())
                 }
                 dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {:?} has got no time unit", dt).into(),
+                    format!("Series of dtype {dt:?} has got no time unit").into(),
                 )),
             },
             GetOutput::map_dtype(move |dtype| match dtype {
@@ -58,7 +58,7 @@ impl DateLikeNameSpace {
                     Ok(ca.into_series())
                 }
                 dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {:?} has got no time unit", dt).into(),
+                    format!("Series of dtype {dt:?} has got no time unit").into(),
                 )),
             },
             GetOutput::same_type(),
@@ -75,7 +75,7 @@ impl DateLikeNameSpace {
                     Ok(ca.into_series())
                 }
                 dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {:?} has got no time zone", dt).into(),
+                    format!("Series of dtype {dt:?} has got no time zone").into(),
                 )),
             },
             GetOutput::same_type(),

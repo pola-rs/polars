@@ -187,7 +187,7 @@ impl Series {
                 // use null dtype here and fix tests
                 Series::full_null(name, av.len(), &DataType::Int32)
             }
-            dt => panic!("{:?} not supported", dt),
+            dt => panic!("{dt:?} not supported"),
         };
         s.rename(name);
         Ok(s)

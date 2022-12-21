@@ -54,7 +54,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
         } => {
             let input = input.first().unwrap();
             let input = predicate_to_pa(*input, expr_arena)?;
-            Some(format!("~({})", input))
+            Some(format!("~({input})"))
         }
         AExpr::Function {
             function: FunctionExpr::IsNull,
@@ -63,7 +63,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
         } => {
             let input = input.first().unwrap();
             let input = predicate_to_pa(*input, expr_arena)?;
-            Some(format!("({}).is_null()", input))
+            Some(format!("({input}).is_null()"))
         }
         AExpr::Function {
             function: FunctionExpr::IsNotNull,
@@ -72,7 +72,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
         } => {
             let input = input.first().unwrap();
             let input = predicate_to_pa(*input, expr_arena)?;
-            Some(format!("~({}).is_null()", input))
+            Some(format!("~({input}).is_null()"))
         }
         _ => None,
     }
