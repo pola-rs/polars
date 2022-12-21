@@ -424,10 +424,13 @@ impl Duration {
             let nsec = ts.nanosecond();
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
             new_t = datetime_to_timestamp(dt);
-        } else if d.weeks > 0 {
-            let nsecs = nsecs_to_unit(self.weeks * NS_WEEK);
-            new_t += if d.negative { -nsecs } else { nsecs };
         }
+
+        if d.weeks > 0 {
+            let t_weeks = nsecs_to_unit(self.weeks * NS_WEEK);
+            new_t += if d.negative { -t_weeks } else { t_weeks };
+        }
+
         new_t
     }
 
