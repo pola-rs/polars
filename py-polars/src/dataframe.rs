@@ -576,13 +576,18 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "object")]
-    pub fn row_tuple(&self, idx: i64) -> PyObject {
-        Python::with_gil(|py| {
-            let idx = if idx < 0 {
-                (self.df.height() as i64 + idx) as usize
-            } else {
-                idx as usize
-            };
+    pub fn row_tuple(&self, idx: i64) -> PyResult<PyObject> {
+        let idx = if idx < 0 {
+            (self.df.height() as i64 + idx) as usize
+        } else {
+            idx as usize
+        };
+        if idx >= self.df.height() {
+            Err(PolarsError::ComputeError("Index out of bounds.".into()))
+                .map_err(PyPolarsErr::from)?;
+        }
+
+        let out = Python::with_gil(|py| {
             PyTuple::new(
                 py,
                 self.df.get_columns().iter().map(|s| match s.dtype() {
@@ -590,11 +595,12 @@ impl PyDataFrame {
                         let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                         obj.to_object(py)
                     }
-                    _ => Wrap(s.get(idx)).into_py(py),
+                    _ => Wrap(s.get(idx).unwrap()).into_py(py),
                 }),
             )
             .into_py(py)
-        })
+        });
+        Ok(out)
     }
 
     #[cfg(feature = "object")]
@@ -612,7 +618,8 @@ impl PyDataFrame {
                                     s.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
                             }
-                            _ => Wrap(s.get(idx)).into_py(py),
+                            // safety: we are in bounds.
+                            _ => unsafe { Wrap(s.get_unchecked(idx)).into_py(py) },
                         }),
                     )
                 }),

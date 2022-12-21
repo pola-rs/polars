@@ -191,7 +191,15 @@ impl LogicalType for StructChunked {
     }
 
     /// Gets AnyValue from LogicalType
-    fn get_any_value(&self, i: usize) -> AnyValue<'_> {
+    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        if i >= self.len() {
+            Err(PolarsError::ComputeError("Index out of bounds.".into()))
+        } else {
+            unsafe { Ok(self.get_any_value_unchecked(i)) }
+        }
+    }
+
+    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         let (chunk_idx, idx) = index_to_chunked_index2(&self.chunks, i);
         if let DataType::Struct(flds) = self.dtype() {
             // safety: we already have a single chunk and we are

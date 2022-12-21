@@ -239,8 +239,14 @@ fn test_null_commutativity() {
         .collect()
         .unwrap();
 
-    assert_eq!(out.column("a").unwrap().get(0), AnyValue::Boolean(true));
-    assert_eq!(out.column("b").unwrap().get(0), AnyValue::Boolean(true));
+    assert_eq!(
+        out.column("a").unwrap().get(0).unwrap(),
+        AnyValue::Boolean(true)
+    );
+    assert_eq!(
+        out.column("b").unwrap().get(0).unwrap(),
+        AnyValue::Boolean(true)
+    );
 }
 
 #[test]
@@ -291,11 +297,11 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     assert_eq!(
-        out.get(0),
+        out.get(0)?,
         AnyValue::List(Series::new("", &[1 as IdxSize, 2 as IdxSize]))
     );
     assert_eq!(
-        out.get(1),
+        out.get(1)?,
         AnyValue::List(Series::new("", &[10 as IdxSize]))
     );
 
@@ -311,11 +317,11 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     assert_eq!(
-        out.get(1),
+        out.get(1)?,
         AnyValue::List(Series::new("", &[1 as IdxSize, 2]))
     );
     assert_eq!(
-        out.get(0),
+        out.get(0)?,
         AnyValue::List(Series::new("", &[10 as IdxSize]))
     );
 
@@ -330,8 +336,8 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("value")?;
-    assert!(matches!(out.get(0), AnyValue::List(_)));
-    assert_eq!(out.get(1), AnyValue::Null);
+    assert!(matches!(out.get(0)?, AnyValue::List(_)));
+    assert_eq!(out.get(1)?, AnyValue::Null);
 
     // swapped branch
     let out = df
@@ -344,8 +350,8 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("value")?;
-    assert!(matches!(out.get(1), AnyValue::List(_)));
-    assert_eq!(out.get(0), AnyValue::Null);
+    assert!(matches!(out.get(1)?, AnyValue::List(_)));
+    assert_eq!(out.get(0)?, AnyValue::Null);
 
     Ok(())
 }

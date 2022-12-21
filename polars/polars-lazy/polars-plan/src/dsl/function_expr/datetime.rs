@@ -179,8 +179,8 @@ pub(super) fn date_range_dispatch(
                 let start = start.to_physical_repr();
                 let stop = stop.to_physical_repr();
                 // to milliseconds
-                let start = start.get(0).extract::<i64>().unwrap() * TO_MS;
-                let stop = stop.get(0).extract::<i64>().unwrap() * TO_MS;
+                let start = start.get(0).unwrap().extract::<i64>().unwrap() * TO_MS;
+                let stop = stop.get(0).unwrap().extract::<i64>().unwrap() * TO_MS;
 
                 date_range_impl(
                     name,
@@ -196,8 +196,8 @@ pub(super) fn date_range_dispatch(
             DataType::Datetime(tu, _) => {
                 let start = start.to_physical_repr();
                 let stop = stop.to_physical_repr();
-                let start = start.get(0).extract::<i64>().unwrap();
-                let stop = stop.get(0).extract::<i64>().unwrap();
+                let start = start.get(0).unwrap().extract::<i64>().unwrap();
+                let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
 
                 Ok(
                     date_range_impl(name, start, stop, every, closed, *tu, tz.as_ref())

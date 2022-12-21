@@ -338,14 +338,14 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn get(&self, index: usize) -> AnyValue {
+            fn get(&self, index: usize) -> PolarsResult<AnyValue> {
                 self.0.get_any_value(index)
             }
 
             #[inline]
             #[cfg(feature = "private")]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-                self.0.get_any_value_unchecked(index).$into_logical()
+                self.0.get_any_value_unchecked(index)
             }
 
             fn sort_with(&self, options: SortOptions) -> Series {

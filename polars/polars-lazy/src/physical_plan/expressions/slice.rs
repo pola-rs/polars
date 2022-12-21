@@ -26,7 +26,7 @@ fn extract_offset(offset: &Series, expr: &Expr) -> PolarsResult<i64> {
         );
         return Err(expression_err!(msg, expr, ComputeError));
     }
-    offset.get(0).extract::<i64>().ok_or_else(|| {
+    offset.get(0).unwrap().extract::<i64>().ok_or_else(|| {
         PolarsError::ComputeError(format!("could not get an offset from {:?}", offset).into())
     })
 }
@@ -39,7 +39,7 @@ fn extract_length(length: &Series, expr: &Expr) -> PolarsResult<usize> {
         );
         return Err(expression_err!(msg, expr, ComputeError));
     }
-    match length.get(0) {
+    match length.get(0).unwrap() {
         Null => Ok(usize::MAX),
         v => v.extract::<usize>().ok_or_else(|| {
             let msg = format!("Could not get a length from {:?}.", length);

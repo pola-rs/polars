@@ -19,22 +19,24 @@ impl<'a> Row<'a> {
 impl DataFrame {
     /// Get a row from a DataFrame. Use of this is discouraged as it will likely be slow.
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
-    pub fn get_row(&self, idx: usize) -> Row {
-        let values = self.columns.iter().map(|s| s.get(idx)).collect::<Vec<_>>();
-        Row(values)
+    pub fn get_row(&self, idx: usize) -> PolarsResult<Row> {
+        let values = self
+            .columns
+            .iter()
+            .map(|s| s.get(idx))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        Ok(Row(values))
     }
 
     /// Amortize allocations by reusing a row.
     /// The caller is responsible to make sure that the row has at least the capacity for the number
     /// of columns in the DataFrame
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
-    pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
-        self.columns
-            .iter()
-            .zip(&mut row.0)
-            .for_each(|(s, any_val)| {
-                *any_val = s.get(idx);
-            });
+    pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) -> PolarsResult<()> {
+        for (s, any_val) in self.columns.iter().zip(&mut row.0) {
+            *any_val = s.get(idx)?;
+        }
+        Ok(())
     }
 
     /// Amortize allocations by reusing a row.

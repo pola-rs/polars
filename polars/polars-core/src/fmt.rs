@@ -72,20 +72,20 @@ macro_rules! format_array {
         if limit < $a.len() {
             if limit > 0 {
                 for i in 0..std::cmp::max((limit / 2), 1) {
-                    let v = $a.get_any_value(i);
+                    let v = $a.get_any_value(i).unwrap();
                     write_fn(v, $f)?;
                 }
             }
             write!($f, "\t...\n")?;
             if limit > 1 {
                 for i in ($a.len() - (limit + 1) / 2)..$a.len() {
-                    let v = $a.get_any_value(i);
+                    let v = $a.get_any_value(i).unwrap();
                     write_fn(v, $f)?;
                 }
             }
         } else {
             for i in 0..limit {
-                let v = $a.get_any_value(i);
+                let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
             }
         }
@@ -116,7 +116,7 @@ fn format_object_array(
 
             for i in 0..limit {
                 let v = object.str_value(i);
-                writeln!(f, "\t{}", v)?;
+                writeln!(f, "\t{}", v.unwrap())?;
             }
 
             write!(f, "]")
@@ -450,14 +450,22 @@ impl Display for DataFrame {
                 if height > max_n_rows {
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
                     for i in 0..std::cmp::max(max_n_rows / 2, 1) {
-                        let row = self.columns.iter().map(|s| s.str_value(i)).collect();
+                        let row = self
+                            .columns
+                            .iter()
+                            .map(|s| s.str_value(i).unwrap())
+                            .collect();
                         rows.push(prepare_row(row, n_first, n_last, str_truncate));
                     }
                     let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                     rows.push(dots);
                     if max_n_rows > 1 {
                         for i in (height - (max_n_rows + 1) / 2)..height {
-                            let row = self.columns.iter().map(|s| s.str_value(i)).collect();
+                            let row = self
+                                .columns
+                                .iter()
+                                .map(|s| s.str_value(i).unwrap())
+                                .collect();
                             rows.push(prepare_row(row, n_first, n_last, str_truncate));
                         }
                     }
@@ -465,7 +473,11 @@ impl Display for DataFrame {
                 } else {
                     for i in 0..height {
                         if self.width() > 0 {
-                            let row = self.columns.iter().map(|s| s.str_value(i)).collect();
+                            let row = self
+                                .columns
+                                .iter()
+                                .map(|s| s.str_value(i).unwrap())
+                                .collect();
                             table.add_row(prepare_row(row, n_first, n_last, str_truncate));
                         } else {
                             break;
@@ -769,19 +781,23 @@ macro_rules! impl_fmt_list {
     ($self:ident) => {{
         match $self.len() {
             0 => format!("[]"),
-            1 => format!("[{}]", $self.get_any_value(0)),
-            2 => format!("[{}, {}]", $self.get_any_value(0), $self.get_any_value(1)),
+            1 => format!("[{}]", $self.get_any_value(0).unwrap()),
+            2 => format!(
+                "[{}, {}]",
+                $self.get_any_value(0).unwrap(),
+                $self.get_any_value(1).unwrap()
+            ),
             3 => format!(
                 "[{}, {}, {}]",
-                $self.get_any_value(0),
-                $self.get_any_value(1),
-                $self.get_any_value(2)
+                $self.get_any_value(0).unwrap(),
+                $self.get_any_value(1).unwrap(),
+                $self.get_any_value(2).unwrap()
             ),
             _ => format!(
                 "[{}, {}, ... {}]",
-                $self.get_any_value(0),
-                $self.get_any_value(1),
-                $self.get_any_value($self.len() - 1)
+                $self.get_any_value(0).unwrap(),
+                $self.get_any_value(1).unwrap(),
+                $self.get_any_value($self.len() - 1).unwrap()
             ),
         }
     }};

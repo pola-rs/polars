@@ -377,8 +377,8 @@ fn test_binary_agg_context_3() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("last")?;
-    assert_eq!(out.get(0), AnyValue::Int32(4));
-    assert_eq!(out.get(1), AnyValue::Int32(0));
+    assert_eq!(out.get(0)?, AnyValue::Int32(4));
+    assert_eq!(out.get(1)?, AnyValue::Int32(0));
 
     Ok(())
 }
@@ -399,12 +399,12 @@ fn test_shift_elementwise_issue_2509() -> PolarsResult<()> {
 
     let out = out.explode(["sum"])?;
     let out = out.column("sum")?;
-    assert_eq!(out.get(0), AnyValue::Int32(10));
-    assert_eq!(out.get(1), AnyValue::Int32(20));
-    assert_eq!(out.get(2), AnyValue::Null);
-    assert_eq!(out.get(3), AnyValue::Int32(11));
-    assert_eq!(out.get(4), AnyValue::Int32(21));
-    assert_eq!(out.get(5), AnyValue::Null);
+    assert_eq!(out.get(0)?, AnyValue::Int32(10));
+    assert_eq!(out.get(1)?, AnyValue::Int32(20));
+    assert_eq!(out.get(2)?, AnyValue::Null);
+    assert_eq!(out.get(3)?, AnyValue::Int32(11));
+    assert_eq!(out.get(4)?, AnyValue::Int32(21));
+    assert_eq!(out.get(5)?, AnyValue::Null);
 
     Ok(())
 }
@@ -426,9 +426,9 @@ fn take_aggregations() -> PolarsResult<()> {
         .collect()?;
 
     let s = out.column("fav_book")?;
-    assert_eq!(s.get(0), AnyValue::Utf8("a"));
-    assert_eq!(s.get(1), AnyValue::Utf8("c"));
-    assert_eq!(s.get(2), AnyValue::Utf8("a"));
+    assert_eq!(s.get(0)?, AnyValue::Utf8("a"));
+    assert_eq!(s.get(1)?, AnyValue::Utf8("c"));
+    assert_eq!(s.get(2)?, AnyValue::Utf8("a"));
 
     let out = df
         .clone()

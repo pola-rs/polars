@@ -176,7 +176,7 @@ impl WindowExpr {
                 let first = group.first();
                 let group = groupby_columns
                     .iter()
-                    .map(|s| format!("{}", s.get(first as usize)))
+                    .map(|s| format!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
                 let err_msg = format!(
                     "{}\n> Group: ",

@@ -88,7 +88,7 @@ pub trait ChunkAnyValue {
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue;
 
     /// Get a single value. Beware this is slow.
-    fn get_any_value(&self, index: usize) -> AnyValue;
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
 }
 
 #[cfg(feature = "cum_agg")]

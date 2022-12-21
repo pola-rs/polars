@@ -137,8 +137,15 @@ impl LogicalType for CategoricalChunked {
         self.logical.2.as_ref().unwrap()
     }
 
-    fn get_any_value(&self, i: usize) -> AnyValue<'_> {
+    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
         match self.logical.0.get(i) {
+            Some(i) => Ok(AnyValue::Categorical(i, self.get_rev_map())),
+            None => Err(PolarsError::ComputeError("index is out of bounds".into())),
+        }
+    }
+
+    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        match self.logical.0.get_unchecked(i) {
             Some(i) => AnyValue::Categorical(i, self.get_rev_map()),
             None => AnyValue::Null,
         }

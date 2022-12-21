@@ -372,7 +372,7 @@ impl PySeries {
     }
 
     pub fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
-        let val = format!("{}", self.series.get(index));
+        let val = format!("{}", self.series.get(index).unwrap());
         if let DataType::Utf8 | DataType::Categorical(_) = self.series.dtype() {
             let v_trunc = &val[..val
                 .char_indices()
@@ -400,8 +400,8 @@ impl PySeries {
         }
     }
 
-    pub fn get_idx(&self, py: Python, idx: usize) -> PyObject {
-        Wrap(self.series.get(idx)).into_py(py)
+    pub fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
+        Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
     }
 
     pub fn bitand(&self, other: &PySeries) -> PyResult<Self> {
@@ -470,16 +470,34 @@ impl PySeries {
         }
     }
 
-    pub fn max(&self, py: Python) -> PyObject {
-        Wrap(self.series.max_as_series().get(0)).into_py(py)
+    pub fn max(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .max_as_series()
+                .get(0)
+                .map_err(PyPolarsErr::from)?,
+        )
+        .into_py(py))
     }
 
-    pub fn min(&self, py: Python) -> PyObject {
-        Wrap(self.series.min_as_series().get(0)).into_py(py)
+    pub fn min(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .min_as_series()
+                .get(0)
+                .map_err(PyPolarsErr::from)?,
+        )
+        .into_py(py))
     }
 
-    pub fn sum(&self, py: Python) -> PyObject {
-        Wrap(self.series.sum_as_series().get(0)).into_py(py)
+    pub fn sum(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .sum_as_series()
+                .get(0)
+                .map_err(PyPolarsErr::from)?,
+        )
+        .into_py(py))
     }
 
     pub fn n_chunks(&self) -> usize {
@@ -735,7 +753,8 @@ impl PySeries {
                 self.series
                     .quantile_as_series(quantile, interpolation.0)
                     .expect("invalid quantile")
-                    .get(0),
+                    .get(0)
+                    .unwrap_or(AnyValue::Null),
             )
             .into_py(py)
         })
