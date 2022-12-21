@@ -113,6 +113,10 @@ def test_parquet_stats(io_test_dir: str) -> None:
     assert (
         pl.scan_parquet(file).filter(4 < pl.col("a")).select(pl.col("a").sum())
     ).collect()[0, "a"] == 10.0
+    assert pl.scan_parquet(file).filter((pl.col("a") * 10) > 5.0).collect().shape == (
+        8,
+        1,
+    )
 
 
 def test_row_count_schema(io_test_dir: str) -> None:
