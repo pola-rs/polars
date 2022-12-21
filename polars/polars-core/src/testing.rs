@@ -17,6 +17,7 @@ impl Series {
     /// Two `Datetime` series are *not* equal if their timezones are different, regardless
     /// if they represent the same UTC time or not.
     pub fn series_equal_missing(&self, other: &Series) -> bool {
+        // TODO! remove this? Default behavior already includes equal missing
         #[cfg(feature = "timezones")]
         {
             use crate::datatypes::DataType::Datetime;
@@ -37,7 +38,7 @@ impl Series {
             && self.name() == other.name()
             && self.null_count() == other.null_count()
             && {
-                let eq = self.eq_missing(other);
+                let eq = self.equal(other);
                 match eq {
                     Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
                     Err(_) => false,
@@ -67,7 +68,7 @@ impl PartialEq for Series {
             && self.field() == other.field()
             && self.null_count() == other.null_count()
             && self
-                .eq_missing(other)
+                .equal(other)
                 .unwrap()
                 .sum()
                 .map(|s| s as usize)

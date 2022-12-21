@@ -424,9 +424,6 @@ pub trait ChunkVar<T> {
 pub trait ChunkCompare<Rhs> {
     type Item;
 
-    /// Check for equality and regard missing values as equal.
-    fn eq_missing(&self, rhs: Rhs) -> Self::Item;
-
     /// Check for equality.
     fn equal(&self, rhs: Rhs) -> Self::Item;
 
