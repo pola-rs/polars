@@ -120,6 +120,7 @@ where
             match &payload.file_type {
                 FileType::Parquet(options) => {
                     Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
+                        as Box<dyn Sink>
                 }
             }
         }

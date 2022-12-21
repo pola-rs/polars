@@ -525,6 +525,20 @@ mod stats {
 
     impl BinaryExpr {
         fn impl_should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
+            // See: #5864 for the rationale behind this.
+            use Expr::*;
+            use Operator::*;
+            if !self.expr.into_iter().all(|e| match e {
+                BinaryExpr { op, .. } => !matches!(
+                    op,
+                    Multiply | Divide | TrueDivide | FloorDivide | Modulus | Eq | NotEq
+                ),
+                Column(_) | Literal(_) | Alias(_, _) => true,
+                _ => false,
+            }) {
+                return Ok(true);
+            }
+
             let schema = stats.schema();
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
