@@ -12,10 +12,10 @@ use polars_io::csv::utils::infer_file_schema;
 use polars_io::csv::CsvEncoding;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
+#[cfg(feature = "parquet-async")]
+use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
-#[cfg(feature = "parquet-async")]
-use polars_io::prelude::ParquetAsyncReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
