@@ -535,6 +535,18 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
     }
 }
 
+#[inline]
+unsafe fn add_value<T: NumericNative>(
+    values_buf_ptr: usize,
+    col_idx: usize,
+    row_idx: usize,
+    value: T,
+) {
+    let column = (*(values_buf_ptr as *mut Vec<Vec<T>>)).get_unchecked_mut(col_idx);
+    let el_ptr = column.as_mut_ptr();
+    *el_ptr.add(row_idx) = value;
+}
+
 fn numeric_transpose<T>(cols: &[Series]) -> PolarsResult<DataFrame>
 where
     T: PolarsNumericType,
@@ -576,12 +588,13 @@ where
                                 .get_unchecked_mut(col_idx);
                             let el_ptr = column.as_mut_ptr();
                             *el_ptr.add(row_idx) = false;
+                            // we must initialize this memory otherwise downstream code
+                            // might access uninitialized memory when the masked out values
+                            // are changed.
+                            add_value(values_buf_ptr, col_idx, row_idx, T::Native::default());
                         },
                         Some(v) => unsafe {
-                            let column = (*(values_buf_ptr as *mut Vec<Vec<T::Native>>))
-                                .get_unchecked_mut(col_idx);
-                            let el_ptr = column.as_mut_ptr();
-                            *el_ptr.add(row_idx) = v;
+                            add_value(values_buf_ptr, col_idx, row_idx, v);
                         },
                     }
                 }
