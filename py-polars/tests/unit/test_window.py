@@ -266,3 +266,32 @@ def test_window_5868() -> None:
         "value": [None, 2],
         "id": [None, 1],
     }
+
+    df = pl.DataFrame({"a": [None, 1, 2, 3, 3, 3, 4, 4]})
+
+    assert df.select(pl.col("a").sum().over("a"))["a"].to_list() == [
+        None,
+        1,
+        2,
+        9,
+        9,
+        9,
+        8,
+        8,
+    ]
+    assert df.with_column(pl.col("a").set_sorted()).select(pl.col("a").sum().over("a"))[
+        "a"
+    ].to_list() == [None, 1, 2, 9, 9, 9, 8, 8]
+
+    assert df.drop_nulls().select(pl.col("a").sum().over("a"))["a"].to_list() == [
+        1,
+        2,
+        9,
+        9,
+        9,
+        8,
+        8,
+    ]
+    assert df.drop_nulls().with_column(pl.col("a").set_sorted()).select(
+        pl.col("a").sum().over("a")
+    )["a"].to_list() == [1, 2, 9, 9, 9, 8, 8]
