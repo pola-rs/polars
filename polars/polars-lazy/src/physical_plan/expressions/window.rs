@@ -1,6 +1,7 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
+use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
@@ -8,9 +9,12 @@ use polars_core::frame::hash_join::{
 };
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_core::utils::_split_offsets;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_utils::sort::perfect_sort;
+use polars_utils::sync::SyncPtr;
+use rayon::prelude::*;
 
 use super::*;
 use crate::physical_plan::expression_err;
@@ -685,33 +689,47 @@ where
             }
         }
     }
+    let mut values = Vec::with_capacity(len);
+    let ptr = values.as_mut_ptr() as *mut T::Native;
+    // safety:
+    // we will write from different threads but we will never alias.
+    let sync_ptr_values = unsafe { SyncPtr::new(ptr) };
 
     if ca.null_count() == 0 {
-        let mut values = Vec::with_capacity(len);
-        let ptr = values.as_mut_ptr() as *mut T::Native;
-
         match groups {
             GroupsProxy::Idx(groups) => {
                 // this should always succeed as we don't expect any chunks after an aggregation
                 let agg_vals = ca.cont_slice().ok()?;
-                agg_vals.iter().zip(groups.all().iter()).for_each(|(v, g)| {
-                    for idx in g {
-                        debug_assert!((*idx as usize) < len);
-                        unsafe { *ptr.add(*idx as usize) = *v }
-                    }
+                POOL.install(|| {
+                    agg_vals
+                        .par_iter()
+                        .zip(groups.all().par_iter())
+                        .for_each(|(v, g)| {
+                            let ptr = sync_ptr_values.get();
+                            for idx in g {
+                                debug_assert!((*idx as usize) < len);
+                                unsafe { *ptr.add(*idx as usize) = *v }
+                            }
+                        })
                 })
             }
             GroupsProxy::Slice { groups, .. } => {
                 // this should always succeed as we don't expect any chunks after an aggregation
                 let agg_vals = ca.cont_slice().ok()?;
-                for (v, [start, g_len]) in agg_vals.iter().zip(groups.iter()) {
-                    let start = *start as usize;
-                    let end = start + *g_len as usize;
-                    for idx in start..end {
-                        debug_assert!(idx < len);
-                        unsafe { *ptr.add(idx) = *v }
-                    }
-                }
+                POOL.install(|| {
+                    agg_vals
+                        .par_iter()
+                        .zip(groups.par_iter())
+                        .for_each(|(v, [start, g_len])| {
+                            let ptr = sync_ptr_values.get();
+                            let start = *start as usize;
+                            let end = start + *g_len as usize;
+                            for idx in start..end {
+                                debug_assert!(idx < len);
+                                unsafe { *ptr.add(idx) = *v }
+                            }
+                        })
+                });
             }
         }
 
@@ -719,52 +737,66 @@ where
         unsafe { values.set_len(len) }
         Some(ChunkedArray::new_vec(ca.name(), values).into_series())
     } else {
-        let mut values = Vec::with_capacity(len);
         let mut validity = MutableBitmap::with_capacity(len);
         validity.extend_constant(len, true);
-        let ptr = values.as_mut_ptr() as *mut T::Native;
+        let validity_ptr = validity.as_slice_mut().as_mut_ptr();
+        let sync_ptr_validity = unsafe { SyncPtr::new(validity_ptr) };
 
+        let n_threads = POOL.current_num_threads();
+        let offsets = _split_offsets(ca.len(), n_threads);
         match groups {
-            GroupsProxy::Idx(groups) => {
-                ca.into_iter()
-                    .zip(groups.all().iter())
-                    .for_each(|(opt_v, g)| {
-                        for idx in g {
-                            let idx = *idx as usize;
-                            debug_assert!(idx < len);
-                            unsafe {
-                                match opt_v {
-                                    Some(v) => {
-                                        *ptr.add(idx) = v;
-                                    }
-                                    None => {
-                                        *ptr.add(idx) = T::Native::default();
-                                        validity.set_unchecked(idx, false);
-                                    }
-                                };
-                            }
-                        }
-                    })
-            }
-            GroupsProxy::Slice { groups, .. } => {
-                for (opt_v, [start, g_len]) in ca.into_iter().zip(groups.iter()) {
-                    let start = *start as usize;
-                    let end = start + *g_len as usize;
-                    for idx in start..end {
+            GroupsProxy::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
+                let offset = *offset;
+                let offset_len = *offset_len;
+                let ca = ca.slice(offset as i64, offset_len);
+                let groups = &groups.all()[offset..offset + offset_len];
+                let values_ptr = sync_ptr_values.get();
+
+                ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
+                    for idx in g {
+                        let idx = *idx as usize;
                         debug_assert!(idx < len);
                         unsafe {
                             match opt_v {
                                 Some(v) => {
-                                    *ptr.add(idx) = v;
+                                    *values_ptr.add(idx) = v;
                                 }
                                 None => {
-                                    *ptr.add(idx) = T::Native::default();
-                                    validity.set_unchecked(idx, false);
+                                    *values_ptr.add(idx) = T::Native::default();
+                                    unset_bit_raw(sync_ptr_validity.get(), idx)
                                 }
                             };
                         }
                     }
-                }
+                })
+            }),
+            GroupsProxy::Slice { groups, .. } => {
+                offsets.par_iter().for_each(|(offset, offset_len)| {
+                    let offset = *offset;
+                    let offset_len = *offset_len;
+                    let ca = ca.slice(offset as i64, offset_len);
+                    let groups = &groups[offset..offset + offset_len];
+                    let values_ptr = sync_ptr_values.get();
+
+                    for (opt_v, [start, g_len]) in ca.into_iter().zip(groups.iter()) {
+                        let start = *start as usize;
+                        let end = start + *g_len as usize;
+                        for idx in start..end {
+                            debug_assert!(idx < len);
+                            unsafe {
+                                match opt_v {
+                                    Some(v) => {
+                                        *values_ptr.add(idx) = v;
+                                    }
+                                    None => {
+                                        *values_ptr.add(idx) = T::Native::default();
+                                        unset_bit_raw(sync_ptr_validity.get(), idx)
+                                    }
+                                };
+                            }
+                        }
+                    }
+                })
             }
         }
         // safety: we have written all slots

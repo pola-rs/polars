@@ -11,6 +11,7 @@ mod hash;
 pub mod mem;
 pub mod slice;
 pub mod sort;
+pub mod sync;
 pub mod unwrap;
 
 pub use functions::*;
