@@ -133,15 +133,6 @@ impl AsyncSeek for CloudReader {
 }
 
 /// Build an ObjectStore based on the URL and information from the environment. Return an object store and the path relative to the store.
-///
-/// Example:
-///
-///     let cred = awscreds::Credentials::default().unwrap();
-///     env::set_var("AWS_SECRET_ACCESS_KEY", cred.secret_key.unwrap());
-///     env::set_var("AWS_REGION", "us-east-2");
-///     env::set_var("AWS_ACCESS_KEY_ID", cred.access_key.unwrap());
-///
-///     let store = build("s3://foo/bar");
 pub fn build(uri: &str) -> PolarsResult<(Path, Box<dyn ObjectStore>)> {
     let parsed =
         Url::parse(uri).map_err(|e| PolarsError::External("url parse".into(), Box::new(e)))?;
