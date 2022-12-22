@@ -10,12 +10,12 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 ahash.workspace = true
-polars-arrow = { version = "0.25.1", path = "../../polars-arrow" }
-polars-core = { version = "0.25.1", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.25.1", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
-polars-ops = { version = "0.25.1", path = "../../polars-ops", default-features = false }
-polars-time = { version = "0.25.1", path = "../../polars-time", optional = true }
-polars-utils = { version = "0.25.1", path = "../../polars-utils" }
+polars-arrow = { version = "0.26.1", path = "../../polars-arrow" }
+polars-core = { version = "0.26.1", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.26.1", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.26.1", path = "../../polars-ops", default-features = false }
+polars-time = { version = "0.26.1", path = "../../polars-time", optional = true }
+polars-utils = { version = "0.26.1", path = "../../polars-utils" }
 pyo3 = { version = "0.16", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }
@@ -62,7 +62,7 @@ repeat_by = ["polars-core/repeat_by"]
 round_series = ["polars-core/round_series"]
 is_first = ["polars-core/is_first"]
 cross_join = ["polars-core/cross_join"]
-asof_join = ["polars-core/asof_join", "polars-time"]
+asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
 dot_product = ["polars-core/dot_product"]
 concat_str = ["polars-core/concat_str"]
 arange = []
@@ -96,7 +96,7 @@ search_sorted = ["polars-ops/search_sorted"]
 meta = []
 pivot = ["polars-core/rows", "polars-ops/pivot"]
 top_k = ["polars-ops/top_k"]
-semi_anti_join = ["polars-core/semi_anti_join"]
+semi_anti_join = ["polars-core/semi_anti_join", "polars-ops/semi_anti_join"]
 cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []

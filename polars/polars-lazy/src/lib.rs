@@ -1,9 +1,5 @@
 //! Lazy API of Polars
 //!
-//!
-//! *Credits to the work of Andy Grove and Ballista/ DataFusion / Apache Arrow, which served as
-//! inspiration for the lazy API.*
-//!
 //! The lazy api of Polars supports a subset of the eager api. Apart from the distributed compute,
 //! it is very similar to [Apache Spark](https://spark.apache.org/). You write queries in a
 //! domain specific language. These queries translate to a logical plan, which represent your query steps.

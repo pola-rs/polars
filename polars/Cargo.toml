@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.25.1"
+version = "0.26.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 keywords = ["dataframe", "query-engine", "arrow"]
@@ -57,7 +57,16 @@ avro = ["polars-io", "polars-io/avro"]
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 
 # slower builds
-performant = ["polars-core/performant", "chunked_ids", "dtype-u8", "dtype-u16", "cse", "polars-ops/performant"]
+performant = [
+  "polars-core/performant",
+  "chunked_ids",
+  "dtype-u8",
+  "dtype-u16",
+  "dtype-struct",
+  "cse",
+  "polars-ops/performant",
+  "streaming",
+]
 
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]
@@ -276,13 +285,13 @@ bench = [
 ]
 
 [dependencies]
-polars-algo = { version = "0.25.1", path = "./polars-algo", optional = true }
-polars-core = { version = "0.25.1", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.25.1", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.25.1", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-ops = { version = "0.25.1", path = "./polars-ops" }
-polars-sql = { version = "0.2.0", path = "./polars-sql", default-features = false, optional = true }
-polars-time = { version = "0.25.1", path = "./polars-time", default-features = false, optional = true }
+polars-algo = { version = "0.26.1", path = "./polars-algo", optional = true }
+polars-core = { version = "0.26.1", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.26.1", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.26.1", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-ops = { version = "0.26.1", path = "./polars-ops" }
+polars-sql = { version = "0.2", path = "./polars-sql", default-features = false, optional = true }
+polars-time = { version = "0.26.1", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"
