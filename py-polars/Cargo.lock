@@ -1479,7 +1479,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "polars-core",
  "polars-io",
@@ -1492,7 +1492,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "arrow2",
  "chrono",
@@ -1505,7 +1505,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1536,7 +1536,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1564,7 +1564,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1583,7 +1583,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "arrow2",
  "jsonpath_lib",
@@ -1596,7 +1596,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "enum_dispatch",
  "hashbrown 0.13.1",
@@ -1612,7 +1612,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "ahash",
  "polars-arrow",
@@ -1629,7 +1629,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "jemallocator",
  "polars-arrow",
@@ -1643,7 +1643,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -1658,7 +1658,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.25.1"
+version = "0.26.1"
 dependencies = [
  "rayon",
 ]

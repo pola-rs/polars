@@ -159,8 +159,8 @@ indexmap = { version = "1", features = ["std"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num.workspace = true
 once_cell = "1"
-polars-arrow = { version = "0.25.1", path = "../polars-arrow", features = ["compute"] }
-polars-utils = { version = "0.25.1", path = "../polars-utils" }
+polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["compute"] }
+polars-utils = { version = "0.26.1", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon.workspace = true

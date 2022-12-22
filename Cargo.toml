@@ -17,7 +17,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.25.1"
+version = "0.26.1"
 
 [workspace.dependencies]
 rayon = "1.5"
