@@ -291,7 +291,7 @@ impl LogicalPlan {
         }
     }
     pub fn describe(&self) -> String {
-        format!("{:#?}", self)
+        format!("{self:#?}")
     }
 }
 

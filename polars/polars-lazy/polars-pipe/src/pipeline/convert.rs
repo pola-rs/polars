@@ -241,7 +241,7 @@ where
             }
         }
         lp => {
-            panic!("{:?} not implemented", lp)
+            panic!("{lp:?} not implemented")
         }
     };
     Ok(out)
@@ -296,7 +296,7 @@ where
         }
 
         lp => {
-            panic!("operator {:?} not (yet) supported", lp)
+            panic!("operator {lp:?} not (yet) supported")
         }
     };
     Ok(op)
@@ -363,7 +363,7 @@ where
                 Box::new(sources::UnionSource::new(sources)) as Box<dyn Source>
             }
             lp => {
-                panic!("source {:?} not (yet) supported", lp)
+                panic!("source {lp:?} not (yet) supported")
             }
         };
         source_objects.push(src)

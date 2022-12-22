@@ -46,7 +46,7 @@ impl DateChunked {
                     Some(v) => {
                         buf.clear();
                         let datefmt = date32_to_date(*v).format(fmt);
-                        write!(buf, "{}", datefmt).unwrap();
+                        write!(buf, "{datefmt}").unwrap();
                         mutarr.push(Some(&buf))
                     }
                 }

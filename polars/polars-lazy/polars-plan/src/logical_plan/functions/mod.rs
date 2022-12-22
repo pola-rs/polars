@@ -95,7 +95,7 @@ impl FunctionNode {
                                 }
                             } else {
                                 return Err(PolarsError::ComputeError(
-                                    format!("expected struct dtype, got: '{:?}'", dtype).into(),
+                                    format!("expected struct dtype, got: '{dtype:?}'").into(),
                                 ));
                             }
                         } else {
@@ -166,7 +166,7 @@ impl FunctionNode {
 
 impl Debug for FunctionNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -174,7 +174,7 @@ impl Display for FunctionNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionNode::*;
         match self {
-            Opaque { fmt_str, .. } => write!(f, "{}", fmt_str),
+            Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             FastProjection { columns } => {
                 write!(f, "FAST_PROJECT: ")?;
                 let columns = columns.as_slice();

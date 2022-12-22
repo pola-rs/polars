@@ -120,7 +120,7 @@ fn update_scan_schema(
         for name in aexpr_to_leaf_names(*node, expr_arena) {
             let item = schema.get_full(&name).ok_or_else(|| {
                 PolarsError::ComputeError(
-                    format!("column '{}' not available in schema {:?}", name, schema).into(),
+                    format!("column '{name}' not available in schema {schema:?}").into(),
                 )
             })?;
             new_cols.push(item);

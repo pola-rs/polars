@@ -756,7 +756,7 @@ impl PyExpr {
             let ca = s.utf8()?;
             match ca.json_path_match(&pat) {
                 Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
+                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
             }
         };
         self.clone()
@@ -1080,13 +1080,13 @@ impl PyExpr {
                             Float64 => obj
                                 .extract::<f64>(py)
                                 .map(|v| Float64Chunked::from_slice("", &[v]).into_series()),
-                            dt => panic!("{:?} not implemented", dt),
+                            dt => panic!("{dt:?} not implemented"),
                         };
 
                         match result {
                             Ok(s) => s,
                             Err(e) => {
-                                panic!("{:?}", e)
+                                panic!("{e:?}")
                             }
                         }
                     }
@@ -1145,7 +1145,7 @@ impl PyExpr {
                 match out {
                     Ok(out) => Ok(out.to_string()),
                     Err(e) => Err(PolarsError::ComputeError(
-                        format!("Python function in 'map_alias' produced an error: {}.", e).into(),
+                        format!("Python function in 'map_alias' produced an error: {e}.").into(),
                     )),
                 }
             })

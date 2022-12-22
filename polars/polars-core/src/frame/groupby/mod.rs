@@ -959,7 +959,7 @@ impl Display for GroupByMethod {
             Std(_) => "std",
             Var(_) => "var",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -967,22 +967,22 @@ impl Display for GroupByMethod {
 pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
     use GroupByMethod::*;
     match method {
-        Min => format!("{}_min", name),
-        Max => format!("{}_max", name),
-        NanMin => format!("{}_nan_min", name),
-        NanMax => format!("{}_nan_max", name),
-        Median => format!("{}_median", name),
-        Mean => format!("{}_mean", name),
-        First => format!("{}_first", name),
-        Last => format!("{}_last", name),
-        Sum => format!("{}_sum", name),
+        Min => format!("{name}_min"),
+        Max => format!("{name}_max"),
+        NanMin => format!("{name}_nan_min"),
+        NanMax => format!("{name}_nan_max"),
+        Median => format!("{name}_median"),
+        Mean => format!("{name}_mean"),
+        First => format!("{name}_first"),
+        Last => format!("{name}_last"),
+        Sum => format!("{name}_sum"),
         Groups => "groups".to_string(),
-        NUnique => format!("{}_n_unique", name),
-        Count => format!("{}_count", name),
-        List => format!("{}_agg_list", name),
-        Quantile(quantile, _interpol) => format!("{}_quantile_{:.2}", name, quantile),
-        Std(_) => format!("{}_agg_std", name),
-        Var(_) => format!("{}_agg_var", name),
+        NUnique => format!("{name}_n_unique"),
+        Count => format!("{name}_count"),
+        List => format!("{name}_agg_list"),
+        Quantile(quantile, _interpol) => format!("{name}_quantile_{quantile:.2}"),
+        Std(_) => format!("{name}_agg_std"),
+        Var(_) => format!("{name}_agg_var"),
     }
 }
 

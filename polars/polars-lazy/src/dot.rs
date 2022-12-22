@@ -53,7 +53,7 @@ impl LazyFrame {
         for (id, label) in id_map {
             // the label is wrapped in double quotes
             // the id already is wrapped in double quotes
-            writeln!(s, "{}[label=\"{}\"]", id, label).unwrap();
+            writeln!(s, "{id}[label=\"{label}\"]").unwrap();
         }
         s.push_str("\n}");
         Ok(s)

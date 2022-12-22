@@ -336,7 +336,7 @@ impl PyDataFrame {
             let out = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::JsonLines)
                 .finish()
-                .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+                .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
             Ok(out.into())
         } else {
             // memmap the file first
@@ -354,7 +354,7 @@ impl PyDataFrame {
                     let out = JsonReader::new(mmap_bytes_r)
                         .with_json_format(JsonFormat::Json)
                         .finish()
-                        .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+                        .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
                     Ok(out.into())
                 }
             }
@@ -369,7 +369,7 @@ impl PyDataFrame {
         let out = JsonReader::new(mmap_bytes_r)
             .with_json_format(JsonFormat::JsonLines)
             .finish()
-            .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+            .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
         Ok(out.into())
     }
 
@@ -392,11 +392,11 @@ impl PyDataFrame {
                 .with_json_format(JsonFormat::Json)
                 .finish(&mut self.df),
             (true, _, _) => serde_json::to_writer_pretty(file, &self.df)
-                .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
+                .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
             (false, _, _) => serde_json::to_writer(file, &self.df)
-                .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
+                .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
         };
-        r.map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+        r.map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -408,7 +408,7 @@ impl PyDataFrame {
             .with_json_format(JsonFormat::JsonLines)
             .finish(&mut self.df);
 
-        r.map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+        r.map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -1415,7 +1415,7 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
             "agg_list" => gb.agg_list(),
             "groups" => gb.groups(),
             a => Err(PolarsError::ComputeError(
-                format!("agg fn {} does not exists", a).into(),
+                format!("agg fn {a} does not exists").into(),
             )),
         });
 

@@ -138,7 +138,7 @@ pub struct DataFrame {
 
 pub fn _duplicate_err(name: &str) -> PolarsResult<()> {
     Err(PolarsError::Duplicate(
-        format!("Column with name: '{}' has more than one occurrences", name).into(),
+        format!("Column with name: '{name}' has more than one occurrences").into(),
     ))
 }
 
@@ -194,7 +194,7 @@ impl DataFrame {
     fn check_already_present(&self, name: &str) -> PolarsResult<()> {
         if self.columns.iter().any(|s| s.name() == name) {
             Err(PolarsError::Duplicate(
-                format!("column with name: '{}' already present in DataFrame", name).into(),
+                format!("column with name: '{name}' already present in DataFrame").into(),
             ))
         } else {
             Ok(())
@@ -229,8 +229,7 @@ impl DataFrame {
             let msg = format!(
                 "Could not create a new DataFrame from Series. \
             The Series have different lengths. \
-            Got {:?}",
-                s
+            Got {s:?}",
             );
             Err(PolarsError::ShapeMisMatch(msg.into()))
         };
@@ -755,17 +754,14 @@ impl DataFrame {
         for col in columns {
             if col.len() != height && height != 0 {
                 return Err(PolarsError::ShapeMisMatch(
-                    format!("Could not horizontally stack Series. The Series length {} differs from the DataFrame height: {}", col.len(), height).into()));
+                    format!("Could not horizontally stack Series. The Series length {} differs from the DataFrame height: {height}", col.len()).into()));
             }
 
             let name = col.name();
             if names.contains(name) {
                 return Err(PolarsError::Duplicate(
-                    format!(
-                        "Cannot do hstack operation. Column with name: {} already exists",
-                        name
-                    )
-                    .into(),
+                    format!("Cannot do hstack operation. Column with name: {name} already exists",)
+                        .into(),
                 ));
             }
             names.insert(name);
@@ -1315,13 +1311,10 @@ impl DataFrame {
             };
 
             if start > end {
-                panic!("slice index starts at {} but ends at {}", start, end);
+                panic!("slice index starts at {start} but ends at {end}");
             }
             if end > len {
-                panic!(
-                    "range end index {} out of range for slice of length {}",
-                    end, len
-                );
+                panic!("range end index {end} out of range for slice of length {len}",);
             }
 
             ops::Range { start, end }
@@ -2101,11 +2094,7 @@ impl DataFrame {
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
             PolarsError::ComputeError(
-                format!(
-                    "Column index: {} outside of DataFrame with {} columns",
-                    idx, width
-                )
-                .into(),
+                format!("Column index: {idx} outside of DataFrame with {width} columns",).into(),
             )
         })?;
         let name = col.name().to_string();
@@ -2186,11 +2175,7 @@ impl DataFrame {
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
             PolarsError::ComputeError(
-                format!(
-                    "Column index: {} outside of DataFrame with {} columns",
-                    idx, width
-                )
-                .into(),
+                format!("Column index: {idx} outside of DataFrame with {width} columns",).into(),
             )
         })?;
         let name = col.name().to_string();

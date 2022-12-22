@@ -363,7 +363,7 @@ impl<'a> CoreReader<'a> {
             self.quote_char,
         ) {
             if logging {
-                eprintln!("avg line length: {}\nstd. dev. line length: {}", mean, std);
+                eprintln!("avg line length: {mean}\nstd. dev. line length: {std}");
             }
 
             // x % upper bound of byte length per line assuming normally distributed
@@ -391,7 +391,7 @@ impl<'a> CoreReader<'a> {
                 }
             }
             if logging {
-                eprintln!("initial row estimate: {}", total_rows)
+                eprintln!("initial row estimate: {total_rows}")
             }
         }
         if total_rows == 128 {
@@ -406,8 +406,7 @@ impl<'a> CoreReader<'a> {
         let n_chunks = total_rows / chunk_size;
         if logging {
             eprintln!(
-                "no. of chunks: {} processed by: {} threads at 1 chunk/thread",
-                n_chunks, n_threads
+                "no. of chunks: {n_chunks} processed by: {n_threads} threads at 1 chunk/thread",
             );
         }
 

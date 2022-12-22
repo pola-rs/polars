@@ -208,7 +208,7 @@ fn pivot_impl(
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
                 let mut headers = headers.utf8().unwrap().clone();
                 if values.len() > 1 {
-                    headers = headers.apply(|v| Cow::from(format!("{}_{}", value_col_name, v)))
+                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}_{v}")))
                 }
 
                 let n_cols = headers.len();

@@ -98,7 +98,7 @@ fn expand_regex(
     pattern: &str,
 ) -> PolarsResult<()> {
     let re = regex::Regex::new(pattern)
-        .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
+        .unwrap_or_else(|_| panic!("invalid regular expression in column: {pattern}"));
     for name in schema.iter_names() {
         if re.is_match(name) {
             let mut new_expr = expr.clone();

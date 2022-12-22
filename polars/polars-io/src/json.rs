@@ -169,8 +169,8 @@ where
         let out = match self.json_format {
             JsonFormat::Json => {
                 let bytes = rb.deref();
-                let json_value = arrow::io::json::read::json_deserializer::parse(bytes)
-                    .map_err(|err| PolarsError::ComputeError(format!("{:?}", err).into()))?;
+                let json_value = json::read::json_deserializer::parse(bytes)
+                    .map_err(|err| PolarsError::ComputeError(format!("{err:?}").into()))?;
                 // likely struct type
                 let dtype = json::read::infer(&json_value)?;
                 let arr = json::read::deserialize(&json_value, dtype)?;

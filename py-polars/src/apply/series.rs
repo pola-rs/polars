@@ -219,7 +219,7 @@ where
 {
     match call_lambda(py, lambda, in_val) {
         Ok(out) => out.extract::<S>(),
-        Err(e) => panic!("python function failed {}", e),
+        Err(e) => panic!("python function failed {e}"),
     }
 }
 

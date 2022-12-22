@@ -1053,7 +1053,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
 pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
     let function = |s: Series, n: Series| {
         let n = n.get(0).unwrap().extract::<usize>().ok_or_else(|| {
-            PolarsError::ComputeError(format!("could not extract a size from {:?}", n).into())
+            PolarsError::ComputeError(format!("could not extract a size from {n:?}").into())
         })?;
         Ok(s.new_from_index(0, n))
     };

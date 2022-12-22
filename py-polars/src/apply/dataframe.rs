@@ -152,7 +152,7 @@ where
         let tpl = (PyTuple::new(py, iter),);
         match lambda.call1(tpl) {
             Ok(val) => val.extract::<T>().ok(),
-            Err(e) => panic!("python function failed {}", e),
+            Err(e) => panic!("python function failed {e}"),
         }
     })
 }
@@ -236,11 +236,11 @@ pub fn apply_lambda_with_list_out_type<'a>(
                         if val.is_none() {
                             None
                         } else {
-                            panic!("should return a Series, got a {:?}", val)
+                            panic!("should return a Series, got a {val:?}")
                         }
                     }
                 },
-                Err(e) => panic!("python function failed {}", e),
+                Err(e) => panic!("python function failed {e}"),
             }
         });
         iterator_to_list(dt, iter, init_null_count, first_value, "apply", df.height())
@@ -285,7 +285,7 @@ pub fn apply_lambda_with_rows_output<'a>(
                     None => &null_row,
                 }
             }
-            Err(e) => panic!("python function failed {}", e),
+            Err(e) => panic!("python function failed {e}"),
         }
     });
 

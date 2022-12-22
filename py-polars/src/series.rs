@@ -285,7 +285,7 @@ impl PySeries {
                 ca.into_series().into()
             }
             dt => {
-                panic!("cannot create repeat with dtype: {:?}", dt);
+                panic!("cannot create repeat with dtype: {dt:?}");
             }
         }
     }
@@ -383,7 +383,7 @@ impl PySeries {
             if val == v_trunc {
                 val
             } else {
-                format!("{}...", v_trunc)
+                format!("{v_trunc}...")
             }
         } else {
             val

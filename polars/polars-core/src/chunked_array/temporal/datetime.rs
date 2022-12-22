@@ -77,10 +77,10 @@ impl DatetimeChunked {
 
         if let Some(from) = self.time_zone() {
             let old: Tz = from.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
+                PolarsError::ComputeError(format!("Could not parse timezone: '{tz}'").into())
             })?;
             let new: Tz = tz.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
+                PolarsError::ComputeError(format!("Could not parse timezone: '{tz}'").into())
             })?;
             let out =
                 self.apply_kernel(&|arr| cast_timezone(arr, self.time_unit().to_arrow(), new, old));
@@ -124,7 +124,7 @@ impl DatetimeChunked {
                     Some(v) => {
                         buf.clear();
                         let datefmt = conversion_f(*v).format(fmt);
-                        write!(buf, "{}", datefmt).unwrap();
+                        write!(buf, "{datefmt}").unwrap();
                         mutarr.push(Some(&buf))
                     }
                 }

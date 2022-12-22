@@ -388,7 +388,7 @@ impl Series {
                 Ok(StructChunked::new_unchecked(name, &fields).into_series())
             }
             dt => Err(PolarsError::InvalidOperation(
-                format!("Cannot create polars series from {:?} type", dt).into(),
+                format!("Cannot create polars series from {dt:?} type").into(),
             )),
         }
     }

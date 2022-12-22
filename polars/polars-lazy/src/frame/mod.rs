@@ -297,10 +297,7 @@ impl LazyFrame {
 
         let prefix = "__POLARS_TEMP_";
 
-        let new: Vec<String> = new
-            .iter()
-            .map(|name| format!("{}{}", prefix, name))
-            .collect();
+        let new: Vec<String> = new.iter().map(|name| format!("{prefix}{name}")).collect();
 
         self.with_columns(
             existing

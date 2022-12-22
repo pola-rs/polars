@@ -133,7 +133,7 @@ impl Duration {
                         nsecs += n;
                         parsed_int = true;
                     }
-                    unit => panic!("unit: '{}' not supported", unit),
+                    unit => panic!("unit: '{unit}' not supported"),
                 }
                 unit.clear();
             }

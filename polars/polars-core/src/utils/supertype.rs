@@ -6,7 +6,7 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     match get_supertype(l, r) {
         Some(dt) => Ok(dt),
         None => Err(PolarsError::ComputeError(
-            format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
+            format!("Failed to determine supertype of {l:?} and {r:?}").into(),
         )),
     }
 }

@@ -206,8 +206,7 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
                     Ok(file) => BufReader::new(file),
                     Err(_e) => {
                         return Err(PyErr::new::<PyFileNotFoundError, _>(format!(
-                            "No such file or directory: {}",
-                            str_slice
+                            "No such file or directory: {str_slice}",
                         )))
                     }
                 }
@@ -242,8 +241,7 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
             Ok(file) => file,
             Err(_e) => {
                 return Err(PyErr::new::<PyFileNotFoundError, _>(format!(
-                    "No such file or directory: {}",
-                    s
+                    "No such file or directory: {s}",
                 )))
             }
         };

@@ -204,7 +204,7 @@ impl<'de> Deserialize<'de> for Series {
                             .unwrap())
                     }
                     dt => {
-                        panic!("{:?} dtype deserialization not yet implemented", dt)
+                        panic!("{dt:?} dtype deserialization not yet implemented")
                     }
                 }
             }

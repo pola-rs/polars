@@ -199,7 +199,7 @@ fn can_run_partitioned(
             }
         };
         if state.verbose() {
-            eprintln!("{} unique values: {}", sampled_method, unique_estimate);
+            eprintln!("{sampled_method} unique values: {unique_estimate}");
         }
 
         if from_partitioned_ds {
@@ -208,12 +208,12 @@ fn can_run_partitioned(
                 eprintln!("PARTITIONED DS");
                 Ok(true)
             } else {
-                eprintln!("PARTITIONED DS: estimated cardinality: {} exceeded the boundary: 0.4, running default HASH AGGREGATION", estimated_cardinality);
+                eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
                 Ok(false)
             }
         } else if unique_estimate > unique_count_boundary {
             if state.verbose() {
-                eprintln!("estimated unique count: {} exceeded the boundary: {}, running default HASH AGGREGATION",unique_estimate, unique_count_boundary)
+                eprintln!("estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION")
             }
             Ok(false)
         } else {

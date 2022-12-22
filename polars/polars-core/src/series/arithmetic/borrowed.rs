@@ -3,47 +3,27 @@ use super::*;
 pub trait NumOpsDispatch: Debug {
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "subtraction operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("subtraction operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "addition operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("addition operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
     fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "multiplication operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("multiplication operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "division operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("division operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "remainder operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("remainder operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
 }
@@ -121,20 +101,13 @@ pub mod checked {
         /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.
         fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             Err(PolarsError::InvalidOperation(
-                format!(
-                    "checked division operation not supported for {:?} and {:?}",
-                    self, rhs
-                )
-                .into(),
+                format!("checked division operation not supported for {self:?} and {rhs:?}",)
+                    .into(),
             ))
         }
         fn checked_div_num<T: ToPrimitive>(&self, _rhs: T) -> PolarsResult<Series> {
             Err(PolarsError::InvalidOperation(
-                format!(
-                    "checked division by number operation not supported for {:?}",
-                    self
-                )
-                .into(),
+                format!("checked division by number operation not supported for {self:?}",).into(),
             ))
         }
     }

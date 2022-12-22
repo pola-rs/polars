@@ -456,7 +456,7 @@ pub trait Utf8Methods: AsUtf8 {
                     })
                     .collect::<PolarsResult<_>>()?;
 
-                let tz = tz.map(|of| format!("{}", of));
+                let tz = tz.map(|of| format!("{of}"));
                 ca.rename(utf8_ca.name());
                 Ok(ca.into_datetime(tu, tz))
             }

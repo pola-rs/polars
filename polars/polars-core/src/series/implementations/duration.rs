@@ -156,11 +156,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
             }
             (dtl, dtr) => Err(PolarsError::ComputeError(
-                format!(
-                    "cannot do subtraction on these date types: {:?}, {:?}",
-                    dtl, dtr
-                )
-                .into(),
+                format!("cannot do subtraction on these date types: {dtl:?}, {dtr:?}",).into(),
             )),
         }
     }
@@ -182,11 +178,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     .into_series())
             }
             (dtl, dtr) => Err(PolarsError::ComputeError(
-                format!(
-                    "cannot do addition on these date types: {:?}, {:?}",
-                    dtl, dtr
-                )
-                .into(),
+                format!("cannot do addition on these date types: {dtl:?}, {dtr:?}",).into(),
             )),
         }
     }

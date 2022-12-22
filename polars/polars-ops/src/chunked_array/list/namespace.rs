@@ -93,9 +93,8 @@ pub trait ListNameSpaceImpl: AsList {
             }
             dt => Err(PolarsError::SchemaMisMatch(
                 format!(
-                    "cannot call lst.join on Series with dtype {:?}.\
+                    "cannot call lst.join on Series with dtype {dt:?}.\
                 Inner type must be Utf8",
-                    dt
                 )
                 .into(),
             )),

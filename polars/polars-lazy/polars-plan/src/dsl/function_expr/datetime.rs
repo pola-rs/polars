@@ -54,7 +54,7 @@ impl Display for TemporalFunction {
             Millisecond => "millisecond",
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
-            TimeStamp(tu) => return write!(f, "dt.timestamp({})", tu),
+            TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate(..) => "truncate",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
@@ -63,7 +63,7 @@ impl Display for TemporalFunction {
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
         };
-        write!(f, "dt.{}", s)
+        write!(f, "dt.{s}")
     }
 }
 
@@ -119,7 +119,7 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
         DataType::Datetime(_, _) => Ok(s.datetime().unwrap().truncate(every, offset).into_series()),
         DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
         dt => Err(PolarsError::ComputeError(
-            format!("expected date/datetime got {:?}", dt).into(),
+            format!("expected date/datetime got {dt:?}").into(),
         )),
     }
 }
@@ -130,7 +130,7 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
         DataType::Datetime(_, _) => Ok(s.datetime().unwrap().round(every, offset).into_series()),
         DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
         dt => Err(PolarsError::ComputeError(
-            format!("expected date/datetime got {:?}", dt).into(),
+            format!("expected date/datetime got {dt:?}").into(),
         )),
     }
 }

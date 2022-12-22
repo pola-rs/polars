@@ -61,7 +61,7 @@ impl LazyFrame {
 
             let lfs = paths
                 .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     let mut args = args.clone();
                     args.rechunk = false;
                     args.row_count = None;

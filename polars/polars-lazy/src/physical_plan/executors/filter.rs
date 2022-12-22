@@ -23,7 +23,7 @@ impl Executor for FilterExec {
         let s = self.predicate.evaluate(&df, state)?;
         let mask = s.bool().map_err(|e| {
             PolarsError::ComputeError(
-                format!("Filter predicate must be of type Boolean, got: {:?}", e).into(),
+                format!("Filter predicate must be of type Boolean, got: {e:?}").into(),
             )
         })?;
 
