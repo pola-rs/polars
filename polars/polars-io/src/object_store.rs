@@ -74,7 +74,7 @@ impl CloudReader {
                     .map_err(|e| {
                         std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            format!("object store error {}", e),
+                            format!("object store error {e:?}"),
                         )
                     })
                     .await
@@ -145,7 +145,7 @@ pub fn build(uri: &str) -> PolarsResult<(Path, Box<dyn ObjectStore>)> {
                         .host()
                         .ok_or(PolarsError::External(
                             "wrong host".into(),
-                            format!("Cannot parse host from {}", path).into(),
+                            format!("Cannot parse host from {path}").into(),
                         ))?
                         .to_string(),
                 )

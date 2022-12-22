@@ -218,8 +218,7 @@ impl HasNextBatches for BatchedParquetReader {
                     || {
                         PolarsResult::Err(PolarsError::External(
                             "get row groups".into(),
-                            format!("cannot acess slice {}..{}", row_group_start, row_group_end)
-                                .into(),
+                            format!("cannot acess slice {row_group_start}..{row_group_end}").into(),
                         ))
                     },
                     Ok,

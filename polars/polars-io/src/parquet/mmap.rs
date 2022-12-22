@@ -21,7 +21,8 @@ pub(crate) enum ColumnStore<'a> {
     Fetched(&'a HashMap<u64, Vec<u8>>),
 }
 
-/// memory maps all columns that are part of the parquet field `field_name`
+/// For local files memory maps all columns that are part of the parquet field `field_name`.
+/// For cloud files the relevant memory regions should have been prefetched.
 pub(super) fn mmap_columns<'a>(
     store: &'a ColumnStore,
     columns: &'a [ColumnChunkMetaData],
@@ -44,8 +45,7 @@ fn _mmap_single_column<'a>(
         ColumnStore::Fetched(fetched) => {
             let entry = fetched.get(&start).unwrap_or_else(|| {
                 panic!(
-                    "mmap_columns: column with start {} must be prefetched in ColumnStore.\n",
-                    start
+                    "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
                 )
             });
             entry.as_slice()
