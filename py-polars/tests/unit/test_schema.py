@@ -284,3 +284,11 @@ def test_fill_null_f32_with_lit() -> None:
     # ensure the literal integer does not upcast the f32 to an f64
     df = pl.DataFrame({"a": [1.1, 1.2]}, columns=[("a", pl.Float32)])
     assert df.fill_null(value=0).dtypes == [pl.Float32]
+
+
+def test_lazy_rename() -> None:
+    df = pl.DataFrame({"x": [1], "y": [2]})
+
+    assert (
+        df.lazy().rename({"y": "x", "x": "y"}).select(["x", "y"]).collect()
+    ).to_dict(False) == {"x": [2], "y": [1]}
