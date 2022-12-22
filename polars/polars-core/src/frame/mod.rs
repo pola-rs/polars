@@ -1347,6 +1347,12 @@ impl DataFrame {
         self.columns.iter().position(|s| s.name() == name)
     }
 
+    /// Get column index of a `Series` by name.
+    pub fn try_find_idx_by_name(&self, name: &str) -> PolarsResult<usize> {
+        self.find_idx_by_name(name)
+            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+    }
+
     /// Select a single column by name.
     ///
     /// # Example
