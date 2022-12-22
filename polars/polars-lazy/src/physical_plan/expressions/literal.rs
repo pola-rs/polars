@@ -69,7 +69,7 @@ impl PhysicalExpr for LiteralExpr {
                 }
                 dt => {
                     return Err(PolarsError::InvalidOperation(
-                        format!("datatype {:?} not supported as range", dt).into(),
+                        format!("datatype {dt:?} not supported as range").into(),
                     ));
                 }
             },

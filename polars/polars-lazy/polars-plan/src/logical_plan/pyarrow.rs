@@ -9,7 +9,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             if op.is_comparison() {
                 let left = predicate_to_pa(*left, expr_arena)?;
                 let right = predicate_to_pa(*right, expr_arena)?;
-                Some(format!("({} {} {})", left, op, right))
+                Some(format!("({left} {op} {right})"))
             } else {
                 None
             }
@@ -21,10 +21,10 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             let dtype = av.dtype();
             if dtype.is_float() {
                 let val = av.extract::<f64>()?;
-                Some(format!("{}", val))
+                Some(format!("{val}"))
             } else if dtype.is_integer() {
                 let val = av.extract::<i64>()?;
-                Some(format!("{}", val))
+                Some(format!("{val}"))
             } else if matches!(dtype, DataType::Utf8) {
                 let val = match &av {
                     AnyValue::Utf8(s) => s,

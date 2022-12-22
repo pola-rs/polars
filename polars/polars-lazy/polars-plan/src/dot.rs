@@ -178,7 +178,7 @@ impl LogicalPlan {
             }
             Selection { predicate, input } => {
                 let pred = fmt_predicate(Some(predicate));
-                let fmt = format!("FILTER BY {}", pred);
+                let fmt = format!("FILTER BY {pred}");
 
                 let current_node = DotNode {
                     branch,
@@ -199,7 +199,7 @@ impl LogicalPlan {
                     "*".to_string()
                 };
 
-                let fmt = format!("PYTHON SCAN;\nπ {}/{};", n_columns, total_columns,);
+                let fmt = format!("PYTHON SCAN;\nπ {n_columns}/{total_columns};");
                 let current_node = DotNode {
                     branch,
                     id,

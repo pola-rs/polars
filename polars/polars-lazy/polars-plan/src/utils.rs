@@ -159,8 +159,7 @@ pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     }
     Err(PolarsError::ComputeError(
         format!(
-            "No root column name could be found for expr '{:?}' when calling 'output_name'",
-            expr
+            "No root column name could be found for expr '{expr:?}' when calling 'output_name'",
         )
         .into(),
     ))
@@ -180,7 +179,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
         }
     }
     Err(PolarsError::ComputeError(
-        format!("no single leaf column found in {:?}", expr).into(),
+        format!("no single leaf column found in {expr:?}").into(),
     ))
 }
 

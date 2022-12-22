@@ -125,7 +125,7 @@ impl PyLazyFrame {
     pub fn write_json(&self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         serde_json::to_writer(file, &self.ldf.logical_plan)
-            .map_err(|err| PyValueError::new_err(format!("{:?}", err)))?;
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
         Ok(())
     }
 
@@ -148,7 +148,7 @@ impl PyLazyFrame {
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
         let lp = serde_json::from_str::<LogicalPlan>(json)
-            .map_err(|err| PyValueError::new_err(format!("{:?}", err)))?;
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
         Ok(LazyFrame::from(lp).into())
     }
 
@@ -809,8 +809,7 @@ impl PyLazyFrame {
                         let pytype = result_df_wrapper.as_ref(py).get_type();
                         return Err(PolarsError::ComputeError(
                             format!(
-                                "Expected 'LazyFrame.map' to return a 'DataFrame', got a {}",
-                                pytype
+                                "Expected 'LazyFrame.map' to return a 'DataFrame', got a {pytype}",
                             )
                             .into(),
                         ));
@@ -826,8 +825,8 @@ impl PyLazyFrame {
                     let output_schema = df.schema();
                     if expected_schema.as_ref() != &output_schema {
                         return Err(PolarsError::ComputeError(
-                            format!("The output schema of 'LazyFrame.map' is incorrect. Expected: {:?}\n\
-                        Got: {:?}", expected_schema, output_schema).into()
+                            format!("The output schema of 'LazyFrame.map' is incorrect. Expected: {expected_schema:?}\n\
+                        Got: {output_schema:?}").into()
                         ));
                     }
                 }

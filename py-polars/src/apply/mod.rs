@@ -37,8 +37,7 @@ fn iterator_to_struct<'a>(
         AnyValue::StructOwned(payload) => (payload.0.clone(), &*payload.1),
         _ => {
             return Err(crate::error::ComputeError::new_err(format!(
-                "expected struct got {:?}",
-                first_value
+                "expected struct got {first_value:?}",
             )))
         }
     };
