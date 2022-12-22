@@ -40,6 +40,7 @@ where
     T: PolarsNumericType,
 {
     // mult_order should be -1 / +1 to determine the order of the heap
+    let k = std::cmp::min(k, ca.len());
 
     let mut heap = BinaryHeap::with_capacity(ca.len());
 
