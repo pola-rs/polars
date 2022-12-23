@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
     from polars.polars import PySeries
 
+
 @expr_dispatch
 class BinaryNameSpace:
     """Series.binary namespace."""
@@ -30,6 +31,7 @@ class BinaryNameSpace:
         Returns
         -------
         Boolean mask
+
         """
 
     def ends_with(self, sub: bytes) -> pli.Series:
@@ -67,6 +69,7 @@ class BinaryNameSpace:
 
             - ``True``: An error will be thrown if unable to decode a value.
             - ``False``: Unhandled values will be replaced with `None`.
+
         """
 
     def encode(self, encoding: TransferEncoding) -> pli.Series:
@@ -81,4 +84,5 @@ class BinaryNameSpace:
         Returns
         -------
         Binary array with values encoded using provided encoding
+
         """

@@ -16,12 +16,12 @@ from polars.datatypes import (
 )
 from polars.dependencies import _NUMPY_TYPE
 from polars.dependencies import numpy as np
+from polars.internals.expr.binary import ExprBinaryNameSpace
 from polars.internals.expr.categorical import ExprCatNameSpace
 from polars.internals.expr.datetime import ExprDateTimeNameSpace
 from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
-from polars.internals.expr.binary import ExprBinaryNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
 from polars.utils import _timedelta_to_pl_duration, accessor, deprecated_alias
 

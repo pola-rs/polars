@@ -64,11 +64,11 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
+from polars.internals.series.binary import BinaryNameSpace
 from polars.internals.series.categorical import CatNameSpace
 from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
 from polars.internals.series.string import StringNameSpace
-from polars.internals.series.binary import BinaryNameSpace
 from polars.internals.series.struct import StructNameSpace
 from polars.internals.series.utils import expr_dispatch, get_ffi_func
 from polars.internals.slice import PolarsSlice
