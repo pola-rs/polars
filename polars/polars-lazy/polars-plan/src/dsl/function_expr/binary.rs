@@ -41,3 +41,9 @@ pub(super) fn starts_with(s: &Series, sub: &[u8]) -> PolarsResult<Series> {
     let ca = s.binary()?;
     Ok(ca.starts_with(sub).into_series())
 }
+
+impl From<BinaryFunction> for FunctionExpr {
+    fn from(b: BinaryFunction) -> Self {
+        FunctionExpr::BinaryExpr(b)
+    }
+}
