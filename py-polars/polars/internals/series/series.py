@@ -192,7 +192,7 @@ class Series:
     """
 
     _s: PySeries = None
-    _accessors: set[str] = {"arr", "cat", "dt", "str", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "str", "binary", "struct"}
 
     def __init__(
         self,

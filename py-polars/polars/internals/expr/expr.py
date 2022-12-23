@@ -130,7 +130,7 @@ class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "binary", "struct"}
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
