@@ -29,6 +29,9 @@ string_encoding = ["base64", "hex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
+# extra utilities for BinaryChunked
+binary_encoding = ["base64", "hex"]
+
 fmt = ["comfy-table/tty"]
 fmt_no_tty = ["comfy-table"]
 
