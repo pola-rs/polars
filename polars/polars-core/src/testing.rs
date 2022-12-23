@@ -78,6 +78,21 @@ impl PartialEq for Series {
 }
 
 impl DataFrame {
+    /// Check if `DataFrames` schemas are equal.
+    pub fn frame_equal_schema(&self, other: &DataFrame) -> PolarsResult<()> {
+        for (lhs, rhs) in self.iter().zip(other.iter()) {
+            if lhs.name() != rhs.name() {
+                return Err(PolarsError::SchemaMisMatch(format!("Name of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.name(), rhs.name()).into()));
+            }
+            if lhs.dtype() != rhs.dtype() {
+                return Err(PolarsError::SchemaMisMatch(
+                    format!("Dtype of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.dtype(), rhs.dtype()).into())
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Check if `DataFrames` are equal. Note that `None == None` evaluates to `false`
     ///
     /// # Example

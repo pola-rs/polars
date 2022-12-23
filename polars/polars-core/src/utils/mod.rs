@@ -358,11 +358,15 @@ macro_rules! with_match_physical_numeric_polars_type {(
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $key_type {
+            #[cfg(feature = "dtype-i8")]
         Int8 => __with_ty__! { Int8Type },
+            #[cfg(feature = "dtype-i16")]
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
+            #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { UInt8Type },
+            #[cfg(feature = "dtype-u16")]
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
