@@ -78,7 +78,7 @@ class ExprBinaryNameSpace:
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
             )
 
-   def encode(self, encoding: TransferEncoding) -> pli.Series:
+    def encode(self, encoding: TransferEncoding) -> pli.Series:
         """
         Encode a value using the provided encoding.
 
