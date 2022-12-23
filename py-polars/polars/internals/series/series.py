@@ -961,12 +961,12 @@ class Series:
         """
         Return the series as a scalar.
 
-        Equivalent to ``df[0]``, with a check that the shape is (1,).
+        Equivalent to ``s[0]``, with a check that the shape is (1,).
 
         Examples
         --------
-        >>> df = pl.Series("a", [1])
-        >>> df.item()
+        >>> s = pl.Series("a", [1])
+        >>> s.item()
         1
 
         """

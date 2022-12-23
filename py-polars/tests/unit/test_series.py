@@ -2476,13 +2476,13 @@ def test_get_chunks() -> None:
 
 
 def test_item() -> None:
-    df = pl.Series("a", [1])
-    assert df.item() == 1
+    s = pl.Series("a", [1])
+    assert s.item() == 1
 
     with pytest.raises(ValueError):
-        df = pl.Series("a", [1, 2])
-        df.item()
+        s = pl.Series("a", [1, 2])
+        s.item()
 
     with pytest.raises(ValueError):
-        df = pl.Series("a", [])
-        df.item()
+        s = pl.Series("a", [])
+        s.item()
