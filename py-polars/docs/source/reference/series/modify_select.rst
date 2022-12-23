@@ -27,6 +27,7 @@ Manipulation/selection
     Series.floor
     Series.head
     Series.interpolate
+    Series.item
     Series.limit
     Series.new_from_index
     Series.rechunk
