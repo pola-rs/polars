@@ -13,3 +13,39 @@ def test_binary_conversions() -> None:
     assert df[0, 0] == b"abc"
     assert df[1, 0] is None
     assert df.dtypes == [pl.Binary, pl.Utf8]
+
+def test_contains() -> None:
+    df = pl.DataFrame(
+        data=[(1, b"some * * text"), (2, b"(with) special\n * chars"), (3, b"**etc...?$")],
+        columns=["idx", "bin"],
+    )
+    for pattern, expected in (
+        (b"e * ", [True, False, False]),
+        (b"text", [True, False, False]),
+        (b"special", [False, True, False]),
+        (b"", [True, True, True]),
+        (b"qwe", [False, False, False]),
+    ):
+        # series
+        assert (
+            expected == df["bin"].bin.contains(pattern).to_list()
+        )
+        # frame select
+        assert (
+            expected
+            == df.select(pl.col("bin").bin.contains(pattern))[
+                "bin"
+            ].to_list()
+        )
+        # frame filter
+        assert sum(expected) == len(
+            df.filter(pl.col("bin").bin.contains(pattern))
+        )
+
+def test_starts_ends_with() -> None:
+    assert pl.DataFrame({"a": [b"hamburger", b"nuts", b"lollypop"]}).select(
+        [
+            pl.col("a").bin.ends_with(b"pop").alias("pop"),
+            pl.col("a").bin.starts_with(b"ham").alias("ham"),
+        ]
+    ).to_dict(False) == {"pop": [False, False, True], "ham": [True, False, False]}
