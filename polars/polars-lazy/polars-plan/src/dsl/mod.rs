@@ -3,6 +3,8 @@
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
+#[cfg(feature = "dtype-binary")]
+pub mod binary;
 #[cfg(feature = "temporal")]
 mod dt;
 mod expr;

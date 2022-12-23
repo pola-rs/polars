@@ -139,6 +139,13 @@ impl FunctionExpr {
                     }
                 }
             }
+            #[cfg(feature = "dtype-binary")]
+            BinaryExpr(s) => {
+                use BinaryFunction::*;
+                match s {
+                    Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
+                }
+            }
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => {
                 use TemporalFunction::*;

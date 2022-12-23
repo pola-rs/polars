@@ -267,6 +267,13 @@ impl From<StringFunction> for FunctionExpr {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl From<BinaryFunction> for FunctionExpr {
+    fn from(b: BinaryFunction) -> Self {
+        FunctionExpr::BinaryExpr(b)
+    }
+}
+
 #[cfg(feature = "regex")]
 fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
     pat.get(0).ok_or_else(|| {
