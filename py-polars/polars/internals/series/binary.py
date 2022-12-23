@@ -12,9 +12,9 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class BinaryNameSpace:
-    """Series.binary namespace."""
+    """Series.bin namespace."""
 
-    _accessor = "binary"
+    _accessor = "bin"
 
     def __init__(self, series: pli.Series):
         self._s: PySeries = series._s

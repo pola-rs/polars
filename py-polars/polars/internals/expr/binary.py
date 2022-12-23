@@ -9,9 +9,9 @@ if TYPE_CHECKING:
 
 
 class ExprBinaryNameSpace:
-    """Namespace for binary related expressions."""
+    """Namespace for bin related expressions."""
 
-    _accessor = "binary"
+    _accessor = "bin"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr

@@ -192,7 +192,7 @@ class Series:
     """
 
     _s: PySeries = None
-    _accessors: set[str] = {"arr", "cat", "dt", "str", "binary", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "str", "bin", "struct"}
 
     def __init__(
         self,
@@ -4827,7 +4827,7 @@ class Series:
         return StringNameSpace(self)
 
     @accessor
-    def binary(self) -> BinaryNameSpace:
+    def bin(self) -> BinaryNameSpace:
         """Create an object namespace of all binary related methods."""
         return BinaryNameSpace(self)
 

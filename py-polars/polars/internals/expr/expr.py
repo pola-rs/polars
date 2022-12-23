@@ -130,7 +130,7 @@ class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "binary", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "bin", "struct"}
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
@@ -6235,7 +6235,7 @@ class Expr:
         return ExprStringNameSpace(self)
 
     @accessor
-    def binary(self) -> ExprBinaryNameSpace:
+    def bin(self) -> ExprBinaryNameSpace:
         """
         Create an object namespace of all binary related methods.
 
