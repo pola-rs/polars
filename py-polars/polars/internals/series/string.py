@@ -649,36 +649,42 @@ class StringNameSpace:
 
         """
 
-    def strip(self, matches: None | str = None) -> pli.Series:
+    def strip(self, matches: str | None = None) -> pli.Series:
         """
-        Remove leading and trailing whitespace.
+        Remove leading and trailing characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed.
 
         """
 
-    def lstrip(self, matches: None | str = None) -> pli.Series:
+    def lstrip(self, matches: str | None = None) -> pli.Series:
         """
-        Remove leading whitespace.
+        Remove leading characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed.
 
         """
 
-    def rstrip(self, matches: None | str = None) -> pli.Series:
+    def rstrip(self, matches: str | None = None) -> pli.Series:
         """
-        Remove trailing whitespace.
+        Remove trailing characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed.
 
         """
 

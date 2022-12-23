@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -608,15 +610,15 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_strip(&self, matches: Option<char>) -> PyExpr {
+    pub fn str_strip(&self, matches: Option<BTreeSet<char>>) -> PyExpr {
         self.inner.clone().str().strip(matches).into()
     }
 
-    pub fn str_rstrip(&self, matches: Option<char>) -> PyExpr {
+    pub fn str_rstrip(&self, matches: Option<BTreeSet<char>>) -> PyExpr {
         self.inner.clone().str().rstrip(matches).into()
     }
 
-    pub fn str_lstrip(&self, matches: Option<char>) -> PyExpr {
+    pub fn str_lstrip(&self, matches: Option<BTreeSet<char>>) -> PyExpr {
         self.inner.clone().str().lstrip(matches).into()
     }
 

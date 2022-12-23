@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
@@ -49,9 +50,9 @@ pub enum StringFunction {
     },
     Uppercase,
     Lowercase,
-    Strip(Option<char>),
-    RStrip(Option<char>),
-    LStrip(Option<char>),
+    Strip(Option<BTreeSet<char>>),
+    RStrip(Option<BTreeSet<char>>),
+    LStrip(Option<BTreeSet<char>>),
 }
 
 impl Display for StringFunction {
@@ -142,34 +143,38 @@ pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
     Ok(ca.rjust(width, fillchar).into_series())
 }
 
-pub(super) fn strip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+fn set_contains_char(matches: &BTreeSet<char>, c: &char) -> bool {
+    matches.contains(c)
+}
+
+pub(super) fn strip(s: &Series, matches: Option<BTreeSet<char>>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_matches(matches)))
+            .apply(|s| Cow::Borrowed(s.trim_matches(|c| set_contains_char(&matches, &c))))
             .into_series())
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
     }
 }
 
-pub(super) fn lstrip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+pub(super) fn lstrip(s: &Series, matches: Option<BTreeSet<char>>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
 
     if let Some(matches) = matches {
         Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_start_matches(matches)))
+            .apply(|s| Cow::Borrowed(s.trim_start_matches(|c| set_contains_char(&matches, &c))))
             .into_series())
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
     }
 }
 
-pub(super) fn rstrip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+pub(super) fn rstrip(s: &Series, matches: Option<BTreeSet<char>>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_end_matches(matches)))
+            .apply(|s| Cow::Borrowed(s.trim_end_matches(|c| set_contains_char(&matches, &c))))
             .into_series())
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())

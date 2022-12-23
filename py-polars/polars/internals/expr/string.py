@@ -263,14 +263,16 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_to_lowercase())
 
-    def strip(self, matches: None | str = None) -> pli.Expr:
+    def strip(self, matches: str | None = None) -> pli.Expr:
         """
-        Remove leading and trailing whitespace.
+        Remove leading and trailing characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed.
 
         Examples
         --------
@@ -290,13 +292,20 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        if matches is not None and len(matches) > 1:
-            raise ValueError("matches should contain a single character")
+        if matches is not None:
+            matches = set(matches)
         return pli.wrap_expr(self._pyexpr.str_strip(matches))
 
-    def lstrip(self, matches: None | str = None) -> pli.Expr:
+    def lstrip(self, matches: str | None = None) -> pli.Expr:
         """
-        Remove leading whitespace.
+        Remove leading characters.
+
+        Parameters
+        ----------
+        matches
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed.
 
         Examples
         --------
@@ -316,18 +325,20 @@ class ExprStringNameSpace:
         └────────┘
 
         """
-        if matches is not None and len(matches) > 1:
-            raise ValueError("matches should contain a single character")
+        if matches is not None:
+            matches = set(matches)
         return pli.wrap_expr(self._pyexpr.str_lstrip(matches))
 
-    def rstrip(self, matches: None | str = None) -> pli.Expr:
+    def rstrip(self, matches: str | None = None) -> pli.Expr:
         """
-        Remove trailing whitespace.
+        Remove trailing characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed.
 
         Examples
         --------
@@ -347,8 +358,8 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        if matches is not None and len(matches) > 1:
-            raise ValueError("matches should contain a single character")
+        if matches is not None:
+            matches = set(matches)
         return pli.wrap_expr(self._pyexpr.str_rstrip(matches))
 
     def zfill(self, alignment: int) -> pli.Expr:

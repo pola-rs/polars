@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
@@ -342,19 +344,19 @@ impl StringNameSpace {
     }
 
     /// Remove whitespace on both sides.
-    pub fn strip(self, matches: Option<char>) -> Expr {
+    pub fn strip(self, matches: Option<BTreeSet<char>>) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::Strip(matches)))
     }
 
     /// Remove leading whitespace.
-    pub fn lstrip(self, matches: Option<char>) -> Expr {
+    pub fn lstrip(self, matches: Option<BTreeSet<char>>) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::LStrip(matches)))
     }
 
     /// Remove trailing whitespace.
-    pub fn rstrip(self, matches: Option<char>) -> Expr {
+    pub fn rstrip(self, matches: Option<BTreeSet<char>>) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::RStrip(matches)))
     }
