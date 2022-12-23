@@ -2246,6 +2246,11 @@ impl Expr {
         string::StringNameSpace(self)
     }
 
+    #[cfg(feature = "dtype-binary")]
+    pub fn binary(self) -> binary::BinaryNameSpace {
+        binary::BinaryNameSpace(self)
+    }
+
     #[cfg(feature = "temporal")]
     pub fn dt(self) -> dt::DateLikeNameSpace {
         dt::DateLikeNameSpace(self)

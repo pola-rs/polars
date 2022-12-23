@@ -710,7 +710,7 @@ impl PyExpr {
     }
 
     pub fn binary_contains(&self, lit: Vec<u8>) -> PyExpr {
-        self.inner.clone().contains_literal(lit).into()
+        self.inner.clone().binary().contains_literal(lit).into()
     }
 
     pub fn binary_ends_with(&self, sub: String) -> PyExpr {
