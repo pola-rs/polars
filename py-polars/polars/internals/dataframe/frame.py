@@ -1498,6 +1498,26 @@ class DataFrame:
             ).render()
         )
 
+    def item(self) -> Any:
+        """
+        Return the dataframe as a scalar.
+
+        Equivalent to ``df[0,0]``, with a check that the shape is (1,1).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1]})
+        >>> df.item()
+        1
+
+        """
+        if self.shape != (1, 1):
+            raise ValueError(
+                f"Can only call .item() if the dataframe is of shape (1,1), "
+                f"dataframe is of shape {self.shape}"
+            )
+        return self[0, 0]
+
     def to_arrow(self) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.

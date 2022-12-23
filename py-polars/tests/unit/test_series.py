@@ -2473,3 +2473,16 @@ def test_get_chunks() -> None:
     chunks = pl.concat([a, b], rechunk=False).get_chunks()
     assert chunks[0].series_equal(a)
     assert chunks[1].series_equal(b)
+
+
+def test_item() -> None:
+    df = pl.Series("a", [1])
+    assert df.item() == 1
+
+    with pytest.raises(ValueError):
+        df = pl.Series("a", [1, 2])
+        df.item()
+
+    with pytest.raises(ValueError):
+        df = pl.Series("a", [])
+        df.item()
