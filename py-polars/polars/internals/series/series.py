@@ -68,6 +68,7 @@ from polars.internals.series.categorical import CatNameSpace
 from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
 from polars.internals.series.string import StringNameSpace
+from polars.internals.series.binary import BinaryNameSpace
 from polars.internals.series.struct import StructNameSpace
 from polars.internals.series.utils import expr_dispatch, get_ffi_func
 from polars.internals.slice import PolarsSlice
@@ -4824,6 +4825,11 @@ class Series:
     def str(self) -> StringNameSpace:
         """Create an object namespace of all string related methods."""
         return StringNameSpace(self)
+
+    @accessor
+    def binary(self) -> BinaryNameSpace:
+        """Create an object namespace of all binary related methods."""
+        return BinaryNameSpace(self)
 
     @accessor
     def struct(self) -> StructNameSpace:

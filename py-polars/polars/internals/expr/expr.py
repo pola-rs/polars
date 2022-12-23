@@ -21,6 +21,7 @@ from polars.internals.expr.datetime import ExprDateTimeNameSpace
 from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
+from polars.internals.expr.binary import ExprBinaryNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
 from polars.utils import _timedelta_to_pl_duration, accessor, deprecated_alias
 
@@ -6232,6 +6233,15 @@ class Expr:
 
         """
         return ExprStringNameSpace(self)
+
+    @accessor
+    def binary(self) -> ExprBinaryNameSpace:
+        """
+        Create an object namespace of all binary related methods.
+
+        See the individual method pages for full details
+        """
+        return ExprBinaryNameSpace(self)
 
     @accessor
     def struct(self) -> ExprStructNameSpace:
