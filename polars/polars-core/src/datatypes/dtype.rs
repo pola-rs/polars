@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::*;
+use crate::config::FMT_STRUCT_DATA_TYPE;
 
 pub type TimeZone = String;
 
