@@ -713,11 +713,11 @@ impl PyExpr {
         self.inner.clone().binary().contains_literal(lit).into()
     }
 
-    pub fn binary_ends_with(&self, sub: String) -> PyExpr {
+    pub fn binary_ends_with(&self, sub: Vec<u8>) -> PyExpr {
         self.inner.clone().binary().ends_with(sub).into()
     }
 
-    pub fn binary_starts_with(&self, sub: String) -> PyExpr {
+    pub fn binary_starts_with(&self, sub: Vec<u8>) -> PyExpr {
         self.inner.clone().binary().starts_with(sub).into()
     }
 

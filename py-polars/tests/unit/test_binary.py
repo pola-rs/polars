@@ -1,20 +1,6 @@
 import polars as pl
 
 
-def test_binary_conversions() -> None:
-    df = pl.DataFrame({"blob": [b"abc", None, b"cde"]}).with_column(
-        pl.col("blob").cast(pl.Utf8).alias("decoded_blob")
-    )
-
-    assert df.to_dict(False) == {
-        "blob": [b"abc", None, b"cde"],
-        "decoded_blob": ["abc", None, "cde"],
-    }
-    assert df[0, 0] == b"abc"
-    assert df[1, 0] is None
-    assert df.dtypes == [pl.Binary, pl.Utf8]
-
-
 def test_contains() -> None:
     df = pl.DataFrame(
         data=[
@@ -50,5 +36,25 @@ def test_starts_ends_with() -> None:
     ).to_dict(False) == {"pop": [False, False, True], "ham": [True, False, False]}
 
 
-def test_base64() -> None:
-    df = pl.DataFrame
+def test_base64_encode() -> None:
+    df = pl.DataFrame({"data": [b"asd", b"qwe"]})
+
+    assert [b"YXNk", b"cXdl"] == df["data"].bin.encode("base64").to_list()
+
+
+def test_base64_decode() -> None:
+    df = pl.DataFrame({"data": [b"YXNk", b"cXdl"]})
+
+    assert [b"asd", b"qwe"] == df["data"].bin.decode("base64").to_list()
+
+
+def test_hex_encode() -> None:
+    df = pl.DataFrame({"data": [b"asd", b"qwe"]})
+
+    assert [b"617364", b"717765"] == df["data"].bin.encode("hex").to_list()
+
+
+def test_hex_decode() -> None:
+    df = pl.DataFrame({"data": [b"617364", b"717765"]})
+
+    assert [b"asd", b"qwe"] == df["data"].bin.decode("hex").to_list()
