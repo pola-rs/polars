@@ -30,29 +30,24 @@ where
             // we pre-allocated enough
             // unsafe { out.push_unchecked(a_indicator) }
             out.push(A_INDICATOR);
-        } else {
-            // unsafe { out.push_unchecked(!a_indicator) }
-            out.push(B_INDICATOR);
+            continue;
+        }
+        out.push(B_INDICATOR);
 
-            loop {
-                match b_iter.next() {
-                    Some(b) => {
-                        current_b = b;
-                        if b >= a {
-                            out.push(A_INDICATOR);
-                            break;
-                        } else {
-                            out.push(B_INDICATOR);
-                        }
-                    }
-                    None => {
-                        // b is depleted fill with a indicator
-                        let remaining = cap - out.len();
-                        out.extend(std::iter::repeat(A_INDICATOR).take(remaining));
-                        return out;
-                    }
+        loop {
+            if let Some(b) = b_iter.next() {
+                current_b = b;
+                if b >= a {
+                    out.push(A_INDICATOR);
+                    break;
                 }
+                out.push(B_INDICATOR);
+                continue;
             }
+            // b is depleted fill with a indicator
+            let remaining = cap - out.len();
+            out.extend(std::iter::repeat(A_INDICATOR).take(remaining));
+            return out;
         }
     }
     if current_a < current_b {
@@ -70,7 +65,7 @@ where
 }
 
 #[test]
-fn test_foo() {
+fn test_merge_sorted() {
     let a = [1, 2, 4, 6, 9];
     let b = [2, 3, 4, 5, 10];
 
@@ -84,8 +79,6 @@ fn test_foo() {
     // swap
     // it is not the inverse because left is preferred when both are equal
     let out = get_merge_indicator(&b, &a);
-    let b = [2, 3, 4, 5, 10];
-    let a = [1, 2, 4, 6, 9];
     let expected = [
         false, true, false, true, true, false, true, false, false, true,
     ];
