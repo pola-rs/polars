@@ -7,7 +7,7 @@ from polars.datatypes import (
     DataType,
     Date,
     Datetime,
-    TemporalDataType,
+    PolarsTemporalType,
     Time,
     is_polars_dtype,
 )
@@ -27,7 +27,7 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: TemporalDataType,
+        datatype: PolarsTemporalType,
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
