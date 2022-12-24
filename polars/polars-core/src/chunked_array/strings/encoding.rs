@@ -4,29 +4,21 @@ use crate::prelude::*;
 
 impl Utf8Chunked {
     #[cfg(not(feature = "binary_encoding"))]
-    pub fn hex_decode(&self, strict: Option<bool>) -> PolarsResult<Utf8Chunked> {
-        let ca = self.apply_on_opt(|e| {
-            e.and_then(|s| {
-                hex::decode(s)
-                    // Safety
-                    // We already know that it is a valid utf8.
-                    .map(|bytes| Some(unsafe { String::from_utf8_unchecked(bytes) }.into()))
-                    .unwrap_or(None)
-            })
-        });
-
-        if strict.unwrap_or(false) && (ca.null_count() != self.null_count()) {
-            Err(PolarsError::ComputeError("Unable to decode inputs".into()))
-        } else {
-            Ok(ca)
-        }
+    pub fn hex_decode(&self) -> PolarsResult<Utf8Chunked> {
+        self.try_apply(|s| {
+            let bytes =
+                hex::decode(s).map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
+            let s = String::from_utf8(bytes)
+                .map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
+            Ok(s.into())
+        })
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn hex_decode(&self, strict: Option<bool>) -> PolarsResult<BinaryChunked> {
+    pub fn hex_decode(&self) -> PolarsResult<BinaryChunked> {
         self.cast_unchecked(&DataType::Binary)?
             .binary()?
-            .hex_decode(strict)
+            .hex_decode()
     }
 
     #[must_use]
@@ -35,29 +27,21 @@ impl Utf8Chunked {
     }
 
     #[cfg(not(feature = "binary_encoding"))]
-    pub fn base64_decode(&self, strict: Option<bool>) -> PolarsResult<Utf8Chunked> {
-        let ca = self.apply_on_opt(|e| {
-            e.and_then(|s| {
-                base64::decode(s)
-                    // Safety
-                    // We already know that it is a valid utf8.
-                    .map(|bytes| Some(unsafe { String::from_utf8_unchecked(bytes) }.into()))
-                    .unwrap_or(None)
-            })
-        });
-
-        if strict.unwrap_or(false) && (ca.null_count() != self.null_count()) {
-            Err(PolarsError::ComputeError("Unable to decode inputs".into()))
-        } else {
-            Ok(ca)
-        }
+    pub fn base64_decode(&self) -> PolarsResult<Utf8Chunked> {
+        self.try_apply(|s| {
+            let bytes =
+                base64::decode(s).map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
+            let s = String::from_utf8(bytes)
+                .map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
+            Ok(s.into())
+        })
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn base64_decode(&self, strict: Option<bool>) -> PolarsResult<BinaryChunked> {
+    pub fn base64_decode(&self) -> PolarsResult<BinaryChunked> {
         self.cast_unchecked(&DataType::Binary)?
             .binary()?
-            .base64_decode(strict)
+            .base64_decode()
     }
 
     #[must_use]

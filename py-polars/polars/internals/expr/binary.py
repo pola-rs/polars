@@ -56,7 +56,7 @@ class ExprBinaryNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.binary_starts_with(sub))
 
-    def decode(self, encoding: TransferEncoding, strict: bool = False) -> pli.Expr:
+    def decode(self, encoding: TransferEncoding) -> pli.Expr:
         """
         Decode a value using the provided encoding.
 
@@ -64,17 +64,12 @@ class ExprBinaryNameSpace:
         ----------
         encoding : {'hex', 'base64'}
             The encoding to use.
-        strict
-            How to handle invalid inputs:
-
-            - ``True``: An error will be thrown if unable to decode a value.
-            - ``False``: Unhandled values will be replaced with `None`.
 
         """
         if encoding == "hex":
-            return pli.wrap_expr(self._pyexpr.binary_hex_decode(strict))
+            return pli.wrap_expr(self._pyexpr.binary_hex_decode())
         elif encoding == "base64":
-            return pli.wrap_expr(self._pyexpr.binary_base64_decode(strict))
+            return pli.wrap_expr(self._pyexpr.binary_base64_decode())
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"

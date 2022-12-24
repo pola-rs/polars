@@ -269,7 +269,7 @@ class StringNameSpace:
 
         """
 
-    def decode(self, encoding: TransferEncoding, strict: bool = False) -> pli.Series:
+    def decode(self, encoding: TransferEncoding) -> pli.Series:
         """
         Decode a value using the provided encoding.
 
@@ -277,11 +277,6 @@ class StringNameSpace:
         ----------
         encoding : {'hex', 'base64'}
             The encoding to use.
-        strict
-            How to handle invalid inputs:
-
-            - ``True``: An error will be thrown if unable to decode a value.
-            - ``False``: Unhandled values will be replaced with `None`.
 
         """
 
