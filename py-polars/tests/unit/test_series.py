@@ -1764,7 +1764,7 @@ def test_str_encode() -> None:
 def test_str_decode() -> None:
     hex_encoded = pl.Series(["666f6f", "626172", None])
     base64_encoded = pl.Series(["Zm9v", "YmFy", None])
-    expected = pl.Series(["foo", "bar", None])
+    expected = pl.Series([b"foo", b"bar", None])
 
     verify_series_and_expr_api(hex_encoded, expected, "str.decode", "hex")
     verify_series_and_expr_api(base64_encoded, expected, "str.decode", "base64")

@@ -53,7 +53,7 @@ def test_starts_ends_with() -> None:
 def test_base64_encode() -> None:
     df = pl.DataFrame({"data": [b"asd", b"qwe"]})
 
-    assert [b"YXNk", b"cXdl"] == df["data"].bin.encode("base64").to_list()
+    assert ["YXNk", "cXdl"] == df["data"].bin.encode("base64").to_list()
 
 
 def test_base64_decode() -> None:
@@ -65,7 +65,7 @@ def test_base64_decode() -> None:
 def test_hex_encode() -> None:
     df = pl.DataFrame({"data": [b"asd", b"qwe"]})
 
-    assert [b"617364", b"717765"] == df["data"].bin.encode("hex").to_list()
+    assert ["617364", "717765"] == df["data"].bin.encode("hex").to_list()
 
 
 def test_hex_decode() -> None:

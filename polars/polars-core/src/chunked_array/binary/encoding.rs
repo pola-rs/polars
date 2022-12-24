@@ -13,9 +13,10 @@ impl BinaryChunked {
         }
     }
 
-    #[must_use]
-    pub fn hex_encode(&self) -> BinaryChunked {
+    pub fn hex_encode(&self) -> Series {
         self.apply(|s| hex::encode(s).into_bytes().into())
+            .cast_unchecked(&DataType::Utf8)
+            .unwrap()
     }
 
     pub fn base64_decode(&self, strict: Option<bool>) -> PolarsResult<BinaryChunked> {
@@ -28,8 +29,9 @@ impl BinaryChunked {
         }
     }
 
-    #[must_use]
-    pub fn base64_encode(&self) -> BinaryChunked {
+    pub fn base64_encode(&self) -> Series {
         self.apply(|s| base64::encode(s).into_bytes().into())
+            .cast_unchecked(&DataType::Utf8)
+            .unwrap()
     }
 }
