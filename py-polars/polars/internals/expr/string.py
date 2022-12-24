@@ -677,23 +677,6 @@ class ExprStringNameSpace:
             - ``True``: An error will be thrown if unable to decode a value.
             - ``False``: Unhandled values will be replaced with `None`.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"encoded": ["666f6f", "626172", None]})
-        >>> df.select(pl.col("encoded").str.decode("hex"))
-        shape: (3, 1)
-        ┌─────────┐
-        │ encoded │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ foo     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ bar     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ null    │
-        └─────────┘
-
         """
         if encoding == "hex":
             return pli.wrap_expr(self._pyexpr.str_hex_decode(strict))
