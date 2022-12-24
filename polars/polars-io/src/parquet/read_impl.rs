@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::sync::Arc;
 
 use arrow::array::new_empty_array;
@@ -12,6 +12,7 @@ use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
 
+use super::mmap::ColumnStore;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
@@ -83,7 +84,7 @@ pub(super) fn array_iter_to_series(
 
 #[allow(clippy::too_many_arguments)]
 // might parallelize over columns
-pub(super) fn rg_to_dfs(
+fn rg_to_dfs(
     store: &mmap::ColumnStore,
     previous_row_count: &mut IdxSize,
     row_group_start: usize,
@@ -159,7 +160,7 @@ pub(super) fn rg_to_dfs(
 
 #[allow(clippy::too_many_arguments)]
 // parallelizes over row groups
-pub(super) fn rg_to_dfs_par(
+fn rg_to_dfs_par(
     store: &mmap::ColumnStore,
     row_group_start: usize,
     row_group_end: usize,
@@ -302,14 +303,41 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 }
 
-pub trait HasNextBatches: Sync + Send {
-    fn next_batches(&mut self, chunk_size: usize) -> PolarsResult<Option<Vec<DataFrame>>>;
+/// Provide RowGroup content to the BatchedReader.
+/// This allows us to share the code to do in-memory processing for different use cases.
+pub trait FetchRowGroups: Sync + Send {
+    /// Fetch the row groups in the given range and package them in a ColumnStore.
+    fn fetch_row_groups(&mut self, row_groups: Range<usize>) -> PolarsResult<ColumnStore>;
 }
+
+pub(crate) struct FetchRowGroupsFromMmapReader(ReaderBytes<'static>);
+
+impl FetchRowGroupsFromMmapReader {
+    pub fn new(mut reader: Box<dyn MmapBytesReader>) -> PolarsResult<Self> {
+        // safety we will keep ownership on the struct and reference the bytes on the heap.
+        // this should not work with passed bytes so we check if it is a file
+        assert!(reader.to_file().is_some());
+        let reader_ptr = unsafe {
+            std::mem::transmute::<&mut dyn MmapBytesReader, &'static mut dyn MmapBytesReader>(
+                reader.as_mut(),
+            )
+        };
+        let reader_bytes = get_reader_bytes(reader_ptr)?;
+        Ok(FetchRowGroupsFromMmapReader(reader_bytes))
+    }
+}
+
+/// There is nothing to do when fetching a mmap-ed file.
+impl FetchRowGroups for FetchRowGroupsFromMmapReader {
+    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+        Ok(mmap::ColumnStore::Local(self.0.deref()))
+    }
+}
+
 pub struct BatchedParquetReader {
     // use to keep ownership
     #[allow(dead_code)]
-    reader: Box<dyn MmapBytesReader>,
-    reader_bytes: ReaderBytes<'static>,
+    row_group_fetcher: Box<dyn FetchRowGroups>,
     limit: usize,
     projection: Vec<usize>,
     schema: ArrowSchema,
@@ -325,13 +353,13 @@ pub struct BatchedParquetReader {
 
 impl BatchedParquetReader {
     pub fn new(
-        mut reader: Box<dyn MmapBytesReader>,
+        row_group_fetcher: Box<dyn FetchRowGroups>,
+        metadata: FileMetaData,
         limit: usize,
         projection: Option<Vec<usize>>,
         row_count: Option<RowCount>,
         chunk_size: usize,
     ) -> PolarsResult<Self> {
-        let metadata = read::read_metadata(&mut reader)?;
         let schema = read::schema::infer_schema(&metadata)?;
         let n_row_groups = metadata.row_groups.len();
         let projection =
@@ -344,18 +372,8 @@ impl BatchedParquetReader {
                 ParallelStrategy::Columns
             };
 
-        // safety we will keep ownership on the struct and reference the bytes on the heap.
-        // this should not work with passed bytes so we check if it is a file
-        assert!(reader.to_file().is_some());
-        let reader_ptr = unsafe {
-            std::mem::transmute::<&mut dyn MmapBytesReader, &'static mut dyn MmapBytesReader>(
-                reader.as_mut(),
-            )
-        };
-        let reader_bytes = get_reader_bytes(reader_ptr)?;
         Ok(BatchedParquetReader {
-            reader,
-            reader_bytes,
+            row_group_fetcher,
             limit,
             projection,
             schema,
@@ -369,20 +387,22 @@ impl BatchedParquetReader {
             chunk_size,
         })
     }
-}
 
-impl HasNextBatches for BatchedParquetReader {
-    fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
+    pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         // fill up fifo stack
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
-            let store = mmap::ColumnStore::Local(self.reader_bytes.deref());
+            let row_group_start = self.row_group_offset;
+            let row_group_end = std::cmp::min(self.row_group_offset + n, self.n_row_groups);
+            let store = self
+                .row_group_fetcher
+                .fetch_row_groups(row_group_start..row_group_end)?;
             let dfs = match self.parallel {
                 ParallelStrategy::Columns => {
                     let dfs = rg_to_dfs(
                         &store,
                         &mut self.rows_read,
-                        self.row_group_offset,
-                        std::cmp::min(self.row_group_offset + n, self.n_row_groups),
+                        row_group_start,
+                        row_group_end,
                         &mut self.limit,
                         &self.metadata,
                         &self.schema,

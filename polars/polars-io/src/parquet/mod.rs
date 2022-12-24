@@ -23,7 +23,6 @@ mod read_impl;
 mod write;
 
 pub use read::*;
-pub use read_impl::HasNextBatches;
 pub use write::{BrotliLevel, GzipLevel, ZstdLevel, *};
 
 use super::*;

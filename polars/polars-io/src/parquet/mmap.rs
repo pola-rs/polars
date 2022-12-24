@@ -1,24 +1,28 @@
-#[cfg(feature = "parquet-async")]
-use ahash::HashMap;
 use arrow::datatypes::Field;
 use arrow::io::parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
 };
+#[cfg(feature = "parquet-async")]
+use polars_core::datatypes::PlHashMap;
 
 use super::*;
 
 /// Store colums data in two scenarios:
 /// 1. a local memory mapped file
-/// 2. data fetched from cloud storage on demand. The intent is to enable a two phase approach:
+/// 2. data fetched from cloud storage on demand, in this case
+///     a. the key in the hashmap is the start in the file
+///     b. the value in the hashmap is the actual data.
+///
+/// For the fetched case we use a two phase approach:
 ///    a. identify all the needed columns
 ///    b. asynchronously fetch them in parallel, for example using object_store
 ///    c. store the data in this data structure
 ///    d. when all the data is available deserialize on multiple threads, for example using rayon
-pub(crate) enum ColumnStore<'a> {
+pub enum ColumnStore<'a> {
     Local(&'a [u8]),
     #[cfg(feature = "parquet-async")]
-    Fetched(&'a HashMap<u64, Vec<u8>>),
+    Fetched(PlHashMap<u64, Vec<u8>>),
 }
 
 /// For local files memory maps all columns that are part of the parquet field `field_name`.

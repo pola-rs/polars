@@ -1,4 +1,4 @@
-//! Interface withe the object_store crate and define AsyncSeek, AsyncRead.
+//! Interface with the object_store crate and define AsyncSeek, AsyncRead.
 //! This is used, for example, by the parquet2 crate.
 
 use std::io::{self};
@@ -50,9 +50,9 @@ impl CloudReader {
 
     /// For each read request we create a new future.
     async fn read_operation(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        lenght: usize,
+        length: usize,
     ) -> std::task::Poll<std::io::Result<Vec<u8>>> {
         let start = self.pos as usize;
 
@@ -69,7 +69,7 @@ impl CloudReader {
             async move {
                 let object_store = arc.lock().await;
                 object_store
-                    .get_range(&path, start..start + lenght)
+                    .get_range(&path, start..start + length)
                     .map_ok(|r| r.to_vec())
                     .map_err(|e| {
                         std::io::Error::new(
@@ -80,6 +80,9 @@ impl CloudReader {
                     .await
             }
         };
+        // Prepare for next read.
+        self.pos += length as u64;
+
         let mut future = Box::pin(future);
 
         // Need to poll it once to get the pump going.
@@ -102,7 +105,7 @@ impl AsyncRead for CloudReader {
         // With this approach we keep ownership of the buffer and we don't have to pass it to the future runtime.
         match block_on(self.read_operation(cx, buf.len())) {
             Poll::Ready(Ok(bytes)) => {
-                buf.copy_from_slice(&bytes[..]);
+                buf.copy_from_slice(&bytes);
                 Poll::Ready(Ok(bytes.len()))
             }
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
@@ -134,8 +137,7 @@ impl AsyncSeek for CloudReader {
 
 /// Build an ObjectStore based on the URL and information from the environment. Return an object store and the path relative to the store.
 pub fn build(uri: &str) -> PolarsResult<(Path, Box<dyn ObjectStore>)> {
-    let parsed =
-        Url::parse(uri).map_err(|e| PolarsError::External("url parse".into(), Box::new(e)))?;
+    let parsed = Url::parse(uri).map_err(anyhow::Error::from)?;
     let path = Path::from(parsed.path());
     match parsed.scheme() {
         "s3" => {
@@ -143,16 +145,13 @@ pub fn build(uri: &str) -> PolarsResult<(Path, Box<dyn ObjectStore>)> {
                 .with_bucket_name(
                     parsed
                         .host()
-                        .ok_or(PolarsError::External(
-                            "wrong host".into(),
+                        .ok_or(PolarsError::ComputeError(
                             format!("Cannot parse host from {path}").into(),
                         ))?
                         .to_string(),
                 )
                 .build()
-                .map_err(|e| {
-                    PolarsError::External("object store amazon s3 builder".into(), Box::new(e))
-                })?;
+                .map_err(anyhow::Error::from)?;
             Ok((path, Box::new(s3)))
         }
         "file" => {

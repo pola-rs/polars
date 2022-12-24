@@ -63,7 +63,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true, default-features = false, features = ["alloc", "raw_value"] }
 simd-json = { version = "0.7.0", optional = true, features = ["allow-non-simd", "known-key"] }
 simdutf8 = "0.1"
-tokio = { version = "1.22.0", features = ["full"], optional = true }
+tokio = { version = "1.22.0", features = ["net"], optional = true }
 url = { version = "2.3.1", optional = true }
 
 [dev-dependencies]

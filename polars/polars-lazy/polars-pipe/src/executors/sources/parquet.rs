@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use polars_core::error::PolarsResult;
 use polars_core::schema::*;
 use polars_core::POOL;
-use polars_io::parquet::{HasNextBatches, ParquetReader};
+use polars_io::parquet::{BatchedParquetReader, ParquetReader};
 #[cfg(feature = "parquet-async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::{is_cloud_url, SerReader};
@@ -14,7 +14,7 @@ use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 use crate::CHUNK_SIZE;
 
 pub struct ParquetSource {
-    batched_reader: Box<dyn HasNextBatches>,
+    batched_reader: BatchedParquetReader,
     n_threads: usize,
     chunk_index: IdxSize,
 }
@@ -33,7 +33,7 @@ impl ParquetSource {
         });
 
         let chunk_size = std::cmp::max(CHUNK_SIZE * 12 / POOL.current_num_threads(), 10_000);
-        let batched_reader: Box<dyn HasNextBatches> = if is_cloud_url(&path) {
+        let batched_reader = if is_cloud_url(&path) {
             #[cfg(not(feature = "parquet-async"))]
             {
                 panic!(
@@ -43,26 +43,20 @@ impl ParquetSource {
             #[cfg(feature = "parquet-async")]
             {
                 let uri = path.to_string_lossy();
-                Box::new(
-                    ParquetAsyncReader::from_uri(&uri)?
-                        .with_n_rows(options.n_rows)
-                        .with_row_count(options.row_count)
-                        .with_projection(projection)
-                        .batched(chunk_size)?,
-                )
+                ParquetAsyncReader::from_uri(&uri)?
+                    .with_n_rows(options.n_rows)
+                    .with_row_count(options.row_count)
+                    .with_projection(projection)
+                    .batched(chunk_size)?
             }
         } else {
             let file = std::fs::File::open(path).unwrap();
 
-            // inversely scale the chunk size by the number of threads so that we reduce memory pressure
-            // in streaming
-            Box::new(
-                ParquetReader::new(file)
-                    .with_n_rows(options.n_rows)
-                    .with_row_count(options.row_count)
-                    .with_projection(projection)
-                    .batched(chunk_size)?,
-            )
+            ParquetReader::new(file)
+                .with_n_rows(options.n_rows)
+                .with_row_count(options.row_count)
+                .with_projection(projection)
+                .batched(chunk_size)?
         };
 
         Ok(ParquetSource {

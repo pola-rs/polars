@@ -7,9 +7,10 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::read_impl::FetchRowGroupsFromMmapReader;
 use crate::mmap::MmapBytesReader;
 #[cfg(feature = "parquet-async")]
-use crate::parquet::async_impl::BatchedParquetReader as BatchedParquetReaderAsync;
+use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "parquet-async")]
 use crate::parquet::async_impl::ParquetObjectStore;
 use crate::parquet::read_impl::read_parquet;
@@ -142,9 +143,13 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 }
 
 impl<R: MmapBytesReader + 'static> ParquetReader<R> {
-    pub fn batched(self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
+    pub fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
+        let metadata = read::read_metadata(&mut self.reader)?;
+
+        let row_group_fetcher = Box::new(FetchRowGroupsFromMmapReader::new(Box::new(self.reader))?);
         BatchedParquetReader::new(
-            Box::new(self.reader),
+            row_group_fetcher,
+            metadata,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
             self.row_count,
@@ -268,17 +273,20 @@ impl ParquetAsyncReader {
     }
 
     #[tokio::main(flavor = "current_thread")]
-    pub async fn batched(mut self, batch_size: usize) -> PolarsResult<BatchedParquetReaderAsync> {
-        let logging = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
-        let metadata = self.reader.fetch_metadata().await?;
-        BatchedParquetReaderAsync::new(
+    pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
+        let metadata = self.reader.get_metadata().await?.to_owned();
+        let row_group_fetcher = Box::new(FetchRowGroupsFromObjectStore::new(
             self.reader,
+            &metadata,
+            &self.projection,
+        )?);
+        BatchedParquetReader::new(
+            row_group_fetcher,
             metadata,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
             self.row_count,
-            batch_size,
-            logging,
+            chunk_size,
         )
     }
 }
