@@ -330,9 +330,7 @@ def sequence_to_pyseries(
                 tz = str(value.tzinfo)
                 return pli.wrap_s(py_series).dt.tz_localize(tz)._s
 
-            # TODO: use anyvalues here (no need to require pyarrow for this).
-            arrow_dtype = dtype_to_arrow_type(dtype)
-            return arrow_to_pyseries(name, pa.array(values, type=arrow_dtype))
+            return PySeries.new_from_anyvalues(name, values)
 
         elif python_dtype in (list, tuple):
             if nested_dtype is None:
