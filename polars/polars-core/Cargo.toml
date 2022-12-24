@@ -30,7 +30,7 @@ string_encoding = ["base64", "hex"]
 object = ["serde_json"]
 
 # extra utilities for BinaryChunked
-binary_encoding = ["base64", "hex"]
+binary_encoding = ["base64", "hex", "dtype-binary"]
 
 fmt = ["comfy-table/tty"]
 fmt_no_tty = ["comfy-table"]
