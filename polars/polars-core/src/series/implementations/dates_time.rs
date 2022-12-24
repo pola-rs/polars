@@ -124,10 +124,11 @@ macro_rules! impl_dyn_series {
                         let rhs = rhs.cast(&dt)?;
                         lhs.subtract(&rhs)
                     }
-                    (DataType::Date, DataType::Duration(tu)) => {
-                        ((&self.cast(&DataType::Datetime(*tu, None)).unwrap()) - rhs)
-                            .cast(&DataType::Date)
-                    }
+                    (DataType::Date, DataType::Duration(_)) => ((&self
+                        .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                        .unwrap())
+                        - rhs)
+                        .cast(&DataType::Date),
                     (dtl, dtr) => Err(PolarsError::ComputeError(
                         format!(
                             "cannot do subtraction on these date types: {:?}, {:?}",
@@ -139,10 +140,11 @@ macro_rules! impl_dyn_series {
             }
             fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
                 match (self.dtype(), rhs.dtype()) {
-                    (DataType::Date, DataType::Duration(tu)) => {
-                        ((&self.cast(&DataType::Datetime(*tu, None)).unwrap()) + rhs)
-                            .cast(&DataType::Date)
-                    }
+                    (DataType::Date, DataType::Duration(_)) => ((&self
+                        .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                        .unwrap())
+                        + rhs)
+                        .cast(&DataType::Date),
                     (dtl, dtr) => Err(PolarsError::ComputeError(
                         format!(
                             "cannot do addition on these date types: {:?}, {:?}",

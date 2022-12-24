@@ -2545,3 +2545,20 @@ $ d    <Utf8> None, b, c
 $ e    <Utf8> usd, eur, None                                                                            
 $ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01"""
     assert result.strip() == expected
+
+
+def test_item() -> None:
+    df = pl.DataFrame({"a": [1]})
+    assert df.item() == 1
+
+    with pytest.raises(ValueError):
+        df = pl.DataFrame({"a": [1, 2]})
+        df.item()
+
+    with pytest.raises(ValueError):
+        df = pl.DataFrame({"a": [1], "b": [2]})
+        df.item()
+
+    with pytest.raises(ValueError):
+        df = pl.DataFrame({})
+        df.item()

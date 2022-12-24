@@ -293,7 +293,7 @@ pub(crate) fn insert_streaming_nodes(
 
             // the most far right branch will be the latest that sets this
             // variable and thus will point to root
-            let mut latest = Default::default();
+            let mut latest = None;
 
             let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<IdxSize>();
             let branches_in_tree = tree.len() as IdxSize;
@@ -314,7 +314,7 @@ pub(crate) fn insert_streaming_nodes(
                 let mut iter = branch.operators_sinks.into_iter().rev();
 
                 for (is_sink, is_rhs_join, node) in &mut iter {
-                    latest = node;
+                    latest = Some(node);
                     let operator_offset = operators.len();
                     if is_sink && !is_rhs_join {
                         sink_nodes.push((operator_offset, node))
@@ -363,30 +363,34 @@ pub(crate) fn insert_streaming_nodes(
                 )?;
                 pipelines.push_back(pipeline);
             }
-            // the most right latest node should be the root of the pipeline
-            let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
+            // some queries only have source/sources and don't have any
+            // operators/sink so no latest
+            if let Some(latest) = latest {
+                // the most right latest node should be the root of the pipeline
+                let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
 
-            if let Some(mut most_left) = pipelines.pop_front() {
-                while let Some(rhs) = pipelines.pop_front() {
-                    most_left = most_left.with_rhs(rhs)
-                }
-                // keep the original around for formatting purposes
-                let original_lp = if fmt {
-                    let original_lp = lp_arena.take(latest);
-                    let original_node = lp_arena.add(original_lp);
-                    let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
-                    Some(original_lp)
+                if let Some(mut most_left) = pipelines.pop_front() {
+                    while let Some(rhs) = pipelines.pop_front() {
+                        most_left = most_left.with_rhs(rhs)
+                    }
+                    // keep the original around for formatting purposes
+                    let original_lp = if fmt {
+                        let original_lp = lp_arena.take(latest);
+                        let original_node = lp_arena.add(original_lp);
+                        let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
+                        Some(original_lp)
+                    } else {
+                        None
+                    };
+
+                    // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+                    let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
+                    lp_arena.replace(latest, pipeline_node);
+                    inserted = true;
                 } else {
-                    None
-                };
-
-                // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
-                let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
-                lp_arena.replace(latest, pipeline_node);
-                inserted = true;
-            } else {
-                panic!()
-            }
+                    panic!()
+                }
+            };
         }
     }
 
