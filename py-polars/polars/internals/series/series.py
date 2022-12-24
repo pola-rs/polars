@@ -957,6 +957,26 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(from_series=True)
 
+    def item(self) -> Any:
+        """
+        Return the series as a scalar.
+
+        Equivalent to ``s[0]``, with a check that the shape is (1,).
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1])
+        >>> s.item()
+        1
+
+        """
+        if len(self) != 1:
+            raise ValueError(
+                f"Can only call .item() if the series is of length 1, "
+                f"series is of length {len(self)}"
+            )
+        return self[0]
+
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
         Return an estimation of the total (heap) allocated size of the Series.

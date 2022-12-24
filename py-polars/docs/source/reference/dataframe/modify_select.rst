@@ -26,6 +26,7 @@ Manipulation/selection
     DataFrame.hstack
     DataFrame.insert_at_idx
     DataFrame.interpolate
+    DataFrame.item
     DataFrame.join
     DataFrame.join_asof
     DataFrame.limit
