@@ -3301,9 +3301,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             elif isinstance(value, bool):
                 dtypes = [Boolean]
             elif matches_supertype and isinstance(value, (int, float)):
-                ints = [Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64]
-                floats = [Float32, Float64]
-                dtypes = ints + floats
+                dtypes = [
+                    Int8,
+                    Int16,
+                    Int32,
+                    Int64,
+                    UInt8,
+                    UInt16,
+                    UInt32,
+                    UInt64,
+                    Float32,
+                    Float64,
+                ]
             elif isinstance(value, int):
                 dtypes = [Int64]
             elif isinstance(value, float):

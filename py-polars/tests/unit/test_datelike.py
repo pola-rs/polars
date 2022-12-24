@@ -16,7 +16,7 @@ else:
     from backports import zoneinfo
 
 import polars as pl
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, TemporalDataType
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, PolarsTemporalType
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing._private import verify_series_and_expr_api
 
@@ -637,7 +637,7 @@ def test_date_range_lazy() -> None:
         (date(5001, 1, 1), date(5001, 1, 2)),
     ],
 )
-def test_date_comp(one: TemporalDataType, two: TemporalDataType) -> None:
+def test_date_comp(one: PolarsTemporalType, two: PolarsTemporalType) -> None:
     a = pl.Series("a", [one, two])
     assert (a == one).to_list() == [True, False]
     assert (a == two).to_list() == [False, True]

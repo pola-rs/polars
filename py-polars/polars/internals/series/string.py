@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import TemporalDataType
+from polars.datatypes import PolarsTemporalType
 from polars.internals.series.utils import expr_dispatch
 from polars.utils import deprecated_alias
 
@@ -23,7 +23,7 @@ class StringNameSpace:
 
     def strptime(
         self,
-        datatype: TemporalDataType,
+        datatype: PolarsTemporalType,
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,

@@ -23,8 +23,6 @@ from typing import (
     overload,
 )
 
-from _ctypes import _SimpleCData  # type: ignore[attr-defined]
-
 from polars.dependencies import pyarrow as pa
 
 try:
@@ -35,23 +33,11 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-UnionType: type
-OptionType = type(Optional[type])
 
 if sys.version_info >= (3, 8):
-    from typing import Literal
+    from typing import Literal, get_args
 else:
     from typing_extensions import Literal
-
-if sys.version_info >= (3, 10):
-    from types import UnionType
-else:
-    # infer equivalent class
-    UnionType = type(Union[int, float])
-
-if sys.version_info >= (3, 8):
-    from typing import get_args
-else:
 
     # pass-through (only impact is that under 3.7 we'll end-up doing
     # standard inference for dataclass fields with an option/union)
@@ -59,24 +45,59 @@ else:
         return tp
 
 
-T = TypeVar("T")
+OptionType = type(Optional[type])
+if sys.version_info >= (3, 10):
+    from types import NoneType, UnionType
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
-
-def cache(func: Callable[..., T]) -> T:
-    # need this to satisfy mypy issue with "@property/@cache combination"
-    # See: https://github.com/python/mypy/issues/5858
-    return functools.lru_cache()(func)  # type: ignore[return-value]
+    # infer equivalent class
+    NoneType = type(None)
+    UnionType = type(Union[int, float])
 
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
 
 
+# note: defined this way as some types can have instances that
+# act as specialisations (eg: "List" and "List[Int32]")
+PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
+PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
+
+PythonDataType: TypeAlias = Union[
+    Type[int],
+    Type[float],
+    Type[bool],
+    Type[str],
+    Type[date],
+    Type[time],
+    Type[datetime],
+    Type[timedelta],
+    Type[list],
+    Type[tuple],  # type: ignore[type-arg]
+    Type[bytes],
+    Type[Decimal],
+]
+
+ColumnsType: TypeAlias = Union[
+    Sequence[str],
+    Mapping[str, Union[PolarsDataType, PythonDataType]],
+    Sequence[Tuple[str, Union[PolarsDataType, PythonDataType, None]]],
+]
+Schema: TypeAlias = Dict[str, PolarsDataType]
+
+DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
+
+
 def get_idx_type() -> PolarsDataType:
     """
-    Get the datatype used for polars Indexing.
+    Get the datatype used for Polars indexing.
 
-    This is UInt32 in regulars polars and UInt64 in polars_u64_idx
+    Returns
+    -------
+    UInt32 in regular Polars, UInt64 in bigidx Polars.
 
     """
     return _get_idx_type()
@@ -85,6 +106,7 @@ def get_idx_type() -> PolarsDataType:
 def _custom_reconstruct(
     cls: type[Any], base: type[Any], state: Any
 ) -> PolarsDataType | type:
+    """Helper function for unpickling DataType objects."""
     if state:
         obj = base.__new__(cls, state)
         if base.__init__ != object.__init__:
@@ -119,67 +141,63 @@ class DataType(metaclass=DataTypeClass):
         return dtype_str_repr(cls)
 
 
-# note: defined this way as some types can have instances that
-# act as specialisations (eg: "List" and "List[Int32]")
-PolarsDataType = Union[DataTypeClass, DataType]
-PythonDataType = Union[
-    Type[int],
-    Type[float],
-    Type[bool],
-    Type[date],
-    Type[time],
-    Type[datetime],
-    Type[timedelta],
-    Type[list],
-    Type[bytes],
-]
+class NumericType(DataType):
+    """Base class for numeric data types."""
 
 
-ColumnsType = Union[
-    Sequence[str],
-    Mapping[str, Union[PolarsDataType, PythonDataType]],
-    Sequence[Tuple[str, Union[PolarsDataType, PythonDataType, None]]],
-]
-NoneType = type(None)
+class IntegralType(NumericType):
+    """Base class for integral data types."""
 
 
-class Int8(DataType):
+class FractionalType(NumericType):
+    """Base class for fractional data types."""
+
+
+class TemporalType(DataType):
+    """Base class for temporal data types."""
+
+
+class NestedType(DataType):
+    """Base class for nested data types."""
+
+
+class Int8(IntegralType):
     """8-bit signed integer type."""
 
 
-class Int16(DataType):
+class Int16(IntegralType):
     """16-bit signed integer type."""
 
 
-class Int32(DataType):
+class Int32(IntegralType):
     """32-bit signed integer type."""
 
 
-class Int64(DataType):
+class Int64(IntegralType):
     """64-bit signed integer type."""
 
 
-class UInt8(DataType):
+class UInt8(IntegralType):
     """8-bit unsigned integer type."""
 
 
-class UInt16(DataType):
+class UInt16(IntegralType):
     """16-bit unsigned integer type."""
 
 
-class UInt32(DataType):
+class UInt32(IntegralType):
     """32-bit unsigned integer type."""
 
 
-class UInt64(DataType):
+class UInt64(IntegralType):
     """64-bit unsigned integer type."""
 
 
-class Float32(DataType):
+class Float32(FractionalType):
     """32-bit floating point type."""
 
 
-class Float64(DataType):
+class Float64(FractionalType):
     """64-bit floating point type."""
 
 
@@ -191,19 +209,7 @@ class Utf8(DataType):
     """UTF-8 encoded string type."""
 
 
-class Binary(DataType):
-    """Binary type."""
-
-
-class Null(DataType):
-    """Type representing Null / None values."""
-
-
-class Unknown(DataType):
-    """Type representing Datatype values that could not be determined statically."""
-
-
-class List(DataType):
+class List(NestedType):
     inner: PolarsDataType | None = None
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
@@ -247,11 +253,11 @@ class List(DataType):
         return f"{class_name}({self.inner!r})"
 
 
-class Date(DataType):
+class Date(TemporalType):
     """Calendar date type."""
 
 
-class Datetime(DataType):
+class Datetime(TemporalType):
     """Calendar date and time type."""
 
     tu: TimeUnit | None = None
@@ -290,7 +296,7 @@ class Datetime(DataType):
         return f"{class_name}(tu={self.tu!r}, tz={self.tz!r})"
 
 
-class Duration(DataType):
+class Duration(TemporalType):
     """Time duration/delta type."""
 
     tu: TimeUnit | None = None
@@ -324,7 +330,7 @@ class Duration(DataType):
         return f"{class_name}(tu={self.tu!r})"
 
 
-class Time(DataType):
+class Time(TemporalType):
     """Time of day type."""
 
 
@@ -360,7 +366,7 @@ class Field:
         return f"{class_name}({self.name!r}: {self.dtype})"
 
 
-class Struct(DataType):
+class Struct(NestedType):
     def __init__(self, fields: Sequence[Field] | dict[str, PolarsDataType]):
         """
         Struct composite type.
@@ -401,9 +407,25 @@ class Struct(DataType):
         return f"{class_name}({self.fields})"
 
 
-TemporalDataType = Union[Type[Datetime], Datetime, Type[Date], Date, Type[Time], Time]
+class Binary(DataType):
+    """Binary type."""
 
-DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
+
+class Null(DataType):
+    """Type representing Null / None values."""
+
+
+class Unknown(DataType):
+    """Type representing Datatype values that could not be determined statically."""
+
+
+T = TypeVar("T")
+
+
+def cache(func: Callable[..., T]) -> T:
+    # need this to satisfy mypy issue with "@property/@cache combination"
+    # See: https://github.com/python/mypy/issues/5858
+    return functools.lru_cache()(func)  # type: ignore[return-value]
 
 
 class _DataTypeMappings:
@@ -456,7 +478,7 @@ class _DataTypeMappings:
 
     @property
     @cache
-    def PY_TYPE_TO_DTYPE(self) -> dict[type, PolarsDataType]:
+    def PY_TYPE_TO_DTYPE(self) -> dict[PythonDataType | type[object], PolarsDataType]:
         return {
             float: Float64,
             int: Int64,
@@ -480,7 +502,7 @@ class _DataTypeMappings:
 
     @property
     @cache
-    def DTYPE_TO_PY_TYPE(self) -> dict[PolarsDataType, type]:
+    def DTYPE_TO_PY_TYPE(self) -> dict[PolarsDataType, PythonDataType]:
         return {
             Float64: float,
             Float32: float,
@@ -524,7 +546,7 @@ class _DataTypeMappings:
 
     @property
     @cache
-    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[type, Callable[[], pa.lib.DataType]]:
+    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.lib.DataType]:
         return {
             float: pa.float64(),
             int: pa.int64(),
@@ -538,9 +560,7 @@ class _DataTypeMappings:
 
     @property
     @cache
-    def DTYPE_TO_ARROW_TYPE(
-        self,
-    ) -> dict[PolarsDataType, Callable[[], pa.lib.DataType]]:
+    def DTYPE_TO_ARROW_TYPE(self) -> dict[PolarsDataType, pa.lib.DataType]:
         return {
             Int8: pa.int8(),
             Int16: pa.int16(),
@@ -578,7 +598,7 @@ def _base_type(dtype: PolarsDataType) -> DataTypeClass:
     return dtype
 
 
-def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
+def dtype_to_ctype(dtype: PolarsDataType) -> Any:
     """Convert a Polars dtype to a ctype."""
     try:
         dtype = _base_type(dtype)
@@ -600,7 +620,7 @@ def dtype_to_ffiname(dtype: PolarsDataType) -> str:
         ) from None
 
 
-def dtype_to_py_type(dtype: PolarsDataType) -> type:
+def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
     """Convert a Polars dtype to a Python dtype."""
     try:
         dtype = _base_type(dtype)
@@ -668,7 +688,7 @@ def py_type_to_dtype(
         ) from None
 
 
-def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
+def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
     """Convert a Python dtype to an Arrow dtype."""
     try:
         return DataTypeMappings.PY_TYPE_TO_ARROW_TYPE[dtype]
@@ -712,8 +732,9 @@ def numpy_char_code_to_dtype(dtype: str) -> PolarsDataType:
 
 
 def maybe_cast(
-    el: PolarsDataType, dtype: PolarsDataType, time_unit: TimeUnit | None = None
-) -> PolarsDataType | int:
+    el: Any, dtype: PolarsDataType, time_unit: TimeUnit | None = None
+) -> Any:
+    """Try casting a value to a value that is valid for the given Polars dtype."""
     # cast el if it doesn't match
     from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
 
@@ -724,9 +745,5 @@ def maybe_cast(
 
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):
-        el = py_type(el)
+        el = py_type(el)  # type: ignore[call-arg]
     return el
-
-
-#: Mapping of `~polars.DataFrame` / `~polars.LazyFrame` column names to their `DataType`
-Schema = Dict[str, PolarsDataType]
