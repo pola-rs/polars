@@ -182,6 +182,13 @@ def test_glob_parquet(io_test_dir: str) -> None:
     assert pl.scan_parquet(path).collect().shape == (3, 16)
 
 
+def test_streaming_parquet_glob_5900(io_test_dir: str) -> None:
+    path = os.path.join(io_test_dir, "small*.parquet")
+    assert pl.scan_parquet(path).select(pl.all().first()).collect(
+        streaming=True
+    ).shape == (1, 16)
+
+
 def test_chunked_round_trip() -> None:
     df1 = pl.DataFrame(
         {
