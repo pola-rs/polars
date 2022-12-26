@@ -301,3 +301,13 @@ def test_epoch_time_type() -> None:
         pl.ComputeError, match="Cannot compute timestamp of a series with dtype 'Time'"
     ):
         pl.Series([time(0, 0, 1)]).dt.epoch("s")
+
+
+def test_duplicate_columns_arg_csv() -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}).write_csv(f)
+    f.seek(0)
+    with pytest.raises(
+        ValueError, match=r"'columns' arg should only have unique values"
+    ):
+        pl.read_csv(f, columns=["x", "x", "y"])
