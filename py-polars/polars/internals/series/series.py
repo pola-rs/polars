@@ -64,6 +64,7 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
+from polars.internals.series.binary import BinaryNameSpace
 from polars.internals.series.categorical import CatNameSpace
 from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
@@ -191,7 +192,7 @@ class Series:
     """
 
     _s: PySeries = None
-    _accessors: set[str] = {"arr", "cat", "dt", "str", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "str", "bin", "struct"}
 
     def __init__(
         self,
@@ -4844,6 +4845,11 @@ class Series:
     def str(self) -> StringNameSpace:
         """Create an object namespace of all string related methods."""
         return StringNameSpace(self)
+
+    @accessor
+    def bin(self) -> BinaryNameSpace:
+        """Create an object namespace of all binary related methods."""
+        return BinaryNameSpace(self)
 
     @accessor
     def struct(self) -> StructNameSpace:

@@ -709,6 +709,18 @@ impl PyExpr {
         self.inner.clone().str().starts_with(sub).into()
     }
 
+    pub fn binary_contains(&self, lit: Vec<u8>) -> PyExpr {
+        self.inner.clone().binary().contains_literal(lit).into()
+    }
+
+    pub fn binary_ends_with(&self, sub: Vec<u8>) -> PyExpr {
+        self.inner.clone().binary().ends_with(sub).into()
+    }
+
+    pub fn binary_starts_with(&self, sub: Vec<u8>) -> PyExpr {
+        self.inner.clone().binary().starts_with(sub).into()
+    }
+
     pub fn str_hex_encode(&self) -> PyExpr {
         self.clone()
             .inner
@@ -719,11 +731,11 @@ impl PyExpr {
             .with_fmt("str.hex_encode")
             .into()
     }
-    pub fn str_hex_decode(&self, strict: Option<bool>) -> PyExpr {
+    pub fn str_hex_decode(&self) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.utf8()?.hex_decode(strict).map(|s| s.into_series()),
+                move |s| s.utf8()?.hex_decode().map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("str.hex_decode")
@@ -740,16 +752,59 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_base64_decode(&self, strict: Option<bool>) -> PyExpr {
+    pub fn str_base64_decode(&self) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.utf8()?.base64_decode(strict).map(|s| s.into_series()),
+                move |s| s.utf8()?.base64_decode().map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("str.base64_decode")
             .into()
     }
+
+    pub fn binary_hex_encode(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.binary().map(|s| s.hex_encode().into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("binary.hex_encode")
+            .into()
+    }
+    pub fn binary_hex_decode(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.binary()?.hex_decode().map(|s| s.into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("binary.hex_decode")
+            .into()
+    }
+    pub fn binary_base64_encode(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.binary().map(|s| s.base64_encode().into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("binary.base64_encode")
+            .into()
+    }
+
+    pub fn binary_base64_decode(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.binary()?.base64_decode().map(|s| s.into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("binary.base64_decode")
+            .into()
+    }
+
     #[cfg(feature = "extract_jsonpath")]
     pub fn str_json_path_match(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {

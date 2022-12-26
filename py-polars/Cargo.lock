@@ -1584,6 +1584,7 @@ version = "0.26.1"
 dependencies = [
  "arrow2",
  "jsonpath_lib",
+ "memchr",
  "polars-arrow",
  "polars-core",
  "polars-utils",

@@ -95,6 +95,7 @@ all = [
   "polars/groupby_list",
   "sql",
   "polars/dtype-binary",
+  "polars/binary_encoding",
   "streaming",
   "performant",
 ]

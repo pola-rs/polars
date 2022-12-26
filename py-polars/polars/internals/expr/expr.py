@@ -16,6 +16,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _NUMPY_TYPE
 from polars.dependencies import numpy as np
+from polars.internals.expr.binary import ExprBinaryNameSpace
 from polars.internals.expr.categorical import ExprCatNameSpace
 from polars.internals.expr.datetime import ExprDateTimeNameSpace
 from polars.internals.expr.list import ExprListNameSpace
@@ -129,7 +130,7 @@ class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "bin", "struct"}
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
@@ -6232,6 +6233,15 @@ class Expr:
 
         """
         return ExprStringNameSpace(self)
+
+    @accessor
+    def bin(self) -> ExprBinaryNameSpace:
+        """
+        Create an object namespace of all binary related methods.
+
+        See the individual method pages for full details
+        """
+        return ExprBinaryNameSpace(self)
 
     @accessor
     def struct(self) -> ExprStructNameSpace:
