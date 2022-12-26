@@ -175,3 +175,21 @@ def test_pivot_floats() -> None:
         "5.0": [2.0, None, None, None],
         "7.5": [None, None, 6.0, None],
     }
+
+
+def test_pivot_reinterpret_5907() -> None:
+    assert pl.DataFrame(
+        {
+            "A": pl.Series([3, -2, 3, -2], dtype=pl.Int32),
+            "B": ["x", "x", "y", "y"],
+            "C": [100, 50, 500, -80],
+        }
+    ).pivot(
+        index=["A"], values=["C"], columns=["B"], aggregate_fn=pl.element().sum()
+    ).to_dict(
+        False
+    ) == {
+        "A": [3, -2],
+        "x": [100, 50],
+        "y": [500, -80],
+    }
