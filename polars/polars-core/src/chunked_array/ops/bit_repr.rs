@@ -191,6 +191,51 @@ impl Reinterpret for Int64Chunked {
     }
 }
 
+#[cfg(feature = "reinterpret")]
+impl Reinterpret for UInt32Chunked {
+    fn reinterpret_signed(&self) -> Series {
+        let chunks = self
+            .downcast_iter()
+            .map(|array| {
+                let buf = array.values().clone();
+                // Safety
+                // same bit length u32 <-> i32
+                // The fields can still be reordered between generic types
+                // so we do some extra assertions
+                let len = buf.len();
+                let offset = buf.offset();
+                let ptr = buf.as_slice().as_ptr() as usize;
+                #[allow(clippy::transmute_undefined_repr)]
+                let reinterpreted_buf = unsafe { std::mem::transmute::<_, Buffer<i32>>(buf) };
+                assert_eq!(reinterpreted_buf.len(), len);
+                assert_eq!(reinterpreted_buf.offset(), offset);
+                assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
+                Box::new(PrimitiveArray::new(
+                    ArrowDataType::Int32,
+                    reinterpreted_buf,
+                    array.validity().cloned(),
+                )) as ArrayRef
+            })
+            .collect::<Vec<_>>();
+        Int32Chunked::from_chunks(self.name(), chunks).into_series()
+    }
+
+    fn reinterpret_unsigned(&self) -> Series {
+        self.clone().into_series()
+    }
+}
+
+#[cfg(feature = "reinterpret")]
+impl Reinterpret for Int32Chunked {
+    fn reinterpret_signed(&self) -> Series {
+        self.clone().into_series()
+    }
+
+    fn reinterpret_unsigned(&self) -> Series {
+        self.bit_repr_large().into_series()
+    }
+}
+
 impl UInt64Chunked {
     #[doc(hidden)]
     pub fn _reinterpret_float(&self) -> Float64Chunked {
