@@ -5,13 +5,7 @@ use crate::prelude::*;
 impl Utf8Chunked {
     #[cfg(not(feature = "binary_encoding"))]
     pub fn hex_decode(&self) -> PolarsResult<Utf8Chunked> {
-        self.try_apply(|s| {
-            let bytes =
-                hex::decode(s).map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
-            let s = String::from_utf8(bytes)
-                .map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
-            Ok(s.into())
-        })
+        panic!("activate 'dtype-binary' feature")
     }
 
     #[cfg(feature = "binary_encoding")]
@@ -28,13 +22,7 @@ impl Utf8Chunked {
 
     #[cfg(not(feature = "binary_encoding"))]
     pub fn base64_decode(&self) -> PolarsResult<Utf8Chunked> {
-        self.try_apply(|s| {
-            let bytes =
-                base64::decode(s).map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
-            let s = String::from_utf8(bytes)
-                .map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
-            Ok(s.into())
-        })
+        panic!("activate 'dtype-binary' feature")
     }
 
     #[cfg(feature = "binary_encoding")]
