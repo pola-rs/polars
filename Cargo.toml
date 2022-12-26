@@ -13,6 +13,7 @@ members = [
   "polars/polars-sql",
   "examples/read_csv",
   "examples/read_parquet",
+  "examples/read_parquet_cloud",
   "examples/python_rust_compiled_function",
 ]
 
