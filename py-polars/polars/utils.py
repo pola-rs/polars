@@ -162,8 +162,16 @@ def handle_projection_columns(
             columns = None
         elif not is_str_sequence(columns):
             raise ValueError(
-                "columns arg should contain a list of all integers or all strings"
+                "'columns' arg should contain a list of all integers or all strings"
                 " values."
+            )
+        if columns and len(set(columns)) != len(columns):
+            raise ValueError(
+                f"'columns' arg should only have unique values. Got '{columns}'."
+            )
+        if projection and len(set(projection)) != len(projection):
+            raise ValueError(
+                f"'columns' arg should only have unique values. Got '{projection}'."
             )
     return projection, columns  # type: ignore[return-value]
 
