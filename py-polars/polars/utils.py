@@ -165,9 +165,13 @@ def handle_projection_columns(
                 "'columns' arg should contain a list of all integers or all strings"
                 " values."
             )
-        if len(set(columns)) != len(columns):  # type: ignore[arg-type]
+        if columns and len(set(columns)) != len(columns):
             raise ValueError(
                 f"'columns' arg should only have unique values. Got '{columns}'."
+            )
+        if projection and len(set(projection)) != len(projection):
+            raise ValueError(
+                f"'columns' arg should only have unique values. Got '{projection}'."
             )
     return projection, columns  # type: ignore[return-value]
 
