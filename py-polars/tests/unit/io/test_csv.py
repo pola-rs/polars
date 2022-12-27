@@ -965,12 +965,12 @@ def test_csv_single_categorical_null() -> None:
 
 def test_csv_quoted_missing() -> None:
     csv = '''"col1"|"col2"|"col3"|"col4"
-    "0"|"Free text with a line
-    break"|"123"|"456"
-    "1"|"Free text without a linebreak"|""|"789"
-    "0"|"Free text with 
-    two 
-    linebreaks"|"101112"|"131415"'''  # noqa: W291
+"0"|"Free text with a line
+break"|"123"|"456"
+"1"|"Free text without a linebreak"|""|"789"
+"0"|"Free text with 
+two 
+linebreaks"|"101112"|"131415"'''  # noqa: W291
     assert pl.read_csv(csv.encode(), sep="|", dtypes={"col3": pl.Int32}).to_dict(
         False
     ) == {
