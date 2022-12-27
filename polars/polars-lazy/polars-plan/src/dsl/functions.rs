@@ -375,11 +375,21 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
 
             if step > 1 {
                 let mut ca = Int64Chunked::from_iter_values("arange", (low..high).step_by(step));
-                ca.set_sorted(high < low);
+                let s = if high < low {
+                    IsSorted::Descending
+                } else {
+                    IsSorted::Ascending
+                };
+                ca.set_sorted_flag(s);
                 Ok(ca.into_series())
             } else {
                 let mut ca = Int64Chunked::from_iter_values("arange", low..high);
-                ca.set_sorted(high < low);
+                let s = if high < low {
+                    IsSorted::Descending
+                } else {
+                    IsSorted::Ascending
+                };
+                ca.set_sorted_flag(s);
                 Ok(ca.into_series())
             }
         };

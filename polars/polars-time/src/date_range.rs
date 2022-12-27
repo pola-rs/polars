@@ -1,5 +1,6 @@
 use chrono::{Datelike, NaiveDateTime};
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 
 use crate::prelude::*;
 
@@ -29,7 +30,12 @@ pub fn date_range_impl(
             .cast_time_zone(tz)
             .unwrap()
     }
-    out.set_sorted(start > stop);
+    let s = if start > stop {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    out.set_sorted_flag(s);
     out
 }
 

@@ -146,7 +146,7 @@ fn test_sorted_path() -> PolarsResult<()> {
         .collect()?;
 
     let s = out.column("row_nr")?;
-    assert_eq!(s.is_sorted(), IsSorted::Ascending);
+    assert_eq!(s.is_sorted_flag(), IsSorted::Ascending);
 
     Ok(())
 }
@@ -163,12 +163,12 @@ fn test_sorted_path_joins() -> PolarsResult<()> {
 
     let out = dfa
         .lazy()
-        .with_column(col("a").set_sorted(IsSorted::Ascending))
+        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
         .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left)
         .collect()?;
 
     let s = out.column("a")?;
-    assert_eq!(s.is_sorted(), IsSorted::Ascending);
+    assert_eq!(s.is_sorted_flag(), IsSorted::Ascending);
 
     Ok(())
 }

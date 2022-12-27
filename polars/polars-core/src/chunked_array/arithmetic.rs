@@ -118,7 +118,7 @@ where
                     .zip(rhs.downcast_iter_mut())
                     .for_each(|(lhs, rhs)| kernel(lhs, rhs));
             }
-            lhs.set_sorted2(IsSorted::Not);
+            lhs.set_sorted_flag(IsSorted::Not);
             lhs
         }
         // broadcast right path

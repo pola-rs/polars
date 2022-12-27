@@ -348,7 +348,7 @@ impl WindowExpr {
             (false, false, AggState::AggregatedList(_)) => {
                 if sorted_keys {
                     if let GroupsProxy::Idx(g) = gb.get_groups() {
-                        debug_assert!(g.is_sorted())
+                        debug_assert!(g.is_sorted_flag())
                     }
                     // GroupsProxy::Slice is always sorted
 
@@ -416,9 +416,12 @@ impl PhysicalExpr for WindowExpr {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         // if the keys are sorted
-        let sorted_keys = groupby_columns
-            .iter()
-            .all(|s| matches!(s.is_sorted(), IsSorted::Ascending | IsSorted::Descending));
+        let sorted_keys = groupby_columns.iter().all(|s| {
+            matches!(
+                s.is_sorted_flag(),
+                IsSorted::Ascending | IsSorted::Descending
+            )
+        });
         let explicit_list_agg = self.is_explicit_list_agg();
 
         // if we flatten this column we need to make sure the groups are sorted.

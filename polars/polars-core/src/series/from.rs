@@ -24,7 +24,7 @@ impl Series {
     /// # Safety
     ///
     /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
-    pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
+    pub unsafe fn from_chunks_and_dtype_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,
         dtype: &DataType,

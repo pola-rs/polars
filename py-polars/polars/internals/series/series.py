@@ -2141,6 +2141,18 @@ class Series:
         """
         return self.len() == 0
 
+    def is_sorted(self, reverse: bool = False) -> bool:
+        """
+        Check if the Series is sorted.
+
+        Parameters
+        ----------
+        reverse
+            Check if the Series is sorted in descending order
+
+        """
+        return self._s.is_sorted(reverse)
+
     def is_null(self) -> Series:
         """
         Returns a boolean Series indicating which values are null.
@@ -4805,7 +4817,7 @@ class Series:
         3
 
         """
-        return wrap_s(self._s.set_sorted(reverse))
+        return wrap_s(self._s.set_sorted_flag(reverse))
 
     def new_from_index(self, index: int, length: int) -> pli.Series:
         """Create a new Series filled with values from the given index."""

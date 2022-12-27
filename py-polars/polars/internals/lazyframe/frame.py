@@ -4009,3 +4009,23 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if isinstance(names, str):
             names = [names]
         return self._from_pyldf(self._ldf.unnest(names))
+
+    def merge_sorted(self: LDF, other: LazyFrame, key: str) -> LDF:
+        """
+        Take two sorted DataFrames and merge them by the sorted key.
+
+        The output of this operation will also be sorted.
+        It is the callers responsibility that the frames are sorted
+        by that key otherwise the output will not make sense.
+
+        The schemas of both LazyFrames must be equal.
+
+        Parameters
+        ----------
+        other
+            Other DataFrame that must be merged
+        key
+            Key that is sorted.
+
+        """
+        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))

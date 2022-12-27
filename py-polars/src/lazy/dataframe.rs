@@ -881,4 +881,13 @@ impl PyLazyFrame {
     pub fn width(&self) -> PyResult<usize> {
         Ok(self.get_schema()?.len())
     }
+
+    pub fn merge_sorted(&self, other: PyLazyFrame, key: &str) -> PyResult<Self> {
+        let out = self
+            .ldf
+            .clone()
+            .merge_sorted(other.ldf, key)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
 }

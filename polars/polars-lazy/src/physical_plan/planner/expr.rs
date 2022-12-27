@@ -177,7 +177,7 @@ pub(crate) fn create_physical_expr(
                                     }
                                 }
 
-                                match s.is_sorted() {
+                                match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
                                         Ok(s.min_as_series())
                                     }
@@ -230,7 +230,7 @@ pub(crate) fn create_physical_expr(
                                     }
                                 }
 
-                                match s.is_sorted() {
+                                match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
                                         Ok(s.max_as_series())
                                     }

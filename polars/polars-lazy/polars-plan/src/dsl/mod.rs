@@ -2225,10 +2225,10 @@ impl Expr {
     /// # Warning
     /// This can lead to incorrect results if this `Series` is not sorted!!
     /// Use with care!
-    pub fn set_sorted(self, sorted: IsSorted) -> Expr {
+    pub fn set_sorted_flag(self, sorted: IsSorted) -> Expr {
         self.apply(
             move |mut s| {
-                s.set_sorted(sorted);
+                s.set_sorted_flag(sorted);
                 Ok(s)
             },
             GetOutput::same_type(),

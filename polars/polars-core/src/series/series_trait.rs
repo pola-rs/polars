@@ -97,7 +97,7 @@ pub(crate) mod private {
             panic!("operation cummin not supported for this dtype")
         }
 
-        fn _set_sorted(&mut self, _is_sorted: IsSorted) {
+        fn _set_sorted_flag(&mut self, _is_sorted: IsSorted) {
             invalid_operation_panic!(self)
         }
 
@@ -194,7 +194,7 @@ pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
     /// Check if [`Series`] is sorted.
-    fn is_sorted(&self) -> IsSorted {
+    fn is_sorted_flag(&self) -> IsSorted {
         IsSorted::Not
     }
 

@@ -1,6 +1,10 @@
+#[cfg(feature = "merge_sorted")]
+mod merge_sorted;
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 
+#[cfg(feature = "merge_sorted")]
+pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::frame::hash_join::*;
 use polars_core::prelude::*;
 use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};

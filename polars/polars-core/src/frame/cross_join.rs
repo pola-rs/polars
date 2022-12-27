@@ -23,7 +23,7 @@ fn take_left(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, usi
         let mut take: NoNull<IdxCa> = (offset..total_rows)
             .map(|i| i / n_rows_right)
             .collect_trusted();
-        take.set_sorted2(IsSorted::Ascending);
+        take.set_sorted_flag(IsSorted::Ascending);
         take.into_inner()
     }
     slice_take(total_rows, n_rows_right, slice, inner)

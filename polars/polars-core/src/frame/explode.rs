@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::try_get_supertype;
 
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
@@ -58,7 +59,7 @@ impl DataFrame {
                 if i == 0 {
                     let row_idx = offsets_to_indexes(offsets.as_slice(), exploded.len());
                     let mut row_idx = IdxCa::from_vec("", row_idx);
-                    row_idx.set_sorted(false);
+                    row_idx.set_sorted_flag(IsSorted::Ascending);
 
                     // Safety
                     // We just created indices that are in bounds.

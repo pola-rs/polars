@@ -66,6 +66,7 @@ build_info = ["dep:pyo3-built", "dep:built"]
 performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
+merge_sorted = ["polars/merge_sorted"]
 
 all = [
   "json",
@@ -80,6 +81,7 @@ all = [
   "cross_join",
   "pct_change",
   "search_sorted",
+  "merge_sorted",
   "meta",
   "decompress",
   "lazy_regex",

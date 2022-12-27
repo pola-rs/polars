@@ -120,7 +120,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
                 .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
         };
         // can be in any order now
-        self.set_sorted2(IsSorted::Not);
+        self.set_sorted_flag(IsSorted::Not);
     }
 }
 

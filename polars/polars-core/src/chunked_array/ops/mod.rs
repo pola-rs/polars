@@ -49,6 +49,8 @@ pub mod zip;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 
+use crate::series::IsSorted;
+
 #[cfg(feature = "to_list")]
 pub trait ToList<T: PolarsDataType> {
     fn to_list(&self) -> PolarsResult<ListChunked> {
@@ -615,7 +617,7 @@ where
 {
     fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
         let mut out = impl_chunk_expand!(self, length, index);
-        out.set_sorted(false);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -623,7 +625,7 @@ where
 impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BooleanChunked {
         let mut out = impl_chunk_expand!(self, length, index);
-        out.set_sorted(false);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -631,7 +633,7 @@ impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
 impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     fn new_from_index(&self, index: usize, length: usize) -> Utf8Chunked {
         let mut out = impl_chunk_expand!(self, length, index);
-        out.set_sorted(false);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -640,7 +642,7 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
 impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BinaryChunked {
         let mut out = impl_chunk_expand!(self, length, index);
-        out.set_sorted(false);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
