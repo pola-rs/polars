@@ -961,3 +961,25 @@ def test_csv_single_categorical_null() -> None:
 
     assert df.dtypes == [pl.Utf8, pl.Categorical, pl.Utf8]
     assert df.to_dict(False) == {"x": ["A"], "y": [None], "z": ["A"]}
+
+
+def test_csv_quoted_missing() -> None:
+    csv = '''"col1"|"col2"|"col3"|"col4"
+"0"|"Free text with a line
+break"|"123"|"456"
+"1"|"Free text without a linebreak"|""|"789"
+"0"|"Free text with 
+two 
+linebreaks"|"101112"|"131415"'''  # noqa: W291
+    assert pl.read_csv(csv.encode(), sep="|", dtypes={"col3": pl.Int32}).to_dict(
+        False
+    ) == {
+        "col1": [0, 1, 0],
+        "col2": [
+            "Free text with a line\nbreak",
+            "Free text without a linebreak",
+            "Free text with \ntwo \nlinebreaks",
+        ],
+        "col3": [123, None, 101112],
+        "col4": [456, 789, 131415],
+    }

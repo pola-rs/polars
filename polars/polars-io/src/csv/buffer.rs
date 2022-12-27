@@ -95,7 +95,7 @@ where
                         let bytes = skip_whitespace(bytes);
                         return self.parse_bytes(bytes, ignore_errors, needs_escaping);
                     }
-                    if ignore_errors {
+                    if ignore_errors || bytes.is_empty() {
                         self.append_null()
                     } else {
                         return Err(PolarsError::ComputeError("".into()));
@@ -349,15 +349,16 @@ impl ParsedBuffer for BooleanChunkedBuilder {
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
-        _needs_escaping: bool,
+        needs_escaping: bool,
     ) -> PolarsResult<()> {
+        let bytes = if needs_escaping {
+            &bytes[1..bytes.len() - 1]
+        } else {
+            bytes
+        };
         if bytes.eq_ignore_ascii_case(b"false") {
             self.append_value(false);
         } else if bytes.eq_ignore_ascii_case(b"true") {
-            self.append_value(true);
-        } else if bytes.eq_ignore_ascii_case(b"\"false\"") {
-            self.append_value(false);
-        } else if bytes.eq_ignore_ascii_case(b"\"true\"") {
             self.append_value(true);
         } else if ignore_errors || bytes.is_empty() {
             self.append_null();
