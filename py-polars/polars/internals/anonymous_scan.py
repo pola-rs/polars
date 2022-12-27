@@ -9,7 +9,7 @@ from polars import internals as pli
 from polars.dependencies import pyarrow as pa
 
 
-def _deser_and_exec(
+def _deser_and_exec(  # noqa: D417
     buf: bytes, with_columns: list[str] | None, *args: Any
 ) -> pli.DataFrame:
     """
@@ -84,7 +84,7 @@ def _scan_ds(
     )
 
 
-def _scan_ipc_impl(
+def _scan_ipc_impl(  # noqa: D417
     uri: str, with_columns: list[str] | None, *args: Any
 ) -> pli.DataFrame:
     """
@@ -117,7 +117,7 @@ def _scan_ipc_fsspec(
     return pli.LazyFrame._scan_python_function(schema, func_serialized)
 
 
-def _scan_parquet_impl(
+def _scan_parquet_impl(  # noqa: D417
     uri: str, with_columns: list[str] | None, *args: Any
 ) -> pli.DataFrame:
     """

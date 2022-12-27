@@ -26,14 +26,12 @@ build-release: venv  ## Compile and install a faster Polars binary
 
 .PHONY: fmt
 fmt: venv  ## Run autoformatting and linting
-	$(VENV_BIN)/isort .
 	$(VENV_BIN)/black .
 	$(VENV_BIN)/blackdoc .
-	$(VENV_BIN)/pyupgrade --py37-plus `find polars tests docs -name "*.py" -type f`
+	$(VENV_BIN)/ruff .
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy
-	-$(VENV_BIN)/flake8
 
 .PHONY: clippy
 clippy:  ## Run clippy
