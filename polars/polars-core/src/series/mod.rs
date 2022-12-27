@@ -178,9 +178,9 @@ impl Series {
         &mut *chunks
     }
 
-    pub fn set_sorted(&mut self, sorted: IsSorted) {
+    pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
         let inner = self._get_inner_mut();
-        inner._set_sorted(sorted)
+        inner._set_sorted_flag(sorted)
     }
 
     pub fn into_frame(self) -> DataFrame {

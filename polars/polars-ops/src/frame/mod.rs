@@ -2,7 +2,7 @@ mod join;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
-pub use join::DataFrameJoinOps;
+pub use join::*;
 #[cfg(feature = "to_dummies")]
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;

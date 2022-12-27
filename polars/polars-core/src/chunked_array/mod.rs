@@ -164,47 +164,43 @@ bitflags! {
 }}
 
 impl<T: PolarsDataType> ChunkedArray<T> {
-    pub(crate) fn is_sorted(&self) -> bool {
+    pub(crate) fn is_sorted_flag(&self) -> bool {
         self.bit_settings.contains(Settings::SORTED_ASC)
     }
 
-    pub(crate) fn is_sorted_reverse(&self) -> bool {
+    pub(crate) fn is_sorted_reverse_flag(&self) -> bool {
         self.bit_settings.contains(Settings::SORTED_DSC)
     }
 
-    /// Set the 'sorted' bit meta info.
-    pub fn set_sorted(&mut self, reverse: bool) {
-        if reverse {
-            // unset sorted
-            self.bit_settings.remove(Settings::SORTED_ASC);
-            // set reverse sorted
-            self.bit_settings.insert(Settings::SORTED_DSC)
-        } else {
-            // // unset reverse sorted
-            self.bit_settings.remove(Settings::SORTED_DSC);
-            // set sorted
-            self.bit_settings.insert(Settings::SORTED_ASC)
-        }
-    }
-
-    pub fn is_sorted2(&self) -> IsSorted {
-        if self.is_sorted() {
+    pub fn is_sorted_flag2(&self) -> IsSorted {
+        if self.is_sorted_flag() {
             IsSorted::Ascending
-        } else if self.is_sorted_reverse() {
+        } else if self.is_sorted_reverse_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
         }
     }
 
-    pub fn set_sorted2(&mut self, sorted: IsSorted) {
+    /// Set the 'sorted' bit meta info.
+    pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
         match sorted {
             IsSorted::Not => {
                 self.bit_settings
                     .remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
             }
-            IsSorted::Ascending => self.set_sorted(false),
-            IsSorted::Descending => self.set_sorted(true),
+            IsSorted::Ascending => {
+                // // unset reverse sorted
+                self.bit_settings.remove(Settings::SORTED_DSC);
+                // set sorted
+                self.bit_settings.insert(Settings::SORTED_ASC)
+            }
+            IsSorted::Descending => {
+                // unset sorted
+                self.bit_settings.remove(Settings::SORTED_ASC);
+                // set reverse sorted
+                self.bit_settings.insert(Settings::SORTED_DSC)
+            }
         }
     }
 
@@ -339,7 +335,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         };
         out.compute_len();
         if !keep_sorted {
-            out.set_sorted2(IsSorted::Not);
+            out.set_sorted_flag(IsSorted::Not);
         }
         out
     }
@@ -636,7 +632,7 @@ pub(crate) mod test {
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
-        assert_eq!(a.is_sorted(), true);
+        assert_eq!(a.is_sorted_flag(), true);
     }
 
     #[test]

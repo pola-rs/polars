@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import polars as pl
 
 
@@ -344,4 +346,45 @@ def test_sort_by_in_over_5499() -> None:
     ).to_dict(False) == {
         "sorted_1": [0, 2, 1, 4, 5, 3],
         "sorted_2": [None, 1, 0, 3, 4, None],
+    }
+
+
+def test_merge_sorted() -> None:
+
+    df_a = (
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo")
+        .to_frame("range")
+        .with_row_count()
+    )
+
+    df_b = (
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo")
+        .to_frame("range")
+        .with_row_count()
+        .with_column(pl.col("row_nr") * 10)
+    )
+    out = df_a.merge_sorted(df_b, key="range")
+    assert out["range"].is_sorted()
+    assert out.to_dict(False) == {
+        "row_nr": [0, 0, 1, 2, 10, 3, 4, 20, 5, 6, 30, 7, 8, 40, 9, 10, 50, 11],
+        "range": [
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 2, 1, 0, 0),
+            datetime(2022, 3, 1, 0, 0),
+            datetime(2022, 3, 1, 0, 0),
+            datetime(2022, 4, 1, 0, 0),
+            datetime(2022, 5, 1, 0, 0),
+            datetime(2022, 5, 1, 0, 0),
+            datetime(2022, 6, 1, 0, 0),
+            datetime(2022, 7, 1, 0, 0),
+            datetime(2022, 7, 1, 0, 0),
+            datetime(2022, 8, 1, 0, 0),
+            datetime(2022, 9, 1, 0, 0),
+            datetime(2022, 9, 1, 0, 0),
+            datetime(2022, 10, 1, 0, 0),
+            datetime(2022, 11, 1, 0, 0),
+            datetime(2022, 11, 1, 0, 0),
+            datetime(2022, 12, 1, 0, 0),
+        ],
     }

@@ -114,10 +114,10 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     pub fn is_sorted_flag(&self) -> bool {
-        matches!(self.series.is_sorted(), IsSorted::Ascending)
+        matches!(self.series.is_sorted_flag(), IsSorted::Ascending)
     }
     pub fn is_sorted_reverse_flag(&self) -> bool {
-        matches!(self.series.is_sorted(), IsSorted::Descending)
+        matches!(self.series.is_sorted_flag(), IsSorted::Descending)
     }
     pub fn can_fast_explode_flag(&self) -> bool {
         match self.series.list() {
@@ -450,12 +450,12 @@ impl PySeries {
             .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
-    fn set_sorted(&self, reverse: bool) -> Self {
+    fn set_sorted_flag(&self, reverse: bool) -> Self {
         let mut out = self.series.clone();
         if reverse {
-            out.set_sorted(IsSorted::Descending);
+            out.set_sorted_flag(IsSorted::Descending);
         } else {
-            out.set_sorted(IsSorted::Ascending)
+            out.set_sorted_flag(IsSorted::Ascending)
         }
         out.into()
     }
@@ -1126,6 +1126,14 @@ impl PySeries {
                 .map(|s| wrap_s.call1(py, (Self::new(s),)))
                 .collect()
         })
+    }
+
+    pub fn is_sorted(&self, reverse: bool) -> bool {
+        let options = SortOptions {
+            descending: reverse,
+            nulls_last: reverse,
+        };
+        self.series.is_sorted(options)
     }
 }
 

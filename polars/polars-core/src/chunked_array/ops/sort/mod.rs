@@ -21,6 +21,7 @@ use crate::prelude::compare_inner::PartialOrdInner;
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_impl};
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 
 /// Reverse sorting when there are no nulls
@@ -116,7 +117,7 @@ macro_rules! sort_with_fast_path {
         }
 
         // we can clone if we sort in same order
-        if $options.descending && $ca.is_sorted_reverse() || ($ca.is_sorted() && !$options.descending) {
+        if $options.descending && $ca.is_sorted_reverse_flag() || ($ca.is_sorted_flag() && !$options.descending) {
             // there are nulls
             if $ca.null_count() > 0 {
                 // if the nulls are already last we can clone
@@ -134,7 +135,7 @@ macro_rules! sort_with_fast_path {
             }
         }
         // we can reverse if we sort in other order
-        else if ($options.descending && $ca.is_sorted() || $ca.is_sorted_reverse()) && $ca.null_count() == 0 {
+        else if ($options.descending && $ca.is_sorted_flag() || $ca.is_sorted_reverse_flag()) && $ca.null_count() == 0 {
             return $ca.reverse()
         };
 
@@ -163,7 +164,12 @@ where
         );
 
         let mut ca = ChunkedArray::from_vec(ca.name(), vals);
-        ca.set_sorted(options.descending);
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        ca.set_sorted_flag(s);
         ca
     } else {
         let null_count = ca.null_count();
@@ -219,7 +225,12 @@ where
                 .into()
         };
 
-        ca.set_sorted(options.descending);
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        ca.set_sorted_flag(s);
         ca
     }
 }
@@ -462,7 +473,12 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
             }
         };
 
-        ca.set_sorted(options.descending);
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        ca.set_sorted_flag(s);
         ca
     }
 
@@ -593,7 +609,12 @@ impl ChunkSort<BinaryType> for BinaryChunked {
             }
         };
 
-        ca.set_sorted(options.descending);
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        ca.set_sorted_flag(s);
         ca
     }
 

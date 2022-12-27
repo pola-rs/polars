@@ -1,3 +1,6 @@
+#[cfg(feature = "merge_sorted")]
+mod merge_sorted;
+
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
@@ -6,6 +9,8 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "merge_sorted")]
+use crate::logical_plan::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -39,6 +44,15 @@ pub enum FunctionNode {
         subset: Arc<Vec<String>>,
     },
     Rechunk,
+    // The two DataFrames are temporary concatenated
+    // this indicates until which chunk the data is from the left df
+    // this trick allows us to reuse the `Union` architecture to get map over
+    // two DataFrames
+    #[cfg(feature = "merge_sorted")]
+    MergeSorted {
+        // sorted column that serves as the key
+        column: Arc<str>,
+    },
 }
 
 impl PartialEq for FunctionNode {
@@ -110,6 +124,8 @@ impl FunctionNode {
                     panic!("activate feature 'dtype-struct'")
                 }
             }
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
         }
     }
 
@@ -118,6 +134,8 @@ impl FunctionNode {
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
             FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } => true,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -127,6 +145,8 @@ impl FunctionNode {
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
             FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } => true,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -149,6 +169,8 @@ impl FunctionNode {
                 df.as_single_chunk_par();
                 Ok(df)
             }
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { column } => merge_sorted(&df, column.as_ref()),
             Unnest { columns: _columns } => {
                 #[cfg(feature = "dtype-struct")]
                 {
@@ -191,6 +213,8 @@ impl Display for FunctionNode {
                 let columns = columns.as_slice();
                 fmt_column_delimited(f, columns, "[", "]")
             }
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
                     writeln!(f, "--- PIPELINE")?;

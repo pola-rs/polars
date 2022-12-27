@@ -194,7 +194,7 @@ pub fn _sort_or_hash_inner(
         .map(|s| s.parse::<f32>().unwrap())
         .unwrap_or(1.0);
     let is_numeric = s_left.dtype().to_physical().is_numeric();
-    match (s_left.is_sorted(), s_right.is_sorted()) {
+    match (s_left.is_sorted_flag(), s_right.is_sorted_flag()) {
         (IsSorted::Ascending, IsSorted::Ascending) if is_numeric => {
             if verbose {
                 eprintln!("inner join: keys are sorted: use sorted merge join");
@@ -264,7 +264,7 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
         .unwrap_or(1.0);
     let is_numeric = s_left.dtype().to_physical().is_numeric();
 
-    match (s_left.is_sorted(), s_right.is_sorted()) {
+    match (s_left.is_sorted_flag(), s_right.is_sorted_flag()) {
         (IsSorted::Ascending, IsSorted::Ascending) if is_numeric => {
             if verbose {
                 eprintln!("left join: keys are sorted: use sorted merge join");

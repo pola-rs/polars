@@ -1200,6 +1200,19 @@ impl LazyFrame {
             columns: Arc::new(cols.into_iter().map(|s| Arc::from(s.as_ref())).collect()),
         })
     }
+
+    #[cfg(feature = "merge_sorted")]
+    pub fn merge_sorted(self, other: LazyFrame, key: &str) -> PolarsResult<LazyFrame> {
+        // The two DataFrames are temporary concatenated
+        // this indicates until which chunk the data is from the left df
+        // this trick allows us to reuse the `Union` architecture to get map over
+        // two DataFrames
+        let left = self.map_private(FunctionNode::Rechunk);
+        let q = concat(&[left, other], false, true)?;
+        Ok(q.map_private(FunctionNode::MergeSorted {
+            column: Arc::from(key),
+        }))
+    }
 }
 
 /// Utility struct for lazy groupby operation.

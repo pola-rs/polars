@@ -129,7 +129,7 @@ where
         // safety:
         // we will not modify the length
         // and we unset the sorted flag.
-        ca.set_sorted2(IsSorted::Not);
+        ca.set_sorted_flag(IsSorted::Not);
         let arr = unsafe { ca.downcast_iter_mut() }.next().unwrap();
         let len = arr.len();
 

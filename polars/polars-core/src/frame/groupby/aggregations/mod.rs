@@ -211,7 +211,7 @@ where
 impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted2(), self.null_count()) {
+        match (self.is_sorted_flag2(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_first(groups);
             }
@@ -252,7 +252,7 @@ impl BooleanChunked {
     }
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted2(), self.null_count()) {
+        match (self.is_sorted_flag2(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_last(groups);
             }
@@ -301,7 +301,7 @@ impl Utf8Chunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (&self.is_sorted2(), &self.null_count()) {
+        match (&self.is_sorted_flag2(), &self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_first(groups);
             }
@@ -362,7 +362,7 @@ impl Utf8Chunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted2(), self.null_count()) {
+        match (self.is_sorted_flag2(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_last(groups);
             }
@@ -451,7 +451,7 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted2(), self.null_count()) {
+        match (self.is_sorted_flag2(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_first(groups);
             }
@@ -528,7 +528,7 @@ where
 
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted2(), self.null_count()) {
+        match (self.is_sorted_flag2(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_last(groups);
             }

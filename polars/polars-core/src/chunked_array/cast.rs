@@ -80,8 +80,8 @@ where
                     || (self.dtype().is_unsigned() && data_type.is_unsigned()))
                     && (s.null_count() == self.null_count())
                 {
-                    let is_sorted = self.is_sorted2();
-                    s.set_sorted(is_sorted)
+                    let is_sorted = self.is_sorted_flag2();
+                    s.set_sorted_flag(is_sorted)
                 }
                 s
             }),

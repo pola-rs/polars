@@ -12,7 +12,7 @@ where
     fn full(name: &str, value: T::Native, length: usize) -> Self {
         let data = vec![value; length];
         let mut out = ChunkedArray::from_vec(name, data);
-        out.set_sorted2(IsSorted::Ascending);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -32,7 +32,7 @@ impl ChunkFull<bool> for BooleanChunked {
         bits.extend_constant(length, value);
         let mut out: BooleanChunked =
             (name, BooleanArray::from_data_default(bits.into(), None)).into();
-        out.set_sorted2(IsSorted::Ascending);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -52,7 +52,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
             builder.append_value(value);
         }
         let mut out = builder.finish();
-        out.set_sorted2(IsSorted::Ascending);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -73,7 +73,7 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
             builder.append_value(value);
         }
         let mut out = builder.finish();
-        out.set_sorted2(IsSorted::Ascending);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }

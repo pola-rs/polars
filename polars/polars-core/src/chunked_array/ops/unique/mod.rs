@@ -183,7 +183,7 @@ where
         if self.is_empty() {
             return Ok(self.clone());
         }
-        match self.is_sorted2() {
+        match self.is_sorted_flag2() {
             IsSorted::Ascending | IsSorted::Descending => {
                 // TODO! optimize this branch
                 if self.null_count() > 0 {

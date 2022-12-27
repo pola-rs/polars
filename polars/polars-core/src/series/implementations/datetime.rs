@@ -60,8 +60,8 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn _set_sorted(&mut self, is_sorted: IsSorted) {
-        self.0.deref_mut().set_sorted2(is_sorted)
+    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
+        self.0.deref_mut().set_sorted_flag(is_sorted)
     }
 
     #[cfg(feature = "zip_with")]
@@ -179,10 +179,10 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DatetimeChunked> {
-    fn is_sorted(&self) -> IsSorted {
-        if self.0.is_sorted() {
+    fn is_sorted_flag(&self) -> IsSorted {
+        if self.0.is_sorted_flag() {
             IsSorted::Ascending
-        } else if self.0.is_sorted_reverse() {
+        } else if self.0.is_sorted_reverse_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
@@ -298,8 +298,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
         let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
-        if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
-            out.set_sorted2(idx.is_sorted2())
+        if self.0.is_sorted_flag() && (idx.is_sorted_flag() || idx.is_sorted_reverse_flag()) {
+            out.set_sorted_flag(idx.is_sorted_flag2())
         }
 
         Ok(out

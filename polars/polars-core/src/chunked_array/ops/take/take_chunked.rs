@@ -39,7 +39,7 @@ where
                 .collect_trusted()
         };
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -71,7 +71,7 @@ impl TakeChunked for Utf8Chunked {
             })
             .collect_trusted();
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -104,7 +104,7 @@ impl TakeChunked for BinaryChunked {
             })
             .collect_trusted();
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -136,7 +136,7 @@ impl TakeChunked for BooleanChunked {
             })
             .collect_trusted();
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -168,7 +168,7 @@ impl TakeChunked for ListChunked {
             })
             .collect();
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -202,7 +202,7 @@ impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
             .collect();
 
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 

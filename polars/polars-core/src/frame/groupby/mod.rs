@@ -345,7 +345,7 @@ impl<'df> GroupBy<'df> {
                             // groups are always in bounds
                             let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
                             if groups.sorted {
-                                out.set_sorted(s.is_sorted());
+                                out.set_sorted_flag(s.is_sorted_flag());
                             };
                             out
                         }
@@ -365,7 +365,7 @@ impl<'df> GroupBy<'df> {
                             // groups are always in bounds
                             let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
                             // sliced groups are always in order of discovery
-                            out.set_sorted(s.is_sorted());
+                            out.set_sorted_flag(s.is_sorted_flag());
                             out
                         }
                     }

@@ -2,7 +2,7 @@ use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
-pub fn merge_dfs(
+pub fn _merge_sorted_dfs(
     left: &DataFrame,
     right: &DataFrame,
     left_s: &Series,

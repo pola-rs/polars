@@ -80,7 +80,7 @@ impl GroupsIdx {
         self.all = all;
         self.sorted = true
     }
-    pub fn is_sorted(&self) -> bool {
+    pub fn is_sorted_flag(&self) -> bool {
         self.sorted
     }
 
@@ -231,7 +231,7 @@ impl GroupsProxy {
     pub fn sort(&mut self) {
         match self {
             GroupsProxy::Idx(groups) => {
-                if !groups.is_sorted() {
+                if !groups.is_sorted_flag() {
                     groups.sort()
                 }
             }
@@ -384,7 +384,7 @@ impl GroupsProxy {
                 ManuallyDrop::new(GroupsProxy::Idx(GroupsIdx::new(
                     first,
                     all,
-                    groups.is_sorted(),
+                    groups.is_sorted_flag(),
                 )))
             }
             GroupsProxy::Slice { groups, rolling } => {

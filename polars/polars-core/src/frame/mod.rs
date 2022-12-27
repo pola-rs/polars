@@ -370,7 +370,7 @@ impl DataFrame {
             name,
             (offset..(self.height() as IdxSize) + offset).collect(),
         );
-        ca.set_sorted(false);
+        ca.set_sorted_flag(IsSorted::Ascending);
         columns.push(ca.into_series());
 
         columns.extend_from_slice(&self.columns);
@@ -384,7 +384,7 @@ impl DataFrame {
             name,
             (offset..(self.height() as IdxSize) + offset).collect(),
         );
-        ca.set_sorted(false);
+        ca.set_sorted_flag(IsSorted::Ascending);
 
         self.columns.insert(0, ca.into_series());
         self
@@ -1894,9 +1894,9 @@ impl DataFrame {
         let _ = df.apply(&first_by_column, |s| {
             let mut s = s.clone();
             if first_reverse {
-                s.set_sorted(IsSorted::Descending)
+                s.set_sorted_flag(IsSorted::Descending)
             } else {
-                s.set_sorted(IsSorted::Ascending)
+                s.set_sorted_flag(IsSorted::Ascending)
             }
             s
         });
@@ -3280,7 +3280,7 @@ impl DataFrame {
 
         // create a temporary vec. we will not drop it.
         let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         let out = self.take_unchecked_impl(&ca, allow_threads);
 
         // ref count of buffers should be one because we dropped all allocations

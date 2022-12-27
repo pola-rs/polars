@@ -1,6 +1,7 @@
 #[cfg(feature = "hash")]
 use polars_core::export::ahash;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 
 use crate::series::ops::SeriesSealed;
 
@@ -36,6 +37,25 @@ pub trait SeriesMethods: SeriesSealed {
                 UInt64Chunked::from_vec(s.name(), h)
             }
         }
+    }
+
+    fn is_sorted(&self, options: SortOptions) -> bool {
+        let s = self.as_series();
+
+        // fast paths
+        if (options.descending
+            && options.nulls_last
+            && matches!(s.is_sorted_flag(), IsSorted::Descending))
+            || (!options.descending
+                && !options.nulls_last
+                && matches!(s.is_sorted_flag(), IsSorted::Ascending))
+        {
+            return true;
+        }
+
+        // TODO! optimize
+        let out = s.sort_with(options);
+        out.eq(s)
     }
 }
 

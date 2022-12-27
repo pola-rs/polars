@@ -4,9 +4,9 @@ use super::*;
 #[test]
 fn test_sample_sorted()  {
     let s = Series::new("a", [1, 2, 3]).sort(false);
-    matches!(s.is_sorted(),IsSorted::Ascending);
+    matches!(s.is_sorted_flag(),IsSorted::Ascending);
     let out = s.sample_frac(1.5, true, false, None).unwrap();
-    matches!(s.is_sorted(),IsSorted::Not);
+    matches!(s.is_sorted_flag(),IsSorted::Not);
 }
 
 #[test]

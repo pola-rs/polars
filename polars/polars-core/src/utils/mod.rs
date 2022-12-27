@@ -151,7 +151,7 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
                     let mut out = unsafe {
                         Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
                     };
-                    out.set_sorted(s.is_sorted());
+                    out.set_sorted_flag(s.is_sorted_flag());
                     out
                 })
                 .collect(),
