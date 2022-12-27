@@ -11,6 +11,7 @@ This page gives an overview of all public Series methods.
    aggregation
    array
    attributes
+   binary
    boolean
    categories
    computation

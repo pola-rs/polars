@@ -10,6 +10,7 @@ This page gives an overview of all public polars expressions.
 
    aggregation
    array
+   binary
    boolean
    categories
    columns
