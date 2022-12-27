@@ -15,3 +15,22 @@ def test_object_when_then_4702() -> None:
         "Type": [pl.Date, pl.UInt8],
         "New_Type": [pl.UInt16, pl.UInt8],
     }
+
+
+def test_object_empty_filter_5911() -> None:
+    df = pl.DataFrame(
+        data=[
+            (1, "dog", {}),
+        ],
+        columns=[
+            ("pet_id", pl.Int64),
+            ("pet_type", pl.Categorical),
+            ("pet_obj", pl.Object),
+        ],
+        orient="row",
+    )
+
+    empty_df = df.filter(pl.col("pet_type") == "cat")
+    out = empty_df.select(["pet_obj"])
+    assert out.dtypes == [pl.Object]
+    assert out.shape == (0, 1)
