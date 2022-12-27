@@ -157,7 +157,7 @@ where
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ObjectChunked::from_chunks(self.name(), vec![])),
+                _ => Ok(ObjectChunked::new_empty(self.name())),
             };
         }
         if self.is_empty() {

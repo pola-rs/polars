@@ -142,4 +142,8 @@ where
             length: len as IdxSize,
         }
     }
+
+    pub fn new_empty(name: &str) -> Self {
+        Self::new_from_vec(name, vec![])
+    }
 }
