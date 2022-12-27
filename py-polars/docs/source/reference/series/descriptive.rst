@@ -24,6 +24,7 @@ Descriptive
     Series.is_not_null
     Series.is_null
     Series.is_numeric
+    Series.is_sorted
     Series.is_unique
     Series.is_utf8
     Series.len
