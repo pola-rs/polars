@@ -1350,7 +1350,7 @@ class DateTimeNameSpace:
         1m  # 1 minute
         1h  # 1 hour
         1d  # 1 day
-        1w  # 1 week
+        1w  # 1 calendar week
         1mo # 1 calendar month
         1y  # 1 calendar year
 
@@ -1457,7 +1457,7 @@ class DateTimeNameSpace:
         1m  # 1 minute
         1h  # 1 hour
         1d  # 1 day
-        1w  # 1 week
+        1w  # 1 calendar week
         1mo # 1 calendar month
         1y  # 1 calendar year
 

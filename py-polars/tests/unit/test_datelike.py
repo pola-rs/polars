@@ -2205,3 +2205,98 @@ def test_asof_join_by_forward() -> None:
         "value_one": [1, 2, 3, 5, 12],
         "value_two": [3, 3, 3, None, None],
     }
+
+
+def test_truncate_by_calendar_weeks() -> None:
+    # 5557
+    start = datetime(2022, 11, 14, 0, 0, 0)
+    end = datetime(2022, 11, 20, 0, 0, 0)
+
+    assert (
+        pl.date_range(start, end, timedelta(days=1), name="date")
+        .to_frame()
+        .select([pl.col("date").dt.truncate("1w")])
+    ).to_dict(False) == {
+        "date": [
+            datetime(2022, 11, 14),
+            datetime(2022, 11, 14),
+            datetime(2022, 11, 14),
+            datetime(2022, 11, 14),
+            datetime(2022, 11, 14),
+            datetime(2022, 11, 14),
+            datetime(2022, 11, 14),
+        ],
+    }
+
+    df = pl.DataFrame(
+        {
+            "date": pl.Series(["1768-03-01", "2023-01-01"]).str.strptime(
+                pl.Date, "%Y-%m-%d"
+            )
+        }
+    )
+
+    assert df.select(pl.col("date").dt.truncate("1w")).to_dict(False) == {
+        "date": [
+            date(1768, 2, 29),
+            date(2022, 12, 26),
+        ],
+    }
+
+
+def test_truncate_by_multiple_weeks() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.Series(
+                [
+                    # Wednesday and Monday
+                    "2022-04-20",
+                    "2022-11-28",
+                ]
+            ).str.strptime(pl.Date, "%Y-%m-%d")
+        }
+    )
+
+    assert (
+        df.select(
+            [
+                pl.col("date").dt.truncate("2w").alias("2w"),
+                pl.col("date").dt.truncate("3w").alias("3w"),
+                pl.col("date").dt.truncate("4w").alias("4w"),
+                pl.col("date").dt.truncate("5w").alias("5w"),
+                pl.col("date").dt.truncate("17w").alias("17w"),
+            ]
+        )
+    ).to_dict(False) == {
+        "2w": [date(2022, 4, 11), date(2022, 11, 21)],
+        "3w": [date(2022, 4, 4), date(2022, 11, 14)],
+        "4w": [date(2022, 3, 28), date(2022, 11, 7)],
+        "5w": [date(2022, 3, 21), date(2022, 10, 31)],
+        "17w": [date(2021, 12, 27), date(2022, 8, 8)],
+    }
+
+
+def test_round_by_week() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.Series(
+                [
+                    # Sunday and Monday
+                    "1998-04-12",
+                    "2022-11-28",
+                ]
+            ).str.strptime(pl.Date, "%Y-%m-%d")
+        }
+    )
+
+    assert (
+        df.select(
+            [
+                pl.col("date").dt.round("7d").alias("7d"),
+                pl.col("date").dt.round("1w").alias("1w"),
+            ]
+        )
+    ).to_dict(False) == {
+        "7d": [date(1998, 4, 9), date(2022, 12, 1)],
+        "1w": [date(1998, 4, 13), date(2022, 11, 28)],
+    }

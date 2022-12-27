@@ -60,20 +60,20 @@ impl Window {
 
     /// Round the given ns timestamp by the window boundary.
     pub fn round_ns(&self, t: i64) -> i64 {
-        let t = t + self.every.nanoseconds() / 2_i64;
+        let t = t + self.every.duration_ns() / 2_i64;
         self.truncate_ns(t)
     }
 
     /// Round the given us timestamp by the window boundary.
     pub fn round_us(&self, t: i64) -> i64 {
-        let t = t + self.every.nanoseconds()
+        let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
         self.truncate_us(t)
     }
 
     /// Round the given ms timestamp by the window boundary.
     pub fn round_ms(&self, t: i64) -> i64 {
-        let t = t + self.every.nanoseconds()
+        let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
         self.truncate_ms(t)
     }
