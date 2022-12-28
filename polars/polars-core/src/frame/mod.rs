@@ -2504,7 +2504,6 @@ impl DataFrame {
     /// │ max        ┆ f           ┆ 3.0     ┆ c      │
     /// └────────────┴─────────────┴─────────┴────────┘
     /// ```
-    #[must_use]
     #[cfg(feature = "describe")]
     pub fn describe(&self, percentiles: Option<&[f64]>) -> PolarsResult<Self> {
         fn describe_cast(df: &DataFrame, original_schema: &Schema) -> PolarsResult<DataFrame> {
@@ -2567,8 +2566,6 @@ impl DataFrame {
         let mut summary = concat_df_unchecked(&tmp);
 
         summary.insert_at_idx(0, Series::new("describe", headers))?;
-
-        println!("{}", summary);
 
         Ok(summary)
     }
