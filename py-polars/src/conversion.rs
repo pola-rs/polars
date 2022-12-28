@@ -247,8 +247,13 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => {
-                let s = format!("{v}");
-                s.into_py(py)
+                let object = v.as_any().downcast_ref::<ObjectValue>().unwrap();
+                object.inner.clone()
+            }
+            #[cfg(feature = "object")]
+            AnyValue::ObjectOwned(v) => {
+                let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
+                object.inner.clone()
             }
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),

@@ -14,6 +14,8 @@ use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use crate::chunked_array::cast::cast_chunks;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::extension::EXTENSION_NAME;
 use crate::prelude::*;
 
 impl Series {
@@ -299,7 +301,7 @@ impl Series {
                 Ok(CategoricalChunked::from_keys_and_values(name, keys, values).into_series())
             }
             #[cfg(feature = "object")]
-            ArrowDataType::Extension(s, _, Some(_)) if s == "POLARS_EXTENSION_TYPE" => {
+            ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
                 assert_eq!(chunks.len(), 1);
                 let arr = chunks[0]
                     .as_any()

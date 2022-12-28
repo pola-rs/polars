@@ -1,5 +1,7 @@
 use std::convert::TryFrom;
 
+#[cfg(feature = "object")]
+use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 
 #[inline]
@@ -100,7 +102,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             AnyValue::Time(v)
         }
         #[cfg(feature = "object")]
-        DataType::Object(_) => panic!("should not be here"),
+        DataType::Object(_) => {
+            // We should almost never hit this. The only known exception is when we put objects in
+            // structs. Any other hit should be considered a bug.
+            let arr = &*(arr as *const dyn Array as *const FixedSizeBinaryArray);
+            PolarsExtension::arr_to_av(arr, idx)
+        }
         dt => panic!("not implemented for {dt:?}"),
     }
 }

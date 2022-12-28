@@ -752,6 +752,8 @@ impl Display for AnyValue<'_> {
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{v}"),
+            #[cfg(feature = "object")]
+            AnyValue::ObjectOwned(v) => write!(f, "{}", v.0.as_ref()),
             #[cfg(feature = "dtype-struct")]
             av @ AnyValue::Struct(_, _, _) => {
                 let mut avs = vec![];

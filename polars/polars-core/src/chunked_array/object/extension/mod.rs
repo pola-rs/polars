@@ -12,6 +12,8 @@ use polars_extension::PolarsExtension;
 use crate::prelude::*;
 use crate::PROCESS_ID;
 
+pub const EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
+
 /// Invariants
 /// `ptr` must point to start a `T` allocation
 /// `n_t_vals` must represent the correct number of `T` values in that allocation
@@ -115,11 +117,8 @@ pub(crate) fn create_extension<
     let metadata = format!("{};{}", *PROCESS_ID, et_ptr as usize);
 
     let physical_type = ArrowDataType::FixedSizeBinary(t_size);
-    let extension_type = ArrowDataType::Extension(
-        "POLARS_EXTENSION_TYPE".into(),
-        physical_type.into(),
-        Some(metadata),
-    );
+    let extension_type =
+        ArrowDataType::Extension(EXTENSION_NAME.into(), physical_type.into(), Some(metadata));
     // first freeze, otherwise we compute null
     let validity = if null_count > 0 {
         Some(validity.into())

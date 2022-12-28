@@ -240,6 +240,8 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             Categorical(_, rev_map) => DataType::Categorical(Some(Arc::new((*rev_map).clone()))),
             #[cfg(feature = "object")]
             Object(o) => DataType::Object(o.type_name()),
+            #[cfg(feature = "object")]
+            ObjectOwned(o) => DataType::Object(o.0.type_name()),
         }
     }
 }

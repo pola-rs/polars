@@ -71,6 +71,22 @@ impl Series {
             }
             #[cfg(feature = "dtype-time")]
             DataType::Time => cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap(),
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                use crate::chunked_array::object::builder::object_series_to_arrow_array;
+                if self.chunks().len() == 1 && chunk_idx == 0 {
+                    object_series_to_arrow_array(self)
+                } else {
+                    // we slice the series to only that chunk
+                    let offset = self.chunks()[..chunk_idx]
+                        .iter()
+                        .map(|arr| arr.len())
+                        .sum::<usize>() as i64;
+                    let len = self.chunks()[chunk_idx].len();
+                    let s = self.slice(offset, len);
+                    object_series_to_arrow_array(&s)
+                }
+            }
             _ => self.array_ref(chunk_idx).clone(),
         }
     }
