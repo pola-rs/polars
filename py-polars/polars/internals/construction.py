@@ -17,7 +17,6 @@ from typing import (
 
 from polars import internals as pli
 from polars.datatypes import (
-    DTYPE_TEMPORAL_UNITS,
     Categorical,
     ColumnsType,
     Date,
@@ -37,10 +36,16 @@ from polars.datatypes import (
 )
 from polars.datatypes_constructor import (
     numpy_type_to_constructor,
+    numpy_values_and_dtype,
     polars_type_to_constructor,
     py_type_to_constructor,
 )
-from polars.dependencies import _NUMPY_AVAILABLE, _PANDAS_TYPE, _PYARROW_AVAILABLE
+from polars.dependencies import (
+    _NUMPY_AVAILABLE,
+    _NUMPY_TYPE,
+    _PANDAS_TYPE,
+    _PYARROW_AVAILABLE,
+)
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -146,24 +151,11 @@ def numpy_to_pyseries(
         values = np.array(values)
 
     if len(values.shape) == 1:
-        dtype = values.dtype.type
-        if dtype == np.float16:
-            values = values.astype(np.float32)
-            dtype = values.dtype.type
-        elif (
-            dtype == np.datetime64
-            and np.datetime_data(values.dtype)[0] not in DTYPE_TEMPORAL_UNITS
-        ):
-            dtype = object
-
+        values, dtype = numpy_values_and_dtype(values)
         constructor = numpy_type_to_constructor(dtype)
-
-        if dtype == np.float32 or dtype == np.float64:
-            return constructor(name, values, nan_to_null)
-        elif dtype == np.datetime64:
-            return constructor(name, values.astype(np.int64), strict)
-        else:
-            return constructor(name, values, strict)
+        return constructor(
+            name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
+        )
     elif len(values.shape) == 2:
         pyseries_container = []
         for row in range(values.shape[0]):
@@ -171,7 +163,6 @@ def numpy_to_pyseries(
                 numpy_to_pyseries("", values[row, :], strict, nan_to_null)
             )
         return PySeries.new_series_list(name, pyseries_container, False)
-
     else:
         return PySeries.new_object(name, values, strict)
 
@@ -250,6 +241,7 @@ def sequence_to_pyseries(
     dtype: PolarsDataType | None = None,
     strict: bool = True,
     dtype_if_empty: PolarsDataType | None = None,
+    nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
@@ -383,8 +375,20 @@ def sequence_to_pyseries(
             # Convert mixed sequences like `[[12], "foo", 9]`
             return PySeries.new_object(name, values, strict)
 
+        elif (
+            _NUMPY_TYPE(value)
+            and isinstance(value, np.ndarray)
+            and len(value.shape) == 1
+        ):
+            return PySeries.new_series_list(
+                name,
+                [numpy_to_pyseries("", v, strict, nan_to_null) for v in values],
+                strict,
+            )
+
         elif python_dtype == pli.Series:
             return PySeries.new_series_list(name, [v._s for v in values], strict)
+
         elif python_dtype == PySeries:
             return PySeries.new_series_list(name, values, strict)
         else:

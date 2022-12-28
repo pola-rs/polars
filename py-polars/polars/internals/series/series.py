@@ -255,7 +255,12 @@ class Series:
             )
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
-                name, values, dtype=dtype, strict=strict, dtype_if_empty=dtype_if_empty
+                name,
+                values,
+                dtype=dtype,
+                strict=strict,
+                dtype_if_empty=dtype_if_empty,
+                nan_to_null=nan_to_null,
             )
         elif _PANDAS_TYPE(values) and isinstance(values, (pd.Series, pd.DatetimeIndex)):
             self._s = pandas_to_pyseries(name, values)
