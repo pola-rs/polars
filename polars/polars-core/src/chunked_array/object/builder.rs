@@ -147,3 +147,20 @@ where
         Self::new_from_vec(name, vec![])
     }
 }
+
+/// Convert a Series of dtype object to an Arrow Array of FixedSizeBinary
+pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
+    // The list builder knows how to create an arrow array
+    // we simply piggy back on that code.
+
+    // safety: 0..len is in bounds
+    let list_s = unsafe {
+        s.agg_list(&GroupsProxy::Slice {
+            groups: vec![[0, s.len() as IdxSize]],
+            rolling: false,
+        })
+    };
+    let arr = &list_s.chunks()[0];
+    let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+    arr.values().to_boxed()
+}

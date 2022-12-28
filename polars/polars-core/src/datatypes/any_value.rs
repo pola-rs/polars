@@ -3,6 +3,17 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
 
+#[cfg(feature = "object")]
+#[derive(Debug)]
+pub struct OwnedObject(pub Box<dyn PolarsObjectSafe>);
+
+#[cfg(feature = "object")]
+impl Clone for OwnedObject {
+    fn clone(&self) -> Self {
+        Self(self.0.to_boxed())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AnyValue<'a> {
     Null,
@@ -50,7 +61,10 @@ pub enum AnyValue<'a> {
     List(Series),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
+    #[cfg(feature = "object")]
     Object(&'a dyn PolarsObjectSafe),
+    #[cfg(feature = "object")]
+    ObjectOwned(OwnedObject),
     #[cfg(feature = "dtype-struct")]
     // 3 pointers and thus not larger than string/vec
     Struct(usize, &'a StructArray, &'a [Field]),
@@ -546,6 +560,8 @@ impl<'a> AnyValue<'a> {
             Binary(v) => BinaryOwned(v.to_vec()),
             #[cfg(feature = "dtype-binary")]
             BinaryOwned(v) => BinaryOwned(v),
+            #[cfg(feature = "object")]
+            Object(v) => ObjectOwned(OwnedObject(v.to_boxed())),
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!("cannot get static AnyValue from {dt}").into(),

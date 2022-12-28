@@ -30,6 +30,8 @@ pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
     fn type_name(&self) -> &'static str;
 
     fn as_any(&self) -> &dyn Any;
+
+    fn to_boxed(&self) -> Box<dyn PolarsObjectSafe>;
 }
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
@@ -47,6 +49,10 @@ impl<T: PolarsObject> PolarsObjectSafe for T {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn to_boxed(&self) -> Box<dyn PolarsObjectSafe> {
+        Box::new(self.clone())
     }
 }
 

@@ -20,11 +20,24 @@ pub struct StructChunked {
     chunks: Vec<ArrayRef>,
 }
 
+fn arrays_to_fields(field_arrays: &[ArrayRef], fields: &[Series]) -> Vec<ArrowField> {
+    field_arrays
+        .iter()
+        .zip(fields)
+        .map(|(arr, s)| ArrowField::new(s.name(), arr.data_type().clone(), true))
+        .collect()
+}
+
 fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
     let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
 
-    let new_fields = fields.iter().map(|s| s.field().to_arrow()).collect();
-    let field_arrays = fields.iter().map(|s| s.to_arrow(0)).collect::<Vec<_>>();
+    let field_arrays = fields
+        .iter()
+        .map(|s| s.rechunk().to_arrow(0))
+        .collect::<Vec<_>>();
+    // we determine fields from arrays as there might be object arrays
+    // where the dtype is bound to that single array
+    let new_fields = arrays_to_fields(&field_arrays, &fields);
     let arr = StructArray::new(ArrowDataType::Struct(new_fields), field_arrays, None);
     (Box::new(arr), fields)
 }
@@ -82,11 +95,6 @@ impl StructChunked {
 
     // Should be called after append or extend
     pub(crate) fn update_chunks(&mut self, offset: usize) {
-        let new_fields = self
-            .fields
-            .iter()
-            .map(|s| s.field().to_arrow())
-            .collect::<Vec<_>>();
         let n_chunks = self.fields[0].chunks().len();
         for i in offset..n_chunks {
             let field_arrays = self
@@ -94,8 +102,12 @@ impl StructChunked {
                 .iter()
                 .map(|s| s.to_arrow(i))
                 .collect::<Vec<_>>();
+
+            // we determine fields from arrays as there might be object arrays
+            // where the dtype is bound to that single array
+            let new_fields = arrays_to_fields(&field_arrays, &self.fields);
             let arr = Box::new(StructArray::new(
-                ArrowDataType::Struct(new_fields.clone()),
+                ArrowDataType::Struct(new_fields),
                 field_arrays,
                 None,
             )) as ArrayRef;
@@ -240,6 +252,31 @@ impl LogicalType for StructChunked {
                     .map(|s| s.cast(dtype))
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(Self::new_unchecked(self.field.name(), &fields).into_series())
+            }
+        }
+    }
+}
+
+#[cfg(feature = "object")]
+impl Drop for StructChunked {
+    fn drop(&mut self) {
+        use crate::chunked_array::object::extension::drop::drop_object_array;
+        use crate::chunked_array::object::extension::EXTENSION_NAME;
+        if self
+            .fields
+            .iter()
+            .any(|s| matches!(s.dtype(), DataType::Object(_)))
+        {
+            for arr in std::mem::take(&mut self.chunks) {
+                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                for arr in arr.values() {
+                    match arr.data_type() {
+                        ArrowDataType::Extension(name, _, _) if name == EXTENSION_NAME => unsafe {
+                            drop_object_array(arr.as_ref())
+                        },
+                        _ => {}
+                    }
+                }
             }
         }
     }
