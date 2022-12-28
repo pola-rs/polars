@@ -42,6 +42,7 @@ def test_cum_agg() -> None:
 
 
 def test_init_inputs(monkeypatch: Any) -> None:
+    nan = float("nan")
     for flag in [False, True]:
         monkeypatch.setattr(pl.internals.construction, "_PYARROW_AVAILABLE", flag)
         # Good inputs
@@ -71,11 +72,34 @@ def test_init_inputs(monkeypatch: Any) -> None:
         )
         assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
 
-        # 2d numpy array
-        res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]], dtype=np.int64))
-        assert res.dtype == pl.List(pl.Int64)
-        assert res[0].to_list() == [1, 2]
-        assert res[1].to_list() == [3, 4]
+        # 2d numpy array and/or list of 1d numpy arrays
+        for res in (
+            pl.Series(
+                name="a",
+                values=np.array([[1, 2], [3, nan]], dtype=np.float32),
+                nan_to_null=True,
+            ),
+            pl.Series(
+                name="a",
+                values=[
+                    np.array([1, 2], dtype=np.float32),
+                    np.array([3, nan], dtype=np.float32),
+                ],
+                nan_to_null=True,
+            ),
+            pl.Series(
+                name="a",
+                values=(
+                    np.ndarray((2,), np.float32, np.array([1, 2], dtype=np.float32)),
+                    np.ndarray((2,), np.float32, np.array([3, nan], dtype=np.float32)),
+                ),
+                nan_to_null=True,
+            ),
+        ):
+            assert res.dtype == pl.List(pl.Float32)
+            assert res[0].to_list() == [1.0, 2.0]
+            assert res[1].to_list() == [3.0, None]
+
         assert pl.Series(
             values=np.array([["foo", "bar"], ["foo2", "bar2"]])
         ).dtype == pl.List(pl.Utf8)
