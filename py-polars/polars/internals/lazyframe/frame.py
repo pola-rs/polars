@@ -81,7 +81,7 @@ def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
 
 class LazyFrame:
     """
-    Representation of a Lazy computation graph/query againat a DataFrame.
+    Representation of a Lazy computation graph/query against a DataFrame.
 
     Notes
     -----
