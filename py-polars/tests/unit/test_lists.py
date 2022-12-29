@@ -572,3 +572,9 @@ def test_list_amortized_apply_explode_5812() -> None:
     assert s.arr.max().to_list() == [None, 3, 0, 2]
     assert s.arr.arg_min().to_list() == [None, 0, 1, 0]
     assert s.arr.arg_max().to_list() == [None, 1, 0, 1]
+
+
+def test_list_slice_5866() -> None:
+    vals = [[1, 2, 3, 4], [10, 2, 1]]
+    s = pl.Series("a", vals)
+    assert s.arr.slice(1).to_list() == [[2, 3, 4], [2, 1]]
