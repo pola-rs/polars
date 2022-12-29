@@ -320,34 +320,6 @@ impl Series {
                 Ok(s)
             }
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Map(_field, _sorted) => {
-                let arr = if chunks.len() > 1 {
-                    // don't spuriously call this. This triggers a read on mmaped data
-                    concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
-                } else {
-                    chunks[0].clone()
-                };
-                let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
-                // inner type is a struct
-                let struct_array = arr.field().clone();
-
-                // small list, because that's the maps offset dtype.
-                // means we are limited to i32::MAX rows
-                let data_type =
-                    ListArray::<i32>::default_datatype(struct_array.data_type().clone());
-                // physical representation of the map
-                let new_arr = ListArray::new(
-                    data_type.clone(),
-                    arr.offsets().clone(),
-                    struct_array,
-                    arr.validity().cloned(),
-                );
-                let mut chunks = chunks;
-                chunks.clear();
-                chunks.push(Box::new(new_arr));
-                Self::try_from_arrow_unchecked(name, chunks, &data_type)
-            }
-            #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let arr = if chunks.len() > 1 {
                     // don't spuriously call this. This triggers a read on mmaped data
@@ -389,11 +361,33 @@ impl Series {
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(StructChunked::new_unchecked(name, &fields).into_series())
             }
+            ArrowDataType::Decimal(_, _) | ArrowDataType::Decimal256(_, _) => {
+                eprintln!(
+                    "Polars does not support decimal types so the 'Series' are read as Float64"
+                );
+                Ok(Float64Chunked::from_chunks(
+                    name,
+                    cast_chunks(&chunks, &DataType::Float64, true)?,
+                )
+                .into_series())
+            }
+            ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {dt:?} type").into(),
             )),
         }
     }
+}
+
+fn map_arrays_to_series(name: &str, chunks: Vec<ArrayRef>) -> PolarsResult<Series> {
+    let chunks = chunks
+        .iter()
+        .map(|arr| {
+            let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
+            arr.field().clone()
+        })
+        .collect::<Vec<_>>();
+    Series::try_from((name, chunks))
 }
 
 fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
