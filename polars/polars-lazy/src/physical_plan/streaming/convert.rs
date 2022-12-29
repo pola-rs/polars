@@ -53,7 +53,11 @@ fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
             // in its data type and streaming different chunks
             // will create different rev-maps that are hard
             // to combine in a streaming sort, join, groupby
-            !matches!(data_type, DataType::Categorical(_))
+            match data_type {
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(_) => false,
+                _ => true,
+            }
         }
         _ => false,
     })
