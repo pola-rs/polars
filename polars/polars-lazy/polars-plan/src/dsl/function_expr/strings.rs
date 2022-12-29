@@ -147,7 +147,7 @@ fn set_contains_char(matches: &BTreeSet<char>, c: &char) -> bool {
     matches.contains(c)
 }
 
-pub(super) fn strip(s: &Series, matches: Option<BTreeSet<char>>) -> PolarsResult<Series> {
+pub(super) fn strip(s: &Series, matches: &Option<BTreeSet<char>>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         Ok(ca
@@ -158,7 +158,7 @@ pub(super) fn strip(s: &Series, matches: Option<BTreeSet<char>>) -> PolarsResult
     }
 }
 
-pub(super) fn lstrip(s: &Series, matches: Option<BTreeSet<char>>) -> PolarsResult<Series> {
+pub(super) fn lstrip(s: &Series, matches: &Option<BTreeSet<char>>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
 
     if let Some(matches) = matches {
@@ -170,7 +170,7 @@ pub(super) fn lstrip(s: &Series, matches: Option<BTreeSet<char>>) -> PolarsResul
     }
 }
 
-pub(super) fn rstrip(s: &Series, matches: Option<BTreeSet<char>>) -> PolarsResult<Series> {
+pub(super) fn rstrip(s: &Series, matches: &Option<BTreeSet<char>>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         Ok(ca

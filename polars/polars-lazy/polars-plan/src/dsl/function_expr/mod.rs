@@ -406,9 +406,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
             Uppercase => map!(strings::uppercase),
             Lowercase => map!(strings::lowercase),
-            Strip(matches) => map!(strings::strip, matches),
-            LStrip(matches) => map!(strings::lstrip, matches),
-            RStrip(matches) => map!(strings::rstrip, matches),
+            Strip(matches) => map!(strings::strip, &matches),
+            LStrip(matches) => map!(strings::lstrip, &matches),
+            RStrip(matches) => map!(strings::rstrip, &matches),
         }
     }
 }
