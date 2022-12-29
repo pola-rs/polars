@@ -1,5 +1,4 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(pattern)]
 
 #[cfg(feature = "avro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "avro")))]

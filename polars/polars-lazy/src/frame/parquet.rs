@@ -1,8 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
+#[cfg(feature = "parquet-async")]
+use polars_io::async_glob;
 use polars_io::parquet::ParallelStrategy;
-use polars_io::{async_glob, is_cloud_url, RowCount};
+use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
