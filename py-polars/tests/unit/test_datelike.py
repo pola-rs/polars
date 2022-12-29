@@ -2300,3 +2300,9 @@ def test_round_by_week() -> None:
         "7d": [date(1998, 4, 9), date(2022, 12, 1)],
         "1w": [date(1998, 4, 13), date(2022, 11, 28)],
     }
+
+
+def test_cast_time_to_duration() -> None:
+    assert pl.Series([time(hour=0, minute=0, second=2)]).cast(
+        pl.Duration
+    ).item() == timedelta(seconds=2)

@@ -29,6 +29,16 @@ impl LogicalType for TimeChunked {
     }
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        self.0.cast(dtype)
+        match dtype {
+            DataType::Duration(tu) => {
+                let out = self.0.cast(&DataType::Duration(TimeUnit::Nanoseconds));
+                if !matches!(tu, TimeUnit::Nanoseconds) {
+                    out?.cast(dtype)
+                } else {
+                    out
+                }
+            }
+            _ => self.0.cast(dtype),
+        }
     }
 }
