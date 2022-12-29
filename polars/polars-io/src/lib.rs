@@ -20,6 +20,8 @@ pub mod json;
 pub mod ndjson_core;
 #[cfg(feature = "object_store")]
 mod object_store;
+#[cfg(feature = "object_store")]
+pub use crate::object_store::glob as async_glob;
 
 #[cfg(any(
     feature = "csv-file",

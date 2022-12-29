@@ -1,8 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
+#[cfg(feature = "parquet-async")]
+use polars_io::async_glob;
 use polars_io::parquet::ParallelStrategy;
-use polars_io::RowCount;
+use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
@@ -103,13 +105,29 @@ impl LazyFrame {
         let path = path.as_ref();
         let path_str = path.to_string_lossy();
         if path_str.contains('*') {
-            let paths = glob::glob(&path_str)
-                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
+            let paths = if is_cloud_url(path) {
+                #[cfg(feature = "parquet-async")]
+                {
+                    Box::new(
+                        async_glob(&path_str)?
+                            .into_iter()
+                            .map(|a| Ok(PathBuf::from(&a))),
+                    )
+                }
+                #[cfg(not(feature="parquet-async"))]
+                panic!("Feature `parquet-async` must be enabled to use globbing patterns with cloud urls.")
+            } else {
+                Box::new(
+                    glob::glob(&path_str).map_err(|_| {
+                        PolarsError::ComputeError("invalid glob pattern given".into())
+                    })?,
+                ) as Box<dyn Iterator<Item = Result<PathBuf, _>>>
+            };
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     Self::scan_parquet_impl(
-                        path,
+                        path.clone(),
                         args.n_rows,
                         args.cache,
                         ParallelStrategy::None,
@@ -117,9 +135,19 @@ impl LazyFrame {
                         false,
                         args.low_memory,
                     )
+                    .map_err(|e| {
+                        PolarsError::ComputeError(
+                            format!("While reading {} got {e:?}.", path.display()).into(),
+                        )
+                    })
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
+            if lfs.is_empty() {
+                return PolarsResult::Err(PolarsError::ComputeError(
+                    format!("Could not load any dataframes from {path_str}").into(),
+                ));
+            }
             Self::concat_impl(lfs, args)
         } else {
             Self::scan_parquet_impl(

@@ -19,7 +19,7 @@ use polars_core::schema::Schema;
 use super::mmap;
 use super::mmap::ColumnStore;
 use super::read_impl::FetchRowGroups;
-use crate::object_store::{build, CloudReader};
+use crate::object_store::{build, CloudLocation, CloudReader};
 
 pub struct ParquetObjectStore {
     store: Arc<Mutex<Box<dyn ObjectStore>>>,
@@ -30,12 +30,12 @@ pub struct ParquetObjectStore {
 
 impl ParquetObjectStore {
     pub fn from_uri(uri: &str) -> PolarsResult<Self> {
-        let (path, store) = build(uri)?;
+        let (CloudLocation { prefix, .. }, store) = build(uri)?;
         let store = Arc::new(Mutex::from(store));
 
         Ok(ParquetObjectStore {
             store,
-            path,
+            path: prefix.into(),
             length: None,
             metadata: None,
         })

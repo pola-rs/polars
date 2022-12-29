@@ -5,7 +5,7 @@ use polars::prelude::*;
 
 // Login to your aws account and then copy the ../datasets/foods1.parquet file to your own bucket.
 // Adjust the link below.
-const TEST_S3: &str = "s3://lov2test/polars/datasets/foods1.parquet";
+const TEST_S3: &str = "s3://lov2test/polars/datasets/*.parquet";
 
 fn main() -> PolarsResult<()> {
     let cred = Credentials::default().unwrap();
