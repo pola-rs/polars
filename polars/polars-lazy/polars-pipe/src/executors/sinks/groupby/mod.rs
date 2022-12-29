@@ -14,12 +14,26 @@ pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schem
         if s.name() != name {
             s.rename(name);
         }
-        let dtype_left = s.dtype();
-        if dtype_left != dtype
-            && !matches!(dtype, DataType::Boolean)
-            && !(dtype.is_float() && dtype_left.is_float())
-        {
-            *s = s.cast(dtype).unwrap()
+        match dtype {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(Some(rev_map)) => {
+                let cats = s.u32().unwrap().clone();
+                // safety:
+                // the rev-map comes from these categoricals
+                unsafe {
+                    *s = CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone())
+                        .into_series()
+                }
+            }
+            _ => {
+                let dtype_left = s.dtype();
+                if dtype_left != dtype
+                    && !matches!(dtype, DataType::Boolean)
+                    && !(dtype.is_float() && dtype_left.is_float())
+                {
+                    *s = s.cast(dtype).unwrap()
+                }
+            }
         }
     }
 }

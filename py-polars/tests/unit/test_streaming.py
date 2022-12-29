@@ -163,3 +163,28 @@ def streaming_groupby_sorted_fast_path() -> None:
             results.append(out)
 
         assert results[0].frame_equal(results[1])
+
+
+def test_streaming_categoricals_5921() -> None:
+    with pl.StringCache():
+        out_lazy = (
+            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+            .lazy()
+            .with_column(pl.col("X").cast(pl.Categorical))
+            .groupby("X")
+            .agg(pl.col("Y").min())
+            .sort("X")
+            .collect(streaming=True)
+        )
+
+        out_eager = (
+            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+            .with_column(pl.col("X").cast(pl.Categorical))
+            .groupby("X")
+            .agg(pl.col("Y").min())
+            .sort("X")
+        )
+
+    for out in [out_eager, out_lazy]:
+        assert out.dtypes == [pl.Categorical, pl.Int64]
+        assert out.to_dict(False) == {"X": ["a", "b"], "Y": [2, 1]}

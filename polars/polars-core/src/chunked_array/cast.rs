@@ -61,9 +61,9 @@ where
     fn cast_impl(&self, data_type: &DataType, checked: bool) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
-                Ok(CategoricalChunked::full_null(self.name(), self.len()).into_series())
-            }
+            DataType::Categorical(_) => Err(PolarsError::ComputeError(
+                "Cannot cast numeric types to 'Categorical'".into(),
+            )),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
                 // cast to first field dtype
