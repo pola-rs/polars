@@ -536,8 +536,12 @@ impl PySeries {
         }
     }
 
-    pub fn add(&self, other: &PySeries) -> Self {
-        (&self.series + &other.series).into()
+    pub fn add(&self, other: &PySeries) -> PyResult<Self> {
+        let out = self
+            .series
+            .try_add(&other.series)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
     pub fn sub(&self, other: &PySeries) -> Self {

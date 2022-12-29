@@ -426,20 +426,25 @@ impl ops::Sub for &Series {
     }
 }
 
+impl Series {
+    pub fn try_add(&self, rhs: &Series) -> PolarsResult<Series> {
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                Ok(struct_arithmetic(self, rhs, |a, b| a.add(b)))
+            }
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                lhs.add_to(rhs.as_ref())
+            }
+        }
+    }
+}
 impl ops::Add for &Series {
     type Output = Series;
 
     fn add(self, rhs: Self) -> Self::Output {
-        match (self.dtype(), rhs.dtype()) {
-            #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.add(b))
-            }
-            _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-                lhs.add_to(rhs.as_ref()).expect("data types don't match")
-            }
-        }
+        self.try_add(rhs).unwrap()
     }
 }
 
