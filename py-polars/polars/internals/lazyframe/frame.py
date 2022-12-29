@@ -632,9 +632,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return func(self, *args, **kwargs)
 
-    def describe_plan(self) -> str:
+    def describe_plan(self, *, optimized: bool = False) -> str:
         """
         Create a string representation of the unoptimized query plan.
+
+        Parameters
+        ----------
+        optimized
+            Return an optimized query plan. Defaults to `False`.
+            Use ``describe_optimized_plan`` to control
+            the optimization flags.
 
         Examples
         --------
@@ -650,6 +657,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ... ).describe_plan()  # doctest: +SKIP
 
         """
+        if optimized:
+            return self._ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
     @deprecated_alias(allow_streaming="streaming")

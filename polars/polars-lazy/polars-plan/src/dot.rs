@@ -1,4 +1,5 @@
-use std::fmt::Write;
+use std::fmt::{Display, Write};
+use std::path::Path;
 
 use polars_core::prelude::*;
 
@@ -133,17 +134,20 @@ impl LogicalPlan {
         let (mut branch, id) = id;
 
         match self {
-            AnonymousScan { file_info, .. } => {
-                let total_columns = file_info.schema.len();
-
-                let fmt = format!("ANONYMOUS SCAN;\nπ {total_columns}");
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
-            }
+            AnonymousScan {
+                file_info, options, ..
+            } => self.write_scan(
+                acc_str,
+                prev_node,
+                "ANONYMOUS SCAN",
+                Path::new(""),
+                options.with_columns.as_deref().map(|cols| cols.as_slice()),
+                file_info.schema.len(),
+                &options.predicate,
+                branch,
+                id,
+                id_map,
+            ),
             Union { inputs, .. } => {
                 let current_node = DotNode {
                     branch,
@@ -190,85 +194,18 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
             #[cfg(feature = "python")]
-            PythonScan { options } => {
-                let schema = &options.schema;
-                let total_columns = schema.len();
-                let n_columns = if let Some(columns) = &options.with_columns {
-                    format!("{}", columns.len())
-                } else {
-                    "*".to_string()
-                };
-
-                let fmt = format!("PYTHON SCAN;\nπ {n_columns}/{total_columns};");
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                if self.is_single(branch, id) {
-                    self.write_single_node(acc_str, current_node)
-                } else {
-                    self.write_dot(acc_str, prev_node, current_node, id_map)
-                }
-            }
-            #[cfg(feature = "csv-file")]
-            CsvScan {
-                path,
-                options,
-                file_info,
-                predicate,
-                ..
-            } => {
-                let total_columns = file_info.schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-                let pred = fmt_predicate(predicate.as_ref());
-
-                let fmt = format!(
-                    "CSV SCAN {};\nπ {}/{};\nσ {};",
-                    path.to_string_lossy(),
-                    n_columns,
-                    total_columns,
-                    pred,
-                );
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                if self.is_single(branch, id) {
-                    self.write_single_node(acc_str, current_node)
-                } else {
-                    self.write_dot(acc_str, prev_node, current_node, id_map)
-                }
-            }
-            DataFrameScan {
-                schema,
-                projection,
-                selection,
-                ..
-            } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = projection {
-                    n_columns = format!("{}", columns.len());
-                }
-
-                let pred = fmt_predicate(selection.as_ref());
-                let fmt = format!("TABLE\nπ {n_columns}/{total_columns};\nσ {pred};");
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                if self.is_single(branch, id) {
-                    self.write_single_node(acc_str, current_node)
-                } else {
-                    self.write_dot(acc_str, prev_node, current_node, id_map)
-                }
-            }
+            PythonScan { options } => self.write_scan(
+                acc_str,
+                prev_node,
+                "PYTHON",
+                Path::new(""),
+                options.with_columns.as_ref().map(|s| s.as_slice()),
+                options.schema.len(),
+                &options.predicate,
+                branch,
+                id,
+                id_map,
+            ),
             Projection { expr, input, .. } => {
                 let schema = input.schema().map_err(|_| {
                     eprintln!("could not determine schema");
@@ -401,6 +338,50 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
+            DataFrameScan {
+                schema,
+                projection,
+                selection,
+                ..
+            } => {
+                let total_columns = schema.len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = projection {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                let pred = fmt_predicate(selection.as_ref());
+                let fmt = format!("TABLE\nπ {n_columns}/{total_columns};\nσ {pred};");
+                let current_node = DotNode {
+                    branch,
+                    id,
+                    fmt: &fmt,
+                };
+                if self.is_single(branch, id) {
+                    self.write_single_node(acc_str, current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, current_node, id_map)
+                }
+            }
+            #[cfg(feature = "csv-file")]
+            CsvScan {
+                path,
+                options,
+                file_info,
+                predicate,
+                ..
+            } => self.write_scan(
+                acc_str,
+                prev_node,
+                "CSV",
+                path.as_ref(),
+                options.with_columns.as_deref().map(|cols| cols.as_slice()),
+                file_info.schema.len(),
+                predicate,
+                branch,
+                id,
+                id_map,
+            ),
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
@@ -408,32 +389,18 @@ impl LogicalPlan {
                 predicate,
                 options,
                 ..
-            } => {
-                let total_columns = file_info.schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-
-                let pred = fmt_predicate(predicate.as_ref());
-                let fmt = format!(
-                    "PARQUET SCAN {};\nπ {}/{};\nσ {}",
-                    path.to_string_lossy(),
-                    n_columns,
-                    total_columns,
-                    pred,
-                );
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                if self.is_single(branch, id) {
-                    self.write_single_node(acc_str, current_node)
-                } else {
-                    self.write_dot(acc_str, prev_node, current_node, id_map)
-                }
-            }
+            } => self.write_scan(
+                acc_str,
+                prev_node,
+                "PARQUET",
+                path.as_ref(),
+                options.with_columns.as_deref().map(|cols| cols.as_slice()),
+                file_info.schema.len(),
+                predicate,
+                branch,
+                id,
+                id_map,
+            ),
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,
@@ -441,32 +408,18 @@ impl LogicalPlan {
                 options,
                 predicate,
                 ..
-            } => {
-                let total_columns = file_info.schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-
-                let pred = fmt_predicate(predicate.as_ref());
-                let fmt = format!(
-                    "IPC SCAN {};\nπ {}/{};\nσ {}",
-                    path.to_string_lossy(),
-                    n_columns,
-                    total_columns,
-                    pred,
-                );
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                if self.is_single(branch, id) {
-                    self.write_single_node(acc_str, current_node)
-                } else {
-                    self.write_dot(acc_str, prev_node, current_node, id_map)
-                }
-            }
+            } => self.write_scan(
+                acc_str,
+                prev_node,
+                "IPC",
+                path.as_ref(),
+                options.with_columns.as_deref().map(|cols| cols.as_slice()),
+                file_info.schema.len(),
+                predicate,
+                branch,
+                id,
+                id_map,
+            ),
             Join {
                 input_left,
                 input_right,
@@ -531,12 +484,51 @@ impl LogicalPlan {
             }
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write_scan<P: Display>(
+        &self,
+        acc_str: &mut String,
+        prev_node: DotNode,
+        name: &str,
+        path: &Path,
+        with_columns: Option<&[String]>,
+        total_columns: usize,
+        predicate: &Option<P>,
+        branch: usize,
+        id: usize,
+        id_map: &mut PlHashMap<String, String>,
+    ) -> std::fmt::Result {
+        let mut n_columns_fmt = "*".to_string();
+        if let Some(columns) = with_columns {
+            n_columns_fmt = format!("{}", columns.len());
+        }
+
+        let pred = fmt_predicate(predicate.as_ref());
+        let fmt = format!(
+            "{name} SCAN {};\nπ {}/{};\nσ {}",
+            path.to_string_lossy(),
+            n_columns_fmt,
+            total_columns,
+            pred,
+        );
+        let current_node = DotNode {
+            branch,
+            id,
+            fmt: &fmt,
+        };
+        if self.is_single(branch, id) {
+            self.write_single_node(acc_str, current_node)
+        } else {
+            self.write_dot(acc_str, prev_node, current_node, id_map)
+        }
+    }
 }
 
-fn fmt_predicate(predicate: Option<&Expr>) -> String {
+fn fmt_predicate<P: Display>(predicate: Option<&P>) -> String {
     if let Some(predicate) = predicate {
         let n = 25;
-        let mut pred_fmt = format!("{predicate:?}");
+        let mut pred_fmt = format!("{predicate}");
         pred_fmt = pred_fmt.replace('[', "");
         pred_fmt = pred_fmt.replace(']', "");
         if pred_fmt.len() > n {
