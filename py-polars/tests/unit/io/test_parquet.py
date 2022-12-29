@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+import typing
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -304,3 +305,30 @@ def test_parquet_5795() -> None:
     df_pd.to_parquet(f)
     f.seek(0)
     assert pl.read_parquet(f).frame_equal(pl.from_pandas(df_pd))
+
+
+@typing.no_type_check
+def test_parquet_nesting_structs_list() -> None:
+    f = io.BytesIO()
+    df = pl.from_records(
+        [
+            {
+                "id": 1,
+                "list_of_structs_col": [
+                    {"a": 10, "b": [10, 11, 12]},
+                    {"a": 11, "b": [13, 14, 15]},
+                ],
+            },
+            {
+                "id": 2,
+                "list_of_structs_col": [
+                    {"a": 44, "b": [12]},
+                ],
+            },
+        ]
+    )
+
+    df.write_parquet(f)
+    f.seek(0)
+
+    assert pl.read_parquet(f).frame_equal(df)
