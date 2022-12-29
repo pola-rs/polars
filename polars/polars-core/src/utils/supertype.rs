@@ -196,15 +196,6 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             #[cfg(feature = "dtype-time")]
             (Time, Float64) => Some(Float64),
 
-            #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
-            (Time, Datetime(_, _)) => Some(Int64),
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype-time"))]
-            (Datetime(_, _), Time) => Some(Int64),
-            #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
-            (Time, Date) => Some(Int64),
-            #[cfg(all(feature = "dtype-date", feature = "dtype-time"))]
-            (Date, Time) => Some(Int64),
-
             // every known type can be casted to a string except binary
             #[cfg(feature = "dtype-binary")]
             (dt, Utf8) if dt != &DataType::Unknown && dt != &DataType::Binary => Some(Utf8),

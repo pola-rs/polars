@@ -311,3 +311,8 @@ def test_duplicate_columns_arg_csv() -> None:
         ValueError, match=r"'columns' arg should only have unique values"
     ):
         pl.read_csv(f, columns=["x", "x", "y"])
+
+
+def test_datetime_time_add_err() -> None:
+    with pytest.raises(pl.ComputeError):
+        pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
