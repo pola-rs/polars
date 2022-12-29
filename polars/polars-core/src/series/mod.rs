@@ -228,7 +228,12 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        self.0.cast(dtype)
+        let len = self.len();
+        if self.null_count() == len {
+            Ok(Series::full_null(self.name(), len, dtype))
+        } else {
+            self.0.cast(dtype)
+        }
     }
 
     /// Compute the sum of all values in this Series.
