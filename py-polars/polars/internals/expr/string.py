@@ -292,8 +292,6 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        if matches is not None:
-            matches = set(matches)
         return pli.wrap_expr(self._pyexpr.str_strip(matches))
 
     def lstrip(self, matches: str | None = None) -> pli.Expr:
@@ -325,8 +323,6 @@ class ExprStringNameSpace:
         └────────┘
 
         """
-        if matches is not None:
-            matches = set(matches)
         return pli.wrap_expr(self._pyexpr.str_lstrip(matches))
 
     def rstrip(self, matches: str | None = None) -> pli.Expr:
@@ -358,8 +354,6 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        if matches is not None:
-            matches = set(matches)
         return pli.wrap_expr(self._pyexpr.str_rstrip(matches))
 
     def zfill(self, alignment: int) -> pli.Expr:
