@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::FMT_STRUCT_DATA_TYPE;
+use crate::fmt::env_is_true;
 
 pub type TimeZone = String;
 
@@ -250,10 +251,6 @@ impl PartialEq<ArrowDataType> for DataType {
         let dt: DataType = other.into();
         self == &dt
     }
-}
-
-fn env_is_true(varname: &str) -> bool {
-    std::env::var(varname).as_deref().unwrap_or("0") == "1"
 }
 
 impl Display for DataType {

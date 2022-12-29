@@ -331,7 +331,7 @@ fn prepare_row(
     row_str
 }
 
-fn env_is_true(varname: &str) -> bool {
+pub fn env_is_true(varname: &str) -> bool {
     std::env::var(varname).as_deref().unwrap_or("0") == "1"
 }
 
