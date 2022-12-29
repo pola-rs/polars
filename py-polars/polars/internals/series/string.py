@@ -650,7 +650,7 @@ class StringNameSpace:
         """
 
     def strip(self, matches: str | None = None) -> pli.Series:
-        """
+        r"""
         Remove leading and trailing characters.
 
         Parameters
@@ -658,12 +658,34 @@ class StringNameSpace:
         matches
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
-            removed.
+            removed instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([" hello ", "\tworld"])
+        >>> s.str.strip()
+        shape: (2,)
+        Series: '' [str]
+        [
+                "hello"
+                "world"
+        ]
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> s.str.strip("od\t")
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello "
+                "worl"
+        ]
 
         """
 
     def lstrip(self, matches: str | None = None) -> pli.Series:
-        """
+        r"""
         Remove leading characters.
 
         Parameters
@@ -671,12 +693,34 @@ class StringNameSpace:
         matches
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
-            removed.
+            removed instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([" hello ", "\tworld"])
+        >>> s.str.lstrip()
+        shape: (2,)
+        Series: '' [str]
+        [
+                "hello "
+                "world"
+        ]
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> s.str.lstrip("wod\t")
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello "
+                "rld"
+        ]
 
         """
 
     def rstrip(self, matches: str | None = None) -> pli.Series:
-        """
+        r"""
         Remove trailing characters.
 
         Parameters
@@ -684,7 +728,29 @@ class StringNameSpace:
         matches
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
-            removed.
+            removed instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([" hello ", "world\t"])
+        >>> s.str.rstrip()
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello"
+                "world"
+        ]
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> s.str.rstrip("wod\t")
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello "
+                "worl"
+        ]
 
         """
 

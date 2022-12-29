@@ -264,7 +264,7 @@ class ExprStringNameSpace:
         return pli.wrap_expr(self._pyexpr.str_to_lowercase())
 
     def strip(self, matches: str | None = None) -> pli.Expr:
-        """
+        r"""
         Remove leading and trailing characters.
 
         Parameters
@@ -272,30 +272,43 @@ class ExprStringNameSpace:
         matches
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
-            removed.
+            removed instead.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
         >>> df.select(pl.col("foo").str.strip())
-        shape: (3, 1)
+        shape: (2, 1)
         ┌───────┐
         │ foo   │
         │ ---   │
         │ str   │
         ╞═══════╡
-        │ lead  │
+        │ hello │
         ├╌╌╌╌╌╌╌┤
-        │ trail │
-        ├╌╌╌╌╌╌╌┤
-        │ both  │
+        │ world │
         └───────┘
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> df.select(pl.col("foo").str.strip("od\t"))
+        shape: (2, 1)
+        ┌─────────┐
+        │ foo     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │  hello  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ worl    │
+        └─────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_strip(matches))
 
     def lstrip(self, matches: str | None = None) -> pli.Expr:
-        """
+        r"""
         Remove leading characters.
 
         Parameters
@@ -303,30 +316,43 @@ class ExprStringNameSpace:
         matches
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
-            removed.
+            removed instead.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
         >>> df.select(pl.col("foo").str.lstrip())
-        shape: (3, 1)
+        shape: (2, 1)
         ┌────────┐
         │ foo    │
         │ ---    │
         │ str    │
         ╞════════╡
-        │ lead   │
+        │ hello  │
         ├╌╌╌╌╌╌╌╌┤
-        │ trail  │
-        ├╌╌╌╌╌╌╌╌┤
-        │ both   │
+        │ world  │
         └────────┘
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> df.select(pl.col("foo").str.lstrip("wod\t"))
+        shape: (2, 1)
+        ┌─────────┐
+        │ foo     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │  hello  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ rld     │
+        └─────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_lstrip(matches))
 
     def rstrip(self, matches: str | None = None) -> pli.Expr:
-        """
+        r"""
         Remove trailing characters.
 
         Parameters
@@ -334,24 +360,37 @@ class ExprStringNameSpace:
         matches
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
-            removed.
+            removed instead.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df = pl.DataFrame({"foo": [" hello ", "world\t"]})
         >>> df.select(pl.col("foo").str.rstrip())
-        shape: (3, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │  lead │
-        ├╌╌╌╌╌╌╌┤
-        │ trail │
-        ├╌╌╌╌╌╌╌┤
-        │  both │
-        └───────┘
+        shape: (2, 1)
+        ┌────────┐
+        │ foo    │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │  hello │
+        ├╌╌╌╌╌╌╌╌┤
+        │ world  │
+        └────────┘
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> df.select(pl.col("foo").str.rstrip("wod\t"))
+        shape: (2, 1)
+        ┌─────────┐
+        │ foo     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │  hello  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ worl    │
+        └─────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_rstrip(matches))
