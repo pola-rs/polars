@@ -437,7 +437,7 @@ impl Display for DataFrame {
                 "UTF8_BORDERS_ONLY" => UTF8_BORDERS_ONLY,
                 "UTF8_HORIZONTAL_ONLY" => UTF8_HORIZONTAL_ONLY,
                 "NOTHING" => NOTHING,
-                "DEFAULT" => UTF8_FULL,
+                "DEFAULT" => UTF8_FULL_CONDENSED,
                 _ => UTF8_FULL,
             };
 
