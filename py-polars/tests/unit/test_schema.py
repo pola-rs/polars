@@ -292,3 +292,10 @@ def test_lazy_rename() -> None:
     assert (
         df.lazy().rename({"y": "x", "x": "y"}).select(["x", "y"]).collect()
     ).to_dict(False) == {"x": [2], "y": [1]}
+
+
+def test_all_null_cast_5826() -> None:
+    df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.Utf8)])
+    out = df.with_column(pl.col("a").cast(pl.Boolean))
+    assert out.dtypes == [pl.Boolean]
+    assert out.item() is None
