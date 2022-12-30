@@ -682,7 +682,7 @@ def py_type_to_dtype(
         if not raise_unmatched:
             return None
         raise NotImplementedError(
-            f"Conversion of Python data type {data_type} to Polars data type not"
+            f"Conversion of Python data type '{data_type}' to Polars data type not"
             " implemented."
         ) from None
 

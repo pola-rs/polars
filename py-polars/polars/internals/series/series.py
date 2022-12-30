@@ -41,6 +41,7 @@ from polars.datatypes import (
     Utf8,
     dtype_to_ctype,
     get_idx_type,
+    is_polars_dtype,
     maybe_cast,
     numpy_char_code_to_dtype,
     py_type_to_dtype,
@@ -203,7 +204,15 @@ class Series:
         nan_to_null: bool = False,
         dtype_if_empty: PolarsDataType | None = None,
     ):
-
+        # Raise error if dtype is not valid
+        if (
+            dtype is not None
+            and not is_polars_dtype(dtype)
+            and py_type_to_dtype(dtype, raise_unmatched=False) is None
+        ):
+            raise ValueError(
+                f"Given dtype: '{dtype}' is not a valid Polars data type and cannot be converted into one."  # noqa: E501
+            )
         # Handle case where values are passed as the first argument
         if name is not None and not isinstance(name, str):
             if values is None:
