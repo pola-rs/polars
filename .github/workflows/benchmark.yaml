@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "polars/**"
+      - "Cargo.toml"
       - "py-polars/tests/db-benchmark/**"
       - ".github/workflows/benchmark.yaml"
 
