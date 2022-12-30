@@ -1826,16 +1826,6 @@ def test_str_to_uppercase() -> None:
     verify_series_and_expr_api(s, expected, "str.to_uppercase")
 
 
-def test_str_rstrip() -> None:
-    s = pl.Series([" hello ", "world\t "])
-    expected = pl.Series([" hello", "world"])
-    assert_series_equal(s.str.rstrip(), expected)
-
-    s = pl.Series([" hello ", "world\t "])
-    expected = pl.Series([" hell", "world"])
-    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
-
-
 def test_str_strip() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series(["hello", "world"])
@@ -1844,13 +1834,45 @@ def test_str_strip() -> None:
     expected = pl.Series(["hello", "worl"])
     assert_series_equal(s.str.strip().str.strip("d"), expected)
 
+    expected = pl.Series(["ell", "rld\t"])
+    assert_series_equal(s.str.strip(" hwo"), expected)
+
 
 def test_str_lstrip() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
     assert_series_equal(s.str.lstrip(), expected)
+
     expected = pl.Series(["ello ", "world"])
     assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
+
+    expected = pl.Series(["ello ", "\t world"])
+    assert_series_equal(s.str.lstrip("hw "), expected)
+
+
+def test_str_rstrip() -> None:
+    s = pl.Series([" hello ", "world\t "])
+    expected = pl.Series([" hello", "world"])
+    assert_series_equal(s.str.rstrip(), expected)
+
+    expected = pl.Series([" hell", "world"])
+    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
+
+    expected = pl.Series([" he", "wor"])
+    assert_series_equal(s.str.rstrip("odl \t"), expected)
+
+
+def test_str_strip_whitespace() -> None:
+    a = pl.Series("a", ["trailing  ", "  leading", "  both  "])
+
+    expected = pl.Series("a", ["trailing", "  leading", "  both"])
+    verify_series_and_expr_api(a, expected, "str.rstrip")
+
+    expected = pl.Series("a", ["trailing  ", "leading", "both  "])
+    verify_series_and_expr_api(a, expected, "str.lstrip")
+
+    expected = pl.Series("a", ["trailing", "leading", "both"])
+    verify_series_and_expr_api(a, expected, "str.strip")
 
 
 def test_str_strptime() -> None:
@@ -2233,16 +2255,6 @@ def test_product() -> None:
     a = pl.Series("a", [None, 2, 3])
     out = a.product()
     assert out is None
-
-
-def test_strip() -> None:
-    a = pl.Series("a", ["trailing  ", "  leading", "  both  "])
-    expected = pl.Series("a", ["trailing", "  leading", "  both"])
-    verify_series_and_expr_api(a, expected, "str.rstrip")
-    expected = pl.Series("a", ["trailing  ", "leading", "both  "])
-    verify_series_and_expr_api(a, expected, "str.lstrip")
-    expected = pl.Series("a", ["trailing", "leading", "both"])
-    verify_series_and_expr_api(a, expected, "str.strip")
 
 
 def test_ceil() -> None:
