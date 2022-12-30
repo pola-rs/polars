@@ -2517,7 +2517,12 @@ class DataFrame:
 
     def filter(
         self,
-        predicate: pli.Expr | str | pli.Series | list[bool] | np.ndarray[Any, Any],
+        predicate: pli.Expr
+        | str
+        | pli.Series
+        | list[bool]
+        | np.ndarray[Any, Any]
+        | bool,
     ) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.

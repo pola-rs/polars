@@ -299,3 +299,10 @@ def test_all_null_cast_5826() -> None:
     out = df.with_column(pl.col("a").cast(pl.Boolean))
     assert out.dtypes == [pl.Boolean]
     assert out.item() is None
+
+
+def test_emtpy_list_eval_schema_5734() -> None:
+    df = pl.DataFrame({"a": [[{"b": 1, "c": 2}]]})
+    assert df.filter(False).select(
+        pl.col("a").arr.eval(pl.element().struct.field("b"))
+    ).schema == {"a": pl.List(pl.Int64)}
