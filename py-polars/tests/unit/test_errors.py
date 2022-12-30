@@ -325,3 +325,12 @@ def test_invalid_dtype() -> None:
         match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",  # noqa: E501
     ):
         pl.Series([1, 2], dtype="mayonnaise")
+
+
+def test_arr_eval_named_cols() -> None:
+    df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
+
+    with pytest.raises(
+        pl.ComputeError,
+    ):
+        df.select(pl.col("B").arr.eval(pl.element().append(pl.col("A"))))
