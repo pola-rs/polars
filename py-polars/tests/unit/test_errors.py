@@ -316,3 +316,12 @@ def test_duplicate_columns_arg_csv() -> None:
 def test_datetime_time_add_err() -> None:
     with pytest.raises(pl.ComputeError):
         pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
+
+
+@typing.no_type_check
+def test_invalid_dtype() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",  # noqa: E501
+    ):
+        pl.Series([1, 2], dtype="mayonnaise")
