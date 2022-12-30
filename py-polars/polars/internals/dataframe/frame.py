@@ -6616,6 +6616,16 @@ class DataFrame:
         """
         return self._df.row_tuples()
 
+    def iterrows(self) -> Iterator[tuple[Any, ...]]:
+        """
+        Returns an iterator over the rows in the DataFrame.
+
+        This is very expensive and should not be used
+        in any performance critical code.
+        """
+        for i in range(self.height):
+            yield self.row(i)
+
     def shrink_to_fit(self: DF, in_place: bool = False) -> DF:
         """
         Shrink DataFrame memory usage.
