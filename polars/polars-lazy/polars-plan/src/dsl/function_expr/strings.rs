@@ -145,9 +145,16 @@ pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
 pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
-        Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
-            .into_series())
+        if matches.chars().count() == 1 {
+            // Fast path for when a single character is passed
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_matches(matches.chars().next().unwrap())))
+                .into_series())
+        } else {
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
+                .into_series())
+        }
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
     }
@@ -157,9 +164,16 @@ pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
     let ca = s.utf8()?;
 
     if let Some(matches) = matches {
-        Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
-            .into_series())
+        if matches.chars().count() == 1 {
+            // Fast path for when a single character is passed
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_start_matches(matches.chars().next().unwrap())))
+                .into_series())
+        } else {
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
+                .into_series())
+        }
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
     }
@@ -168,9 +182,16 @@ pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
 pub(super) fn rstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
-        Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
-            .into_series())
+        if matches.chars().count() == 1 {
+            // Fast path for when a single character is passed
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_end_matches(matches.chars().next().unwrap())))
+                .into_series())
+        } else {
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
+                .into_series())
+        }
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
     }
