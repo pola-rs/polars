@@ -788,3 +788,11 @@ def test_asof_join_by_logical_types() -> None:
         "b": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         "c": ["1", "2", "3", "1", "2", "3", "1", "2", "3"],
     }
+
+
+def test_join_panic_on_binary_expr_5915() -> None:
+    df_a = pl.DataFrame({"a": [1, 2, 3]}).lazy()
+    df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]}).lazy()
+
+    z = df_a.join(df_b, left_on=[(pl.col("a") + 1).cast(int)], right_on=[pl.col("b")])
+    assert z.collect().to_dict(False) == {"a": [4]}
