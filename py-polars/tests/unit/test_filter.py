@@ -77,3 +77,19 @@ def test_is_in_bool() -> None:
     assert df.filter(pl.col("A").is_in(bool_value_to_filter_on)).to_dict(False) == {
         "A": [True, False]
     }
+
+
+def test_predicate_order_explode_5950() -> None:
+    df = pl.from_dict(
+        {
+            "i": [[0, 1], [1, 2]],
+            "n": [0, None],
+        }
+    )
+
+    assert (
+        df.lazy()
+        .explode("i")
+        .filter(pl.col("n").count().over(["i"]) == 2)
+        .filter(pl.col("n").is_not_null())
+    ).collect().to_dict(False) == {"i": [1], "n": [0]}
