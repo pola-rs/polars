@@ -604,7 +604,7 @@ impl ALogicalPlan {
         feature = "streaming"
     ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
-        let mut inputs = [None];
+        let mut inputs = [None, None];
         self.copy_inputs(&mut inputs);
         inputs[0]
     }
