@@ -8,12 +8,12 @@ Miscellaneous
 
     LazyFrame.cache
     LazyFrame.collect
-    LazyFrame.sink_parquet
     LazyFrame.fetch
     LazyFrame.lazy
     LazyFrame.map
     LazyFrame.pipe
     LazyFrame.profile
+    LazyFrame.sink_parquet
 
 
 Read/write logical plan
