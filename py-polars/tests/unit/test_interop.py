@@ -260,6 +260,12 @@ def test_from_dicts() -> None:
     assert df.schema == {"a": pl.Int64, "b": pl.Int64}
 
 
+def test_from_dict_no_inference() -> None:
+    schema = {"a": pl.Utf8}
+    data = [{"a": "aa"}]
+    pl.from_dicts(data, schema=schema, infer_schema_length=0)
+
+
 def test_from_dicts_struct() -> None:
     data = [{"a": {"b": 1, "c": 2}, "d": 5}, {"a": {"b": 3, "c": 4}, "d": 6}]
     df = pl.from_dicts(data)

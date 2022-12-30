@@ -11,7 +11,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     ForwardRef,
     Mapping,
     Optional,
@@ -86,7 +85,7 @@ ColumnsType: TypeAlias = Union[
     Mapping[str, Union[PolarsDataType, PythonDataType]],
     Sequence[Tuple[str, Union[PolarsDataType, PythonDataType, None]]],
 ]
-Schema: TypeAlias = Dict[str, PolarsDataType]
+Schema: TypeAlias = Mapping[str, PolarsDataType]
 
 DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
 
