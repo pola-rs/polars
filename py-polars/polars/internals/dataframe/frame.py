@@ -6,6 +6,7 @@ import os
 import random
 import sys
 import typing
+from collections import namedtuple
 from collections.abc import Sized
 from datetime import timedelta
 from io import BytesIO, IOBase, StringIO
@@ -6543,9 +6544,33 @@ class DataFrame:
             acc = operation(acc, self.to_series(i))
         return acc
 
+    @overload
     def row(
-        self, index: int | None = None, *, by_predicate: pli.Expr | None = None
+        self,
+        index: int | None = ...,
+        *,
+        by_predicate: pli.Expr | None = ...,
+        named: Literal[False] = ...,
     ) -> tuple[Any, ...]:
+        ...
+
+    @overload
+    def row(
+        self,
+        index: int | None = ...,
+        *,
+        by_predicate: pli.Expr | None = ...,
+        named: Literal[True] = ...,
+    ) -> Any:
+        ...
+
+    def row(
+        self,
+        index: int | None = None,
+        *,
+        by_predicate: pli.Expr | None = None,
+        named: bool = False,
+    ) -> tuple[Any, ...] | Any:
         """
         Get a row as tuple, either by index or by predicate.
 
@@ -6555,6 +6580,9 @@ class DataFrame:
             Row index.
         by_predicate
             Select the row according to a given expression/predicate.
+        named
+            Return a named tuple instead of a regular tuple. This is more expensive than
+            returning a regular tuple, but allows for accessing values by column name.
 
         Notes
         -----
@@ -6567,6 +6595,8 @@ class DataFrame:
 
         Examples
         --------
+        Specify an index to return the row at the given index as a tuple.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -6574,10 +6604,16 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> # return the row at the given index
         >>> df.row(2)
         (3, 8, 'c')
-        >>> # return the row that matches the given predicate
+
+        Specify ``named=True`` to get a named tuple.
+
+        >>> df.row(2, named=True)
+        Row(foo=3, bar=8, ham='c')
+
+        Use ``by_predicate`` to return the row that matches the given predicate.
+
         >>> df.row(by_predicate=(pl.col("ham") == "b"))
         (2, 7, 'b')
 
@@ -6588,8 +6624,16 @@ class DataFrame:
             )
         elif isinstance(index, pli.Expr):
             raise TypeError("Expressions should be passed to the 'by_predicate' param")
-        elif isinstance(index, int):
-            return self._df.row_tuple(index)
+
+        if named:
+            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
+
+        if isinstance(index, int):
+            row = self._df.row_tuple(index)
+            if named:
+                return Row(*row)
+            else:
+                return row
         elif isinstance(by_predicate, pli.Expr):
             rows = self.filter(by_predicate).rows()
             n_rows = len(rows)
@@ -6599,13 +6643,31 @@ class DataFrame:
                 )
             elif n_rows == 0:
                 raise NoRowsReturned(f"Predicate <{by_predicate!s}> returned no rows")
-            return rows[0]
+            row = rows[0]
+            if named:
+                return Row(*row)
+            else:
+                return row
         else:
             raise ValueError("One of 'index' or 'by_predicate' must be set")
 
-    def rows(self) -> list[tuple[Any, ...]]:
+    @overload
+    def rows(self, named: Literal[False] = ...) -> list[tuple[Any, ...]]:
+        ...
+
+    @overload
+    def rows(self, named: Literal[True] = ...) -> list[Any]:
+        ...
+
+    def rows(self, named: bool = False) -> list[tuple[Any, ...]] | list[Any]:
         """
-        Convert columnar data to rows as python tuples.
+        Returns the rows of this DataFrame as a list of Python tuples.
+
+        Parameters
+        ----------
+        named
+            Return named tuples instead of regular tuples. This is more expensive than
+            returning regular tuples, but allows for accessing values by column name.
 
         Examples
         --------
@@ -6617,19 +6679,61 @@ class DataFrame:
         ... )
         >>> df.rows()
         [(1, 2), (3, 4), (5, 6)]
+        >>> df.rows(named=True)
+        [Row(a=1, b=2), Row(a=3, b=4), Row(a=5, b=6)]
 
         """
-        return self._df.row_tuples()
+        if named:
+            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
+            return [Row(*row) for row in self._df.row_tuples()]
+        else:
+            return self._df.row_tuples()
 
-    def iterrows(self) -> Iterator[tuple[Any, ...]]:
+    @overload
+    def iterrows(self, named: Literal[False] = ...) -> Iterator[tuple[Any, ...]]:
+        ...
+
+    @overload
+    def iterrows(self, named: Literal[True] = ...) -> Iterator[Any]:
+        ...
+
+    def iterrows(
+        self, named: bool = False
+    ) -> Iterator[tuple[Any, ...]] | Iterator[Any]:
         """
         Returns an iterator over the rows in the DataFrame.
 
-        This is very expensive and should not be used
-        in any performance critical code.
+        Parameters
+        ----------
+        named
+            Return named tuples instead of regular tuples. This is more expensive than
+            returning regular tuples, but allows for accessing values by column name.
+
+        Warnings
+        --------
+        This is very expensive and should not be used in any performance critical code!
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> [row[0] for row in df.iterrows()]
+        [1, 3, 5]
+        >>> [row.b for row in df.iterrows(named=True)]
+        [2, 4, 6]
+
         """
-        for i in range(self.height):
-            yield self.row(i)
+        if named:
+            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
+            for i in range(self.height):
+                yield Row(*self.row(i))
+        else:
+            for i in range(self.height):
+                yield self.row(i)
 
     def shrink_to_fit(self: DF, in_place: bool = False) -> DF:
         """
