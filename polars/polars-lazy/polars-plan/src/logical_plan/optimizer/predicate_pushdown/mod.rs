@@ -373,9 +373,16 @@ impl PredicatePushDown {
 
             Explode { input, columns, schema } => {
                 let condition = |name: Arc<str>| columns.iter().any(|s| s.as_str() == &*name);
+
+                // first columns that refer to the exploded columns should be done here
                 let mut local_predicates =
                     transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-                local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
+
+                // if any predicate is a pushdown boundary, thus influenced by order of predicates e.g.: sum(), over(), sort
+                // we do all here. #5950
+                if acc_predicates.values().chain(local_predicates.iter()).any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
+                    local_predicates.extend(acc_predicates.drain().map(|(_name, node)| node))
+                }
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 let lp = Explode { input, columns, schema };
