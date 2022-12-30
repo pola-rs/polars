@@ -1194,10 +1194,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         slice_pushdown: bool = True,
     ) -> pli.DataFrame:
         """
-        Collect into a DataFrame.
+        Persists a LazyFrame at the provided path.
 
-        Note: use :func:`fetch` if you want to run your query on the first `n` rows
-        only. This can be a huge time saver in debugging queries.
+        This allows streaming results that are larger than RAM to be written to disk.
 
         Parameters
         ----------
@@ -1242,6 +1241,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        >>> ldf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> ldf.sink_parquet("/tmp/out.parquet")  # doctest: +SKIP
 
         """
         if no_optimization:
