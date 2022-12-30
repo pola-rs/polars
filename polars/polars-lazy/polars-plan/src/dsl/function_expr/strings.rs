@@ -142,7 +142,7 @@ pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
     Ok(ca.rjust(width, fillchar).into_series())
 }
 
-pub(super) fn strip(s: &Series, matches: &Option<String>) -> PolarsResult<Series> {
+pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         Ok(ca
@@ -153,7 +153,7 @@ pub(super) fn strip(s: &Series, matches: &Option<String>) -> PolarsResult<Series
     }
 }
 
-pub(super) fn lstrip(s: &Series, matches: &Option<String>) -> PolarsResult<Series> {
+pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
 
     if let Some(matches) = matches {
@@ -165,7 +165,7 @@ pub(super) fn lstrip(s: &Series, matches: &Option<String>) -> PolarsResult<Serie
     }
 }
 
-pub(super) fn rstrip(s: &Series, matches: &Option<String>) -> PolarsResult<Series> {
+pub(super) fn rstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         Ok(ca
