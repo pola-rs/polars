@@ -29,12 +29,17 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
     fn eval(self, expr: Expr, parallel: bool) -> Expr {
         let this = self.into_list_name_space();
 
-        use crate::physical_plan::exotic::{prepare_eval_expr, prepare_expression_for_context};
+        use crate::physical_plan::exotic::prepare_expression_for_context;
         use crate::physical_plan::state::ExecutionState;
-        let expr = prepare_eval_expr(expr);
 
         let expr2 = expr.clone();
         let func = move |s: Series| {
+            for name in expr_to_leaf_column_names(&expr) {
+                if !name.is_empty() {
+                    return Err(PolarsError::ComputeError(r#"Named columns not allowed in 'arr.eval'. Consider using 'element' or 'col("")'."#.into()));
+                }
+            }
+
             let lst = s.list()?;
             if lst.is_empty() {
                 // ensure we get the new schema
