@@ -40,7 +40,8 @@ from typing import Any, Iterator
 
 import polars
 
-def testSetup(*args):
+
+def doctest_teardown(d: doctest.DocTest) -> None:
     # don't let config changes leak between tests
     polars.Config.restore_defaults()
 
@@ -94,7 +95,10 @@ if __name__ == "__main__":
         # collect all tests
         tests = [
             doctest.DocTestSuite(
-                m, extraglobs={"pl": polars, "dirpath": Path(tmpdir)}, optionflags=1, setUp=testSetup
+                m,
+                extraglobs={"pl": polars, "dirpath": Path(tmpdir)},
+                optionflags=1,
+                tearDown=doctest_teardown,
             )
             for m in modules_in_path(src_dir)
         ]
