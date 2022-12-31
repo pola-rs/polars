@@ -135,7 +135,9 @@ def test_compare_frame_equal_nans() -> None:
         data={"x": [1.0, nan], "y": [None, 2.0]},
         columns=[("x", pl.Float32), ("y", pl.Float64)],
     )
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError, match="DataFrames are different\n\nExact value mismatch"
+    ):
         assert_frame_equal(df1, df2, check_exact=True)
 
 
@@ -148,35 +150,43 @@ def test_assert_frame_equal_pass() -> None:
 def test_assert_frame_equal_types() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     srs1 = pl.Series(values=[1, 2], name="a")
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError, match="DataFrames are different\n\nType mismatch"
+    ):
         assert_frame_equal(df1, srs1)  # type: ignore[arg-type]
 
 
 def test_assert_frame_equal_length_mismatch() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"a": [1, 2, 3]})
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError, match="DataFrames are different\n\nLength mismatch"
+    ):
         assert_frame_equal(df1, df2)
 
 
 def test_assert_frame_equal_column_mismatch() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"b": [1, 2]})
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError, match="Columns \\['a'\\] in left frame, but not in right"
+    ):
         assert_frame_equal(df1, df2)
 
 
 def test_assert_frame_equal_column_mismatch2() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
-    df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    with pytest.raises(AssertionError):
+    df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
+    with pytest.raises(
+        AssertionError, match="Columns \\['b', 'c'\\] in right frame, but not in left"
+    ):
         assert_frame_equal(df1, df2)
 
 
 def test_assert_frame_equal_column_mismatch_order() -> None:
     df1 = pl.DataFrame({"b": [3, 4], "a": [1, 2]})
     df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    with pytest.raises(AssertionError):
+    with pytest.raises(AssertionError, match="Columns are not in the same order"):
         assert_frame_equal(df1, df2)
     assert_frame_equal(df1, df2, check_column_names=False)
 

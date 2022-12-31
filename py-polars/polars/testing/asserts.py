@@ -57,22 +57,25 @@ def assert_frame_equal(
     """
     if isinstance(left, pli.LazyFrame) and isinstance(right, pli.LazyFrame):
         left, right = left.collect(), right.collect()
-        obj = "pli.LazyFrame"
+        obj = "LazyFrames"
     else:
-        obj = "pli.DataFrame"
+        obj = "DataFrames"
 
     if not (isinstance(left, pli.DataFrame) and isinstance(right, pli.DataFrame)):
         raise_assert_detail(obj, "Type mismatch", type(left), type(right))
     elif left.shape[0] != right.shape[0]:
         raise_assert_detail(obj, "Length mismatch", left.shape, right.shape)
 
-    # this assumes we want it in the same order
-    union_cols = list(set(left.columns).union(set(right.columns)))
-    for c in union_cols:
-        if c not in right.columns:
-            raise AssertionError(f"column {c} in left frame, but not in right")
-        if c not in left.columns:
-            raise AssertionError(f"column {c} in right frame, but not in left")
+    left_not_right = [c for c in left.columns if c not in right.columns]
+    if left_not_right:
+        raise AssertionError(
+            f"Columns {left_not_right} in left frame, but not in right"
+        )
+    right_not_left = [c for c in right.columns if c not in left.columns]
+    if right_not_left:
+        raise AssertionError(
+            f"Columns {right_not_left} in right frame, but not in left"
+        )
 
     if check_column_names:
         if left.columns != right.columns:
