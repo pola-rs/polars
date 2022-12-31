@@ -8,7 +8,7 @@ use polars_utils::HashSingle;
 use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
-use crate::{using_string_cache, StrHashGlobal, StringCache, POOL};
+use crate::{using_string_cache, StringCache, POOL};
 
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
@@ -272,31 +272,15 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         {
             let cache = &mut crate::STRING_CACHE.lock_map();
             id = cache.uuid;
-            let global_mapping = &mut cache.map;
-            let hb = global_mapping.hasher().clone();
 
             for s in values.values_iter() {
-                let h = hb.hash_single(s);
-                let mut global_idx = global_mapping.len() as u32;
-                // Note that we don't create the StrHashGlobal to search the key in the hashmap
-                // as StrHashGlobal may allocate a string
-                let entry = global_mapping
-                    .raw_entry_mut()
-                    .from_hash(h, |val| (val.hash == h) && val.str == s);
+                let global_idx = cache.insert(s);
 
-                match entry {
-                    RawEntryMut::Occupied(entry) => global_idx = *entry.get(),
-                    RawEntryMut::Vacant(entry) => {
-                        // only just now we allocate the string
-                        let key = StrHashGlobal::new(s.into(), h);
-                        entry.insert_with_hasher(h, key, global_idx, |s| s.hash);
-                    }
-                }
                 // safety:
                 // we allocated enough
                 unsafe { local_to_global.push_unchecked(global_idx) }
             }
-            if global_mapping.len() > u32::MAX as usize {
+            if cache.len() > u32::MAX as usize {
                 panic!("not more than {} categories supported", u32::MAX)
             };
         }
@@ -355,29 +339,14 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         {
             let cache = &mut crate::STRING_CACHE.lock_map();
             id = cache.uuid;
-            let global_mapping = &mut cache.map;
 
             for (s, h) in values.values_iter().zip(hashes.into_iter()) {
-                let mut global_idx = global_mapping.len() as u32;
-                // Note that we don't create the StrHashGlobal to search the key in the hashmap
-                // as StrHashGlobal may allocate a string
-                let entry = global_mapping
-                    .raw_entry_mut()
-                    .from_hash(h, |val| (val.hash == h) && val.str == s);
-
-                match entry {
-                    RawEntryMut::Occupied(entry) => global_idx = *entry.get(),
-                    RawEntryMut::Vacant(entry) => {
-                        // only just now we allocate the string
-                        let key = StrHashGlobal::new(s.into(), h);
-                        entry.insert_with_hasher(h, key, global_idx, |s| s.hash);
-                    }
-                }
+                let global_idx = cache.insert_from_hash(h, s);
                 // safety:
                 // we allocated enough
                 unsafe { local_to_global.push_unchecked(global_idx) }
             }
-            if global_mapping.len() > u32::MAX as usize {
+            if cache.len() > u32::MAX as usize {
                 panic!("not more than {} categories supported", u32::MAX)
             };
         }
