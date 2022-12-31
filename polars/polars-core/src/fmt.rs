@@ -426,6 +426,7 @@ impl Display for DataFrame {
                 .unwrap_or("DEFAULT")
             {
                 "ASCII_FULL" => ASCII_FULL,
+                "ASCII_FULL_CONDENSED" => ASCII_FULL_CONDENSED,
                 "ASCII_NO_BORDERS" => ASCII_NO_BORDERS,
                 "ASCII_BORDERS_ONLY" => ASCII_BORDERS_ONLY,
                 "ASCII_BORDERS_ONLY_CONDENSED" => ASCII_BORDERS_ONLY_CONDENSED,
@@ -437,8 +438,8 @@ impl Display for DataFrame {
                 "UTF8_BORDERS_ONLY" => UTF8_BORDERS_ONLY,
                 "UTF8_HORIZONTAL_ONLY" => UTF8_HORIZONTAL_ONLY,
                 "NOTHING" => NOTHING,
-                "DEFAULT" => UTF8_FULL,
-                _ => UTF8_FULL,
+                "DEFAULT" => UTF8_FULL_CONDENSED,
+                _ => UTF8_FULL_CONDENSED,
             };
 
             let mut table = Table::new();

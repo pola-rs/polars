@@ -50,7 +50,6 @@ class ExprStructNameSpace:
         │ str │
         ╞═════╡
         │ a   │
-        ├╌╌╌╌╌┤
         │ b   │
         └─────┘
 
@@ -96,7 +95,6 @@ class ExprStructNameSpace:
         │ i64 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 2   │
         └─────┘
 
