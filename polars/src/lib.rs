@@ -321,15 +321,17 @@
 //! ```
 //! ## Config with ENV vars
 //!
-//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL):
+//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED):
 //!     
 //!                                    ASCII_FULL
+//!                                    ASCII_FULL_CONDENSED
 //!                                    ASCII_NO_BORDERS
 //!                                    ASCII_BORDERS_ONLY
 //!                                    ASCII_BORDERS_ONLY_CONDENSED
 //!                                    ASCII_HORIZONTAL_ONLY
 //!                                    ASCII_MARKDOWN
 //!                                    UTF8_FULL
+//!                                    UTF8_FULL_CONDENSED
 //!                                    UTF8_NO_BORDERS
 //!                                    UTF8_BORDERS_ONLY
 //!                                    UTF8_HORIZONTAL_ONLY

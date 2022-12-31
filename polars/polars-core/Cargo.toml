@@ -155,7 +155,7 @@ base64 = { version = "0.13", optional = true }
 bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.6", optional = true }
-comfy-table = { version = "6.1.1", optional = true, default_features = false }
+comfy-table = { version = "6.1.4", optional = true, default_features = false }
 hashbrown.workspace = true
 hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }

@@ -169,14 +169,12 @@ class Config:
         # │ f64 ┆ bool  │      | f64 | bool  |
         # ╞═════╪═══════╡      +=============+
         # │ 1.0 ┆ true  │  >>  | 1.0 | true  |
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      |-----+-------|
         # │ 2.5 ┆ false │      | 2.5 | false |
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      |-----+-------|
         # │ 5.0 ┆ true  │      | 5.0 | true  |
         # └─────┴───────┘      +-----+-------+
 
         """
-        fmt = "ASCII_FULL" if active else "UTF8_FULL"
+        fmt = "ASCII_FULL_CONDENSED" if active else "UTF8_FULL_CONDENSED"
         os.environ["POLARS_FMT_TABLE_FORMATTING"] = fmt
         return cls
 
@@ -222,9 +220,7 @@ class Config:
         # │        f64 ┆       bool │
         # ╞════════════╪════════════╡
         # │        1.0 ┆       true │
-        # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         # │        2.5 ┆      false │
-        # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         # │        5.0 ┆       true │
         # └────────────┴────────────┘
 
@@ -294,11 +290,9 @@ class Config:
         # │ abc ┆ xyz   │      │ abc (f64) ┆ xyz (bool) │
         # │ --- ┆ ---   │      ╞═══════════╪════════════╡
         # │ f64 ┆ bool  │      │ 1.0       ┆ true       │
-        # ╞═════╪═══════╡      ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        # │ 1.0 ┆ true  │  >>  │ 2.5       ┆ false      │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        # │ 2.5 ┆ false │      │ 5.0       ┆ true       │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └───────────┴────────────┘
+        # ╞═════╪═══════╡  >>  │ 2.5       ┆ false      │
+        # │ 1.0 ┆ true  │      │ 5.0       ┆ true       │
+        # │ 2.5 ┆ false │      └───────────┴────────────┘
         # │ 5.0 ┆ true  │
         # └─────┴───────┘
 
@@ -321,11 +315,9 @@ class Config:
         # │ abc ┆ xyz   │      │ --- ┆ ---   │
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
         # │ f64 ┆ bool  │      ╞═════╪═══════╡
-        # ╞═════╪═══════╡      │ 1.0 ┆ true  │
-        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
-        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # ╞═════╪═══════╡  >>  │ 1.0 ┆ true  │
+        # │ 1.0 ┆ true  │      │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
         # └─────┴───────┘      shape: (3, 2)
 
@@ -338,6 +330,7 @@ class Config:
         cls,
         format: Literal[
             "ASCII_FULL",
+            "ASCII_FULL_CONDENSED",
             "ASCII_NO_BORDERS",
             "ASCII_BORDERS_ONLY",
             "ASCII_BORDERS_ONLY_CONDENSED",
@@ -357,14 +350,15 @@ class Config:
         Parameters
         ----------
         format : str
-            * "ASCII_FULL": ASCII, borders / lines.
+            * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
+            * "ASCII_FULL_CONDENSED": Same as ASCII_FULL, but with dense row spacing.
             * "ASCII_NO_BORDERS": ASCII, no borders.
             * "ASCII_BORDERS_ONLY": ASCII, borders only.
             * "ASCII_BORDERS_ONLY_CONDENSED": ASCII, borders only, dense row spacing.
             * "ASCII_HORIZONTAL_ONLY": ASCII, horizontal lines only.
             * "ASCII_MARKDOWN": ASCII, Markdown compatible.
-            * "UTF8_FULL": UTF8, with all borders and lines (default).
-            * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, with dense row spacing.
+            * "UTF8_FULL": UTF8, with all borders and lines, including row dividers.
+            * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, but with dense row spacing.
             * "UTF8_NO_BORDERS": UTF8, no borders.
             * "UTF8_BORDERS_ONLY": UTF8, borders only.
             * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
@@ -401,11 +395,9 @@ class Config:
         # │ abc ┆ xyz   │      │ abc ┆ xyz   │
         # │ --- ┆ ---   │      ╞═════╪═══════╡
         # │ f64 ┆ bool  │      │ 1.0 ┆ true  │
-        # ╞═════╪═══════╡      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └─────┴───────┘
+        # ╞═════╪═══════╡  >>  │ 2.5 ┆ false │
+        # │ 1.0 ┆ true  │      │ 5.0 ┆ true  │
+        # │ 2.5 ┆ false │      └─────┴───────┘
         # │ 5.0 ┆ true  │
         # └─────┴───────┘
 
@@ -428,11 +420,9 @@ class Config:
         # │ abc ┆ xyz   │      │ f64 ┆ bool  │
         # │ --- ┆ ---   │      ╞═════╪═══════╡
         # │ f64 ┆ bool  │      │ 1.0 ┆ true  │
-        # ╞═════╪═══════╡      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └─────┴───────┘
+        # ╞═════╪═══════╡  >>  │ 2.5 ┆ false │
+        # │ 1.0 ┆ true  │      │ 5.0 ┆ true  │
+        # │ 2.5 ┆ false │      └─────┴───────┘
         # │ 5.0 ┆ true  │
         # └─────┴───────┘
 
@@ -456,10 +446,8 @@ class Config:
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
         # │ f64 ┆ bool  │      ╞═════╪═══════╡
         # ╞═════╪═══════╡      │ 1.0 ┆ true  │
-        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
-        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
         # └─────┴───────┘
 
@@ -487,10 +475,8 @@ class Config:
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
         # │ f64 ┆ bool  │      ╞═════╪═══════╡
         # ╞═════╪═══════╡      │ 1.0 ┆ true  │
-        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
-        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
         # └─────┴───────┘
 
@@ -525,9 +511,7 @@ class Config:
         # │ f64 ┆ bool  │
         # ╞═════╪═══════╡
         # │ 1.0 ┆ true  │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         # │ ... ┆ ...   │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         # │ 5.0 ┆ false │
         # └─────┴───────┘
 
