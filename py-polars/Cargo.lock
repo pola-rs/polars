@@ -337,9 +337,9 @@ dependencies = [
 
 [[package]]
 name = "comfy-table"
-version = "6.1.3"
+version = "6.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e621e7e86c46fd8a14c32c6ae3cb95656621b4743a27d0cffedb831d46e7ad21"
+checksum = "6e7b787b0dc42e8111badfdbe4c3059158ccb2db8780352fa1b01e8ccf45cc4d"
 dependencies = [
  "crossterm",
  "strum",
@@ -1682,7 +1682,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.15.8"
+version = "0.15.9"
 dependencies = [
  "ahash",
  "bincode",
