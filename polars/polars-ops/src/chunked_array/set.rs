@@ -90,25 +90,22 @@ unsafe fn set_at_idx_impl<V, T: NativeType>(
             mut_validity.into()
         })
     } else {
-        let mut validity = MutableBitmap::default();
+        let mut null_idx = vec![];
         for (idx, val) in idx.iter().zip(values_iter) {
             match val {
-                Some(value) => {
-                    if validity.is_empty() {
-                        validity.extend_constant(len, true);
-                    }
-                    validity.set_unchecked(*idx as usize, true);
-                    *new_values_slice.get_unchecked_mut(*idx as usize) = value
-                }
+                Some(value) => *new_values_slice.get_unchecked_mut(*idx as usize) = value,
                 None => {
-                    if validity.is_empty() {
-                        validity.extend_constant(len, true);
-                    }
-                    validity.set_unchecked(*idx as usize, false)
+                    null_idx.push(*idx);
                 }
             }
         }
-        if !validity.is_empty() {
+        // only make a validity bitmap when null values are set
+        if !null_idx.is_empty() {
+            let mut validity = MutableBitmap::with_capacity(len);
+            validity.extend_constant(len, true);
+            for idx in null_idx {
+                validity.set_unchecked(idx as usize, false)
+            }
             arr.set_validity(Some(validity.into()))
         }
     }
