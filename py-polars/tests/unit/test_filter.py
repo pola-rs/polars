@@ -93,3 +93,13 @@ def test_predicate_order_explode_5950() -> None:
         .filter(pl.col("n").count().over(["i"]) == 2)
         .filter(pl.col("n").is_not_null())
     ).collect().to_dict(False) == {"i": [1], "n": [0]}
+
+
+def test_binary_simplification_5971() -> None:
+    df = pl.DataFrame(pl.Series("a", [1, 2, 3, 4]))
+    assert df.select((pl.col("a") > 2) | pl.lit(False))["a"].to_list() == [
+        False,
+        False,
+        True,
+        True,
+    ]
