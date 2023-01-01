@@ -62,9 +62,18 @@ where
     fn cast_impl(&self, data_type: &DataType, checked: bool) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => Err(PolarsError::ComputeError(
-                "Cannot cast numeric types to 'Categorical'".into(),
-            )),
+            DataType::Categorical(_) => {
+                if self.dtype() == &DataType::UInt32 {
+                    // safety:
+                    // we are guarded by the type system.
+                    let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
+                    CategoricalChunked::from_global_indices(ca.clone()).map(|ca| ca.into_series())
+                } else {
+                    Err(PolarsError::ComputeError(
+                        "Cannot cast numeric types to 'Categorical'".into(),
+                    ))
+                }
+            }
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
                 // cast to first field dtype
