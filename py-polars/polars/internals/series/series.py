@@ -862,7 +862,11 @@ class Series:
         key: int | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
         value: Any,
     ) -> None:
-        if isinstance(value, Sequence) and not isinstance(value, str):
+        # do the single idx as first branch as those are likely in a tight loop
+        if isinstance(key, int) and not isinstance(key, bool):
+            self.set_at_idx(key, value)
+            return None
+        elif isinstance(value, Sequence) and not isinstance(value, str):
             if self.is_numeric() or self.is_datelike():
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
@@ -889,8 +893,6 @@ class Series:
         elif isinstance(key, (list, tuple)):
             s = wrap_s(sequence_to_pyseries("", key, dtype=UInt32))
             self.__setitem__(s, value)
-        elif isinstance(key, int) and not isinstance(key, bool):
-            self.__setitem__([key], value)
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
 
