@@ -6447,6 +6447,11 @@ class DataFrame:
             Return named tuples instead of regular tuples. This is more expensive than
             returning regular tuples, but allows for accessing values by column name.
 
+        Warnings
+        --------
+        Row-iteration is not optimal as the underlying data is stored in columnar form;
+        where possible, prefer export via one of the dedicated export/output methods.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -6460,6 +6465,10 @@ class DataFrame:
         >>> df.rows(named=True)
         [Row(a=1, b=2), Row(a=3, b=4), Row(a=5, b=6)]
 
+        See Also
+        --------
+        iterrows : row iterator over frame data (does not materialise all rows).
+
         """
         if named:
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
@@ -6468,15 +6477,19 @@ class DataFrame:
             return self._df.row_tuples()
 
     @overload
-    def iterrows(self, named: Literal[False] = ...) -> Iterator[tuple[Any, ...]]:
+    def iterrows(
+        self, named: Literal[False] = ..., buffer_size: int = ...
+    ) -> Iterator[tuple[Any, ...]]:
         ...
 
     @overload
-    def iterrows(self, named: Literal[True] = ...) -> Iterator[Any]:
+    def iterrows(
+        self, named: Literal[True] = ..., buffer_size: int = ...
+    ) -> Iterator[Any]:
         ...
 
     def iterrows(
-        self, named: bool = False
+        self, named: bool = False, buffer_size: int = 500
     ) -> Iterator[tuple[Any, ...]] | Iterator[Any]:
         """
         Returns an iterator over the rows in the DataFrame.
@@ -6487,9 +6500,22 @@ class DataFrame:
             Return named tuples instead of regular tuples. This is more expensive than
             returning regular tuples, but allows for accessing values by column name.
 
+        buffer_size
+            Determines the number of rows that are buffered internally while iterating
+            over the data; you should only modify this in very specific cases where the
+            default value is determined not to be a good fit to your access pattern, as
+            the speedup from using the buffer is significant (~2-4x). Setting this
+            value to zero disables row buffering.
+
         Warnings
         --------
-        This is very expensive and should not be used in any performance critical code!
+        Row-iteration is not optimal as the underlying data is stored in columnar form;
+        where possible, prefer export via one of the dedicated export/output methods.
+
+        Notes
+        -----
+        If you are planning to materialise all frame data at once you should prefer
+        calling ``rows()``, which will be faster.
 
         Examples
         --------
@@ -6504,9 +6530,25 @@ class DataFrame:
         >>> [row.b for row in df.iterrows(named=True)]
         [2, 4, 6]
 
+        See Also
+        --------
+        rows : materialises all frame data as a list of rows.
+
         """
+        # note: buffering rows results in a 2-4x speedup over individual calls
+        # to ".row(i)", so it should only be disabled in extremely specific cases.
         if named:
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
+        if buffer_size:
+            for offset in range(0, self.height, buffer_size):
+                rows_chunk = self.slice(offset, buffer_size).rows(named=False)
+                if named:
+                    for row in rows_chunk:
+                        yield Row(*row)
+                else:
+                    yield from rows_chunk
+
+        elif named:
             for i in range(self.height):
                 yield Row(*self.row(i))
         else:

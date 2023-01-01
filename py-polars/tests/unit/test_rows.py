@@ -68,7 +68,7 @@ def test_rows() -> None:
 def test_iterrows() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [None, False, None]})
 
-    # Regular iterrows
+    # Default iterrows behaviour
     it = df.iterrows()
     assert next(it) == (1, None)
     assert next(it) == (2, False)
@@ -76,18 +76,27 @@ def test_iterrows() -> None:
     with pytest.raises(StopIteration):
         next(it)
 
-    # Named iterrows
-    it_named = df.iterrows(named=True)
+    # Apply explicit row-buffer size
+    for sz in (0, 1, 2, 3, 4):
+        it = df.iterrows(buffer_size=sz)
+        assert next(it) == (1, None)
+        assert next(it) == (2, False)
+        assert next(it) == (3, None)
+        with pytest.raises(StopIteration):
+            next(it)
 
-    row = next(it_named)
-    assert row.a == 1
-    assert row.b is None
-    row = next(it_named)
-    assert row.a == 2
-    assert row.b is False
-    row = next(it_named)
-    assert row.a == 3
-    assert row.b is None
+        # Return rows as namedtuples
+        it_named = df.iterrows(named=True, buffer_size=sz)
 
-    with pytest.raises(StopIteration):
-        next(it_named)
+        row = next(it_named)
+        assert row.a == 1
+        assert row.b is None
+        row = next(it_named)
+        assert row.a == 2
+        assert row.b is False
+        row = next(it_named)
+        assert row.a == 3
+        assert row.b is None
+
+        with pytest.raises(StopIteration):
+            next(it_named)
