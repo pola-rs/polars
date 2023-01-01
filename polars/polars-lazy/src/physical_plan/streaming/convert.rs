@@ -45,20 +45,11 @@ fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
         AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
             matches!(options.collect_groups, ApplyOptions::ApplyFlat)
         }
-        AExpr::Column(_) | AExpr::Literal(_) | AExpr::BinaryExpr { .. } | AExpr::Alias(_, _) => {
-            true
-        }
-        AExpr::Cast { data_type, .. } => {
-            // a Categorical's indices are bound to the rev map
-            // in its data type and streaming different chunks
-            // will create different rev-maps that are hard
-            // to combine in a streaming sort, join, groupby
-            match data_type {
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_) => false,
-                _ => true,
-            }
-        }
+        AExpr::Column(_)
+        | AExpr::Literal(_)
+        | AExpr::BinaryExpr { .. }
+        | AExpr::Alias(_, _)
+        | AExpr::Cast { .. } => true,
         _ => false,
     })
 }

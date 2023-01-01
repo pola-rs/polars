@@ -1,6 +1,6 @@
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ahash::RandomState;
@@ -106,6 +106,11 @@ pub(crate) struct SCacheInner {
 }
 
 impl SCacheInner {
+    #[inline]
+    pub(crate) unsafe fn get_unchecked(&self, cat: u32) -> &str {
+        self.payloads.get_unchecked(cat as usize).as_str()
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.map.len()
     }
@@ -166,7 +171,8 @@ impl Default for SCacheInner {
 /// In *eager* you need to specifically toggle global string cache to have a global effect.
 /// In *lazy* it is toggled on at the start of a computation run and turned of (deleted) when a
 /// result is produced.
-pub(crate) struct StringCache(pub(crate) Mutex<SCacheInner>);
+#[derive(Default)]
+pub(crate) struct StringCache(pub(crate) RwLock<SCacheInner>);
 
 impl StringCache {
     /// The global `StringCache` will always use a predictable seed. This allows local builders to mimic
@@ -176,19 +182,17 @@ impl StringCache {
     }
 
     /// Lock the string cache
-    pub(crate) fn lock_map(&self) -> MutexGuard<SCacheInner> {
-        self.0.lock().unwrap()
+    pub(crate) fn lock_map(&self) -> RwLockWriteGuard<SCacheInner> {
+        self.0.write().unwrap()
+    }
+
+    pub(crate) fn read_map(&self) -> RwLockReadGuard<SCacheInner> {
+        self.0.read().unwrap()
     }
 
     pub(crate) fn clear(&self) {
         let mut lock = self.lock_map();
         *lock = Default::default();
-    }
-}
-
-impl Default for StringCache {
-    fn default() -> Self {
-        StringCache(Mutex::new(Default::default()))
     }
 }
 

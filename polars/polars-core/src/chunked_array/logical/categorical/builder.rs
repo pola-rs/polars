@@ -1,11 +1,12 @@
 use std::hash::{Hash, Hasher};
 
 use arrow::array::*;
-use hashbrown::hash_map::RawEntryMut;
+use hashbrown::hash_map::{Entry, RawEntryMut};
 use polars_arrow::trusted_len::PushUnchecked;
 use polars_utils::HashSingle;
 
 use crate::datatypes::PlHashMap;
+use crate::error::PolarsError::ComputeError;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
@@ -411,6 +412,59 @@ fn fill_global_to_local(local_to_global: &[u32], global_to_local: &mut PlHashMap
         // we know the keys are unique so this is much faster
         global_to_local.insert_unique_unchecked(*global_idx, local_idx);
         local_idx += 1;
+    }
+}
+
+impl CategoricalChunked {
+    /// Create a [`CategoricalChunked`] from a categorical indices. The indices will
+    /// probe the global string cache.
+    pub(crate) fn from_global_indices(cats: UInt32Chunked) -> PolarsResult<CategoricalChunked> {
+        let cache = crate::STRING_CACHE.read_map();
+        let len = cache.len() as u32;
+        drop(cache);
+        let mut oob = false;
+
+        // fastest happy path
+        for cat in cats.into_iter().flatten() {
+            if cat >= len {
+                oob = true
+            }
+        }
+
+        if oob {
+            return Err(ComputeError("Cannot construct 'Categorical' from these categories. At least on of them is out of bounds.".into()));
+        }
+        Ok(unsafe { Self::from_global_indices_unchecked(cats) })
+    }
+
+    /// Create a [`CategoricalChunked`] from a categorical indices. The indices will
+    /// probe the global string cache.
+    ///
+    /// # Safety
+    ///
+    /// This does not do any bound checks
+    pub unsafe fn from_global_indices_unchecked(cats: UInt32Chunked) -> CategoricalChunked {
+        let cache = crate::STRING_CACHE.read_map();
+
+        let cap = std::cmp::min(std::cmp::min(cats.len(), cache.len()), HASHMAP_INIT_SIZE);
+        let mut rev_map = PlHashMap::with_capacity(cap);
+        let mut str_values = MutableUtf8Array::with_capacities(cap, cap * 24);
+
+        for arr in cats.downcast_iter() {
+            for cat in arr.into_iter().flatten().copied() {
+                let offset = str_values.len() as u32;
+
+                if let Entry::Vacant(entry) = rev_map.entry(cat) {
+                    entry.insert(offset);
+                    let str_val = cache.get_unchecked(cat);
+                    str_values.push(Some(str_val))
+                }
+            }
+        }
+
+        let rev_map = RevMapping::Global(rev_map, str_values.into(), cache.uuid);
+
+        CategoricalChunked::from_cats_and_rev_map_unchecked(cats, Arc::new(rev_map))
     }
 }
 
