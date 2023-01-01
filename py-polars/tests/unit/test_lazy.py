@@ -1168,44 +1168,35 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_is_between(fruits_cars: pl.DataFrame) -> None:
     result = fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"]
     assert result.series_equal(
         pl.Series("is_between", [False, False, True, False, False])
     )
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, False))["is_between"]
-    assert result.series_equal(
-        pl.Series("is_between", [False, False, True, False, False])
-    )
-
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, (False, False)))[
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="none"))[
         "is_between"
     ]
     assert result.series_equal(
         pl.Series("is_between", [False, False, True, False, False])
     )
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, True))["is_between"]
-    assert result.series_equal(
-        pl.Series("is_between", [False, True, True, True, False])
-    )
-
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, (True, True)))[
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="both"))[
         "is_between"
     ]
     assert result.series_equal(
         pl.Series("is_between", [False, True, True, True, False])
     )
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, (False, True)))[
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="right"))[
         "is_between"
     ]
     assert result.series_equal(
         pl.Series("is_between", [False, False, True, True, False])
     )
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, (True, False)))[
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="left"))[
         "is_between"
     ]
     assert result.series_equal(
@@ -1213,6 +1204,7 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
     )
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_is_between_data_types() -> None:
     df = pl.DataFrame(
         {
