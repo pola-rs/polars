@@ -49,3 +49,18 @@ def test_object_in_struct() -> None:
     assert (arr == np_a).sum() == 3
     arr = out["foo"][1]["B"]
     assert (arr == np_b).sum() == 3
+
+
+def test_empty_sort() -> None:
+    df = pl.DataFrame(
+        data=[
+            ({"name": "bar", "sort_key": 2},),
+            ({"name": "foo", "sort_key": 1},),
+        ],
+        columns=[
+            ("blob", pl.Object),
+        ],
+        orient="row",
+    )
+    df_filtered = df.filter(pl.col("blob").apply(lambda blob: blob["name"] == "baz"))
+    df_filtered.sort(pl.col("blob").apply(lambda blob: blob["sort_key"]))

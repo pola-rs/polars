@@ -1837,6 +1837,9 @@ impl DataFrame {
         nulls_last: bool,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
+        if self.height() == 0 {
+            return Ok(self.clone());
+        }
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
 
