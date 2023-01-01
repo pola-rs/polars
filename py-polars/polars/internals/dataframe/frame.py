@@ -6537,18 +6537,18 @@ class DataFrame:
         """
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
+        if named:
+            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
         if buffer_size:
             for offset in range(0, self.height, buffer_size):
                 rows_chunk = self.slice(offset, buffer_size).rows(named=False)
                 if named:
-                    Row = namedtuple("Row", self.columns)  # type: ignore[misc]
                     for row in rows_chunk:
                         yield Row(*row)
                 else:
                     yield from rows_chunk
 
         elif named:
-            Row = namedtuple("Row", self.columns)  # type: ignore[misc,no-redef]
             for i in range(self.height):
                 yield Row(*self.row(i))
         else:
