@@ -833,7 +833,13 @@ impl Series {
             AnyValue::Utf8(s) => Cow::Borrowed(s),
             AnyValue::Null => Cow::Borrowed("null"),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev) => Cow::Borrowed(rev.get(idx)),
+            AnyValue::Categorical(idx, rev, arr) => {
+                if arr.is_null() {
+                    Cow::Borrowed(rev.get(idx))
+                } else {
+                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(idx as usize)) }
+                }
+            }
             av => Cow::Owned(format!("{av}")),
         };
         Ok(out)

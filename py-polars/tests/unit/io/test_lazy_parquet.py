@@ -175,3 +175,17 @@ def test_streaming_categorical() -> None:
                 "name": ["Bob", "Alice"],
                 "amount": [400, 200],
             }
+
+
+def test_parquet_struct_categorical() -> None:
+    if os.name != "nt":
+        df = pl.DataFrame(
+            [
+                pl.Series("a", ["bob"], pl.Categorical),
+                pl.Series("b", ["foo"], pl.Categorical),
+            ]
+        )
+        df.write_parquet("/tmp/tmp.pq")
+        with pl.StringCache():
+            out = pl.read_parquet("/tmp/tmp.pq").select(pl.col("b").value_counts())
+        assert out.to_dict(False) == {"b": [{"b": "foo", "counts": 1}]}

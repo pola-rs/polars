@@ -746,8 +746,12 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             }
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev) => {
-                let s = rev.get(*idx);
+            AnyValue::Categorical(idx, rev, arr) => {
+                let s = if arr.is_null() {
+                    rev.get(*idx)
+                } else {
+                    unsafe { arr.deref_unchecked().value(*idx as usize) }
+                };
                 write!(f, "\"{s}\"")
             }
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),

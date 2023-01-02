@@ -237,7 +237,15 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             Int8(_) => DataType::Int8,
             Int16(_) => DataType::Int16,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, rev_map) => DataType::Categorical(Some(Arc::new((*rev_map).clone()))),
+            Categorical(_, rev_map, arr) => {
+                if arr.is_null() {
+                    DataType::Categorical(Some(Arc::new((*rev_map).clone())))
+                } else {
+                    let array = unsafe { arr.deref_unchecked().clone() };
+                    let rev_map = RevMapping::Local(array);
+                    DataType::Categorical(Some(Arc::new(rev_map)))
+                }
+            }
             #[cfg(feature = "object")]
             Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]
