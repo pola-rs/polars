@@ -1954,12 +1954,9 @@ class DataFrame:
     @overload
     def write_json(
         self,
-        file: None = None,
+        file: None = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        json_lines: bool | None = ...,
-        *,
-        to_string: bool | None = ...,
     ) -> str:
         ...
 
@@ -1969,9 +1966,6 @@ class DataFrame:
         file: IOBase | str | Path,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        json_lines: bool | None = ...,
-        *,
-        to_string: bool | None = ...,
     ) -> None:
         ...
 
@@ -1980,9 +1974,6 @@ class DataFrame:
         file: IOBase | str | Path | None = None,
         pretty: bool = False,
         row_oriented: bool = False,
-        json_lines: bool | None = None,
-        *,
-        to_string: bool | None = None,
     ) -> str | None:
         """
         Serialize to JSON representation.
@@ -1996,10 +1987,6 @@ class DataFrame:
             Pretty serialize json.
         row_oriented
             Write to row oriented json. This is slower, but more common.
-        json_lines
-            Deprecated argument. Toggle between `JSON` and `NDJSON` format.
-        to_string
-            Deprecated argument. Ignore file argument and return a string.
 
         See Also
         --------
@@ -2019,32 +2006,12 @@ class DataFrame:
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
 
         """
-        if json_lines is not None:
-            warnings.warn(
-                "`json_lines` argument for `DataFrame.write_json` will be removed in a"
-                " future version. Remove the argument or use `DataFrame.write_ndjson`.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        else:
-            json_lines = False
-
-        if to_string is not None:
-            warnings.warn(
-                "`to_string` argument for `DataFrame.write_json` will be removed in a"
-                " future version. Remove the argument and set `file=None`.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        else:
-            to_string = False
-
         if isinstance(file, (str, Path)):
             file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
-        if to_string or file is None or to_string_io:
+        if file is None or to_string_io:
             with BytesIO() as buf:
-                self._df.write_json(buf, pretty, row_oriented, json_lines)
+                self._df.write_json(buf, pretty, row_oriented)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -2053,7 +2020,7 @@ class DataFrame:
             else:
                 return json_str
         else:
-            self._df.write_json(file, pretty, row_oriented, json_lines)
+            self._df.write_json(file, pretty, row_oriented)
         return None
 
     @overload

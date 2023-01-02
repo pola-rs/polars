@@ -80,7 +80,7 @@ if not os.path.isfile(FOODS_IPC):
     pl.read_csv(FOODS_CSV).write_ipc(FOODS_IPC)
 
 if not os.path.isfile(FOODS_NDJSON):
-    pl.read_csv(FOODS_CSV).write_json(FOODS_NDJSON, json_lines=True)
+    pl.read_csv(FOODS_CSV).write_ndjson(FOODS_NDJSON)
 
 
 @pytest.fixture()
