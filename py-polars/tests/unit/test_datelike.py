@@ -2306,3 +2306,34 @@ def test_cast_time_to_duration() -> None:
     assert pl.Series([time(hour=0, minute=0, second=2)]).cast(
         pl.Duration
     ).item() == timedelta(seconds=2)
+
+
+def test_tz_aware_day_weekday() -> None:
+    start = datetime(2001, 1, 1)
+    stop = datetime(2001, 1, 9)
+    df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
+
+    df = df.with_columns(
+        [
+            pl.col("date").dt.with_time_zone("Asia/Tokyo").alias("tyo_date"),
+            pl.col("date").dt.with_time_zone("America/New_York").alias("ny_date"),
+        ]
+    )
+
+    assert df.select(
+        [
+            pl.col("date").dt.day().alias("day"),
+            pl.col("tyo_date").dt.day().alias("tyo_day"),
+            pl.col("ny_date").dt.day().alias("ny_day"),
+            pl.col("date").dt.weekday().alias("weekday"),
+            pl.col("tyo_date").dt.weekday().alias("tyo_weekday"),
+            pl.col("ny_date").dt.weekday().alias("ny_weekday"),
+        ]
+    ).to_dict(False) == {
+        "day": [1, 4, 7],
+        "tyo_day": [1, 4, 7],
+        "ny_day": [31, 3, 6],
+        "weekday": [1, 4, 7],
+        "tyo_weekday": [1, 4, 7],
+        "ny_weekday": [7, 3, 6],
+    }

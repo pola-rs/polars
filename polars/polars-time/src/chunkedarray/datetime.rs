@@ -69,13 +69,7 @@ pub trait DatetimeMethods: AsDatetime {
     /// Extract ISO weekday from underlying NaiveDateTime representation.
     /// Returns the weekday number where monday = 1 and sunday = 7
     fn weekday(&self) -> UInt32Chunked {
-        let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_weekday_ns,
-            TimeUnit::Microseconds => datetime_to_weekday_us,
-            TimeUnit::Milliseconds => datetime_to_weekday_ms,
-        };
-        ca.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::weekday)
     }
 
     /// Returns the ISO week number starting from 1.
