@@ -15,7 +15,6 @@ from typing import (
     Union,
     overload,
 )
-from warnings import warn
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -4566,7 +4565,8 @@ class Series:
         Parameters
         ----------
         seed
-            Seed for the random number generator.
+            Seed for the random number generator. If set to None (default), a random
+            seed is generated using the ``random`` module.
 
         Examples
         --------
@@ -4581,15 +4581,6 @@ class Series:
         ]
 
         """
-        if seed is None:
-            warn(
-                "Series.shuffle will default to a random seed in a future version."
-                " Provide a value for the seed argument to silence this warning.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            seed = 0
-        return self.to_frame().select(pli.col(self.name).shuffle(seed)).to_series()
 
     def ewm_mean(
         self,
