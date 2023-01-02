@@ -470,6 +470,21 @@ class Series:
     def __le__(self, other: Any) -> Series:
         return self._comp(other, "lt_eq")
 
+    def le(self, other: Any) -> Series:
+        return self.__le__(other)
+
+    def eq(self, other: Any) -> Series:
+        return self.__eq__(other)
+
+    def ne(self, other: Any) -> Series:
+        return self.__ne__(other)
+
+    def lt(self, other: Any) -> Series:
+        return self.__lt__(other)
+
+    def gt(self, other: Any) -> Series:
+        return self.__gt__(other)
+
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
         if isinstance(other, pli.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
