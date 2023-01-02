@@ -42,14 +42,6 @@ impl DatetimeChunked {
         }
     }
 
-    #[cfg(feature = "timezones")]
-    pub fn apply_tz_offset(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
-        let keep_tz = self.time_zone().as_deref().unwrap_or("UTC").to_string();
-        self.clone()
-            .with_time_zone(Some(tz.into()))
-            .cast_time_zone(&keep_tz)
-    }
-
     pub fn apply_on_tz_corrected<F>(&self, mut func: F) -> PolarsResult<DatetimeChunked>
     where
         F: FnMut(DatetimeChunked) -> PolarsResult<DatetimeChunked>,

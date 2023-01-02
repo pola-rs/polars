@@ -176,32 +176,6 @@ to_temporal_unit!(
 
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
-    datetime_to_weekday_ns,
-    p_weekday,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_weekday_ms,
-    p_weekday,
-    timestamp_ms_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_weekday_us,
-    p_weekday,
-    timestamp_us_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
     datetime_to_iso_year_ns,
     iso_year,
     timestamp_ns_to_datetime,
