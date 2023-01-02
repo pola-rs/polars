@@ -3327,7 +3327,8 @@ class Expr:
         self,
         start: Expr | datetime | date | int | float,
         end: Expr | datetime | date | int | float,
-        include_bounds: bool | tuple[bool, bool] = False,
+        include_bounds: bool | tuple[bool, bool] | None = None,
+        closed: ClosedWindow | None = None,
     ) -> Expr:
         """
         Check if this expression is between start and end.
@@ -3339,12 +3340,16 @@ class Expr:
         end
             Upper bound as primitive type or datetime.
         include_bounds
-           False:           Exclude both start and end (default).
-           True:            Include both start and end.
-           (False, False):  Exclude start and exclude end.
-           (True, True):    Include start and include end.
-           (False, True):   Exclude start and include end.
-           (True, False):   Include start and exclude end.
+            This argument is deprecated. Use ``closed`` instead!
+
+            - False:           Exclude both start and end (default).
+            - True:            Include both start and end.
+            - (False, False):  Exclude start and exclude end.
+            - (True, True):    Include start and include end.
+            - (False, True):   Exclude start and include end.
+            - (True, False):   Include start and exclude end.
+        closed : {'none', 'left', 'right', 'both'}
+            Define whether the interval is closed or not. Defaults to 'none'.
 
         Returns
         -------
@@ -3367,25 +3372,67 @@ class Expr:
         │ 5   ┆ false      │
         └─────┴────────────┘
 
+        Use the ``closed`` argument to include or exclude the values at the bounds.
+
+        >>> df.with_column(pl.col("num").is_between(2, 4, closed="left"))
+        shape: (5, 2)
+        ┌─────┬────────────┐
+        │ num ┆ is_between │
+        │ --- ┆ ---        │
+        │ i64 ┆ bool       │
+        ╞═════╪════════════╡
+        │ 1   ┆ false      │
+        │ 2   ┆ true       │
+        │ 3   ┆ true       │
+        │ 4   ┆ false      │
+        │ 5   ┆ false      │
+        └─────┴────────────┘
+
         """
-        if isinstance(include_bounds, list):
+        if include_bounds is not None:
             warnings.warn(
-                "include_bounds: list[bool] will not be supported in a future "
-                "version; pass include_bounds: tuple[bool, bool] instead",
+                "The `include_bounds` argument will be replaced in a future version."
+                " Use the `closed` argument to silence this warning.",
                 category=DeprecationWarning,
             )
-            include_bounds = tuple(include_bounds)
+            if isinstance(include_bounds, list):
+                include_bounds = tuple(include_bounds)
 
-        if include_bounds is False or include_bounds == (False, False):
+            if include_bounds is False or include_bounds == (False, False):
+                closed = "none"
+            elif include_bounds is True or include_bounds == (True, True):
+                closed = "both"
+            elif include_bounds == (False, True):
+                closed = "right"
+            elif include_bounds == (True, False):
+                closed = "left"
+            else:
+                raise ValueError(
+                    "include_bounds should be a bool or tuple[bool, bool]."
+                )
+
+        if closed is None:
+            warnings.warn(
+                "Default behaviour will change from excluding both bounds to including"
+                " both bounds. Provide a value for the `closed` argument to silence"
+                " this warning.",
+                category=FutureWarning,
+            )
+            closed = "none"
+
+        if closed == "none":
             return ((self > start) & (self < end)).alias("is_between")
-        elif include_bounds is True or include_bounds == (True, True):
+        elif closed == "both":
             return ((self >= start) & (self <= end)).alias("is_between")
-        elif include_bounds == (False, True):
+        elif closed == "right":
             return ((self > start) & (self <= end)).alias("is_between")
-        elif include_bounds == (True, False):
+        elif closed == "left":
             return ((self >= start) & (self < end)).alias("is_between")
         else:
-            raise ValueError("include_bounds should be a bool or tuple[bool, bool].")
+            raise ValueError(
+                "closed must be one of {'left', 'right', 'both', 'none'},"
+                f" got {closed}"
+            )
 
     def hash(
         self,
