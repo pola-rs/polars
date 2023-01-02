@@ -379,7 +379,7 @@ def test_query_4538() -> None:
             pl.Series("value", ["aaa", "bbb"]),
         ]
     )
-    assert df.select([pl.col("value").str.to_uppercase().is_in(["AAA"])])[
+    assert df.select([pl.col("value").str.upper().is_in(["AAA"])])[
         "value"
     ].to_list() == [True, False]
 

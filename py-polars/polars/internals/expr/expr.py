@@ -5946,7 +5946,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"letters": ["a", "b"]})
-        >>> df.select(pl.col("letters").str.to_uppercase())
+        >>> df.select(pl.col("letters").str.upper())
         shape: (2, 1)
         ┌─────────┐
         │ letters │

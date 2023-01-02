@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from warnings import warn
 
 import polars.internals as pli
 from polars.datatypes import (
@@ -210,14 +211,55 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_concat(delimiter))
 
-    def to_uppercase(self) -> pli.Expr:
+    def lower(self) -> pli.Expr:
         """
-        Transform to uppercase variant.
+        Transforms strings to lowercase.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": ["cat", "dog"]})
-        >>> df.select(pl.col("foo").str.to_uppercase())
+        >>> df = pl.DataFrame({"foo": ["CAT", "Dog"]})
+        >>> df.select(pl.col("foo").str.lower())
+        shape: (2, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ cat │
+        │ dog │
+        └─────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.str_to_lowercase())
+
+    def to_lowercase(self) -> pli.Expr:
+        """
+        Transforms strings to lowercase.
+
+        .. deprecated:: 0.15.10
+            `to_lowercase` will be removed in favor of the equivalent `lower`.
+
+        See Also
+        --------
+        lower
+
+        """
+        warn(
+            "`to_lowercase` will be replaced by the equivalent `lower` in a future"
+            "version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.lower()
+
+    def upper(self) -> pli.Expr:
+        """
+        Transforms strings to uppercase.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": ["cat", "Dog"]})
+        >>> df.select(pl.col("foo").str.upper())
         shape: (2, 1)
         ┌─────┐
         │ foo │
@@ -231,26 +273,25 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_to_uppercase())
 
-    def to_lowercase(self) -> pli.Expr:
+    def to_uppercase(self) -> pli.Expr:
         """
-        Transform to lowercase variant.
+        Transforms strings to uppercase.
 
-        Examples
+        .. deprecated:: 0.15.10
+            `to_uppercase` will be removed in favor of the equivalent `upper`.
+
+        See Also
         --------
-        >>> df = pl.DataFrame({"foo": ["CAT", "DOG"]})
-        >>> df.select(pl.col("foo").str.to_lowercase())
-        shape: (2, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ cat │
-        │ dog │
-        └─────┘
+        upper
 
         """
-        return pli.wrap_expr(self._pyexpr.str_to_lowercase())
+        warn(
+            "`to_uppercase` will be replaced by the equivalent `upper` in a future"
+            "version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.upper()
 
     def strip(self, matches: str | None = None) -> pli.Expr:
         r"""

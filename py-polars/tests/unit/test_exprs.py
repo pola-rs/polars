@@ -151,9 +151,11 @@ def test_wildcard_expansion() -> None:
     # see: #2867
 
     df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
-    assert df.select(
-        pl.concat_str(pl.all()).str.to_lowercase()
-    ).to_series().to_list() == ["xs", "yo", "zs"]
+    assert df.select(pl.concat_str(pl.all()).str.lower()).to_series().to_list() == [
+        "xs",
+        "yo",
+        "zs",
+    ]
 
 
 def test_split() -> None:

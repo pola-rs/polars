@@ -819,11 +819,65 @@ class StringNameSpace:
 
         """
 
+    def lower(self) -> pli.Series:
+        """
+        Transforms strings to lowercase.
+
+        Examples
+        --------
+        >>> s = pl.Series(["CAT", "Dog"])
+        >>> s.str.lower()
+        shape: (2,)
+        Series: '' [str]
+        [
+                "cat"
+                "dog"
+        ]
+
+        """
+
     def to_lowercase(self) -> pli.Series:
-        """Modify the strings to their lowercase equivalent."""
+        """
+        Transforms strings to lowercase.
+
+        .. deprecated:: 0.15.10
+            `to_lowercase` will be removed in favor of the equivalent `lower`.
+
+        See Also
+        --------
+        lower
+
+        """
+
+    def upper(self) -> pli.Series:
+        """
+        Transforms strings to uppercase.
+
+        Examples
+        --------
+        >>> s = pl.Series(["cat", "Dog"])
+        >>> s.str.upper()
+        shape: (2,)
+        Series: '' [str]
+        [
+                "CAT"
+                "DOG"
+        ]
+
+        """
 
     def to_uppercase(self) -> pli.Series:
-        """Modify the strings to their uppercase equivalent."""
+        """
+        Transforms strings to uppercase.
+
+        .. deprecated:: 0.15.10
+            `to_uppercase` will be removed in favor of the equivalent `upper`.
+
+        See Also
+        --------
+        upper
+
+        """
 
     @deprecated_alias(start="offset")
     def slice(self, offset: int, length: int | None = None) -> pli.Series:

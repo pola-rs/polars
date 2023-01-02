@@ -1814,16 +1814,16 @@ def test_str_replace_str_replace_all() -> None:
     verify_series_and_expr_api(s, expected, "str.replace_all", "o", "0")
 
 
-def test_str_to_lowercase() -> None:
+def test_str_lower() -> None:
     s = pl.Series(["Hello", "WORLD"])
     expected = pl.Series(["hello", "world"])
-    verify_series_and_expr_api(s, expected, "str.to_lowercase")
+    verify_series_and_expr_api(s, expected, "str.lower")
 
 
-def test_str_to_uppercase() -> None:
+def test_str_upper() -> None:
     s = pl.Series(["Hello", "WORLD"])
     expected = pl.Series(["HELLO", "WORLD"])
-    verify_series_and_expr_api(s, expected, "str.to_uppercase")
+    verify_series_and_expr_api(s, expected, "str.upper")
 
 
 def test_str_strip() -> None:
