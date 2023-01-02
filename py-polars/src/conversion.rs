@@ -200,8 +200,12 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Boolean(v) => v.into_py(py),
             AnyValue::Utf8(v) => v.into_py(py),
             AnyValue::Utf8Owned(v) => v.into_py(py),
-            AnyValue::Categorical(idx, rev) => {
-                let s = rev.get(idx);
+            AnyValue::Categorical(idx, rev, arr) => {
+                let s = if arr.is_null() {
+                    rev.get(idx)
+                } else {
+                    unsafe { arr.deref_unchecked().value(idx as usize) }
+                };
                 s.into_py(py)
             }
             AnyValue::Date(v) => {

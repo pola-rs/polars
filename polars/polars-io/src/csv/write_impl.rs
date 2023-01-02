@@ -69,7 +69,7 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
         AnyValue::Boolean(v) => write!(f, "{v}"),
         AnyValue::Utf8(v) => fmt_and_escape_str(f, v, options),
         #[cfg(feature = "dtype-categorical")]
-        AnyValue::Categorical(idx, rev_map) => {
+        AnyValue::Categorical(idx, rev_map, _) => {
             let v = rev_map.get(idx);
             fmt_and_escape_str(f, v, options)
         }

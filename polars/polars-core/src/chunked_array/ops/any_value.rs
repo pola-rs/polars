@@ -1,5 +1,8 @@
 use std::convert::TryFrom;
 
+#[cfg(feature = "dtype-categorical")]
+use polars_utils::sync::SyncPtr;
+
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
@@ -70,7 +73,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Categorical(rev_map) => {
             let arr = &*(arr as *const dyn Array as *const UInt32Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref())
+            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
         }
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
@@ -120,12 +123,28 @@ impl<'a> AnyValue<'a> {
                 let idx = *idx;
                 unsafe {
                     arr.values().iter().zip(*flds).map(move |(arr, fld)| {
-                        // TODO! this is hacky. Investigate if we only should put physical types
-                        // into structs
-                        if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
-                            let keys = arr.keys();
-                            arr_to_any_value(keys, idx, fld.data_type())
-                        } else {
+                        // The dictionary arrays categories don't have to map to the rev-map in the dtype
+                        // so we set the array pointer with values of the dictionary array.
+                        #[cfg(feature = "dtype-categorical")]
+                        {
+                            if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
+                                let keys = arr.keys();
+                                let values = arr.values();
+                                let values =
+                                    values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                                let arr = &*(keys as *const dyn Array as *const UInt32Array);
+                                let v = arr.value_unchecked(idx);
+                                let DataType::Categorical(Some(rev_map)) = fld.data_type() else {
+                                    unimplemented!()
+                                };
+                                AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
+                            } else {
+                                arr_to_any_value(&**arr, idx, fld.data_type())
+                            }
+                        }
+
+                        #[cfg(not(feature = "dtype-categorical"))]
+                        {
                             arr_to_any_value(&**arr, idx, fld.data_type())
                         }
                     })

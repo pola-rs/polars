@@ -7,6 +7,7 @@ pub mod stringcache;
 pub use builder::*;
 pub(crate) use merge::*;
 pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
+use polars_utils::sync::SyncPtr;
 
 use super::*;
 use crate::prelude::*;
@@ -147,7 +148,7 @@ impl LogicalType for CategoricalChunked {
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         match self.logical.0.get_unchecked(i) {
-            Some(i) => AnyValue::Categorical(i, self.get_rev_map()),
+            Some(i) => AnyValue::Categorical(i, self.get_rev_map(), SyncPtr::new_null()),
             None => AnyValue::Null,
         }
     }
@@ -295,7 +296,7 @@ mod test {
         );
         assert!(matches!(
             s.get(0)?,
-            AnyValue::Categorical(0, RevMapping::Local(_))
+            AnyValue::Categorical(0, RevMapping::Local(_), _)
         ));
 
         let groups = s.group_tuples(false, true);
