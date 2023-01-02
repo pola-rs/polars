@@ -332,10 +332,7 @@ class LazyFrame:
         return wrap_ldf(PyLazyFrame.read_json(file))
 
     @classmethod
-    def read_json(
-        cls,
-        file: str | Path | IOBase,
-    ) -> LazyFrame:
+    def read_json(cls, file: str | Path | IOBase) -> LazyFrame:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
 

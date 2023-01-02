@@ -14,7 +14,6 @@ from typing import (
     cast,
     overload,
 )
-from warnings import warn
 
 from polars import BatchedCsvReader
 
@@ -969,7 +968,7 @@ def read_parquet(
         )
 
 
-def read_json(file: str | Path | IOBase, json_lines: bool | None = None) -> DataFrame:
+def read_json(file: str | Path | IOBase) -> DataFrame:
     """
     Read into a DataFrame from a JSON file.
 
@@ -977,27 +976,12 @@ def read_json(file: str | Path | IOBase, json_lines: bool | None = None) -> Data
     ----------
     file
         Path to a file or a file-like object.
-    json_lines
-        Deprecated argument. Toggle between `JSON` and `NDJSON` format.
 
     See Also
     --------
     read_ndjson
 
     """
-    if json_lines is not None:
-        warn(
-            "`json_lines` argument for `read_json` will be removed in a future version."
-            " Remove the argument or use `pl.read_ndjson`.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    else:
-        json_lines = False
-
-    if json_lines:
-        return read_ndjson(file)
-
     return DataFrame._read_json(file)
 
 
