@@ -11,7 +11,6 @@ from polars.datatypes import (
     Time,
     is_polars_dtype,
 )
-from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -1104,7 +1103,6 @@ class ExprStringNameSpace:
             self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
         )
 
-    @deprecated_alias(start="offset")
     def slice(self, offset: int, length: int | None = None) -> pli.Expr:
         """
         Create subslices of the string values of a Utf8 Series.
