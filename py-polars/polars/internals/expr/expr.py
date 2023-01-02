@@ -242,6 +242,24 @@ class Expr:
     def __gt__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
 
+    def ge(self, other: Any) -> Expr:
+        return self.__ge__(other)
+
+    def le(self, other: Any) -> Expr:
+        return self.__le__(other)
+
+    def eq(self, other: Any) -> Expr:
+        return self.__eq__(other)
+
+    def ne(self, other: Any) -> Expr:
+        return self.__ne__(other)
+
+    def lt(self, other: Any) -> Expr:
+        return self.__lt__(other)
+
+    def gt(self, other: Any) -> Expr:
+        return self.__gt__(other)
+
     def __neg__(self) -> Expr:
         return pli.lit(0) - self
 
