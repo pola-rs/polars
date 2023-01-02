@@ -125,17 +125,26 @@ impl<'a> AnyValue<'a> {
                     arr.values().iter().zip(*flds).map(move |(arr, fld)| {
                         // The dictionary arrays categories don't have to map to the rev-map in the dtype
                         // so we set the array pointer with values of the dictionary array.
-                        if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
-                            let keys = arr.keys();
-                            let values = arr.values();
-                            let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-                            let arr = &*(keys as *const dyn Array as *const UInt32Array);
-                            let v = arr.value_unchecked(idx);
-                            let DataType::Categorical(Some(rev_map)) = fld.data_type() else {
-                                unimplemented!()
-                            };
-                            AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
-                        } else {
+                        #[cfg(feature = "dtype-categorical")]
+                        {
+                            if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
+                                let keys = arr.keys();
+                                let values = arr.values();
+                                let values =
+                                    values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                                let arr = &*(keys as *const dyn Array as *const UInt32Array);
+                                let v = arr.value_unchecked(idx);
+                                let DataType::Categorical(Some(rev_map)) = fld.data_type() else {
+                                    unimplemented!()
+                                };
+                                AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
+                            } else {
+                                arr_to_any_value(&**arr, idx, fld.data_type())
+                            }
+                        }
+
+                        #[cfg(not(feature = "dtype-categorical"))]
+                        {
                             arr_to_any_value(&**arr, idx, fld.data_type())
                         }
                     })

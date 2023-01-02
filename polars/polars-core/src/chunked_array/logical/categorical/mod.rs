@@ -296,7 +296,7 @@ mod test {
         );
         assert!(matches!(
             s.get(0)?,
-            AnyValue::Categorical(0, RevMapping::Local(_))
+            AnyValue::Categorical(0, RevMapping::Local(_), _)
         ));
 
         let groups = s.group_tuples(false, true);
