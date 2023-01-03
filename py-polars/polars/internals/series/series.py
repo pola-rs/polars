@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import warnings
 from collections.abc import Sized
 from datetime import date, datetime, time, timedelta
@@ -77,11 +78,11 @@ from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
-    accessor,
     is_bool_sequence,
     is_int_sequence,
     range_to_slice,
     scale_bytes,
+    sphinx_accessor,
 )
 
 try:
@@ -104,6 +105,8 @@ if TYPE_CHECKING:
         SizeUnit,
         TimeUnit,
     )
+elif os.getenv("BUILDING_SPHINX_DOCS"):
+    property = sphinx_accessor
 
 
 def wrap_s(s: PySeries) -> Series:
@@ -4860,32 +4863,32 @@ class Series:
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the
     # namespace `str`
-    @accessor
+    @property
     def arr(self) -> ListNameSpace:
         """Create an object namespace of all list related methods."""
         return ListNameSpace(self)
 
-    @accessor
+    @property
     def cat(self) -> CatNameSpace:
         """Create an object namespace of all categorical related methods."""
         return CatNameSpace(self)
 
-    @accessor
+    @property
     def dt(self) -> DateTimeNameSpace:
         """Create an object namespace of all datetime related methods."""
         return DateTimeNameSpace(self)
 
-    @accessor
+    @property
     def str(self) -> StringNameSpace:
         """Create an object namespace of all string related methods."""
         return StringNameSpace(self)
 
-    @accessor
+    @property
     def bin(self) -> BinaryNameSpace:
         """Create an object namespace of all binary related methods."""
         return BinaryNameSpace(self)
 
-    @accessor
+    @property
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
