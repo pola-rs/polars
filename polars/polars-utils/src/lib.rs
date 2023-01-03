@@ -21,3 +21,6 @@ pub use hash::HashSingle;
 pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
+
+#[cfg(target_family = "wasm")]
+pub mod wasm;

@@ -158,8 +158,15 @@ impl Default for SCacheInner {
                 HASHMAP_INIT_SIZE,
                 StringCache::get_hash_builder(),
             ),
+            #[cfg(not(target_family = "wasm"))]
             uuid: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+
+            #[cfg(target_family = "wasm")]
+            uuid: wasm_timer::SystemTime::now()
+                .duration_since(wasm_timer::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos(),
             payloads: Vec::with_capacity(HASHMAP_INIT_SIZE),

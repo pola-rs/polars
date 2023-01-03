@@ -16,6 +16,7 @@ use crate::IdxSize;
 ///
 /// # Safety
 /// The caller must ensure that the right indexes fo `&[(_, IdxSize)]` are integers ranging from `0..idx.len`
+#[cfg(not(target_family = "wasm"))]
 pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
     let chunk_size = std::cmp::max(
         idx.len() / pool.current_num_threads(),
@@ -39,4 +40,41 @@ pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &
     // Safety:
     // all elements are written
     out.set_len(idx.len());
+}
+
+macro_rules! perfect_sort_inner {
+    ($pool:expr, $idx:expr, $idz:expr) => {{
+        let chunk_size = std::cmp::max(
+            $idx.len() / $pool.current_num_threads(),
+            $pool.current_num_threads(),
+        );
+
+        let mut out: Vec<IdxSize> = Vec::with_capacity($idx.len());
+        let ptr = out.as_mut_ptr() as *const IdxSize as usize;
+
+        $pool.install(|| {
+            $idx.par_chunks(chunk_size).for_each(|indices| {
+                let ptr = ptr as *mut IdxSize;
+                for (idx_val, idx_location) in indices {
+                    // Safety:
+                    // idx_location is in bounds by invariant of this function
+                    // and we ensured we have at least `idx.len()` capacity
+                    *ptr.add(*idx_location as usize) = *idx_val;
+                }
+            });
+        });
+        // Safety:
+        // all elements are written
+        out.set_len($idx.len());
+        out
+    }};
+}
+
+#[cfg(target_family = "wasm")]
+pub unsafe fn perfect_sort(
+    pool: &crate::wasm::Pool,
+    idx: &[(IdxSize, IdxSize)],
+    out: &mut Vec<IdxSize>,
+) -> Vec<IdxSize> {
+    perfect_sort_inner!(pool, idx, out)
 }

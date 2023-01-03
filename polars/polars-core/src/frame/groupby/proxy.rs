@@ -26,11 +26,14 @@ impl Drop for GroupsIdx {
         let v = std::mem::take(&mut self.all);
         // ~65k took approximately 1ms on local machine, so from that point we drop on other thread
         // to stop query from being blocked
+        #[cfg(not(target_family = "wasm"))]
         if v.len() > 1 << 16 {
             std::thread::spawn(move || drop(v));
         } else {
             drop(v);
         }
+        #[cfg(target_family = "wasm")]
+        drop(v);
     }
 }
 

@@ -148,6 +148,7 @@ docs-selection = [
 ]
 
 [dependencies]
+wasm-timer = "0.2.5"
 ahash.workspace = true
 anyhow.workspace = true
 arrow.workspace = true
