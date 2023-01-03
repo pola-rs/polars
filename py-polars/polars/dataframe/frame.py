@@ -58,7 +58,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import NoRowsReturned, TooManyRowsReturned
+from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions.lazy import col, lit
 from polars.io._utils import _is_local_file
 from polars.io.excel._write_utils import (
@@ -7707,8 +7707,8 @@ class DataFrame:
         to ensure clarity, the `by_predicate` parameter must be supplied by keyword.
 
         When using ``by_predicate`` it is an error condition if anything other than
-        one row is returned; more than one row raises ``TooManyRowsReturned``, and
-        zero rows will raise ``NoRowsReturned`` (both inherit from ``RowsException``).
+        one row is returned; more than one row raises ``TooManyRowsReturnedError``, and
+        zero rows will raise ``NoRowsReturnedError`` (both inherit from ``RowsError``).
 
         Warnings
         --------
@@ -7769,11 +7769,13 @@ class DataFrame:
             rows = self.filter(by_predicate).rows()
             n_rows = len(rows)
             if n_rows > 1:
-                raise TooManyRowsReturned(
+                raise TooManyRowsReturnedError(
                     f"Predicate <{by_predicate!s}> returned {n_rows} rows"
                 )
             elif n_rows == 0:
-                raise NoRowsReturned(f"Predicate <{by_predicate!s}> returned no rows")
+                raise NoRowsReturnedError(
+                    f"Predicate <{by_predicate!s}> returned no rows"
+                )
 
             row = rows[0]
             if named:

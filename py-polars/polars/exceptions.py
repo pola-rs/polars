@@ -6,7 +6,7 @@ try:
         DuplicateError,
         InvalidOperationError,
         NoDataError,
-        PanicException,
+        PolarsPanicError,
         SchemaError,
         SchemaFieldNotFoundError,
         ShapeError,
@@ -46,7 +46,7 @@ except ImportError:
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
 
-    class PanicException(Exception):  # type: ignore[no-redef]
+    class PolarsPanicError(Exception):  # type: ignore[no-redef]
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
 
@@ -54,15 +54,15 @@ class InvalidAssert(Exception):
     """Exception raised when an unsupported testing assert is made."""
 
 
-class RowsException(Exception):
+class RowsError(Exception):
     """Exception raised when the number of returned rows does not match expectation."""
 
 
-class NoRowsReturned(RowsException):
+class NoRowsReturnedError(RowsError):
     """Exception raised when no rows are returned, but at least one row is expected."""
 
 
-class TooManyRowsReturned(RowsException):
+class TooManyRowsReturnedError(RowsError):
     """Exception raised when more rows than expected are returned."""
 
 
@@ -73,12 +73,12 @@ __all__ = [
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
-    "NoRowsReturned",
-    "PanicException",
-    "RowsException",
+    "NoRowsReturnedError",
+    "PolarsPanicError",
+    "RowsError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
-    "TooManyRowsReturned",
+    "TooManyRowsReturnedError",
 ]
