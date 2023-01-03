@@ -26,9 +26,6 @@ all = [
   "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib]",
 ]
 
-[tool.isort]
-profile = "black"
-
 [tool.mypy]
 files = ["polars", "tests"]
 namespace_packages = true
@@ -88,4 +85,73 @@ exclude_lines = [
 ]
 
 [tool.ruff]
+# Assume Python 3.7.
+target-version = "py37"
+
 line-length = 88
+
+extend-exclude = [
+  # Automatically generated test artifacts
+  "venv/",
+  "target/",
+]
+
+select = [
+  # pycodestyle
+  "E",
+  "W",
+  # Pyflakes
+  "F",
+  # flake8-bugbear
+  "B",
+  # flake8-comprehensions
+  "C4",
+  # flake8-docstrings
+  "D",
+  # isort
+  "I001",
+  # flake8-simplify
+  "SIM",
+  # flake8-tidy-imports
+  "TID",
+  # flake8-quotes
+  "Q",
+  # pyupgrade
+  "UP",
+]
+ignore = []
+
+extend-select = ["D"]
+extend-ignore = [
+  # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
+  # numpy convention with a few additional lints
+  "D107",
+  "D203",
+  "D212",
+  "D402",
+  "D415",
+  "D416",
+  # TODO: Remove errors below to further improve docstring linting
+  # Ordered from most common to least common errors.
+  "D105",
+  "D100",
+  "D103",
+  "D102",
+  "D104",
+  "D101",
+]
+
+[tool.ruff.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.flake8-quotes]
+inline-quotes = "double"
+docstring-quotes = "double"
+multiline-quotes = "double"
+
+[tool.ruff.per-file-ignores]
+"polars/datatypes.py" = ["B019"]
+"tests/*/*.py" = ["D100", "D103"]
+"tests/docs/run_doc_examples.py" = ["D101", "D102", "D103"]
+"tests/parametric/__init__.py" = ["D104"]
+"tests/slow/__init__.py" = ["D104"]

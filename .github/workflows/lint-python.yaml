@@ -33,9 +33,7 @@ jobs:
         run: |
           black --check .
           blackdoc --check .
-          isort --check .
-          pyupgrade --py37-plus `find . -name "*.py" -type f`
-          flake8
+          ruff .
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:

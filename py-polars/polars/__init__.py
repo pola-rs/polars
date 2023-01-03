@@ -65,8 +65,10 @@ from polars.exceptions import (
 from polars.internals import BatchedCsvReader
 
 # TODO remove need for wrap_df
-from polars.internals.dataframe import wrap_df  # noqa: F401
-from polars.internals.dataframe import DataFrame
+from polars.internals.dataframe import (
+    DataFrame,
+    wrap_df,  # noqa: F401
+)
 from polars.internals.expr.expr import Expr
 from polars.internals.functions import (
     align_frames,
@@ -125,9 +127,9 @@ from polars.internals.lazy_functions import (
     struct,
     sum,
     tail,
+    var,
 )
 from polars.internals.lazy_functions import to_list as list
-from polars.internals.lazy_functions import var
 from polars.internals.lazyframe import LazyFrame
 
 # TODO: remove need for wrap_s
