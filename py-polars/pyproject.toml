@@ -121,6 +121,9 @@ select = [
 ]
 ignore = []
 
+fix = true
+fixable = ["I001"]
+
 extend-select = ["D"]
 extend-ignore = [
   # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
