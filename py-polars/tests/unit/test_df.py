@@ -2086,10 +2086,11 @@ def test_preservation_of_subclasses_after_groupby_statements() -> None:
     )
 
     # Round-trips to PivotOps and back should also preserve subclass
-    assert isinstance(
-        groupby.pivot(pivot_column="a", values_column="b").first(),
-        SubClassedDataFrame,
-    )
+    with pytest.deprecated_call():
+        assert isinstance(
+            groupby.pivot(pivot_column="a", values_column="b").first(),
+            SubClassedDataFrame,
+        )
 
 
 def test_explode_empty() -> None:
@@ -2493,15 +2494,19 @@ def test_glimpse() -> None:
     )
     result = df.glimpse()
 
-    expected = """Rows: 3
-Columns: 6
-$ a <Float64> 1.0, 2.8, 3.0                                                                             
-$ b   <Int64> 4, 5, None                                                                                
-$ c <Boolean> True, False, True                                                                         
-$ d    <Utf8> None, b, c                                                                                
-$ e    <Utf8> usd, eur, None                                                                            
-$ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01"""
-    assert result.strip() == expected
+    # Strip trailing whitespace for the purposes of this test
+    result_lines = [line.strip() for line in result.strip().split("\n")]
+    expected_lines = [
+        "Rows: 3",
+        "Columns: 6",
+        "$ a <Float64> 1.0, 2.8, 3.0",
+        "$ b   <Int64> 4, 5, None",
+        "$ c <Boolean> True, False, True",
+        "$ d    <Utf8> None, b, c",
+        "$ e    <Utf8> usd, eur, None",
+        "$ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01",
+    ]
+    assert result_lines == expected_lines
 
 
 def test_item() -> None:

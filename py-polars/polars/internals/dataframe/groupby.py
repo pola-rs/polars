@@ -414,6 +414,9 @@ class GroupBy(Generic[DF]):
         The pivot operation is based on the group key, a pivot column and an aggregation
         function on the values column.
 
+        .. deprecated:: 0.13.23
+            `DataFrame.groupby.pivot` will be removed in favour of `DataFrame.pivot`.
+
         Parameters
         ----------
         pivot_column
@@ -449,6 +452,12 @@ class GroupBy(Generic[DF]):
         └─────┴─────┴─────┴─────┘
 
         """
+        warnings.warn(
+            "`DataFrame.groupby.pivot` is deprecated and will be removed in a future"
+            " version. Use `DataFrame.pivot` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if isinstance(pivot_column, str):
             pivot_column = [pivot_column]
         if isinstance(values_column, str):
