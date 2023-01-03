@@ -20,7 +20,6 @@ This namespace is available after calling :code:`DataFrame.groupby(...)`.
     GroupBy.median
     GroupBy.min
     GroupBy.n_unique
-    GroupBy.pivot
     GroupBy.quantile
     GroupBy.sum
     GroupBy.tail
