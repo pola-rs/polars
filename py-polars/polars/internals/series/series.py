@@ -1041,7 +1041,7 @@ class Series:
 
         """
         sz = self._s.estimated_size()
-        return scale_bytes(sz, to=unit)
+        return scale_bytes(sz, unit)
 
     def sqrt(self) -> Series:
         """

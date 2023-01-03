@@ -2273,7 +2273,7 @@ class DataFrame:
 
         """
         sz = self._df.estimated_size()
-        return scale_bytes(sz, to=unit)
+        return scale_bytes(sz, unit)
 
     def transpose(
         self: DF,

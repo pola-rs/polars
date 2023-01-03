@@ -71,3 +71,6 @@ def test_estimated_size() -> None:
     assert s.estimated_size("mb") == (df.estimated_size("kb") / 1024)
     assert s.estimated_size("gb") == (df.estimated_size("mb") / 1024)
     assert s.estimated_size("tb") == (df.estimated_size("gb") / 1024)
+
+    with pytest.raises(ValueError):
+        s.estimated_size("milkshake")  # type: ignore[arg-type]
