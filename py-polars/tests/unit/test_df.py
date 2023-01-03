@@ -2214,13 +2214,6 @@ def test_preservation_of_subclasses_after_groupby_statements() -> None:
     groupby = subclassed_df.groupby("a")
     assert isinstance(groupby.agg(pl.count()), SubClassedDataFrame)
 
-    # Round-trips to PivotOps and back should also preserve subclass
-    with pytest.deprecated_call():
-        assert isinstance(
-            groupby.pivot(pivot_column="a", values_column="b").first(),
-            SubClassedDataFrame,
-        )
-
 
 def test_explode_empty() -> None:
     df = (
