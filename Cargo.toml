@@ -51,6 +51,10 @@ features = [
   "compute_filter",
   "compute_if_then_else",
 ]
+[workspace.dependencies.object_store]
+package = "object_store"
+git = "https://github.com/apache/arrow-rs"
+default-features = false
 
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }

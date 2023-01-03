@@ -33,11 +33,10 @@ compile = ["polars-plan/compile"]
 streaming = ["chunked_ids", "polars-pipe/compile", "polars-plan/streaming"]
 default = ["compile", "private"]
 parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
-parquet-async = [
-  "parquet",
-  "polars-plan/parquet-async",
-  "polars-io/parquet-async",
-  "polars-pipe/parquet-async",
+async = [
+  "polars-plan/async",
+  "polars-io/async",
+  "polars-pipe/async",
   "streaming",
 ]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]

@@ -260,3 +260,6 @@ impl PolarsIntegerType for Int64Type {}
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
+
+// Provide options to cloud providers (credentials, region).
+pub type CloudOptions = PlHashMap<String, String>;

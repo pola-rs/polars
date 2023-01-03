@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "parquet")]
+use polars_core::cloud::CloudOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
@@ -72,6 +74,7 @@ pub enum ALogicalPlan {
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
         options: ParquetOptions,
+        cloud_options: Option<CloudOptions>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -375,6 +378,7 @@ impl ALogicalPlan {
                 output_schema,
                 predicate,
                 options,
+                cloud_options,
                 ..
             } => {
                 let mut new_predicate = None;
@@ -388,6 +392,7 @@ impl ALogicalPlan {
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
                     options: options.clone(),
+                    cloud_options: cloud_options.clone(),
                 }
             }
             #[cfg(feature = "csv-file")]

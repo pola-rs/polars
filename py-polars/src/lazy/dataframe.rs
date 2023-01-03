@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
@@ -11,6 +12,7 @@ use polars::lazy::frame::{AllowedOptimizations, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
+use polars_core::cloud;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
@@ -33,6 +35,15 @@ use crate::py_modules::POLARS;
 pub struct PyLazyGroupBy {
     // option because we cannot get a self by value in pyo3
     pub lgb: Option<LazyGroupBy>,
+}
+/// Extract CloudOptions from a Python object.
+fn extract_cloud_options(url: &str, py_object: PyObject) -> PyResult<cloud::CloudOptions> {
+    let untyped_options = Python::with_gil(|py| py_object.extract::<HashMap<String, String>>(py))
+        .expect("Expected a dictionary for cloud_options");
+    Ok(
+        cloud::CloudOptions::from_untyped_config(url, untyped_options)
+            .map_err(PyPolarsErr::from)?,
+    )
 }
 
 #[pymethods]
@@ -264,6 +275,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "parquet")]
     #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
     pub fn new_from_parquet(
         path: String,
         n_rows: Option<usize>,
@@ -272,7 +284,11 @@ impl PyLazyFrame {
         rechunk: bool,
         row_count: Option<(String, IdxSize)>,
         low_memory: bool,
+        cloud_options: Option<PyObject>,
     ) -> PyResult<Self> {
+        let cloud_options = cloud_options
+            .map(|po| extract_cloud_options(&path, po))
+            .transpose()?;
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
             n_rows,
@@ -281,6 +297,7 @@ impl PyLazyFrame {
             rechunk,
             row_count,
             low_memory,
+            cloud_options,
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())

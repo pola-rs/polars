@@ -84,6 +84,7 @@ where
             path,
             file_info,
             options,
+            cloud_options,
             predicate,
             output_schema,
             ..
@@ -95,7 +96,7 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::ParquetSource::new(path, options, &file_info.schema)?;
+            let src = sources::ParquetSource::new(path, options, cloud_options, &file_info.schema)?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         _ => todo!(),
