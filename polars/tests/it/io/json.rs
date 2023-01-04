@@ -187,3 +187,15 @@ fn test_read_ndjson_iss_5875_part2() {
 
     assert_eq!(schema, df.unwrap().schema());
 }
+#[test]
+fn test_read_ndjson_iss_5875_part3() {
+    let jsonlines = r#"
+    {"key1":"value1", "key2": "value2", "key3": {"k1": 2, "k3": "value5", "k10": 5}}
+    {"key1":"value5", "key2": "value4", "key3": {"k1": 2, "k5": "value5", "k10": 4}}
+    {"key1":"value6", "key3": {"k1": 5, "k3": "value5"}}"#;
+
+    let cursor = Cursor::new(jsonlines);
+
+    let df = JsonLineReader::new(cursor).finish();
+    assert!(df.is_ok());
+}
