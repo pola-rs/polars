@@ -3471,8 +3471,7 @@ class Series:
         skip_nulls: bool = True,
     ) -> Series:
         """
-        Apply a custom/user-defined function (UDF) over elements in this Series and
-        return a new Series.
+        Apply a custom/user-defined function (UDF) over elements in this Series and return a new Series.
 
         If the function returns another datatype, the return_dtype arg should be set,
         otherwise the method will fail.
@@ -3505,7 +3504,7 @@ class Series:
         -------
         Series
 
-        """  # noqa: D400,D205
+        """  # noqa: E501
         if return_dtype is None:
             pl_return_dtype = None
         else:

@@ -401,7 +401,7 @@ class LazyFrame:
         --------
         schema : Returns a {colname:dtype} mapping.
 
-        """  # noqa: E501
+        """
         return self._ldf.dtypes()
 
     @property
