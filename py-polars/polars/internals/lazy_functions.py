@@ -2498,60 +2498,19 @@ def coalesce(
 
 
 @overload
-def from_epoch(
-    column: str | pli.Expr | pli.Series,
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: Literal[False],
-) -> pli.Expr:
+def from_epoch(column: str | pli.Expr, unit: EpochTimeUnit = ...) -> pli.Expr:
     ...
 
 
 @overload
 def from_epoch(
-    column: str | pli.Expr | pli.Series | Sequence[int],
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: Literal[True],
+    column: pli.Series | Sequence[int], unit: EpochTimeUnit = ...
 ) -> pli.Series:
     ...
 
 
-@overload
 def from_epoch(
-    column: pli.Series | Sequence[int],
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: Literal[True] = ...,
-) -> pli.Series:
-    ...
-
-
-@overload
-def from_epoch(
-    column: str | pli.Expr,
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: Literal[False] = ...,
-) -> pli.Expr:
-    ...
-
-
-@overload
-def from_epoch(
-    column: str | pli.Expr | pli.Series | Sequence[int],
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: bool = ...,
-) -> pli.Expr | pli.Series:
-    ...
-
-
-def from_epoch(
-    column: str | pli.Expr | pli.Series | Sequence[int],
-    unit: EpochTimeUnit = "s",
-    *,
-    eager: bool = False,
+    column: str | pli.Expr | pli.Series | Sequence[int], unit: EpochTimeUnit = "s"
 ) -> pli.Expr | pli.Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
@@ -2569,8 +2528,6 @@ def from_epoch(
         Series or expression to parse integers to pl.Datetime.
     unit
         The unit of the timesteps since epoch time.
-    eager
-        If eager evaluation is `True`, a Series is returned instead of an Expr.
 
     Examples
     --------
@@ -2586,6 +2543,17 @@ def from_epoch(
     │ 2022-10-25 07:31:39 │
     └─────────────────────┘
 
+    The function can also be used in an eager context by passing a Series.
+
+    >>> s = pl.Series([12345, 12346])
+    >>> pl.from_epoch(s, unit="d")
+    shape: (2,)
+    Series: '' [date]
+    [
+            2003-10-20
+            2003-10-21
+    ]
+
     """
     if isinstance(column, str):
         column = col(column)
@@ -2593,23 +2561,12 @@ def from_epoch(
         column = pli.Series(column)  # Sequence input handled by Series constructor
 
     if unit == "d":
-        expr = column.cast(Date)
+        return column.cast(Date)
     elif unit == "s":
-        expr = (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
+        return (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
     elif unit in DTYPE_TEMPORAL_UNITS:
-        expr = column.cast(Datetime(unit))
+        return column.cast(Datetime(unit))
     else:
         raise ValueError(
             f"'unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got '{unit}'."
         )
-
-    if eager:
-        if not isinstance(column, pli.Series):
-            raise ValueError(
-                "expected 'Series or Sequence' in 'from_epoch' if 'eager=True', got"
-                f" {type(column)}"
-            )
-        else:
-            return column.to_frame().select(expr).to_series()
-    else:
-        return expr
