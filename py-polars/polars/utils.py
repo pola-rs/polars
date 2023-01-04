@@ -5,7 +5,7 @@ import functools
 import os
 import sys
 import warnings
-from collections.abc import Sized
+from collections.abc import MappingView, Reversible, Sized
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import (
@@ -16,6 +16,7 @@ from typing import (
     Iterable,
     Sequence,
     TypeVar,
+    cast,
     overload,
 )
 
@@ -36,21 +37,16 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import ParamSpec, TypeGuard
 
+# note: reversed views don't match as instances of MappingView
+if sys.version_info >= (3, 8):
+    _reverse_mapping_views = tuple(
+        type(reversed(cast(Reversible[Any], view)))
+        for view in ({}.keys(), {}.values(), {}.items())
+    )
+
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import SizeUnit, TimeUnit
-
-_dict_itertypes = tuple(
-    type(obj)
-    for obj in [
-        {}.keys(),
-        {}.values(),
-        {}.items(),
-        reversed({}.keys()),
-        reversed({}.values()),
-        reversed({}.items()),
-    ]
-)
 
 
 def _process_null_values(
@@ -119,8 +115,10 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int
 
 def _is_generator(val: object) -> bool:
     return (
-        isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized)
-    ) or isinstance(val, _dict_itertypes)
+        (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
+        or isinstance(val, MappingView)
+        or (sys.version_info >= (3, 8) and isinstance(val, _reverse_mapping_views))
+    )
 
 
 def _date_to_pl_date(d: date) -> int:

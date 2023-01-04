@@ -1288,28 +1288,26 @@ def test_from_generator_or_iterable() -> None:
             "keys": d.keys(),
             "vals": d.values(),
             "itms": d.items(),
-            "rev_keys": reversed(d.keys()),
-            "rev_vals": reversed(d.values()),
-            "rev_itms": reversed(d.items()),
         }
     )
-    # ┌──────┬──────┬──────────┬──────────┬──────────┬──────────┐
-    # │ keys ┆ vals ┆ itms     ┆ rev_keys ┆ rev_vals ┆ rev_itms │
-    # │ ---  ┆ ---  ┆ ---      ┆ ---      ┆ ---      ┆ ---      │
-    # │ i64  ┆ str  ┆ object   ┆ i64      ┆ str      ┆ object   │
-    # ╞══════╪══════╪══════════╪══════════╪══════════╪══════════╡
-    # │ 0    ┆ x    ┆ (0, 'x') ┆ 2        ┆ z        ┆ (2, 'z') │
-    # │ 1    ┆ y    ┆ (1, 'y') ┆ 1        ┆ y        ┆ (1, 'y') │
-    # │ 2    ┆ z    ┆ (2, 'z') ┆ 0        ┆ x        ┆ (0, 'x') │
-    # └──────┴──────┴──────────┴──────────┴──────────┴──────────┘
     assert df.to_dict(False) == {
         "keys": [0, 1, 2],
         "vals": ["x", "y", "z"],
         "itms": [(0, "x"), (1, "y"), (2, "z")],
-        "rev_keys": [2, 1, 0],
-        "rev_vals": ["z", "y", "x"],
-        "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
     }
+    if sys.version_info >= (3, 8):
+        df = pl.DataFrame(
+            {
+                "rev_keys": reversed(d.keys()),
+                "rev_vals": reversed(d.values()),
+                "rev_itms": reversed(d.items()),
+            }
+        )
+        assert df.to_dict(False) == {
+            "rev_keys": [2, 1, 0],
+            "rev_vals": ["z", "y", "x"],
+            "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
+        }
 
 
 def test_from_rows() -> None:
