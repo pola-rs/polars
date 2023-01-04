@@ -60,3 +60,18 @@ def test_hmean_with_str_column() -> None:
     assert pl.DataFrame(
         {"int": [1, 2, 3], "bool": [True, True, None], "str": ["a", "b", "c"]}
     ).mean(axis=1).to_list() == [1.0, 1.5, 3.0]
+
+
+def test_list_aggregation_that_filters_all_data_6017() -> None:
+    out = (
+        pl.DataFrame({"col_to_groupby": [2], "flt": [1672740910.967138], "col3": [1]})
+        .groupby("col_to_groupby")
+        .agg(
+            (pl.col("flt").filter(pl.col("col3") == 0).diff() * 1000)
+            .diff()
+            .alias("calc")
+        )
+    )
+
+    assert out.schema == {"col_to_groupby": pl.Int64, "calc": pl.List(pl.Float64)}
+    assert out.to_dict(False) == {"col_to_groupby": [2], "calc": [[]]}

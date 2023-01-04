@@ -140,26 +140,24 @@ impl PhysicalExpr for ApplyExpr {
                         return Err(expression_err!(msg, self.expr, ComputeError));
                     }
 
+                    let name = s.name().to_string();
+                    let agg = ac.aggregated();
                     // collection of empty list leads to a null dtype
                     // see: #3687
-                    if s.len() == 0 {
+                    if agg.len() == 0 {
                         // create input for the function to determine the output dtype
                         // see #3946
-                        let agg = ac.aggregated();
                         let agg = agg.list().unwrap();
                         let input_dtype = agg.inner_dtype();
 
                         let input = Series::full_null("", 0, &input_dtype);
 
                         let output = self.function.call_udf(&mut [input])?;
-                        let ca = ListChunked::full(ac.series().name(), &output, 0);
+                        let ca = ListChunked::full(&name, &output, 0);
                         return Ok(self.finish_apply_groups(ac, ca));
                     }
 
-                    let name = s.name().to_string();
-
-                    let mut ca: ListChunked = ac
-                        .aggregated()
+                    let mut ca: ListChunked = agg
                         .list()
                         .unwrap()
                         .par_iter()
