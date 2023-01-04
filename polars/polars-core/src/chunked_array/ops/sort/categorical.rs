@@ -65,11 +65,14 @@ impl CategoricalChunked {
                     );
                     let cats: NoNull<UInt32Chunked> =
                         vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+                    let mut cats = cats.into_inner();
+                    cats.rename(self.name());
+
                     // safety:
                     // we only reordered the indexes so we are still in bounds
                     unsafe {
                         CategoricalChunked::from_cats_and_rev_map_unchecked(
-                            cats.into_inner(),
+                            cats,
                             self.get_rev_map().clone(),
                         )
                     }

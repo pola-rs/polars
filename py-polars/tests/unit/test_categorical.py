@@ -288,3 +288,20 @@ def test_categorical_in_struct_nulls() -> None:
     assert s[0] == {"job": None, "counts": 3}
     assert s[1] == {"job": "doctor", "counts": 2}
     assert s[2] == {"job": "waiter", "counts": 1}
+
+
+def test_sort_categoricals_6014() -> None:
+    with pl.StringCache():
+        # create basic categorical
+        df1 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_column(
+            pl.col("key").cast(pl.Categorical)
+        )
+        # create lexically-ordered categorical
+        df2 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_column(
+            pl.col("key").cast(pl.Categorical).cat.set_ordering("lexical")
+        )
+
+    out = df1.sort("key")
+    assert out.to_dict(False) == {"key": ["bbb", "aaa", "ccc"]}
+    out = df2.sort("key")
+    assert out.to_dict(False) == {"key": ["aaa", "bbb", "ccc"]}
