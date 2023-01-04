@@ -113,6 +113,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let arr = &*(arr as *const dyn Array as *const FixedSizeBinaryArray);
             PolarsExtension::arr_to_av(arr, idx)
         }
+        DataType::Null => AnyValue::Null,
         dt => panic!("not implemented for {dt:?}"),
     }
 }
