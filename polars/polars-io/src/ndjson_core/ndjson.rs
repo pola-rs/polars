@@ -215,16 +215,12 @@ impl<'a> CoreJsonReader<'a> {
                 .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity)?;
                     let _ = parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers);
-                    let mut df = DataFrame::new(
+                    DataFrame::new(
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
                             .collect::<_>(),
-                    )?;
-                    let columns: Vec<&String> = self.schema.iter_names().collect();
-
-                    df.set_column_names(&columns)?;
-                    Ok(df)
+                    )
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
