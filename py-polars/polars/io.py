@@ -1028,19 +1028,11 @@ def read_sql(
     """
     Read a SQL query into a DataFrame.
 
-    Reading a SQL query from the following data sources are supported:
+    A range of databases are supported, such as PostgreSQL, Redshift, MySQL, MariaDB,
+    Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
+    please see the connectorx docs:
 
-        * Postgres
-        * Mysql
-        * Sqlite
-        * Redshift (through postgres protocol)
-        * Clickhouse (through mysql protocol)
-
-    If a database source is not supported, an alternative solution is to first use
-    pandas to load the SQL query, then converting the result into a polars DataFrame:
-
-    >>> import pandas as pd
-    >>> df = pl.from_pandas(pd.read_sql(sql, engine))  # doctest: +SKIP
+    * https://github.com/sfu-db/connector-x#supported-sources--destinations
 
     Parameters
     ----------

@@ -6350,7 +6350,7 @@ class DataFrame:
         named: bool = False,
     ) -> tuple[Any, ...] | Any:
         """
-        Get a row as tuple, either by index or by predicate.
+        Get a single row as a tuple, either by index or by predicate.
 
         Parameters
         ----------
@@ -6370,6 +6370,11 @@ class DataFrame:
         When using ``by_predicate`` it is an error condition if anything other than
         one row is returned; more than one row raises ``TooManyRowsReturned``, and
         zero rows will raise ``NoRowsReturned`` (both inherit from ``RowsException``).
+
+        Warning
+        -------
+        You should NEVER use this method to iterate over a DataFrame; if you absolutely
+        require row-iteration you should strongly prefer ``iterrows()`` instead.
 
         Examples
         --------
@@ -6394,6 +6399,11 @@ class DataFrame:
 
         >>> df.row(by_predicate=(pl.col("ham") == "b"))
         (2, 7, 'b')
+
+        See Also
+        --------
+        iterrows : Row iterator over frame data (does not materialise all rows).
+        rows : Materialises all frame data as a list of rows.
 
         """
         if index is not None and by_predicate is not None:
@@ -6467,7 +6477,7 @@ class DataFrame:
 
         See Also
         --------
-        iterrows : row iterator over frame data (does not materialise all rows).
+        iterrows : Row iterator over frame data (does not materialise all rows).
 
         """
         if named:
@@ -6532,7 +6542,7 @@ class DataFrame:
 
         See Also
         --------
-        rows : materialises all frame data as a list of rows.
+        rows : Materialises all frame data as a list of rows.
 
         """
         # note: buffering rows results in a 2-4x speedup over individual calls
