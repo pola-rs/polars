@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import glob
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
@@ -11,11 +11,9 @@ from polars.datatypes import DataType
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.utils import format_path
 
-try:
+with suppress(ImportError):
     from polars.polars import ipc_schema as _ipc_schema
     from polars.polars import parquet_schema as _parquet_schema
-except ImportError:
-    pass
 
 
 def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:

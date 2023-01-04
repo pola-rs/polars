@@ -366,11 +366,9 @@ def sequence_to_pyseries(
                         )
                 except ValueError:  # pragma: no cover
                     return sequence_from_anyvalue_or_object(name, values)
-                try:
+                with suppress(pa.lib.ArrowInvalid, pa.lib.ArrowTypeError):
                     arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
                     return arrow_to_pyseries(name, arrow_values)
-                except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError):
-                    pass
 
             # Convert mixed sequences like `[[12], "foo", 9]`
             return PySeries.new_object(name, values, strict)
