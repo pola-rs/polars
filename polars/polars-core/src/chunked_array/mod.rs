@@ -343,7 +343,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
         if !self.has_validity() {
-            return BooleanChunked::full("is_null", false, self.len());
+            return BooleanChunked::full(self.name(), false, self.len());
         }
         let chunks = self
             .chunks
@@ -362,7 +362,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the valid values.
     pub fn is_not_null(&self) -> BooleanChunked {
         if !self.has_validity() {
-            return BooleanChunked::full("is_not_null", true, self.len());
+            return BooleanChunked::full(self.name(), true, self.len());
         }
         let chunks = self
             .chunks
