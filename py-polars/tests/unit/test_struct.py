@@ -718,3 +718,15 @@ def test_struct_categorical_5843() -> None:
             {"foo": "c", "counts": 1},
         ]
     }
+
+
+def test_struct_empty() -> None:
+    # List<struct>
+    df = pl.DataFrame({"a": [[{}]]})
+    assert df.to_dict(False) == {"a": [[{"": None}]]}
+    # Struct one not empty
+    df = pl.DataFrame({"a": [[{}, {"a": 10}]]})
+    assert df.to_dict(False) == {"a": [[{"a": None}, {"a": 10}]]}
+    # Empty struct
+    df = pl.DataFrame({"a": [{}]})
+    assert df.to_dict(False) == {"a": [{"": None}]}
