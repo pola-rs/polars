@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import textwrap
 import typing
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -2497,19 +2498,19 @@ def test_glimpse() -> None:
     )
     result = df.glimpse()
 
-    # Strip trailing whitespace for the purposes of this test
-    result_lines = [line.strip() for line in result.strip().split("\n")]
-    expected_lines = [
-        "Rows: 3",
-        "Columns: 6",
-        "$ a <Float64> 1.0, 2.8, 3.0",
-        "$ b   <Int64> 4, 5, None",
-        "$ c <Boolean> True, False, True",
-        "$ d    <Utf8> None, b, c",
-        "$ e    <Utf8> usd, eur, None",
-        "$ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01",
-    ]
-    assert result_lines == expected_lines
+    expected = textwrap.dedent(
+        """\
+        Rows: 3
+        Columns: 6
+        $ a <Float64> 1.0, 2.8, 3.0
+        $ b   <Int64> 4, 5, None
+        $ c <Boolean> True, False, True
+        $ d    <Utf8> None, b, c
+        $ e    <Utf8> usd, eur, None
+        $ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01
+        """
+    )
+    assert result == expected
 
 
 def test_item() -> None:
