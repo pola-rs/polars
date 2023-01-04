@@ -276,3 +276,15 @@ def test_categorical_max_null_5437() -> None:
         .with_column(pl.col("strings").cast(pl.Categorical).alias("cats"))
         .select(pl.all().max())
     ).to_dict(False) == {"strings": ["c"], "values": [3], "cats": [None]}
+
+
+def test_categorical_in_struct_nulls() -> None:
+    s = pl.Series(
+        "job", ["doctor", "waiter", None, None, None, "doctor"], pl.Categorical
+    )
+    df = pl.DataFrame([s])
+    s = (df.select(pl.col("job").value_counts(sort=True)))["job"]
+
+    assert s[0] == {"job": None, "counts": 3}
+    assert s[1] == {"job": "doctor", "counts": 2}
+    assert s[2] == {"job": "waiter", "counts": 1}
