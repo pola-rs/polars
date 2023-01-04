@@ -1,6 +1,8 @@
 use std::convert::TryFrom;
 
 #[cfg(feature = "dtype-categorical")]
+use polars_arrow::is_valid::IsValid;
+#[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 
 #[cfg(feature = "object")]
@@ -133,11 +135,17 @@ impl<'a> AnyValue<'a> {
                                 let values =
                                     values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
                                 let arr = &*(keys as *const dyn Array as *const UInt32Array);
-                                let v = arr.value_unchecked(idx);
-                                let DataType::Categorical(Some(rev_map)) = fld.data_type() else {
-                                    unimplemented!()
-                                };
-                                AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
+
+                                if arr.is_valid_unchecked(idx) {
+                                    let v = arr.value_unchecked(idx);
+                                    let DataType::Categorical(Some(rev_map)) = fld.data_type() else {
+                                        unimplemented!()
+                                    };
+                                    AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
+                                } else {
+                                    AnyValue::Null
+                                }
+
                             } else {
                                 arr_to_any_value(&**arr, idx, fld.data_type())
                             }
