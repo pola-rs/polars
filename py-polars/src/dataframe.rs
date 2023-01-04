@@ -2,7 +2,6 @@ use std::io::BufWriter;
 use std::ops::Deref;
 
 use numpy::IntoPyArray;
-use polars::frame::groupby::GroupBy;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
@@ -1057,16 +1056,6 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {
-        let gb = Python::with_gil(|py| py.allow_threads(|| self.df.groupby(&by)))
-            .map_err(PyPolarsErr::from)?;
-        let selection = match select.as_ref() {
-            Some(s) => gb.select(s),
-            None => gb,
-        };
-        finish_groupby(selection, agg)
-    }
-
     pub fn groupby_apply(&self, by: Vec<&str>, lambda: PyObject) -> PyResult<Self> {
         let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
         let function = move |df: DataFrame| {
@@ -1103,21 +1092,6 @@ impl PyDataFrame {
         let df = gb.apply(function).map_err(PyPolarsErr::from)?;
 
         Ok(df.into())
-    }
-
-    #[allow(deprecated)]
-    pub fn groupby_quantile(
-        &self,
-        by: Vec<&str>,
-        select: Vec<String>,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-    ) -> PyResult<Self> {
-        let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
-        let selection = gb.select(&select);
-        let df = selection.quantile(quantile, interpolation.0);
-        let df = df.map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
     }
 
     pub fn clone(&self) -> Self {
@@ -1398,29 +1372,4 @@ impl PyDataFrame {
         let df = self.df.unnest(names).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
-}
-
-#[allow(deprecated)]
-fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
-    Python::with_gil(|py| {
-        let df = py.allow_threads(|| match agg {
-            "min" => gb.min(),
-            "max" => gb.max(),
-            "mean" => gb.mean(),
-            "first" => gb.first(),
-            "last" => gb.last(),
-            "sum" => gb.sum(),
-            "count" => gb.count(),
-            "n_unique" => gb.n_unique(),
-            "median" => gb.median(),
-            "agg_list" => gb.agg_list(),
-            "groups" => gb.groups(),
-            a => Err(PolarsError::ComputeError(
-                format!("agg fn {a} does not exists").into(),
-            )),
-        });
-
-        let df = df.map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    })
 }
