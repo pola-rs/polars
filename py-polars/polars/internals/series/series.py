@@ -3,14 +3,11 @@ from __future__ import annotations
 import math
 import os
 import warnings
-from collections.abc import Sized
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generator,
-    Iterable,
     NoReturn,
     Sequence,
     Union,
@@ -77,6 +74,7 @@ from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
+    _is_generator,
     _time_to_pl_time,
     is_bool_sequence,
     is_int_sequence,
@@ -277,9 +275,7 @@ class Series:
         elif _PANDAS_TYPE(values) and isinstance(values, (pd.Series, pd.DatetimeIndex)):
             self._s = pandas_to_pyseries(name, values)
 
-        elif isinstance(values, (Generator, Iterable)) and not isinstance(
-            values, Sized
-        ):
+        elif _is_generator(values):
             self._s = iterable_to_pyseries(
                 name,
                 values,

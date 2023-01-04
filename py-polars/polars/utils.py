@@ -5,9 +5,20 @@ import functools
 import os
 import sys
 import warnings
+from collections.abc import MappingView, Reversible, Sized
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generator,
+    Iterable,
+    Sequence,
+    TypeVar,
+    cast,
+    overload,
+)
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
@@ -25,6 +36,13 @@ if sys.version_info >= (3, 10):
     from typing import ParamSpec, TypeGuard
 else:
     from typing_extensions import ParamSpec, TypeGuard
+
+# note: reversed views don't match as instances of MappingView
+if sys.version_info >= (3, 8):
+    _reverse_mapping_views = tuple(
+        type(reversed(cast(Reversible[Any], view)))
+        for view in ({}.keys(), {}.values(), {}.items())
+    )
 
 
 if TYPE_CHECKING:
@@ -93,6 +111,14 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int
         return int(td.total_seconds() * 1e6)
     else:
         raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
+
+
+def _is_generator(val: object) -> bool:
+    return (
+        (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
+        or isinstance(val, MappingView)
+        or (sys.version_info >= (3, 8) and isinstance(val, _reverse_mapping_views))
+    )
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -308,6 +334,14 @@ def _in_notebook() -> bool:
 def format_path(path: str | Path) -> str:
     """Create a string path, expanding the home directory if present."""
     return os.path.expanduser(path)
+
+
+def arrlen(obj: Any) -> int | None:
+    """Return length of (non-string) sequence object; returns None for non-sequences."""
+    try:
+        return None if isinstance(obj, str) else len(obj)
+    except TypeError:
+        return None
 
 
 def threadpool_size() -> int:

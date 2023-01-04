@@ -4950,7 +4950,7 @@ class DataFrame:
         >>> from string import ascii_uppercase
         >>> df = pl.DataFrame(
         ...     {
-        ...         "col1": ascii_uppercase[0:9],
+        ...         "col1": list(ascii_uppercase[0:9]),
         ...         "col2": pl.arange(0, 9, eager=True),
         ...     }
         ... )
