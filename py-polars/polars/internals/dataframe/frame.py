@@ -975,7 +975,7 @@ class DataFrame:
         >>> df.schema
         {'foo': Int64, 'bar': Float64, 'ham': Utf8}
 
-        """  # noqa: E501
+        """
         return dict(zip(self.columns, self.dtypes))
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
