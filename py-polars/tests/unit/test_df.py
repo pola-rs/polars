@@ -223,6 +223,27 @@ def test_from_arrow() -> None:
     assert df.rows() == []
 
 
+def test_from_dict_with_dict_columns() -> None:
+    # expect schema order to take precedence
+    schema = {"a": pl.UInt8, "b": pl.UInt32}
+    df = pl.DataFrame({"b": [3, 4], "a": [1, 2]}, columns=schema)
+    # ┌─────┬─────┐
+    # │ a   ┆ b   │
+    # │ --- ┆ --- │
+    # │ u8  ┆ u32 │
+    # ╞═════╪═════╡
+    # │ 1   ┆ 3   │
+    # │ 2   ┆ 4   │
+    # └─────┴─────┘
+    assert df.columns == ["a", "b"]
+    assert df.rows() == [(1, 3), (2, 4)]
+
+    # expected error
+    mismatched_schema = {"x": pl.UInt8, "b": pl.UInt32}
+    with pytest.raises(ValueError):
+        pl.DataFrame({"b": [3, 4], "a": [1, 2]}, columns=mismatched_schema)
+
+
 def test_from_dict_with_scalars() -> None:
     import polars as pl
 
