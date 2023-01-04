@@ -566,7 +566,7 @@ def dict_to_pydf(
     """Construct a PyDataFrame from a dictionary of sequences."""
     if columns is not None:
         # the columns arg may also set the dtype/column order of the series
-        if isinstance(columns, dict):
+        if isinstance(columns, dict) and data:
             if not all((col in columns) for col in data):
                 raise ValueError(
                     "The given column-schema names do not match the data dictionary"
