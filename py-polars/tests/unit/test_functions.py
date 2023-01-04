@@ -272,3 +272,14 @@ def test_ones_zeros() -> None:
     zeros = pl.zeros(3, dtype=pl.UInt8)
     assert zeros.dtype == pl.UInt8
     assert zeros.to_list() == [0, 0, 0]
+
+
+def test_overflow_diff() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [20, 10, 30],
+        }
+    )
+    assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(False) == {
+        "a": [None, -10, 20]
+    }
