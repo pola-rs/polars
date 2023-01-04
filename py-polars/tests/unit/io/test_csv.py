@@ -232,7 +232,8 @@ def test_partial_column_rename() -> None:
 
 
 @pytest.mark.parametrize(
-    "col_input, col_out", [([0, 1], ["a", "b"]), ([0, 2], ["a", "c"]), (["b"], ["b"])]
+    ("col_input", "col_out"),
+    [([0, 1], ["a", "b"]), ([0, 2], ["a", "c"]), (["b"], ["b"])],
 )
 def test_read_csv_columns_argument(
     col_input: list[int] | list[str], col_out: list[str]
@@ -753,7 +754,7 @@ def test_csv_dtype_overwrite_bool() -> None:
 
 
 @pytest.mark.parametrize(
-    "fmt,expected",
+    ("fmt", "expected"),
     [
         (None, "dt\n2022-01-02T00:00:00.000000\n"),
         ("%F %T%.3f", "dt\n2022-01-02 00:00:00.000\n"),
@@ -770,7 +771,7 @@ def test_datetime_format(fmt: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "tu1,tu2,expected",
+    ("tu1", "tu2", "expected"),
     [
         (
             "ns",
@@ -810,7 +811,7 @@ def test_datetime_format_inferred_precision(
 
 
 @pytest.mark.parametrize(
-    "fmt,expected",
+    ("fmt", "expected"),
     [
         (None, "dt\n2022-01-02\n"),
         ("%Y", "dt\n2022\n"),
@@ -825,7 +826,7 @@ def test_date_format(fmt: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "fmt,expected",
+    ("fmt", "expected"),
     [
         (None, "dt\n16:15:30.000000000\n"),
         ("%R", "dt\n16:15\n"),

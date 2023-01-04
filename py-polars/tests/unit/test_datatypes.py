@@ -67,7 +67,7 @@ def test_dtypes_hashable() -> None:
 
 
 @pytest.mark.parametrize(
-    ["dtype", "representation"],
+    ("dtype", "representation"),
     [
         (pl.Boolean, "Boolean"),
         (pl.Datetime, "Datetime"),

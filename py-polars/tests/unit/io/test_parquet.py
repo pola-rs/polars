@@ -26,7 +26,7 @@ COMPRESSIONS: list[ParquetCompression] = [
 ]
 
 
-@pytest.fixture
+@pytest.fixture()
 def compressions() -> list[ParquetCompression]:
     return COMPRESSIONS
 
@@ -36,17 +36,22 @@ def test_to_from_buffer(
 ) -> None:
     for compression in compressions:
         if compression == "lzo":
-            # lzo compression is not supported now
+            buf = io.BytesIO()
+            # Writing lzo compressed parquet files is not supported for now.
             with pytest.raises(pl.ArrowError):
-                buf = io.BytesIO()
                 df.write_parquet(buf, compression=compression)
-                buf.seek(0)
+            buf.seek(0)
+            # Invalid parquet file as writing failed.
+            with pytest.raises(pl.ArrowError):
                 _ = pl.read_parquet(buf)
 
+            buf = io.BytesIO()
             with pytest.raises(OSError):
-                buf = io.BytesIO()
+                # Writing lzo compressed parquet files is not supported for now.
                 df.write_parquet(buf, compression=compression, use_pyarrow=True)
-                buf.seek(0)
+            buf.seek(0)
+            # Invalid parquet file as writing failed.
+            with pytest.raises(pl.ArrowError):
                 _ = pl.read_parquet(buf)
         else:
             buf = io.BytesIO()
@@ -69,13 +74,18 @@ def test_to_from_file(
     f = os.path.join(io_test_dir, "small.parquet")
     for compression in compressions:
         if compression == "lzo":
-            # lzo compression is not supported now
+            # Writing lzo compressed parquet files is not supported for now.
             with pytest.raises(pl.ArrowError):
                 df.write_parquet(f, compression=compression)
+            # Invalid parquet file as writing failed.
+            with pytest.raises(pl.ArrowError):
                 _ = pl.read_parquet(f)
 
+            # Writing lzo compressed parquet files is not supported for now.
             with pytest.raises(OSError):
                 df.write_parquet(f, compression=compression, use_pyarrow=True)
+            # Invalid parquet file as writing failed.
+            with pytest.raises(FileNotFoundError):
                 _ = pl.read_parquet(f)
         else:
             df.write_parquet(f, compression=compression)

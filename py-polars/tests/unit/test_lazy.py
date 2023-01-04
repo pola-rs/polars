@@ -1597,8 +1597,8 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
 
     assert_frame_equal(ldf_result, expected)
 
+    ts_col = pl.col("timestamp_s")
     with pytest.raises(ValueError):
-        ts_col = pl.col("timestamp_s")
         _ = ldf.select(pl.from_epoch(ts_col, unit="s2"))  # type: ignore[call-overload]
 
 

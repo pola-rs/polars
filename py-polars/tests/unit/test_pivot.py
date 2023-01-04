@@ -48,7 +48,7 @@ def test_pivot_list() -> None:
 
 
 @pytest.mark.parametrize(
-    ["agg_fn", "expected_rows"],
+    ("agg_fn", "expected_rows"),
     [
         ("first", [("a", 2, None, None), ("b", None, None, 10)]),
         ("count", [("a", 2, None, None), ("b", None, 2, 1)]),
@@ -74,7 +74,7 @@ def test_pivot_aggregate(agg_fn: PivotAgg, expected_rows: list[tuple[Any]]) -> N
 
 
 @pytest.mark.parametrize(
-    ["agg_fn", "expected_rows"],
+    ("agg_fn", "expected_rows"),
     [
         ("first", [("a", 2, None, None), ("b", None, None, 10)]),
         ("count", [("a", 2, None, None), ("b", None, 2, 1)]),

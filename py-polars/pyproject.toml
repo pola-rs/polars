@@ -118,6 +118,8 @@ select = [
   "Q",
   # pyupgrade
   "UP",
+  # flake8-pytest-style
+  "PT",
 ]
 ignore = []
 
@@ -134,6 +136,8 @@ extend-ignore = [
   "D402",
   "D415",
   "D416",
+  # flake8-pytest-style:
+  "PT011", # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
   # TODO: Remove errors below to further improve docstring linting
   # Ordered from most common to least common errors.
   "D105",

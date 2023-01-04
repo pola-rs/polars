@@ -7,6 +7,6 @@ IO_TEST_DIR = os.path.abspath(
 )
 
 
-@pytest.fixture
+@pytest.fixture()
 def io_test_dir() -> str:
     return IO_TEST_DIR

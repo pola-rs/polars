@@ -627,7 +627,7 @@ def test_date_range_lazy() -> None:
 
 
 @pytest.mark.parametrize(
-    "one,two",
+    ("one", "two"),
     [
         (date(2001, 1, 1), date(2001, 1, 2)),
         (datetime(2001, 1, 1), datetime(2001, 1, 2)),

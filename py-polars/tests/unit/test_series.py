@@ -743,7 +743,7 @@ def test_set_np_array(dtype: Any) -> None:
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))
 
 
-@pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
+@pytest.mark.parametrize("idx", [[0, 2], (0, 2)])  # noqa: PT007
 def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
     a = pl.Series("a", [1, 2, 3])
     a[idx] = 4
@@ -2475,7 +2475,7 @@ def test_builtin_abs() -> None:
 
 
 @pytest.mark.parametrize(
-    "value, unit, exp, exp_type",
+    ("value", "unit", "exp", "exp_type"),
     [
         (13285, "d", date(2006, 5, 17), pl.Date),
         (1147880044, "s", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime),
@@ -2516,10 +2516,10 @@ def test_item() -> None:
     s = pl.Series("a", [1])
     assert s.item() == 1
 
+    s = pl.Series("a", [1, 2])
     with pytest.raises(ValueError):
-        s = pl.Series("a", [1, 2])
         s.item()
 
+    s = pl.Series("a", [])
     with pytest.raises(ValueError):
-        s = pl.Series("a", [])
         s.item()

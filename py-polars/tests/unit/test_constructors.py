@@ -89,7 +89,8 @@ def test_init_dict() -> None:
     assert df.schema == {"c": pl.Int8, "d": pl.Int16}
 
     dfe = df.cleared()
-    assert (df.schema == dfe.schema) and (len(dfe) == 0)
+    assert df.schema == dfe.schema
+    assert len(dfe) == 0
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
@@ -435,7 +436,8 @@ def test_init_only_columns() -> None:
 
         dfe = df.cleared()
         assert len(dfe) == 0
-        assert (df.schema == dfe.schema) and (dfe.shape == df.shape)
+        assert df.schema == dfe.schema
+        assert dfe.shape == df.shape
 
 
 def test_from_dicts_list_without_dtype() -> None:

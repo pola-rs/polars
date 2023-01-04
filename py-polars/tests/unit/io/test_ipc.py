@@ -11,7 +11,7 @@ import polars as pl
 from polars.testing import assert_frame_equal_local_categoricals
 
 
-@pytest.fixture
+@pytest.fixture()
 def compressions() -> list[str]:
     return ["uncompressed", "lz4", "zstd"]
 
