@@ -94,12 +94,12 @@ impl Buffer<'_> {
                 }
                 Ok(())
             }
-            #[cfg(feature = "dtype-datetime")]	
-            Datetime(buf, _, _) => {	
-                let v = deserialize_datetime::<Int64Type>(value);	
-                buf.append_option(v);	
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(buf, _, _) => {
+                let v = deserialize_datetime::<Int64Type>(value);
+                buf.append_option(v);
                 Ok(())
-            }	
+            }
             #[cfg(feature = "dtype-date")]
             Date(buf) => {
                 let v = deserialize_datetime::<Int32Type>(value);
