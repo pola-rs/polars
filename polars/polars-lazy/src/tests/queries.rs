@@ -2009,3 +2009,24 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_foo() -> PolarsResult<()> {
+    let df = df![
+        "a" => [2, 2],
+        "b" => [1, 2]
+    ]?;
+
+    let out = df
+        .lazy()
+        .groupby([col("a")])
+        .agg([
+            (col("a").filter(col("b").eq(0)).diff(1, Default::default()) * lit(100))
+                .diff(1, Default::default())
+                .alias("foo"),
+        ])
+        .collect();
+    dbg!(out);
+
+    Ok(())
+}
