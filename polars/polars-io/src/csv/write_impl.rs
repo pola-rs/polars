@@ -3,6 +3,7 @@ use std::io::Write;
 use arrow::temporal_conversions;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
+use polars_core::error::PolarsError::ComputeError;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -167,6 +168,18 @@ pub(crate) fn write<W: Write>(
     chunk_size: usize,
     options: &mut SerializeOptions,
 ) -> PolarsResult<()> {
+    for s in df.get_columns() {
+        let nested = match s.dtype() {
+            DataType::List(_) => true,
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => true,
+            _ => false,
+        };
+        if nested {
+            return Err(ComputeError(format!("CSV format does not support nested data. Consider using a different data format. Got: '{}'", s.dtype()).into()));
+        }
+    }
+
     // check that the double quote is valid utf8
     std::str::from_utf8(&[options.quote, options.quote])
         .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
