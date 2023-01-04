@@ -26,8 +26,87 @@ impl Buffer<'_> {
         s.rename(self.0);
         s
     }
-    pub fn add(&mut self, value: &Value) -> PolarsResult<()> {
-        add_av(&mut self.1, value)
+
+    #[inline]
+    pub(crate) fn add(&mut self, value: &Value) -> PolarsResult<()> {
+        use AnyValueBuffer::*;
+        match &mut self.1 {
+            Boolean(buf) => {
+                match value {
+                    Value::Static(StaticNode::Bool(b)) => buf.append_value(*b),
+                    _ => buf.append_null(),
+                }
+                Ok(())
+            }
+            Int32(buf) => {
+                let n = deserialize_number::<i32>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            }
+            Int64(buf) => {
+                let n = deserialize_number::<i64>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            }
+            UInt64(buf) => {
+                let n = deserialize_number::<u64>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            }
+            UInt32(buf) => {
+                let n = deserialize_number::<u32>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            }
+            Float32(buf) => {
+                let n = deserialize_number::<f32>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            }
+            Float64(buf) => {
+                let n = deserialize_number::<f64>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            }
+
+            Utf8(buf) => {
+                match value {
+                    Value::String(v) => buf.append_value(v),
+                    _ => buf.append_null(),
+                }
+                Ok(())
+            }
+            #[cfg(feature = "dtype-date")]
+            Date(buf) => {
+                let v = deserialize_datetime::<Int32Type>(value);
+                buf.append_option(v);
+                Ok(())
+            }
+            All(_, buf) => {
+                let av = deserialize_all(value);
+                buf.push(av);
+                Ok(())
+            }
+            _ => panic!("unexpected dtype when deserializing ndjson"),
+        }
     }
     pub fn add_null(&mut self) {
         self.1.add(AnyValue::Null).expect("should not fail");
@@ -129,87 +208,5 @@ fn deserialize_all<'a>(json: &Value) -> AnyValue<'a> {
         }
         #[cfg(not(feature = "dtype-struct"))]
         val => AnyValue::Utf8Owned(format!("{:#?}", val).into()),
-    }
-}
-
-#[inline]
-pub(crate) fn add_av(buf: &mut AnyValueBuffer, value: &Value) -> PolarsResult<()> {
-    use AnyValueBuffer::*;
-    match buf {
-        Boolean(buf) => {
-            match value {
-                Value::Static(StaticNode::Bool(b)) => buf.append_value(*b),
-                _ => buf.append_null(),
-            }
-            Ok(())
-        }
-        Int32(buf) => {
-            let n = deserialize_number::<i32>(value);
-            match n {
-                Some(v) => buf.append_value(v),
-                None => buf.append_null(),
-            }
-            Ok(())
-        }
-        Int64(buf) => {
-            let n = deserialize_number::<i64>(value);
-            match n {
-                Some(v) => buf.append_value(v),
-                None => buf.append_null(),
-            }
-            Ok(())
-        }
-        UInt64(buf) => {
-            let n = deserialize_number::<u64>(value);
-            match n {
-                Some(v) => buf.append_value(v),
-                None => buf.append_null(),
-            }
-            Ok(())
-        }
-        UInt32(buf) => {
-            let n = deserialize_number::<u32>(value);
-            match n {
-                Some(v) => buf.append_value(v),
-                None => buf.append_null(),
-            }
-            Ok(())
-        }
-        Float32(buf) => {
-            let n = deserialize_number::<f32>(value);
-            match n {
-                Some(v) => buf.append_value(v),
-                None => buf.append_null(),
-            }
-            Ok(())
-        }
-        Float64(buf) => {
-            let n = deserialize_number::<f64>(value);
-            match n {
-                Some(v) => buf.append_value(v),
-                None => buf.append_null(),
-            }
-            Ok(())
-        }
-
-        Utf8(buf) => {
-            match value {
-                Value::String(v) => buf.append_value(v),
-                _ => buf.append_null(),
-            }
-            Ok(())
-        }
-        #[cfg(feature = "dtype-date")]
-        Date(buf) => {
-            let v = deserialize_datetime::<Int32Type>(value);
-            buf.append_option(v);
-            Ok(())
-        }
-        All(_, buf) => {
-            let av = deserialize_all(value);
-            buf.push(av);
-            Ok(())
-        }
-        _ => panic!("unexpected dtype when deserializing ndjson"),
     }
 }
