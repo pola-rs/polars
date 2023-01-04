@@ -196,7 +196,7 @@ impl<'a> CoreJsonReader<'a> {
             }
         }
 
-        if total_rows == 128 {
+        if total_rows <= 128 {
             n_threads = 1;
         }
 
@@ -208,7 +208,6 @@ impl<'a> CoreJsonReader<'a> {
         } else {
             std::cmp::min(rows_per_thread, max_proxy)
         };
-
         let file_chunks = get_file_chunks_json(bytes, n_threads);
         let dfs = POOL.install(|| {
             file_chunks
@@ -216,13 +215,16 @@ impl<'a> CoreJsonReader<'a> {
                 .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity)?;
                     let _ = parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers);
-
-                    DataFrame::new(
+                    let mut df = DataFrame::new(
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
-                            .collect::<PolarsResult<_>>()?,
-                    )
+                            .collect::<_>(),
+                    )?;
+                    let columns: Vec<&String> = self.schema.iter_names().collect();
+
+                    df.set_column_names(&columns)?;
+                    Ok(df)
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
