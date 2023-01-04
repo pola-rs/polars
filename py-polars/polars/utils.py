@@ -5,9 +5,19 @@ import functools
 import os
 import sys
 import warnings
+from collections.abc import Sized
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generator,
+    Iterable,
+    Sequence,
+    TypeVar,
+    overload,
+)
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
@@ -29,6 +39,18 @@ else:
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import SizeUnit, TimeUnit
+
+_dict_itertypes = tuple(
+    type(obj)
+    for obj in [
+        {}.keys(),
+        {}.values(),
+        {}.items(),
+        reversed({}.keys()),
+        reversed({}.values()),
+        reversed({}.items()),
+    ]
+)
 
 
 def _process_null_values(
@@ -93,6 +115,12 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int
         return int(td.total_seconds() * 1e6)
     else:
         raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
+
+
+def _is_generator(val: object) -> bool:
+    return (
+        isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized)
+    ) or isinstance(val, _dict_itertypes)
 
 
 def _date_to_pl_date(d: date) -> int:

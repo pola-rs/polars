@@ -245,6 +245,26 @@ def test_from_dict_with_scalars() -> None:
         "value": [0],
     }
 
+    # edge-case: single unsized generator
+    df3 = pl.DataFrame({"vals": map(float, [1, 2, 3])})
+    assert df3.to_dict(False) == {"vals": [1.0, 2.0, 3.0]}
+
+    # ensure we don't accidentally consume or expand map/range/generator cols
+    df4 = pl.DataFrame(
+        {
+            "key": range(1, 4),
+            "misc": (x for x in [4, 5, 6]),
+            "other": map(float, [7, 8, 9]),
+            "value": {0: "x", 1: "y", 2: "z"}.values(),
+        }
+    )
+    assert df4.to_dict(False) == {
+        "key": [1, 2, 3],
+        "misc": [4, 5, 6],
+        "other": [7.0, 8.0, 9.0],
+        "value": ["x", "y", "z"],
+    }
+
 
 def test_dataclasses_and_namedtuple() -> None:
     from dataclasses import dataclass
@@ -1260,6 +1280,36 @@ def test_from_generator_or_iterable() -> None:
         pl.DataFrame(data=gen(0), columns=["a", "b", "c", "d"]),
         pl.DataFrame(columns=["a", "b", "c", "d"]),
     )
+
+    # dict-related generator-views
+    d = {0: "x", 1: "y", 2: "z"}
+    df = pl.DataFrame(
+        {
+            "keys": d.keys(),
+            "vals": d.values(),
+            "itms": d.items(),
+            "rev_keys": reversed(d.keys()),
+            "rev_vals": reversed(d.values()),
+            "rev_itms": reversed(d.items()),
+        }
+    )
+    # ┌──────┬──────┬──────────┬──────────┬──────────┬──────────┐
+    # │ keys ┆ vals ┆ itms     ┆ rev_keys ┆ rev_vals ┆ rev_itms │
+    # │ ---  ┆ ---  ┆ ---      ┆ ---      ┆ ---      ┆ ---      │
+    # │ i64  ┆ str  ┆ object   ┆ i64      ┆ str      ┆ object   │
+    # ╞══════╪══════╪══════════╪══════════╪══════════╪══════════╡
+    # │ 0    ┆ x    ┆ (0, 'x') ┆ 2        ┆ z        ┆ (2, 'z') │
+    # │ 1    ┆ y    ┆ (1, 'y') ┆ 1        ┆ y        ┆ (1, 'y') │
+    # │ 2    ┆ z    ┆ (2, 'z') ┆ 0        ┆ x        ┆ (0, 'x') │
+    # └──────┴──────┴──────────┴──────────┴──────────┴──────────┘
+    assert df.to_dict(False) == {
+        "keys": [0, 1, 2],
+        "vals": ["x", "y", "z"],
+        "itms": [(0, "x"), (1, "y"), (2, "z")],
+        "rev_keys": [2, 1, 0],
+        "rev_vals": ["z", "y", "x"],
+        "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
+    }
 
 
 def test_from_rows() -> None:
