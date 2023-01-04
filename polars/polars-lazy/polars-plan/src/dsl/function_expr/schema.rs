@@ -226,6 +226,9 @@ impl FunctionExpr {
                 DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
                 #[cfg(feature = "dtype-time")]
                 DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
+                DataType::UInt64 | DataType::UInt32 => DataType::Int64,
+                DataType::UInt16 => DataType::Int32,
+                DataType::UInt8 => DataType::Int8,
                 dt => dt.clone(),
             }),
             #[cfg(feature = "interpolate")]
