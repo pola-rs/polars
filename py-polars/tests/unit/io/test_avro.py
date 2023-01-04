@@ -8,12 +8,12 @@ import pytest
 import polars as pl
 
 
-@pytest.fixture
+@pytest.fixture()
 def example_df() -> pl.DataFrame:
     return pl.DataFrame({"i64": [1, 2], "f64": [0.1, 0.2], "utf8": ["a", "b"]})
 
 
-@pytest.fixture
+@pytest.fixture()
 def compressions() -> list[str]:
     return ["uncompressed", "snappy", "deflate"]
 

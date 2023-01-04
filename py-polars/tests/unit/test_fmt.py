@@ -6,7 +6,7 @@ import polars as pl
 
 
 @pytest.mark.parametrize(
-    "expected, values",
+    ("expected", "values"),
     [
         pytest.param(
             """shape: (1,)

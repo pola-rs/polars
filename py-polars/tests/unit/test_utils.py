@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    "dt, tu, expected",
+    ("dt", "tu", "expected"),
     [
         (datetime(2121, 1, 1), "ns", 4765132800000000000),
         (datetime(2121, 1, 1), "us", 4765132800000000),
@@ -31,7 +31,7 @@ def test_datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit, expected: int) -> 
 
 
 @pytest.mark.parametrize(
-    "t, expected",
+    ("t", "expected"),
     [
         (time(0, 0, 0), 0),
         (time(0, 0, 1), 1_000_000_000),

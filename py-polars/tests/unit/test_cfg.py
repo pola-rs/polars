@@ -9,7 +9,7 @@ import polars as pl
 
 
 @pytest.fixture(autouse=True)
-def environ() -> Iterator[None]:
+def _environ() -> Iterator[None]:
     """Fixture to restore the environment variables/state after the test."""
     with pl.StringCache(), pl.Config():
         yield

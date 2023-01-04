@@ -46,22 +46,22 @@ FOODS_NDJSON = os.path.join(
 )
 
 
-@pytest.fixture
+@pytest.fixture()
 def io_test_dir() -> str:
     return IO_TEST_DIR
 
 
-@pytest.fixture
+@pytest.fixture()
 def examples_dir() -> str:
     return EXAMPLES_DIR
 
 
-@pytest.fixture
+@pytest.fixture()
 def foods_csv() -> str:
     return FOODS_CSV
 
 
-@pytest.fixture
+@pytest.fixture()
 def foods_csv_glob() -> str:
     return FOODS_CSV
 
@@ -76,22 +76,22 @@ if not os.path.isfile(FOODS_NDJSON):
     pl.read_csv(FOODS_CSV).write_json(FOODS_NDJSON, json_lines=True)
 
 
-@pytest.fixture
+@pytest.fixture()
 def foods_ipc() -> str:
     return FOODS_IPC
 
 
-@pytest.fixture
+@pytest.fixture()
 def foods_parquet() -> str:
     return FOODS_PARQUET
 
 
-@pytest.fixture
+@pytest.fixture()
 def foods_ndjson() -> str:
     return FOODS_NDJSON
 
 
-@pytest.fixture
+@pytest.fixture()
 def df() -> pl.DataFrame:
     df = pl.DataFrame(
         {
@@ -122,14 +122,14 @@ def df() -> pl.DataFrame:
     )
 
 
-@pytest.fixture
+@pytest.fixture()
 def df_no_lists(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(
         pl.all().exclude(["list_str", "list_int", "list_bool", "list_int", "list_flt"])
     )
 
 
-@pytest.fixture
+@pytest.fixture()
 def fruits_cars() -> pl.DataFrame:
     return pl.DataFrame(
         {

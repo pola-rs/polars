@@ -505,7 +505,7 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
     df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
 
     for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError):  # noqa: PT012
             result = df_or_lazy.groupby("a").agg(bad_param)
             if lazy:
                 result.collect()  # type: ignore[union-attr]
@@ -525,7 +525,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
     df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
 
     for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError):  # noqa: PT012
             result = df_or_lazy.groupby_rolling(
                 index_column="index_column", period="2i"
             ).agg(bad_param)
@@ -549,7 +549,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
     df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
 
     for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError):  # noqa: PT012
             result = df_or_lazy.groupby_dynamic(
                 index_column="index_column", every="2i", closed="right"
             ).agg(bad_param)
@@ -568,7 +568,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    "stack,exp_shape,exp_columns",
+    ("stack", "exp_shape", "exp_columns"),
     [
         ([pl.Series("stacked", [-1, -1, -1])], (3, 3), ["a", "b", "stacked"]),
         (
@@ -707,9 +707,11 @@ def test_read_missing_file() -> None:
     with pytest.raises(FileNotFoundError, match="fake_csv_file"):
         pl.read_csv("fake_csv_file")
 
-    with pytest.raises(FileNotFoundError, match="fake_csv_file"):
-        with open("fake_csv_file") as f:
-            pl.read_csv(f)
+    with pytest.raises(FileNotFoundError, match="fake_ipc_file"):
+        pl.read_ipc("fake_ipc_file")
+
+    with pytest.raises(FileNotFoundError, match="fake_avro_file"):
+        pl.read_ipc("fake_avro_file")
 
 
 def test_melt() -> None:
@@ -1987,7 +1989,9 @@ def test_get_item() -> None:
     assert df[4, [5]].frame_equal(pl.DataFrame({"fo5": [1024]}))
 
 
-@pytest.mark.parametrize("as_series,inner_dtype", [(True, pl.Series), (False, list)])
+@pytest.mark.parametrize(
+    ("as_series", "inner_dtype"), [(True, pl.Series), (False, list)]
+)
 def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
     df = pl.DataFrame(
         {
@@ -2512,14 +2516,14 @@ def test_item() -> None:
     df = pl.DataFrame({"a": [1]})
     assert df.item() == 1
 
+    df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(ValueError):
-        df = pl.DataFrame({"a": [1, 2]})
         df.item()
 
+    df = pl.DataFrame({"a": [1], "b": [2]})
     with pytest.raises(ValueError):
-        df = pl.DataFrame({"a": [1], "b": [2]})
         df.item()
 
+    df = pl.DataFrame({})
     with pytest.raises(ValueError):
-        df = pl.DataFrame({})
         df.item()
