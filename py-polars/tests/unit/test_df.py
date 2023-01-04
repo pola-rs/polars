@@ -222,6 +222,30 @@ def test_from_arrow() -> None:
     assert df.rows() == []
 
 
+def test_from_dict_with_scalars() -> None:
+    import polars as pl
+
+    # one or more valid arrays, with some scalars
+    df1 = pl.DataFrame(
+        {"key": ["aa", "bb", "cc"], "misc": "xyz", "other": None, "value": 0}
+    )
+    assert df1.to_dict(False) == {
+        "key": ["aa", "bb", "cc"],
+        "misc": ["xyz", "xyz", "xyz"],
+        "other": [None, None, None],
+        "value": [0, 0, 0],
+    }
+
+    # edge-case: all scalars
+    df2 = pl.DataFrame({"key": "aa", "misc": "xyz", "other": None, "value": 0})
+    assert df2.to_dict(False) == {
+        "key": ["aa"],
+        "misc": ["xyz"],
+        "other": [None],
+        "value": [0],
+    }
+
+
 def test_dataclasses_and_namedtuple() -> None:
     from dataclasses import dataclass
     from typing import NamedTuple

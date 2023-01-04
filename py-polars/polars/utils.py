@@ -310,6 +310,14 @@ def format_path(path: str | Path) -> str:
     return os.path.expanduser(path)
 
 
+def arrlen(obj: Any) -> int | None:
+    """Return length of (non-string) sequence object; returns None for non-sequences."""
+    try:
+        return None if isinstance(obj, str) else len(obj)
+    except TypeError:
+        return None
+
+
 def threadpool_size() -> int:
     """Get the size of polars' thread pool."""
     return _pool_size()

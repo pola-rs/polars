@@ -50,7 +50,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
-from polars.utils import threadpool_size
+from polars.utils import arrlen, threadpool_size
 
 if version_info >= (3, 10):
 
@@ -605,6 +605,17 @@ def dict_to_pydf(
                     [(k, v) for k, v in data.items()],
                 )
             return PyDataFrame(data_series)
+
+    if data:
+        # expand scalars (convenience init for propagating literals)
+        array_len = max((arrlen(val) or 0) for val in data.values())
+        if array_len > 0:
+            for key, val in data.items():
+                if arrlen(val) is None:
+                    data[key] = [val] * array_len  # type: ignore[index]
+        elif all((arrlen(val) is None) for val in data.values()):
+            for key, val in data.items():
+                data[key] = [val]  # type: ignore[index]
 
     # fast path
     return PyDataFrame.read_dict(data)
