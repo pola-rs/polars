@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 import warnings
 from datetime import date, datetime, time, timedelta
@@ -23,7 +24,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.utils import _timedelta_to_pl_duration, accessor, deprecated_alias
+from polars.utils import _timedelta_to_pl_duration, deprecated_alias, sphinx_accessor
 
 try:
     from polars.polars import PyExpr
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
         RankMethod,
         RollingInterpolationMethod,
     )
+elif os.getenv("BUILDING_SPHINX_DOCS"):
+    property = sphinx_accessor
 
 
 def selection_to_pyexpr_list(
@@ -5903,7 +5906,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shrink_dtype())
 
-    @accessor
+    @property
     def arr(self) -> ExprListNameSpace:
         """
         Create an object namespace of all list related methods.
@@ -5913,7 +5916,7 @@ class Expr:
         """
         return ExprListNameSpace(self)
 
-    @accessor
+    @property
     def cat(self) -> ExprCatNameSpace:
         """
         Create an object namespace of all categorical related methods.
@@ -5939,12 +5942,12 @@ class Expr:
         """
         return ExprCatNameSpace(self)
 
-    @accessor
+    @property
     def dt(self) -> ExprDateTimeNameSpace:
         """Create an object namespace of all datetime related methods."""
         return ExprDateTimeNameSpace(self)
 
-    @accessor
+    @property
     def meta(self) -> ExprMetaNameSpace:
         """
         Create an object namespace of all meta related expression methods.
@@ -5954,7 +5957,7 @@ class Expr:
         """
         return ExprMetaNameSpace(self)
 
-    @accessor
+    @property
     def str(self) -> ExprStringNameSpace:
         """
         Create an object namespace of all string related methods.
@@ -5978,7 +5981,7 @@ class Expr:
         """
         return ExprStringNameSpace(self)
 
-    @accessor
+    @property
     def bin(self) -> ExprBinaryNameSpace:
         """
         Create an object namespace of all binary related methods.
@@ -5987,7 +5990,7 @@ class Expr:
         """
         return ExprBinaryNameSpace(self)
 
-    @accessor
+    @property
     def struct(self) -> ExprStructNameSpace:
         """
         Create an object namespace of all struct related methods.

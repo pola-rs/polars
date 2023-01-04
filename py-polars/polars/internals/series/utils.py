@@ -54,7 +54,7 @@ def _is_empty_method(func: SeriesMethod) -> bool:
     fc = func.__code__
     return (fc.co_code in _EMPTY_BYTECODE) and (
         (len(fc.co_consts) == 2 and fc.co_consts[1] is None)
-        # account for potentially optimized-out docstrings
+        # account for optimized-out docstrings (eg: running 'python -OO')
         or (sys.flags.optimize == 2 and fc.co_consts == (None,))
     )
 
@@ -74,7 +74,7 @@ def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str,
         if not name.startswith("_"):
             try:
                 m = getattr(expr, name)
-            except AttributeError:  # May be raised for @property methods
+            except AttributeError:  # may raise for @property methods
                 continue
             if callable(m):
                 # add function signature (argument names only) to the lookup

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import accessor
+from polars.utils import sphinx_accessor
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
+elif os.getenv("BUILDING_SPHINX_DOCS"):
+    property = sphinx_accessor
 
 
 @expr_dispatch
@@ -34,7 +37,7 @@ class StructNameSpace:
         """Convert this Struct Series to a DataFrame."""
         return pli.wrap_df(self._s.struct_to_frame())
 
-    @accessor
+    @property
     def fields(self) -> list[str]:
         """Get the names of the fields."""
         if getattr(self, "_s", None) is None:
