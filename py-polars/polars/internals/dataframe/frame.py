@@ -2589,7 +2589,7 @@ class DataFrame:
         ...         "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
         ...     }
         ... )
-        >>> df.glimpse()  # doctest: +IGNORE_RESULT
+        >>> print(df.glimpse())
         Rows: 3
         Columns: 6
         $ a <Float64> 1.0, 2.8, 3.0
@@ -2623,18 +2623,19 @@ class DataFrame:
         # limit the amount of data printed such that total width is fixed
         max_col_values = 100 - max_col_name - max_col_dtype
 
+        output = StringIO()
         # print header
-        output = f"Rows: {self.height}\nColumns: {self.width}\n"
+        output.write(f"Rows: {self.height}\nColumns: {self.width}\n")
 
         # print individual columns: one row per column
         for col_name, dtype_str, val_str in data:
-            output += (
+            output.write(
                 f"$ {col_name:<{max_col_name}}"
                 f" {dtype_str:>{max_col_dtype}}"
-                f" {val_str:<{max_col_values}}\n"
+                f" {val_str:<{min(len(val_str), max_col_values)}}\n"
             )
 
-        return output
+        return output.getvalue()
 
     def describe(self: DF) -> DF:
         """
