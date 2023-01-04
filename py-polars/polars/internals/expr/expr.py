@@ -5,7 +5,7 @@ import os
 import random
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, cast
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -50,7 +50,7 @@ def selection_to_pyexpr_list(
     exprs: str
     | Expr
     | pli.Series
-    | Sequence[
+    | Iterable[
         str
         | Expr
         | pli.Series

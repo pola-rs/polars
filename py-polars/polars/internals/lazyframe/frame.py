@@ -5,7 +5,16 @@ import typing
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterable,
+    NoReturn,
+    Sequence,
+    TypeVar,
+    overload,
+)
 from warnings import warn
 
 from polars import internals as pli
@@ -1498,7 +1507,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         exprs: str
         | pli.Expr
         | pli.Series
-        | Sequence[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen],
+        | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen],
     ) -> LDF:
         """
         Select columns from this DataFrame.
