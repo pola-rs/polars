@@ -1,6 +1,8 @@
 pub mod dataframe;
 pub mod series;
 
+use std::collections::BTreeMap;
+
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::export::rayon::prelude::*;
@@ -42,8 +44,6 @@ fn iterator_to_struct<'a>(
         }
     };
 
-    let struct_width = vals.len();
-
     // every item in the struct is kept as its own buffer of anyvalues
     // so as struct with 2 items: {a, b}
     // will have
@@ -51,45 +51,67 @@ fn iterator_to_struct<'a>(
     //      [ a values ]
     //      [ b values ]
     // ]
-    let mut items = Vec::with_capacity(vals.len());
-    for item in vals {
+    let mut struct_fields: BTreeMap<&str, Vec<AnyValue>> = BTreeMap::new();
+
+    // use the first value and the known null count to initialize the buffers
+    // if we find a new key later on, we make a new entry in the BTree
+    for (value, fld) in vals.into_iter().zip(flds) {
         let mut buf = Vec::with_capacity(capacity);
         for _ in 0..init_null_count {
             buf.push(AnyValue::Null);
         }
-        buf.push(item.clone());
-        items.push(buf);
+        buf.push(value);
+        struct_fields.insert(fld.name(), buf);
     }
 
     for dict in it {
         match dict {
             None => {
-                for field_items in &mut items {
+                for field_items in struct_fields.values_mut() {
                     field_items.push(AnyValue::Null);
                 }
             }
             Some(dict) => {
                 let dict = dict.downcast::<PyDict>()?;
-                if dict.len() != struct_width {
-                    return Err(crate::error::ComputeError::new_err(
-                        format!("Cannot create struct type.\n> The struct dtype expects {} fields, but it got a dict with {} fields.", struct_width, dict.len())
-                    ));
-                }
+
+                let current_len = struct_fields
+                    .values()
+                    .next()
+                    .map(|buf| buf.len())
+                    .unwrap_or(0);
+
                 // we ignore the keys of the rest of the dicts
                 // the first item determines the output name
-                for ((_, val), field_items) in dict.iter().zip(&mut items) {
+                for (key, val) in dict.iter() {
+                    let key = key.str().unwrap().to_str().unwrap();
+                    let buf = struct_fields.entry(key).or_insert_with(|| {
+                        let mut buf = Vec::with_capacity(capacity);
+                        for _ in 0..(init_null_count + current_len) {
+                            buf.push(AnyValue::Null);
+                        }
+                        buf
+                    });
                     let item = val.extract::<Wrap<AnyValue>>()?;
-                    field_items.push(item.0)
+                    buf.push(item.0)
+                }
+
+                // add nulls to keys that were not in the dict
+                if dict.len() < struct_fields.len() {
+                    let current_len = current_len + 1;
+                    for buf in struct_fields.values_mut() {
+                        if buf.len() < current_len {
+                            buf.push(AnyValue::Null)
+                        }
+                    }
                 }
             }
         }
     }
 
     let fields = POOL.install(|| {
-        items
+        struct_fields
             .par_iter()
-            .zip(flds)
-            .map(|(av, fld)| Series::new(fld.name(), av))
+            .map(|(name, avs)| Series::new(name, avs))
             .collect::<Vec<_>>()
     });
 

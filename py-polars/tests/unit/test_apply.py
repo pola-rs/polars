@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta
 from functools import reduce
 from typing import Sequence, no_type_check
@@ -274,3 +275,15 @@ def test_apply_explicit_list_output_type() -> None:
 
     assert out.dtypes == [pl.List(pl.Int64)]
     assert out.to_dict(False) == {"str": [[1, 2, 3], [1, 2, 3]]}
+
+
+def test_apply_dict() -> None:
+    df = pl.DataFrame({"Col": ['{"A":"Value1"}', '{"B":"Value2"}']})
+    assert df.select(pl.col("Col").apply(json.loads)).to_dict(False) == {
+        "Col": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
+    }
+    assert pl.DataFrame(
+        {"Col": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
+    ).select(pl.col("Col").apply(json.loads)).to_dict(False) == {
+        "Col": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
+    }
