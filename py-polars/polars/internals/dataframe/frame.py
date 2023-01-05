@@ -142,9 +142,9 @@ class DataFrame:
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
         Two-dimensional data in various forms. dict must contain Sequences.
         Sequence may contain Series or other Sequences.
-    columns : Sequence of str or (str,DataType) pairs, default None
-        Column labels to use for resulting DataFrame. If specified, overrides any
-        labels already present in the data. Must match data dimensions.
+    columns : Sequence of str, (str,DataType) pairs, or {str:DataType,} dict
+        Column labels (with optional type) to use for resulting DataFrame. If specified,
+        overrides any labels already present in the data. Must match data dimensions.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
