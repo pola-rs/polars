@@ -9,8 +9,9 @@ use once_cell::sync::Lazy;
 use polars_utils::HashSingle;
 use smartstring::{LazyCompact, SmartString};
 
+use crate::datatypes::PlIdHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::prelude::PlHashMap;
+use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting
 /// to determine how many threads use the string cache
@@ -100,7 +101,7 @@ impl Hash for Key {
 }
 
 pub(crate) struct SCacheInner {
-    map: PlHashMap<Key, ()>,
+    map: PlIdHashMap<Key, ()>,
     pub(crate) uuid: u128,
     payloads: Vec<StrHashGlobal>,
 }
@@ -146,7 +147,7 @@ impl SCacheInner {
 
     #[inline]
     pub(crate) fn insert(&mut self, s: &str) -> u32 {
-        let h = self.map.hasher().hash_single(s);
+        let h = StringCache::get_hash_builder().hash_single(s);
         self.insert_from_hash(h, s)
     }
 }
@@ -154,10 +155,7 @@ impl SCacheInner {
 impl Default for SCacheInner {
     fn default() -> Self {
         Self {
-            map: PlHashMap::with_capacity_and_hasher(
-                HASHMAP_INIT_SIZE,
-                StringCache::get_hash_builder(),
-            ),
+            map: PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE),
             uuid: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -177,6 +175,7 @@ pub(crate) struct StringCache(pub(crate) RwLock<SCacheInner>);
 impl StringCache {
     /// The global `StringCache` will always use a predictable seed. This allows local builders to mimic
     /// the hashes in case of contention.
+    #[inline]
     pub(crate) fn get_hash_builder() -> RandomState {
         RandomState::with_seed(0)
     }
