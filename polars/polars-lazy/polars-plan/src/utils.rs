@@ -327,9 +327,8 @@ pub(crate) fn check_input_node(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    aexpr_to_leaf_names(node, expr_arena)
-        .iter()
-        .all(|name| input_schema.index_of(name).is_some())
+    aexpr_to_leaf_names_iter(node, expr_arena)
+        .all(|name| input_schema.index_of(name.as_ref()).is_some())
 }
 
 pub(crate) fn aexprs_to_schema(

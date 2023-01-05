@@ -41,6 +41,7 @@ pub(super) fn process_groupby(
             acc_projections,
             lp_arena.get(input).schema(lp_arena).as_ref(),
             expr_arena,
+            false,
         );
 
         // add the columns used in the aggregations to the projection only if they are used upstream
