@@ -194,7 +194,7 @@ def col(
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))
 
-    elif not isinstance(name, str) and isinstance(name, Sequence):
+    elif not isinstance(name, str) and isinstance(name, (list, tuple, Sequence)):
         if len(name) == 0 or isinstance(name[0], str):
             return pli.wrap_expr(pycols(name))
         elif is_polars_dtype(name[0]):

@@ -658,7 +658,7 @@ def sequence_to_pydf(
             pydf = _post_apply_columns(pydf, column_names)
         return pydf
 
-    elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
+    elif isinstance(data[0], (list, tuple, Sequence)) and not isinstance(data[0], str):
         if is_namedtuple(data[0]):
             if columns is None:
                 columns = data[0]._fields  # type: ignore[attr-defined]

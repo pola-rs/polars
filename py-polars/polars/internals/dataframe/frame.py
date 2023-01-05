@@ -274,13 +274,13 @@ class DataFrame:
         elif isinstance(data, dict):
             self._df = dict_to_pydf(data, columns=columns)
 
-        elif isinstance(data, Sequence) and not isinstance(data, str):
-            self._df = sequence_to_pydf(
-                data, columns=columns, orient=orient, infer_schema_length=50
-            )
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
 
+        elif isinstance(data, (list, tuple, Sequence)):
+            self._df = sequence_to_pydf(
+                data, columns=columns, orient=orient, infer_schema_length=50
+            )
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(data, columns=columns, orient=orient)
 
