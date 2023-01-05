@@ -880,14 +880,18 @@ impl Expr {
             move |s: Series| Ok(s.cumsum(reverse)),
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
-                match dt {
-                    Boolean => UInt32,
-                    Int32 => Int32,
-                    UInt32 => UInt32,
-                    UInt64 => UInt64,
-                    Float32 => Float32,
-                    Float64 => Float64,
-                    _ => Int64,
+                if dt.is_logical() {
+                    dt.clone()
+                } else {
+                    match dt {
+                        Boolean => UInt32,
+                        Int32 => Int32,
+                        UInt32 => UInt32,
+                        UInt64 => UInt64,
+                        Float32 => Float32,
+                        Float64 => Float64,
+                        _ => Int64,
+                    }
                 }
             }),
         )
@@ -928,14 +932,7 @@ impl Expr {
     pub fn cummax(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cummax(reverse)),
-            GetOutput::map_dtype(|dt| {
-                use DataType::*;
-                match dt {
-                    Float32 => Float32,
-                    Float64 => Float64,
-                    _ => Int64,
-                }
-            }),
+            GetOutput::same_type(),
         )
         .with_fmt("cummax")
     }

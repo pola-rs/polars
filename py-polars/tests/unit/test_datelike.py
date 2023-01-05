@@ -2337,3 +2337,58 @@ def test_tz_aware_day_weekday() -> None:
         "tyo_weekday": [1, 4, 7],
         "ny_weekday": [7, 3, 6],
     }
+
+
+def test_datetime_cum_agg_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 3),
+            ]
+        }
+    )
+    # Exactly the same as above but with lazy() and collect() later
+    assert (
+        df.lazy()
+        .with_columns(
+            [
+                (pl.col("timestamp").cummin()).alias("cummin"),
+                (pl.col("timestamp").cummax()).alias("cummax"),
+            ]
+        )
+        .with_columns(
+            [
+                (pl.col("cummin") + pl.duration(hours=24)).alias("cummin+24"),
+                (pl.col("cummax") + pl.duration(hours=24)).alias("cummax+24"),
+            ]
+        )
+        .collect()
+    ).to_dict(False) == {
+        "timestamp": [
+            datetime(2023, 1, 1, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 3, 0, 0),
+        ],
+        "cummin": [
+            datetime(2023, 1, 1, 0, 0),
+            datetime(2023, 1, 1, 0, 0),
+            datetime(2023, 1, 1, 0, 0),
+        ],
+        "cummax": [
+            datetime(2023, 1, 1, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 3, 0, 0),
+        ],
+        "cummin+24": [
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+        ],
+        "cummax+24": [
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 3, 0, 0),
+            datetime(2023, 1, 4, 0, 0),
+        ],
+    }
