@@ -84,17 +84,16 @@ class GroupBy(Generic[DF]):
         self.maintain_order = maintain_order
 
     def __iter__(self) -> GroupBy[DF]:
-        df = self._dataframe_class._from_pydf(self._df)
-        by = [self.by] if isinstance(self.by, str) else self.by
+        by = {self.by} if isinstance(self.by, str) else set(self.by)
 
         # Aggregate groups for any single column that is not specified as 'by'
-        non_by_cols = [c for c in df.columns if c not in by]
-        if non_by_cols:
-            non_by_col = non_by_cols[0]
+        columns = self._df.columns()
+        if len(by) < len(columns):
+            non_by_col = next(c for c in columns if c not in by)
             groups_df = self.agg(pli.col(non_by_col).agg_groups())
             group_indices = groups_df.select(non_by_col).to_series()
         else:
-            group_indices = pli.Series([[i] for i in range(df.height)])
+            group_indices = pli.Series([[i] for i in range(self._df.height())])
 
         self._group_indices = group_indices
         self._current_index = 0
