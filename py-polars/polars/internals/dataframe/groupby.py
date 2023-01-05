@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from datetime import timedelta
-from typing import TYPE_CHECKING, Callable, Generic, Sequence, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, Iterator, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.internals.dataframe.pivot import PivotOps
@@ -83,31 +83,9 @@ class GroupBy(Generic[DF]):
         self.by = by
         self.maintain_order = maintain_order
 
-    def __iter__(self) -> GroupBy[DF]:
-        by = {self.by} if isinstance(self.by, str) else set(self.by)
-
-        # Aggregate groups for any single column that is not specified as 'by'
-        columns = self._df.columns()
-        if len(by) < len(columns):
-            non_by_col = next(c for c in columns if c not in by)
-            groups_df = self.agg(pli.col(non_by_col).agg_groups())
-            group_indices = groups_df.select(non_by_col).to_series()
-        else:
-            group_indices = pli.Series([[i] for i in range(self._df.height())])
-
-        self._group_indices = group_indices
-        self._current_index = 0
-
-        return self
-
-    def __next__(self) -> DF:
-        if self._current_index >= len(self._group_indices):
-            raise StopIteration
-
+    def __iter__(self) -> Iterator[DF]:
         df = self._dataframe_class._from_pydf(self._df)
-        group = df[self._group_indices[self._current_index]]
-        self._current_index += 1
-        return group
+        return iter(df.partition_by(groups=self.by, maintain_order=self.maintain_order))
 
     def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> DF:
         """
