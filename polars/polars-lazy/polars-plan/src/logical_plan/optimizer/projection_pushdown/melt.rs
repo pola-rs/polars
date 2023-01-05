@@ -31,6 +31,7 @@ pub(super) fn process_melt(
             acc_projections,
             lp_arena.get(input).schema(lp_arena).as_ref(),
             expr_arena,
+            false,
         );
 
         if !local_projections.is_empty() {

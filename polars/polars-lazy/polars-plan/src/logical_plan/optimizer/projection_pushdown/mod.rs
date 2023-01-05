@@ -52,13 +52,16 @@ fn get_scan_columns(
 ///
 /// # Returns
 /// accumulated_projections, local_projections, accumulated_names
+///
+/// - `expands_schema`. An unnest adds more columns to a schema, so we cannot use fast path
 fn split_acc_projections(
     acc_projections: Vec<Node>,
     down_schema: &Schema,
     expr_arena: &mut Arena<AExpr>,
+    expands_schema: bool,
 ) -> (Vec<Node>, Vec<Node>, PlHashSet<Arc<str>>) {
     // If node above has as many columns as the projection there is nothing to pushdown.
-    if down_schema.len() == acc_projections.len() {
+    if !expands_schema && down_schema.len() == acc_projections.len() {
         let local_projections = acc_projections;
         (vec![], local_projections, PlHashSet::new())
     } else {
@@ -254,11 +257,14 @@ impl ProjectionPushDown {
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
+        // an unnest changes/expands the schema
+        expands_schema: bool,
     ) -> PolarsResult<Vec<Node>> {
         let alp = lp_arena.take(input);
         let down_schema = alp.schema(lp_arena);
+
         let (acc_projections, local_projections, names) =
-            split_acc_projections(acc_projections, &down_schema, expr_arena);
+            split_acc_projections(acc_projections, &down_schema, expr_arena, expands_schema);
 
         let lp = self.push_down(
             alp,
@@ -687,6 +693,7 @@ impl ProjectionPushDown {
                     projections_seen,
                     lp_arena,
                     expr_arena,
+                    false,
                 )?;
 
                 let mut new_schema = lp_arena
@@ -720,6 +727,9 @@ impl ProjectionPushDown {
                     function: function.clone(),
                 };
                 if function.allow_projection_pd() && !acc_projections.is_empty() {
+                    let original_acc_projection_len = acc_projections.len();
+
+                    // add columns needed for the function.
                     for name in function.additional_projection_pd_columns() {
                         let node = expr_arena.add(AExpr::Column(name.clone()));
                         add_expr_to_accumulated(
@@ -729,20 +739,21 @@ impl ProjectionPushDown {
                             expr_arena,
                         )
                     }
+                    let expands_schema = matches!(function, FunctionNode::Unnest { .. });
 
-                    let acc_projection_len = acc_projections.len();
                     let local_projections = self.pushdown_and_assign_check_schema(
                         input,
                         acc_projections,
                         projections_seen,
                         lp_arena,
                         expr_arena,
+                        expands_schema,
                     )?;
                     if local_projections.is_empty() {
                         Ok(lp)
                     } else {
                         // if we would project, we would remove pushed down predicates
-                        if local_projections.len() < acc_projection_len {
+                        if local_projections.len() < original_acc_projection_len {
                             Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
                                 .with_columns(local_projections)
                                 .build())
