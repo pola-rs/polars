@@ -38,7 +38,7 @@ else:
     from typing_extensions import ParamSpec, TypeGuard
 
 # note: reversed views don't match as instances of MappingView
-if sys.version_info >= (3, 8):
+if sys.version_info >= (3, 11):
     _reverse_mapping_views = tuple(
         type(reversed(cast(Reversible[Any], view)))
         for view in ({}.keys(), {}.values(), {}.items())
@@ -117,7 +117,7 @@ def _is_generator(val: object) -> bool:
     return (
         (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
         or isinstance(val, MappingView)
-        or (sys.version_info >= (3, 8) and isinstance(val, _reverse_mapping_views))
+        or (sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views))
     )
 
 

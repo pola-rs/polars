@@ -1330,7 +1330,7 @@ def test_from_generator_or_iterable() -> None:
         "vals": ["x", "y", "z"],
         "itms": [(0, "x"), (1, "y"), (2, "z")],
     }
-    if sys.version_info >= (3, 8):
+    if sys.version_info >= (3, 11):
         df = pl.DataFrame(
             {
                 "rev_keys": reversed(d.keys()),
