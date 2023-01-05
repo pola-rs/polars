@@ -173,7 +173,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
         _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), columns=["a"])
 
     # NumPy not available
-    monkeypatch.setattr(pl.internals.dataframe.frame, "_NUMPY_TYPE", lambda x: False)
+    monkeypatch.setattr(pl.internals.dataframe.frame, "_check_for_numpy", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
 
@@ -358,7 +358,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(datetime(2022, 10, 31, 10, 30, 45, 123456),)]
 
     # pandas is not available
-    monkeypatch.setattr(pl.internals.dataframe.frame, "_PANDAS_TYPE", lambda x: False)
+    monkeypatch.setattr(pl.internals.dataframe.frame, "_check_for_pandas", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(pandas_df)
 
