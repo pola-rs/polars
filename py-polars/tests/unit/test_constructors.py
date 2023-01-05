@@ -312,8 +312,7 @@ def test_init_1d_sequence() -> None:
     assert df.rows() == [(None,), (1,), (0,)]
 
     # String sequence
-    with pytest.raises(ValueError):
-        pl.DataFrame("abc")
+    assert pl.DataFrame("abc", columns=["s"]).to_dict(False) == {"s": ["a", "b", "c"]}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:

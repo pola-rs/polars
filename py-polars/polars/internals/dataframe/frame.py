@@ -290,7 +290,7 @@ class DataFrame:
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(data, columns=columns)
 
-        elif isinstance(data, (Generator, Iterable)) and not isinstance(data, Sized):
+        elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
             self._df = iterable_to_pydf(data, columns=columns, orient=orient)
         else:
             raise ValueError(
