@@ -509,13 +509,6 @@ def test_groupby() -> None:
 
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
-    with pytest.deprecated_call():
-        # TODO: find a way to avoid indexing into GroupBy
-        for subdf in df.groupby("a"):  # type: ignore[attr-defined]
-            # TODO: add __next__() to GroupBy
-            if subdf["a"][0] == "b":
-                assert subdf.shape == (3, 3)
-
     # Use lazy API in eager groupby
     assert df.groupby("a").agg([pl.sum("b")]).shape == (3, 2)
     # test if it accepts a single expression
@@ -552,6 +545,24 @@ def test_groupby() -> None:
     # Invalid input: `by` not specified as a sequence
     with pytest.raises(TypeError):
         df.groupby("a", "b")  # type: ignore[arg-type]
+
+
+def test_groupby_iteration() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "b", "b", "c"],
+            "b": [1, 2, 3, 4, 5, 6],
+            "c": [6, 5, 4, 3, 2, 1],
+        }
+    )
+
+    expected_shapes = [(2, 3), (3, 3), (1, 3)]
+    for i, group in enumerate(df.groupby("a", maintain_order=True)):
+        assert group.shape == expected_shapes[i]
+
+    # Grouped by ALL columns should give groups of a single row
+    result = list(df.groupby(["a", "b", "c"]))
+    assert len(result) == 6
 
 
 def bad_agg_parameters() -> Any:
@@ -2176,11 +2187,6 @@ def test_preservation_of_subclasses_after_groupby_statements() -> None:
     subclassed_df = SubClassedDataFrame({"a": [1, 2], "b": [3, 4]})
     groupby = subclassed_df.groupby("a")
     assert isinstance(groupby.agg(pl.count()), SubClassedDataFrame)
-
-    # Round-trips to GBSelection and back should also preserve subclass
-    assert isinstance(
-        groupby.agg(pl.col("a").count().alias("count")), SubClassedDataFrame
-    )
 
     # Round-trips to PivotOps and back should also preserve subclass
     with pytest.deprecated_call():
