@@ -46,7 +46,7 @@ from polars.datatypes import (
     get_idx_type,
     py_type_to_dtype,
 )
-from polars.dependencies import _NUMPY_TYPE, _PANDAS_TYPE, _PYARROW_TYPE
+from polars.dependencies import _check_for_numpy, _check_for_pandas, _check_for_pyarrow
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -274,23 +274,23 @@ class DataFrame:
         elif isinstance(data, dict):
             self._df = dict_to_pydf(data, columns=columns)
 
-        elif _NUMPY_TYPE(data) and isinstance(data, np.ndarray):
-            self._df = numpy_to_pydf(data, columns=columns, orient=orient)
-
-        elif _PYARROW_TYPE(data) and isinstance(data, pa.Table):
-            self._df = arrow_to_pydf(data, columns=columns)
-
-        elif isinstance(data, Sequence) and not isinstance(data, str):
-            self._df = sequence_to_pydf(
-                data, columns=columns, orient=orient, infer_schema_length=50
-            )
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
 
-        elif _PANDAS_TYPE(data) and isinstance(data, pd.DataFrame):
+        elif isinstance(data, (list, tuple, Sequence)):
+            self._df = sequence_to_pydf(
+                data, columns=columns, orient=orient, infer_schema_length=50
+            )
+        elif _check_for_numpy(data) and isinstance(data, np.ndarray):
+            self._df = numpy_to_pydf(data, columns=columns, orient=orient)
+
+        elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
+            self._df = arrow_to_pydf(data, columns=columns)
+
+        elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(data, columns=columns)
 
-        elif isinstance(data, (Generator, Iterable)) and not isinstance(data, Sized):
+        elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
             self._df = iterable_to_pydf(data, columns=columns, orient=orient)
         else:
             raise ValueError(
@@ -1176,7 +1176,7 @@ class DataFrame:
 
                 return idxs.cast(idx_type)
 
-        if _NUMPY_TYPE(idxs) and isinstance(idxs, np.ndarray):
+        if _check_for_numpy(idxs) and isinstance(idxs, np.ndarray):
             if idxs.ndim != 1:
                 raise ValueError("Only 1D numpy array is supported as index.")
             if idxs.dtype.kind in ("i", "u"):
@@ -1301,7 +1301,8 @@ class DataFrame:
             # df[2, :] (select row as df)
             if isinstance(row_selection, int):
                 if isinstance(col_selection, (slice, list)) or (
-                    _NUMPY_TYPE(col_selection) and isinstance(col_selection, np.ndarray)
+                    _check_for_numpy(col_selection)
+                    and isinstance(col_selection, np.ndarray)
                 ):
                     df = self[:, col_selection]
                     return df.slice(row_selection, 1)
@@ -1348,7 +1349,7 @@ class DataFrame:
         # select rows by numpy mask or index
         # df[np.array([1, 2, 3])]
         # df[np.array([True, False, True])]
-        if _NUMPY_TYPE(item) and isinstance(item, np.ndarray):
+        if _check_for_numpy(item) and isinstance(item, np.ndarray):
             if item.ndim != 1:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):
@@ -2556,7 +2557,7 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        if _NUMPY_TYPE(predicate) and isinstance(predicate, np.ndarray):
+        if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray):
             predicate = pli.Series(predicate)
 
         return (

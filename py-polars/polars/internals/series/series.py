@@ -46,10 +46,10 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.dependencies import (
-    _NUMPY_TYPE,
-    _PANDAS_TYPE,
     _PYARROW_AVAILABLE,
-    _PYARROW_TYPE,
+    _check_for_numpy,
+    _check_for_pandas,
+    _check_for_pyarrow,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -232,25 +232,6 @@ class Series:
         elif isinstance(values, Series):
             self._s = series_to_pyseries(name, values)
 
-        elif _PYARROW_TYPE(values) and isinstance(values, (pa.Array, pa.ChunkedArray)):
-            self._s = arrow_to_pyseries(name, values)
-
-        elif _NUMPY_TYPE(values) and isinstance(values, np.ndarray):
-            self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
-            if values.dtype.type == np.datetime64:
-                # cast to appropriate dtype, handling NaT values
-                dtype = _resolve_datetime_dtype(dtype, values.dtype)
-                if dtype is not None:
-                    self._s = (
-                        self.cast(dtype)
-                        .set_at_idx(np.argwhere(np.isnat(values)).flatten(), None)
-                        ._s
-                    )
-                    return
-
-            if dtype is not None:
-                self._s = self.cast(dtype, strict=True)._s
-
         elif isinstance(values, range):
             self._s = (
                 pli.arange(
@@ -272,7 +253,30 @@ class Series:
                 dtype_if_empty=dtype_if_empty,
                 nan_to_null=nan_to_null,
             )
-        elif _PANDAS_TYPE(values) and isinstance(values, (pd.Series, pd.DatetimeIndex)):
+        elif _check_for_numpy(values) and isinstance(values, np.ndarray):
+            self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            if values.dtype.type == np.datetime64:
+                # cast to appropriate dtype, handling NaT values
+                dtype = _resolve_datetime_dtype(dtype, values.dtype)
+                if dtype is not None:
+                    self._s = (
+                        self.cast(dtype)
+                        .set_at_idx(np.argwhere(np.isnat(values)).flatten(), None)
+                        ._s
+                    )
+                    return
+
+            if dtype is not None:
+                self._s = self.cast(dtype, strict=True)._s
+
+        elif _check_for_pyarrow(values) and isinstance(
+            values, (pa.Array, pa.ChunkedArray)
+        ):
+            self._s = arrow_to_pyseries(name, values)
+
+        elif _check_for_pandas(values) and isinstance(
+            values, (pd.Series, pd.DatetimeIndex)
+        ):
             self._s = pandas_to_pyseries(name, values)
 
         elif _is_generator(values):
@@ -627,7 +631,7 @@ class Series:
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
-            _NUMPY_TYPE(other) and isinstance(other, np.ndarray)
+            _check_for_numpy(other) and isinstance(other, np.ndarray)
         ):
             other = Series(other)
         # elif isinstance(other, pli.DataFrame):
@@ -636,7 +640,7 @@ class Series:
 
     def __rmatmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
-            _NUMPY_TYPE(other) and isinstance(other, np.ndarray)
+            _check_for_numpy(other) and isinstance(other, np.ndarray)
         ):
             other = Series(other)
         return other.dot(self)
@@ -706,7 +710,7 @@ class Series:
 
                 return idxs.cast(idx_type)
 
-        elif _NUMPY_TYPE(idxs) and isinstance(idxs, np.ndarray):
+        elif _check_for_numpy(idxs) and isinstance(idxs, np.ndarray):
             if idxs.ndim != 1:
                 raise ValueError("Only 1D numpy array is supported as index.")
             if idxs.dtype.kind in ("i", "u"):
@@ -785,7 +789,7 @@ class Series:
             return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
 
         elif (
-            _NUMPY_TYPE(item)
+            _check_for_numpy(item)
             and isinstance(item, np.ndarray)
             and item.dtype.kind in ("i", "u")
         ):
@@ -843,7 +847,7 @@ class Series:
             return wrap_s(self._s.filter(item._s))
 
         elif (
-            _NUMPY_TYPE(item)
+            _check_for_numpy(item)
             and isinstance(item, np.ndarray)
             and item.dtype.kind == "b"
         ):
@@ -897,7 +901,7 @@ class Series:
                 self._s = self.set_at_idx(key, value)._s
 
         # TODO: implement for these types without casting to series
-        elif _NUMPY_TYPE(key) and isinstance(key, np.ndarray):
+        elif _check_for_numpy(key) and isinstance(key, np.ndarray):
             if key.dtype == np.bool_:
                 # boolean numpy mask
                 self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s

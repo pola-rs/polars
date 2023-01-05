@@ -19,7 +19,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import _NUMPY_TYPE
+from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.internals.type_aliases import EpochTimeUnit
 from polars.utils import (
@@ -194,7 +194,7 @@ def col(
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))
 
-    elif not isinstance(name, str) and isinstance(name, Sequence):
+    elif not isinstance(name, str) and isinstance(name, (list, tuple, Sequence)):
         if len(name) == 0 or isinstance(name[0], str):
             return pli.wrap_expr(pycols(name))
         elif is_polars_dtype(name[0]):
@@ -1101,7 +1101,7 @@ def lit(
             return e
         return e.alias(name)
 
-    if _NUMPY_TYPE(value) and isinstance(value, np.ndarray):
+    if _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
 
     if dtype:

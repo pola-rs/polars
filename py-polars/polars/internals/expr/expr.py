@@ -15,7 +15,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import _NUMPY_TYPE
+from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.internals.expr.binary import ExprBinaryNameSpace
 from polars.internals.expr.categorical import ExprCatNameSpace
@@ -1999,7 +1999,7 @@ class Expr:
 
         """
         if isinstance(indices, list) or (
-            _NUMPY_TYPE(indices) and isinstance(indices, np.ndarray)
+            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
