@@ -188,3 +188,12 @@ def test_streaming_categoricals_5921() -> None:
     for out in [out_eager, out_lazy]:
         assert out.dtypes == [pl.Categorical, pl.Int64]
         assert out.to_dict(False) == {"X": ["a", "b"], "Y": [2, 1]}
+
+
+def test_streaming_block_on_literals_6054() -> None:
+    df = pl.DataFrame({"col_1": [0] * 5 + [1] * 5})
+    s = pl.Series("col_2", list(range(10)))
+
+    assert df.lazy().with_column(s).groupby("col_1").agg(pl.all().first()).collect(
+        streaming=True
+    ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}
