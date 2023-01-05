@@ -175,6 +175,9 @@ smartstring = { version = "1" }
 thiserror.workspace = true
 xxhash-rust.workspace = true
 
+[target.'cfg(target_family = "wasm")'.dependencies]
+wasm-timer = "0.2.5"
+
 [dev-dependencies]
 bincode = "1"
 
