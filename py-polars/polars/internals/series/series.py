@@ -46,10 +46,10 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.dependencies import (
+    _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
-    _PYARROW_AVAILABLE,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -269,7 +269,9 @@ class Series:
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
 
-        elif _check_for_pyarrow(values) and isinstance(values, (pa.Array, pa.ChunkedArray)):
+        elif _check_for_pyarrow(values) and isinstance(
+            values, (pa.Array, pa.ChunkedArray)
+        ):
             self._s = arrow_to_pyseries(name, values)
 
         elif _check_for_pandas(values) and isinstance(

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import re
 import sys
-from functools import cache
+from functools import lru_cache
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Hashable, cast
 
 _FSSPEC_AVAILABLE = True
 _NUMPY_AVAILABLE = True
@@ -165,7 +165,7 @@ else:
     )
 
 
-@cache
+@lru_cache(maxsize=None)
 def _might_be(cls: type, type_: str) -> bool:
     # infer whether the given class "might" be associated with the given
     # module (in which case it's reasonable to do a real isinstance check)
@@ -176,15 +176,15 @@ def _might_be(cls: type, type_: str) -> bool:
 
 
 def _check_for_numpy(obj: Any) -> bool:
-    return _NUMPY_AVAILABLE and _might_be(type(obj), "numpy")
+    return _NUMPY_AVAILABLE and _might_be(cast(Hashable, type(obj)), "numpy")
 
 
 def _check_for_pandas(obj: Any) -> bool:
-    return _PANDAS_AVAILABLE and _might_be(type(obj), "pandas")
+    return _PANDAS_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pandas")
 
 
 def _check_for_pyarrow(obj: Any) -> bool:
-    return _PYARROW_AVAILABLE and _might_be(type(obj), "pyarrow")
+    return _PYARROW_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pyarrow")
 
 
 __all__ = [

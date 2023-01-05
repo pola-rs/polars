@@ -41,10 +41,10 @@ from polars.datatypes_constructor import (
     py_type_to_constructor,
 )
 from polars.dependencies import (
-    _check_for_numpy,
-    _check_for_pandas,
     _NUMPY_AVAILABLE,
     _PYARROW_AVAILABLE,
+    _check_for_numpy,
+    _check_for_pandas,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -584,7 +584,11 @@ def dict_to_pydf(
         count_numpy = 0
         for val in data.values():
             # only start a thread pool from a reasonable size.
-            count_numpy += int(_check_for_numpy(val) and isinstance(val, np.ndarray) and len(val) > 1000)
+            count_numpy += int(
+                _check_for_numpy(val)
+                and isinstance(val, np.ndarray)
+                and len(val) > 1000
+            )
 
         # if we have more than 3 numpy arrays we multi-thread
         if count_numpy > 2:
@@ -721,7 +725,9 @@ def sequence_to_pydf(
             pydf = _post_apply_columns(pydf, columns, categoricals)
         return pydf
 
-    elif _check_for_pandas(data[0]) and isinstance(data[0], (pd.Series, pd.DatetimeIndex)):
+    elif _check_for_pandas(data[0]) and isinstance(
+        data[0], (pd.Series, pd.DatetimeIndex)
+    ):
         dtypes = {}
         if columns is not None:
             columns, dtypes = _unpack_columns(columns, n_expected=1)
