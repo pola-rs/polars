@@ -1282,6 +1282,33 @@ class Expr:
         │ 10  ┆ 4         │
         └─────┴───────────┘
 
+        Null values are excluded, but can also be filled by calling ``forward_fill``.
+        >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
+        >>> df.with_columns(
+        ...     [
+        ...         pl.col("values").cumsum().alias("value_cumsum"),
+        ...         pl.col("values")
+        ...         .cumsum()
+        ...         .forward_fill()
+        ...         .alias("value_cumsum_all_filled"),
+        ...     ]
+        ... )
+        shape: (8, 3)
+        ┌────────┬──────────────┬─────────────────────────┐
+        │ values ┆ value_cumsum ┆ value_cumsum_all_filled │
+        │ ---    ┆ ---          ┆ ---                     │
+        │ i64    ┆ i64          ┆ i64                     │
+        ╞════════╪══════════════╪═════════════════════════╡
+        │ null   ┆ null         ┆ null                    │
+        │ 10     ┆ 10           ┆ 10                      │
+        │ null   ┆ null         ┆ 10                      │
+        │ 8      ┆ 18           ┆ 18                      │
+        │ 9      ┆ 27           ┆ 27                      │
+        │ null   ┆ null         ┆ 27                      │
+        │ 16     ┆ 43           ┆ 43                      │
+        │ null   ┆ null         ┆ 43                      │
+        └────────┴──────────────┴─────────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.cumsum(reverse))
 
@@ -1385,6 +1412,33 @@ class Expr:
         │ 3   ┆ 4         │
         │ 4   ┆ 4         │
         └─────┴───────────┘
+
+        Null values are excluded, but can also be filled by calling ``forward_fill``.
+        >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
+        >>> df.with_columns(
+        ...     [
+        ...         pl.col("values").cummax().alias("value_cummax"),
+        ...         pl.col("values")
+        ...         .cummax()
+        ...         .forward_fill()
+        ...         .alias("value_cummax_all_filled"),
+        ...     ]
+        ... )
+        shape: (8, 3)
+        ┌────────┬──────────────┬─────────────────────────┐
+        │ values ┆ value_cummax ┆ value_cummax_all_filled │
+        │ ---    ┆ ---          ┆ ---                     │
+        │ i64    ┆ i64          ┆ i64                     │
+        ╞════════╪══════════════╪═════════════════════════╡
+        │ null   ┆ null         ┆ null                    │
+        │ 10     ┆ 10           ┆ 10                      │
+        │ null   ┆ null         ┆ 10                      │
+        │ 8      ┆ 10           ┆ 10                      │
+        │ 9      ┆ 10           ┆ 10                      │
+        │ null   ┆ null         ┆ 10                      │
+        │ 16     ┆ 16           ┆ 16                      │
+        │ null   ┆ null         ┆ 16                      │
+        └────────┴──────────────┴─────────────────────────┘
 
         """
         return wrap_expr(self._pyexpr.cummax(reverse))
