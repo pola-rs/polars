@@ -122,8 +122,16 @@ impl RevMapping {
     /// str to Categorical
     pub fn find(&self, value: &str) -> Option<u32> {
         match self {
-            Self::Global(map, a, _) => {
-                map.iter()
+            Self::Global(rev_map, a, id) => {
+                // fast path is check
+                if using_string_cache() {
+                    let map = crate::STRING_CACHE.read_map();
+                    if map.uuid == *id {
+                        return map.get_cat(value);
+                    }
+                }
+                rev_map
+                    .iter()
                     // Safety:
                     // value is always within bounds
                     .find(|(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))

@@ -146,6 +146,22 @@ impl SCacheInner {
     }
 
     #[inline]
+    pub(crate) fn get_cat(&self, s: &str) -> Option<u32> {
+        let h = StringCache::get_hash_builder().hash_single(s);
+        // as StrHashGlobal may allocate a string
+        self.map
+            .raw_entry()
+            .from_hash(h, |key| {
+                (key.hash == h) && {
+                    let pos = key.idx as usize;
+                    let value = unsafe { self.payloads.get_unchecked(pos) };
+                    s == value.as_str()
+                }
+            })
+            .map(|(k, _)| k.idx)
+    }
+
+    #[inline]
     pub(crate) fn insert(&mut self, s: &str) -> u32 {
         let h = StringCache::get_hash_builder().hash_single(s);
         self.insert_from_hash(h, s)
