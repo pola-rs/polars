@@ -1537,10 +1537,7 @@ impl DataFrame {
     fn select_mut(&mut self, name: &str) -> Option<&mut Series> {
         let opt_idx = self.find_idx_by_name(name);
 
-        match opt_idx {
-            Some(idx) => self.select_at_idx_mut(idx),
-            None => None,
-        }
+        opt_idx.and_then(|idx| self.select_at_idx_mut(idx))
     }
 
     /// Does a filter but splits thread chunks vertically instead of horizontally

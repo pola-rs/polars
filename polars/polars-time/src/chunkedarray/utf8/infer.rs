@@ -160,24 +160,22 @@ fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_ns);
-    match out {
-        Some(out) => Some(out),
-        None => NaiveDate::parse_from_str(val, fmt)
+    out.or_else(|| {
+        NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap())),
-    }
+            .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap()))
+    })
 }
 
 fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_us);
-    match out {
-        Some(out) => Some(out),
-        None => NaiveDate::parse_from_str(val, fmt)
+    out.or_else(|| {
+        NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap())),
-    }
+            .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap()))
+    })
 }
 
 fn transform_datetime_us_bytes(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<i64> {
@@ -188,20 +186,16 @@ fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_ms);
-    match out {
-        Some(out) => Some(out),
-        None => NaiveDate::parse_from_str(val, fmt)
+    out.or_else(|| {
+        NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap())),
-    }
+            .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap()))
+    })
 }
 
 pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
     // Dates come first, because we see datetimes as superset of dates
-    match infer_pattern_date_single(val) {
-        Some(pat) => Some(pat),
-        None => infer_pattern_datetime_single(val),
-    }
+    infer_pattern_date_single(val).or_else(|| infer_pattern_datetime_single(val))
 }
 
 fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
