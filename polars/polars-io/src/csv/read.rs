@@ -110,7 +110,7 @@ where
     columns: Option<Vec<String>>,
     delimiter: Option<u8>,
     has_header: bool,
-    ignore_parser_errors: bool,
+    ignore_errors: bool,
     pub(crate) schema: Option<&'a Schema>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
@@ -168,8 +168,8 @@ where
     }
 
     /// Continue with next batch when a ParserError is encountered.
-    pub fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
-        self.ignore_parser_errors = ignore;
+    pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
+        self.ignore_errors = ignore;
         self
     }
 
@@ -339,7 +339,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.max_records,
             self.delimiter,
             self.has_header,
-            self.ignore_parser_errors,
+            self.ignore_errors,
             self.schema,
             std::mem::take(&mut self.columns),
             self.encoding,
@@ -462,7 +462,7 @@ where
             projection: None,
             delimiter: None,
             has_header: true,
-            ignore_parser_errors: false,
+            ignore_errors: false,
             schema: None,
             columns: None,
             encoding: CsvEncoding::Utf8,

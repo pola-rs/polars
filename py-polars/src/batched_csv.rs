@@ -85,7 +85,7 @@ impl PyBatchedCsv {
             .with_n_rows(n_rows)
             .with_delimiter(sep.as_bytes()[0])
             .with_skip_rows(skip_rows)
-            .with_ignore_parser_errors(ignore_errors)
+            .with_ignore_errors(ignore_errors)
             .with_projection(projection)
             .with_rechunk(rechunk)
             .with_chunk_size(chunk_size)

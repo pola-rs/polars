@@ -55,7 +55,7 @@ fn test_parser() -> PolarsResult<()> {
     CsvReader::new(file)
         .infer_schema(Some(100))
         .has_header(true)
-        .with_ignore_parser_errors(true)
+        .with_ignore_errors(true)
         .finish()
         .unwrap();
 
@@ -72,7 +72,7 @@ fn test_parser() -> PolarsResult<()> {
         // we also check if infer schema ignores errors
         .infer_schema(Some(10))
         .has_header(true)
-        .with_ignore_parser_errors(true)
+        .with_ignore_errors(true)
         .finish()
         .unwrap();
 
@@ -146,7 +146,7 @@ fn test_tab_sep() {
         .infer_schema(Some(100))
         .with_delimiter(b'\t')
         .has_header(false)
-        .with_ignore_parser_errors(true)
+        .with_ignore_errors(true)
         .finish()
         .unwrap();
     assert_eq!(df.shape(), (8, 26))
