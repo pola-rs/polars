@@ -485,7 +485,9 @@ impl<'a> CoreReader<'a> {
 
         // If the number of threads given by the user is lower than our global thread pool we create
         // new one.
+        #[cfg(not(target_family = "wasm"))]
         let owned_pool;
+        #[cfg(not(target_family = "wasm"))]
         let pool = if POOL.current_num_threads() != n_threads {
             owned_pool = Some(
                 ThreadPoolBuilder::new()
@@ -497,7 +499,8 @@ impl<'a> CoreReader<'a> {
         } else {
             &POOL
         };
-
+        #[cfg(target_family = "wasm")] // use a pre-created pool for wasm
+        let pool = &POOL;
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             // TODO! add DataFrame::new_from_schema
