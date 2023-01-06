@@ -357,6 +357,8 @@ def test_sort() -> None:
     assert df.sort(["a", "b"]).frame_equal(
         pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
+    # if we do not pass in an argument, it is the same as passing in df.columns
+    assert df.sort().frame_equal(df.sort(df.columns))
 
 
 def test_replace() -> None:

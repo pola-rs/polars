@@ -2773,7 +2773,7 @@ class DataFrame:
 
     def sort(
         self: DF,
-        by: str | pli.Expr | Sequence[str] | Sequence[pli.Expr],
+        by: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | None = None,
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
     ) -> DF | DataFrame:
@@ -2783,7 +2783,8 @@ class DataFrame:
         Parameters
         ----------
         by
-            By which column to sort. Only accepts string.
+            By which column(s) to sort. If ``None``, sort on all columns. Defaults
+            to ``None``.
         reverse
             Reverse/descending sort.
         nulls_last
@@ -2829,6 +2830,9 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
+        if by is None:
+            by = self.columns
+
         if not isinstance(by, str) and isinstance(by, (Sequence, pli.Expr)):
             df = self.lazy().sort(by, reverse, nulls_last).collect(no_optimization=True)
             return df
