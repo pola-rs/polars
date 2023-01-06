@@ -1086,6 +1086,22 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<SearchSortedSide> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "any" => SearchSortedSide::Any,
+            "left" => SearchSortedSide::Left,
+            "right" => SearchSortedSide::Right,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "side must be one of {{'any', 'left', 'right'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 pub(crate) fn parse_fill_null_strategy(
     strategy: &str,
     limit: FillNullLimit,

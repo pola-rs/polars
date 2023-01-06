@@ -65,7 +65,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "search_sorted")]
-    SearchSorted,
+    SearchSorted(SearchSortedSide),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
     #[cfg(feature = "dtype-binary")]
@@ -133,7 +133,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "search_sorted")]
-            SearchSorted => "search_sorted",
+            SearchSorted(_) => "search_sorted",
             #[cfg(feature = "strings")]
             StringExpr(s) => return write!(f, "{s}"),
             #[cfg(feature = "dtype-binary")]
@@ -280,8 +280,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 wrap!(arg_where::arg_where)
             }
             #[cfg(feature = "search_sorted")]
-            SearchSorted => {
-                wrap!(search_sorted::search_sorted_impl)
+            SearchSorted(side) => {
+                map_as_slice!(search_sorted::search_sorted_impl, side)
             }
             #[cfg(feature = "strings")]
             StringExpr(s) => s.into(),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import typing
 from typing import cast
 
 import numpy as np
@@ -414,6 +415,7 @@ def test_unique_empty() -> None:
         assert s.unique().series_equal(s)
 
 
+@typing.no_type_check
 def test_search_sorted() -> None:
     for seed in [1, 2, 3]:
         np.random.seed(seed)
@@ -422,6 +424,22 @@ def test_search_sorted() -> None:
 
         for v in range(int(np.min(a)), int(np.max(a)), 20):
             assert np.searchsorted(a, v) == s.search_sorted(v)
+
+    a = pl.Series([1, 2, 3])
+    b = pl.Series([1, 2, 2, -1])
+    assert a.search_sorted(b).to_list() == [0, 1, 1, 0]
+    b = pl.Series([1, 2, 2, None, 3])
+    assert a.search_sorted(b).to_list() == [0, 1, 1, 0, 2]
+
+    a = pl.Series(["b", "b", "d", "d"])
+    b = pl.Series(["a", "b", "c", "d", "e"])
+    assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
+    assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
+
+    a = pl.Series([1, 1, 4, 4])
+    b = pl.Series([0, 1, 2, 4, 5])
+    assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
+    assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
 
 
 def test_abs_expr() -> None:

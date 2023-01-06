@@ -117,7 +117,7 @@ impl FunctionExpr {
             #[cfg(feature = "arg_where")]
             ArgWhere => with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
-            SearchSorted => with_dtype(IDX_DTYPE),
+            SearchSorted(_) => with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
             StringExpr(s) => {
                 use StringFunction::*;
