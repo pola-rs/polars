@@ -41,6 +41,7 @@ if TYPE_CHECKING:
         NullBehavior,
         RankMethod,
         RollingInterpolationMethod,
+        SearchSortedSide,
     )
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
@@ -1859,7 +1860,9 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_min())
 
-    def search_sorted(self, element: Expr | int | float) -> Expr:
+    def search_sorted(
+        self, element: Expr | int | float | pli.Series, side: SearchSortedSide = "any"
+    ) -> Expr:
         """
         Find indices where elements should be inserted to maintain order.
 
@@ -1869,6 +1872,10 @@ class Expr:
         ----------
         element
             Expression or scalar value.
+        side : {'any', 'left', 'right'}
+            If 'any', the index of the first suitable location found is given.
+            If 'left', the index of the leftmost suitable location found is given.
+            If 'right', return the rightmost suitable location found is given.
 
         Examples
         --------
@@ -1895,7 +1902,7 @@ class Expr:
 
         """
         element = expr_to_lit_or_expr(element, str_to_lit=False)
-        return wrap_expr(self._pyexpr.search_sorted(element._pyexpr))
+        return wrap_expr(self._pyexpr.search_sorted(element._pyexpr, side))
 
     def sort_by(
         self,

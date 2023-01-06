@@ -258,8 +258,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "search_sorted")]
-    pub fn search_sorted(&self, element: PyExpr) -> PyExpr {
-        self.inner.clone().search_sorted(element.inner).into()
+    pub fn search_sorted(&self, element: PyExpr, side: Wrap<SearchSortedSide>) -> PyExpr {
+        self.inner
+            .clone()
+            .search_sorted(element.inner, side.0)
+            .into()
     }
     pub fn take(&self, idx: PyExpr) -> PyExpr {
         self.clone().inner.take(idx.inner).into()

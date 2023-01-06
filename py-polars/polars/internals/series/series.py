@@ -100,6 +100,7 @@ if TYPE_CHECKING:
         NullBehavior,
         RankMethod,
         RollingInterpolationMethod,
+        SearchSortedSide,
         SizeUnit,
         TimeUnit,
     )
@@ -2073,7 +2074,23 @@ class Series:
         """
         return self._s.arg_max()
 
-    def search_sorted(self, element: int | float) -> int:
+    @overload
+    def search_sorted(self, element: int | float, side: SearchSortedSide = ...) -> int:
+        ...
+
+    @overload
+    def search_sorted(
+        self,
+        element: Series | np.ndarray[Any, Any] | list[int] | list[float],
+        side: SearchSortedSide = ...,
+    ) -> Series:
+        ...
+
+    def search_sorted(
+        self,
+        element: int | float | Series | np.ndarray[Any, Any] | list[int] | list[float],
+        side: SearchSortedSide = "any",
+    ) -> int | Series:
         """
         Find indices where elements should be inserted to maintain order.
 
@@ -2083,9 +2100,16 @@ class Series:
         ----------
         element
             Expression or scalar value.
+        side : {'any', 'left', 'right'}
+            If 'any', the index of the first suitable location found is given.
+            If 'left', the index of the leftmost suitable location found is given.
+            If 'right', return the rightmost suitable location found is given.
 
         """
-        return pli.select(pli.lit(self).search_sorted(element))[0, 0]
+        if isinstance(element, (int, float)):
+            return pli.select(pli.lit(self).search_sorted(element, side))[0, 0]
+        element = Series(element)
+        return pli.select(pli.lit(self).search_sorted(element, side)).to_series()
 
     def unique(self, maintain_order: bool = False) -> Series:
         """
