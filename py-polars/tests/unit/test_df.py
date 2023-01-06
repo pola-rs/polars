@@ -2601,12 +2601,12 @@ def test_glimpse() -> None:
         """\
         Rows: 3
         Columns: 6
-        $ a <Float64> 1.0, 2.8, 3.0
-        $ b   <Int64> 4, 5, None
-        $ c <Boolean> True, False, True
-        $ d    <Utf8> None, b, c
-        $ e    <Utf8> usd, eur, None
-        $ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01
+        $ a  <f64> 1.0, 2.8, 3.0
+        $ b  <i64> 4, 5, None
+        $ c <bool> True, False, True
+        $ d  <str> None, b, c
+        $ e  <str> usd, eur, None
+        $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
         """
     )
     assert result == expected
