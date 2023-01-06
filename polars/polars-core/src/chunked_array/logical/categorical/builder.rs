@@ -95,6 +95,16 @@ impl RevMapping {
         }
     }
 
+    pub fn get_optional(&self, idx: u32) -> Option<&str> {
+        match self {
+            Self::Global(map, a, _) => {
+                let idx = *map.get(&idx)?;
+                a.get(idx as usize)
+            }
+            Self::Local(a) => a.get(idx as usize),
+        }
+    }
+
     /// Categorical to str
     ///
     /// # Safety

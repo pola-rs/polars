@@ -158,10 +158,17 @@ impl ChunkCompare<&Series> for Series {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
-                    self.categorical()
-                        .unwrap()
-                        .logical()
-                        .equal(rhs.categorical().unwrap().logical())
+                    let rhs = rhs.categorical().unwrap().logical();
+
+                    // first check the rev-map
+                    if rhs.len() == 1 && rhs.null_count() == 0 {
+                        let rhs = rhs.get(0).unwrap();
+                        if rev_map_l.get_optional(rhs).is_none() {
+                            return Ok(BooleanChunked::full(self.name(), false, self.len()));
+                        }
+                    }
+
+                    self.categorical().unwrap().logical().equal(rhs)
                 } else {
                     return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
                 }
@@ -203,10 +210,17 @@ impl ChunkCompare<&Series> for Series {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
-                    self.categorical()
-                        .unwrap()
-                        .logical()
-                        .not_equal(rhs.categorical().unwrap().logical())
+                    let rhs = rhs.categorical().unwrap().logical();
+
+                    // first check the rev-map
+                    if rhs.len() == 1 && rhs.null_count() == 0 {
+                        let rhs = rhs.get(0).unwrap();
+                        if rev_map_l.get_optional(rhs).is_none() {
+                            return Ok(BooleanChunked::full(self.name(), true, self.len()));
+                        }
+                    }
+
+                    self.categorical().unwrap().logical().not_equal(rhs)
                 } else {
                     return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
                 }
