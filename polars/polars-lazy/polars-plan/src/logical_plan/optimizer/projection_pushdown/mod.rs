@@ -139,12 +139,18 @@ fn update_scan_schema(
     Ok(new_schema)
 }
 
-pub struct ProjectionPushDown {}
+pub struct ProjectionPushDown {
+    pub(crate) changed: bool,
+}
 
 impl ProjectionPushDown {
+    pub(super) fn new() -> Self {
+        Self { changed: false }
+    }
+
     /// Projection will be done at this node, but we continue optimization
     fn no_pushdown_restart_opt(
-        &self,
+        &mut self,
         lp: ALogicalPlan,
         acc_projections: Vec<Node>,
         projections_seen: usize,
@@ -177,7 +183,7 @@ impl ProjectionPushDown {
     }
 
     fn finish_node(
-        &self,
+        &mut self,
         local_projections: Vec<Node>,
         builder: ALogicalPlanBuilder,
     ) -> ALogicalPlan {
@@ -190,7 +196,7 @@ impl ProjectionPushDown {
 
     #[allow(clippy::too_many_arguments)]
     fn join_push_down(
-        &self,
+        &mut self,
         schema_left: &Schema,
         schema_right: &Schema,
         proj: Node,
@@ -224,7 +230,7 @@ impl ProjectionPushDown {
 
     /// This pushes down current node and assigns the result to this node.
     fn pushdown_and_assign(
-        &self,
+        &mut self,
         input: Node,
         acc_projections: Vec<Node>,
         names: PlHashSet<Arc<str>>,
@@ -251,7 +257,7 @@ impl ProjectionPushDown {
     ///
     /// The local projections are return and still have to be applied
     fn pushdown_and_assign_check_schema(
-        &self,
+        &mut self,
         input: Node,
         acc_projections: Vec<Node>,
         projections_seen: usize,
@@ -290,7 +296,7 @@ impl ProjectionPushDown {
     /// * `expr_arena` - The local memory arena for the expressions.
     ///
     fn push_down(
-        &self,
+        &mut self,
         logical_plan: ALogicalPlan,
         mut acc_projections: Vec<Node>,
         mut projected_names: PlHashSet<Arc<str>>,
@@ -301,16 +307,19 @@ impl ProjectionPushDown {
         use ALogicalPlan::*;
 
         match logical_plan {
-            Projection { expr, input, .. } => process_projection(
-                self,
-                input,
-                expr,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
+            Projection { expr, input, .. } => {
+                self.changed = true;
+                process_projection(
+                    self,
+                    input,
+                    expr,
+                    acc_projections,
+                    projected_names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )
+            }
             LocalProjection { expr, input, .. } => {
                 self.pushdown_and_assign(
                     input,
@@ -804,7 +813,7 @@ impl ProjectionPushDown {
     }
 
     pub fn optimize(
-        &self,
+        &mut self,
         logical_plan: ALogicalPlan,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
