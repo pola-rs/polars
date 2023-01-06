@@ -30,7 +30,7 @@ impl CsvExec {
             .has_header(self.options.has_header)
             .with_schema(&self.schema)
             .with_delimiter(self.options.delimiter)
-            .with_ignore_parser_errors(self.options.ignore_errors)
+            .with_ignore_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)
             .with_n_rows(n_rows)
             .with_columns(with_columns.map(|mut cols| std::mem::take(Arc::make_mut(&mut cols))))

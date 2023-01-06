@@ -221,7 +221,7 @@ impl PyLazyFrame {
             .with_infer_schema_length(infer_schema_length)
             .with_delimiter(delimiter)
             .has_header(has_header)
-            .with_ignore_parser_errors(ignore_errors)
+            .with_ignore_errors(ignore_errors)
             .with_skip_rows(skip_rows)
             .with_n_rows(n_rows)
             .with_cache(cache)

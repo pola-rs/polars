@@ -451,7 +451,7 @@ pub(super) fn parse_lines<'a>(
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
     buffers: &mut [Buffer<'a>],
-    ignore_parser_errors: bool,
+    ignore_errors: bool,
     n_lines: usize,
     // length or original schema
     schema_len: usize,
@@ -547,28 +547,27 @@ pub(super) fn parse_lines<'a>(
                         if add_null {
                             buf.add_null()
                         } else {
-                            buf.add(field, ignore_parser_errors, needs_escaping)
-                                .map_err(|_| {
-                                    let bytes_offset = offset + field.as_ptr() as usize - start;
-                                    let unparsable = String::from_utf8_lossy(field);
-                                    PolarsError::ComputeError(
-                                        format!(
-                                            "Could not parse `{}` as dtype {:?} at column {}.\n\
+                            buf.add(field, ignore_errors, needs_escaping).map_err(|_| {
+                                let bytes_offset = offset + field.as_ptr() as usize - start;
+                                let unparsable = String::from_utf8_lossy(field);
+                                PolarsError::ComputeError(
+                                    format!(
+                                        "Could not parse `{}` as dtype {:?} at column {}.\n\
                                             The current offset in the file is {} bytes.\n\
                                             \n\
                                             Consider specifying the correct dtype, increasing\n\
                                             the number of records used to infer the schema,\n\
-                                            running the parser with `ignore_parser_errors=true`\n\
-                                            or  adding `{}` to the `null_values` list.",
-                                            &unparsable,
-                                            buf.dtype(),
-                                            idx,
-                                            bytes_offset,
-                                            &unparsable,
-                                        )
-                                        .into(),
+                                            enabling the `ignore_errors` flag, or adding\n\
+                                            `{}` to the `null_values` list.",
+                                        &unparsable,
+                                        buf.dtype(),
+                                        idx,
+                                        bytes_offset,
+                                        &unparsable,
                                     )
-                                })?;
+                                    .into(),
+                                )
+                            })?;
                         }
 
                         processed_fields += 1;

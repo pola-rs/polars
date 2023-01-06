@@ -81,7 +81,7 @@ pub(crate) struct CoreReader<'a> {
     projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
     line_number: usize,
-    ignore_parser_errors: bool,
+    ignore_errors: bool,
     skip_rows_before_header: usize,
     // after the header, we need to take embedded lines into account
     skip_rows_after_header: usize,
@@ -170,7 +170,7 @@ impl<'a> CoreReader<'a> {
         max_records: Option<usize>,
         delimiter: Option<u8>,
         has_header: bool,
-        ignore_parser_errors: bool,
+        ignore_errors: bool,
         schema: Option<&'a Schema>,
         columns: Option<Vec<String>>,
         encoding: CsvEncoding,
@@ -264,7 +264,7 @@ impl<'a> CoreReader<'a> {
             schema,
             projection,
             line_number: usize::from(has_header),
-            ignore_parser_errors,
+            ignore_errors,
             skip_rows_before_header: skip_rows,
             skip_rows_after_header,
             n_rows,
@@ -508,7 +508,7 @@ impl<'a> CoreReader<'a> {
                 &self.init_string_size_stats(&str_columns, 0),
                 self.quote_char,
                 self.encoding,
-                self.ignore_parser_errors,
+                self.ignore_errors,
             )?;
             let df = DataFrame::new_no_checks(
                 buffers
@@ -530,7 +530,7 @@ impl<'a> CoreReader<'a> {
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
                         let delimiter = self.delimiter;
                         let schema = self.schema.as_ref();
-                        let ignore_parser_errors = self.ignore_parser_errors;
+                        let ignore_errors = self.ignore_errors;
                         let projection = &projection;
 
                         let mut read = bytes_offset_thread;
@@ -549,7 +549,7 @@ impl<'a> CoreReader<'a> {
                                 &str_capacities,
                                 self.quote_char,
                                 self.encoding,
-                                self.ignore_parser_errors,
+                                self.ignore_errors,
                             )?;
 
                             let local_bytes = &bytes[read..stop_at_nbytes];
@@ -566,7 +566,7 @@ impl<'a> CoreReader<'a> {
                                 self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
-                                ignore_parser_errors,
+                                ignore_errors,
                                 chunk_size,
                                 self.schema.len(),
                             )?;
@@ -624,7 +624,7 @@ impl<'a> CoreReader<'a> {
                             bytes,
                             self.delimiter,
                             self.schema.as_ref(),
-                            self.ignore_parser_errors,
+                            self.ignore_errors,
                             &projection,
                             bytes_offset_thread,
                             self.quote_char,
@@ -701,7 +701,7 @@ fn read_chunk(
     bytes: &[u8],
     delimiter: u8,
     schema: &Schema,
-    ignore_parser_errors: bool,
+    ignore_errors: bool,
     projection: &[usize],
     bytes_offset_thread: usize,
     quote_char: Option<u8>,
@@ -723,7 +723,7 @@ fn read_chunk(
         str_capacities,
         quote_char,
         encoding,
-        ignore_parser_errors,
+        ignore_errors,
     )?;
 
     let mut last_read = usize::MAX;
@@ -745,7 +745,7 @@ fn read_chunk(
             null_values,
             projection,
             &mut buffers,
-            ignore_parser_errors,
+            ignore_errors,
             chunk_size,
             schema.len(),
         )?;

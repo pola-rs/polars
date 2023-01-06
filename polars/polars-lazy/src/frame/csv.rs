@@ -92,7 +92,7 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Continue with next batch when a ParserError is encountered.
     #[must_use]
-    pub fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
+    pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
         self.ignore_errors = ignore;
         self
     }
