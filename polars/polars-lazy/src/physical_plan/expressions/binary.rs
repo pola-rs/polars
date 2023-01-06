@@ -283,16 +283,26 @@ impl PhysicalExpr for BinaryExpr {
                 let lhs = ac_l.flat_naive().as_ref().clone();
                 let rhs = ac_r.flat_naive().as_ref().clone();
 
-                // drop lhs so that we might operate in place
-                {
-                    let _ = ac_l.take();
+                match null_propagate_empty(ac_l.series(), ac_r.series()) {
+                    Some(null_prop) => {
+                        ac_l.with_update_groups(UpdateGroups::No);
+                        ac_l.with_series(null_prop, true);
+                    }
+                    None => {
+                        let out = null_propagate_empty(ac_l.series(), ac_r.series())
+                            .map(Ok)
+                            .unwrap_or_else(|| apply_operator_owned(lhs, rhs, self.op))?;
+
+                        // drop lhs so that we might operate in place
+                        {
+                            let _ = ac_l.take();
+                        }
+
+                        // we flattened the series, so that sorts by group
+                        ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
+                        ac_l.with_series(out, false);
+                    }
                 }
-
-                let out = apply_operator_owned(lhs, rhs, self.op)?;
-
-                // we flattened the series, so that sorts by group
-                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
-                ac_l.with_series(out, false);
                 Ok(ac_l)
             }
             // # Flatten the Series and apply the operators.
@@ -639,5 +649,27 @@ impl PartitionedAggregation for BinaryExpr {
         _state: &ExecutionState,
     ) -> PolarsResult<Series> {
         Ok(partitioned)
+    }
+}
+
+//  A    B
+// []    null
+// []    null
+//
+// A - B should return null
+fn null_propagate_empty(lhs: &Series, rhs: &Series) -> Option<Series> {
+    match (lhs.dtype(), rhs.dtype()) {
+        (DataType::List(_), _) => {
+            let lhs = lhs.list().unwrap();
+            if !lhs.is_empty() {
+                let flat = lhs.explode().unwrap();
+                if flat.is_empty() && rhs.null_count() == rhs.len() {
+                    return Some(rhs.clone());
+                }
+            }
+            None
+        }
+        (_, DataType::List(_)) => null_propagate_empty(rhs, lhs),
+        _ => None,
     }
 }
