@@ -56,7 +56,13 @@ where
         vals.extend(iter);
     }
 
-    argsort_branch(vals.as_mut_slice(), reverse, default_order, reverse_order);
+    argsort_branch(
+        vals.as_mut_slice(),
+        reverse,
+        default_order,
+        reverse_order,
+        options.multithreaded,
+    );
 
     let iter = vals.into_iter().map(|(idx, _v)| idx);
     let idx = if reverse || nulls_last {

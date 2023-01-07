@@ -36,6 +36,7 @@ impl SortExec {
             std::mem::take(&mut self.args.reverse),
             self.args.nulls_last,
             self.args.slice,
+            true,
         )
     }
 }

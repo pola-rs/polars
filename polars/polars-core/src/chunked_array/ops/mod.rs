@@ -484,11 +484,22 @@ pub trait ChunkUnique<T: PolarsDataType> {
     }
 }
 
-#[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortOptions {
     pub descending: bool,
     pub nulls_last: bool,
+    pub multithreaded: bool,
+}
+
+impl Default for SortOptions {
+    fn default() -> Self {
+        Self {
+            descending: false,
+            nulls_last: false,
+            multithreaded: true,
+        }
+    }
 }
 
 /// Sort operations on `ChunkedArray`.
