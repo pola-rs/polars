@@ -12,17 +12,21 @@ from polars.datatypes import (
     Float64,
     dtype_to_py_type,
 )
+from polars.exceptions import InvalidAssert, PanicException
+from polars.utils import deprecated_alias
 
 
+@deprecated_alias(check_column_names="check_column_order")
 def assert_frame_equal(
     left: pli.DataFrame | pli.LazyFrame,
     right: pli.DataFrame | pli.LazyFrame,
     check_dtype: bool = True,
     check_exact: bool = False,
-    check_column_names: bool = True,
     rtol: float = 1.0e-5,
     atol: float = 1.0e-8,
     nans_compare_equal: bool = True,
+    check_column_order: bool = True,
+    check_row_order: bool = True,
 ) -> None:
     """
     Raise detailed AssertionError if `left` does not equal `right`.
@@ -38,14 +42,19 @@ def assert_frame_equal(
     check_exact
         if False, test if values are within tolerance of each other
         (see `rtol` & `atol`).
-    check_column_names
-        if True, dataframes must have the same column names in the same order.
     rtol
         relative tolerance for inexact checking. Fraction of values in `right`.
     atol
         absolute tolerance for inexact checking.
     nans_compare_equal
         if your assert/test requires float NaN != NaN, set this to False.
+    check_column_order
+        if False, allows the assert/test to succeed if the required columns are present,
+        irrespective of the order in which they appear.
+    check_row_order
+        if False, allows the assert/test to succeed if the required rows are present,
+        irrespective of the order in which they appear; as this requires
+        sorting, you cannot set on frames that contain unsortable columns.
 
     Examples
     --------
@@ -77,11 +86,21 @@ def assert_frame_equal(
             f"Columns {right_not_left} in right frame, but not in left"
         )
 
-    if check_column_names:
-        if left.columns != right.columns:
-            raise AssertionError("Columns are not in the same order")
+    if check_column_order and left.columns != right.columns:
+        raise AssertionError(
+            f"Columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
+        )
 
-    # this does not assume a particular order
+    if not check_row_order:
+        try:
+            left = left.sort(by=left.columns)
+            right = right.sort(by=left.columns)
+        except PanicException as err:
+            raise InvalidAssert(
+                "Cannot set 'check_row_order=False' on frame with unsortable columns"
+            ) from err
+
+    # note: does not assume a particular column order
     for c in left.columns:
         _assert_series_inner(
             left[c],  # type: ignore[arg-type, index]
