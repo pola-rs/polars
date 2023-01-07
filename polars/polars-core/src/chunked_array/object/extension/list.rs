@@ -87,7 +87,7 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
             )) as ArrayRef
         };
 
-        let mut listarr = ListChunked::from_chunks(ca.name(), vec![arr]);
+        let mut listarr = unsafe { ListChunked::from_chunks(ca.name(), vec![arr]) };
         if self.fast_explode {
             listarr.set_fast_explode()
         }

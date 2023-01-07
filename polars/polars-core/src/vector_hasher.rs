@@ -745,5 +745,5 @@ pub(crate) fn df_rows_to_hashes(
         hashes.into(),
         None,
     )) as ArrayRef];
-    Ok((UInt64Chunked::from_chunks("", chunks), build_hasher))
+    unsafe { Ok((UInt64Chunked::from_chunks("", chunks), build_hasher)) }
 }

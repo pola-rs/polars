@@ -19,7 +19,8 @@ fn reshape_fast_path(name: &str, s: &Series) -> Series {
             .collect::<Vec<_>>(),
     };
 
-    let mut ca = ListChunked::from_chunks(name, chunks);
+    // safety dtype is checked.
+    let mut ca = unsafe { ListChunked::from_chunks(name, chunks) };
     ca.set_inner_dtype(s.dtype().clone());
     ca.set_fast_explode();
     ca.into_series()
@@ -50,7 +51,7 @@ impl Series {
         };
         let name = self.name();
 
-        let mut ca = ListChunked::from_chunks(name, vec![Box::new(arr)]);
+        let mut ca = unsafe { ListChunked::from_chunks(name, vec![Box::new(arr)]) };
         if self.dtype() != &self.dtype().to_physical() {
             ca.to_logical(inner_type.clone())
         }

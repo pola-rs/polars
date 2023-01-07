@@ -32,7 +32,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::from_chunks("", chunks)
+        unsafe { ChunkedArray::from_chunks("", chunks) }
     }
 }
 
@@ -204,7 +204,7 @@ fn compare_bools(
         .map(|(l, r)| Box::new(f(l, r)) as ArrayRef)
         .collect();
 
-    BooleanChunked::from_chunks(lhs.name(), chunks)
+    unsafe { BooleanChunked::from_chunks(lhs.name(), chunks) }
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
@@ -234,7 +234,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                         }
                                     })
                                     .collect();
-                                BooleanChunked::from_chunks("", chunks)
+                                unsafe { BooleanChunked::from_chunks("", chunks) }
                             }
                         }
                         false => {
@@ -253,7 +253,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                             as ArrayRef
                                     })
                                     .collect();
-                                BooleanChunked::from_chunks("", chunks)
+                                unsafe { BooleanChunked::from_chunks("", chunks) }
                             }
                         }
                     }
@@ -292,7 +292,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                             as ArrayRef
                                     })
                                     .collect();
-                                BooleanChunked::from_chunks("", chunks)
+                                unsafe { BooleanChunked::from_chunks("", chunks) }
                             }
                         }
                         false => {
@@ -311,7 +311,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                             as ArrayRef
                                     })
                                     .collect();
-                                BooleanChunked::from_chunks("", chunks)
+                                unsafe { BooleanChunked::from_chunks("", chunks) }
                             }
                         }
                     }
@@ -469,7 +469,7 @@ impl Utf8Chunked {
                 Box::new(arr) as ArrayRef
             })
             .collect();
-        BooleanChunked::from_chunks("", chunks)
+        unsafe { BooleanChunked::from_chunks("", chunks) }
     }
 }
 
@@ -624,7 +624,7 @@ impl BinaryChunked {
                 Box::new(arr) as ArrayRef
             })
             .collect();
-        BooleanChunked::from_chunks("", chunks)
+        unsafe { BooleanChunked::from_chunks("", chunks) }
     }
 }
 
@@ -944,7 +944,7 @@ impl Not for &BooleanChunked {
                 Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 

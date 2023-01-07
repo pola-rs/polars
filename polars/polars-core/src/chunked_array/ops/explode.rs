@@ -221,7 +221,7 @@ impl ExplodeByOffsets for ListChunked {
             if o == last {
                 if start != last {
                     let vals = arr.slice(start, last - start);
-                    let ca = ListChunked::from_chunks("", vec![Box::new(vals)]);
+                    let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
                     for s in &ca {
                         builder.append_opt_series(s.as_ref())
                     }
@@ -232,7 +232,7 @@ impl ExplodeByOffsets for ListChunked {
             last = o;
         }
         let vals = arr.slice(start, last - start);
-        let ca = ListChunked::from_chunks("", vec![Box::new(vals)]);
+        let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
         for s in &ca {
             builder.append_opt_series(s.as_ref())
         }

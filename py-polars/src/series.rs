@@ -307,7 +307,7 @@ impl PySeries {
                     }
                     previous = o;
                 }
-                let mut out = ListChunked::from_chunks(name, vec![arr]);
+                let mut out = unsafe { ListChunked::from_chunks(name, vec![arr]) };
                 if fast_explode {
                     out.set_fast_explode()
                 }

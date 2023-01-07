@@ -50,7 +50,10 @@ where
     T: PolarsDataType,
 {
     /// Create a new ChunkedArray from existing chunks.
-    pub fn from_chunks(name: &str, mut chunks: Vec<ArrayRef>) -> Self {
+    ///
+    /// # Safety
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
+    pub unsafe fn from_chunks(name: &str, mut chunks: Vec<ArrayRef>) -> Self {
         let dtype = match T::get_dtype() {
             dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
             dt => dt,
@@ -93,7 +96,7 @@ where
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
     pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
         let arr = to_array::<T>(v, None);
-        Self::from_chunks(name, vec![arr])
+        unsafe { Self::from_chunks(name, vec![arr]) }
     }
 
     /// Nullify values in slice with an existing null bitmap

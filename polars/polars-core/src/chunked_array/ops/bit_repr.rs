@@ -28,7 +28,7 @@ impl Int16Chunked {
                 )) as ArrayRef
             })
             .collect::<Vec<_>>();
-        UInt16Chunked::from_chunks(self.name(), chunks)
+        unsafe { UInt16Chunked::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -58,7 +58,7 @@ impl Int8Chunked {
                 )) as ArrayRef
             })
             .collect::<Vec<_>>();
-        UInt8Chunked::from_chunks(self.name(), chunks)
+        unsafe { UInt8Chunked::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -100,7 +100,7 @@ where
                     )) as ArrayRef
                 })
                 .collect::<Vec<_>>();
-            UInt64Chunked::from_chunks(self.name(), chunks)
+            unsafe { UInt64Chunked::from_chunks(self.name(), chunks) }
         } else {
             unreachable!()
         }
@@ -136,7 +136,7 @@ where
                     )) as ArrayRef
                 })
                 .collect::<Vec<_>>();
-            UInt32Chunked::from_chunks(self.name(), chunks)
+            unsafe { UInt32Chunked::from_chunks(self.name(), chunks) }
         } else {
             self.cast_unchecked(&DataType::UInt32)
                 .unwrap()
@@ -173,7 +173,7 @@ impl Reinterpret for UInt64Chunked {
                 )) as ArrayRef
             })
             .collect::<Vec<_>>();
-        Int64Chunked::from_chunks(self.name(), chunks).into_series()
+        unsafe { Int64Chunked::from_chunks(self.name(), chunks).into_series() }
     }
 
     fn reinterpret_unsigned(&self) -> Series {
@@ -217,7 +217,7 @@ impl Reinterpret for UInt32Chunked {
                 )) as ArrayRef
             })
             .collect::<Vec<_>>();
-        Int32Chunked::from_chunks(self.name(), chunks).into_series()
+        unsafe { Int32Chunked::from_chunks(self.name(), chunks).into_series() }
     }
 
     fn reinterpret_unsigned(&self) -> Series {
@@ -262,7 +262,7 @@ impl UInt64Chunked {
                 )) as ArrayRef
             })
             .collect::<Vec<_>>();
-        Float64Chunked::from_chunks(self.name(), chunks)
+        unsafe { Float64Chunked::from_chunks(self.name(), chunks) }
     }
 }
 impl UInt32Chunked {
@@ -291,7 +291,7 @@ impl UInt32Chunked {
                 )) as ArrayRef
             })
             .collect::<Vec<_>>();
-        Float32Chunked::from_chunks(self.name(), chunks)
+        unsafe { Float32Chunked::from_chunks(self.name(), chunks) }
     }
 }
 

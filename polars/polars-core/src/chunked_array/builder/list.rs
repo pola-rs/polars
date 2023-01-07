@@ -577,7 +577,7 @@ impl<'a> AnonymousListBuilder<'a> {
             let dtype = slf.dtype.map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(dtype.as_ref()).unwrap();
             let dtype = DataType::from(arr.data_type());
-            let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
+            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
             if self.fast_explode {
                 ca.set_fast_explode();
@@ -644,7 +644,8 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                 let array = new_null_array(dtype.clone(), real_length);
                 let dtype = ListArray::<i64>::default_datatype(dtype);
                 let array = ListArray::new(dtype, slf.builder.take_offsets().into(), array, None);
-                ListChunked::from_chunks(&slf.name, vec![Box::new(array)])
+                // safety: same type
+                unsafe { ListChunked::from_chunks(&slf.name, vec![Box::new(array)]) }
             } else {
                 ListChunked::full_null_with_dtype(
                     &slf.name,
@@ -656,7 +657,8 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             let inner_dtype = slf.inner_dtype.map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(inner_dtype.as_ref()).unwrap();
             let dtype = DataType::from(arr.data_type());
-            let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
+            // safety: same type
+            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
             if self.fast_explode {
                 ca.set_fast_explode();

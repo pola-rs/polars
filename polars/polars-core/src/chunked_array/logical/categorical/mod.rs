@@ -55,7 +55,7 @@ impl CategoricalChunked {
         chunks: Vec<ArrayRef>,
         rev_map: RevMapping,
     ) -> Self {
-        let ca = UInt32Chunked::from_chunks(name, chunks);
+        let ca = unsafe { UInt32Chunked::from_chunks(name, chunks) };
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(ca);
         logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map))));
         let bit_settings = 1u8;
@@ -177,8 +177,9 @@ impl LogicalType for CategoricalChunked {
                 Ok(ca.into_series())
             }
             DataType::UInt32 => {
-                let ca =
-                    UInt32Chunked::from_chunks(self.logical.name(), self.logical.chunks.clone());
+                let ca = unsafe {
+                    UInt32Chunked::from_chunks(self.logical.name(), self.logical.chunks.clone())
+                };
                 Ok(ca.into_series())
             }
             #[cfg(feature = "dtype-categorical")]

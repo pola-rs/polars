@@ -426,7 +426,7 @@ impl PartitionedAggregation for AggregationExpr {
                         None,
                     )) as ArrayRef
                 };
-                let mut ca = ListChunked::from_chunks(&new_name, vec![arr]);
+                let mut ca = unsafe { ListChunked::from_chunks(&new_name, vec![arr]) };
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }

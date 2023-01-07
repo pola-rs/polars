@@ -193,7 +193,7 @@ impl ChunkCast for ListChunked {
                             .downcast_iter()
                             .map(|list| cast_inner_list_type(list, &phys_child))
                             .collect::<PolarsResult<_>>()?;
-                        ListChunked::from_chunks(self.name(), chunks)
+                        unsafe { ListChunked::from_chunks(self.name(), chunks) }
                     } else {
                         self.clone()
                     };

@@ -70,7 +70,7 @@ where
                         value,
                         T::get_dtype().to_arrow(),
                     )?;
-                    return Ok(Self::from_chunks(self.name(), vec![Box::new(arr)]));
+                    return unsafe { Ok(Self::from_chunks(self.name(), vec![Box::new(arr)])) };
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy
                 else {
@@ -123,7 +123,7 @@ where
                     Box::new(a) as ArrayRef
                 })
                 .collect();
-            Ok(ChunkedArray::from_chunks(self.name(), chunks))
+            Ok(unsafe { ChunkedArray::from_chunks(self.name(), chunks) })
         } else {
             // slow path, could be optimized.
             let ca = mask
@@ -181,10 +181,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         }
         let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
 
-        Ok(BooleanChunked::from_chunks(
-            self.name(),
-            vec![Box::new(arr)],
-        ))
+        Ok(unsafe { BooleanChunked::from_chunks(self.name(), vec![Box::new(arr)]) })
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> PolarsResult<Self> {

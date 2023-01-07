@@ -246,7 +246,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            Ok(Self::from_chunks(self.name(), vec![Box::new(arr)]))
+            unsafe { Ok(Self::from_chunks(self.name(), vec![Box::new(arr)])) }
         }
     }
 }

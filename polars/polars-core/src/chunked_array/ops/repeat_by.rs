@@ -18,15 +18,16 @@ where
 
         // Safety:
         // Length of iter is trusted
-        ListChunked::from_chunks(
-            self.name(),
-            vec![Box::new(unsafe {
-                LargeListArray::from_iter_primitive_trusted_len::<T::Native, _, _>(
-                    iter,
-                    T::get_dtype().to_arrow(),
-                )
-            })],
-        )
+        unsafe {
+            ListChunked::from_chunks(
+                self.name(),
+                vec![Box::new(LargeListArray::from_iter_primitive_trusted_len::<
+                    T::Native,
+                    _,
+                    _,
+                >(iter, T::get_dtype().to_arrow()))],
+            )
+        }
     }
 }
 impl RepeatBy for BooleanChunked {
@@ -38,12 +39,12 @@ impl RepeatBy for BooleanChunked {
 
         // Safety:
         // Length of iter is trusted
-        ListChunked::from_chunks(
-            self.name(),
-            vec![Box::new(unsafe {
-                LargeListArray::from_iter_bool_trusted_len(iter)
-            })],
-        )
+        unsafe {
+            ListChunked::from_chunks(
+                self.name(),
+                vec![Box::new(LargeListArray::from_iter_bool_trusted_len(iter))],
+            )
+        }
     }
 }
 impl RepeatBy for Utf8Chunked {
@@ -55,12 +56,15 @@ impl RepeatBy for Utf8Chunked {
 
         // Safety:
         // Length of iter is trusted
-        ListChunked::from_chunks(
-            self.name(),
-            vec![Box::new(unsafe {
-                LargeListArray::from_iter_utf8_trusted_len(iter, self.len())
-            })],
-        )
+        unsafe {
+            ListChunked::from_chunks(
+                self.name(),
+                vec![Box::new(LargeListArray::from_iter_utf8_trusted_len(
+                    iter,
+                    self.len(),
+                ))],
+            )
+        }
     }
 }
 #[cfg(feature = "dtype-binary")]
@@ -73,11 +77,14 @@ impl RepeatBy for BinaryChunked {
 
         // Safety:
         // Length of iter is trusted
-        ListChunked::from_chunks(
-            self.name(),
-            vec![Box::new(unsafe {
-                LargeListArray::from_iter_binary_trusted_len(iter, self.len())
-            })],
-        )
+        unsafe {
+            ListChunked::from_chunks(
+                self.name(),
+                vec![Box::new(LargeListArray::from_iter_binary_trusted_len(
+                    iter,
+                    self.len(),
+                ))],
+            )
+        }
     }
 }

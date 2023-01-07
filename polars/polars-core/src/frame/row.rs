@@ -642,7 +642,10 @@ where
                     validity,
                 );
                 let name = format!("column_{i}");
-                ChunkedArray::<T>::from_chunks(&name, vec![Box::new(arr) as ArrayRef]).into_series()
+                unsafe {
+                    ChunkedArray::<T>::from_chunks(&name, vec![Box::new(arr) as ArrayRef])
+                        .into_series()
+                }
             })
             .collect()
     });
