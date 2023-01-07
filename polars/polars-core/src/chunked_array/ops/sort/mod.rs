@@ -153,7 +153,7 @@ where
     T: PolarsNumericType,
 {
     sort_with_fast_path!(ca, options);
-    if !ca.has_validity() {
+    if ca.null_count() == 0 {
         let mut vals = memcpy_values(ca);
 
         sort_branch(

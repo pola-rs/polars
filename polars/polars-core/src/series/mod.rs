@@ -694,9 +694,14 @@ impl Series {
     }
 
     /// Cast throws an error if conversion had overflows
-    pub fn strict_cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        let s = self.cast(data_type)?;
-        if self.null_count() != s.null_count() {
+    pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+        let null_count = self.null_count();
+        let len = self.len();
+        if null_count == len {
+            return Ok(Series::full_null(self.name(), len, dtype));
+        }
+        let s = self.0.cast(dtype)?;
+        if null_count != s.null_count() {
             let failure_mask = !self.is_null() & s.is_null();
             let failures = self.filter_threaded(&failure_mask, false)?.unique()?;
             Err(PolarsError::ComputeError(
@@ -705,7 +710,7 @@ impl Series {
                     If you were trying to cast Utf8 to Date, Time, or Datetime, \
                     consider using `strptime`.",
                     self.dtype(),
-                    data_type,
+                    dtype,
                     failures.fmt_list(),
                 )
                 .into(),
