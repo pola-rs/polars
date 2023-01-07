@@ -48,21 +48,23 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 
 def selection_to_pyexpr_list(
-    exprs: str
-    | Expr
-    | pli.Series
-    | Iterable[
+    exprs: (
         str
         | Expr
         | pli.Series
-        | timedelta
-        | date
-        | datetime
-        | int
-        | float
-        | pli.WhenThen
-        | pli.WhenThenThen
-    ],
+        | Iterable[
+            str
+            | Expr
+            | pli.Series
+            | timedelta
+            | date
+            | datetime
+            | int
+            | float
+            | pli.WhenThen
+            | pli.WhenThenThen
+        ]
+    ),
 ) -> list[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
