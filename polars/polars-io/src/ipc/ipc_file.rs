@@ -149,17 +149,21 @@ impl<R: MmapBytesReader> IpcReader<R> {
             }
             match self.finish_memmapped(predicate.clone()) {
                 Ok(df) => return Ok(df),
-                Err(err) => match err {
-                    PolarsError::ArrowError(e) => match e.as_ref() {
-                        arrow::error::Error::NotYetImplemented(s)
-                            if s == "mmap can only be done on uncompressed IPC files" =>
-                        {
-                            eprint!("could not mmap compressed IPC file, defaulting to normal read")
-                        }
-                        _ => return Err(PolarsError::ArrowError(e)),
-                    },
-                    err => return Err(err),
-                },
+                Err(err) => {
+                    match err {
+                        PolarsError::ArrowError(e) => match e.as_ref() {
+                            arrow::error::Error::NotYetImplemented(s)
+                                if s == "mmap can only be done on uncompressed IPC files" =>
+                            {
+                                if verbose {
+                                    eprint!("could not mmap compressed IPC file, defaulting to normal read")
+                                }
+                            }
+                            _ => return Err(PolarsError::ArrowError(e)),
+                        },
+                        err => return Err(err),
+                    }
+                }
             }
         }
         let rechunk = self.rechunk;
