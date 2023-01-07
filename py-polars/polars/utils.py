@@ -421,6 +421,7 @@ _series_dtype = {
 }
 NS = TypeVar("NS")
 
+
 class sphinx_accessor(property):  # type: ignore[no-redef]
     def __get__(  # type: ignore[override]
         self,
@@ -430,14 +431,14 @@ class sphinx_accessor(property):  # type: ignore[no-redef]
         try:
             obj = self.fget
             if isinstance(instance, cls):
-                return obj(instance)  # type:ignore [misc]
+                return obj(instance)  # type:ignore[misc]
             else:
                 lookup = getattr(obj, "__qualname__")  # noqa: B009
                 dtype = _series_dtype.get(lookup)
                 return (
-                    obj(cls)  # type:ignore [misc]
+                    obj(cls)  # type:ignore[misc]
                     if dtype is None
-                    else obj(cls(dtype=dtype))  # type:ignore [misc,call-arg]
+                    else obj(cls(dtype=dtype))  # type:ignore[misc,call-arg]
                 )
         except AttributeError:
             return None  # type: ignore[return-value]
