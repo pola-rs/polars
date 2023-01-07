@@ -198,21 +198,27 @@ def test_assert_frame_equal_column_mismatch_order() -> None:
 
 
 def test_assert_frame_equal_ignore_row_order() -> None:
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    df = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
+    df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
+    df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
+    df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
     with pytest.raises(AssertionError, match="Value mismatch"):
-        assert_frame_equal(expected, df)
+        assert_frame_equal(df1, df2)
 
-    assert_frame_equal(expected, df, check_row_order=False)
+    assert_frame_equal(df1, df2, check_row_order=False)
     # eg:
     # ┌─────┬─────┐      ┌─────┬─────┐
     # │ a   ┆ b   │      │ a   ┆ b   │
     # │ --- ┆ --- │      │ --- ┆ --- │
     # │ i64 ┆ i64 │ (eq) │ i64 ┆ i64 │
     # ╞═════╪═════╡  ==  ╞═════╪═════╡
-    # │ 1   ┆ 3   │      │ 2   ┆ 4   │
-    # │ 2   ┆ 4   │      │ 1   ┆ 3   │
+    # │ 1   ┆ 4   │      │ 2   ┆ 3   │
+    # │ 2   ┆ 3   │      │ 1   ┆ 4   │
     # └─────┴─────┘      └─────┴─────┘
+
+    with pytest.raises(AssertionError, match="Columns are not in the same order"):
+        assert_frame_equal(df1, df3, check_row_order=False)
+
+    assert_frame_equal(df1, df3, check_row_order=False, check_column_order=False)
 
     # note: not all column types support sorting
     with pytest.raises(

@@ -94,7 +94,7 @@ def assert_frame_equal(
     if not check_row_order:
         try:
             left = left.sort(by=left.columns)
-            right = right.sort(by=right.columns)
+            right = right.sort(by=left.columns)
         except PanicException as err:
             raise InvalidAssert(
                 "Cannot set 'check_row_order=False' on frame with unsortable columns"
