@@ -124,7 +124,7 @@ select = [
 ignore = []
 
 fix = true
-fixable = ["I001"]
+fixable = ["F401", "I001"]
 
 extend-select = ["D"]
 extend-ignore = [
