@@ -831,11 +831,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def sort(
         self: LDF,
-        by: str
-        | pli.Expr
-        | Sequence[str]
-        | Sequence[pli.Expr]
-        | Sequence[str | pli.Expr],
+        by: (
+            str
+            | pli.Expr
+            | Sequence[str]
+            | Sequence[pli.Expr]
+            | Sequence[str | pli.Expr]
+        ),
         reverse: bool | Sequence[bool] = False,
         nulls_last: bool = False,
     ) -> LDF:
@@ -1504,10 +1506,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def select(
         self: LDF,
-        exprs: str
-        | pli.Expr
-        | pli.Series
-        | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen],
+        exprs: (
+            str
+            | pli.Expr
+            | pli.Series
+            | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
+        ),
     ) -> LDF:
         """
         Select columns from this DataFrame.

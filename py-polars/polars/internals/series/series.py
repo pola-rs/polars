@@ -753,13 +753,9 @@ class Series:
 
     def __getitem__(
         self,
-        item: int
-        | Series
-        | range
-        | slice
-        | np.ndarray[Any, Any]
-        | list[int]
-        | list[bool],
+        item: (
+            int | Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool]
+        ),
     ) -> Any:
 
         if isinstance(item, Series) and item.dtype in {
@@ -2920,20 +2916,22 @@ class Series:
     def set_at_idx(
         self,
         idx: Series | np.ndarray[Any, Any] | Sequence[int] | int,
-        value: int
-        | float
-        | str
-        | bool
-        | Sequence[int]
-        | Sequence[float]
-        | Sequence[bool]
-        | Sequence[str]
-        | Sequence[date]
-        | Sequence[datetime]
-        | date
-        | datetime
-        | Series
-        | None,
+        value: (
+            int
+            | float
+            | str
+            | bool
+            | Sequence[int]
+            | Sequence[float]
+            | Sequence[bool]
+            | Sequence[str]
+            | Sequence[date]
+            | Sequence[datetime]
+            | date
+            | datetime
+            | Series
+            | None
+        ),
     ) -> Series:
         """
         Set values at the index locations.

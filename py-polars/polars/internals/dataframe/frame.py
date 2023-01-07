@@ -1211,11 +1211,13 @@ class DataFrame:
     @overload
     def __getitem__(
         self: DF,
-        item: int
-        | np.ndarray[Any, Any]
-        | MultiColSelector
-        | tuple[int, MultiColSelector]
-        | tuple[MultiRowSelector, MultiColSelector],
+        item: (
+            int
+            | np.ndarray[Any, Any]
+            | MultiColSelector
+            | tuple[int, MultiColSelector]
+            | tuple[MultiRowSelector, MultiColSelector]
+        ),
     ) -> DF:
         ...
 
@@ -2493,12 +2495,9 @@ class DataFrame:
 
     def filter(
         self,
-        predicate: pli.Expr
-        | str
-        | pli.Series
-        | list[bool]
-        | np.ndarray[Any, Any]
-        | bool,
+        predicate: (
+            pli.Expr | str | pli.Series | list[bool] | np.ndarray[Any, Any] | bool
+        ),
     ) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
@@ -5360,10 +5359,12 @@ class DataFrame:
 
     def select(
         self: DF,
-        exprs: str
-        | pli.Expr
-        | pli.Series
-        | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen],
+        exprs: (
+            str
+            | pli.Expr
+            | pli.Series
+            | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
+        ),
     ) -> DF:
         """
         Select columns from this DataFrame.
