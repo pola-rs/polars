@@ -2,7 +2,7 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_melt(
-    proj_pd: &ProjectionPushDown,
+    proj_pd: &mut ProjectionPushDown,
     input: Node,
     args: Arc<MeltArgs>,
     schema: SchemaRef,

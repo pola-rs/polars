@@ -41,7 +41,7 @@ fn add_nodes_to_accumulated_state(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
-    proj_pd: &ProjectionPushDown,
+    proj_pd: &mut ProjectionPushDown,
     input_left: Node,
     input_right: Node,
     left_on: Vec<Node>,

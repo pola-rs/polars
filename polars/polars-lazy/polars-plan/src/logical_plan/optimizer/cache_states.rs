@@ -146,7 +146,7 @@ pub(super) fn set_cache_states(
         // and finally remove that last projection and stitch the subplan
         // back to the cache node again
         if !cache_schema_and_children.is_empty() {
-            let pd = projection_pushdown::ProjectionPushDown {};
+            let mut pd = ProjectionPushDown::new();
             for (_cache_id, (children, columns)) in cache_schema_and_children {
                 if !columns.is_empty() {
                     let projection = columns

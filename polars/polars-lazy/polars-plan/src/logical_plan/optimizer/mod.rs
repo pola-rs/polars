@@ -96,11 +96,14 @@ pub fn optimize(
 
     // should be run before predicate pushdown
     if projection_pushdown {
-        let projection_pushdown_opt = ProjectionPushDown {};
+        let mut projection_pushdown_opt = ProjectionPushDown::new();
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
+
+        if projection_pushdown_opt.changed {
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
+        }
     }
 
     if predicate_pushdown {
