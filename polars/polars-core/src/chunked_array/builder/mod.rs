@@ -49,7 +49,8 @@ where
         for (values, opt_buffer) in iter {
             chunks.push(to_array::<T>(values, opt_buffer))
         }
-        ChunkedArray::from_chunks("from_iter", chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks("from_iter", chunks) }
     }
 }
 
@@ -70,7 +71,8 @@ where
 {
     fn from_slice(name: &str, v: &[T::Native]) -> Self {
         let arr = PrimitiveArray::<T::Native>::from_slice(v).to(T::get_dtype().to_arrow());
-        ChunkedArray::from_chunks(name, vec![Box::new(arr)])
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(name, vec![Box::new(arr)]) }
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<T::Native>]) -> Self {
@@ -132,7 +134,8 @@ where
         builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
 
         let chunks = vec![builder.as_box()];
-        ChunkedArray::from_chunks(name, chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(name, chunks) }
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<S>]) -> Self {
@@ -144,7 +147,8 @@ where
         builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
 
         let chunks = vec![builder.as_box()];
-        ChunkedArray::from_chunks(name, chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(name, chunks) }
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
@@ -175,7 +179,8 @@ where
         builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
 
         let chunks = vec![builder.as_box()];
-        ChunkedArray::from_chunks(name, chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(name, chunks) }
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<B>]) -> Self {
@@ -187,7 +192,8 @@ where
         builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
 
         let chunks = vec![builder.as_box()];
-        ChunkedArray::from_chunks(name, chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(name, chunks) }
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<B>>) -> Self {

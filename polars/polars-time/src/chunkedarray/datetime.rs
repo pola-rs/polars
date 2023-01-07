@@ -31,7 +31,7 @@ fn cast_and_apply<
         })
         .collect();
 
-    ChunkedArray::from_chunks(ca.name(), chunks)
+    unsafe { ChunkedArray::from_chunks(ca.name(), chunks) }
 }
 
 pub trait DatetimeMethods: AsDatetime {

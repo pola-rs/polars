@@ -23,7 +23,7 @@ where
 {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(T::get_dtype().to_arrow(), length);
-        ChunkedArray::from_chunks(name, vec![arr])
+        unsafe { ChunkedArray::from_chunks(name, vec![arr]) }
     }
 }
 impl ChunkFull<bool> for BooleanChunked {
@@ -40,7 +40,7 @@ impl ChunkFull<bool> for BooleanChunked {
 impl ChunkFullNull for BooleanChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Boolean.to_arrow(), length);
-        BooleanChunked::from_chunks(name, vec![arr])
+        unsafe { BooleanChunked::from_chunks(name, vec![arr]) }
     }
 }
 
@@ -60,7 +60,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Utf8.to_arrow(), length);
-        Utf8Chunked::from_chunks(name, vec![arr])
+        unsafe { Utf8Chunked::from_chunks(name, vec![arr]) }
     }
 }
 
@@ -82,7 +82,7 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Binary.to_arrow(), length);
-        BinaryChunked::from_chunks(name, vec![arr])
+        unsafe { BinaryChunked::from_chunks(name, vec![arr]) }
     }
 }
 
@@ -113,7 +113,7 @@ impl ListChunked {
             ))),
             length,
         );
-        ListChunked::from_chunks(name, vec![arr])
+        unsafe { ListChunked::from_chunks(name, vec![arr]) }
     }
 }
 

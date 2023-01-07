@@ -356,7 +356,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
-        BooleanChunked::from_chunks(self.name(), chunks)
+        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 
     /// Get a mask of the valid values.
@@ -375,7 +375,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
-        BooleanChunked::from_chunks(self.name(), chunks)
+        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 
     pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
@@ -448,7 +448,7 @@ where
                 })
                 .collect();
 
-            Self::from_chunks(self.name(), chunks)
+            unsafe { Self::from_chunks(self.name(), chunks) }
         };
 
         if self.chunks.len() != 1 {
@@ -607,7 +607,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
     fn from(a: PrimitiveArray<T::Native>) -> Self {
-        ChunkedArray::from_chunks("", vec![Box::new(a)])
+        unsafe { ChunkedArray::from_chunks("", vec![Box::new(a)]) }
     }
 }
 

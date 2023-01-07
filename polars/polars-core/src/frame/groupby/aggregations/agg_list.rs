@@ -81,7 +81,7 @@ where
                     None,
                 );
 
-                let mut ca = ListChunked::from_chunks(self.name(), vec![Box::new(arr)]);
+                let mut ca = unsafe { ListChunked::from_chunks(self.name(), vec![Box::new(arr)]) };
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -138,7 +138,7 @@ where
                     Box::new(array),
                     None,
                 );
-                let mut ca = ListChunked::from_chunks(self.name(), vec![Box::new(arr)]);
+                let mut ca = unsafe { ListChunked::from_chunks(self.name(), vec![Box::new(arr)]) };
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -259,7 +259,7 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
             None,
         )) as ArrayRef
     };
-    let mut listarr = ListChunked::from_chunks(ca.name(), vec![arr]);
+    let mut listarr = unsafe { ListChunked::from_chunks(ca.name(), vec![arr]) };
     if can_fast_explode {
         listarr.set_fast_explode()
     }
@@ -392,7 +392,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             None,
         )) as ArrayRef;
 
-        let mut listarr = ListChunked::from_chunks(self.name(), vec![arr]);
+        let mut listarr = unsafe { ListChunked::from_chunks(self.name(), vec![arr]) };
         if can_fast_explode {
             listarr.set_fast_explode()
         }

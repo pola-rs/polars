@@ -209,10 +209,12 @@ where
                     arr.extend(to_extend);
                     let arr: PrimitiveArray<T::Native> = arr.into();
 
-                    Ok(ChunkedArray::from_chunks(
-                        self.name(),
-                        vec![Box::new(arr) as ArrayRef],
-                    ))
+                    unsafe {
+                        Ok(ChunkedArray::from_chunks(
+                            self.name(),
+                            vec![Box::new(arr) as ArrayRef],
+                        ))
+                    }
                 } else {
                     let mask = self.not_equal(&self.shift(1));
                     self.filter(&mask)
@@ -447,7 +449,7 @@ mod is_first {
             })
             .collect();
 
-        BooleanChunked::from_chunks(ca.name(), chunks)
+        unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
     }
 
     impl<T> IsFirst<T> for ChunkedArray<T>
@@ -489,7 +491,7 @@ mod is_first {
                 })
                 .collect();
 
-            Ok(BooleanChunked::from_chunks(self.name(), chunks))
+            unsafe { Ok(BooleanChunked::from_chunks(self.name(), chunks)) }
         }
     }
 
@@ -508,7 +510,7 @@ mod is_first {
                 })
                 .collect();
 
-            Ok(BooleanChunked::from_chunks(self.name(), chunks))
+            unsafe { Ok(BooleanChunked::from_chunks(self.name(), chunks)) }
         }
     }
 }

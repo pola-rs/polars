@@ -287,7 +287,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             .map(|c| substring(c, start, &length))
             .collect::<arrow::error::Result<_>>()?;
 
-        Ok(Utf8Chunked::from_chunks(ca.name(), chunks))
+        unsafe { Ok(Utf8Chunked::from_chunks(ca.name(), chunks)) }
     }
 }
 

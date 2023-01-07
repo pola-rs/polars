@@ -129,11 +129,11 @@ impl<T: NativeType> DatetimeInfer<T> {
             })
             .collect();
         let mut out = match self.logical_type {
-            DataType::Date => Int32Chunked::from_chunks(ca.name(), chunks)
+            DataType::Date => unsafe { Int32Chunked::from_chunks(ca.name(), chunks) }
                 .into_series()
                 .cast(&self.logical_type)
                 .unwrap(),
-            DataType::Datetime(_, _) => Int64Chunked::from_chunks(ca.name(), chunks)
+            DataType::Datetime(_, _) => unsafe { Int64Chunked::from_chunks(ca.name(), chunks) }
                 .into_series()
                 .cast(&self.logical_type)
                 .unwrap(),

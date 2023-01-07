@@ -29,6 +29,6 @@ pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Series> {
             }
         });
         let arr = Box::new(IdxArr::from_vec(out)) as ArrayRef;
-        Ok(IdxCa::from_chunks(predicate.name(), vec![arr]).into_series())
+        unsafe { Ok(IdxCa::from_chunks(predicate.name(), vec![arr]).into_series()) }
     }
 }

@@ -34,7 +34,7 @@ impl CategoricalChunked {
                 RevMapping::Local(arr) => {
                     // we don't use arrow2 sort here because its not activated
                     // that saves compilation
-                    let ca = Utf8Chunked::from_chunks("", vec![Box::from(arr.clone())]);
+                    let ca = unsafe { Utf8Chunked::from_chunks("", vec![Box::from(arr.clone())]) };
                     let sorted = ca.sort(options.descending);
                     let arr = sorted.downcast_iter().next().unwrap().clone();
                     let rev_map = RevMapping::Local(arr);

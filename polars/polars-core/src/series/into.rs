@@ -53,7 +53,7 @@ impl Series {
             DataType::Categorical(_) => {
                 let ca = self.categorical().unwrap();
                 let arr = ca.logical().chunks()[chunk_idx].clone();
-                let cats = UInt32Chunked::from_chunks("", vec![arr]);
+                let cats = unsafe { UInt32Chunked::from_chunks("", vec![arr]) };
 
                 // safety:
                 // we only take a single chunk and change nothing about the index/rev_map mapping

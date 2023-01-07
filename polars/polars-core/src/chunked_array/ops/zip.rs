@@ -91,7 +91,7 @@ where
                     Ok(arr)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            Ok(ChunkedArray::from_chunks(self.name(), chunks))
+            unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
         }
     }
 }
@@ -117,7 +117,7 @@ impl ChunkZip<BooleanType> for BooleanChunked {
                     Ok(arr)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            Ok(ChunkedArray::from_chunks(self.name(), chunks))
+            unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
         }
     }
 }
@@ -138,7 +138,7 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
                     Ok(arr)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            Ok(ChunkedArray::from_chunks(self.name(), chunks))
+            unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
         }
     }
 }
@@ -164,7 +164,7 @@ impl ChunkZip<BinaryType> for BinaryChunked {
                     Ok(arr)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            Ok(ChunkedArray::from_chunks(self.name(), chunks))
+            unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
         }
     }
 }
@@ -186,7 +186,7 @@ impl ChunkZip<ListType> for ListChunked {
                 Ok(arr)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(ChunkedArray::from_chunks(self.name(), chunks))
+        unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
     }
 }
 
