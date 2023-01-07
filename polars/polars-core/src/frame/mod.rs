@@ -1631,11 +1631,6 @@ impl DataFrame {
     where
         I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
     {
-        if std::env::var("POLARS_VERT_PAR").is_ok() {
-            let idx_ca: NoNull<IdxCa> = iter.into_iter().map(|idx| idx as IdxSize).collect();
-            return self.take_unchecked_vectical(&idx_ca.into_inner());
-        }
-
         let n_chunks = self.n_chunks();
         let has_utf8 = self
             .columns
@@ -1673,14 +1668,6 @@ impl DataFrame {
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync + TrustedLen,
     {
-        if std::env::var("POLARS_VERT_PAR").is_ok() {
-            let idx_ca: IdxCa = iter
-                .into_iter()
-                .map(|opt| opt.map(|v| v as IdxSize))
-                .collect();
-            return self.take_unchecked_vectical(&idx_ca);
-        }
-
         let n_chunks = self.n_chunks();
 
         let has_utf8 = self
@@ -1757,31 +1744,6 @@ impl DataFrame {
                 .collect()
         };
         DataFrame::new_no_checks(cols)
-    }
-
-    unsafe fn take_unchecked_vectical(&self, indices: &IdxCa) -> Self {
-        let n_threads = POOL.current_num_threads();
-        let idxs = split_ca(indices, n_threads).unwrap();
-
-        let dfs: Vec<_> = POOL.install(|| {
-            idxs.par_iter()
-                .map(|idx| {
-                    let cols = self
-                        .columns
-                        .iter()
-                        .map(|s| s.take_unchecked(idx).unwrap())
-                        .collect();
-                    DataFrame::new_no_checks(cols)
-                })
-                .collect()
-        });
-
-        let mut iter = dfs.into_iter();
-        let first = iter.next().unwrap();
-        iter.fold(first, |mut acc, df| {
-            acc.vstack_mut(&df).unwrap();
-            acc
-        })
     }
 
     /// Rename a column in the `DataFrame`.
@@ -1887,11 +1849,7 @@ impl DataFrame {
 
         // Safety:
         // the created indices are in bounds
-        let mut df = if std::env::var("POLARS_VERT_PAR").is_ok() {
-            unsafe { self.take_unchecked_vectical(&take) }
-        } else {
-            unsafe { self.take_unchecked_impl(&take, parallel) }
-        };
+        let mut df = unsafe { self.take_unchecked_impl(&take, parallel) };
         // Mark the first sort column as sorted
         // if the column did not exists it is ok, because we sorted by an expression
         // not present in the dataframe
