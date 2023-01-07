@@ -62,6 +62,7 @@ impl CategoricalChunked {
                         options.descending,
                         |(_, a), (_, b)| order_default_null(a, b),
                         |(_, a), (_, b)| order_reverse_null(a, b),
+                        options.multithreaded,
                     );
                     let cats: NoNull<UInt32Chunked> =
                         vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
@@ -97,6 +98,7 @@ impl CategoricalChunked {
         self.sort_with(SortOptions {
             nulls_last: false,
             descending: reverse,
+            multithreaded: true,
         })
     }
 

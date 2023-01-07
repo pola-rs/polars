@@ -1821,7 +1821,9 @@ impl DataFrame {
         self.as_single_chunk_par();
         let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
-        self.columns = self.sort_impl(by_column, reverse, false, None)?.columns;
+        self.columns = self
+            .sort_impl(by_column, reverse, false, None, true)?
+            .columns;
         Ok(self)
     }
 
@@ -1833,6 +1835,7 @@ impl DataFrame {
         reverse: Vec<bool>,
         nulls_last: bool,
         slice: Option<(i64, usize)>,
+        parallel: bool,
     ) -> PolarsResult<Self> {
         if self.height() == 0 {
             return Ok(self.clone());
@@ -1850,6 +1853,7 @@ impl DataFrame {
                 let options = SortOptions {
                     descending: reverse[0],
                     nulls_last,
+                    multithreaded: parallel,
                 };
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
@@ -1886,7 +1890,7 @@ impl DataFrame {
         let mut df = if std::env::var("POLARS_VERT_PAR").is_ok() {
             unsafe { self.take_unchecked_vectical(&take) }
         } else {
-            unsafe { self.take_unchecked(&take) }
+            unsafe { self.take_unchecked_impl(&take, parallel) }
         };
         // Mark the first sort column as sorted
         // if the column did not exists it is ok, because we sorted by an expression
@@ -1935,7 +1939,13 @@ impl DataFrame {
         let by_column = vec![df.column(by_column)?.clone()];
         let reverse = vec![options.descending];
         df.columns = df
-            .sort_impl(by_column, reverse, options.nulls_last, None)?
+            .sort_impl(
+                by_column,
+                reverse,
+                options.nulls_last,
+                None,
+                options.multithreaded,
+            )?
             .columns;
         Ok(df)
     }

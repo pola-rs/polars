@@ -442,6 +442,7 @@ fn take_aggregations() -> PolarsResult<()> {
                         .arg_sort(SortOptions {
                             descending: true,
                             nulls_last: false,
+                            multithreaded: true,
                         })
                         .head(Some(2)),
                 )
@@ -479,6 +480,7 @@ fn test_take_consistency() -> PolarsResult<()> {
             .arg_sort(SortOptions {
                 descending: true,
                 nulls_last: false,
+                multithreaded: true,
             })
             .take(lit(0))])
         .collect()?;
@@ -495,6 +497,7 @@ fn test_take_consistency() -> PolarsResult<()> {
             .arg_sort(SortOptions {
                 descending: true,
                 nulls_last: false,
+                multithreaded: true,
             })
             .take(lit(0))])
         .collect()?;
@@ -513,6 +516,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 .arg_sort(SortOptions {
                     descending: true,
                     nulls_last: false,
+                    multithreaded: true,
                 })
                 .take(lit(0))
                 .alias("1"),
@@ -522,6 +526,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                         .arg_sort(SortOptions {
                             descending: true,
                             nulls_last: false,
+                            multithreaded: true,
                         })
                         .take(lit(0)),
                 )
