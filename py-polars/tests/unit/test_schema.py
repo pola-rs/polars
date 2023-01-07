@@ -69,7 +69,8 @@ def test_bool_numeric_supertype() -> None:
         pl.Int64,
     ]:
         assert (
-            df.select([(pl.col("v") < 3).sum().cast(dt) / pl.count()])[0, 0] - 0.3333333
+            df.select([(pl.col("v") < 3).sum().cast(dt) / pl.count()]).item()
+            - 0.3333333
             <= 0.00001
         )
 

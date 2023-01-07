@@ -90,7 +90,7 @@ def test_count_expr() -> None:
 
     out = df.select(pl.count())
     assert out.shape == (1, 1)
-    assert cast(int, out[0, 0]) == 5
+    assert cast(int, out.item()) == 5
 
     out = df.groupby("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
