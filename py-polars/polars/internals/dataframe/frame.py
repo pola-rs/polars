@@ -2593,26 +2593,25 @@ class DataFrame:
         >>> print(df.glimpse())
         Rows: 3
         Columns: 6
-        $ a <Float64> 1.0, 2.8, 3.0
-        $ b   <Int64> 4, 5, None
-        $ c <Boolean> True, False, True
-        $ d    <Utf8> None, b, c
-        $ e    <Utf8> usd, eur, None
-        $ f    <Date> 2020-01-01, 2021-01-02, 2022-01-01
+        $ a  <f64> 1.0, 2.8, 3.0
+        $ b  <i64> 4, 5, None
+        $ c <bool> True, False, True
+        $ d  <str> None, b, c
+        $ e  <str> usd, eur, None
+        $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
 
         """
         # always print at most this number of values, mainly used to ensure
         # we do not cast long arrays to strings which would be very slow
         max_num_values = min(10, self.height)
 
-        def _parse_column(col_name: str) -> tuple[str, str, str]:
-            s = self[col_name]
-            dtype_str = "<" + s.dtype.__name__ + ">"
-            val = s[:max_num_values].to_list()
+        def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
+            dtype_str = f"<{dtype.string_repr()}>"
+            val = self[:max_num_values][col_name].to_list()
             val_str = ", ".join(map(str, val))
             return col_name, dtype_str, val_str
 
-        data = [_parse_column(s) for s in self.columns]
+        data = [_parse_column(s, dtype) for s, dtype in self.schema.items()]
 
         # we make the first column as small as possible by taking the longest
         # column name

@@ -121,6 +121,10 @@ class DataTypeClass(type):
     def __repr__(cls) -> str:
         return cls.__name__
 
+    @classmethod
+    def string_repr(cls) -> str:
+        return dtype_str_repr(cls)
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
