@@ -151,13 +151,12 @@ where
         Value::String(s) => s,
         _ => return None,
     };
-    match infer_pattern_single(val) {
-        None => None,
-        Some(pattern) => match DatetimeInfer::<T::Native>::try_from(pattern) {
+    infer_pattern_single(val).and_then(|pattern| {
+        match DatetimeInfer::<T::Native>::try_from(pattern) {
             Ok(mut infer) => infer.parse(val),
             Err(_) => None,
-        },
-    }
+        }
+    })
 }
 
 #[cfg(feature = "dtype-struct")]

@@ -261,7 +261,7 @@ fn create_serializer<'a>(
         .par_iter()
         .zip(fields)
         .zip(encodings)
-        .map(move |((array, type_), encoding)| {
+        .flat_map(move |((array, type_), encoding)| {
             let encoded_columns =
                 array_to_columns(array, type_.clone(), options, encoding).unwrap();
 
@@ -288,7 +288,6 @@ fn create_serializer<'a>(
                 })
                 .collect::<Vec<_>>()
         })
-        .flatten()
         .collect::<Vec<_>>();
 
     let row_group = DynIter::new(columns.into_iter());

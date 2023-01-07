@@ -200,7 +200,7 @@ pub fn _inner_join_multiple_keys(
         probe_hashes
             .into_par_iter()
             .zip(offsets)
-            .map(|(probe_hashes, offset)| {
+            .flat_map(|(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
                 let mut results =
@@ -233,7 +233,6 @@ pub fn _inner_join_multiple_keys(
 
                 results
             })
-            .flatten()
             .unzip()
     })
 }
@@ -414,7 +413,7 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
         probe_hashes
             .into_par_iter()
             .zip(offsets)
-            .map(move |(probe_hashes, offset)| {
+            .flat_map(move |(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
                 let mut results =
@@ -448,7 +447,6 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
 
                 results
             })
-            .flatten()
     })
 }
 

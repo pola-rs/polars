@@ -280,7 +280,7 @@ where
             .zip(offsets)
             // probes_hashes: Vec<u64> processed by this thread
             // offset: offset index
-            .map(|(vals_left, offset)| {
+            .flat_map(|(vals_left, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
 
@@ -321,7 +321,6 @@ where
                 });
                 results
             })
-            .flatten()
             .collect()
     }))
 }
@@ -402,7 +401,7 @@ where
             .zip(offsets)
             // probes_hashes: Vec<u64> processed by this thread
             // offset: offset index
-            .map(|(vals_left, offset)| {
+            .flat_map(|(vals_left, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
 
@@ -443,7 +442,6 @@ where
                 });
                 results
             })
-            .flatten()
             .collect()
     })
 }
@@ -514,7 +512,7 @@ where
         probe_hashes
             .into_par_iter()
             .zip(offsets)
-            .map(|(probe_hashes, offset)| {
+            .flat_map(|(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
 
@@ -566,7 +564,6 @@ where
 
                 results
             })
-            .flatten()
             .collect()
     })
 }

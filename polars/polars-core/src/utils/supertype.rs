@@ -3,12 +3,11 @@ use super::*;
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
-    match get_supertype(l, r) {
-        Some(dt) => Ok(dt),
-        None => Err(PolarsError::ComputeError(
+    get_supertype(l, r).ok_or_else(|| {
+        PolarsError::ComputeError(
             format!("Failed to determine supertype of {l:?} and {r:?}").into(),
-        )),
-    }
+        )
+    })
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
@@ -270,10 +269,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         }
     }
 
-    match inner(l, r) {
-        Some(dt) => Some(dt),
-        None => inner(r, l),
-    }
+    inner(l, r).or_else(|| inner(r, l))
 }
 
 #[cfg(feature = "dtype-struct")]
