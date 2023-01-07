@@ -379,6 +379,7 @@ impl PyLazyFrame {
             SortOptions {
                 descending: reverse,
                 nulls_last,
+                multithreaded: true,
             },
         )
         .into()

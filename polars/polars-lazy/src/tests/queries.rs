@@ -890,6 +890,7 @@ fn test_lazy_groupby_filter() -> PolarsResult<()> {
             SortOptions {
                 descending: false,
                 nulls_last: false,
+                multithreaded: true,
             },
         )
         .collect()?;
@@ -1755,6 +1756,7 @@ fn test_single_group_result() -> PolarsResult<()> {
             .arg_sort(SortOptions {
                 descending: false,
                 nulls_last: false,
+                multithreaded: true,
             })
             .list()
             .over([col("a")])

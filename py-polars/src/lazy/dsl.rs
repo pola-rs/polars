@@ -231,6 +231,7 @@ impl PyExpr {
             .sort_with(SortOptions {
                 descending,
                 nulls_last,
+                multithreaded: true,
             })
             .into()
     }
@@ -241,6 +242,7 @@ impl PyExpr {
             .arg_sort(SortOptions {
                 descending: reverse,
                 nulls_last,
+                multithreaded: true,
             })
             .into()
     }

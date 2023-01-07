@@ -986,6 +986,7 @@ impl PyDataFrame {
                 SortOptions {
                     descending: reverse,
                     nulls_last,
+                    multithreaded: true,
                 },
             )
             .map_err(PyPolarsErr::from)?;

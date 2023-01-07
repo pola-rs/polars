@@ -1136,6 +1136,7 @@ impl PySeries {
         let options = SortOptions {
             descending: reverse,
             nulls_last: reverse,
+            multithreaded: true,
         };
         self.series.is_sorted(options)
     }

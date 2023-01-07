@@ -822,6 +822,7 @@ mod test {
         let out = a.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
+            multithreaded: true,
         });
         assert_eq!(
             Vec::from(&out),
@@ -839,6 +840,7 @@ mod test {
         let out = a.sort_with(SortOptions {
             descending: false,
             nulls_last: true,
+            multithreaded: true,
         });
         assert_eq!(
             Vec::from(&out),
@@ -919,6 +921,7 @@ mod test {
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
+            multithreaded: true,
         });
         let expected = &[None, None, Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);
@@ -926,6 +929,7 @@ mod test {
         let out = ca.sort_with(SortOptions {
             descending: true,
             nulls_last: false,
+            multithreaded: true,
         });
 
         let expected = &[None, None, Some("c"), Some("b"), Some("a")];
@@ -934,6 +938,7 @@ mod test {
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: true,
+            multithreaded: true,
         });
         let expected = &[Some("a"), Some("b"), Some("c"), None, None];
         assert_eq!(Vec::from(&out), expected);
@@ -941,6 +946,7 @@ mod test {
         let out = ca.sort_with(SortOptions {
             descending: true,
             nulls_last: true,
+            multithreaded: true,
         });
         let expected = &[Some("c"), Some("b"), Some("a"), None, None];
         assert_eq!(Vec::from(&out), expected);
