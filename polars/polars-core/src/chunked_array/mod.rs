@@ -315,7 +315,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Returns true if contains a single chunk and has no null values
     pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && !self.has_validity()
+        self.chunks.len() == 1 && self.null_count() == 0
     }
 
     /// Count the null values.

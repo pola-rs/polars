@@ -730,3 +730,19 @@ def test_struct_empty() -> None:
     # Empty struct
     df = pl.DataFrame({"a": [{}]})
     assert df.to_dict(False) == {"a": [{"": None}]}
+
+
+def test_struct_null_cast() -> None:
+    dtype = pl.Struct(
+        [
+            pl.Field("a", pl.Int64),
+            pl.Field("b", pl.Utf8),
+            pl.Field("c", pl.List(pl.Float64)),
+        ]
+    )
+    assert (
+        pl.DataFrame()
+        .lazy()
+        .select([pl.lit(None, dtype=pl.Null).cast(dtype, strict=True)])
+        .collect()
+    ).to_dict(False) == {"": [{"a": None, "b": None, "c": None}]}
