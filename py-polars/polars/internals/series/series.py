@@ -78,6 +78,7 @@ from polars.utils import (
     _time_to_pl_time,
     is_bool_sequence,
     is_int_sequence,
+    range_to_series,
     range_to_slice,
     scale_bytes,
     sphinx_accessor,
@@ -215,16 +216,16 @@ class Series:
             raise ValueError(
                 f"Given dtype: '{dtype}' is not a valid Polars data type and cannot be converted into one."  # noqa: E501
             )
-        # Handle case where values are passed as the first argument
-        if name is not None and not isinstance(name, str):
-            if values is None:
-                values = name
-                name = None
-            else:
-                raise ValueError("Series name must be a string.")
 
+        # Handle case where values are passed as the first argument
         if name is None:
             name = ""
+        elif not isinstance(name, str):
+            if values is None:
+                values = name
+                name = ""
+            else:
+                raise ValueError("Series name must be a string.")
 
         if values is None:
             self._s = sequence_to_pyseries(
@@ -234,17 +235,8 @@ class Series:
             self._s = series_to_pyseries(name, values)
 
         elif isinstance(values, range):
-            self._s = (
-                pli.arange(
-                    low=values.start,
-                    high=values.stop,
-                    step=values.step,
-                    eager=True,
-                    dtype=dtype,
-                )
-                .rename(name, in_place=True)
-                ._s
-            )
+            self._s = range_to_series(name, values, dtype=dtype)._s
+
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
                 name,

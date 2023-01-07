@@ -50,7 +50,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
-from polars.utils import _is_generator, arrlen, threadpool_size
+from polars.utils import _is_generator, arrlen, range_to_series, threadpool_size
 
 if version_info >= (3, 10):
 
@@ -269,6 +269,8 @@ def sequence_to_pyseries(
     if value is not None:
         if is_dataclass(value) or is_namedtuple(value, annotated=True):
             return pli.DataFrame(values).to_struct(name)._s
+        elif isinstance(value, range):
+            values = [range_to_series("", v) for v in values]
         else:
             # for temporal dtypes:
             # * if the values are integer, we take the physical branch.
@@ -319,7 +321,12 @@ def sequence_to_pyseries(
         elif python_dtype in (list, tuple):
             if nested_dtype is None:
                 nested_value = _get_first_non_none(value)
-                nested_dtype = type(nested_value) if nested_value is not None else float
+                if isinstance(nested_value, range):
+                    nested_dtype = list
+                else:
+                    nested_dtype = (
+                        type(nested_value) if nested_value is not None else float
+                    )
 
             # recursively call Series constructor
             if nested_dtype == list:
@@ -391,7 +398,6 @@ def sequence_to_pyseries(
             return PySeries.new_series_list(name, values, strict)
         else:
             constructor = py_type_to_constructor(python_dtype)
-
             if constructor == PySeries.new_object:
                 try:
                     return PySeries.new_from_anyvalues(name, values)

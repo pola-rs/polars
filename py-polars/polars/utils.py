@@ -21,7 +21,14 @@ from typing import (
 )
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
+from polars.datatypes import (
+    DataType,
+    Date,
+    Datetime,
+    Int64,
+    PolarsDataType,
+    is_polars_dtype,
+)
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 try:
@@ -168,6 +175,19 @@ def is_str_sequence(
     if allow_str is False and isinstance(val, str):
         return False
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
+
+
+def range_to_series(
+    name: str, rng: range, dtype: PolarsDataType | None = Int64
+) -> pli.Series:
+    """Fast conversion of the given range to a Series."""
+    return pli.arange(
+        low=rng.start,
+        high=rng.stop,
+        step=rng.step,
+        eager=True,
+        dtype=dtype,
+    ).rename(name, in_place=True)
 
 
 def range_to_slice(rng: range) -> slice:

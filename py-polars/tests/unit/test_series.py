@@ -1317,9 +1317,25 @@ def test_sqrt() -> None:
 
 
 def test_range() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    assert s[2:5].series_equal(s[range(2, 5)])
-    df = pl.DataFrame([s])
+    s1 = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+    assert s1[2:5].series_equal(s1[range(2, 5)])
+
+    ranges = [range(-2, 1), range(3), range(2, 8, 2)]
+
+    s2 = pl.Series("b", ranges, dtype=pl.List(pl.Int8))
+    assert s2.to_list() == [[-2, -1, 0], [0, 1, 2], [2, 4, 6]]
+    assert s2.dtype == pl.List(pl.Int8)
+    assert s2.name == "b"
+
+    s3 = pl.Series("c", (ranges for _ in range(3)))
+    assert s3.to_list() == [
+        [[-2, -1, 0], [0, 1, 2], [2, 4, 6]],
+        [[-2, -1, 0], [0, 1, 2], [2, 4, 6]],
+        [[-2, -1, 0], [0, 1, 2], [2, 4, 6]],
+    ]
+    assert s3.dtype == pl.List(pl.List(pl.Int64))
+
+    df = pl.DataFrame([s1])
     assert df[2:5].frame_equal(df[range(2, 5)])
 
 
