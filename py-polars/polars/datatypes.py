@@ -83,7 +83,7 @@ PythonDataType: TypeAlias = Union[
 ColumnsType: TypeAlias = Union[
     Sequence[str],
     Mapping[str, Union[PolarsDataType, PythonDataType]],
-    Sequence[Tuple[str, Union[PolarsDataType, PythonDataType, None]]],
+    Sequence[Union[str, Tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
 ]
 Schema: TypeAlias = Mapping[str, PolarsDataType]
 

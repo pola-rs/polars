@@ -257,7 +257,7 @@ class DataFrame:
     def __init__(
         self,
         data: (
-            dict[str, Sequence[Any]]
+            Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series]
             | Sequence[Any]
             | np.ndarray[Any, Any]
             | pa.Table
@@ -274,13 +274,13 @@ class DataFrame:
         elif isinstance(data, dict):
             self._df = dict_to_pydf(data, columns=columns)
 
-        elif isinstance(data, pli.Series):
-            self._df = series_to_pydf(data, columns=columns)
-
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
                 data, columns=columns, orient=orient, infer_schema_length=50
             )
+        elif isinstance(data, pli.Series):
+            self._df = series_to_pydf(data, columns=columns)
+
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(data, columns=columns, orient=orient)
 
@@ -317,7 +317,9 @@ class DataFrame:
     @classmethod
     def _from_dict(
         cls: type[DF],
-        data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]]],
+        data: Mapping[
+            str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series
+        ],
         columns: Sequence[str] | None = None,
     ) -> DF:
         """

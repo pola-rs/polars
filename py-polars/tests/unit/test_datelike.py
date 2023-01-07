@@ -64,7 +64,7 @@ def test_fill_null_temporal() -> None:
             [dtm, dtm_ms, dtm, dtm, dt, tm, td, td, td, td],
             [None] * 10,
         ],
-        columns=[  # type: ignore[arg-type]
+        columns=[
             ("a", pl.Datetime),
             ("b", pl.Datetime("ms")),
             ("c", pl.Datetime("us")),
