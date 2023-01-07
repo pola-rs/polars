@@ -12,6 +12,8 @@ use arrow::temporal_conversions::*;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+use comfy_table::modifiers::*;
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
@@ -421,25 +423,25 @@ impl Display for DataFrame {
                 names.push(s);
                 constraints.push(tbl_lower_bounds(l));
             }
-            let preset = match std::env::var(FMT_TABLE_FORMATTING)
+            let (preset, is_utf8) = match std::env::var(FMT_TABLE_FORMATTING)
                 .as_deref()
                 .unwrap_or("DEFAULT")
             {
-                "ASCII_FULL" => ASCII_FULL,
-                "ASCII_FULL_CONDENSED" => ASCII_FULL_CONDENSED,
-                "ASCII_NO_BORDERS" => ASCII_NO_BORDERS,
-                "ASCII_BORDERS_ONLY" => ASCII_BORDERS_ONLY,
-                "ASCII_BORDERS_ONLY_CONDENSED" => ASCII_BORDERS_ONLY_CONDENSED,
-                "ASCII_HORIZONTAL_ONLY" => ASCII_HORIZONTAL_ONLY,
-                "ASCII_MARKDOWN" => ASCII_MARKDOWN,
-                "UTF8_FULL" => UTF8_FULL,
-                "UTF8_FULL_CONDENSED" => UTF8_FULL_CONDENSED,
-                "UTF8_NO_BORDERS" => UTF8_NO_BORDERS,
-                "UTF8_BORDERS_ONLY" => UTF8_BORDERS_ONLY,
-                "UTF8_HORIZONTAL_ONLY" => UTF8_HORIZONTAL_ONLY,
-                "NOTHING" => NOTHING,
-                "DEFAULT" => UTF8_FULL_CONDENSED,
-                _ => UTF8_FULL_CONDENSED,
+                "ASCII_FULL" => (ASCII_FULL, false),
+                "ASCII_FULL_CONDENSED" => (ASCII_FULL_CONDENSED, false),
+                "ASCII_NO_BORDERS" => (ASCII_NO_BORDERS, false),
+                "ASCII_BORDERS_ONLY" => (ASCII_BORDERS_ONLY, false),
+                "ASCII_BORDERS_ONLY_CONDENSED" => (ASCII_BORDERS_ONLY_CONDENSED, false),
+                "ASCII_HORIZONTAL_ONLY" => (ASCII_HORIZONTAL_ONLY, false),
+                "ASCII_MARKDOWN" => (ASCII_MARKDOWN, false),
+                "UTF8_FULL" => (UTF8_FULL, true),
+                "UTF8_FULL_CONDENSED" => (UTF8_FULL_CONDENSED, true),
+                "UTF8_NO_BORDERS" => (UTF8_NO_BORDERS, true),
+                "UTF8_BORDERS_ONLY" => (UTF8_BORDERS_ONLY, true),
+                "UTF8_HORIZONTAL_ONLY" => (UTF8_HORIZONTAL_ONLY, true),
+                "NOTHING" => (NOTHING, false),
+                "DEFAULT" => (UTF8_FULL_CONDENSED, true),
+                _ => (UTF8_FULL_CONDENSED, true),
             };
 
             let mut table = Table::new();
@@ -447,6 +449,9 @@ impl Display for DataFrame {
                 .load_preset(preset)
                 .set_content_arrangement(ContentArrangement::Dynamic);
 
+            if is_utf8 && env_is_true(FMT_TABLE_ROUNDED_CORNERS) {
+                table.apply_modifier(UTF8_ROUND_CORNERS);
+            }
             if max_n_rows > 0 {
                 if height > max_n_rows {
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));

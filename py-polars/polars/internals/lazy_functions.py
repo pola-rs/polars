@@ -2455,10 +2455,20 @@ def arg_where(
 
 
 def coalesce(
-    exprs: Sequence[
-        pli.Expr | str | date | datetime | timedelta | int | float | bool | pli.Series
-    ]
-    | pli.Expr,
+    exprs: (
+        Sequence[
+            pli.Expr
+            | str
+            | date
+            | datetime
+            | timedelta
+            | int
+            | float
+            | bool
+            | pli.Series
+        ]
+        | pli.Expr
+    ),
 ) -> pli.Expr:
     """
     Folds the expressions from left to right, keeping the first non-null value.

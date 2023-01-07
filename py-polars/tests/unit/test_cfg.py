@@ -344,32 +344,35 @@ def test_shape_below_table_and_inlined_dtype() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
 
     pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(True)
-    pl.Config.set_tbl_formatting("UTF8_FULL")
+    pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
     assert (
         str(df) == ""
-        "┌─────────┬─────────┬─────────┐\n"
+        "╭─────────┬─────────┬─────────╮\n"
         "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
         "╞═════════╪═════════╪═════════╡\n"
         "│ 1       ┆ 3       ┆ 5       │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 2       ┆ 4       ┆ 6       │\n"
-        "└─────────┴─────────┴─────────┘\n"
+        "╰─────────┴─────────┴─────────╯\n"
         "shape: (2, 3)"
     )
 
     pl.Config.set_tbl_dataframe_shape_below(False)
     assert (
         str(df) == "shape: (2, 3)\n"
-        "┌─────────┬─────────┬─────────┐\n"
+        "╭─────────┬─────────┬─────────╮\n"
         "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
         "╞═════════╪═════════╪═════════╡\n"
         "│ 1       ┆ 3       ┆ 5       │\n"
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 2       ┆ 4       ┆ 6       │\n"
-        "└─────────┴─────────┴─────────┘"
+        "╰─────────┴─────────┴─────────╯"
     )
-
-    pl.Config.set_tbl_column_data_type_inline(False).set_tbl_cell_alignment("RIGHT")
+    (
+        pl.Config.set_tbl_formatting(rounded_corners=False)
+        .set_tbl_column_data_type_inline(False)
+        .set_tbl_cell_alignment("RIGHT")
+    )
     assert (
         str(df) == "shape: (2, 3)\n"
         "┌─────┬─────┬─────┐\n"
@@ -444,13 +447,18 @@ def test_config_scope() -> None:
     initial_state = pl.Config.state()
 
     with pl.Config() as cfg:
-        cfg.set_verbose(True).set_tbl_hide_dtype_separator(True).set_ascii_tables()
-
+        (
+            cfg.set_tbl_formatting(rounded_corners=True)
+            .set_verbose(True)
+            .set_tbl_hide_dtype_separator(True)
+            .set_ascii_tables()
+        )
         new_state_entries = set(
             {
                 "POLARS_FMT_MAX_COLS": "8",
                 "POLARS_FMT_TABLE_FORMATTING": "ASCII_FULL_CONDENSED",
                 "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR": "1",
+                "POLARS_FMT_TABLE_ROUNDED_CORNERS": "1",
                 "POLARS_VERBOSE": "1",
             }.items()
         )
