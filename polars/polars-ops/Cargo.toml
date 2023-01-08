@@ -35,6 +35,7 @@ dtype-i16 = ["polars-core/dtype-i16"]
 object = ["polars-core/object"]
 propagate_nans = []
 performant = ["polars-core/performant"]
+big_idx = ["polars-core/bigidx"]
 
 # ops
 to_dummies = []
@@ -56,3 +57,4 @@ cross_join = ["polars-core/cross_join"]
 chunked_ids = ["polars-core/chunked_ids"]
 asof_join = ["polars-core/asof_join"]
 semi_anti_join = ["polars-core/semi_anti_join"]
+list_take = []

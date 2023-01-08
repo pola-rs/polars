@@ -84,6 +84,20 @@ class ListNameSpace:
 
         """
 
+    def take(self, index: pli.Series | list[int]) -> pli.Series:
+        """
+        Take sublists by multiple indices.
+
+        The indices may be defined in a single column, or by sublists in another
+        column of dtype ``List``.
+
+        Parameters
+        ----------
+        index
+            Indices to return per sublist
+
+        """
+
     def __getitem__(self, item: int) -> pli.Series:
         return self.get(item)
 

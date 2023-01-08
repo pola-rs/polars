@@ -64,6 +64,7 @@ date_offset = ["polars-plan/date_offset"]
 trigonometry = ["polars-plan/trigonometry"]
 sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
+list_take = ["polars-ops/list_take", "polars-plan/list_take"]
 
 true_div = ["polars-plan/true_div"]
 

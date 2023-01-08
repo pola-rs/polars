@@ -122,6 +122,14 @@ impl ListNameSpace {
             .map_many_private(FunctionExpr::ListExpr(ListFunction::Get), &[index], false)
     }
 
+    /// Get items in every sublist by multiple indexes.
+    #[cfg(feature = "list_take")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "list_take")))]
+    pub fn take(self, index: Expr) -> Expr {
+        self.0
+            .map_many_private(FunctionExpr::ListExpr(ListFunction::Take), &[index], false)
+    }
+
     /// Get first item of every sublist.
     pub fn first(self) -> Expr {
         self.get(lit(0i64))

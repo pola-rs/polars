@@ -1458,6 +1458,11 @@ impl PyExpr {
         self.inner.clone().arr().get(index.inner).into()
     }
 
+    #[cfg(feature = "list_take")]
+    fn lst_take(&self, index: PyExpr) -> Self {
+        self.inner.clone().arr().take(index.inner).into()
+    }
+
     fn lst_join(&self, separator: &str) -> Self {
         self.inner.clone().arr().join(separator).into()
     }

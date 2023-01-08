@@ -67,6 +67,7 @@ performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
+list_take = ["polars/list_take"]
 
 all = [
   "json",
@@ -100,6 +101,7 @@ all = [
   "polars/binary_encoding",
   "streaming",
   "performant",
+  "list_take",
 ]
 
 # we cannot conditionaly activate simd

@@ -30,5 +30,6 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.sort
     Series.arr.sum
     Series.arr.tail
+    Series.arr.take
     Series.arr.to_struct
     Series.arr.unique
