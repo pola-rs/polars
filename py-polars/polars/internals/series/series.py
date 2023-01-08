@@ -1283,7 +1283,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(pli.col(self.name).nan_max())[0, 0]
+        return self.to_frame().select(pli.col(self.name).nan_max()).item()
 
     def nan_min(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -1293,7 +1293,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(pli.col(self.name).nan_min())[0, 0]
+        return self.to_frame().select(pli.col(self.name).nan_min()).item()
 
     def std(self, ddof: int = 1) -> float | None:
         """
@@ -2095,7 +2095,7 @@ class Series:
 
         """
         if isinstance(element, (int, float)):
-            return pli.select(pli.lit(self).search_sorted(element, side))[0, 0]
+            return pli.select(pli.lit(self).search_sorted(element, side)).item()
         element = Series(element)
         return pli.select(pli.lit(self).search_sorted(element, side)).to_series()
 

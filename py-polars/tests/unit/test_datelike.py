@@ -1771,12 +1771,12 @@ def test_from_dict_tu_consistency() -> None:
 
 def test_date_parse_omit_day() -> None:
     df = pl.DataFrame({"month": ["2022-01"]})
-    assert df.select(pl.col("month").str.strptime(pl.Date, fmt="%Y-%m"))[0, 0] == date(
+    assert df.select(pl.col("month").str.strptime(pl.Date, fmt="%Y-%m")).item() == date(
         2022, 1, 1
     )
-    assert df.select(pl.col("month").str.strptime(pl.Datetime, fmt="%Y-%m"))[
-        0, 0
-    ] == datetime(2022, 1, 1)
+    assert df.select(
+        pl.col("month").str.strptime(pl.Datetime, fmt="%Y-%m")
+    ).item() == datetime(2022, 1, 1)
 
 
 def test_shift_and_fill_group_logicals() -> None:
