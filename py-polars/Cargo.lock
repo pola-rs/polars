@@ -1362,7 +1362,7 @@ dependencies = [
 [[package]]
 name = "object_store"
 version = "0.5.3"
-source = "git+https://github.com/apache/arrow-rs#2d2d0a3ba72efb5ee82324064f7c7678c2dd8336"
+source = "git+https://github.com/apache/arrow-rs?rev=c74665808439cb7020fb1cfb74b376a136c73259#c74665808439cb7020fb1cfb74b376a136c73259"
 dependencies = [
  "async-trait",
  "bytes",

@@ -1,5 +1,3 @@
-#![allow(clippy::disallowed_types)]
-use std::collections::HashMap;
 use std::str::FromStr;
 
 #[cfg(feature = "aws")]
@@ -23,10 +21,14 @@ use url::Url;
 
 use crate::error::{PolarsError, PolarsResult};
 
-/// The object_store crate API requires a HashMap.
+/// The type of the config keys must satisfy the following requirements:
+/// 1. must be easily collected into a HashMap, the type required by the object_crate API.
+/// 2. be Serializable, required when the serde-lazy feature is defined.
+/// 3. not actually use HashMap since that type is disallowed in Polars for performance reasons.
+///
+/// Currently this type is a vector of pairs config key - config value.
 #[allow(dead_code)]
-#[allow(clippy::disallowed_types)]
-type Configs<T> = HashMap<T, String>;
+type Configs<T> = Vec<(T, String)>;
 
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
@@ -42,20 +44,24 @@ pub struct CloudOptions {
 
 #[allow(dead_code)]
 /// Parse an untype configuration hashmap to a typed configuration for the given configuration key type.
-fn parsed_untyped_config<T>(config: HashMap<String, String>) -> PolarsResult<Configs<T>>
+fn parsed_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
+    config: I,
+) -> PolarsResult<Configs<T>>
 where
     T: FromStr + std::cmp::Eq + std::hash::Hash,
 {
     config
         .into_iter()
         .map(|(key, val)| {
-            T::from_str(&key)
+            T::from_str(key.as_ref())
                 .map_err(|_e| {
-                    PolarsError::ComputeError(format!("Unknown configuration key {key}.").into())
+                    PolarsError::ComputeError(
+                        format!("Unknown configuration key {}.", key.as_ref()).into(),
+                    )
                 })
-                .map(|typed_key| (typed_key, val))
+                .map(|typed_key| (typed_key, val.into()))
         })
-        .collect::<PolarsResult<HashMap<T, String>>>()
+        .collect::<PolarsResult<Configs<T>>>()
 }
 
 pub enum CloudType {
@@ -91,8 +97,16 @@ impl FromStr for CloudType {
 impl CloudOptions {
     /// Set the configuration for AWS connections. This is the preferred API from rust.
     #[cfg(feature = "aws")]
-    pub fn with_aws(mut self, aws: Configs<AmazonS3ConfigKey>) -> Self {
-        self.aws = Some(aws);
+    pub fn with_aws<I: IntoIterator<Item = (AmazonS3ConfigKey, impl Into<String>)>>(
+        mut self,
+        configs: I,
+    ) -> Self {
+        self.aws = Some(
+            configs
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect::<Configs<AmazonS3ConfigKey>>(),
+        );
         self
     }
 
@@ -105,15 +119,23 @@ impl CloudOptions {
             ))
         })?;
         AmazonS3Builder::new()
-            .try_with_options(options)
+            .try_with_options(options.clone().into_iter())
             .and_then(|b| b.with_bucket_name(bucket_name).build())
             .map_err(|e| PolarsError::ComputeError(e.to_string().into()))
     }
 
     /// Set the configuration for Azure connections. This is the preferred API from rust.
     #[cfg(feature = "azure")]
-    pub fn with_azure(mut self, azure: Configs<AzureConfigKey>) -> Self {
-        self.azure = Some(azure);
+    pub fn with_azure<I: IntoIterator<Item = (AzureConfigKey, impl Into<String>)>>(
+        mut self,
+        configs: I,
+    ) -> Self {
+        self.azure = Some(
+            configs
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect::<Configs<AzureConfigKey>>(),
+        );
         self
     }
 
@@ -126,15 +148,23 @@ impl CloudOptions {
             ))
         })?;
         MicrosoftAzureBuilder::new()
-            .try_with_options(options)
+            .try_with_options(options.clone().into_iter())
             .and_then(|b| b.with_container_name(container_name).build())
             .map_err(|e| PolarsError::ComputeError(e.to_string().into()))
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
     #[cfg(feature = "gcp")]
-    pub fn with_gcp(mut self, gcp: Configs<GoogleConfigKey>) -> Self {
-        self.gcp = Some(gcp);
+    pub fn with_gcp<I: IntoIterator<Item = (GoogleConfigKey, impl Into<String>)>>(
+        mut self,
+        configs: I,
+    ) -> Self {
+        self.gcp = Some(
+            configs
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect::<Configs<GoogleConfigKey>>(),
+        );
         self
     }
 
@@ -147,19 +177,22 @@ impl CloudOptions {
             ))
         })?;
         GoogleCloudStorageBuilder::new()
-            .try_with_options(options)
+            .try_with_options(options.clone().into_iter())
             .and_then(|b| b.with_bucket_name(bucket_name).build())
             .map_err(|e| PolarsError::ComputeError(e.to_string().into()))
     }
 
     /// Parse a configuration from a Hashmap. This is the interface from Python.
     #[allow(unused_variables)]
-    pub fn from_untyped_config(url: &str, config: HashMap<String, String>) -> PolarsResult<Self> {
+    pub fn from_untyped_config<I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
+        url: &str,
+        config: I,
+    ) -> PolarsResult<Self> {
         match CloudType::from_str(url)? {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
-                    parsed_untyped_config::<AmazonS3ConfigKey>(config)
+                    parsed_untyped_config::<AmazonS3ConfigKey, _>(config)
                         .map(|aws| Self::default().with_aws(aws))
                 }
                 #[cfg(not(feature = "aws"))]
@@ -172,7 +205,7 @@ impl CloudOptions {
             CloudType::Azure => {
                 #[cfg(feature = "azure")]
                 {
-                    parsed_untyped_config::<AzureConfigKey>(config)
+                    parsed_untyped_config::<AzureConfigKey, _>(config)
                         .map(|azure| Self::default().with_azure(azure))
                 }
                 #[cfg(not(feature = "azure"))]
@@ -186,7 +219,7 @@ impl CloudOptions {
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    parsed_untyped_config::<GoogleConfigKey>(config)
+                    parsed_untyped_config::<GoogleConfigKey, _>(config)
                         .map(|gcp| Self::default().with_gcp(gcp))
                 }
                 #[cfg(not(feature = "gcp"))]

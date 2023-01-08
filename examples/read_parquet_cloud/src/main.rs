@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use awscreds::Credentials;
 use cloud::AmazonS3ConfigKey as Key;
 use polars::prelude::*;
@@ -13,12 +11,11 @@ fn main() -> PolarsResult<()> {
 
     // Propagate the credentials and other cloud options.
     let mut args = ScanArgsParquet::default();
-    let kv = HashMap::<_, String>::from([
-        (Key::AccessKeyId, cred.access_key.unwrap()),
-        (Key::SecretAccessKey, cred.secret_key.unwrap()),
-        (Key::Region, "us-west-2".into()),
+    let cloud_options = cloud::CloudOptions::default().with_aws([
+        (Key::AccessKeyId, &cred.access_key.unwrap()),
+        (Key::SecretAccessKey, &cred.secret_key.unwrap()),
+        (Key::Region, &"us-west-2".into()),
     ]);
-    let cloud_options = cloud::CloudOptions::default().with_aws(kv);
     args.cloud_options = Some(cloud_options);
     let df = LazyFrame::scan_parquet(TEST_S3, args)?
         .with_streaming(true)
