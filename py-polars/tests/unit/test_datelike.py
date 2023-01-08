@@ -1089,6 +1089,44 @@ def test_date_duration_offset() -> None:
     }
 
 
+def test_date_time_combine() -> None:
+    # test combining datetime/date and time (as expr/col and as literal)
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(2022, 12, 31, 10, 30, 45),
+                datetime(2023, 7, 5, 23, 59, 59),
+            ],
+            "dt": [date(2022, 10, 10), date(2022, 7, 5)],
+            "tm": [time(1, 2, 3, 456000), time(7, 8, 9, 101000)],
+        }
+    ).select(
+        [
+            pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),
+            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),
+            pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),
+        ]
+    )
+    # if combining with datetime, the time component should be overwritten.
+    # if combining with date, should write both parts 'as-is' into the new datetime.
+    assert df.to_dict(False) == {
+        "d1": [
+            datetime(2022, 12, 31, 1, 2, 3, 456000),
+            datetime(2023, 7, 5, 7, 8, 9, 101000),
+        ],
+        "d2": [
+            datetime(2022, 10, 10, 1, 2, 3, 456000),
+            datetime(2022, 7, 5, 7, 8, 9, 101000),
+        ],
+        "d3": [datetime(2022, 10, 10, 4, 5, 6), datetime(2022, 7, 5, 4, 5, 6)],
+    }
+    assert df.schema == {
+        "d1": pl.Datetime("us"),
+        "d2": pl.Datetime("us"),
+        "d3": pl.Datetime("us"),
+    }
+
+
 def test_add_duration_3786() -> None:
     df = pl.DataFrame(
         {

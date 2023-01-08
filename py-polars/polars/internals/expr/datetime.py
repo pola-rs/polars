@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import time, timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Duration, Int32
 from polars.utils import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
@@ -253,9 +253,69 @@ class ExprDateTimeNameSpace:
             )
         )
 
+    def combine(self, tm: time | pli.Expr) -> pli.Expr:
+        """
+        Create a naive Datetime from an existing Date/Datetime expression and a Time.
+
+        If the underlying expression is a Datetime then its time component is replaced,
+        and if it is a Date then a new Datetime is created by combining the two values.
+
+        Parameters
+        ----------
+        tm
+            A python time literal or polars expression/column that resolves to a time.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dtm": [
+        ...             datetime(2022, 12, 31, 10, 30, 45),
+        ...             datetime(2023, 7, 5, 23, 59, 59),
+        ...         ],
+        ...         "dt": [date(2022, 10, 10), date(2022, 7, 5)],
+        ...         "tm": [time(1, 2, 3, 456), time(7, 8, 9, 101)],
+        ...     }
+        ... )
+        >>> df
+        shape: (2, 3)
+        ┌─────────────────────┬────────────┬──────────────┐
+        │ dtm                 ┆ dt         ┆ tm           │
+        │ ---                 ┆ ---        ┆ ---          │
+        │ datetime[μs]        ┆ date       ┆ time         │
+        ╞═════════════════════╪════════════╪══════════════╡
+        │ 2022-12-31 10:30:45 ┆ 2022-10-10 ┆ 01:02:03.456 │
+        │ 2023-07-05 23:59:59 ┆ 2022-07-05 ┆ 07:08:09.101 │
+        └─────────────────────┴────────────┴──────────────┘
+        >>> df.select(
+        ...     [
+        ...         pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),
+        ...         pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),
+        ...         pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),
+        ...     ]
+        ... )
+        shape: (2, 3)
+        ┌─────────────────────────┬─────────────────────────┬─────────────────────┐
+        │ d1                      ┆ d2                      ┆ d3                  │
+        │ ---                     ┆ ---                     ┆ ---                 │
+        │ datetime[μs]            ┆ datetime[μs]            ┆ datetime[μs]        │
+        ╞═════════════════════════╪═════════════════════════╪═════════════════════╡
+        │ 2022-12-31 01:02:03.456 ┆ 2022-10-10 01:02:03.456 ┆ 2022-10-10 04:05:06 │
+        │ 2023-07-05 07:08:09.101 ┆ 2022-07-05 07:08:09.101 ┆ 2022-07-05 04:05:06 │
+        └─────────────────────────┴─────────────────────────┴─────────────────────┘
+        """
+        if not isinstance(tm, (time, pli.Expr)):
+            raise TypeError(
+                f"Expected 'tm' to be a python time or polars expression, found {tm!r}"
+            )
+        duration = pli.expr_to_lit_or_expr(tm).cast(Duration)
+        return pli.wrap_expr(
+            self._pyexpr.cast(Date, True).cast(Datetime, True) + duration._pyexpr
+        )
+
     def strftime(self, fmt: str) -> pli.Expr:
         """
-        Format Date/datetime with a formatting rule.
+        Format Date/Datetime with a formatting rule.
 
         See `chrono strftime/strptime
         <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
