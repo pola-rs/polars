@@ -305,3 +305,17 @@ def test_sort_categoricals_6014() -> None:
     assert out.to_dict(False) == {"key": ["bbb", "aaa", "ccc"]}
     out = df2.sort("key")
     assert out.to_dict(False) == {"key": ["aaa", "bbb", "ccc"]}
+
+
+def test_cast_inner_categorical() -> None:
+    dtype = pl.List(pl.Categorical)
+    out = pl.Series("foo", [["a"], ["a", "b"]]).cast(dtype)
+    assert out.dtype == dtype
+    assert out.to_list() == [["a"], ["a", "b"]]
+
+    with pytest.raises(
+        pl.ComputeError, match=r"Casting to 'Categorical' not allowed in 'arr.eval'"
+    ):
+        pl.Series("foo", [["a", "b"], ["a", "b"]]).arr.eval(
+            pl.element().cast(pl.Categorical)
+        )

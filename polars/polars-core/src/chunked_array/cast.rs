@@ -183,38 +183,41 @@ fn cast_inner_list_type(list: &ListArray<i64>, child_type: &DataType) -> PolarsR
 /// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        use DataType::*;
         match data_type {
-            DataType::List(child_type) => {
+            List(child_type) => {
                 let phys_child = child_type.to_physical();
 
-                if phys_child.is_primitive() {
-                    let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical() {
-                        let chunks = self
-                            .downcast_iter()
-                            .map(|list| cast_inner_list_type(list, &phys_child))
-                            .collect::<PolarsResult<_>>()?;
-                        unsafe { ListChunked::from_chunks(self.name(), chunks) }
-                    } else {
-                        self.clone()
-                    };
-                    ca.set_inner_dtype(*child_type.clone());
-                    Ok(ca.into_series())
-                } else {
-                    let ca = self.rechunk();
-                    let arr = ca.downcast_iter().next().unwrap();
-                    let s = Series::try_from(("", arr.values().clone())).unwrap();
-                    let new_inner = s.cast(child_type)?;
-                    let new_values = new_inner.array_ref(0).clone();
-
-                    let data_type =
-                        ListArray::<i64>::default_datatype(new_values.data_type().clone());
-                    let new_arr = ListArray::<i64>::new(
-                        data_type,
-                        arr.offsets().clone(),
-                        new_values,
-                        arr.validity().cloned(),
-                    );
-                    Series::try_from((self.name(), Box::new(new_arr) as ArrayRef))
+                match (self.inner_dtype(), &**child_type) {
+                    #[cfg(feature = "dtype-categorical")]
+                    (Utf8, Categorical(_)) => {
+                        let (arr, inner_dtype) = cast_list(self, child_type)?;
+                        Ok(unsafe {
+                            Series::from_chunks_and_dtype_unchecked(
+                                self.name(),
+                                vec![arr],
+                                &List(Box::new(inner_dtype)),
+                            )
+                        })
+                    }
+                    _ if phys_child.is_primitive() => {
+                        let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical()
+                        {
+                            let chunks = self
+                                .downcast_iter()
+                                .map(|list| cast_inner_list_type(list, &phys_child))
+                                .collect::<PolarsResult<_>>()?;
+                            unsafe { ListChunked::from_chunks(self.name(), chunks) }
+                        } else {
+                            self.clone()
+                        };
+                        ca.set_inner_dtype(*child_type.clone());
+                        Ok(ca.into_series())
+                    }
+                    _ => {
+                        let arr = cast_list(self, child_type)?.0;
+                        Series::try_from((self.name(), arr))
+                    }
                 }
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
@@ -224,6 +227,27 @@ impl ChunkCast for ListChunked {
     fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         self.cast(data_type)
     }
+}
+
+// returns inner data type
+fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef, DataType)> {
+    let ca = ca.rechunk();
+    let arr = ca.downcast_iter().next().unwrap();
+    let s = Series::try_from(("", arr.values().clone())).unwrap();
+    let new_inner = s.cast(child_type)?;
+
+    let inner_dtype = new_inner.dtype().clone();
+
+    let new_values = new_inner.array_ref(0).clone();
+
+    let data_type = ListArray::<i64>::default_datatype(new_values.data_type().clone());
+    let new_arr = ListArray::<i64>::new(
+        data_type,
+        arr.offsets().clone(),
+        new_values,
+        arr.validity().cloned(),
+    );
+    Ok((Box::new(new_arr), inner_dtype))
 }
 
 #[cfg(test)]

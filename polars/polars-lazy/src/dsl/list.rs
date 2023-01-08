@@ -34,9 +34,23 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
 
         let expr2 = expr.clone();
         let func = move |s: Series| {
-            for name in expr_to_leaf_column_names(&expr) {
-                if !name.is_empty() {
-                    return Err(PolarsError::ComputeError(r#"Named columns not allowed in 'arr.eval'. Consider using 'element' or 'col("")'."#.into()));
+            for e in expr.into_iter() {
+                match e {
+                    #[cfg(feature = "dtype-categorical")]
+                    Expr::Cast {
+                        data_type: DataType::Categorical(_),
+                        ..
+                    } => {
+                        return Err(PolarsError::ComputeError(
+                            "Casting to 'Categorical' not allowed in 'arr.eval'".into(),
+                        ))
+                    }
+                    Expr::Column(name) => {
+                        if !name.is_empty() {
+                            return Err(PolarsError::ComputeError(r#"Named columns not allowed in 'arr.eval'. Consider using 'element' or 'col("")'."#.into()));
+                        }
+                    }
+                    _ => {}
                 }
             }
 
