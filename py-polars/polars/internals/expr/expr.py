@@ -828,7 +828,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.all().is_null().suffix("_isnull"))  # nan != null
+        >>> df.with_columns(pl.all().is_null().suffix("_isnull"))  # nan != null
         shape: (5, 4)
         ┌──────┬─────┬──────────┬──────────┐
         │ a    ┆ b   ┆ a_isnull ┆ b_isnull │
@@ -857,7 +857,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.all().is_not_null().suffix("_not_null"))  # nan != null
+        >>> df.with_columns(pl.all().is_not_null().suffix("_not_null"))  # nan != null
         shape: (5, 4)
         ┌──────┬─────┬────────────┬────────────┐
         │ a    ┆ b   ┆ a_not_null ┆ b_not_null │
@@ -953,7 +953,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.col(pl.Float64).is_nan().suffix("_isnan"))
+        >>> df.with_columns(pl.col(pl.Float64).is_nan().suffix("_isnan"))
         shape: (5, 3)
         ┌──────┬─────┬─────────┐
         │ a    ┆ b   ┆ b_isnan │
@@ -987,7 +987,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
+        >>> df.with_columns(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
         shape: (5, 3)
         ┌──────┬─────┬──────────────┐
         │ a    ┆ b   ┆ b_is_not_nan │
@@ -2693,7 +2693,7 @@ class Expr:
         ...     }
         ... )
         >>> (
-        ...     df.with_column(
+        ...     df.with_columns(
         ...         pl.col("values").max().over("groups").alias("max_by_group")
         ...     )
         ... )
@@ -2781,7 +2781,7 @@ class Expr:
         ...         "num": [1, 2, 3, 1, 5],
         ...     }
         ... )
-        >>> (df.with_column(pl.col("num").is_first().alias("is_first")))
+        >>> (df.with_columns(pl.col("num").is_first().alias("is_first")))
         shape: (5, 2)
         ┌─────┬──────────┐
         │ num ┆ is_first │
@@ -3076,7 +3076,7 @@ class Expr:
         In a selection context, the function is applied by row.
 
         >>> (
-        ...     df.with_column(
+        ...     df.with_columns(
         ...         pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ...     )
         ... )
@@ -3095,7 +3095,7 @@ class Expr:
         It is better to implement this with an expression:
 
         >>> (
-        ...     df.with_column(
+        ...     df.with_columns(
         ...         (pl.col("a") * 2).alias("a_times_2"),
         ...     )
         ... )  # doctest: +IGNORE_RESULT
@@ -3438,7 +3438,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"num": [1, 2, 3, 4, 5]})
-        >>> df.with_column(pl.col("num").is_between(2, 4))
+        >>> df.with_columns(pl.col("num").is_between(2, 4))
         shape: (5, 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
@@ -3454,7 +3454,7 @@ class Expr:
 
         Use the ``closed`` argument to include or exclude the values at the bounds.
 
-        >>> df.with_column(pl.col("num").is_between(2, 4, closed="left"))
+        >>> df.with_columns(pl.col("num").is_between(2, 4, closed="left"))
         shape: (5, 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
@@ -3545,7 +3545,7 @@ class Expr:
         ...         "b": ["x", None, "z"],
         ...     }
         ... )
-        >>> df.with_column(pl.all().hash(10, 20, 30, 40))  # doctest: +IGNORE_RESULT
+        >>> df.with_columns(pl.all().hash(10, 20, 30, 40))  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌──────────────────────┬──────────────────────┐
         │ a                    ┆ b                    │
@@ -3675,7 +3675,7 @@ class Expr:
         >>> (
         ...     df_new_grid.join(
         ...         df_original_grid, on="grid_points", how="left"
-        ...     ).with_column(pl.col("values").interpolate())
+        ...     ).with_columns(pl.col("values").interpolate())
         ... )
         shape: (10, 2)
         ┌─────────────┬────────┐
@@ -4740,7 +4740,7 @@ class Expr:
         ...         "a": [10, 11, 12, None, 12],
         ...     }
         ... )
-        >>> df.with_column(pl.col("a").pct_change().alias("pct_change"))
+        >>> df.with_columns(pl.col("a").pct_change().alias("pct_change"))
         shape: (5, 2)
         ┌──────┬────────────┐
         │ a    ┆ pct_change │
@@ -4866,7 +4866,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip(1, 10).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip(1, 10).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
@@ -4899,7 +4899,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip_min(0).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip_min(0).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
@@ -4932,7 +4932,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip_max(0).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip_max(0).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │

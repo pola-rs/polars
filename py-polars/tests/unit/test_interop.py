@@ -565,7 +565,7 @@ def test_from_pyarrow_chunked_array() -> None:
 
 
 def test_numpy_preserve_uint64_4112() -> None:
-    assert pl.DataFrame({"a": [1, 2, 3]}).with_column(
+    assert pl.DataFrame({"a": [1, 2, 3]}).with_columns(
         pl.col("a").hash()
     ).to_numpy().dtype == np.dtype("uint64")
 

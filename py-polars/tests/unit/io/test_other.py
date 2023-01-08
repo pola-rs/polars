@@ -18,7 +18,7 @@ def test_copy() -> None:
 
 def test_categorical_round_trip() -> None:
     df = pl.DataFrame({"ints": [1, 2, 3], "cat": ["a", "b", "c"]})
-    df = df.with_column(pl.col("cat").cast(pl.Categorical))
+    df = df.with_columns(pl.col("cat").cast(pl.Categorical))
 
     tbl = df.to_arrow()
     assert "dictionary" in str(tbl["cat"].type)
@@ -35,7 +35,7 @@ def test_date_list_fmt() -> None:
         }
     )
 
-    df = df.with_column(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
+    df = df.with_columns(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
     assert (
         str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
         == """shape: (3,)

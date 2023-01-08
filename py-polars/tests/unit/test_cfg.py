@@ -395,8 +395,8 @@ def test_string_cache() -> None:
     pl.toggle_string_cache(False)
     assert pl.using_string_cache() is False
 
-    df1a = df1.with_column(pl.col("a").cast(pl.Categorical))
-    df2a = df2.with_column(pl.col("a").cast(pl.Categorical))
+    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
         _ = df1a.join(df2a, on="a", how="inner")
 
@@ -404,8 +404,8 @@ def test_string_cache() -> None:
     pl.toggle_string_cache(True)
     assert pl.using_string_cache() is True
 
-    df1b = df1.with_column(pl.col("a").cast(pl.Categorical))
-    df2b = df2.with_column(pl.col("a").cast(pl.Categorical))
+    df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
     out = df1b.join(df2b, on="a", how="inner")
     assert out.frame_equal(pl.DataFrame({"a": ["foo"], "b": [1], "c": [3]}))
 

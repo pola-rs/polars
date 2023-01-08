@@ -146,7 +146,7 @@ def test_rolling_groupby_extrema() -> None:
     # two dfs, but ensure that one does not have a sorted flag
 
     # descending order
-    not_sorted_flag = pl.DataFrame({"col1": [6, 5, 4, 3, 2, 1, 0]}).with_column(
+    not_sorted_flag = pl.DataFrame({"col1": [6, 5, 4, 3, 2, 1, 0]}).with_columns(
         pl.col("col1").reverse().alias("row_nr")
     )
     assert not not_sorted_flag["col1"].flags["SORTED_DESC"]
@@ -155,7 +155,7 @@ def test_rolling_groupby_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True).reverse(),
         }
-    ).with_column(pl.col("col1").reverse().alias("row_nr"))
+    ).with_columns(pl.col("col1").reverse().alias("row_nr"))
 
     for df in [sorted_flag, not_sorted_flag]:
         assert (
@@ -195,9 +195,9 @@ def test_rolling_groupby_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True),
         }
-    ).with_column(pl.col("col1").alias("row_nr"))
+    ).with_columns(pl.col("col1").alias("row_nr"))
 
-    not_sorted_df = pl.DataFrame({"col1": [0, 1, 2, 3, 4, 5, 6]}).with_column(
+    not_sorted_df = pl.DataFrame({"col1": [0, 1, 2, 3, 4, 5, 6]}).with_columns(
         pl.col("col1").alias("row_nr")
     )
 
@@ -239,7 +239,7 @@ def test_rolling_groupby_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True).shuffle(1),
         }
-    ).with_column(pl.col("col1").sort().alias("row_nr"))
+    ).with_columns(pl.col("col1").sort().alias("row_nr"))
 
     assert (
         df.groupby_rolling(
@@ -463,7 +463,7 @@ def test_groupby_dynamic_startby_5599() -> None:
     start = datetime(2022, 1, 1)
     stop = datetime(2022, 1, 12, 7)
 
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_column(
+    df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_columns(
         pl.col("date").dt.weekday().alias("day")
     )
 
@@ -498,7 +498,7 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
             "label": ["a", "b", "a", "a", "b", "a", "b"],
             "value": [1, 2, 3, 4, 5, 6, 7],
         }
-    ).with_column(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
+    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
 
     result = df.groupby_dynamic(
         "date", every="1w", offset="1d", by="label", start_by="monday"

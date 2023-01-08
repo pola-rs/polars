@@ -104,7 +104,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert df.frame_equal(truth)
 
     df = pl.DataFrame(np.array([1, 2, 3]), schema=[("a", pl.Int32)])
-    truth = pl.DataFrame({"a": [1, 2, 3]}).with_column(pl.col("a").cast(pl.Int32))
+    truth = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").cast(pl.Int32))
     assert df.frame_equal(truth)
 
     # 2D array - default to column orientation
@@ -488,7 +488,7 @@ def test_upcast_primitive_and_strings() -> None:
 
 
 def test_u64_lit_5031() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 3]}).with_column(pl.col("foo").cast(pl.UInt64))
+    df = pl.DataFrame({"foo": [1, 2, 3]}).with_columns(pl.col("foo").cast(pl.UInt64))
     assert df.filter(pl.col("foo") < (1 << 64) - 20).shape == (3, 1)
     assert df["foo"].to_list() == [1, 2, 3]
 

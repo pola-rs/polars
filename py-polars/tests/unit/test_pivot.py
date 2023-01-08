@@ -110,7 +110,7 @@ def test_pivot_categorical_3968() -> None:
         }
     )
 
-    assert df.with_column(pl.col("baz").cast(str).cast(pl.Categorical)).to_dict(
+    assert df.with_columns(pl.col("baz").cast(str).cast(pl.Categorical)).to_dict(
         False
     ) == {
         "foo": ["one", "one", "one", "two", "two", "two"],

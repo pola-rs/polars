@@ -166,7 +166,7 @@ def test_parquet_datetime(use_pyarrow: bool, compression: ParquetCompression) ->
         "laf_eq": [59.5999984741, 61.0, 62.2999992371, 56.9000015259, 60.0],
     }
     df = pl.DataFrame(data)
-    df = df.with_column(df["datetime"].cast(pl.Datetime))
+    df = df.with_columns(df["datetime"].cast(pl.Datetime))
 
     df.write_parquet(f, use_pyarrow=use_pyarrow, compression=compression)
     f.seek(0)
@@ -235,7 +235,7 @@ def test_lazy_self_join_file_cache_prop_3979(io_test_dir: str) -> None:
 
 def test_recursive_logical_type() -> None:
     df = pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
-    df = df.with_column(pl.col("str").cast(pl.Categorical))
+    df = df.with_columns(pl.col("str").cast(pl.Categorical))
 
     df_groups = df.groupby("group").agg([pl.col("str").list().alias("cat_list")])
     f = io.BytesIO()
@@ -250,7 +250,7 @@ def test_nested_dictionary() -> None:
     with pl.StringCache():
         df = (
             pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
-            .with_column(pl.col("str").cast(pl.Categorical))
+            .with_columns(pl.col("str").cast(pl.Categorical))
             .groupby("group")
             .agg([pl.col("str").list().alias("cat_list")])
         )

@@ -92,17 +92,17 @@ def test_sorted_merge_joins() -> None:
         join_strategies: list[JoinStrategy] = ["left", "inner"]
         for cast_to in [int, str, float]:
             for how in join_strategies:
-                df_a_ = df_a.with_column(pl.col("a").cast(cast_to))
-                df_b_ = df_b.with_column(pl.col("a").cast(cast_to))
+                df_a_ = df_a.with_columns(pl.col("a").cast(cast_to))
+                df_b_ = df_b.with_columns(pl.col("a").cast(cast_to))
 
                 # hash join
                 out_hash_join = df_a_.join(df_b_, on="a", how=how)
 
                 # sorted merge join
-                out_sorted_merge_join = df_a_.with_column(
+                out_sorted_merge_join = df_a_.with_columns(
                     pl.col("a").set_sorted(reverse)
                 ).join(
-                    df_b_.with_column(pl.col("a").set_sorted(reverse)), on="a", how=how
+                    df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how
                 )
 
                 assert out_hash_join.frame_equal(out_sorted_merge_join)
@@ -126,8 +126,8 @@ def test_join_negative_integers() -> None:
 
     for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
         assert (
-            df1.with_column(pl.all().cast(dt))
-            .join(df2.with_column(pl.all().cast(dt)), on="a", how="inner")
+            df1.with_columns(pl.all().cast(dt))
+            .join(df2.with_columns(pl.all().cast(dt)), on="a", how="inner")
             .to_dict(False)
             == expected
         )
@@ -152,7 +152,7 @@ def test_join_asof_floats() -> None:
             "val": [0, 2.5, 2.6, 2.7, 3.4, 4, 5],
             "c": ["x", "x", "x", "y", "y", "y", "y"],
         }
-    ).with_column(pl.col("val").alias("b"))
+    ).with_columns(pl.col("val").alias("b"))
     assert df1.join_asof(df2, on="b", by="c").to_dict(False) == {
         "b": [
             0.0,
@@ -406,7 +406,7 @@ def test_join_on_cast() -> None:
     df_a = (
         pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
         .with_row_count()
-        .with_column(pl.col("a").cast(pl.Int32))
+        .with_columns(pl.col("a").cast(pl.Int32))
     )
 
     df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
@@ -563,7 +563,7 @@ def test_jit_sort_joins() -> None:
         # left key sorted right is not
         pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"])
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         assert a.frame_equal(pl_result, null_equal=True)
         assert pl_result["a"].flags["SORTED_ASC"]
 
@@ -572,7 +572,7 @@ def test_jit_sort_joins() -> None:
         pd_result.columns = ["a", "b", "b_right"]
         pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"])
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         assert a.frame_equal(pl_result, null_equal=True)
         assert pl_result["a"].flags["SORTED_ASC"]
 
@@ -656,7 +656,7 @@ def test_streaming_joins() -> None:
             .collect(streaming=True)
         )
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
 
         pd_result = dfa.merge(dfb, on=["a", "b"], how=how)
@@ -669,7 +669,7 @@ def test_streaming_joins() -> None:
         )
 
         # we cast to integer because pandas joins creates floats
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
 
 

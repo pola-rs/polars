@@ -906,19 +906,19 @@ def test_rolling() -> None:
         pl.col("val").rolling_min(window_size=3),
         pl.col("val").rolling_max(window_size=3),
     ]:
-        out = df.with_column(e).to_series()
+        out = df.with_columns(e).to_series()
         assert out.null_count() == 2
         assert np.isnan(out.to_numpy()).sum() == 5
 
     expected = [None, None, 2.0, 3.0, 5.0, 6.0, 6.0]
     assert (
-        df.with_column(pl.col("val").rolling_median(window_size=3))
+        df.with_columns(pl.col("val").rolling_median(window_size=3))
         .to_series()
         .to_list()
         == expected
     )
     assert (
-        df.with_column(pl.col("val").rolling_quantile(0.5, window_size=3))
+        df.with_columns(pl.col("val").rolling_quantile(0.5, window_size=3))
         .to_series()
         .to_list()
         == expected
@@ -2074,7 +2074,7 @@ def test_is_between_datetime() -> None:
     expected = pl.Series("a", [False, True])
 
     # only on the expression api
-    result = s.to_frame().with_column(pl.col("*").is_between(start, end))["is_between"]
+    result = s.to_frame().with_columns(pl.col("*").is_between(start, end))["is_between"]
     assert_series_equal(result.rename("a"), expected)
 
 
