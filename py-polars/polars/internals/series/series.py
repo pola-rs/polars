@@ -4804,17 +4804,19 @@ class Series:
 
         """
 
-    def extend_constant(self, value: int | float | str | bool | None, n: int) -> Series:
+    def extend_constant(
+        self, value: int | float | str | bool | date | None, n: int
+    ) -> Series:
         """
         Extend the Series with given number of values.
 
         Parameters
         ----------
         value
-            The value to extend the Series with. This value may be None to fill with
-            nulls.
+            A constant literal value (not an expression) with which to extend the
+            Series; can pass None to fill the Series with nulls.
         n
-            The number of values to extend.
+            The number of additional values that will be added into the Series.
 
         Examples
         --------

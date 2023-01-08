@@ -5649,17 +5649,19 @@ class Expr:
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, bias, min_periods))
 
-    def extend_constant(self, value: int | float | str | bool | None, n: int) -> Expr:
+    def extend_constant(
+        self, value: int | float | str | bool | date | None, n: int
+    ) -> Expr:
         """
         Extend the Series with given number of values.
 
         Parameters
         ----------
         value
-            The value to extend the Series with. This value may be None to fill with
-            nulls.
+            A constant literal value (not an expression) with which to extend the
+            Series; can pass None to fill the Series with nulls.
         n
-            The number of values to extend.
+            The number of additional values that will be added into the Series.
 
         Examples
         --------
@@ -5679,6 +5681,8 @@ class Expr:
         └────────┘
 
         """
+        if isinstance(value, Expr):
+            raise TypeError(f"'value' must be a supported literal; found {value!r}")
         return wrap_expr(self._pyexpr.extend_constant(value, n))
 
     def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Expr:

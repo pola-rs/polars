@@ -13,6 +13,7 @@ impl Series {
             Int64(v) => Series::new("", vec![v]),
             Utf8(v) => Series::new("", vec![v]),
             Boolean(v) => Series::new("", vec![v]),
+            Date(v) => Series::new("", vec![v]),
             Null => BooleanChunked::full_null("", 1).into_series(),
             dt => panic!("{dt:?} not supported"),
         };
