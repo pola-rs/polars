@@ -79,7 +79,7 @@ def test_init_dict() -> None:
 
     df = pl.DataFrame(
         {"a": [1, 2, 3], "b": [4, 5, 6]},
-        columns=["c", ("d", pl.Int8)],  # type: ignore[arg-type]
+        columns=["c", ("d", pl.Int8)],
     )  # partial type info (allowed, but mypy doesn't like it ;p)
     assert df.schema == {"c": pl.Int64, "d": pl.Int8}
 
@@ -120,7 +120,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
 
     df = pl.DataFrame(
         data=[[1, 2.0, "a"], [None, None, None]],
-        columns=[("x", pl.Boolean), ("y", pl.Int32), "z"],  # type: ignore[arg-type]
+        columns=[("x", pl.Boolean), ("y", pl.Int32), "z"],
         orient="row",
     )
     assert df.rows() == [(True, 2, "a"), (None, None, None)]
@@ -416,10 +416,10 @@ def test_init_only_columns() -> None:
     for no_data in (None, {}, []):
         df = pl.DataFrame(
             data=no_data,
-            columns=[  # type: ignore[arg-type]
+            columns=[
                 ("a", pl.Date),
                 ("b", pl.UInt64),
-                ("c", pl.datatypes.Int8),
+                ("c", pl.Int8),
                 ("d", pl.List(pl.UInt8)),
             ],
         )

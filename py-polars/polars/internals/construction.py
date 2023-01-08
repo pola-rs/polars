@@ -555,18 +555,65 @@ def _unpack_columns(
     lookup = {
         col: name for col, name in zip_longest(column_names, lookup_names or []) if name
     }
+    dtypes = {
+        lookup.get(col[0], col[0]): col[1]
+        for col in (columns or [])
+        if not isinstance(col, str) and col[1]
+    }
     return (
         column_names or None,  # type: ignore[return-value]
-        {
-            lookup.get(col[0], col[0]): col[1]  # type: ignore[misc]
-            for col in (columns or [])
-            if not isinstance(col, str) and col[1]
-        },
+        dtypes,
     )
 
 
+def _expand_dict_scalars(
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series],
+    dtypes: dict[str, PolarsDataType] | None = None,
+    order: Sequence[str] | None = None,
+) -> dict[str, pli.Series]:
+    """Expand scalar values in dict data (propagate literal as array)."""
+    updated_data = {}
+    if data:
+        dtypes = dtypes or {}
+        array_len = max((arrlen(val) or 0) for val in data.values())
+        if array_len > 0:
+            for name, val in data.items():
+                dtype = dtypes.get(name)
+                if isinstance(val, dict):
+                    updated_data[name] = pli.DataFrame(val).to_struct(name)
+                elif arrlen(val) is not None or _is_generator(val):
+                    updated_data[name] = pli.Series(name=name, values=val, dtype=dtype)
+                elif val is None or isinstance(  # type: ignore[redundant-expr]
+                    val, (int, float, str, bool)
+                ):
+                    updated_data[name] = pli.Series(
+                        name=name, values=[val], dtype=dtype
+                    ).extend_constant(val, array_len - 1)
+                else:
+                    updated_data[name] = pli.Series(
+                        name=name, values=[val] * array_len, dtype=dtype
+                    )
+
+        elif all((arrlen(val) == 0) for val in data.values()):
+            for name, val in data.items():
+                updated_data[name] = pli.Series(
+                    name, values=val, dtype=dtypes.get(name)
+                )
+
+        elif all((arrlen(val) is None) for val in data.values()):
+            for name, val in data.items():
+                updated_data[name] = pli.Series(
+                    name,
+                    values=(val if _is_generator(val) else [val]),
+                    dtype=dtypes.get(name),
+                )
+    if order and list(updated_data) != order:
+        return {col: updated_data.pop(col) for col in order}
+    return updated_data
+
+
 def dict_to_pydf(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]]],
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series],
     columns: ColumnsType | None = None,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
@@ -580,16 +627,13 @@ def dict_to_pydf(
             data = {col: data[col] for col in columns}
 
         columns, dtypes = _unpack_columns(columns, lookup_names=data.keys())
-
         if not data and dtypes:
             data_series = [
                 pli.Series(name, [], dtypes.get(name))._s for name in columns
             ]
         else:
-            data_series = [
-                pli.Series(name, values, dtypes.get(name))._s
-                for name, values in data.items()
-            ]
+            data_series = [s._s for s in _expand_dict_scalars(data, dtypes).values()]
+
         data_series = _handle_columns_arg(data_series, columns=columns)
         return PyDataFrame(data_series)
 
@@ -621,19 +665,7 @@ def dict_to_pydf(
                 )
             return PyDataFrame(data_series)
 
-    if data:
-        # expand scalars (convenience init for propagating literals)
-        array_len = max((arrlen(val) or 0) for val in data.values())
-        if array_len > 0:
-            for key, val in data.items():
-                if arrlen(val) is None and not _is_generator(val):
-                    data[key] = [val] * array_len  # type: ignore[index]
-        elif all((arrlen(val) is None) for val in data.values()):
-            for key, val in data.items():
-                if not _is_generator(val):
-                    data[key] = [val]  # type: ignore[index]
-
-    # fast path
+    data = _expand_dict_scalars(data)
     return PyDataFrame.read_dict(data)
 
 

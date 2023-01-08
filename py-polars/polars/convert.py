@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 def from_dict(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]]],
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     columns: Sequence[str] | None = None,
 ) -> DataFrame:
     """

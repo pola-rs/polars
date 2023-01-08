@@ -272,19 +272,44 @@ def test_from_dict_with_scalars() -> None:
     assert df3.to_dict(False) == {"vals": [1.0, 2.0, 3.0]}
 
     # ensure we don't accidentally consume or expand map/range/generator cols
+    # and can properly apply schema dtype/ordering directives (via 'columns')
     df4 = pl.DataFrame(
         {
             "key": range(1, 4),
             "misc": (x for x in [4, 5, 6]),
             "other": map(float, [7, 8, 9]),
             "value": {0: "x", 1: "y", 2: "z"}.values(),
-        }
+        },
+        columns={
+            "value": pl.Utf8,
+            "other": pl.Float32,
+            "misc": pl.Int32,
+            "key": pl.Int8,
+        },
     )
     assert df4.to_dict(False) == {
-        "key": [1, 2, 3],
-        "misc": [4, 5, 6],
-        "other": [7.0, 8.0, 9.0],
         "value": ["x", "y", "z"],
+        "other": [7.0, 8.0, 9.0],
+        "misc": [4, 5, 6],
+        "key": [1, 2, 3],
+    }
+    assert df4.schema == {
+        "value": pl.Utf8,
+        "other": pl.Float32,
+        "misc": pl.Int32,
+        "key": pl.Int8,
+    }
+
+    # mixed with struct cols
+    df5 = pl.from_dict(
+        {"x": {"b": [1, 3], "c": [2, 4]}, "y": [5, 6], "z": "x"},
+        columns=["x", ("y", pl.Int8), "z"],  # type: ignore[list-item]
+    )
+    assert df5.rows() == [({"b": 1, "c": 2}, 5, "x"), ({"b": 3, "c": 4}, 6, "x")]
+    assert df5.schema == {
+        "x": pl.Struct([pl.Field("b", pl.Int64), pl.Field("c", pl.Int64)]),
+        "y": pl.Int8,
+        "z": pl.Utf8,
     }
 
 
@@ -327,7 +352,7 @@ def test_dataclasses_and_namedtuple() -> None:
         # in conjunction with 'columns' override (rename/downcast)
         df = pl.DataFrame(
             data=trades,
-            columns=[  # type: ignore[arg-type]
+            columns=[
                 ("ts", pl.Datetime("ms")),
                 ("tk", pl.Categorical),
                 ("pc", pl.Float32),
