@@ -10,6 +10,8 @@ pub enum ListFunction {
     Contains,
     Slice,
     Get,
+    #[cfg(feature = "list_take")]
+    Take,
 }
 
 impl Display for ListFunction {
@@ -22,6 +24,8 @@ impl Display for ListFunction {
             Contains => "contains",
             Slice => "slice",
             Get => "get",
+            #[cfg(feature = "list_take")]
+            Take => "take",
         };
         write!(f, "{name}")
     }
@@ -183,5 +187,22 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
             Err(PolarsError::ComputeError(format!("Expression 'arr.get' got an index array of length: {} where there were {} elements in the list.", len, ca.len()).into()))
         }
 
+    }
+}
+
+#[cfg(feature = "list_take")]
+pub(super) fn take(args: &[Series]) -> PolarsResult<Series> {
+    let ca = &args[0];
+    let idx = &args[1];
+    let ca = ca.list()?;
+
+    if idx.len() == 1 {
+        // fast path
+        let idx = idx.get(0)?.try_extract::<i64>()?;
+        let out = ca.lst_get(idx)?;
+        // make sure we return a list
+        out.reshape(&[-1, 1])
+    } else {
+        ca.lst_take(idx)
     }
 }

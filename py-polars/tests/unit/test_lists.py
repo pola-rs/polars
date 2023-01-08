@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
@@ -578,3 +579,18 @@ def test_list_slice_5866() -> None:
     vals = [[1, 2, 3, 4], [10, 2, 1]]
     s = pl.Series("a", vals)
     assert s.arr.slice(1).to_list() == [[2, 3, 4], [2, 1]]
+
+
+def test_list_take() -> None:
+    s = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8]])
+    # mypy: we make it work, but idomatic is `arr.get`.
+    assert s.arr.take(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
+    assert s.arr.take([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
+
+    assert s.arr.take([-1, 1]).to_list() == [[3, 2], [5, 5], [8, 7]]
+
+    # use another list to make sure negative indices are respected
+    taker = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
+    assert s.arr.take(taker).to_list() == [[3, 2], [5, 5], [8, 7]]
+    with pytest.raises(pl.ComputeError, match=r"take indices are out of bounds"):
+        s.arr.take([1, 2])

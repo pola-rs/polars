@@ -274,6 +274,24 @@ class ExprListNameSpace:
         index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_get(index))
 
+    def take(self, index: pli.Expr | pli.Series | list[int]) -> pli.Expr:
+        """
+        Take sublists by multiple indices.
+
+        The indices may be defined in a single column, or by sublists in another
+        column of dtype ``List``.
+
+        Parameters
+        ----------
+        index
+            Indices to return per sublist
+
+        """
+        if isinstance(index, list):
+            index = pli.Series(index)
+        index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
+        return pli.wrap_expr(self._pyexpr.lst_take(index))
+
     def __getitem__(self, item: int) -> pli.Expr:
         return self.get(item)
 

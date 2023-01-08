@@ -2,22 +2,27 @@
 use arrow::array::UInt32Array;
 #[cfg(feature = "bigidx")]
 use arrow::array::UInt64Array;
+use num::{NumCast, Signed, Zero};
 
 pub trait IndexToUsize {
     /// Translate the negative index to an offset.
-    fn negative_to_usize(self, index: usize) -> Option<usize>;
+    fn negative_to_usize(self, len: usize) -> Option<usize>;
 }
 
-impl IndexToUsize for i64 {
-    fn negative_to_usize(self, index: usize) -> Option<usize> {
-        if self >= 0 && (self as usize) < index {
-            Some(self as usize)
+impl<I> IndexToUsize for I
+where
+    I: PartialOrd + PartialEq + NumCast + Signed + Zero,
+{
+    #[inline]
+    fn negative_to_usize(self, len: usize) -> Option<usize> {
+        if self >= Zero::zero() && (self.to_usize().unwrap()) < len {
+            Some(self.to_usize().unwrap())
         } else {
-            let subtract = self.unsigned_abs() as usize;
-            if subtract > index {
+            let subtract = self.abs().to_usize().unwrap();
+            if subtract > len {
                 None
             } else {
-                Some(index - subtract)
+                Some(len - subtract)
             }
         }
     }
