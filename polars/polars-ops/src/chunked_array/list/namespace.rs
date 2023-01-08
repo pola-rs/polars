@@ -242,13 +242,7 @@ pub trait ListNameSpaceImpl: AsList {
                     .map(|(opt_s, opt_idx)| {
                         {
                             match (opt_s, opt_idx) {
-                                (Some(s), Some(idx)) => {
-                                    let s = s.as_ref();
-                                    let len = s.len();
-                                    let idx = cast_index(idx, len);
-                                    let idx = idx.idx().unwrap();
-                                    Some(s.take(idx))
-                                }
+                                (Some(s), Some(idx)) => take_series(s.as_ref(), idx),
                                 _ => None,
                             }
                         }
@@ -261,9 +255,25 @@ pub trait ListNameSpaceImpl: AsList {
             }
             UInt32 | UInt64 => index_typed_index(idx),
             dt if dt.is_signed() => {
-                // cannot use negative indexes as the lenths of subarrays may differ
-                let idx = idx.cast(&IDX_DTYPE).unwrap();
-                index_typed_index(&idx)
+                if let Some(min) = idx.min::<i64>() {
+                    if min > 0 {
+                        let idx = idx.cast(&IDX_DTYPE).unwrap();
+                        index_typed_index(&idx)
+                    } else {
+                        let mut out = list_ca
+                            .amortized_iter()
+                            .map(|opt_s| {
+                                opt_s
+                                    .and_then(|s| take_series(s.as_ref(), idx.clone()))
+                                    .transpose()
+                            })
+                            .collect::<PolarsResult<ListChunked>>()?;
+                        out.rename(list_ca.name());
+                        Ok(out.into_series())
+                    }
+                } else {
+                    Err(PolarsError::ComputeError("All indices are null".into()))
+                }
             }
             dt => Err(PolarsError::ComputeError(
                 format!("Cannot use dtype: '{dt}' as index.").into(),
@@ -418,6 +428,14 @@ pub trait ListNameSpaceImpl: AsList {
 }
 
 impl ListNameSpaceImpl for ListChunked {}
+
+#[cfg(feature = "list_take")]
+fn take_series(s: &Series, idx: Series) -> Option<PolarsResult<Series>> {
+    let len = s.len();
+    let idx = cast_index(idx, len);
+    let idx = idx.idx().unwrap();
+    Some(s.take(idx))
+}
 
 #[cfg(feature = "list_take")]
 fn cast_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series

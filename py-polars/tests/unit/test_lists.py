@@ -587,8 +587,7 @@ def test_list_take() -> None:
     assert s.arr.take(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
     assert s.arr.take([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
 
-    # we don't know the length up front, so negative indices are ignore
-    assert s.arr.take([-1, 1]).to_list() == [[None, 2], [None, 5], [None, 7]]
+    assert s.arr.take([-1, 1]).to_list() == [[3, 2], [5, 5], [8, 7]]
 
     # use another list to make sure negative indices are respected
     taker = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
