@@ -143,7 +143,7 @@ class ExprDateTimeNameSpace:
 
         Each date/datetime in the first half of the interval
         is mapped to the start of its bucket.
-        Each date/datetime in the seconod half of the interval
+        Each date/datetime in the second half of the interval
         is mapped to the end of its bucket.
 
         Parameters
@@ -267,6 +267,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime, date, time
         >>> df = pl.DataFrame(
         ...     {
         ...         "dtm": [
@@ -274,7 +275,7 @@ class ExprDateTimeNameSpace:
         ...             datetime(2023, 7, 5, 23, 59, 59),
         ...         ],
         ...         "dt": [date(2022, 10, 10), date(2022, 7, 5)],
-        ...         "tm": [time(1, 2, 3, 456), time(7, 8, 9, 101)],
+        ...         "tm": [time(1, 2, 3, 456000), time(7, 8, 9, 101000)],
         ...     }
         ... )
         >>> df

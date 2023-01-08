@@ -1448,7 +1448,7 @@ class DateTimeNameSpace:
 
         Each date/datetime in the first half of the interval
         is mapped to the start of its bucket.
-        Each date/datetime in the seconod half of the interval
+        Each date/datetime in the second half of the interval
         is mapped to the end of its bucket.
 
         The `every` and `offset` argument are created with the
