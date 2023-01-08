@@ -2240,12 +2240,17 @@ def test_ewm_param_validation() -> None:
 
 
 def test_extend_constant() -> None:
-    a = pl.Series("a", [1, 2, 3])
-    expected = pl.Series("a", [1, 2, 3, 1, 1, 1])
-    verify_series_and_expr_api(a, expected, "extend_constant", 1, 3)
+    today = date.today()
 
-    expected = pl.Series("a", [1, 2, 3, None, None, None])
-    verify_series_and_expr_api(a, expected, "extend_constant", None, 3)
+    for const, dtype in (
+        (1, pl.Int8),
+        (today, pl.Date),
+        ("xyz", pl.Utf8),
+        (None, pl.Float64),
+    ):
+        s = pl.Series("s", [None], dtype=dtype)
+        expected = pl.Series("s", [None, const, const, const], dtype=dtype)
+        verify_series_and_expr_api(s, expected, "extend_constant", const, 3)
 
 
 def test_any_all() -> None:
