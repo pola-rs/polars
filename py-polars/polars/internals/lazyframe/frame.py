@@ -2518,7 +2518,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ null │
         └──────┘
 
-        Fill nulls with the median from another dataframe
+        Fill nulls with the median from another dataframe:
+
         >>> train_df = pl.DataFrame(
         ...     {"feature_0": [-1.0, 0, 1], "feature_1": [-1.0, 0, 1]}
         ... ).lazy()
