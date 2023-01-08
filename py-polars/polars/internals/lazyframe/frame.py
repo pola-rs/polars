@@ -2400,6 +2400,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         Return a new LazyFrame with the columns added, if new, or replaced.
 
+        Notes
+        -----
+        Creating a new LazyFrame using this method does not create a new copy of
+        existing underlying data.
+
         Parameters
         ----------
         exprs
@@ -2550,7 +2555,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def with_column(self: LDF, column: pli.Series | pli.Expr) -> LDF:
         """
-        Add or overwrite column in a DataFrame.
+        Return a new LazyFrame with the column added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new LazyFrame using this method does not create a new copy of
+        existing underlying data.
 
         Parameters
         ----------

@@ -4164,7 +4164,12 @@ class DataFrame:
 
     def with_column(self, column: pli.Series | pli.Expr) -> DataFrame:
         """
-        Return a new DataFrame with the column added or replaced.
+        Return a new DataFrame with the column added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new DataFrame using this method does not create a new copy of
+        existing underlying data.
 
         Parameters
         ----------
@@ -5457,6 +5462,11 @@ class DataFrame:
     ) -> DataFrame:
         """
         Return a new DataFrame with the columns added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new DataFrame using this method does not create a new copy of
+        existing underlying data.
 
         Parameters
         ----------
