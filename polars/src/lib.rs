@@ -343,28 +343,31 @@
 //!                                    LEFT
 //!                                    CENTER
 //!                                    RIGHT
-//! * `POLARS_FMT_TABLE_HIDE_COLUMN_NAMES` -> Hide column names
-//! * `POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES` -> Hide data types for columns
-//! * `POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR` -> Hide separator that separates column names from rows
-//! * `POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT"` -> changes the position and format of data, putting it directly below column name
+//! * `POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW` -> print shape information below the table.
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_NAMES` -> hide table column names.
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES` -> hide data types for columns.
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR` -> hide separator that separates column names from rows.
+//! * `POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"` -> omit table shape information.
+//! * `POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE` -> put column data type on the same line as the column name.
+//! * `POLARS_FMT_TABLE_ROUNDED_CORNERS` -> apply rounded corners to UTF8-styled tables.
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
 //! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
 //! * `POLARS_FMT_STR_LEN` -> maximum number of characters printed per string value.
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 //! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).
-//! * `POLARS_VERBOSE` -> print logging info to stderr
-//! * `POLARS_NO_PARTITION` -> Polars may choose to partition the groupby operation, based on data
-//!                            cardinality. Setting this env var will turn partitioned groupby's off
+//! * `POLARS_VERBOSE` -> print logging info to stderr.
+//! * `POLARS_NO_PARTITION` -> polars may choose to partition the groupby operation, based on data
+//!                            cardinality. Setting this env var will turn partitioned groupby's off.
 //! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
-//!                                     defaults to `0.001`
+//!                                     defaults to `0.001`.
 //! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned groupby should run.
 //!                                          defaults to `1000`, any higher cardinality will run default groupby.
-//! * `POLARS_FORCE_PARTITION` -> Force partitioned groupby if the keys and aggregations allow it.
+//! * `POLARS_FORCE_PARTITION` -> force partitioned groupby if the keys and aggregations allow it.
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error.
-//! * `POLARS_NO_CHUNKED_JOIN` -> Force rechunk before joins.
+//! * `POLARS_NO_CHUNKED_JOIN` -> force rechunk before joins.
 //!
 //!
 //! ## User Guide

@@ -26,6 +26,7 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR",
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
+    "POLARS_FMT_TABLE_ROUNDED_CORNERS",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
 }
@@ -328,21 +329,25 @@ class Config:
     @classmethod
     def set_tbl_formatting(
         cls,
-        format: Literal[
-            "ASCII_FULL",
-            "ASCII_FULL_CONDENSED",
-            "ASCII_NO_BORDERS",
-            "ASCII_BORDERS_ONLY",
-            "ASCII_BORDERS_ONLY_CONDENSED",
-            "ASCII_HORIZONTAL_ONLY",
-            "ASCII_MARKDOWN",
-            "UTF8_FULL",
-            "UTF8_FULL_CONDENSED",
-            "UTF8_NO_BORDERS",
-            "UTF8_BORDERS_ONLY",
-            "UTF8_HORIZONTAL_ONLY",
-            "NOTHING",
-        ],
+        format: (
+            Literal[
+                "ASCII_FULL",
+                "ASCII_FULL_CONDENSED",
+                "ASCII_NO_BORDERS",
+                "ASCII_BORDERS_ONLY",
+                "ASCII_BORDERS_ONLY_CONDENSED",
+                "ASCII_HORIZONTAL_ONLY",
+                "ASCII_MARKDOWN",
+                "UTF8_FULL",
+                "UTF8_FULL_CONDENSED",
+                "UTF8_NO_BORDERS",
+                "UTF8_BORDERS_ONLY",
+                "UTF8_HORIZONTAL_ONLY",
+                "NOTHING",
+            ]
+            | None
+        ) = None,
+        rounded_corners: bool = False,
     ) -> type[Config]:
         """
         Set table formatting style.
@@ -364,6 +369,9 @@ class Config:
             * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
             * "NOTHING": No borders or other lines.
 
+        rounded_corners : bool
+            apply rounded corners to UTF8-styled tables (no-op for ASCII formats).
+
         Notes
         -----
         The UTF8 styles all use one or more of the semigraphic box-drawing characters
@@ -377,7 +385,9 @@ class Config:
         """
         # can see what the different styles look like in the comfy-table tests:
         # https://github.com/Nukesor/comfy-table/blob/main/tests/all/presets_test.rs
-        os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
+        if format:
+            os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
+        os.environ["POLARS_FMT_TABLE_ROUNDED_CORNERS"] = str(int(rounded_corners))
         return cls
 
     @classmethod
