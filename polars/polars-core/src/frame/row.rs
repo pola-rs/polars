@@ -18,7 +18,6 @@ impl<'a> Row<'a> {
 
 impl DataFrame {
     /// Get a row from a DataFrame. Use of this is discouraged as it will likely be slow.
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn get_row(&self, idx: usize) -> PolarsResult<Row> {
         let values = self
             .columns
@@ -31,7 +30,6 @@ impl DataFrame {
     /// Amortize allocations by reusing a row.
     /// The caller is responsible to make sure that the row has at least the capacity for the number
     /// of columns in the DataFrame
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) -> PolarsResult<()> {
         for (s, any_val) in self.columns.iter().zip(&mut row.0) {
             *any_val = s.get(idx)?;
@@ -46,7 +44,6 @@ impl DataFrame {
     /// # Safety
     /// Does not do any bounds checking.
     #[inline]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub unsafe fn get_row_amortized_unchecked<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
         self.columns
             .iter()
@@ -58,14 +55,12 @@ impl DataFrame {
 
     /// Create a new DataFrame from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> PolarsResult<Self> {
         Self::from_rows_iter_and_schema(rows.iter(), schema)
     }
 
     /// Create a new DataFrame from an iterator over rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
     where
         I: Iterator<Item = &'a Row<'a>>,
@@ -108,7 +103,6 @@ impl DataFrame {
 
     /// Create a new DataFrame from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows(rows: &[Row]) -> PolarsResult<Self> {
         let schema = rows_to_schema_first_non_null(rows, Some(50));
         let has_nulls = schema
@@ -177,7 +171,6 @@ impl DataFrame {
         }
     }
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     /// Transpose a DataFrame. This is a very expensive operation.
     pub fn transpose(&self) -> PolarsResult<DataFrame> {
         let height = self.height();

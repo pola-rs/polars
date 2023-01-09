@@ -1,4 +1,4 @@
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 extern crate core;
 
 #[macro_use]
@@ -17,7 +17,6 @@ mod named_from;
 pub mod prelude;
 pub mod schema;
 #[cfg(feature = "serde")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;
 pub mod series;
 pub mod testing;

@@ -63,7 +63,6 @@ where
             .map(|ca| ca.into_series())
     }
 }
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,

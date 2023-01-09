@@ -2778,7 +2778,6 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmin(&self) -> PolarsResult<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| {
             let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
@@ -2808,7 +2807,6 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmax(&self) -> PolarsResult<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| {
             let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
@@ -3305,7 +3303,6 @@ impl DataFrame {
 
     /// Split into multiple DataFrames partitioned by groups
     #[cfg(feature = "partition_by")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, false)
@@ -3314,7 +3311,6 @@ impl DataFrame {
     /// Split into multiple DataFrames partitioned by groups
     /// Order of the groups are maintained.
     #[cfg(feature = "partition_by")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, true)
@@ -3323,7 +3319,6 @@ impl DataFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     pub fn unnest<I: IntoVec<String>>(&self, cols: I) -> PolarsResult<DataFrame> {
         let cols = cols.into_vec();
         self.unnest_impl(cols.into_iter().collect())
