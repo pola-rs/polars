@@ -10,7 +10,7 @@ pub mod datatypes;
 pub mod doc;
 pub mod error;
 pub mod export;
-mod fmt;
+pub mod fmt;
 pub mod frame;
 pub mod functions;
 mod named_from;

@@ -984,3 +984,10 @@ linebreaks"|"101112"|"131415"'''  # noqa: W291
         "col3": [123, None, 101112],
         "col4": [456, 789, 131415],
     }
+
+
+def test_csv_write_tz_aware() -> None:
+    df = pl.DataFrame({"times": datetime(2021, 1, 1)}).with_columns(
+        pl.col("times").dt.with_time_zone("Europe/Zurich")
+    )
+    assert df.write_csv() == "times\n2021-01-01 01:00:00 CET\n"

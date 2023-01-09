@@ -9,6 +9,7 @@ use std::fmt::{Debug, Display, Formatter};
     feature = "dtype-time"
 ))]
 use arrow::temporal_conversions::*;
+use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -714,28 +715,8 @@ impl Display for AnyValue<'_> {
                 };
                 match tz {
                     None => write!(f, "{ndt}"),
-                    Some(_tz) => {
-                        #[cfg(feature = "timezones")]
-                        {
-                            match _tz.parse::<chrono_tz::Tz>() {
-                                Ok(tz) => {
-                                    let dt_utc = chrono::Utc.from_local_datetime(&ndt).unwrap();
-                                    let dt_tz_aware = dt_utc.with_timezone(&tz);
-                                    write!(f, "{dt_tz_aware}")
-                                }
-                                Err(_) => match parse_offset(_tz) {
-                                    Ok(offset) => {
-                                        let dt_tz_aware = offset.from_utc_datetime(&ndt);
-                                        write!(f, "{dt_tz_aware}")
-                                    }
-                                    Err(_) => write!(f, "invalid timezone"),
-                                },
-                            }
-                        }
-                        #[cfg(not(feature = "timezones"))]
-                        {
-                            panic!("activate 'timezones' feature")
-                        }
+                    Some(tz) => {
+                        write!(f, "{}", PlTzAware::new(ndt, tz))
                     }
                 }
             }
@@ -772,6 +753,43 @@ impl Display for AnyValue<'_> {
             }
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
+        }
+    }
+}
+
+/// Utility struct to format a timezone aware datetime.
+#[allow(dead_code)]
+pub struct PlTzAware<'a> {
+    ndt: NaiveDateTime,
+    tz: &'a str,
+}
+impl<'a> PlTzAware<'a> {
+    pub fn new(ndt: NaiveDateTime, tz: &'a str) -> Self {
+        Self { ndt, tz }
+    }
+}
+
+impl Display for PlTzAware<'_> {
+    #[allow(unused_variables)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        #[cfg(feature = "timezones")]
+        match self.tz.parse::<chrono_tz::Tz>() {
+            Ok(tz) => {
+                let dt_utc = chrono::Utc.from_local_datetime(&self.ndt).unwrap();
+                let dt_tz_aware = dt_utc.with_timezone(&tz);
+                write!(f, "{dt_tz_aware}")
+            }
+            Err(_) => match parse_offset(self.tz) {
+                Ok(offset) => {
+                    let dt_tz_aware = offset.from_utc_datetime(&self.ndt);
+                    write!(f, "{dt_tz_aware}")
+                }
+                Err(_) => write!(f, "invalid timezone"),
+            },
+        }
+        #[cfg(not(feature = "timezones"))]
+        {
+            panic!("activate 'timezones' feature")
         }
     }
 }

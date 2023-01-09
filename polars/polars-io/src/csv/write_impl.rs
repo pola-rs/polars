@@ -4,6 +4,7 @@ use arrow::temporal_conversions;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
 use polars_core::error::PolarsError::ComputeError;
+use polars_core::fmt::PlTzAware;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -83,28 +84,22 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
             }
         }
         #[cfg(feature = "dtype-datetime")]
-        AnyValue::Datetime(v, tu, tz) => match tz {
-            None => {
-                let dt = match tu {
-                    TimeUnit::Nanoseconds => temporal_conversions::timestamp_ns_to_datetime(v),
-                    TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
-                    TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
-                };
-                match &options.datetime_format {
-                    None => write!(f, "{dt}"),
-                    Some(fmt) => write!(f, "{}", dt.format(fmt)),
+        AnyValue::Datetime(v, tu, tz) => {
+            let ndt = match tu {
+                TimeUnit::Nanoseconds => temporal_conversions::timestamp_ns_to_datetime(v),
+                TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
+                TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
+            };
+            match tz {
+                None => match &options.datetime_format {
+                    None => write!(f, "{ndt}"),
+                    Some(fmt) => write!(f, "{}", ndt.format(fmt)),
+                },
+                Some(tz) => {
+                    write!(f, "{}", PlTzAware::new(ndt, tz))
                 }
             }
-            Some(tz) => {
-                let tz = temporal_conversions::parse_offset(tz).unwrap();
-
-                let dt = temporal_conversions::timestamp_to_datetime(v, tu.to_arrow(), &tz);
-                match &options.datetime_format {
-                    None => write!(f, "{dt}"),
-                    Some(fmt) => write!(f, "{}", dt.format(fmt)),
-                }
-            }
-        },
+        }
         #[cfg(feature = "dtype-time")]
         AnyValue::Time(v) => {
             let date = temporal_conversions::time64ns_to_time(v);
