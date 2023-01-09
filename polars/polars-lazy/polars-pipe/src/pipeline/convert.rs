@@ -407,8 +407,9 @@ where
 }
 
 pub fn swap_join_order(options: &JoinOptions) -> bool {
-    match (options.rows_left, options.rows_right) {
-        ((Some(left), _), (Some(right), _)) => left > right,
-        ((_, left), (_, right)) => left > right,
-    }
+    matches!(options.how, JoinType::Left)
+        || match (options.rows_left, options.rows_right) {
+            ((Some(left), _), (Some(right), _)) => left > right,
+            ((_, left), (_, right)) => left > right,
+        }
 }

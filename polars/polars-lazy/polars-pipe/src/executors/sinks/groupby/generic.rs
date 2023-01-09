@@ -428,4 +428,7 @@ impl Sink for GenericGroupbySink {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+    fn fmt(&self) -> &str {
+        "generic_groupby"
+    }
 }

@@ -358,6 +358,9 @@ impl Sink for Utf8GroupbySink {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+    fn fmt(&self) -> &str {
+        "utf8_groupby"
+    }
 }
 
 // write agg_idx to the hashes buffer.

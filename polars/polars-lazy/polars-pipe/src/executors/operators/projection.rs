@@ -24,6 +24,9 @@ impl Operator for FastProjectionOperator {
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
     }
+    fn fmt(&self) -> &str {
+        "fast_join_projection"
+    }
 }
 
 #[derive(Clone)]
@@ -48,6 +51,9 @@ impl Operator for ProjectionOperator {
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
+    }
+    fn fmt(&self) -> &str {
+        "projection"
     }
 }
 
@@ -78,5 +84,8 @@ impl Operator for HstackOperator {
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
+    }
+    fn fmt(&self) -> &str {
+        "hstack"
     }
 }

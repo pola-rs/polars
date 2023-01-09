@@ -33,4 +33,7 @@ impl Operator for FilterOperator {
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
     }
+    fn fmt(&self) -> &str {
+        "filter"
+    }
 }

@@ -84,4 +84,7 @@ impl Source for ParquetSource {
             ),
         })
     }
+    fn fmt(&self) -> &str {
+        "parquet"
+    }
 }

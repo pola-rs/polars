@@ -360,6 +360,9 @@ where
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+    fn fmt(&self) -> &str {
+        "primitive_groupby"
+    }
 }
 
 fn insert_and_get<T>(

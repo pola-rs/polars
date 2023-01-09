@@ -48,4 +48,7 @@ impl Sink for OrderedSink {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+    fn fmt(&self) -> &str {
+        "ordered_sink"
+    }
 }

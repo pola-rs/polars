@@ -230,7 +230,7 @@ fn test_streaming_left_join() -> PolarsResult<()> {
 
     let q = lf_left.left_join(lf_right, col("a"), col("a"));
 
-    let out1 = q.clone().with_streaming(false).collect()?;
+    let out1 = q.clone().with_streaming(true).collect()?;
     let out2 = q.clone().with_streaming(false).collect()?;
     assert!(out1.frame_equal_missing(&out2));
 
@@ -306,5 +306,50 @@ fn test_streaming_aggregate_join() -> PolarsResult<()> {
     let q1 = q.clone().with_streaming(true);
     let out_streaming = q1.collect()?;
     assert_eq!(out_streaming.shape(), (3, 3));
+    Ok(())
+}
+
+#[test]
+fn test_streaming_double_left_join() -> PolarsResult<()> {
+    // A left join swaps the tables, so that checks the swapping of the branches
+    let q1 = df![
+        "id" => ["1a"],
+        "p_id" => ["1b"],
+        "m_id" => ["1c"],
+    ]?
+    .lazy();
+
+    let q2 = df![
+        "p_id2" => ["2a"],
+        "p_code" => ["2b"],
+    ]?
+    .lazy();
+
+    let q3 = df![
+        "m_id3" => ["3a"],
+        "m_code" => ["3b"],
+    ]?
+    .lazy();
+
+    let q = q1
+        .clone()
+        .left_join(q2, col("p_id"), col("p_id2"))
+        .left_join(q3.clone(), col("m_id"), col("m_id3"));
+
+    let out = q.clone().with_streaming(true).collect()?;
+    let expected = q.clone().with_streaming(false).collect()?;
+
+    assert_eq!(out, expected);
+
+    // more joins
+    let q = q
+        .left_join(q1, col("p_id"), col("p_id"))
+        .left_join(q3, col("m_id"), col("m_id3"));
+
+    let out = q.clone().with_streaming(true).collect()?;
+    let expected = q.clone().with_streaming(false).collect()?;
+
+    assert_eq!(out, expected);
+
     Ok(())
 }
