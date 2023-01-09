@@ -1459,8 +1459,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "list_take")]
-    fn lst_take(&self, index: PyExpr) -> Self {
-        self.inner.clone().arr().take(index.inner).into()
+    fn lst_take(&self, index: PyExpr, null_on_oob: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .take(index.inner, null_on_oob)
+            .into()
     }
 
     fn lst_join(&self, separator: &str) -> Self {

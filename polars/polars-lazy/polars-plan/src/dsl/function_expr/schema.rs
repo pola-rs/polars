@@ -185,7 +185,7 @@ impl FunctionExpr {
                     Slice => same_type(),
                     Get => inner_type_list(),
                     #[cfg(feature = "list_take")]
-                    Take => same_type(),
+                    Take(_) => same_type(),
                 }
             }
             #[cfg(feature = "dtype-struct")]

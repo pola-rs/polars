@@ -274,7 +274,9 @@ class ExprListNameSpace:
         index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_get(index))
 
-    def take(self, index: pli.Expr | pli.Series | list[int]) -> pli.Expr:
+    def take(
+        self, index: pli.Expr | pli.Series | list[int], null_on_oob: bool = False
+    ) -> pli.Expr:
         """
         Take sublists by multiple indices.
 
@@ -285,12 +287,17 @@ class ExprListNameSpace:
         ----------
         index
             Indices to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
 
         """
         if isinstance(index, list):
             index = pli.Series(index)
         index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
-        return pli.wrap_expr(self._pyexpr.lst_take(index))
+        return pli.wrap_expr(self._pyexpr.lst_take(index, null_on_oob))
 
     def __getitem__(self, item: int) -> pli.Expr:
         return self.get(item)

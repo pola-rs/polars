@@ -58,7 +58,7 @@ where
             Ok(())
         } else {
             Err(PolarsError::ComputeError(
-                "take indices are out of bounds".into(),
+                "Take indices are out of bounds.".into(),
             ))
         }
     }
@@ -86,7 +86,7 @@ where
             Ok(())
         } else {
             Err(PolarsError::ComputeError(
-                "take indices are out of bounds".into(),
+                "Take indices are out of bounds.".into(),
             ))
         }
     }
@@ -142,7 +142,7 @@ where
                     Ok(())
                 } else {
                     Err(PolarsError::ComputeError(
-                        "take indices are out of bounds".into(),
+                        "Take indices are out of bounds.".into(),
                     ))
                 }
             }
