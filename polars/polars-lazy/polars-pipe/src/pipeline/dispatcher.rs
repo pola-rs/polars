@@ -1,9 +1,12 @@
+use std::collections::VecDeque;
+
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
 
+use crate::executors::operators::Dummy;
 use crate::executors::sources::DataFrameSource;
 use crate::operators::{
     DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, SExecutionContext, Sink,
@@ -66,12 +69,16 @@ impl PipeLine {
         self
     }
 
-    fn replace_operator(&mut self, op: &dyn Operator, node: Node) {
+    // returns if operator was successfully replaced
+    fn replace_operator(&mut self, op: &dyn Operator, node: Node) -> bool {
         if let Some(pos) = self.operator_nodes.iter().position(|n| *n == node) {
             let pos = pos + self.operator_offset;
             for (i, operator_pipe) in &mut self.operators.iter_mut().enumerate() {
                 operator_pipe[pos] = op.split(i)
             }
+            true
+        } else {
+            false
         }
     }
 
@@ -214,11 +221,45 @@ impl PipeLine {
         Ok(out.unwrap())
     }
 
+    /// print the branches of the pipeline
+    /// in the order they run.
+    #[cfg(test)]
+    fn show(&self) {
+        let mut fmt = String::new();
+        let mut start = 0usize;
+        fmt.push_str(self.sources[0].fmt());
+        fmt.push_str(" -> ");
+        for (offset_end, sink) in &self.sinks {
+            // take operators of a single thread
+            let ops = &self.operators[0];
+            // slice the pipeline
+            let ops = &ops[start..*offset_end];
+            for op in ops {
+                fmt.push_str(op.fmt());
+                fmt.push_str(" -> ")
+            }
+            start = *offset_end;
+            fmt.push_str(sink[0].fmt())
+        }
+        println!("{fmt}");
+        for pl in &self.rh_sides {
+            pl.show()
+        }
+    }
+
     pub fn execute(&mut self, state: Box<dyn SExecutionContext>) -> PolarsResult<DataFrame> {
         let ec = PExecutionContext::new(state);
         let mut sink_out = self.run_pipeline(&ec)?;
         let mut pipelines = self.rh_sides.iter_mut();
         let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
+
+        // This is a stack of operators that should replace the sinks of join nodes
+        // If we don't reorder joins, the order we run the pipelines coincide with the
+        // order the sinks need to be replaced, however this is not always the case
+        // if we reorder joins.
+        // This stack ensures we still replace the dummy operators even if they are all in
+        // the most right branch
+        let mut operators_to_replace: VecDeque<(Box<dyn Operator>, Node)> = VecDeque::new();
 
         loop {
             match &mut sink_out {
@@ -236,10 +277,33 @@ impl PipeLine {
                     // we unwrap, because the latest pipeline should not return an Operator
                     let pipeline = pipelines.next().unwrap();
 
+                    // First check the operators
+                    // keep a counter as we also push to the front of deque
+                    // otherwise we keep iterating
+                    let mut remaining = operators_to_replace.len();
+                    while let Some((op, sink_node)) = operators_to_replace.pop_back() {
+                        if !pipeline.replace_operator(op.as_ref(), sink_node) {
+                            operators_to_replace.push_front((op, sink_node))
+                        } else {
+                        }
+                        if remaining == 0 {
+                            break;
+                        }
+                        remaining -= 1;
+                    }
+
                     // latest sink_node will be the operator, as the left side of the join
                     // always finishes that branch.
                     if let Some(sink_node) = sink_nodes.pop() {
-                        pipeline.replace_operator(op.as_ref(), sink_node);
+                        // if dummy that should be replaces is not found in this branch
+                        // we push it to the operators stack that should be replaced
+                        // on the next branch of the pipeline we first check this stack.
+                        // this only happens if we reorder joins
+                        if !pipeline.replace_operator(op.as_ref(), sink_node) {
+                            let mut swap = Box::<Dummy>::default() as Box<dyn Operator>;
+                            std::mem::swap(op, &mut swap);
+                            operators_to_replace.push_back((swap, sink_node));
+                        }
                     }
                     sink_out = pipeline.run_pipeline(&ec)?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);

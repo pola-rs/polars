@@ -5,6 +5,7 @@ use polars_core::datatypes::Field;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{DataType, SchemaRef, Series, IDX_DTYPE};
 use polars_core::schema::Schema;
+use polars_plan::dsl::Expr;
 use polars_plan::logical_plan::{ArenaExprIter, Context};
 use polars_plan::prelude::{AAggExpr, AExpr};
 use polars_utils::arena::{Arena, Node};
@@ -29,6 +30,10 @@ impl PhysicalPipedExpr for Count {
 
     fn field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         todo!()
+    }
+
+    fn expression(&self) -> Expr {
+        Expr::Count
     }
 }
 

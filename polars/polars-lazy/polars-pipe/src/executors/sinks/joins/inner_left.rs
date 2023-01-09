@@ -66,15 +66,12 @@ impl GenericJoinProbe {
         hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-        mut swapped_or_left: bool,
+        swapped_or_left: bool,
         join_series: Vec<Series>,
         hashes: Vec<u64>,
         context: &PExecutionContext,
         how: JoinType,
     ) -> Self {
-        if matches!(how, JoinType::Left) {
-            swapped_or_left = true
-        }
         if swapped_or_left {
             let tmp = DataChunk {
                 data: df_a.slice(0, 1),
@@ -328,5 +325,8 @@ impl Operator for GenericJoinProbe {
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         let new = self.clone();
         Box::new(new)
+    }
+    fn fmt(&self) -> &str {
+        "generic_join_probe"
     }
 }

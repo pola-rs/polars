@@ -44,6 +44,8 @@ pub struct JoinOptions {
     pub how: JoinType,
     pub suffix: Cow<'static, str>,
     pub slice: Option<(i64, usize)>,
+    /// Proxy of the number of rows in both sides of the joins
+    /// Holds `(Option<known_size>, estimated_size)`
     pub rows_left: (Option<usize>, usize),
     pub rows_right: (Option<usize>, usize),
 }

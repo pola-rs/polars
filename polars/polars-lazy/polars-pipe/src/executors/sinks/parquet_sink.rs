@@ -108,4 +108,7 @@ impl Sink for ParquetSink {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+    fn fmt(&self) -> &str {
+        "parquet_sink"
+    }
 }

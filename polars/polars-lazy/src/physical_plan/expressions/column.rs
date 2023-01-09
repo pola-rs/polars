@@ -61,7 +61,9 @@ impl ColumnExpr {
             // this path should not happen
             #[cfg(feature = "panic_on_schema")]
             {
-                if _state.ext_contexts.is_empty() {
+                if _state.ext_contexts.is_empty()
+                    && std::env::var("POLARS_NO_SCHEMA_CHECK").is_err()
+                {
                     panic!(
                         "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
                         out.name(),
@@ -88,7 +90,10 @@ impl ColumnExpr {
     ) -> PolarsResult<Series> {
         #[cfg(feature = "panic_on_schema")]
         {
-            if _panic_during_test && _state.ext_contexts.is_empty() {
+            if _panic_during_test
+                && _state.ext_contexts.is_empty()
+                && std::env::var("POLARS_NO_SCHEMA_CHECK").is_err()
+            {
                 panic!("invalid schema")
             }
         }

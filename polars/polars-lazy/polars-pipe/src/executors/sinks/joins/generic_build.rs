@@ -151,6 +151,7 @@ impl GenericBuild {
         chunk: &DataChunk,
     ) -> PolarsResult<&[Series]> {
         self.join_series.clear();
+
         for phys_e in self.join_columns_left.iter() {
             let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
@@ -337,7 +338,7 @@ impl Sink for GenericBuild {
                 let suffix = self.suffix.clone();
                 let hb = self.hb.clone();
                 let hash_tables = Arc::new(std::mem::take(&mut self.hash_tables));
-                let join_columns_left = self.join_columns_right.clone();
+                let join_columns_left = self.join_columns_left.clone();
                 let join_columns_right = self.join_columns_right.clone();
 
                 // take the buffers, this saves one allocation
@@ -368,6 +369,9 @@ impl Sink for GenericBuild {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+    fn fmt(&self) -> &str {
+        "generic_join_build"
     }
 }
 

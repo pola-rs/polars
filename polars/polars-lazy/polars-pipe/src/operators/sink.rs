@@ -23,4 +23,6 @@ pub trait Sink: Send + Sync {
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink>;
 
     fn as_any(&mut self) -> &mut dyn Any;
+
+    fn fmt(&self) -> &str;
 }

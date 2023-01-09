@@ -28,6 +28,10 @@ impl PhysicalPipedExpr for Wrap {
     fn field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.0.to_field(input_schema)
     }
+
+    fn expression(&self) -> Expr {
+        self.0.as_expression().unwrap().clone()
+    }
 }
 
 fn to_physical_piped_expr(
@@ -206,12 +210,11 @@ pub(crate) fn insert_streaming_nodes(
                 // *except* for a left join. In a left join we use the right
                 // table as build table and we stream the left table. This way
                 // we maintain order in the left join.
-                let (input_left, input_right) =
-                    if swap_join_order(options) || matches!(options.how, JoinType::Left) {
-                        (input_right, input_left)
-                    } else {
-                        (input_left, input_right)
-                    };
+                let (input_left, input_right) = if swap_join_order(options) {
+                    (input_right, input_left)
+                } else {
+                    (input_left, input_right)
+                };
 
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
@@ -357,7 +360,7 @@ pub(crate) fn insert_streaming_nodes(
                                 ..
                             } = lp_arena.get(node)
                             {
-                                let slice_node = lp_arena.add(ALogicalPlan::Slice {
+                                let slice_node = lp_arena.add(Slice {
                                     input: Node::default(),
                                     offset: *offset,
                                     len: *len as IdxSize,

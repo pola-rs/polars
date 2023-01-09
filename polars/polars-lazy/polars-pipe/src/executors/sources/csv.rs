@@ -110,4 +110,7 @@ impl Source for CsvSource {
             ),
         })
     }
+    fn fmt(&self) -> &str {
+        "csv"
+    }
 }
