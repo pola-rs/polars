@@ -25,6 +25,7 @@ from polars.datatypes import (
     Float32,
     List,
     PolarsDataType,
+    Struct,
     Time,
     Unknown,
     Utf8,
@@ -285,13 +286,27 @@ def sequence_to_pyseries(
 
     # physical branch
     # flat data
-    if (dtype is not None) and is_polars_dtype(dtype) and (python_dtype is None):
+    if (
+        dtype is not None
+        and dtype not in (Struct, Unknown)
+        and is_polars_dtype(dtype)
+        and (python_dtype is None)
+    ):
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values, strict)
 
         if dtype in (Date, Datetime, Duration, Time, Categorical):
             pyseries = pyseries.cast(dtype, True)
         return pyseries
+
+    elif dtype == Struct:
+        struct_schema = dtype.to_schema() if isinstance(dtype, Struct) else None
+        empty = {}  # type: ignore[var-annotated]
+        return sequence_to_pydf(
+            data=[(empty if v is None else v) for v in values],
+            columns=struct_schema,
+            orient="row",
+        ).to_struct(name)
     else:
         if python_dtype is None:
             if value is None:
@@ -514,7 +529,10 @@ def _handle_columns_arg(
 
 
 def _post_apply_columns(
-    pydf: PyDataFrame, columns: ColumnsType, categoricals: set[str] | None = None
+    pydf: PyDataFrame,
+    columns: ColumnsType | None,
+    categoricals: set[str] | None = None,
+    structs: dict[str, Struct] | None = None,
 ) -> PyDataFrame:
     """Apply 'columns' param _after_ PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
@@ -526,6 +544,8 @@ def _post_apply_columns(
     for i, col in enumerate(columns):
         if categoricals and col in categoricals:
             column_casts.append(pli.col(col).cast(Categorical)._pyexpr)
+        elif structs and col in structs and structs[col] != pydf_dtypes[i]:
+            column_casts.append(pli.col(col).cast(structs[col])._pyexpr)
         elif col in dtypes and dtypes[col] != pydf_dtypes[i]:
             column_casts.append(pli.col(col).cast(dtypes[col])._pyexpr)
 
@@ -579,10 +599,12 @@ def _expand_dict_scalars(
         if array_len > 0:
             for name, val in data.items():
                 dtype = dtypes.get(name)
-                if isinstance(val, dict):
+                if isinstance(val, dict) and dtype != Struct:
                     updated_data[name] = pli.DataFrame(val).to_struct(name)
+
                 elif arrlen(val) is not None or _is_generator(val):
                     updated_data[name] = pli.Series(name=name, values=val, dtype=dtype)
+
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool)
                 ):
@@ -766,8 +788,11 @@ def sequence_to_pydf(
         pydf = PyDataFrame.read_rows(
             [astuple(dc) for dc in data], infer_schema_length, schema_override or None
         )
-        if columns:
-            pydf = _post_apply_columns(pydf, columns, categoricals)
+        if schema_override:
+            structs = {
+                col: tp for col, tp in schema_override.items() if isinstance(tp, Struct)
+            }
+            pydf = _post_apply_columns(pydf, columns, categoricals, structs)
         return pydf
 
     elif _check_for_pandas(data[0]) and isinstance(
