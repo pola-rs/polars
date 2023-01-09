@@ -113,9 +113,7 @@ def test_struct_function_expansion() -> None:
 
     assert isinstance(s, pl.Series)
     assert s.struct.fields == ["a", "b"]
-    assert struct_schema == dict(
-        s.to_frame().schema["a"]
-    )  # type: ignore[call-overload]
+    assert pl.Struct(struct_schema) == s.to_frame().schema["a"]
 
 
 def test_value_counts_expr() -> None:
