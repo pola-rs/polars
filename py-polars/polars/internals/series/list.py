@@ -84,7 +84,9 @@ class ListNameSpace:
 
         """
 
-    def take(self, index: pli.Series | list[int]) -> pli.Series:
+    def take(
+        self, index: pli.Series | list[int], null_on_oob: bool = False
+    ) -> pli.Series:
         """
         Take sublists by multiple indices.
 
@@ -95,6 +97,11 @@ class ListNameSpace:
         ----------
         index
             Indices to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
 
         """
 

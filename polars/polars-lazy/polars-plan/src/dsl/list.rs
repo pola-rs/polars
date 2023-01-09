@@ -123,11 +123,18 @@ impl ListNameSpace {
     }
 
     /// Get items in every sublist by multiple indexes.
+    ///
+    /// # Arguments
+    /// - `null_on_oob`: Return a null when an index is out of bounds.
+    /// This behavior is more expensive than defaulting to returing an `Error`.
     #[cfg(feature = "list_take")]
     #[cfg_attr(docsrs, doc(cfg(feature = "list_take")))]
-    pub fn take(self, index: Expr) -> Expr {
-        self.0
-            .map_many_private(FunctionExpr::ListExpr(ListFunction::Take), &[index], false)
+    pub fn take(self, index: Expr, null_on_oob: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Take(null_on_oob)),
+            &[index],
+            false,
+        )
     }
 
     /// Get first item of every sublist.

@@ -11,7 +11,7 @@ pub enum ListFunction {
     Slice,
     Get,
     #[cfg(feature = "list_take")]
-    Take,
+    Take(bool),
 }
 
 impl Display for ListFunction {
@@ -25,7 +25,7 @@ impl Display for ListFunction {
             Slice => "slice",
             Get => "get",
             #[cfg(feature = "list_take")]
-            Take => "take",
+            Take(_) => "take",
         };
         write!(f, "{name}")
     }
@@ -191,7 +191,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "list_take")]
-pub(super) fn take(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
     let ca = &args[0];
     let idx = &args[1];
     let ca = ca.list()?;
@@ -203,6 +203,6 @@ pub(super) fn take(args: &[Series]) -> PolarsResult<Series> {
         // make sure we return a list
         out.reshape(&[-1, 1])
     } else {
-        ca.lst_take(idx)
+        ca.lst_take(idx, null_on_oob)
     }
 }
