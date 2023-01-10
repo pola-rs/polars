@@ -1168,7 +1168,7 @@ def read_excel(
         Extra options passed to :func:`read_csv` for parsing the CSV file returned by
         ``xlsx2csv.Xlsx2csv().convert()``
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
-        infer_schema_length=None}``
+        "infer_schema_length": None}``
 
     Returns
     -------
