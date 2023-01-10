@@ -82,6 +82,12 @@ fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     exprs.iter().all(|node| is_streamable(*node, expr_arena))
 }
 
+fn all_column(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    exprs
+        .iter()
+        .all(|node| matches!(expr_arena.get(*node), AExpr::Column(_)))
+}
+
 fn streamable_join(join_type: &JoinType) -> bool {
     match join_type {
         #[cfg(feature = "cross_join")]
@@ -148,6 +154,15 @@ pub(crate) fn insert_streaming_nodes(
                 stack.push((*input, state, current_idx))
             }
             FileSink { input, .. } => {
+                state.streamable = true;
+                state.operators_sinks.push((true, false, root));
+                stack.push((*input, state, current_idx))
+            }
+            Sort {
+                input,
+                by_column,
+                args,
+            } if !args.nulls_last && by_column.len() == 1 && all_column(by_column, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push((true, false, root));
                 stack.push((*input, state, current_idx))

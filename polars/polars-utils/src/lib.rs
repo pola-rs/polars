@@ -12,6 +12,8 @@ pub mod mem;
 pub mod slice;
 pub mod sort;
 pub mod sync;
+#[cfg(feature = "sysinfo")]
+pub mod sys;
 pub mod unwrap;
 
 pub use functions::*;

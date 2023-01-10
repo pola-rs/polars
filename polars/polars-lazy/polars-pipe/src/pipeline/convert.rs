@@ -180,6 +180,21 @@ where
             let slice = SliceSink::new(*offset as u64, *len as usize);
             Box::new(slice) as Box<dyn Sink>
         }
+        Sort {
+            input,
+            by_column,
+            args,
+        } => {
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
+            assert_eq!(by_column.len(), 1);
+            let by_column = aexpr_to_leaf_names_iter(by_column[0], expr_arena)
+                .next()
+                .unwrap();
+            let index = input_schema.try_index_of(by_column.as_ref())?;
+
+            let sort_sink = SortSink::new(vec![index], args.reverse.clone());
+            Box::new(sort_sink) as Box<dyn Sink>
+        }
         Aggregate {
             input,
             keys,
