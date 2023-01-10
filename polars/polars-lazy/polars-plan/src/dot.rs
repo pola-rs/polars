@@ -8,6 +8,7 @@ use crate::utils::expr_to_leaf_column_names;
 
 impl Expr {
     /// Get a dot language representation of the Expression.
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub fn to_dot(&self) -> PolarsResult<String> {
         let mut s = String::with_capacity(512);
         self.dot_viz(&mut s, (0, 0), "").expect("io error");
@@ -34,6 +35,7 @@ impl Expr {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     fn dot_viz(
         &self,
         acc_str: &mut String,
@@ -120,6 +122,7 @@ impl LogicalPlan {
     ///     Used to make sure that the dot boxes are distinct.
     ///     branch is an id per join/union branch
     ///     id is incremented by the depth traversal of the tree.
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub fn dot(
         &self,
         acc_str: &mut String,

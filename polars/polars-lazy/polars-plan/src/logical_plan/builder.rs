@@ -98,6 +98,7 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet<P: Into<PathBuf>>(
         path: P,
         n_rows: Option<usize>,
@@ -154,6 +155,7 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "ipc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 

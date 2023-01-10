@@ -1,16 +1,22 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "avro")]
+#[cfg_attr(docsrs, doc(cfg(feature = "avro")))]
 pub mod avro;
 #[cfg(any(feature = "csv-file", feature = "json"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
 #[cfg(feature = "parquet")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
 pub mod export;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "ipc", feature = "ipc_streaming"))))]
 pub mod ipc;
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod json;
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod ndjson_core;
 #[cfg(feature = "object_store")]
 mod object_store;
@@ -26,6 +32,7 @@ pub use crate::object_store::glob as async_glob;
 pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]
+#[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
 #[cfg(feature = "private")]
 pub mod predicates;
