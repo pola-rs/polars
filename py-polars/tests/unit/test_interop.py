@@ -250,6 +250,7 @@ def test_from_dict_struct() -> None:
     assert df.shape == (2, 2)
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
+    assert df.schema == {"a": pl.Struct, "d": pl.Int64}
 
 
 def test_from_dicts() -> None:

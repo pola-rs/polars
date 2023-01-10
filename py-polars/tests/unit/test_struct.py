@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from dataclasses import dataclass
 from datetime import datetime
 
 import pandas as pd
@@ -107,10 +108,12 @@ def test_struct_function_expansion() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     )
-    assert df.with_column(pl.struct(pl.col(["a", "b"])))["a"].struct.fields == [
-        "a",
-        "b",
-    ]
+    struct_schema = {"a": pl.UInt32, "b": pl.Utf8}
+    s = df.with_column(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
+
+    assert isinstance(s, pl.Series)
+    assert s.struct.fields == ["a", "b"]
+    assert pl.Struct(struct_schema) == s.to_frame().schema["a"]
 
 
 def test_value_counts_expr() -> None:
@@ -119,7 +122,6 @@ def test_value_counts_expr() -> None:
             "id": ["a", "b", "b", "c", "c", "c", "d", "d"],
         }
     )
-
     out = (
         df.select(
             [
@@ -699,11 +701,16 @@ def test_concat_list_reverse_struct_fields() -> None:
 
 
 def test_struct_any_value_get_after_append() -> None:
-    a = pl.Series("a", [{"a": 1, "b": 2}])
-    b = pl.Series("a", [{"a": 2, "b": 3}])
+    schema = {"a": pl.Int8, "b": pl.Int32}
+    struct_def = pl.Struct(schema)
+
+    a = pl.Series("s", [{"a": 1, "b": 2}], dtype=struct_def)
+    b = pl.Series("s", [{"a": 2, "b": 3}], dtype=struct_def)
     a = a.append(b)
+
     assert a[0] == {"a": 1, "b": 2}
     assert a[1] == {"a": 2, "b": 3}
+    assert schema == a.to_frame().unnest("s").schema
 
 
 def test_struct_categorical_5843() -> None:
@@ -720,16 +727,54 @@ def test_struct_categorical_5843() -> None:
     }
 
 
-def test_struct_empty() -> None:
+def test_empty_struct() -> None:
     # List<struct>
     df = pl.DataFrame({"a": [[{}]]})
     assert df.to_dict(False) == {"a": [[{"": None}]]}
+
     # Struct one not empty
     df = pl.DataFrame({"a": [[{}, {"a": 10}]]})
     assert df.to_dict(False) == {"a": [[{"a": None}, {"a": 10}]]}
+
     # Empty struct
     df = pl.DataFrame({"a": [{}]})
     assert df.to_dict(False) == {"a": [{"": None}]}
+
+
+def test_empty_with_schema_struct() -> None:
+    # Empty structs, with schema
+    struct_schema = {"a": pl.Date, "b": pl.Boolean, "c": pl.Float64}
+    frame_schema = {"x": pl.Int8, "y": pl.Struct(struct_schema)}
+
+    @dataclass
+    class TestData:
+        x: int
+        y: dict  # type: ignore[type-arg]
+
+    # validate empty struct, null, and a mix of both
+    for empty_structs in (
+        [{}, {}],
+        [{}, None],
+        [None, {}],
+        [None, None],
+    ):
+        # test init from rows, dicts, and dataclasses
+        dict_data = {"x": [10, 20], "y": empty_structs}
+        dataclass_data = [
+            TestData(10, empty_structs[0]),  # type: ignore[index]
+            TestData(20, empty_structs[1]),  # type: ignore[index]
+        ]
+        for frame_data in (dict_data, dataclass_data):
+            df = pl.DataFrame(
+                data=frame_data,
+                columns=frame_schema,  # type: ignore[arg-type]
+            )
+            assert df.schema == frame_schema
+            assert df.unnest("y").columns == ["x", "a", "b", "c"]
+            assert df.rows() == [
+                (10, {"a": None, "b": None, "c": None}),
+                (20, {"a": None, "b": None, "c": None}),
+            ]
 
 
 def test_struct_null_cast() -> None:

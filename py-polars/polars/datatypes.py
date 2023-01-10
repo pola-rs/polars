@@ -12,6 +12,7 @@ from typing import (
     Any,
     Callable,
     ForwardRef,
+    Iterator,
     Mapping,
     Optional,
     Sequence,
@@ -370,7 +371,7 @@ class Field:
 
 
 class Struct(NestedType):
-    def __init__(self, fields: Sequence[Field] | dict[str, PolarsDataType]):
+    def __init__(self, fields: Sequence[Field] | Mapping[str, PolarsDataType]):
         """
         Struct composite type.
 
@@ -380,13 +381,10 @@ class Struct(NestedType):
             The sequence of fields that make up the struct
 
         """
-        if isinstance(fields, dict):
-            new_fields = []
-            for name, dtype in fields.items():
-                new_fields.append(Field(name, dtype))
-            self.fields: Sequence[Field] = new_fields
+        if isinstance(fields, Mapping):
+            self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:
-            self.fields = fields
+            self.fields = list(fields)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes, and specific
@@ -405,9 +403,17 @@ class Struct(NestedType):
     def __hash__(self) -> int:
         return hash(Struct)
 
+    def __iter__(self) -> Iterator[tuple[str, PolarsDataType]]:
+        for fld in self.fields or []:
+            yield fld.name, fld.dtype
+
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
         return f"{class_name}({self.fields})"
+
+    def to_schema(self) -> dict[str, PolarsDataType] | None:
+        """Return Struct dtype as a schema dict."""
+        return dict(self)
 
 
 class Binary(DataType):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Sequence, overload
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -14,6 +14,7 @@ from polars.datatypes import (
     Duration,
     Int64,
     PolarsDataType,
+    Struct,
     Time,
     UInt32,
     is_polars_dtype,
@@ -2247,6 +2248,7 @@ def select(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[True],
+    schema: Mapping[str, PolarsDataType] | None = None,
 ) -> pli.Series:
     ...
 
@@ -2255,6 +2257,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[False],
+    schema: Mapping[str, PolarsDataType] | None = None,
 ) -> pli.Expr:
     ...
 
@@ -2263,6 +2266,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
+    schema: Mapping[str, PolarsDataType] | None = None,
 ) -> pli.Expr | pli.Series:
     ...
 
@@ -2270,6 +2274,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
+    schema: Mapping[str, PolarsDataType] | None = None,
 ) -> pli.Expr | pli.Series:
     """
     Collect several columns into a Series of dtype Struct.
@@ -2277,9 +2282,11 @@ def struct(
     Parameters
     ----------
     exprs
-        Columns/Expressions to collect into a Struct
+        Columns/Expressions to collect into a Struct.
     eager
-        Evaluate immediately
+        Evaluate immediately.
+    schema
+        Optional schema dict that explicitly defines the struct field dtypes.
 
     Examples
     --------
@@ -2321,9 +2328,11 @@ def struct(
 
     """
     if eager:
-        return pli.select(struct(exprs, eager=False)).to_series()
-    exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_as_struct(exprs))
+        s = pli.select(struct(exprs, eager=False)).to_series()
+        return s.cast(Struct(schema)) if schema else s
+    else:
+        e = pli.wrap_expr(_as_struct(pli.selection_to_pyexpr_list(exprs)))
+        return e.cast(Struct(schema)) if schema else e
 
 
 @overload
