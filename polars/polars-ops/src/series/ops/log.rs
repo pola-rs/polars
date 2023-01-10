@@ -12,7 +12,6 @@ fn exp<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
 
 pub trait LogSeries: SeriesSealed {
     /// Compute the logarithm to a given base
-    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     fn log(&self, base: f64) -> Series {
         let s = self.as_series().to_physical_repr();
         let s = s.as_ref();
@@ -29,7 +28,6 @@ pub trait LogSeries: SeriesSealed {
         }
     }
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     /// Calculate the exponential of all elements in the input array.
     fn exp(&self) -> Series {
         let s = self.as_series().to_physical_repr();
@@ -49,7 +47,6 @@ pub trait LogSeries: SeriesSealed {
 
     /// Compute the entropy as `-sum(pk * log(pk)`.
     /// where `pk` are discrete probabilities.
-    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     fn entropy(&self, base: f64, normalize: bool) -> Option<f64> {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {

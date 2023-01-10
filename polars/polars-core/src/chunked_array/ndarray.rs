@@ -9,7 +9,6 @@ where
 {
     /// If data is aligned in a single chunk and has no Null values a zero copy view is returned
     /// as an `ndarray`
-    #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
     pub fn to_ndarray(&self) -> PolarsResult<ArrayView1<T::Native>> {
         let slice = self.cont_slice()?;
         Ok(aview1(slice))
@@ -18,7 +17,6 @@ where
 
 impl ListChunked {
     /// If all nested `Series` have the same length, a 2 dimensional `ndarray::Array` is returned.
-    #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
     pub fn to_ndarray<N>(&self) -> PolarsResult<Array2<N::Native>>
     where
         N: PolarsNumericType,
@@ -96,7 +94,6 @@ impl DataFrame {
     ///  [2.0, 8.0],
     ///  [3.0, 6.0]], shape=[3, 2], strides=[2, 1], layout=C (0x1), const ndim=2/
     /// ```
-    #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
     pub fn to_ndarray<N>(&self) -> PolarsResult<Array2<N::Native>>
     where
         N: PolarsNumericType,

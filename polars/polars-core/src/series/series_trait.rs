@@ -327,7 +327,6 @@ pub trait SeriesTrait:
     /// Take by index from an iterator. This operation clones the data.
     /// todo! remove?
     #[cfg(feature = "take_opt_iter")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "take_opt_iter")))]
     fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
         invalid_operation_panic!(self)
     }
@@ -601,7 +600,6 @@ pub trait SeriesTrait:
     }
 
     #[cfg(feature = "object")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     /// Get the value at this index as a downcastable Any trait ref.
     fn get_object(&self, _index: usize) -> Option<&dyn PolarsObjectSafe> {
         invalid_operation_panic!(self)
@@ -631,37 +629,31 @@ pub trait SeriesTrait:
 
     /// Check if elements of this Series are in the right Series, or List values of the right Series.
     #[cfg(feature = "is_in")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
     fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
         invalid_operation_panic!(self)
     }
     #[cfg(feature = "repeat_by")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
     fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
         invalid_operation_panic!(self)
     }
     #[cfg(feature = "checked_arithmetic")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "checked_arithmetic")))]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
         invalid_operation_panic!(self)
     }
 
     #[cfg(feature = "is_first")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
     /// Get a mask of the first unique values.
     fn is_first(&self) -> PolarsResult<BooleanChunked> {
         invalid_operation_panic!(self)
     }
 
     #[cfg(feature = "mode")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
     /// Compute the most occurring element in the array.
     fn mode(&self) -> PolarsResult<Series> {
         invalid_operation_panic!(self)
     }
 
     #[cfg(feature = "rolling_window")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     fn rolling_apply(
@@ -672,7 +664,6 @@ pub trait SeriesTrait:
         panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
     }
     #[cfg(feature = "concat_str")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
     /// Concat the values into a string array.
     /// # Arguments
     ///
