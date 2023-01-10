@@ -304,6 +304,9 @@ class ListNameSpace:
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
             Strategy to determine the number of fields of the struct.
+            'first_non_null': set number of fields to the length of the first
+            non-zero-length sublist.
+            'max_width': set number of fields as max length of all sublists.
         name_generator
             A custom function that can be used to generate the field names.
             Default field names are `field_0, field_1 .. field_n`
