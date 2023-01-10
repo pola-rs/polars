@@ -3504,7 +3504,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             compute.
         subset
             Subset to use to compare rows.
-        keep : {'first', 'last'}
+        keep : {'first', 'last', 'none'}
             Which of the duplicate rows to keep.
 
         Returns

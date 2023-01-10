@@ -40,7 +40,7 @@ PivotAgg: TypeAlias = Literal[
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
-UniqueKeepStrategy: TypeAlias = Literal["first", "last"]
+UniqueKeepStrategy: TypeAlias = Literal["first", "last", "none"]
 SizeUnit: TypeAlias = Literal[
     "b",
     "kb",

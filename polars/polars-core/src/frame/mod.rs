@@ -54,6 +54,7 @@ pub enum NullStrategy {
 pub enum UniqueKeepStrategy {
     First,
     Last,
+    KeepNone,
 }
 
 /// A contiguous growable collection of `Series` that have the same length.
@@ -3082,6 +3083,11 @@ impl DataFrame {
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
                 self.apply_columns_par(&|s| unsafe { s.agg_last(groups) })
+            }
+            (KeepNone, _) => {
+                let df_part = self.select(names)?;
+                let mask = df_part.is_unique()?;
+                return self.filter(&mask);
             }
         };
         Ok(DataFrame::new_no_checks(columns))

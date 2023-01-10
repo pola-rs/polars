@@ -6026,7 +6026,7 @@ class DataFrame:
             compute.
         subset
             Subset to use to compare rows.
-        keep : {'first', 'last'}
+        keep : {'first', 'last', 'none'}
             Which of the duplicate rows to keep (in conjunction with ``subset``).
 
         Returns
