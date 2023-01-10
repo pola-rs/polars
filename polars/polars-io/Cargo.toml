@@ -54,7 +54,7 @@ lexical-core = { version = "0.8", optional = true }
 memchr = "2.5"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num.workspace = true
-object_store = { git = "https://github.com/apache/arrow-rs", default-features = false, rev = "c74665808439cb7020fb1cfb74b376a136c73259", optional = true }
+object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell = "1"
 polars-arrow = { version = "0.26.1", path = "../polars-arrow" }
 polars-core = { version = "0.26.1", path = "../polars-core", features = ["private"], default-features = false }
