@@ -135,7 +135,7 @@ impl GenericBuild {
     fn is_empty(&self) -> bool {
         match self.chunks.len() {
             0 => true,
-            1 => self.chunks[0].data.height() == 0,
+            1 => self.chunks[0].is_empty(),
             _ => false,
         }
     }
@@ -189,7 +189,7 @@ impl Sink for GenericBuild {
         // end up with empty chunks
         // But we always want one empty chunk if all is empty as we need
         // to finish the join
-        if self.chunks.len() == 1 && self.chunks[0].data.height() == 0 {
+        if self.chunks.len() == 1 && self.chunks[0].is_empty() {
             self.chunks.pop().unwrap();
         }
         if chunk.is_empty() {
@@ -247,7 +247,9 @@ impl Sink for GenericBuild {
     fn combine(&mut self, mut other: Box<dyn Sink>) {
         if self.is_empty() {
             let other = other.as_any().downcast_mut::<Self>().unwrap();
-            std::mem::swap(self, other);
+            if !other.is_empty() {
+                std::mem::swap(self, other);
+            }
             return;
         }
         let other = other.as_any().downcast_ref::<Self>().unwrap();
