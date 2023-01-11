@@ -6,7 +6,7 @@ import typing
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Iterator, cast
+from typing import TYPE_CHECKING, Any, Iterator, Sequence, cast
 
 import numpy as np
 import pyarrow as pa
@@ -20,7 +20,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import columns
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import JoinStrategy
+    from polars.internals.type_aliases import JoinStrategy, UniqueKeepStrategy
 
 
 def test_version() -> None:
@@ -2652,3 +2652,23 @@ def test_item() -> None:
     df = pl.DataFrame({})
     with pytest.raises(ValueError):
         df.item()
+
+
+@pytest.mark.parametrize(
+    ("subset", "keep", "expected_mask"),
+    [
+        (None, "first", [True, True, True, False]),
+        ("a", "first", [True, True, False, False]),
+        (["a", "b"], "first", [True, True, False, False]),
+        (("a", "b"), "last", [True, False, False, True]),
+        (("a", "b"), "none", [True, False, False, False]),
+    ],
+)
+def test_unique(
+    subset: str | Sequence[str], keep: UniqueKeepStrategy, expected_mask: list[bool]
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
+
+    result = df.unique(maintain_order=True, subset=subset, keep=keep)
+    expected = df.filter(expected_mask)
+    assert_frame_equal(result, expected)

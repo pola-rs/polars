@@ -6014,47 +6014,66 @@ class DataFrame:
         """
         Drop duplicate rows from this DataFrame.
 
-        Warnings
-        --------
-        Note that this fails if there is a column of type `List` in the DataFrame or
-        subset.
-
         Parameters
         ----------
         maintain_order
-            Keep the same order as the original DataFrame. This requires more work to
+            Keep the same order as the original DataFrame. This is more expensive to
             compute.
         subset
-            Subset to use to compare rows.
-        keep : {'first', 'last'}
-            Which of the duplicate rows to keep (in conjunction with ``subset``).
+            Columns to consider for identifying duplicates. Defaults to using all
+            columns.
+        keep : {'first', 'last', 'none'}
+            Which of the duplicate rows to keep.
 
         Returns
         -------
-        DataFrame with unique rows
+        DataFrame with unique rows.
+
+        Warnings
+        --------
+        This method will fail if there is a column of type `List` in the DataFrame or
+        subset.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 1, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 1.0, 2.0, 3.0, 3.0],
-        ...         "c": [True, True, True, False, True, True],
+        ...         "foo": [1, 2, 3, 1],
+        ...         "bar": ["a", "a", "a", "a"],
+        ...         "ham": ["b", "b", "b", "b"],
         ...     }
         ... )
         >>> df.unique()
-        shape: (5, 3)
-        ┌─────┬─────┬───────┐
-        │ a   ┆ b   ┆ c     │
-        │ --- ┆ --- ┆ ---   │
-        │ i64 ┆ f64 ┆ bool  │
-        ╞═════╪═════╪═══════╡
-        │ 1   ┆ 0.5 ┆ true  │
-        │ 2   ┆ 1.0 ┆ true  │
-        │ 3   ┆ 2.0 ┆ false │
-        │ 4   ┆ 3.0 ┆ true  │
-        │ 5   ┆ 3.0 ┆ true  │
-        └─────┴─────┴───────┘
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
+        >>> df.unique(subset=["bar", "ham"])
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
+        >>> df.unique(keep="last")
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        │ 1   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
 
         """
         if subset is not None:

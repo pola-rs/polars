@@ -54,6 +54,7 @@ pub enum NullStrategy {
 pub enum UniqueKeepStrategy {
     First,
     Last,
+    None,
 }
 
 /// A contiguous growable collection of `Series` that have the same length.
@@ -3047,19 +3048,18 @@ impl DataFrame {
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
     ) -> PolarsResult<Self> {
-        use UniqueKeepStrategy::*;
         let names = match &subset {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
         };
 
         let columns = match (keep, maintain_order) {
-            (First, true) => {
+            (UniqueKeepStrategy::First, true) => {
                 let gb = self.groupby_stable(names)?;
                 let groups = gb.get_groups();
                 self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
             }
-            (Last, true) => {
+            (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
                 let gb = self.groupby(names)?;
@@ -3075,15 +3075,20 @@ impl DataFrame {
                 let last_idx = last_idx.sort(false);
                 return Ok(unsafe { self.take_unchecked(&last_idx) });
             }
-            (First, false) => {
+            (UniqueKeepStrategy::First, false) => {
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
                 self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
             }
-            (Last, false) => {
+            (UniqueKeepStrategy::Last, false) => {
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
                 self.apply_columns_par(&|s| unsafe { s.agg_last(groups) })
+            }
+            (UniqueKeepStrategy::None, _) => {
+                let df_part = self.select(names)?;
+                let mask = df_part.is_unique()?;
+                return self.filter(&mask);
             }
         };
         Ok(DataFrame::new_no_checks(columns))
