@@ -476,6 +476,7 @@ pub trait ChunkUnique<T: PolarsDataType> {
 
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
     fn mode(&self) -> PolarsResult<ChunkedArray<T>> {
         Err(PolarsError::InvalidOperation(
             "mode is not implemented for this dtype".into(),
@@ -727,6 +728,7 @@ pub trait ChunkPeaks {
 
 /// Check if element is member of list array
 #[cfg(feature = "is_in")]
+#[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
 pub trait IsIn {
     /// Check if elements of this array are in the right Series, or List values of the right Series.
     fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
@@ -748,6 +750,7 @@ pub trait ArgAgg {
 
 /// Repeat the values `n` times.
 #[cfg(feature = "repeat_by")]
+#[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
 pub trait RepeatBy {
     /// Repeat the values `n` times, where `n` is determined by the values in `by`.
     fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
@@ -756,6 +759,7 @@ pub trait RepeatBy {
 }
 
 #[cfg(feature = "is_first")]
+#[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
 /// Mask the first unique values as `true`
 pub trait IsFirst<T: PolarsDataType> {
     fn is_first(&self) -> PolarsResult<BooleanChunked> {
@@ -766,6 +770,7 @@ pub trait IsFirst<T: PolarsDataType> {
 }
 
 #[cfg(feature = "is_first")]
+#[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
 /// Mask the last unique values as `true`
 pub trait IsLast<T: PolarsDataType> {
     fn is_last(&self) -> PolarsResult<BooleanChunked> {
@@ -776,6 +781,7 @@ pub trait IsLast<T: PolarsDataType> {
 }
 
 #[cfg(feature = "concat_str")]
+#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Concat the values into a string array.
 pub trait StrConcat {
     /// Concat the values into a string array.

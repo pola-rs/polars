@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+#[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
 fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult<Option<f64>> {
     // see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L922
     let out = match moment {
@@ -47,6 +48,7 @@ impl Series {
     /// is close enough to zero, statistically speaking.
     ///
     /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024
+    #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
     pub fn skew(&self, bias: bool) -> PolarsResult<Option<f64>> {
         let mean = match self.mean() {
             Some(mean) => mean,
@@ -75,6 +77,7 @@ impl Series {
     /// eliminate bias coming from biased moment estimators
     ///
     /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1027
+    #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
     pub fn kurtosis(&self, fisher: bool, bias: bool) -> PolarsResult<Option<f64>> {
         let mean = match self.mean() {
             Some(mean) => mean,
