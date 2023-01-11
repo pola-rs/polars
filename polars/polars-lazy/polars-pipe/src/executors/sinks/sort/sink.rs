@@ -11,6 +11,7 @@ use polars_utils::atomic::SyncCounter;
 use polars_utils::sys::MEMINFO;
 
 use crate::executors::sinks::sort::io::IOThread;
+use crate::executors::sinks::sort::ooc::sort_ooc;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
 pub struct SortSink {
@@ -41,7 +42,7 @@ impl SortSink {
     }
 
     fn refresh_memory(&self) {
-        if !self.free_mem.load(Ordering::Relaxed) == 0 {
+        if self.free_mem.load(Ordering::Relaxed) == 0 {
             self.free_mem
                 .store(MEMINFO.free() as usize, Ordering::Relaxed);
         }
@@ -54,9 +55,24 @@ impl SortSink {
             let used = self.mem_total.fetch_add(chunk_bytes, Ordering::Relaxed);
             let free = self.free_mem.load(Ordering::Relaxed);
 
+
+            dbg!(used, free);
+
             // we need some free memory to be able to sort
             // so we keep 3x the sort data size before we go out of core
             if used * 3 > free {
+                self.ooc = true;
+
+                // start IO thread
+                let mut iot = self.io_thread.lock().unwrap();
+                if iot.is_none() {
+                    *iot = Some(IOThread::try_new()?)
+                }
+            }
+
+            // TODO! remove, only for testing
+            if used > 200_000{
+                dbg!("Start ooc");
                 self.ooc = true;
 
                 // start IO thread
@@ -70,17 +86,21 @@ impl SortSink {
         Ok(())
     }
 
+    fn sort_df(&self, df: &DataFrame) -> PolarsResult<DataFrame> {
+        let cols = df.get_columns();
+        let sort_cols = self
+            .sort_idx
+            .iter()
+            .map(|i| cols[*i].clone())
+            .collect::<Vec<_>>();
+
+        df.sort_impl(sort_cols, self.reverse.clone(), false, None, false)
+    }
+
     fn sort_and_dump(&mut self) -> PolarsResult<()> {
         // take from the front so that sorted data remains sorted in writing order
         while let Some(mut df) = self.chunks.pop_front() {
-            let cols = df.get_columns();
-            let sort_cols = self
-                .sort_idx
-                .iter()
-                .map(|i| cols[*i].clone())
-                .collect::<Vec<_>>();
-
-            df = df.sort_impl(sort_cols, self.reverse.clone(), false, None, false)?;
+            df = self.sort_df(&df)?;
 
             let iot = self.io_thread.lock().unwrap();
             let iot = iot.as_ref().unwrap();
@@ -106,7 +126,11 @@ impl Sink for SortSink {
     fn combine(&mut self, mut other: Box<dyn Sink>) {
         let mut other = other.as_any().downcast_mut::<Self>().unwrap();
         self.chunks.extend(std::mem::take(&mut other.chunks));
-        self.sort_and_dump().unwrap()
+        self.ooc |= other.ooc;
+
+        if self.ooc {
+            self.sort_and_dump().unwrap()
+        }
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
@@ -121,12 +145,15 @@ impl Sink for SortSink {
         })
     }
 
-    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         if self.ooc {
-            todo!()
+            let lock = self.io_thread.lock().unwrap();
+            let io_thread = lock.as_ref().unwrap();
+
+            sort_ooc(io_thread).map( FinalizedSink::Finished)
         } else {
             let df = accumulate_dataframes_vertical_unchecked(std::mem::take(&mut self.chunks));
-            Ok(FinalizedSink::Finished(df))
+            self.sort_df(&df).map( FinalizedSink::Finished)
         }
     }
 

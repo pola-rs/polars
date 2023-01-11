@@ -1,3 +1,4 @@
+use polars_core::utils::NoNull;
 use super::*;
 
 fn get_csv_file() -> LazyFrame {
@@ -329,4 +330,24 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
     assert_streaming_with_default(q);
 
     Ok(())
+}
+
+#[test]
+#[cfg(feature = "random")]
+fn test_streaming_sort() -> PolarsResult<()> {
+
+    let ca: NoNull<Int32Chunked> = (0..100_000).collect();
+    let s = ca.into_inner().into_series();
+    let s = s.shuffle(None);
+
+    let q = df![
+        "a" => s
+    ]?.lazy();
+
+    let out = q.sort("a", Default::default()).with_streaming(true).collect()?;
+
+    dbg!(&out);
+
+    Ok(())
+
 }

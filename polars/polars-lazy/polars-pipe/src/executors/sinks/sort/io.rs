@@ -9,7 +9,7 @@ use polars_io::prelude::*;
 
 pub(super) struct IOThread {
     sender: Sender<DataFrame>,
-    dir: PathBuf,
+    pub(super) dir: PathBuf,
 }
 
 impl IOThread {
@@ -30,16 +30,12 @@ impl IOThread {
                 let mut path = dir2.clone();
                 path.push(format!("{count}.ipc"));
 
-                let file = std::fs::File::open(path).unwrap();
+                let file = std::fs::File::create(path).unwrap();
                 IpcWriter::new(file).finish(&mut df).unwrap();
 
                 count += 1;
             }
-
-            // clean up directory and its contents
-            if std::fs::remove_dir_all(&dir2).is_err() {
-                eprintln!("Failed to clean {}", dir2.display())
-            }
+            eprintln!("kill thread");
         });
 
         Ok(Self { sender, dir })
