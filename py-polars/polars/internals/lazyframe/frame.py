@@ -2398,7 +2398,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         **named_exprs: pli.Expr | pli.Series | str,
     ) -> LDF:
         """
-        Add or overwrite multiple columns in a DataFrame.
+        Return a new LazyFrame with the columns added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new LazyFrame using this method does not create a new copy of
+        existing underlying data.
 
         Parameters
         ----------
@@ -2435,9 +2440,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        >>> # Support for kwarg expressions is considered EXPERIMENTAL.
-        >>> # Currently requires opt-in via `pl.Config` boolean flag:
-        >>>
+        Support for kwarg expressions is considered EXPERIMENTAL. Currently
+        requires opt-in via `pl.Config` boolean flag:
+
         >>> pl.Config.with_columns_kwargs = True
         >>> ldf.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
@@ -2550,7 +2555,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def with_column(self: LDF, column: pli.Series | pli.Expr) -> LDF:
         """
-        Add or overwrite column in a DataFrame.
+        Return a new LazyFrame with the column added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new LazyFrame using this method does not create a new copy of
+        existing underlying data.
 
         Parameters
         ----------

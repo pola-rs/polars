@@ -4192,7 +4192,12 @@ class DataFrame:
 
     def with_column(self, column: pli.Series | pli.Expr) -> DataFrame:
         """
-        Return a new DataFrame with the column added or replaced.
+        Return a new DataFrame with the column added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new DataFrame using this method does not create a new copy of
+        existing underlying data.
 
         Parameters
         ----------
@@ -5484,7 +5489,12 @@ class DataFrame:
         **named_exprs: pli.Expr | pli.Series,
     ) -> DataFrame:
         """
-        Add or overwrite multiple columns in a DataFrame.
+        Return a new DataFrame with the columns added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new DataFrame using this method does not create a new copy of
+        existing underlying data.
 
         Parameters
         ----------
@@ -5521,9 +5531,9 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        >>> # Support for kwarg expressions is considered EXPERIMENTAL.
-        >>> # Currently requires opt-in via `pl.Config` boolean flag:
-        >>>
+        Support for kwarg expressions is considered EXPERIMENTAL. Currently
+        requires opt-in via `pl.Config` boolean flag:
+
         >>> pl.Config.with_columns_kwargs = True
         >>> df.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
