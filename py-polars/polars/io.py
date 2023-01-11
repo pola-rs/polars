@@ -1142,6 +1142,7 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
+    driver: Literal["xlsx2csv", "openpyxl"] = "xlsx2csv",
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
 ) -> DataFrame | dict[str, DataFrame]:
@@ -1161,6 +1162,10 @@ def read_excel(
         Sheet number to convert (0 for all sheets).
     sheet_name
         Sheet name to convert.
+    driver
+        Library to open the Excel with. Either openpyxl or xlsx2csv (default is xlsx2csv).
+        Please not that xlsx2csv converts first to csv, making type inference worse than openpyxl. To remedy that, you
+        can use the extra options defined on `xlsx2csv_options` and `read_csv_options`
     xlsx2csv_options
         Extra options passed to ``xlsx2csv.Xlsx2csv()``.
         e.g.: ``{"skip_empty_lines": True}``
@@ -1218,13 +1223,6 @@ def read_excel(
     >>> pl.from_pandas(pd.read_excel(excel_file))  # doctest: +SKIP
 
     """
-    try:
-        import xlsx2csv  # type: ignore[import]
-    except ImportError:
-        raise ImportError(
-            "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
-        ) from None
-
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
@@ -1234,21 +1232,68 @@ def read_excel(
     if not read_csv_options:
         read_csv_options = {}
 
-    # Convert sheets from XSLX document to CSV.
-    parser = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
+    # do conditions imports
+    if driver == "openpyxl":
+        try:
+            import openpyxl  # type: ignore[import]
+        except ImportError:
+            raise ImportError(
+                "openpyxl is not installed. Please run `pip install openpyxl`."
+            ) from None
+        parser = openpyxl.load_workbook(file, read_only=True)
+        sheets = parser.worksheets
+        reader_fn = _read_excel_sheet_openpyxl
+    else:
+        try:
+            import xlsx2csv  # type: ignore[import]
+        except ImportError:
+            raise ImportError(
+                "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
+            ) from None
+        # Convert sheets from XSLX document to CSV.
+        parser = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
+        sheets = parser.workbook.sheets
+        reader_fn = _read_excel_sheet_xlsx2csv
 
-    if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id > 0)):
-        return _read_excel_sheet(parser, sheet_id, sheet_name, read_csv_options)
+    if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id >= 0)):
+        return reader_fn(parser, sheet_id, sheet_name, read_csv_options)
     else:
         return {
-            sheet["name"]: _read_excel_sheet(
+            sheet["name"]: reader_fn(
                 parser, sheet["index"], None, read_csv_options
             )
-            for sheet in parser.workbook.sheets
+            for sheet in sheets
         }
 
 
-def _read_excel_sheet(
+def _read_excel_sheet_openpyxl(
+    parser: Any,
+    sheet_id: int | None,
+    sheet_name: str | None,
+    read_csv_options: dict[str, Any] | None,
+) -> DataFrame:
+    # read requested sheet if provided on kwargs, otherwise read active sheet
+    if sheet_name is not None:
+        ws = parser[sheet_name]
+    elif sheet_id is not None:
+        ws = parser.worksheets[sheet_id - 1]
+    else:
+        ws = parser.active
+
+    rows_iter = iter(ws.rows)
+
+    # check whether to include or omit the header
+    header = [str(cell.value) for cell in next(rows_iter)]
+
+    df = DataFrame(
+        {key: cell.value for key, cell in zip(header, row)}
+        for row in rows_iter
+    )
+    parser.close()
+    return df
+
+
+def _read_excel_sheet_xlsx2csv(
     parser: Any,
     sheet_id: int | None,
     sheet_name: str | None,
