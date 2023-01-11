@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
-#[cfg(feature = "parquet-async")]
+#[cfg(feature = "async")]
 use polars_io::async_glob;
 use polars_io::parquet::ParallelStrategy;
 use polars_io::{is_cloud_url, RowCount};
@@ -16,6 +17,7 @@ pub struct ScanArgsParquet {
     pub rechunk: bool,
     pub row_count: Option<RowCount>,
     pub low_memory: bool,
+    pub cloud_options: Option<CloudOptions>,
 }
 
 impl Default for ScanArgsParquet {
@@ -27,11 +29,13 @@ impl Default for ScanArgsParquet {
             rechunk: true,
             row_count: None,
             low_memory: false,
+            cloud_options: None,
         }
     }
 }
 
 impl LazyFrame {
+    #[allow(clippy::too_many_arguments)]
     fn scan_parquet_impl(
         path: impl AsRef<Path>,
         n_rows: Option<usize>,
@@ -40,6 +44,7 @@ impl LazyFrame {
         row_count: Option<RowCount>,
         rechunk: bool,
         low_memory: bool,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
             path.as_ref(),
@@ -49,6 +54,7 @@ impl LazyFrame {
             None,
             rechunk,
             low_memory,
+            cloud_options,
         )?
         .build()
         .into();
@@ -92,6 +98,7 @@ impl LazyFrame {
                     None,
                     args.rechunk,
                     args.low_memory,
+                    args.cloud_options.clone(),
                 )
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -106,16 +113,16 @@ impl LazyFrame {
         let path_str = path.to_string_lossy();
         if path_str.contains('*') {
             let paths = if is_cloud_url(path) {
-                #[cfg(feature = "parquet-async")]
+                #[cfg(feature = "async")]
                 {
                     Box::new(
-                        async_glob(&path_str)?
+                        async_glob(&path_str, args.cloud_options.as_ref())?
                             .into_iter()
                             .map(|a| Ok(PathBuf::from(&a))),
                     )
                 }
-                #[cfg(not(feature="parquet-async"))]
-                panic!("Feature `parquet-async` must be enabled to use globbing patterns with cloud urls.")
+                #[cfg(not(feature = "async"))]
+                panic!("Feature `async` must be enabled to use globbing patterns with cloud urls.")
             } else {
                 Box::new(
                     glob::glob(&path_str).map_err(|_| {
@@ -134,6 +141,7 @@ impl LazyFrame {
                         None,
                         false,
                         args.low_memory,
+                        args.cloud_options.clone(),
                     )
                     .map_err(|e| {
                         PolarsError::ComputeError(
@@ -158,6 +166,7 @@ impl LazyFrame {
                 args.row_count,
                 args.rechunk,
                 args.low_memory,
+                args.cloud_options,
             )
         }
     }

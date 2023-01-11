@@ -51,4 +51,4 @@ pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
 pub use crate::vector_hasher::{VecHash, VecHashSingle};
-pub use crate::{datatypes, df};
+pub use crate::{cloud, datatypes, df};

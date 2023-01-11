@@ -221,6 +221,7 @@ pub fn create_physical_plan(
             output_schema,
             predicate,
             options,
+            cloud_options,
         } => {
             let predicate = predicate
                 .map(|pred| {
@@ -233,6 +234,7 @@ pub fn create_physical_plan(
                 file_info.schema,
                 predicate,
                 options,
+                cloud_options,
             )))
         }
         Projection {

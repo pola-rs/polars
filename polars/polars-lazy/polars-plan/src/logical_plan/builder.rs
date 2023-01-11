@@ -3,6 +3,8 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+#[cfg(feature = "parquet")]
+use polars_core::cloud::CloudOptions;
 use polars_core::frame::_duplicate_err;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
@@ -12,7 +14,7 @@ use polars_io::csv::utils::infer_file_schema;
 use polars_io::csv::CsvEncoding;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
-#[cfg(feature = "parquet-async")]
+#[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
@@ -99,6 +101,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
+    #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet<P: Into<PathBuf>>(
         path: P,
         n_rows: Option<usize>,
@@ -107,18 +110,22 @@ impl LogicalPlanBuilder {
         row_count: Option<RowCount>,
         rechunk: bool,
         low_memory: bool,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
         let file_info: PolarsResult<FileInfo> = if is_cloud_url(&path) {
-            #[cfg(not(feature = "parquet-async"))]
-            panic!("The feature parquet-async needs to be enabled in order to access parquet on cloud storage.");
+            #[cfg(not(feature = "async"))]
+            panic!(
+                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
+            );
 
-            #[cfg(feature = "parquet-async")]
+            #[cfg(feature = "async")]
             {
                 let uri = path.to_string_lossy();
-                let (schema, num_rows) = ParquetAsyncReader::file_info(&uri)?;
+                let (schema, num_rows) =
+                    ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?;
                 Ok(FileInfo {
                     schema: Arc::new(schema),
                     row_estimation: (Some(num_rows), num_rows),
@@ -150,6 +157,7 @@ impl LogicalPlanBuilder {
                 file_counter: Default::default(),
                 low_memory,
             },
+            cloud_options,
         }
         .into())
     }

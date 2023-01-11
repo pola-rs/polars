@@ -14,7 +14,7 @@
 //! }
 //! ```
 //!
-#[cfg(feature = "parquet-async")]
+#[cfg(feature = "async")]
 pub(super) mod async_impl;
 pub(super) mod mmap;
 pub mod predicates;

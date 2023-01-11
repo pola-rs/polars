@@ -147,6 +147,12 @@ docs-selection = [
   "partition_by",
 ]
 
+# Cloud support.
+"async" = ["url"]
+"aws" = ["async", "object_store/aws"]
+"azure" = ["async", "object_store/azure"]
+"gcp" = ["async", "object_store/gcp"]
+
 [dependencies]
 ahash.workspace = true
 anyhow.workspace = true
@@ -161,6 +167,7 @@ hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num.workspace = true
+object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell = "1"
 polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["compute"] }
 polars-utils = { version = "0.26.1", path = "../polars-utils" }
@@ -173,6 +180,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = { version = "1" }
 thiserror.workspace = true
+url = { version = "2.3.1", optional = true }
 xxhash-rust.workspace = true
 
 [target.'cfg(target_family = "wasm")'.dependencies]

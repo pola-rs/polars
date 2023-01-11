@@ -24,7 +24,7 @@ smartstring = { version = "1" }
 compile = []
 csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]
 parquet = ["polars-plan/parquet", "polars-io/parquet"]
-parquet-async = ["polars-plan/parquet-async", "polars-io/parquet-async"]
+async = ["polars-plan/async", "polars-io/async"]
 nightly = ["polars-core/nightly", "polars-utils/nightly", "hashbrown/nightly"]
 cross_join = ["polars-core/cross_join"]
 dtype-u8 = ["polars-core/dtype-u8"]

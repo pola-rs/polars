@@ -51,6 +51,5 @@ features = [
   "compute_filter",
   "compute_if_then_else",
 ]
-
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }

@@ -1,6 +1,5 @@
-use std::env;
-
 use awscreds::Credentials;
+use cloud::AmazonS3ConfigKey as Key;
 use polars::prelude::*;
 
 // Login to your aws account and then copy the ../datasets/foods1.parquet file to your own bucket.
@@ -9,11 +8,16 @@ const TEST_S3: &str = "s3://lov2test/polars/datasets/*.parquet";
 
 fn main() -> PolarsResult<()> {
     let cred = Credentials::default().unwrap();
-    env::set_var("AWS_SECRET_ACCESS_KEY", cred.secret_key.unwrap());
-    env::set_var("AWS_DEFAULT_REGION", "us-west-2");
-    env::set_var("AWS_ACCESS_KEY_ID", cred.access_key.unwrap());
 
-    let df = LazyFrame::scan_parquet(TEST_S3, ScanArgsParquet::default())?
+    // Propagate the credentials and other cloud options.
+    let mut args = ScanArgsParquet::default();
+    let cloud_options = cloud::CloudOptions::default().with_aws([
+        (Key::AccessKeyId, &cred.access_key.unwrap()),
+        (Key::SecretAccessKey, &cred.secret_key.unwrap()),
+        (Key::Region, &"us-west-2".into()),
+    ]);
+    args.cloud_options = Some(cloud_options);
+    let df = LazyFrame::scan_parquet(TEST_S3, args)?
         .with_streaming(true)
         .select([
             // select all columns
