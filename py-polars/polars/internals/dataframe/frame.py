@@ -2969,9 +2969,9 @@ class DataFrame:
         """
         return self.head(n)
 
-    def head(self: DF, n: int = 5) -> DF:
+    def head(self: DF, n: int | None = 5) -> DF:
         """
-        Get the first `n` rows.
+        Get the first `n` rows (if negative, returns all rows except the last `n`).
 
         Parameters
         ----------
@@ -2980,7 +2980,7 @@ class DataFrame:
 
         See Also
         --------
-        tail, glimpse
+        tail, glimpse, slice
 
         Examples
         --------
@@ -3003,12 +3003,26 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
+        Negative values of ``head`` return all rows _except_ the last abs(n).
+
+        >>> df.head(-3)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        └─────┴─────┴─────┘
         """
+        if n and n < 0:
+            n = len(self) + n
         return self._from_pydf(self._df.head(n))
 
-    def tail(self: DF, n: int = 5) -> DF:
+    def tail(self: DF, n: int | None = 5) -> DF:
         """
-        Get the last `n` rows.
+        Get the last `n` rows (if negative, returns all rows except the first `n`).
 
         Parameters
         ----------
@@ -3017,7 +3031,7 @@ class DataFrame:
 
         See Also
         --------
-        head
+        head, slice
 
         Examples
         --------
@@ -3040,7 +3054,21 @@ class DataFrame:
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
 
+        Negative values of ``tail`` return all rows _except_ the first abs(n).
+
+        >>> df.tail(-3)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 4   ┆ 9   ┆ d   │
+        │ 5   ┆ 10  ┆ e   │
+        └─────┴─────┴─────┘
         """
+        if n and n < 0:
+            n = len(self) + n
         return self._from_pydf(self._df.tail(n))
 
     def drop_nulls(self: DF, subset: str | Sequence[str] | None = None) -> DF:

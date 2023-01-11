@@ -480,6 +480,12 @@ def test_head_tail_limit() -> None:
     # limit is an alias of head
     assert df.head(5).frame_equal(df.limit(5))
 
+    # negative values
+    assert df.head(-7).rows() == [(0, 0), (1, 1), (2, 2)]
+    assert len(df.head(-2)) == 8
+    assert df.tail(-8).rows() == [(8, 8), (9, 9)]
+    assert len(df.tail(-6)) == 4
+
 
 def test_drop_nulls() -> None:
     df = pl.DataFrame(
@@ -489,7 +495,6 @@ def test_drop_nulls() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-
     result = df.drop_nulls()
     expected = pl.DataFrame(
         {
