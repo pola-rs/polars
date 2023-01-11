@@ -33,7 +33,7 @@ class WhenThenThen:
             | str
             | None
             | pli.Series
-            | Sequence[(int | float | str | None)]
+            | Sequence[int | float | str | None]
         ),
     ) -> WhenThenThen:
         """
@@ -51,7 +51,7 @@ class WhenThenThen:
     def otherwise(
         self,
         expr: (
-            pli.Expr | int | float | str | None | Sequence[(int | float | str | None)]
+            pli.Expr | int | float | str | None | Sequence[int | float | str | None]
         ),
     ) -> pli.Expr:
         """
