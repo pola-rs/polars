@@ -2395,7 +2395,22 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def with_columns(
         self: LDF,
         exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: pli.Expr | pli.Series | str,
+        **named_exprs: (
+            pli.Expr
+            | bool
+            | int
+            | float
+            | str
+            | pli.Series
+            | None
+            | date
+            | datetime
+            | time
+            | timedelta
+            | pli.WhenThen
+            | pli.WhenThenThen
+            | Sequence[(int | float | str | None)]
+        ),
     ) -> LDF:
         """
         Return a new LazyFrame with the columns added, if new, or replaced.
@@ -2476,7 +2491,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             else ([exprs] if isinstance(exprs, pli.Expr) else list(exprs))
         )
         exprs.extend(
-            (pli.lit(expr).alias(name) if isinstance(expr, str) else expr.alias(name))
+            pli.expr_to_lit_or_expr(expr).alias(name)
             for name, expr in named_exprs.items()
         )
         pyexprs = []

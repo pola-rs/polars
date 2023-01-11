@@ -2406,6 +2406,8 @@ def test_selection_regex_and_multicol() -> None:
 
 
 def test_with_columns() -> None:
+    import datetime
+
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4],
@@ -2424,12 +2426,28 @@ def test_with_columns() -> None:
             "d": [0.5, 8.0, 30.0, 52.0],
             "e": [False, False, True, False],
             "f": [3, 2, 1, 0],
+            "g": True,
+            "h": pl.Series(values=[1, 1, 1, 1], dtype=pl.Int32),
+            "i": 3.2,
+            "j": "d",
+            "k": pl.Series(values=[None, None, None, None], dtype=pl.Boolean),
+            "l": datetime.datetime(2001, 1, 1, 0, 0),
         }
     )
 
     # as exprs list
     dx = df.with_columns(
-        [(pl.col("a") * pl.col("b")).alias("d"), ~pl.col("c").alias("e"), srs_named]
+        [
+            (pl.col("a") * pl.col("b")).alias("d"),
+            ~pl.col("c").alias("e"),
+            srs_named,
+            pl.lit(True).alias("g"),
+            pl.lit(1).alias("h"),
+            pl.lit(3.2).alias("i"),
+            pl.lit("d").alias("j"),
+            pl.lit(None).alias("k"),
+            pl.lit(datetime.datetime(2001, 1, 1, 0, 0)).alias("l"),
+        ]
     )
     assert_frame_equal(dx, expected)
 
@@ -2440,6 +2458,12 @@ def test_with_columns() -> None:
         d=pl.col("a") * pl.col("b"),
         e=~pl.col("c"),
         f=srs_unnamed,
+        g=True,
+        h=1,
+        i=3.2,
+        j="d",
+        k=None,
+        l=datetime.datetime(2001, 1, 1, 0, 0),
     )
     assert_frame_equal(dx, expected)
 
@@ -2448,6 +2472,12 @@ def test_with_columns() -> None:
         [(pl.col("a") * pl.col("b")).alias("d")],
         e=~pl.col("c"),
         f=srs_unnamed,
+        g=True,
+        h=1,
+        i=3.2,
+        j="d",
+        k=None,
+        l=datetime.datetime(2001, 1, 1, 0, 0),
     )
     assert_frame_equal(dx, expected)
 

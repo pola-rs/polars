@@ -8,7 +8,7 @@ import sys
 import typing
 from collections import namedtuple
 from collections.abc import Sized
-from datetime import timedelta
+from datetime import date, datetime, time, timedelta
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
@@ -5486,7 +5486,22 @@ class DataFrame:
     def with_columns(
         self,
         exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: pli.Expr | pli.Series,
+        **named_exprs: (
+            pli.Expr
+            | bool
+            | int
+            | float
+            | str
+            | pli.Series
+            | None
+            | date
+            | datetime
+            | time
+            | timedelta
+            | pli.WhenThen
+            | pli.WhenThenThen
+            | Sequence[(int | float | str | None)]
+        ),
     ) -> DataFrame:
         """
         Return a new DataFrame with the columns added, if new, or replaced.
