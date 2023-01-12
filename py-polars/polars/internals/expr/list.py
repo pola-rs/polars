@@ -275,7 +275,9 @@ class ExprListNameSpace:
         return pli.wrap_expr(self._pyexpr.lst_get(index))
 
     def take(
-        self, index: pli.Expr | pli.Series | list[int], null_on_oob: bool = False
+        self,
+        index: pli.Expr | pli.Series | list[int] | list[list[int]],
+        null_on_oob: bool = False,
     ) -> pli.Expr:
         """
         Take sublists by multiple indices.
