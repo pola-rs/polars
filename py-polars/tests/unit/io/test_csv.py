@@ -103,11 +103,90 @@ def test_csv_null_values() -> None:
         a,b,c
         na,b,c
         a,\N,c
+        ,b,
         """
     )
     f = io.StringIO(csv)
     df = pl.read_csv(f, null_values={"a": "na", "b": r"\N"})
-    assert df.rows() == [(None, "b", "c"), ("a", None, "c")]
+    assert df.rows() == [(None, "b", "c"), ("a", None, "c"), (None, "b", None)]
+
+
+def test_csv_missing_utf8_is_empty_string() -> None:
+    # validate 'missing_utf8_is_empty_string' for missing fields that are...
+    # >> ...leading
+    # >> ...trailing (both EOL & EOF)
+    # >> ...in lines that have missing fields
+    # >> ...in cols containing no other strings
+    # >> ...interacting with other user-supplied null values
+
+    csv = textwrap.dedent(
+        r"""
+        a,b,c
+        na,b,c
+        a,\N,c
+        ,b,
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        null_values={"a": "na", "b": r"\N"},
+        missing_utf8_is_empty_string=True,
+    )
+    # ┌──────┬──────┬─────┐
+    # │ a    ┆ b    ┆ c   │
+    # ╞══════╪══════╪═════╡
+    # │ null ┆ b    ┆ c   │
+    # │ a    ┆ null ┆ c   │
+    # │      ┆ b    ┆     │
+    # └──────┴──────┴─────┘
+    assert df.rows() == [(None, "b", "c"), ("a", None, "c"), ("", "b", "")]
+
+    csv = textwrap.dedent(
+        r"""
+        a,b,c,d,e,f,g
+        na,,,,\N,,
+        a,\N,c,,,,g
+        ,,,
+        ,,,na,,,
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, null_values=["na", r"\N"])
+    # ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┐
+    # │ a    ┆ b    ┆ c    ┆ d    ┆ e    ┆ f    ┆ g    │
+    # ╞══════╪══════╪══════╪══════╪══════╪══════╪══════╡
+    # │ null ┆ null ┆ null ┆ null ┆ null ┆ null ┆ null │
+    # │ a    ┆ null ┆ c    ┆ null ┆ null ┆ null ┆ g    │
+    # │ null ┆ null ┆ null ┆ null ┆ null ┆ null ┆ null │
+    # │ null ┆ null ┆ null ┆ null ┆ null ┆ null ┆ null │
+    # └──────┴──────┴──────┴──────┴──────┴──────┴──────┘
+    assert df.rows() == [
+        (None, None, None, None, None, None, None),
+        ("a", None, "c", None, None, None, "g"),
+        (None, None, None, None, None, None, None),
+        (None, None, None, None, None, None, None),
+    ]
+
+    df = pl.read_csv(
+        f,
+        null_values=["na", r"\N"],
+        missing_utf8_is_empty_string=True,
+    )
+    # ┌──────┬──────┬─────┬──────┬──────┬──────┬─────┐
+    # │ a    ┆ b    ┆ c   ┆ d    ┆ e    ┆ f    ┆ g   │
+    # ╞══════╪══════╪═════╪══════╪══════╪══════╪═════╡
+    # │ null ┆      ┆     ┆      ┆ null ┆      ┆     │
+    # │ a    ┆ null ┆ c   ┆      ┆      ┆      ┆ g   │
+    # │      ┆      ┆     ┆      ┆      ┆      ┆     │
+    # │      ┆      ┆     ┆ null ┆      ┆      ┆     │
+    # └──────┴──────┴─────┴──────┴──────┴──────┴─────┘
+    assert df.rows() == [
+        (None, "", "", "", None, "", ""),
+        ("a", None, "c", "", "", "", "g"),
+        ("", "", "", "", "", "", ""),
+        ("", "", "", None, "", "", ""),
+    ]
 
 
 def test_csv_float_parsing() -> None:
@@ -732,16 +811,22 @@ def test_skip_new_line_embedded_lines() -> None:
     csv = r"""a,b,c,d,e\n
         1,2,3,"\n Test",\n
         4,5,6,"Test A",\n
-        7,8,9,"Test B \n",\n"""
+        7,8,,"Test B \n",\n"""
 
-    df = pl.read_csv(csv.encode(), skip_rows_after_header=1, infer_schema_length=0)
-    assert df.to_dict(False) == {
-        "a": ["4", "7"],
-        "b": ["5", "8"],
-        "c": ["6", "9"],
-        "d": ["Test A", "Test B \\n"],
-        "e\\n": ["\\n", "\\n"],
-    }
+    for empty_string, missing_value in ((True, ""), (False, None)):
+        df = pl.read_csv(
+            csv.encode(),
+            skip_rows_after_header=1,
+            infer_schema_length=0,
+            missing_utf8_is_empty_string=empty_string,
+        )
+        assert df.to_dict(False) == {
+            "a": ["4", "7"],
+            "b": ["5", "8"],
+            "c": ["6", missing_value],
+            "d": ["Test A", "Test B \\n"],
+            "e\\n": ["\\n", "\\n"],
+        }
 
 
 def test_csv_dtype_overwrite_bool() -> None:
@@ -860,10 +945,13 @@ def test_skip_rows_different_field_len() -> None:
         """
         )
     )
-    assert pl.read_csv(csv, skip_rows_after_header=2).to_dict(False) == {
-        "a": [3, 4],
-        "b": ["B", None],
-    }
+    for empty_string, missing_value in ((True, ""), (False, None)):
+        assert pl.read_csv(
+            csv, skip_rows_after_header=2, missing_utf8_is_empty_string=empty_string
+        ).to_dict(False) == {
+            "a": [3, 4],
+            "b": ["B", missing_value],
+        }
 
 
 def test_duplicated_columns() -> None:
