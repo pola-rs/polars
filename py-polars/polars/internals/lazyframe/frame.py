@@ -2395,22 +2395,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def with_columns(
         self: LDF,
         exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: (
-            pli.Expr
-            | bool
-            | int
-            | float
-            | str
-            | pli.Series
-            | None
-            | date
-            | datetime
-            | time
-            | timedelta
-            | pli.WhenThen
-            | pli.WhenThenThen
-            | Sequence[(int | float | str | None)]
-        ),
+        **named_exprs: Any,
     ) -> LDF:
         """
         Return a new LazyFrame with the columns added, if new, or replaced.
@@ -2418,7 +2403,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Notes
         -----
         Creating a new LazyFrame using this method does not create a new copy of
-        existing underlying data.
+        existing data.
 
         Parameters
         ----------
@@ -2575,7 +2560,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Notes
         -----
         Creating a new LazyFrame using this method does not create a new copy of
-        existing underlying data.
+        existing data.
 
         Parameters
         ----------

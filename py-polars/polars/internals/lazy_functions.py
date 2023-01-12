@@ -441,10 +441,20 @@ def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     │ 3   │
     └─────┘
 
-    To aggregate the maximums for more than one column/expression
-    use ``pl.col(list).max()`` instead:
+    To aggregate maximums for more than one column/expression use ``pl.col(list).max()``
+    or a regular expression selector like ``pl.sum(regex)``:
 
     >>> df.select(pl.col(["a", "b"]).max())
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 8   ┆ 5   │
+    └─────┴─────┘
+
+    >>> df.select(pl.max("^.*[ab]$"))
     shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -518,10 +528,20 @@ def min(
     │ 2   │
     └─────┘
 
-    To aggregate the minimums for more than one column/expression
-    use ``pl.col(list).min()`` instead:
+    To aggregate minimums for more than one column/expression use ``pl.col(list).min()``
+    or a regular expression selector like ``pl.sum(regex)``:
 
     >>> df.select(pl.col(["a", "b"]).min())
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 2   │
+    └─────┴─────┘
+
+    >>> df.select(pl.min("^.*[ab]$"))
     shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -625,7 +645,7 @@ def sum(
     3
 
     To aggregate the sums for more than one column/expression use ``pl.col(list).sum()``
-    instead:
+    or a regular expression selector like ``pl.sum(regex)``:
 
     >>> df.select(pl.col(["a", "c"]).sum())
     shape: (1, 2)
@@ -635,6 +655,16 @@ def sum(
     │ i64 ┆ i64 │
     ╞═════╪═════╡
     │ 3   ┆ 11  │
+    └─────┴─────┘
+
+    >>> df.select(pl.sum("^.*[bc]$"))
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ b   ┆ c   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 7   ┆ 11  │
     └─────┴─────┘
 
     """

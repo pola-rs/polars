@@ -87,7 +87,7 @@ def expr_to_lit_or_expr(
         | timedelta
         | pli.WhenThen
         | pli.WhenThenThen
-        | Sequence[(int | float | str | None)]
+        | Sequence[int | float | str | None]
     ),
     str_to_lit: bool = True,
 ) -> Expr:

@@ -467,11 +467,12 @@ def test_slice() -> None:
 
 def test_head_tail_limit() -> None:
     df = pl.DataFrame({"a": range(10), "b": range(10)})
-    assert df.head(5).height == 5
-    assert df.limit(5).height == 5
-    assert df.tail(5).height == 5
 
+    assert df.head(5).rows() == [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)]
+    assert df.limit(5).frame_equal(df.head(5))
+    assert df.tail(5).rows() == [(5, 5), (6, 6), (7, 7), (8, 8), (9, 9)]
     assert not df.head(5).frame_equal(df.tail(5))
+
     # check if it doesn't fail when out of bounds
     assert df.head(100).height == 10
     assert df.limit(100).height == 10
@@ -1067,6 +1068,18 @@ def test_lazy_functions() -> None:
     expected = 3
     assert np.isclose(out.to_series(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
+
+    # regex selection
+    out = df.select(
+        [
+            pl.struct(pl.max("^a|b$")).alias("x"),
+            pl.struct(pl.min("^.*[bc]$")).alias("y"),
+            pl.struct(pl.sum("^[^b]$")).alias("z"),
+        ]
+    )
+    assert out.rows() == [
+        ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
+    ]
 
 
 def test_multiple_column_sort() -> None:
