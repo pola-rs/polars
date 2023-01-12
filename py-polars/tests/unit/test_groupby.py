@@ -251,3 +251,21 @@ def test_groupby_min_max_string_type() -> None:
             .to_dict(False)
             == expected
         )
+
+
+def test_groupby_6185() -> None:
+    df_1 = pl.DataFrame({"A": [0, 0], "B": [1, 2]})
+
+    df_2 = pl.DataFrame({"A": [0, 0] * 2, "B": [1, 2] * 2})
+
+    expr = pl.col("A").filter(pl.col("A") > 0)
+
+    expected = {"B": [1, 2], "A": [None, None]}
+    assert (
+        df_1.groupby("B").agg((expr - expr.mean()).mean()).sort("B").to_dict(False)
+        == expected
+    )
+    assert (
+        df_2.groupby("B").agg((expr - expr.mean()).mean()).sort("B").to_dict(False)
+        == expected
+    )
