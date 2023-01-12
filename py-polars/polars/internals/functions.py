@@ -30,7 +30,7 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import ClosedWindow, ConcatMethod, TimeUnit
+    from polars.internals.type_aliases import ClosedInterval, ConcatMethod, TimeUnit
 
 
 def get_dummies(
@@ -277,7 +277,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -292,7 +292,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -307,7 +307,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -322,7 +322,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: Literal[True],
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -337,7 +337,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: bool = False,
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,

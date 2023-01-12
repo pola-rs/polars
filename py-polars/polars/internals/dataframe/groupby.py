@@ -10,7 +10,7 @@ from polars.utils import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
-        ClosedWindow,
+        ClosedInterval,
         RollingInterpolationMethod,
         StartBy,
     )
@@ -736,7 +736,7 @@ class RollingGroupBy(Generic[DF]):
         index_column: str,
         period: str | timedelta,
         offset: str | timedelta | None,
-        closed: ClosedWindow = "none",
+        closed: ClosedInterval = "none",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ):
         period = _timedelta_to_pl_duration(period)
@@ -781,7 +781,7 @@ class DynamicGroupBy(Generic[DF]):
         offset: str | timedelta | None,
         truncate: bool = True,
         include_boundaries: bool = True,
-        closed: ClosedWindow = "none",
+        closed: ClosedInterval = "none",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
         start_by: StartBy = "window",
     ):
