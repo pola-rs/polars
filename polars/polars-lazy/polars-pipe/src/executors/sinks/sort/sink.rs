@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{AnyValue, SortOptions};
+use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_utils::atomic::SyncCounter;
 use polars_utils::sys::MEMINFO;
@@ -16,6 +16,7 @@ use crate::executors::sinks::sort::ooc::sort_ooc;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
 pub struct SortSink {
+    schema: SchemaRef,
     chunks: VecDeque<DataFrame>,
     free_mem: SyncCounter,
     // Total memory used by sort sink
@@ -25,15 +26,16 @@ pub struct SortSink {
     // when ooc, we write to disk using an IO thread
     io_thread: Arc<Mutex<Option<IOThread>>>,
     // location in the dataframe of the columns to sort by
-    sort_idx: Vec<usize>,
-    reverse: Vec<bool>,
+    sort_idx: usize,
+    reverse: bool,
     // sampled values so we can find the distribution.
     dist_sample: Vec<AnyValue<'static>>
 }
 
 impl SortSink {
-    pub(crate) fn new(sort_idx: Vec<usize>, reverse: Vec<bool>) -> Self {
+    pub(crate) fn new(sort_idx: usize, reverse: bool, schema: SchemaRef) -> Self {
         Self {
+            schema,
             chunks: Default::default(),
             free_mem: SyncCounter::new(0),
             mem_total: SyncCounter::new(0),
@@ -67,7 +69,7 @@ impl SortSink {
                 // start IO thread
                 let mut iot = self.io_thread.lock().unwrap();
                 if iot.is_none() {
-                    *iot = Some(IOThread::try_new()?)
+                    *iot = Some(IOThread::try_new(self.schema.clone())?)
                 }
             }
 
@@ -79,7 +81,7 @@ impl SortSink {
                 // start IO thread
                 let mut iot = self.io_thread.lock().unwrap();
                 if iot.is_none() {
-                    *iot = Some(IOThread::try_new()?)
+                    *iot = Some(IOThread::try_new(self.schema.clone())?)
                 }
             }
         }
@@ -87,22 +89,13 @@ impl SortSink {
         Ok(())
     }
 
-    fn sort_df(&self, df: &DataFrame) -> PolarsResult<DataFrame> {
-        let cols = df.get_columns();
-        let sort_cols = self
-            .sort_idx
-            .iter()
-            .map(|i| cols[*i].clone())
-            .collect::<Vec<_>>();
-
-        df.sort_impl(sort_cols, self.reverse.clone(), false, None, false)
-    }
-
-    fn sort_and_dump(&mut self) -> PolarsResult<()> {
+    fn dump(&mut self) -> PolarsResult<()> {
         // take from the front so that sorted data remains sorted in writing order
         while let Some(mut df) = self.chunks.pop_front() {
             if df.height() > 0 {
-                df = self.sort_df(&df)?;
+                // safety: we just asserted height > 0
+                let sample = unsafe { df.get_columns()[self.sort_idx].get_unchecked(0) };
+                self.dist_sample.push(sample.into_static().unwrap());
 
                 let iot = self.io_thread.lock().unwrap();
                 let iot = iot.as_ref().unwrap();
@@ -121,7 +114,7 @@ impl Sink for SortSink {
         self.store_chunk(chunk)?;
 
         if self.ooc {
-            self.sort_and_dump()?;
+            self.dump()?;
         }
         Ok(SinkResult::CanHaveMoreInput)
     }
@@ -130,22 +123,23 @@ impl Sink for SortSink {
         let mut other = other.as_any().downcast_mut::<Self>().unwrap();
         self.chunks.extend(std::mem::take(&mut other.chunks));
         self.ooc |= other.ooc;
-        self.dist_sample.extend(other.dist_sample);
+        self.dist_sample.extend(std::mem::take(&mut other.dist_sample));
 
         if self.ooc {
-            self.sort_and_dump().unwrap()
+            self.dump().unwrap()
         }
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         Box::new(Self {
+            schema: self.schema.clone(),
             chunks: Default::default(),
             free_mem: self.free_mem.clone(),
             mem_total: self.mem_total.clone(),
             ooc: self.ooc.clone(),
             io_thread: self.io_thread.clone(),
-            sort_idx: self.sort_idx.clone(),
-            reverse: self.reverse.clone(),
+            sort_idx: self.sort_idx,
+            reverse: self.reverse,
             dist_sample: vec![],
         })
     }
@@ -154,11 +148,28 @@ impl Sink for SortSink {
         if self.ooc {
             let lock = self.io_thread.lock().unwrap();
             let io_thread = lock.as_ref().unwrap();
+            let all_processed = io_thread.all_processed.clone();
 
-            sort_ooc(io_thread).map(FinalizedSink::Finished)
+            let dist = Series::from_any_values("", &self.dist_sample).unwrap();
+            let dist = dist.sort(self.reverse);
+
+
+            // get number sent
+            let sent = io_thread.sent.load(Ordering::Relaxed);
+            // set total sent
+            io_thread.total.fetch_add(sent, Ordering::Relaxed);
+
+            // then the io thread will check if it has written all files, and if it has
+            // it will set the condvar so we can continue on this thread
+
+            // we don't really need the mutex for our case, but the condvar needs one
+            let cond_lock = io_thread.all_processed.1.lock().unwrap();
+            all_processed.0.wait(cond_lock).unwrap();
+
+            sort_ooc(io_thread, dist, self.sort_idx, &self.schema).map(FinalizedSink::Finished)
         } else {
             let df = accumulate_dataframes_vertical_unchecked(std::mem::take(&mut self.chunks));
-            self.sort_df(&df).map(FinalizedSink::Finished)
+            Ok(FinalizedSink::Finished(df))
         }
     }
 

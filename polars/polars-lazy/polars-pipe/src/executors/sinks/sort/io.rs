@@ -3,24 +3,28 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::{Sender, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_io::prelude::*;
 use polars_utils::atomic::SyncCounter;
 
-type Payload = (Schema, Box<dyn Iterator<Item = DataFrame> + Send + Sync>);
+pub(super) type DfIter = Box<dyn ExactSizeIterator<Item=DataFrame>+ Sync + Send>;
+// The Option<IdxCa> are the partitions it should be written to, if any
+type Payload = (Option<IdxCa>, DfIter);
+
 
 pub(super) struct IOThread {
     sender: SyncSender<Payload>,
     pub(super) dir: PathBuf,
-    pub(super) send: SyncCounter,
-    pub(super) all_processed: Arc<Condvar>
+    pub(super) sent: SyncCounter,
+    pub(super) total: SyncCounter,
+    pub(super) all_processed: Arc<(Condvar, Mutex<()>)>
 }
 
 impl IOThread {
-    pub(super) fn try_new() -> PolarsResult<Self> {
+    pub(super) fn try_new(schema: SchemaRef) -> PolarsResult<Self> {
         let uuid = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -32,31 +36,54 @@ impl IOThread {
         let (sender, receiver) =
             std::sync::mpsc::sync_channel::<Payload>(POOL.current_num_threads() * 2);
 
-        let send = SyncCounter::new(0);
+        let sent = SyncCounter::new(0);
+        let total = SyncCounter::new(0);
+
+        // we acutally don't really need the mutex
+        let all_processed = Arc::new((Condvar::new(), Mutex::new(())));
 
         let dir2 = dir.clone();
-        let send2 = send.clone();
+        let total2 = total.clone();
+        let all_processed2 = all_processed.clone();
         std::thread::spawn(move || {
             let mut count = 0usize;
-            while let Ok((schema, iter)) = receiver.recv() {
-                let mut path = dir2.clone();
-                path.push(format!("{count}.parquet"));
+            while let Ok((partitions, iter)) = receiver.recv() {
 
-                let file = std::fs::File::create(path).unwrap();
-                let mut writer = ParquetWriter::new(file).batched(&schema).unwrap();
+                if let Some(partitions) = partitions {
+                    for (part, df) in partitions.into_no_null_iter().zip(iter) {
+                        let mut path = dir2.clone();
+                        path.push(format!("{part}"));
 
-                for df in iter {
-                    writer.write_batch(&df).unwrap();
+                        let _ = std::fs::create_dir(&path);
+                        path.push(format!("{count}.parquet"));
+
+                        let file = std::fs::File::create(path).unwrap();
+                        let mut writer = ParquetWriter::new(file).batched(&schema).unwrap();
+                        writer.write_batch(&df).unwrap();
+                        writer.finish().unwrap();
+                        count += 1;
+                    }
+
+                } else {
+                    let mut path = dir2.clone();
+                    path.push(format!("{count}.parquet"));
+
+                    let file = std::fs::File::create(path).unwrap();
+                    let mut writer = ParquetWriter::new(file).batched(&schema).unwrap();
+
+                    for df in iter {
+                        writer.write_batch(&df).unwrap();
+                    }
+                    writer.finish().unwrap();
+
+                    count += 1;
                 }
-                writer.finish().unwrap();
-
-                let previous_send = send2.fetch_add(Ordering::Relaxed);
-
-                // read previous_count as we have not updated it yet
-                if previous_send == count {
-
+                let total = total2.load(Ordering::Relaxed);
+                dbg!(total, count);
+                if total != 0 && total == count {
+                    all_processed2.0.notify_one();
+                    dbg!("notified");
                 }
-                count += 1;
             }
             eprintln!("kill thread");
         });
@@ -64,15 +91,21 @@ impl IOThread {
         Ok(Self {
             sender,
             dir,
-            send
+            sent,
+            total,
+            all_processed
         })
     }
 
     pub(super) fn dump_chunk(&self, df: DataFrame) {
-        let schema = df.schema();
+        let iter = Box::new(std::iter::once(df));
+        self.dump_iter(None, iter)
+    }
+    pub(super) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {
+        let add = iter.size_hint().1.unwrap();
         self.sender
-            .send((schema, Box::new(std::iter::once(df))))
+            .send( (partition, iter))
             .unwrap();
-        self.send.fetch_add(1, Ordering::Relaxed);
+        self.sent.fetch_add(add, Ordering::Relaxed);
     }
 }

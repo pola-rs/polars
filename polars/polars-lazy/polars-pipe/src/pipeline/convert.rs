@@ -192,7 +192,7 @@ where
                 .unwrap();
             let index = input_schema.try_index_of(by_column.as_ref())?;
 
-            let sort_sink = SortSink::new(vec![index], args.reverse.clone());
+            let sort_sink = SortSink::new(index, args.reverse[0], input_schema.into_owned());
             Box::new(sort_sink) as Box<dyn Sink>
         }
         Aggregate {

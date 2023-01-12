@@ -17,6 +17,7 @@ polars-core = { version = "0.26.1", path = "../../polars-core", features = ["laz
 polars-io = { version = "0.26.1", path = "../../polars-io", default-features = false }
 polars-plan = { version = "0.26.1", path = "../polars-plan", default-features = false, features = ["compile"] }
 polars-utils = { version = "0.26.1", path = "../../polars-utils", features = ["sysinfo"] }
+polars-ops = { version = "0.26.1", path = "../../polars-ops", features = ["search_sorted"] }
 rayon.workspace = true
 smartstring = { version = "1" }
 
