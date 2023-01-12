@@ -1163,9 +1163,10 @@ def read_excel(
     sheet_name
         Sheet name to convert.
     driver
-        Library to open the Excel with. Either openpyxl or xlsx2csv (default is xlsx2csv).
-        Please not that xlsx2csv converts first to csv, making type inference worse than openpyxl. To remedy that, you
-        can use the extra options defined on `xlsx2csv_options` and `read_csv_options`
+        Library used to parse Excel, either openpyxl or xlsx2csv (default is xlsx2csv).
+        Please not that xlsx2csv converts first to csv, making type inference worse
+        than openpyxl. To remedy that, you can use the extra options defined on
+        `xlsx2csv_options` and `read_csv_options`
     xlsx2csv_options
         Extra options passed to ``xlsx2csv.Xlsx2csv()``.
         e.g.: ``{"skip_empty_lines": True}``
@@ -1259,9 +1260,7 @@ def read_excel(
         return reader_fn(parser, sheet_id, sheet_name, read_csv_options)
     else:
         return {
-            sheet["name"]: reader_fn(
-                parser, sheet["index"], None, read_csv_options
-            )
+            sheet["name"]: reader_fn(parser, sheet["index"], None, read_csv_options)
             for sheet in sheets
         }
 
@@ -1270,7 +1269,7 @@ def _read_excel_sheet_openpyxl(
     parser: Any,
     sheet_id: int | None,
     sheet_name: str | None,
-    read_csv_options: dict[str, Any] | None,
+    _: dict[str, Any] | None,
 ) -> DataFrame:
     # read requested sheet if provided on kwargs, otherwise read active sheet
     if sheet_name is not None:
@@ -1286,8 +1285,7 @@ def _read_excel_sheet_openpyxl(
     header = [str(cell.value) for cell in next(rows_iter)]
 
     df = DataFrame(
-        {key: cell.value for key, cell in zip(header, row)}
-        for row in rows_iter
+        {key: cell.value for key, cell in zip(header, row)} for row in rows_iter
     )
     parser.close()
     return df

@@ -2074,7 +2074,7 @@ class DataFrame:
         fieldnames: list = None,
         float_precision: int | None = None,
         null_value: str | None = None,
-        **kwargs
+        **kwargs,
     ):
         try:
             import openpyxl
@@ -2169,7 +2169,9 @@ class DataFrame:
         """
         if file is None:
             buffer = BytesIO()
-            self._write_excel(buffer, has_header, self.columns, float_precision, null_value)
+            self._write_excel(
+                buffer, has_header, self.columns, float_precision, null_value
+            )
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, (str, Path)):
