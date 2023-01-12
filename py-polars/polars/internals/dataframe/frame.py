@@ -66,11 +66,11 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
-    format_path,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
+    normalise_filepath,
     range_to_slice,
     scale_bytes,
 )
@@ -527,7 +527,7 @@ class DataFrame:
 
         path: str | None
         if isinstance(file, (str, Path)):
-            path = format_path(file)
+            path = normalise_filepath(file)
         else:
             path = None
             if isinstance(file, BytesIO):
@@ -644,7 +644,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -709,7 +709,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_avro(file, columns, projection, n_rows)
@@ -755,7 +755,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -807,7 +807,7 @@ class DataFrame:
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(file, False)
@@ -828,7 +828,7 @@ class DataFrame:
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_ndjson(file)
@@ -1868,7 +1868,7 @@ class DataFrame:
             to_string = False
 
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
@@ -1915,7 +1915,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -2051,7 +2051,7 @@ class DataFrame:
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self._df.write_csv(
             file,
@@ -2100,7 +2100,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self._df.write_avro(file, compression)
 
@@ -2137,7 +2137,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self._df.write_ipc(file, compression)
 
@@ -2204,7 +2204,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         if use_pyarrow:
             tbl = self.to_arrow()

@@ -53,7 +53,7 @@ from polars.utils import (
     _process_null_values,
     _timedelta_to_pl_duration,
     deprecated_alias,
-    format_path,
+    normalise_filepath,
 )
 
 try:
@@ -246,7 +246,7 @@ class LazyFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         # try fsspec scanner
         if not pli._is_local_file(file):
@@ -342,7 +342,7 @@ class LazyFrame:
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         return wrap_ldf(PyLazyFrame.read_json(file))
 
@@ -562,7 +562,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             to_string = False
 
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
