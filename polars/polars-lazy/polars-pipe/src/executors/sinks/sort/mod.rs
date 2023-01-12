@@ -1,5 +1,5 @@
 mod io;
-mod sink;
 mod ooc;
+mod sink;
 
 pub(crate) use sink::SortSink;

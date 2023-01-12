@@ -2,10 +2,11 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::SortOptions;
+use polars_core::prelude::{AnyValue, SortOptions};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_utils::atomic::SyncCounter;
 use polars_utils::sys::MEMINFO;
@@ -26,6 +27,8 @@ pub struct SortSink {
     // location in the dataframe of the columns to sort by
     sort_idx: Vec<usize>,
     reverse: Vec<bool>,
+    // sampled values so we can find the distribution.
+    dist_sample: Vec<AnyValue<'static>>
 }
 
 impl SortSink {
@@ -38,6 +41,7 @@ impl SortSink {
             io_thread: Default::default(),
             sort_idx,
             reverse,
+            dist_sample: vec![]
         }
     }
 
@@ -55,9 +59,6 @@ impl SortSink {
             let used = self.mem_total.fetch_add(chunk_bytes, Ordering::Relaxed);
             let free = self.free_mem.load(Ordering::Relaxed);
 
-
-            dbg!(used, free);
-
             // we need some free memory to be able to sort
             // so we keep 3x the sort data size before we go out of core
             if used * 3 > free {
@@ -71,7 +72,7 @@ impl SortSink {
             }
 
             // TODO! remove, only for testing
-            if used > 200_000{
+            if used > 200_000 {
                 dbg!("Start ooc");
                 self.ooc = true;
 
@@ -100,11 +101,13 @@ impl SortSink {
     fn sort_and_dump(&mut self) -> PolarsResult<()> {
         // take from the front so that sorted data remains sorted in writing order
         while let Some(mut df) = self.chunks.pop_front() {
-            df = self.sort_df(&df)?;
+            if df.height() > 0 {
+                df = self.sort_df(&df)?;
 
-            let iot = self.io_thread.lock().unwrap();
-            let iot = iot.as_ref().unwrap();
-            iot.dump_chunk(df)
+                let iot = self.io_thread.lock().unwrap();
+                let iot = iot.as_ref().unwrap();
+                iot.dump_chunk(df)
+            }
         }
         Ok(())
     }
@@ -127,6 +130,7 @@ impl Sink for SortSink {
         let mut other = other.as_any().downcast_mut::<Self>().unwrap();
         self.chunks.extend(std::mem::take(&mut other.chunks));
         self.ooc |= other.ooc;
+        self.dist_sample.extend(other.dist_sample);
 
         if self.ooc {
             self.sort_and_dump().unwrap()
@@ -142,6 +146,7 @@ impl Sink for SortSink {
             io_thread: self.io_thread.clone(),
             sort_idx: self.sort_idx.clone(),
             reverse: self.reverse.clone(),
+            dist_sample: vec![],
         })
     }
 
@@ -150,10 +155,10 @@ impl Sink for SortSink {
             let lock = self.io_thread.lock().unwrap();
             let io_thread = lock.as_ref().unwrap();
 
-            sort_ooc(io_thread).map( FinalizedSink::Finished)
+            sort_ooc(io_thread).map(FinalizedSink::Finished)
         } else {
             let df = accumulate_dataframes_vertical_unchecked(std::mem::take(&mut self.chunks));
-            self.sort_df(&df).map( FinalizedSink::Finished)
+            self.sort_df(&df).map(FinalizedSink::Finished)
         }
     }
 

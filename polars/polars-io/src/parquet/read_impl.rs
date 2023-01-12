@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::ops::{Deref, Range};
 use std::sync::Arc;
+use std::thread::current;
 
 use arrow::array::new_empty_array;
 use arrow::io::parquet::read;
@@ -463,6 +464,39 @@ impl BatchedParquetReader {
             }
 
             Ok(Some(chunks))
+        }
+    }
+
+    /// Turn the batched reader into an iterator.
+    pub fn iter(self, batch_size: usize) -> BatchedParquetIter {
+        BatchedParquetIter {
+            batch_size,
+            inner: self,
+            current_batch: vec![].into_iter(),
+        }
+    }
+}
+
+pub struct BatchedParquetIter {
+    batch_size: usize,
+    inner: BatchedParquetReader,
+    current_batch: std::vec::IntoIter<DataFrame>,
+}
+
+impl Iterator for BatchedParquetIter {
+    type Item = PolarsResult<DataFrame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current_batch.next() {
+            Some(df) => Some(Ok(df)),
+            None => match self.inner.next_batches(self.batch_size) {
+                Err(e) => return Some(Err(e)),
+                Ok(opt_batch) => {
+                    let batch = opt_batch?;
+                    self.current_batch = batch.into_iter();
+                    return self.current_batch.next().map(Ok);
+                }
+            },
         }
     }
 }
