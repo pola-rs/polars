@@ -351,17 +351,20 @@ def _in_notebook() -> bool:
     return True
 
 
-def format_path(path: str | Path) -> str:
-    """Create a string path, expanding the home directory if present."""
-    return os.path.expanduser(path)
-
-
 def arrlen(obj: Any) -> int | None:
     """Return length of (non-string) sequence object; returns None for non-sequences."""
     try:
         return None if isinstance(obj, str) else len(obj)
     except TypeError:
         return None
+
+
+def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> str:
+    """Create a string path, expanding the home directory if present."""
+    path = os.path.expanduser(path)
+    if check_not_directory and os.path.exists(path) and os.path.isdir(path):
+        raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
+    return path
 
 
 def threadpool_size() -> int:

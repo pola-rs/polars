@@ -9,8 +9,8 @@ from polars.internals.type_aliases import CsvEncoding
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
-    format_path,
     handle_projection_columns,
+    normalise_filepath,
 )
 
 try:
@@ -52,7 +52,7 @@ class BatchedCsvReader:
 
         path: str | None
         if isinstance(file, (str, Path)):
-            path = format_path(file)
+            path = normalise_filepath(file)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
