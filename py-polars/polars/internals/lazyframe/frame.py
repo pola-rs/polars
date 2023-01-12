@@ -1697,7 +1697,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         offset
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
 
@@ -1831,7 +1831,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
         closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday'}

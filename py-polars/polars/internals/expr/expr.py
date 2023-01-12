@@ -3433,7 +3433,7 @@ class Expr:
             - (False, True):   Exclude start and include end.
             - (True, False):   Include start and exclude end.
         closed : {'none', 'left', 'right', 'both'}
-            Define whether the interval is closed or not. Defaults to 'none'.
+            Define which sides of the interval are closed (inclusive).
 
         Returns
         -------
@@ -3750,7 +3750,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -3846,7 +3846,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -3942,7 +3942,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4036,7 +4036,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4132,7 +4132,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4228,7 +4228,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4320,7 +4320,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4418,7 +4418,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------

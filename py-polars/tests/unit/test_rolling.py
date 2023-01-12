@@ -37,7 +37,6 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
     ]:
         closed_windows: list[ClosedInterval] = ["left", "right", "none", "both"]
         for closed in closed_windows:
-
             out1 = df.select(
                 [
                     pl.col("dt"),

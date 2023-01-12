@@ -3398,7 +3398,7 @@ class DataFrame:
         offset
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
 
@@ -3521,8 +3521,8 @@ class DataFrame:
             Add the lower and upper bound of the window to the "_lower_bound" and
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
-        closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday'}
