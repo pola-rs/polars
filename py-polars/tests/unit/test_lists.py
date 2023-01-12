@@ -612,3 +612,12 @@ def test_list_take() -> None:
         ["1", "2", None],
         ["e", None, None],
     ]
+    s = pl.Series([[42, 1, 2], [5, 6, 7]])
+
+    with pytest.raises(pl.ComputeError, match=r"Take indices are out of bounds"):
+        s.arr.take([[0, 1, 2, 3], [0, 1, 2, 3]])
+
+    assert s.arr.take([0, 1, 2, 3], null_on_oob=True).to_list() == [
+        [42, 1, 2, None],
+        [5, 6, 7, None],
+    ]

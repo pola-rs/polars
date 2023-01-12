@@ -15,8 +15,12 @@ where
 {
     #[inline]
     fn negative_to_usize(self, len: usize) -> Option<usize> {
-        if self >= Zero::zero() && (self.to_usize().unwrap()) < len {
-            Some(self.to_usize().unwrap())
+        if self >= Zero::zero() {
+            if (self.to_usize().unwrap()) < len {
+                Some(self.to_usize().unwrap())
+            } else {
+                None
+            }
         } else {
             let subtract = self.abs().to_usize().unwrap();
             if subtract > len {
