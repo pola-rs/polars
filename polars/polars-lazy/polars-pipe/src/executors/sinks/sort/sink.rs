@@ -166,7 +166,8 @@ impl Sink for SortSink {
             let cond_lock = io_thread.all_processed.1.lock().unwrap();
             all_processed.0.wait(cond_lock).unwrap();
 
-            sort_ooc(io_thread, dist, self.sort_idx, &self.schema).map(FinalizedSink::Finished)
+            sort_ooc(io_thread, dist, self.sort_idx, self.reverse)
+
         } else {
             let df = accumulate_dataframes_vertical_unchecked(std::mem::take(&mut self.chunks));
             Ok(FinalizedSink::Finished(df))

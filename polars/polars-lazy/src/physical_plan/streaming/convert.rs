@@ -340,6 +340,7 @@ pub(crate) fn insert_streaming_nodes(
             if (branches_in_tree - 1) != joins_in_tree {
                 continue;
             }
+            let verbose = std::env::var("POLARS_VERBOSE").is_ok();
 
             for branch in tree {
                 // should be reset for every branch
@@ -398,6 +399,7 @@ pub(crate) fn insert_streaming_nodes(
                     lp_arena,
                     expr_arena,
                     to_physical_piped_expr,
+                    verbose
                 )?;
                 pipelines.push_back(pipeline);
             }

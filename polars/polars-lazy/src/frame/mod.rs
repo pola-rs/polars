@@ -587,6 +587,7 @@ impl LazyFrame {
     /// streaming fashion.
     #[cfg(feature = "parquet")]
     pub fn sink_parquet(mut self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::FileSink {
             input: Box::new(self.logical_plan),
             payload: FileSinkOptions {

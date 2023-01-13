@@ -346,8 +346,9 @@ fn test_streaming_sort() -> PolarsResult<()> {
     .lazy();
 
     let out = q
-        .sort("a", Default::default())
         .with_streaming(true)
+        .sort("a", Default::default())
+        // .sink_parquet("/tmp/test.parquet".into(), Default::default());
         .collect()?;
 
     dbg!(&out);

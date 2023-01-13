@@ -5,6 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
 use crate::executors::operators::Dummy;
 use crate::executors::sources::DataFrameSource;
@@ -24,6 +25,7 @@ pub struct PipeLine {
     sink_nodes: Vec<Node>,
     rh_sides: Vec<PipeLine>,
     operator_offset: usize,
+    verbose: bool
 }
 
 impl PipeLine {
@@ -33,6 +35,7 @@ impl PipeLine {
         operator_nodes: Vec<Node>,
         sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>)>,
         operator_offset: usize,
+        verbose: bool
     ) -> PipeLine {
         debug_assert_eq!(operators.len(), operator_nodes.len() + operator_offset);
         // we don't use the power of two partition size here
@@ -59,6 +62,7 @@ impl PipeLine {
             sink_nodes,
             rh_sides: vec![],
             operator_offset,
+            verbose
         }
     }
 
@@ -164,10 +168,15 @@ impl PipeLine {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn set_sources(&mut self, df: DataFrame) {
+    fn set_df_as_sources(&mut self, df: DataFrame) {
+        let src = Box::new(DataFrameSource::from_df(df)) as Box<dyn Source>;
+        self.set_sources(src)
+    }
+
+    fn set_sources(&mut self, src: Box<dyn Source>) {
         self.sources.clear();
         self.sources
-            .push(Box::new(DataFrameSource::from_df(df)) as Box<dyn Source>);
+            .push(src);
     }
 
     pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<FinalizedSink> {
@@ -208,7 +217,8 @@ impl PipeLine {
             if i != last_i {
                 match sink_result {
                     // turn this sink an a new source
-                    FinalizedSink::Finished(df) => self.set_sources(df),
+                    FinalizedSink::Finished(df) => self.set_df_as_sources(df),
+                    FinalizedSink::Source(src) => self.set_sources(src),
                     // should not happen
                     FinalizedSink::Operator(_) => {
                         unreachable!()
@@ -223,13 +233,12 @@ impl PipeLine {
 
     /// print the branches of the pipeline
     /// in the order they run.
-    #[cfg(test)]
     fn show(&self) {
         let mut fmt = String::new();
         let mut start = 0usize;
         fmt.push_str(self.sources[0].fmt());
-        fmt.push_str(" -> ");
         for (offset_end, sink) in &self.sinks {
+            fmt.push_str(" -> ");
             // take operators of a single thread
             let ops = &self.operators[0];
             // slice the pipeline
@@ -241,7 +250,7 @@ impl PipeLine {
             start = *offset_end;
             fmt.push_str(sink[0].fmt())
         }
-        println!("{fmt}");
+        eprintln!("{fmt}");
         for pl in &self.rh_sides {
             pl.show()
         }
@@ -249,6 +258,10 @@ impl PipeLine {
 
     pub fn execute(&mut self, state: Box<dyn SExecutionContext>) -> PolarsResult<DataFrame> {
         let ec = PExecutionContext::new(state);
+
+        if self.verbose {
+            self.show();
+        }
         let mut sink_out = self.run_pipeline(&ec)?;
         let mut pipelines = self.rh_sides.iter_mut();
         let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
@@ -264,6 +277,7 @@ impl PipeLine {
         loop {
             match &mut sink_out {
                 FinalizedSink::Finished(df) => return Ok(std::mem::take(df)),
+                FinalizedSink::Source(src) => return consume_source(&mut **src, &ec),
 
                 //
                 //  1/\
@@ -311,4 +325,13 @@ impl PipeLine {
             }
         }
     }
+}
+
+fn consume_source(src: &mut dyn Source, context: &PExecutionContext) -> PolarsResult<DataFrame> {
+    let mut frames = Vec::with_capacity(32);
+
+    while let SourceResult::GotMoreData(batch) = src.get_batches(context)? {
+        frames.extend(batch.into_iter().map(|chunk| chunk.data))
+    }
+    Ok(accumulate_dataframes_vertical_unchecked(frames))
 }
