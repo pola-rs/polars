@@ -324,13 +324,17 @@ def sequence_to_pyseries(
                 dtype = py_type_to_dtype(dtype)
 
             # we use anyvalue builder to create the datetime array
+            py_series = PySeries.new_from_anyvalues(name, values)
+
+            # cast it to right precision. There is no way to do this directly?
+            s = pli.wrap_s(py_series).cast(dtype)
+
             # we store the values internally as UTC and set the timezone
             if dtype == Datetime and value.tzinfo is not None:
-                py_series = PySeries.new_from_anyvalues(name, values)
                 tz = str(value.tzinfo)
-                return pli.wrap_s(py_series).dt.tz_localize(tz)._s
+                s = s.dt.with_time_zone(tz)
 
-            return PySeries.new_from_anyvalues(name, values)
+            return s._s
 
         elif python_dtype in (list, tuple):
             if nested_dtype is None:
