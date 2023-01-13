@@ -1,4 +1,3 @@
-#[cfg_attr(docsrs, doc(cfg(feature = "dtype-binary")))]
 mod namespace;
 
 pub use namespace::*;

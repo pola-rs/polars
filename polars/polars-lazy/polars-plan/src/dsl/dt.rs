@@ -87,7 +87,6 @@ impl DateLikeNameSpace {
     // This method takes a naive Datetime Series and makes this time zone aware.
     // It does not move the time to another time zone.
     #[cfg(feature = "timezones")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "timezones")))]
     pub fn tz_localize(self, tz: TimeZone) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TzLocalize(tz)))
@@ -212,13 +211,11 @@ impl DateLikeNameSpace {
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
     #[cfg(feature = "date_offset")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "date_offset")))]
     pub fn offset_by(self, by: Duration) -> Expr {
         self.0.map_private(FunctionExpr::DateOffset(by))
     }
 
     #[cfg(feature = "timezones")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "timezones")))]
     pub fn cast_time_zone(self, tz: TimeZone) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(

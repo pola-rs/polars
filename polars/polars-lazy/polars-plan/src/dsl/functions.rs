@@ -178,7 +178,6 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
 ///     If to `false` then `NaN` are regarded as larger than any finite number
 ///     and thus lead to the highest rank.
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "rank", feature = "propagate_nans"))))]
 pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> Expr {
     use polars_ops::prelude::nan_propagating_aggregate::nan_max_s;
 
@@ -254,7 +253,6 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Horizontally concat string columns in linear time
 pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
     let input = s.as_ref().to_vec();
@@ -273,7 +271,6 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
 /// Format the results of an array of expressions using a format string
 pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
     let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
@@ -324,7 +321,6 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
 /// - if `low` and `high` are a column, every element will expand into an array in a list column.
 /// - if `low` and `high` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
-#[cfg_attr(docsrs, doc(cfg(feature = "arange")))]
 pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
     let has_col_without_agg = |e: &Expr| {
         has_expr(e, |ae| matches!(ae, Expr::Column(_)))
@@ -850,7 +846,6 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-#[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
 pub fn cumreduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
@@ -896,7 +891,6 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-#[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
 pub fn cumfold_exprs<F: 'static, E: AsRef<[Expr]>>(
     acc: Expr,
     f: F,
@@ -1071,7 +1065,6 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
 }
 
 #[cfg(feature = "arg_where")]
-#[cfg_attr(docsrs, doc(cfg(feature = "arg_where")))]
 /// Get the indices where `condition` evaluates `true`.
 pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
     let condition = condition.into();
