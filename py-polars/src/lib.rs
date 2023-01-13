@@ -106,7 +106,10 @@ fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<dsl::PyExpr> {
 }
 
 #[pyfunction]
-fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
+fn dtype_str_repr(dtype: Wrap<DataType>, inner: Option<Wrap<DataType>>) -> PyResult<String> {
+    if let Some(inner) = inner {
+        return Ok(format!("'List[{:?}]'",inner.0));
+    }
     let dtype = dtype.0;
     Ok(dtype.to_string())
 }

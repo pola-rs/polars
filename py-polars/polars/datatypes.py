@@ -123,7 +123,7 @@ class DataTypeClass(type):
 
     @classmethod
     def string_repr(cls) -> str:
-        return dtype_str_repr(cls)
+        return dtype_str_repr(cls,None)
 
 
 class DataType(metaclass=DataTypeClass):
@@ -133,6 +133,8 @@ class DataType(metaclass=DataTypeClass):
         # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
         # still respecting types that take initialisation params (eg: Duration/Datetime)
         if args or kwargs:
+            if cls == List:
+                cls.inner = args[0]
             return super().__new__(cls)
         return cls
 
@@ -141,7 +143,10 @@ class DataType(metaclass=DataTypeClass):
 
     @classmethod
     def string_repr(cls) -> str:
-        return dtype_str_repr(cls)
+        inner_dtype = None
+        if cls == List:
+            inner_dtype = cls.inner
+        return dtype_str_repr(cls,inner_dtype)
 
 
 class NumericType(DataType):
