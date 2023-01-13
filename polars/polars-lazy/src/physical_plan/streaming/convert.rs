@@ -352,7 +352,6 @@ pub(crate) fn insert_streaming_nodes(
                 continue;
             }
             let verbose = std::env::var("POLARS_VERBOSE").is_ok();
-            dbg!(verbose);
 
             for branch in tree {
                 // should be reset for every branch

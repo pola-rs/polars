@@ -154,6 +154,12 @@ impl Sink for SortSink {
     }
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+        // safety: we are the final thread and will drop only once.
+        unsafe {
+            self.mem_total.manual_drop();
+            self.free_mem.manual_drop();
+        }
+
         if self.ooc {
             let lock = self.io_thread.lock().unwrap();
             let io_thread = lock.as_ref().unwrap();
