@@ -28,9 +28,9 @@ def test_read_excel_all_sheets() -> None:
 
 def test_read_excel_all_sheets_openpyxl() -> None:
     example_file = Path(__file__).parent.parent / "files" / "example.xlsx"
-    df = pl.read_excel(
+    df = pl.read_excel(  # type: ignore[call-overload]
         example_file, sheet_id=None, use_openpyxl=True
-    )  # type: ignore[call-overload]
+    )
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
