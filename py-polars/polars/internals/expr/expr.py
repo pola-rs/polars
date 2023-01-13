@@ -35,7 +35,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
-        ClosedWindow,
+        ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
         NullBehavior,
@@ -3412,7 +3412,7 @@ class Expr:
         start: Expr | datetime | date | int | float,
         end: Expr | datetime | date | int | float,
         include_bounds: bool | tuple[bool, bool] | None = None,
-        closed: ClosedWindow | None = None,
+        closed: ClosedInterval | None = None,
     ) -> Expr:
         """
         Check if this expression is between start and end.
@@ -3433,7 +3433,7 @@ class Expr:
             - (False, True):   Exclude start and include end.
             - (True, False):   Include start and exclude end.
         closed : {'none', 'left', 'right', 'both'}
-            Define whether the interval is closed or not. Defaults to 'none'.
+            Define which sides of the interval are closed (inclusive).
 
         Returns
         -------
@@ -3708,7 +3708,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -3750,7 +3750,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -3804,7 +3804,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -3846,7 +3846,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -3900,7 +3900,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -3942,7 +3942,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -3994,7 +3994,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -4036,7 +4036,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4090,7 +4090,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Compute a rolling standard deviation.
@@ -4132,7 +4132,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4186,7 +4186,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Compute a rolling variance.
@@ -4228,7 +4228,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4282,7 +4282,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Compute a rolling median.
@@ -4320,7 +4320,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4376,7 +4376,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Compute a rolling quantile.
@@ -4418,7 +4418,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------

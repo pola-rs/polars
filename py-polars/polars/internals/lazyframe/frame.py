@@ -67,7 +67,7 @@ except ImportError:
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
-        ClosedWindow,
+        ClosedInterval,
         CsvEncoding,
         FillNullStrategy,
         JoinStrategy,
@@ -1646,7 +1646,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
-        closed: ClosedWindow = "right",
+        closed: ClosedInterval = "right",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
@@ -1697,7 +1697,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         offset
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
 
@@ -1765,7 +1765,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         offset: str | timedelta | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
         by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
         start_by: StartBy = "window",
     ) -> LazyGroupBy[LDF]:
@@ -1831,7 +1831,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
         closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday'}

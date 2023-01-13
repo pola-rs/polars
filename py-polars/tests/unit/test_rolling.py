@@ -10,7 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import ClosedWindow
+    from polars.internals.type_aliases import ClosedInterval
 
 
 def test_rolling_kernels_and_groupby_rolling() -> None:
@@ -35,9 +35,8 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
         timedelta(days=2),
         timedelta(days=3),
     ]:
-        closed_windows: list[ClosedWindow] = ["left", "right", "none", "both"]
+        closed_windows: list[ClosedInterval] = ["left", "right", "none", "both"]
         for closed in closed_windows:
-
             out1 = df.select(
                 [
                     pl.col("dt"),
