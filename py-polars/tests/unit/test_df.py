@@ -30,6 +30,7 @@ def test_version() -> None:
 def test_null_count() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", None]})
     assert df.null_count().shape == (1, 2)
+    assert df.null_count().row(0) == (0, 1)
 
 
 def test_init_empty() -> None:
@@ -101,8 +102,8 @@ def test_selection() -> None:
     assert df.get_column("a").to_list() == [1, 2, 3]
 
     # select columns by mask
-    assert df[:2, :1].shape == (2, 1)
-    assert df[:2, "a"].shape == (2, 1)  # type: ignore[comparison-overlap]
+    assert df[:2, :1].rows() == [(1,), (2,)]
+    assert df[:2, "a"].rows() == [(1,), (2,)]  # type: ignore[attr-defined]
 
     # column selection by string(s) in first dimension
     assert df["a"].to_list() == [1, 2, 3]
@@ -133,12 +134,12 @@ def test_selection() -> None:
     assert typing.cast(float, df[1, 1]) == 2.0
     assert typing.cast(int, df[2, 0]) == 3
 
-    assert df[[0, 1], "b"].shape == (2, 1)  # type: ignore[comparison-overlap]
-    assert df[[2], ["a", "b"]].shape == (1, 2)
+    assert df[[0, 1], "b"].rows() == [(1.0,), (2.0,)]  # type: ignore[attr-defined]
+    assert df[[2], ["a", "b"]].rows() == [(3, 3.0)]
     assert df.to_series(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
     assert (df["c"] == df["a"].cast(str)).sum() == 0
-    assert df[:, "a":"b"].shape == (3, 2)  # type: ignore[misc]
+    assert df[:, "a":"b"].rows() == [(1, 1.0), (2, 2.0), (3, 3.0)]  # type: ignore[misc]
     assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore[misc]
     expect = pl.DataFrame({"c": ["b"]})
     assert df[1, [2]].frame_equal(expect)
@@ -541,9 +542,17 @@ def test_groupby() -> None:
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
     # Use lazy API in eager groupby
-    assert df.groupby("a").agg([pl.sum("b")]).shape == (3, 2)
+    assert sorted(df.groupby("a").agg([pl.sum("b")]).rows()) == [
+        ("a", 4),
+        ("b", 11),
+        ("c", 6),
+    ]
     # test if it accepts a single expression
-    assert df.groupby("a").agg(pl.sum("b")).shape == (3, 2)
+    assert df.groupby("a", maintain_order=True).agg(pl.sum("b")).rows() == [
+        ("a", 4),
+        ("b", 11),
+        ("c", 6),
+    ]
 
     df = pl.DataFrame(
         {
@@ -557,21 +566,24 @@ def test_groupby() -> None:
     df.groupby("b").agg(pl.col("c").forward_fill()).explode("c")
 
     # get a specific column
-    result = df.groupby("b").agg(pl.count("a"))
-    assert result.shape == (2, 2)
+    result = df.groupby("b", maintain_order=True).agg(pl.count("a"))
+    assert result.rows() == [("a", 2), ("b", 3)]
     assert result.columns == ["b", "a"]
 
     # make sure all the methods below run
-    assert df.groupby("b").first().shape == (2, 3)
-    assert df.groupby("b").last().shape == (2, 3)
-    assert df.groupby("b").max().shape == (2, 3)
-    assert df.groupby("b").min().shape == (2, 3)
-    assert df.groupby("b").count().shape == (2, 2)
-    assert df.groupby("b").mean().shape == (2, 3)
-    assert df.groupby("b").n_unique().shape == (2, 3)
-    assert df.groupby("b").median().shape == (2, 3)
-    # assert df.groupby("b").quantile(0.5).shape == (2, 3)
-    assert df.groupby("b").agg_list().shape == (2, 3)
+    assert sorted(df.groupby("b").first().rows()) == [("a", 1, None), ("b", 3, None)]
+    assert sorted(df.groupby("b").last().rows()) == [("a", 2, 1), ("b", 5, None)]
+    assert sorted(df.groupby("b").max().rows()) == [("a", 2, 1), ("b", 5, 1)]
+    assert sorted(df.groupby("b").min().rows()) == [("a", 1, 1), ("b", 3, 1)]
+    assert sorted(df.groupby("b").count().rows()) == [("a", 2), ("b", 3)]
+    assert sorted(df.groupby("b").mean().rows()) == [("a", 1.5, 1.0), ("b", 4.0, 1.0)]
+    assert sorted(df.groupby("b").n_unique().rows()) == [("a", 2, 2), ("b", 3, 2)]
+    assert sorted(df.groupby("b").median().rows()) == [("a", 1.5, 1.0), ("b", 4.0, 1.0)]
+    assert sorted(df.groupby("b").agg_list().rows()) == [
+        ("a", [1, 2], [None, 1]),
+        ("b", [3, 4, 5], [None, 1, None]),
+    ]
+    # assert sorted(df.groupby("b").quantile(0.5).rows()) == ...
 
     # Invalid input: `by` not specified as a sequence
     with pytest.raises(TypeError):
@@ -586,10 +598,15 @@ def test_groupby_iteration() -> None:
             "c": [6, 5, 4, 3, 2, 1],
         }
     )
-
     expected_shapes = [(2, 3), (3, 3), (1, 3)]
+    expected_rows = [
+        [("a", 1, 6), ("a", 3, 4)],
+        [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
+        [("c", 6, 1)],
+    ]
     for i, group in enumerate(df.groupby("a", maintain_order=True)):
         assert group.shape == expected_shapes[i]
+        assert group.rows() == expected_rows[i]
 
     # Grouped by ALL columns should give groups of a single row
     result = list(df.groupby(["a", "b", "c"]))
@@ -1342,16 +1359,23 @@ def test_from_generator_or_iterable() -> None:
     # test 'iterable_to_pydf' directly to validate 'chunk_size' behaviour
     cols = ["a", "b", ("c", pl.Int8), "d"]
 
-    d1 = iterable_to_pydf(gen(4), columns=cols, chunk_size=2)  # type: ignore[arg-type]
-    d2 = iterable_to_pydf(Rows(4), columns=cols, chunk_size=3)  # type: ignore[arg-type]
-    d3 = iterable_to_pydf(Rows(4), columns=cols)  # type: ignore[arg-type]
-
     expected_data = [("0", 0, 1, 1), ("1", 1, 2, 3), ("2", 2, 4, 9), ("3", 3, 8, 27)]
     expected_schema = [("a", pl.Utf8), ("b", pl.Int64), ("c", pl.Int8), ("d", pl.Int64)]
 
-    for d in (d1, d2, d3):
+    for params in (
+        {"data": Rows(4)},
+        {"data": gen(4), "chunk_size": 2},
+        {"data": Rows(4), "chunk_size": 3},
+        {"data": gen(4), "infer_schema_length": None},
+        {"data": Rows(4), "infer_schema_length": 1},
+        {"data": gen(4), "chunk_size": 2},
+        {"data": Rows(4), "infer_schema_length": 5},
+        {"data": gen(4), "infer_schema_length": 3, "chunk_size": 2},
+        {"data": gen(4), "infer_schema_length": None, "chunk_size": 3},
+    ):
+        d = iterable_to_pydf(columns=cols, **params)  # type: ignore[arg-type]
         assert expected_data == d.row_tuples()
-        assert expected_schema == list(zip(d1.columns(), d1.dtypes()))
+        assert expected_schema == list(zip(d.columns(), d.dtypes()))
 
     # empty iterator
     assert_frame_equal(

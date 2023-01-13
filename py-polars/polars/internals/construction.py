@@ -17,6 +17,7 @@ from typing import (
 
 from polars import internals as pli
 from polars.datatypes import (
+    N_INFER_DEFAULT,
     Categorical,
     ColumnsType,
     Date,
@@ -537,8 +538,12 @@ def _post_apply_columns(
     """Apply 'columns' param _after_ PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
     columns, dtypes = _unpack_columns(columns or pydf_columns)
+    column_subset: list[str] = []
     if columns != pydf_columns:
-        pydf.set_column_names(columns)
+        if len(columns) < len(pydf_columns) and columns == pydf_columns[: len(columns)]:
+            column_subset = columns
+        else:
+            pydf.set_column_names(columns)
 
     column_casts = []
     for i, col in enumerate(columns):
@@ -549,8 +554,14 @@ def _post_apply_columns(
         elif col in dtypes and dtypes[col] != pydf_dtypes[i]:
             column_casts.append(pli.col(col).cast(dtypes[col])._pyexpr)
 
-    if column_casts:
-        pydf = pydf.lazy().with_columns(column_casts).collect()
+    if column_casts or column_subset:
+        pydf = pydf.lazy()
+        if column_casts:
+            pydf = pydf.with_columns(column_casts)
+        if column_subset:
+            pydf = pydf.select([pli.col(col)._pyexpr for col in column_subset])
+        pydf = pydf.collect()
+
     return pydf
 
 
@@ -695,7 +706,7 @@ def sequence_to_pydf(
     data: Sequence[Any],
     columns: ColumnsType | None = None,
     orient: Orientation | None = None,
-    infer_schema_length: int | None = 50,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
     data_series: list[PySeries]
@@ -991,6 +1002,7 @@ def iterable_to_pydf(
     columns: ColumnsType | None = None,
     orient: Orientation | None = None,
     chunk_size: int | None = None,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an iterable/generator."""
     original_columns = columns
@@ -1018,7 +1030,12 @@ def iterable_to_pydf(
         )._df
 
     def to_frame_chunk(values: list[Any], columns: ColumnsType | None) -> pli.DataFrame:
-        return pli.DataFrame(data=values, columns=columns, orient="row")
+        return pli.DataFrame(
+            data=values,
+            columns=columns,
+            orient="row",
+            infer_schema_length=infer_schema_length,
+        )
 
     n_chunks = 0
     n_chunk_elems = 1_000_000

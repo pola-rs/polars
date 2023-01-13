@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 import polars.internals as pli
-from polars.datatypes import PolarsDataType, py_type_to_dtype
+from polars.datatypes import N_INFER_DEFAULT, PolarsDataType, py_type_to_dtype
 from polars.internals.type_aliases import CsvEncoding
 from polars.utils import (
     _prepare_row_count_args,
@@ -37,7 +37,7 @@ class BatchedCsvReader:
         ignore_errors: bool = False,
         parse_dates: bool = False,
         n_threads: int | None = None,
-        infer_schema_length: int | None = 100,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 50_000,
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",

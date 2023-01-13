@@ -61,6 +61,10 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
 
 
+# number of rows to scan by default when inferring datatypes
+N_INFER_DEFAULT = 100
+
+
 # note: defined this way as some types can have instances that
 # act as specialisations (eg: "List" and "List[Int32]")
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
