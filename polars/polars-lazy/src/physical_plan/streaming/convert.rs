@@ -44,6 +44,14 @@ fn to_physical_piped_expr(
         .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
 
+fn is_streamable_sort(args: &SortArguments) -> bool {
+    let positive_slice = match args.slice {
+        Some((offset, _)) => offset >= 0,
+        None => true,
+    };
+    positive_slice && !args.nulls_last
+}
+
 fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     // check weather leaf colum is Col or Lit
     let mut seen_column = false;
@@ -162,7 +170,10 @@ pub(crate) fn insert_streaming_nodes(
                 input,
                 by_column,
                 args,
-            } if !args.nulls_last && by_column.len() == 1 && all_column(by_column, expr_arena) => {
+            } if is_streamable_sort(args)
+                && by_column.len() == 1
+                && all_column(by_column, expr_arena) =>
+            {
                 state.streamable = true;
                 state.operators_sinks.push((true, false, root));
                 stack.push((*input, state, current_idx))
@@ -341,6 +352,7 @@ pub(crate) fn insert_streaming_nodes(
                 continue;
             }
             let verbose = std::env::var("POLARS_VERBOSE").is_ok();
+            dbg!(verbose);
 
             for branch in tree {
                 // should be reset for every branch

@@ -192,7 +192,12 @@ where
                 .unwrap();
             let index = input_schema.try_index_of(by_column.as_ref())?;
 
-            let sort_sink = SortSink::new(index, args.reverse[0], input_schema.into_owned());
+            let sort_sink = SortSink::new(
+                index,
+                args.reverse[0],
+                input_schema.into_owned(),
+                args.slice,
+            );
             Box::new(sort_sink) as Box<dyn Sink>
         }
         Aggregate {
@@ -264,7 +269,7 @@ where
 }
 
 pub fn get_dummy_operator() -> Box<dyn Operator> {
-    Box::new(operators::Dummy {})
+    Box::new(operators::PlaceHolder {})
 }
 
 pub fn get_operator<F>(

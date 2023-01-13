@@ -27,12 +27,18 @@ pub struct SortSink {
     // location in the dataframe of the columns to sort by
     sort_idx: usize,
     reverse: bool,
+    slice: Option<(i64, usize)>,
     // sampled values so we can find the distribution.
     dist_sample: Vec<AnyValue<'static>>,
 }
 
 impl SortSink {
-    pub(crate) fn new(sort_idx: usize, reverse: bool, schema: SchemaRef) -> Self {
+    pub(crate) fn new(
+        sort_idx: usize,
+        reverse: bool,
+        schema: SchemaRef,
+        slice: Option<(i64, usize)>,
+    ) -> Self {
         // for testing purposes
         let ooc = std::env::var("POLARS_FORCE_OOC_SORT").is_ok();
 
@@ -45,6 +51,7 @@ impl SortSink {
             io_thread: Default::default(),
             sort_idx,
             reverse,
+            slice,
             dist_sample: vec![],
         };
         if ooc {
@@ -142,6 +149,7 @@ impl Sink for SortSink {
             sort_idx: self.sort_idx,
             reverse: self.reverse,
             dist_sample: vec![],
+            slice: self.slice,
         })
     }
 
@@ -155,13 +163,11 @@ impl Sink for SortSink {
 
             block_thread_until_io_thread_done(io_thread);
 
-            sort_ooc(io_thread, dist, self.sort_idx, self.reverse)
+            sort_ooc(io_thread, dist, self.sort_idx, self.reverse, self.slice)
         } else {
-            let df = accumulate_and_sort(
-                std::mem::take(&mut self.chunks),
-                self.sort_idx,
-                self.reverse,
-            )?;
+            let chunks = std::mem::take(&mut self.chunks);
+            let df = accumulate_dataframes_vertical_unchecked(chunks);
+            let df = sort_accumulated(df, self.sort_idx, self.reverse, self.slice)?;
             Ok(FinalizedSink::Finished(df))
         }
     }
@@ -175,12 +181,12 @@ impl Sink for SortSink {
     }
 }
 
-pub(super) fn accumulate_and_sort<I: IntoIterator<Item = DataFrame>>(
-    dfs: I,
+pub(super) fn sort_accumulated(
+    df: DataFrame,
     sort_idx: usize,
     reverse: bool,
+    slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-    let df = accumulate_dataframes_vertical_unchecked(dfs);
     let sort_column = df.get_columns()[sort_idx].clone();
-    df.sort_impl(vec![sort_column], vec![reverse], false, None, true)
+    df.sort_impl(vec![sort_column], vec![reverse], false, slice, true)
 }

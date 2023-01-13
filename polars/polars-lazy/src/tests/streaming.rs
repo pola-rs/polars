@@ -332,3 +332,27 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "random")]
+fn test_streaming_sort() -> PolarsResult<()> {
+    let ca: NoNull<Int32Chunked> = (0..100_000).collect();
+    let s = ca.into_inner().into_series();
+    let s = s.shuffle(None);
+
+    let q = df![
+        "a" => s
+    ]?
+    .lazy();
+
+    let out = q
+        .with_streaming(true)
+        .sort("a", Default::default())
+        .slice(10, 19)
+        // .sink_parquet("/tmp/test.parquet".into(), Default::default());
+        .collect()?;
+
+    dbg!(&out);
+
+    Ok(())
+}

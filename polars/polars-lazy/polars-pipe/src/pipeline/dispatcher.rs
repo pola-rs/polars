@@ -7,7 +7,7 @@ use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
 
-use crate::executors::operators::Dummy;
+use crate::executors::operators::PlaceHolder;
 use crate::executors::sources::DataFrameSource;
 use crate::operators::{
     DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, SExecutionContext, Sink,
@@ -313,7 +313,7 @@ impl PipeLine {
                         // on the next branch of the pipeline we first check this stack.
                         // this only happens if we reorder joins
                         if !pipeline.replace_operator(op.as_ref(), sink_node) {
-                            let mut swap = Box::<Dummy>::default() as Box<dyn Operator>;
+                            let mut swap = Box::<PlaceHolder>::default() as Box<dyn Operator>;
                             std::mem::swap(op, &mut swap);
                             operators_to_replace.push_back((swap, sink_node));
                         }
