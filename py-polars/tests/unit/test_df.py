@@ -2242,15 +2242,23 @@ def test_preservation_of_subclasses_after_groupby_statements() -> None:
 def test_explode_empty() -> None:
     df = (
         pl.DataFrame({"x": ["a", "a", "b", "b"], "y": [1, 1, 2, 2]})
-        .groupby("x")
+        .groupby("x", maintain_order=True)
         .agg(pl.col("y").take([]))
     )
-    assert df.explode("y").shape == (0, 2)
+    assert df.explode("y").to_dict(False) == {"x": ["a", "b"], "y": [None, None]}
 
     df = pl.DataFrame({"x": ["1", "2", "4"], "y": [["a", "b", "c"], ["d"], []]})
     assert df.explode("y").frame_equal(
         pl.DataFrame({"x": ["1", "1", "1", "2", "4"], "y": ["a", "b", "c", "d", None]})
     )
+
+    df = pl.DataFrame(
+        {
+            "letters": ["a"],
+            "numbers": [[]],
+        }
+    )
+    assert df.explode("numbers").to_dict(False) == {"letters": ["a"], "numbers": [None]}
 
 
 def test_asof_by_multiple_keys() -> None:

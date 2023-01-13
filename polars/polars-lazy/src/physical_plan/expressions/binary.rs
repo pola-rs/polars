@@ -663,7 +663,9 @@ fn null_propagate_empty(lhs: &Series, rhs: &Series) -> Option<Series> {
             let lhs = lhs.list().unwrap();
             if !lhs.is_empty() {
                 let flat = lhs.explode().unwrap();
-                if flat.is_empty() && rhs.null_count() == rhs.len() {
+                if rhs.null_count() == rhs.len()
+                    && (flat.null_count() == rhs.len() || flat.is_empty())
+                {
                     return Some(rhs.clone());
                 }
             }
