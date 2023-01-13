@@ -2,10 +2,10 @@ use std::collections::VecDeque;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
 use crate::executors::operators::Dummy;
 use crate::executors::sources::DataFrameSource;
@@ -25,7 +25,7 @@ pub struct PipeLine {
     sink_nodes: Vec<Node>,
     rh_sides: Vec<PipeLine>,
     operator_offset: usize,
-    verbose: bool
+    verbose: bool,
 }
 
 impl PipeLine {
@@ -35,7 +35,7 @@ impl PipeLine {
         operator_nodes: Vec<Node>,
         sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>)>,
         operator_offset: usize,
-        verbose: bool
+        verbose: bool,
     ) -> PipeLine {
         debug_assert_eq!(operators.len(), operator_nodes.len() + operator_offset);
         // we don't use the power of two partition size here
@@ -62,7 +62,7 @@ impl PipeLine {
             sink_nodes,
             rh_sides: vec![],
             operator_offset,
-            verbose
+            verbose,
         }
     }
 
@@ -175,8 +175,7 @@ impl PipeLine {
 
     fn set_sources(&mut self, src: Box<dyn Source>) {
         self.sources.clear();
-        self.sources
-            .push(src);
+        self.sources.push(src);
     }
 
     pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<FinalizedSink> {

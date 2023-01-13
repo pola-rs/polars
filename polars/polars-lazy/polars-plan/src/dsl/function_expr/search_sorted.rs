@@ -6,5 +6,5 @@ pub(super) fn search_sorted_impl(s: &mut [Series], side: SearchSortedSide) -> Po
     let sorted_array = &s[0];
     let search_value = &s[1];
 
-    search_sorted(sorted_array, search_value, side).map(|ca| ca.into_series())
+    search_sorted(sorted_array, search_value, side, false).map(|ca| ca.into_series())
 }

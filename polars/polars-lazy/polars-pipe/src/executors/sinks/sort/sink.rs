@@ -2,16 +2,15 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
+use polars_core::prelude::{AnyValue, SchemaRef, Series};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_utils::atomic::SyncCounter;
 use polars_utils::sys::MEMINFO;
 
-use crate::executors::sinks::sort::io::IOThread;
+use crate::executors::sinks::sort::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::sort::ooc::sort_ooc;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
@@ -29,22 +28,30 @@ pub struct SortSink {
     sort_idx: usize,
     reverse: bool,
     // sampled values so we can find the distribution.
-    dist_sample: Vec<AnyValue<'static>>
+    dist_sample: Vec<AnyValue<'static>>,
 }
 
 impl SortSink {
     pub(crate) fn new(sort_idx: usize, reverse: bool, schema: SchemaRef) -> Self {
-        Self {
+        // for testing purposes
+        let ooc = std::env::var("POLARS_FORCE_OOC_SORT").is_ok();
+
+        let mut out = Self {
             schema,
             chunks: Default::default(),
             free_mem: SyncCounter::new(0),
             mem_total: SyncCounter::new(0),
-            ooc: false,
+            ooc,
             io_thread: Default::default(),
             sort_idx,
             reverse,
-            dist_sample: vec![]
+            dist_sample: vec![],
+        };
+        if ooc {
+            eprintln!("Out of core sort forced");
+            out.init_ooc().unwrap();
         }
+        out
     }
 
     fn refresh_memory(&self) {
@@ -52,6 +59,17 @@ impl SortSink {
             self.free_mem
                 .store(MEMINFO.free() as usize, Ordering::Relaxed);
         }
+    }
+
+    fn init_ooc(&mut self) -> PolarsResult<()> {
+        self.ooc = true;
+
+        // start IO thread
+        let mut iot = self.io_thread.lock().unwrap();
+        if iot.is_none() {
+            *iot = Some(IOThread::try_new(self.schema.clone())?)
+        }
+        Ok(())
     }
 
     fn store_chunk(&mut self, chunk: DataChunk) -> PolarsResult<()> {
@@ -64,25 +82,7 @@ impl SortSink {
             // we need some free memory to be able to sort
             // so we keep 3x the sort data size before we go out of core
             if used * 3 > free {
-                self.ooc = true;
-
-                // start IO thread
-                let mut iot = self.io_thread.lock().unwrap();
-                if iot.is_none() {
-                    *iot = Some(IOThread::try_new(self.schema.clone())?)
-                }
-            }
-
-            // TODO! remove, only for testing
-            if used > 200_000 {
-                dbg!("Start ooc");
-                self.ooc = true;
-
-                // start IO thread
-                let mut iot = self.io_thread.lock().unwrap();
-                if iot.is_none() {
-                    *iot = Some(IOThread::try_new(self.schema.clone())?)
-                }
+                self.init_ooc()?;
             }
         }
         self.chunks.push_back(chunk.data);
@@ -91,7 +91,7 @@ impl SortSink {
 
     fn dump(&mut self) -> PolarsResult<()> {
         // take from the front so that sorted data remains sorted in writing order
-        while let Some(mut df) = self.chunks.pop_front() {
+        while let Some(df) = self.chunks.pop_front() {
             if df.height() > 0 {
                 // safety: we just asserted height > 0
                 let sample = unsafe { df.get_columns()[self.sort_idx].get_unchecked(0) };
@@ -120,10 +120,11 @@ impl Sink for SortSink {
     }
 
     fn combine(&mut self, mut other: Box<dyn Sink>) {
-        let mut other = other.as_any().downcast_mut::<Self>().unwrap();
+        let other = other.as_any().downcast_mut::<Self>().unwrap();
         self.chunks.extend(std::mem::take(&mut other.chunks));
         self.ooc |= other.ooc;
-        self.dist_sample.extend(std::mem::take(&mut other.dist_sample));
+        self.dist_sample
+            .extend(std::mem::take(&mut other.dist_sample));
 
         if self.ooc {
             self.dump().unwrap()
@@ -136,7 +137,7 @@ impl Sink for SortSink {
             chunks: Default::default(),
             free_mem: self.free_mem.clone(),
             mem_total: self.mem_total.clone(),
-            ooc: self.ooc.clone(),
+            ooc: self.ooc,
             io_thread: self.io_thread.clone(),
             sort_idx: self.sort_idx,
             reverse: self.reverse,
@@ -148,28 +149,19 @@ impl Sink for SortSink {
         if self.ooc {
             let lock = self.io_thread.lock().unwrap();
             let io_thread = lock.as_ref().unwrap();
-            let all_processed = io_thread.all_processed.clone();
 
             let dist = Series::from_any_values("", &self.dist_sample).unwrap();
             let dist = dist.sort(self.reverse);
 
-
-            // get number sent
-            let sent = io_thread.sent.load(Ordering::Relaxed);
-            // set total sent
-            io_thread.total.fetch_add(sent, Ordering::Relaxed);
-
-            // then the io thread will check if it has written all files, and if it has
-            // it will set the condvar so we can continue on this thread
-
-            // we don't really need the mutex for our case, but the condvar needs one
-            let cond_lock = io_thread.all_processed.1.lock().unwrap();
-            all_processed.0.wait(cond_lock).unwrap();
+            block_thread_until_io_thread_done(io_thread);
 
             sort_ooc(io_thread, dist, self.sort_idx, self.reverse)
-
         } else {
-            let df = accumulate_dataframes_vertical_unchecked(std::mem::take(&mut self.chunks));
+            let df = accumulate_and_sort(
+                std::mem::take(&mut self.chunks),
+                self.sort_idx,
+                self.reverse,
+            )?;
             Ok(FinalizedSink::Finished(df))
         }
     }
@@ -181,4 +173,14 @@ impl Sink for SortSink {
     fn fmt(&self) -> &str {
         "sort"
     }
+}
+
+pub(super) fn accumulate_and_sort<I: IntoIterator<Item = DataFrame>>(
+    dfs: I,
+    sort_idx: usize,
+    reverse: bool,
+) -> PolarsResult<DataFrame> {
+    let df = accumulate_dataframes_vertical_unchecked(dfs);
+    let sort_column = df.get_columns()[sort_idx].clone();
+    df.sort_impl(vec![sort_column], vec![reverse], false, None, true)
 }

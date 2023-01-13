@@ -318,6 +318,7 @@ where
     Ok(op)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,
@@ -326,7 +327,7 @@ pub fn create_pipeline<F>(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
-    verbose: bool
+    verbose: bool,
 ) -> PolarsResult<PipeLine>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -420,7 +421,7 @@ where
         operator_nodes,
         sink_nodes,
         operator_offset,
-        verbose
+        verbose,
     ))
 }
 

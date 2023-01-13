@@ -126,10 +126,10 @@ impl Schema {
     }
 
     pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &String, &DataType)> {
-        self.inner.get_full(name)
+        self.inner
+            .get_full(name)
             .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
     }
-
 
     pub fn get_full(&self, name: &str) -> Option<(usize, &String, &DataType)> {
         self.inner.get_full(name)

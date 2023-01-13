@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::ops::{Deref, Range};
 use std::sync::Arc;
-use std::thread::current;
 
 use arrow::array::new_empty_array;
 use arrow::io::parquet::read;
@@ -490,11 +489,11 @@ impl Iterator for BatchedParquetIter {
         match self.current_batch.next() {
             Some(df) => Some(Ok(df)),
             None => match self.inner.next_batches(self.batch_size) {
-                Err(e) => return Some(Err(e)),
+                Err(e) => Some(Err(e)),
                 Ok(opt_batch) => {
                     let batch = opt_batch?;
                     self.current_batch = batch.into_iter();
-                    return self.current_batch.next().map(Ok);
+                    self.current_batch.next().map(Ok)
                 }
             },
         }

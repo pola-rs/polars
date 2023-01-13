@@ -64,7 +64,7 @@ pub enum ParquetCompression {
 
 impl Default for ParquetCompression {
     fn default() -> Self {
-       ParquetCompression::Lz4Raw
+        ParquetCompression::Lz4Raw
     }
 }
 

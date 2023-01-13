@@ -1,26 +1,24 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use std::sync::mpsc::{Sender, SyncSender};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread::JoinHandle;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_io::prelude::*;
 use polars_utils::atomic::SyncCounter;
 
-pub(super) type DfIter = Box<dyn ExactSizeIterator<Item=DataFrame>+ Sync + Send>;
+pub(super) type DfIter = Box<dyn ExactSizeIterator<Item = DataFrame> + Sync + Send>;
 // The Option<IdxCa> are the partitions it should be written to, if any
 type Payload = (Option<IdxCa>, DfIter);
-
 
 pub(super) struct IOThread {
     sender: SyncSender<Payload>,
     pub(super) dir: PathBuf,
     pub(super) sent: SyncCounter,
     pub(super) total: SyncCounter,
-    pub(super) all_processed: Arc<(Condvar, Mutex<()>)>
+    pub(super) all_processed: Arc<(Condvar, Mutex<()>)>,
 }
 
 impl IOThread {
@@ -48,7 +46,6 @@ impl IOThread {
         std::thread::spawn(move || {
             let mut count = 0usize;
             while let Ok((partitions, iter)) = receiver.recv() {
-
                 if let Some(partitions) = partitions {
                     for (part, df) in partitions.into_no_null_iter().zip(iter) {
                         let mut path = dir2.clone();
@@ -63,7 +60,6 @@ impl IOThread {
                         writer.finish().unwrap();
                         count += 1;
                     }
-
                 } else {
                     let mut path = dir2.clone();
                     path.push(format!("{count}.parquet"));
@@ -79,13 +75,10 @@ impl IOThread {
                     count += 1;
                 }
                 let total = total2.load(Ordering::Relaxed);
-                dbg!(total, count);
                 if total != 0 && total == count {
                     all_processed2.0.notify_one();
-                    dbg!("notified");
                 }
             }
-            eprintln!("kill thread");
         });
 
         Ok(Self {
@@ -93,7 +86,7 @@ impl IOThread {
             dir,
             sent,
             total,
-            all_processed
+            all_processed,
         })
     }
 
@@ -103,9 +96,21 @@ impl IOThread {
     }
     pub(super) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {
         let add = iter.size_hint().1.unwrap();
-        self.sender
-            .send( (partition, iter))
-            .unwrap();
+        self.sender.send((partition, iter)).unwrap();
         self.sent.fetch_add(add, Ordering::Relaxed);
     }
+}
+
+pub(super) fn block_thread_until_io_thread_done(io_thread: &IOThread) {
+    // get number sent
+    let sent = io_thread.sent.load(Ordering::Relaxed);
+    // set total sent
+    io_thread.total.store(sent, Ordering::Relaxed);
+
+    // then the io thread will check if it has written all files, and if it has
+    // it will set the condvar so we can continue on this thread
+
+    // we don't really need the mutex for our case, but the condvar needs one
+    let cond_lock = io_thread.all_processed.1.lock().unwrap();
+    let _lock = io_thread.all_processed.0.wait(cond_lock).unwrap();
 }

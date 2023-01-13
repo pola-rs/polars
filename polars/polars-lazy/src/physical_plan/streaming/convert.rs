@@ -399,7 +399,7 @@ pub(crate) fn insert_streaming_nodes(
                     lp_arena,
                     expr_arena,
                     to_physical_piped_expr,
-                    verbose
+                    verbose,
                 )?;
                 pipelines.push_back(pipeline);
             }
