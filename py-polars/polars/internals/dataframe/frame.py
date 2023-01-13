@@ -2071,27 +2071,22 @@ class DataFrame:
         self,
         file: BytesIO | str | Path | None = None,
         has_header: bool = True,
-        fieldnames: list = None,
+        fieldnames: list[str] | None = None,
         float_precision: int | None = None,
         null_value: str | None = None,
-        **kwargs,
-    ):
+    ) -> None:
         try:
-            import openpyxl
+            import openpyxl  # type: ignore[import]
         except ImportError:
             raise ImportError(
                 "openpyxl is not installed. Please run `pip install openpyxl`."
             ) from None
         # lxml speeds up openpyxl
         try:
-            import lxml
-        except ImportError:
-            lxml = None
 
-        if lxml is not None:
             wb = openpyxl.Workbook(write_only=True)
             ws = wb.create_sheet()
-        else:
+        except ImportError:
             wb = openpyxl.Workbook()
             ws = wb.active
         # set header rows
@@ -2108,6 +2103,7 @@ class DataFrame:
                 row_array.append(value)
             ws.append(row_array)
         wb.save(file)
+        wb.close()
 
     @overload
     def write_excel(

@@ -26,7 +26,20 @@ def test_read_excel_all_sheets() -> None:
     assert_frame_equal(df["Sheet2"], expected2)
 
 
-def test_basic_datatypes_write_excel() -> None:
+def test_read_excel_all_sheets_openpyxl() -> None:
+    example_file = Path(__file__).parent.parent / "files" / "example.xlsx"
+    df = pl.read_excel(
+        example_file, sheet_id=None, use_openpyxl=True
+    )  # type: ignore[call-overload]
+
+    expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
+    expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
+
+    assert_frame_equal(df["Sheet1"], expected1)
+    assert_frame_equal(df["Sheet2"], expected2)
+
+
+def test_basic_datatypes_openpyxl_write_excel() -> None:
     df = pl.DataFrame(
         {
             "A": [1, 2, 3, 4, 5],
@@ -40,6 +53,6 @@ def test_basic_datatypes_write_excel() -> None:
     df.write_excel(filename)
     # check if can be read as it was written
     # we use openpyxl because type inference is better
-    df_reread = pl.read_excel(filename, driver="openpyxl")
-    assert_frame_equal(df, df_reread)
+    df_read = pl.read_excel(filename, use_openpyxl=True)  # type: ignore[call-overload]
+    assert_frame_equal(df, df_read)
     os.remove(filename)

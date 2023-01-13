@@ -23,6 +23,7 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Literal
 
+
 import polars.internals as pli
 from polars.convert import from_arrow
 from polars.datatypes import DataType, PolarsDataType, Utf8
@@ -1112,6 +1113,7 @@ def read_excel(
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None,
     read_csv_options: dict[str, Any] | None,
+    use_openpyxl: bool = False,
 ) -> dict[str, DataFrame]:
     ...
 
@@ -1123,6 +1125,7 @@ def read_excel(
     sheet_name: str,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
+    use_openpyxl: bool = False,
 ) -> DataFrame:
     ...
 
@@ -1134,6 +1137,7 @@ def read_excel(
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
+    use_openpyxl: bool = False,
 ) -> DataFrame:
     ...
 
@@ -1142,9 +1146,9 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
-    driver: Literal["xlsx2csv", "openpyxl"] = "xlsx2csv",
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
+    use_openpyxl: bool = False,
 ) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
@@ -1162,11 +1166,6 @@ def read_excel(
         Sheet number to convert (0 for all sheets).
     sheet_name
         Sheet name to convert.
-    driver
-        Library used to parse Excel, either openpyxl or xlsx2csv (default is xlsx2csv).
-        Please not that xlsx2csv converts first to csv, making type inference worse
-        than openpyxl. To remedy that, you can use the extra options defined on
-        `xlsx2csv_options` and `read_csv_options`
     xlsx2csv_options
         Extra options passed to ``xlsx2csv.Xlsx2csv()``.
         e.g.: ``{"skip_empty_lines": True}``
@@ -1175,6 +1174,11 @@ def read_excel(
         ``xlsx2csv.Xlsx2csv().convert()``
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
         "infer_schema_length": None}``
+    use_openpyxl
+        Library used to parse Excel, either openpyxl or xlsx2csv (default is xlsx2csv).
+        Please not that xlsx2csv converts first to csv, making type inference worse
+        than openpyxl. To remedy that, you can use the extra options defined on
+        `xlsx2csv_options` and `read_csv_options`
 
     Returns
     -------
@@ -1233,8 +1237,9 @@ def read_excel(
     if not read_csv_options:
         read_csv_options = {}
 
+    reader_fn: Any = None  # make mypy happy
     # do conditions imports
-    if driver == "openpyxl":
+    if use_openpyxl:
         try:
             import openpyxl  # type: ignore[import]
         except ImportError:
@@ -1242,7 +1247,9 @@ def read_excel(
                 "openpyxl is not installed. Please run `pip install openpyxl`."
             ) from None
         parser = openpyxl.load_workbook(file, read_only=True)
-        sheets = parser.worksheets
+        sheets = [
+            {"index": i + 1, "name": sheet.title} for i, sheet in enumerate(parser)
+        ]
         reader_fn = _read_excel_sheet_openpyxl
     else:
         try:
@@ -1257,12 +1264,16 @@ def read_excel(
         reader_fn = _read_excel_sheet_xlsx2csv
 
     if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id >= 0)):
-        return reader_fn(parser, sheet_id, sheet_name, read_csv_options)
+        ret_val = reader_fn(parser, sheet_id, sheet_name, read_csv_options)
     else:
-        return {
+        ret_val = {
             sheet["name"]: reader_fn(parser, sheet["index"], None, read_csv_options)
             for sheet in sheets
         }
+    if use_openpyxl:
+        # close iterator
+        parser.close()
+    return ret_val
 
 
 def _read_excel_sheet_openpyxl(
@@ -1287,7 +1298,6 @@ def _read_excel_sheet_openpyxl(
     df = DataFrame(
         {key: cell.value for key, cell in zip(header, row)} for row in rows_iter
     )
-    parser.close()
     return df
 
 
