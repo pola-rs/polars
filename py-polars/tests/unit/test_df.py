@@ -6,7 +6,7 @@ import typing
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Iterator, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
 
 import numpy as np
 import pyarrow as pa
@@ -828,7 +828,7 @@ def test_file_buffer() -> None:
 @pytest.mark.parametrize(
     "read_function", [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_avro]
 )
-def test_read_missing_file(read_function) -> None:  # type: ignore[no-untyped-def]
+def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None:
     with pytest.raises(FileNotFoundError, match="fake_file"):
         read_function("fake_file")
 
