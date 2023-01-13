@@ -1,7 +1,6 @@
 use std::io::{Read, Seek};
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 #[cfg(feature = "parquet")]
 use polars_core::cloud::CloudOptions;
@@ -56,7 +55,7 @@ macro_rules! try_delayed {
             Err(err) => {
                 return LogicalPlan::Error {
                     input: Box::new($input.clone()),
-                    err: Arc::new(Mutex::new(Some(err))),
+                    err: err.into(),
                 }
                 .$convert()
             }

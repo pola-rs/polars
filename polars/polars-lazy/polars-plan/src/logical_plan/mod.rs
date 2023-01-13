@@ -64,6 +64,51 @@ pub enum Context {
     Default,
 }
 
+#[derive(Debug)]
+pub enum ErrorState {
+    NotYetEncountered { err: PolarsError },
+    AlreadyEncountered { prev_err_msg: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct ErrorStateSync(Arc<Mutex<ErrorState>>);
+
+impl std::ops::Deref for ErrorStateSync {
+    type Target = Arc<Mutex<ErrorState>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ErrorStateSync {
+    fn take(&self) -> PolarsError {
+        let mut err = self.0.lock().unwrap();
+        match &*err {
+            ErrorState::NotYetEncountered { err: polars_err } => {
+                let msg = format!("{polars_err:?}");
+                let err = std::mem::replace(
+                    &mut *err,
+                    ErrorState::AlreadyEncountered { prev_err_msg: msg },
+                );
+                let ErrorState::NotYetEncountered { err } = err else {
+                    unreachable!("polars bug in LogicalPlan error handling")
+                };
+                err
+            }
+            ErrorState::AlreadyEncountered { prev_err_msg } => PolarsError::ComputeError(
+                format!("LogicalPlan already failed with error: `{prev_err_msg}`").into(),
+            ),
+        }
+    }
+}
+
+impl From<PolarsError> for ErrorStateSync {
+    fn from(err: PolarsError) -> Self {
+        Self(Arc::new(Mutex::new(ErrorState::NotYetEncountered { err })))
+    }
+}
+
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -206,7 +251,7 @@ pub enum LogicalPlan {
     #[cfg_attr(feature = "serde", serde(skip))]
     Error {
         input: Box<LogicalPlan>,
-        err: Arc<Mutex<Option<PolarsError>>>,
+        err: ErrorStateSync,
     },
     /// This allows expressions to access other tables
     ExtContext {
@@ -280,16 +325,7 @@ impl LogicalPlan {
                     Cow::Borrowed(schema) => function.schema(schema),
                 }
             }
-            Error { err, .. } => {
-                // We just take the error. The LogicalPlan should not be used anymore once this
-                let mut err = err.lock().unwrap();
-                match err.take() {
-                    Some(err) => Err(err),
-                    None => Err(PolarsError::ComputeError(
-                        "LogicalPlan already failed".into(),
-                    )),
-                }
-            }
+            Error { err, .. } => Err(err.take()),
             ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
         }
     }
