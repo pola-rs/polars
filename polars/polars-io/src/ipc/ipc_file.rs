@@ -293,7 +293,7 @@ impl<W: Write> IpcWriter<W> {
                 compression: self.compression,
             },
         );
-        let _ = writer.start()?;
+        writer.start()?;
 
         Ok(BatchedWriter { writer })
     }

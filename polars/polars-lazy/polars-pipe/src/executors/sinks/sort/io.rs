@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use polars_core::prelude::*;
-use polars_core::POOL;
+use polars_core::{POOL, PROCESS_ID};
 use polars_io::prelude::*;
 
 pub(super) type DfIter = Box<dyn ExactSizeIterator<Item = DataFrame> + Sync + Send>;
@@ -19,13 +19,37 @@ pub(super) struct IOThread {
     pub(super) total: Arc<AtomicUsize>,
 }
 
+fn clean_up_thread(current_pid: u128) {
+    let _ = std::thread::spawn(move || {
+        let dir = resolve_homedir(Path::new("~/.polars/sort/"));
+
+        // if the directory does not exist, there is nothing to clean
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                let dirname = path.file_name().unwrap();
+                let dir_uuid = dirname.to_string_lossy().parse::<u128>().unwrap();
+                if dir_uuid != current_pid {
+                    std::fs::remove_dir_all(path).unwrap()
+                }
+            }
+        }
+    });
+}
+
 impl IOThread {
     pub(super) fn try_new(schema: SchemaRef) -> PolarsResult<Self> {
+        let process_id = *PROCESS_ID;
         let uuid = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = resolve_homedir(Path::new(&format!("~/.polars/sort/{uuid}")));
+
+        // start a thread that will clean up old dumps.
+        // TODO: if we will have more ooc in the future  we will have a dedicated GC thread
+        clean_up_thread(process_id);
+
+        let dir = resolve_homedir(Path::new(&format!("~/.polars/sort/{process_id}/{uuid}")));
         std::fs::create_dir_all(&dir)?;
 
         // we need some pushback otherwise we still could go OOM.
@@ -57,7 +81,7 @@ impl IOThread {
                     }
                 } else {
                     let mut path = dir2.clone();
-                    path.push(format!("{count}.parquet"));
+                    path.push(format!("{count}.ipc"));
 
                     let file = std::fs::File::create(path).unwrap();
                     let mut writer = IpcWriter::new(file);
