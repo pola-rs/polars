@@ -25,7 +25,7 @@ else:
 
 import polars.internals as pli
 from polars.convert import from_arrow
-from polars.datatypes import DataType, PolarsDataType, Utf8
+from polars.datatypes import N_INFER_DEFAULT, DataType, PolarsDataType, Utf8
 from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
@@ -75,7 +75,7 @@ def read_csv(
     ignore_errors: bool = False,
     parse_dates: bool = False,
     n_threads: int | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 8192,
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
@@ -427,7 +427,7 @@ def scan_csv(
     ignore_errors: bool = False,
     cache: bool = True,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
@@ -709,7 +709,7 @@ def scan_parquet(
 
 def scan_ndjson(
     file: str | Path,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
@@ -1684,7 +1684,7 @@ def read_csv_batched(
     ignore_errors: bool = False,
     parse_dates: bool = False,
     n_threads: int | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 50_000,
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",

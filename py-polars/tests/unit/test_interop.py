@@ -267,6 +267,47 @@ def test_from_dict_no_inference() -> None:
     pl.from_dicts(data, schema=schema, infer_schema_length=0)
 
 
+def test_from_dicts_schema_override() -> None:
+    schema = {
+        "a": pl.Utf8,
+        "b": pl.Int64,
+        "c": pl.List(pl.Struct({"x": pl.Int64, "y": pl.Utf8, "z": pl.Float64})),
+    }
+
+    # initial data matches the expected schema
+    data1 = [
+        {
+            "a": "l",
+            "b": i,
+            "c": [{"x": (j + 2), "y": "?", "z": (j % 2)} for j in range(2)],
+        }
+        for i in range(5)
+    ]
+
+    # extend with a mix of fields that are/not in the schema
+    data2 = [{"b": i + 5, "d": "ABC", "e": "DEF"} for i in range(5)]
+
+    for n_infer in (0, 3, 5, 8, 10, 100):
+        df = pl.DataFrame(
+            data=(data1 + data2),
+            columns=schema,  # type: ignore[arg-type]
+            infer_schema_length=n_infer,
+        )
+        assert df.schema == schema
+        assert df.rows() == [
+            ("l", 0, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            ("l", 1, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            ("l", 2, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            ("l", 3, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            ("l", 4, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            (None, 5, None),
+            (None, 6, None),
+            (None, 7, None),
+            (None, 8, None),
+            (None, 9, None),
+        ]
+
+
 def test_from_dicts_struct() -> None:
     data = [{"a": {"b": 1, "c": 2}, "d": 5}, {"a": {"b": 3, "c": 4}, "d": 6}]
     df = pl.from_dicts(data)

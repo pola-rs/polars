@@ -21,6 +21,7 @@ from polars import internals as pli
 from polars.cfg import Config
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
+    N_INFER_DEFAULT,
     Boolean,
     Categorical,
     DataType,
@@ -127,7 +128,7 @@ class LazyFrame:
         ignore_errors: bool = False,
         cache: bool = True,
         with_column_names: Callable[[list[str]], list[str]] | None = None,
-        infer_schema_length: int | None = 100,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",
         low_memory: bool = False,

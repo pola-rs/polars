@@ -30,6 +30,7 @@ from warnings import warn
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
+    N_INFER_DEFAULT,
     Boolean,
     ColumnsType,
     Int8,
@@ -149,6 +150,9 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
+    infer_schema_length : int, default None
+        Maximum number of rows to read for schema inference; only applies if the input
+        data is a sequence or generator of rows; other input is read as-is.
 
     Examples
     --------
@@ -267,6 +271,7 @@ class DataFrame:
         ) = None,
         columns: ColumnsType | None = None,
         orient: Orientation | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ):
         if data is None:
             self._df = dict_to_pydf({}, columns=columns)
@@ -276,7 +281,10 @@ class DataFrame:
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
-                data, columns=columns, orient=orient, infer_schema_length=50
+                data,
+                columns=columns,
+                orient=orient,
+                infer_schema_length=infer_schema_length,
             )
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
@@ -291,7 +299,12 @@ class DataFrame:
             self._df = pandas_to_pydf(data, columns=columns)
 
         elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
-            self._df = iterable_to_pydf(data, columns=columns, orient=orient)
+            self._df = iterable_to_pydf(
+                data,
+                columns=columns,
+                orient=orient,
+                infer_schema_length=infer_schema_length,
+            )
         else:
             raise ValueError(
                 f"DataFrame constructor called with unsupported type; got {type(data)}"
@@ -308,7 +321,7 @@ class DataFrame:
     def _from_dicts(
         cls: type[DF],
         data: Sequence[dict[str, Any]],
-        infer_schema_length: int | None = 100,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: Schema | None = None,
     ) -> DF:
         pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
@@ -347,7 +360,7 @@ class DataFrame:
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
         orient: Orientation | None = None,
-        infer_schema_length: int | None = 50,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> DF:
         """
         Construct a DataFrame from a sequence of sequences.
@@ -502,7 +515,7 @@ class DataFrame:
         ignore_errors: bool = False,
         parse_dates: bool = False,
         n_threads: int | None = None,
-        infer_schema_length: int | None = 100,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 8192,
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",

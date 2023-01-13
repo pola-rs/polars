@@ -22,6 +22,7 @@ def test_groupby_sorted_empty_dataframe_3680() -> None:
         .tail(1)
         .collect()
     )
+    assert df.rows() == []
     assert df.shape == (0, 2)
     assert df.schema == {"key": pl.Categorical, "val": pl.Float64}
 

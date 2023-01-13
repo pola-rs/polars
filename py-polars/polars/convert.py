@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
-from polars.datatypes import Schema
+from polars.datatypes import N_INFER_DEFAULT, Schema
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -55,7 +55,7 @@ def from_dict(
 
 def from_dicts(
     dicts: Sequence[dict[str, Any]],
-    infer_schema_length: int | None = 50,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     *,
     schema: Schema | None = None,
 ) -> DataFrame:
@@ -127,7 +127,7 @@ def from_records(
     data: Sequence[Sequence[Any]],
     columns: Sequence[str] | None = None,
     orient: Orientation | None = None,
-    infer_schema_length: int | None = 50,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
     Construct a DataFrame from a sequence of sequences. This operation clones data.
