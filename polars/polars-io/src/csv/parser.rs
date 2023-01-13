@@ -449,6 +449,7 @@ pub(super) fn parse_lines<'a>(
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<&NullValuesCompiled>,
+    missing_is_null: bool,
     projection: &[usize],
     buffers: &mut [Buffer<'a>],
     ignore_errors: bool,
@@ -545,31 +546,31 @@ pub(super) fn parse_lines<'a>(
                             add_null = unsafe { null_values.is_null(field, processed_fields) }
                         }
                         if add_null {
-                            buf.add_null()
+                            buf.add_null(!missing_is_null && field.is_empty())
                         } else {
-                            buf.add(field, ignore_errors, needs_escaping).map_err(|_| {
-                                let bytes_offset = offset + field.as_ptr() as usize - start;
-                                let unparsable = String::from_utf8_lossy(field);
-                                PolarsError::ComputeError(
-                                    format!(
-                                        "Could not parse `{}` as dtype {:?} at column {}.\n\
+                            buf.add(field, ignore_errors, needs_escaping, missing_is_null)
+                                .map_err(|_| {
+                                    let bytes_offset = offset + field.as_ptr() as usize - start;
+                                    let unparsable = String::from_utf8_lossy(field);
+                                    PolarsError::ComputeError(
+                                        format!(
+                                            "Could not parse `{}` as dtype {:?} at column {}.\n\
                                             The current offset in the file is {} bytes.\n\
                                             \n\
                                             Consider specifying the correct dtype, increasing\n\
                                             the number of records used to infer the schema,\n\
                                             enabling the `ignore_errors` flag, or adding\n\
                                             `{}` to the `null_values` list.",
-                                        &unparsable,
-                                        buf.dtype(),
-                                        idx,
-                                        bytes_offset,
-                                        &unparsable,
+                                            &unparsable,
+                                            buf.dtype(),
+                                            idx,
+                                            bytes_offset,
+                                            &unparsable,
+                                        )
+                                        .into(),
                                     )
-                                    .into(),
-                                )
-                            })?;
+                                })?;
                         }
-
                         processed_fields += 1;
 
                         // if we have all projected columns we are done with this line
@@ -603,11 +604,9 @@ pub(super) fn parse_lines<'a>(
                 // SAFETY: processed fields index can never exceed the projection indices.
                 buffers.get_unchecked_mut(processed_fields)
             };
-
-            buf.add_null();
+            buf.add_null(!missing_is_null);
             processed_fields += 1;
         }
-
         line_count += 1;
     }
 }

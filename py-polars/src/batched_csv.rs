@@ -40,6 +40,7 @@ impl PyBatchedCsv {
         comment_char: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
+        missing_utf8_is_empty_string: bool,
         parse_dates: bool,
         skip_rows_after_header: usize,
         row_count: Option<(String, IdxSize)>,
@@ -49,9 +50,7 @@ impl PyBatchedCsv {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let eol_char = eol_char.as_bytes()[0];
-
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-
         let quote_char = if let Some(s) = quote_char {
             if s.is_empty() {
                 None
@@ -93,6 +92,7 @@ impl PyBatchedCsv {
             .with_columns(columns)
             .with_n_threads(n_threads)
             .with_dtypes_slice(overwrite_dtype_slice.as_deref())
+            .with_missing_is_null(!missing_utf8_is_empty_string)
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_null_values(null_values)
