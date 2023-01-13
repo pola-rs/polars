@@ -27,7 +27,6 @@ mod tests;
 pub(crate) mod vector_hasher;
 
 use std::sync::Mutex;
-#[cfg(feature = "object")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
@@ -36,8 +35,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::stringcache::*;
 
-#[cfg(feature = "object")]
-pub(crate) static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
+pub static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

@@ -3,15 +3,15 @@ use polars_core::error::PolarsResult;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Default)]
-pub struct Dummy {}
+pub struct PlaceHolder {}
 
-impl Operator for Dummy {
+impl Operator for PlaceHolder {
     fn execute(
         &mut self,
         _context: &PExecutionContext,
         _chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        panic!("dummy should be replaced")
+        panic!("placeholder should be replaced")
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
@@ -19,6 +19,6 @@ impl Operator for Dummy {
     }
 
     fn fmt(&self) -> &str {
-        "dummy"
+        "placeholder"
     }
 }

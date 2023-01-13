@@ -51,7 +51,7 @@ pub struct ParquetOptions {
 }
 
 #[cfg(feature = "parquet")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetWriteOptions {
     /// Data page compression

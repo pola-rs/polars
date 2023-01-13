@@ -11,6 +11,7 @@ pub enum SinkResult {
 pub enum FinalizedSink {
     Finished(DataFrame),
     Operator(Box<dyn Operator>),
+    Source(Box<dyn Source>),
 }
 
 pub trait Sink: Send + Sync {

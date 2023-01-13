@@ -62,6 +62,12 @@ pub enum ParquetCompression {
     Lz4Raw,
 }
 
+impl Default for ParquetCompression {
+    fn default() -> Self {
+        ParquetCompression::Lz4Raw
+    }
+}
+
 impl From<ParquetCompression> for CompressionOptions {
     fn from(value: ParquetCompression) -> Self {
         use ParquetCompression::*;

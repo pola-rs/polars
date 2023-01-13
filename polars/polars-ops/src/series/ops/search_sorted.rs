@@ -104,6 +104,7 @@ fn binary_search_array<G, I>(
     arr: G,
     len: usize,
     search_value: I,
+    reverse: bool,
 ) where
     G: GetArray<I>,
     I: PartialEq + Debug + Copy + PartialOrd + IsFloat,
@@ -120,7 +121,13 @@ fn binary_search_array<G, I>(
         // - `mid < size`: `mid` is limited by `[left; right)` bound.
         let cmp = match unsafe { arr._get_value_unchecked(mid as usize) } {
             None => Ordering::Less,
-            Some(value) => compare_fn_nan_max(&value, &search_value),
+            Some(value) => {
+                if reverse {
+                    compare_fn_nan_max(&search_value, &value)
+                } else {
+                    compare_fn_nan_max(&value, &search_value)
+                }
+            }
         };
 
         // The reason why we use if/else control flow rather than match
@@ -146,6 +153,7 @@ fn search_sorted_ca_array<T>(
     ca: &ChunkedArray<T>,
     search_values: &ChunkedArray<T>,
     side: SearchSortedSide,
+    reverse: bool,
 ) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
@@ -158,7 +166,9 @@ where
     for opt_v in search_values {
         match opt_v {
             None => out.push(0),
-            Some(search_value) => binary_search_array(side, &mut out, arr, ca.len(), search_value),
+            Some(search_value) => {
+                binary_search_array(side, &mut out, arr, ca.len(), search_value, reverse)
+            }
         }
     }
     out
@@ -168,6 +178,7 @@ fn search_sorted_utf8_array(
     ca: &Utf8Chunked,
     search_values: &Utf8Chunked,
     side: SearchSortedSide,
+    reverse: bool,
 ) -> Vec<IdxSize> {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
@@ -178,7 +189,7 @@ fn search_sorted_utf8_array(
         match opt_v {
             None => out.push(0),
             Some(search_value) => {
-                binary_search_array(side, &mut out, arr, ca.len(), search_value);
+                binary_search_array(side, &mut out, arr, ca.len(), search_value, reverse);
             }
         }
     }
@@ -189,6 +200,7 @@ pub fn search_sorted(
     s: &Series,
     search_values: &Series,
     side: SearchSortedSide,
+    reverse: bool,
 ) -> PolarsResult<IdxCa> {
     let original_dtype = s.dtype();
     let s = s.to_physical_repr();
@@ -198,7 +210,7 @@ pub fn search_sorted(
         DataType::Utf8 => {
             let ca = s.utf8().unwrap();
             let search_values = search_values.utf8()?;
-            let idx = search_sorted_utf8_array(ca, search_values, side);
+            let idx = search_sorted_utf8_array(ca, search_values, side, reverse);
 
             Ok(IdxCa::new_vec(s.name(), idx))
         }
@@ -209,7 +221,7 @@ pub fn search_sorted(
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let search_values: &ChunkedArray<$T> = search_values.as_ref().as_ref().as_ref();
 
-                search_sorted_ca_array(ca, search_values, side)
+                search_sorted_ca_array(ca, search_values, side, reverse)
             });
             Ok(IdxCa::new_vec(s.name(), idx))
         }
@@ -217,12 +229,4 @@ pub fn search_sorted(
             format!("'search_sorted' not allowed on dtype: {original_dtype}").into(),
         )),
     }
-}
-
-#[test]
-fn test_search_sorted() {
-    let s = Series::new("", [1, 1, 4, 4]);
-    let b = Series::new("", [0, 1, 2, 4, 5]);
-    let out = search_sorted_array(&s, &b, SearchSortedSide::Right).unwrap();
-    dbg!(out);
 }

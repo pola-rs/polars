@@ -1780,8 +1780,6 @@ impl DataFrame {
         by_column: impl IntoVec<String>,
         reverse: impl IntoVec<bool>,
     ) -> PolarsResult<&mut Self> {
-        // a lot of indirection in both sorting and take
-        self.as_single_chunk_par();
         let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
         self.columns = self
@@ -1803,6 +1801,9 @@ impl DataFrame {
         if self.height() == 0 {
             return Ok(self.clone());
         }
+        // a lot of indirection in both sorting and take
+        let mut df = self.clone();
+        let df = df.as_single_chunk_par();
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
 
@@ -1821,7 +1822,7 @@ impl DataFrame {
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
                 // simply sort and return as frame
-                if self.width() == 1 && self.check_name_to_idx(s.name()).is_ok() {
+                if df.width() == 1 && df.check_name_to_idx(s.name()).is_ok() {
                     let mut out = s.sort_with(options);
                     if let Some((offset, len)) = slice {
                         out = out.slice(offset, len);
@@ -1850,7 +1851,7 @@ impl DataFrame {
 
         // Safety:
         // the created indices are in bounds
-        let mut df = unsafe { self.take_unchecked_impl(&take, parallel) };
+        let mut df = unsafe { df.take_unchecked_impl(&take, parallel) };
         // Mark the first sort column as sorted
         // if the column did not exists it is ok, because we sorted by an expression
         // not present in the dataframe
@@ -1893,8 +1894,6 @@ impl DataFrame {
     /// Sort the `DataFrame` by a single column with extra options.
     pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> PolarsResult<Self> {
         let mut df = self.clone();
-        // a lot of indirection in both sorting and take
-        df.as_single_chunk_par();
         let by_column = vec![df.column(by_column)?.clone()];
         let reverse = vec![options.descending];
         df.columns = df

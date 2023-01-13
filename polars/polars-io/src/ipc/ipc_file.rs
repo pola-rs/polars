@@ -277,11 +277,25 @@ pub use write::Compression as IpcCompression;
 use crate::mmap::MmapBytesReader;
 use crate::RowCount;
 
-impl<W> IpcWriter<W> {
+impl<W: Write> IpcWriter<W> {
     /// Set the compression used. Defaults to None.
     pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
         self.compression = compression;
         self
+    }
+
+    pub fn batched(&mut self, schema: &Schema) -> PolarsResult<BatchedWriter<&mut W>> {
+        let mut writer = write::FileWriter::new(
+            &mut self.writer,
+            schema.to_arrow(),
+            None,
+            WriteOptions {
+                compression: self.compression,
+            },
+        );
+        writer.start()?;
+
+        Ok(BatchedWriter { writer })
     }
 }
 
@@ -312,6 +326,30 @@ where
             ipc_writer.write(&batch, None)?
         }
         ipc_writer.finish()?;
+        Ok(())
+    }
+}
+
+pub struct BatchedWriter<W: Write> {
+    writer: write::FileWriter<W>,
+}
+
+impl<W: Write> BatchedWriter<W> {
+    /// Write a batch to the parquet writer.
+    ///
+    /// # Panics
+    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
+    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        let iter = df.iter_chunks();
+        for batch in iter {
+            self.writer.write(&batch, None)?
+        }
+        Ok(())
+    }
+
+    /// Writes the footer of the IPC file.
+    pub fn finish(&mut self) -> PolarsResult<()> {
+        self.writer.finish()?;
         Ok(())
     }
 }

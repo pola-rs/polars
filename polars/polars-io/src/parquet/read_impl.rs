@@ -465,4 +465,37 @@ impl BatchedParquetReader {
             Ok(Some(chunks))
         }
     }
+
+    /// Turn the batched reader into an iterator.
+    pub fn iter(self, batch_size: usize) -> BatchedParquetIter {
+        BatchedParquetIter {
+            batch_size,
+            inner: self,
+            current_batch: vec![].into_iter(),
+        }
+    }
+}
+
+pub struct BatchedParquetIter {
+    batch_size: usize,
+    inner: BatchedParquetReader,
+    current_batch: std::vec::IntoIter<DataFrame>,
+}
+
+impl Iterator for BatchedParquetIter {
+    type Item = PolarsResult<DataFrame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current_batch.next() {
+            Some(df) => Some(Ok(df)),
+            None => match self.inner.next_batches(self.batch_size) {
+                Err(e) => Some(Err(e)),
+                Ok(opt_batch) => {
+                    let batch = opt_batch?;
+                    self.current_batch = batch.into_iter();
+                    self.current_batch.next().map(Ok)
+                }
+            },
+        }
+    }
 }
