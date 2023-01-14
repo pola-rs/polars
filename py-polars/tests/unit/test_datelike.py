@@ -321,8 +321,8 @@ def test_datetime_consistency() -> None:
 
     test_data = [
         datetime(2000, 1, 1, 1, 1, 1, 555555),
-        datetime(2514, 5, 30, 1, 53, 4, 986756),
-        datetime(3099, 12, 31, 23, 59, 59, 123460),
+        datetime(2514, 5, 30, 1, 53, 4, 986754),
+        datetime(3099, 12, 31, 23, 59, 59, 123456),
         # datetime(9999, 12, 31, 23, 59, 59, 999999),
     ]
     ddf = pl.DataFrame({"dtm": test_data}).with_column(
@@ -330,8 +330,8 @@ def test_datetime_consistency() -> None:
     )
     assert ddf.rows() == [
         (test_data[0], 555555000),
-        (test_data[1], 986756000),
-        (test_data[2], 123460000),
+        (test_data[1], 986754000),
+        (test_data[2], 123456000),
         # (test_data[3], 999999000),
     ]
 
