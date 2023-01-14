@@ -1,0 +1,112 @@
+use std::path::PathBuf;
+
+use polars_core::prelude::*;
+use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
+use polars_core::POOL;
+use rayon::prelude::*;
+
+use crate::executors::sinks::sort::ooc::read_df;
+use crate::executors::sinks::sort::sink::sort_accumulated;
+use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
+
+pub struct SortSource {
+    files: std::vec::IntoIter<(u32, PathBuf)>,
+    n_threads: usize,
+    sort_idx: usize,
+    reverse: bool,
+    chunk_offset: IdxSize,
+    slice: Option<(i64, usize)>,
+    finished: bool,
+}
+
+impl SortSource {
+    pub(super) fn new(
+        mut files: Vec<(u32, PathBuf)>,
+        sort_idx: usize,
+        reverse: bool,
+        slice: Option<(i64, usize)>,
+    ) -> Self {
+        files.sort_unstable_by_key(|entry| entry.0);
+
+        let n_threads = POOL.current_num_threads();
+        let files = files.into_iter();
+
+        Self {
+            files,
+            n_threads,
+            sort_idx,
+            reverse,
+            chunk_offset: 0,
+            slice,
+            finished: false,
+        }
+    }
+}
+
+impl Source for SortSource {
+    fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+        match self.files.next() {
+            None => Ok(SourceResult::Finished),
+            Some((_, path)) => {
+                let files = std::fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
+
+                // early return
+                if self.finished {
+                    return Ok(SourceResult::Finished);
+                }
+
+                // read the files in a single partition in parallel
+                let dfs = POOL.install(|| {
+                    files
+                        .par_iter()
+                        .map(read_df)
+                        .collect::<PolarsResult<Vec<DataFrame>>>()
+                })?;
+                let df = accumulate_dataframes_vertical_unchecked(dfs);
+                // sort a single partition
+                let current_slice = self.slice;
+                let mut df = match &mut self.slice {
+                    None => sort_accumulated(df, self.sort_idx, self.reverse, None),
+                    Some((offset, len)) => {
+                        let df_len = df.height();
+                        assert!(*offset >= 0);
+                        let out = if *offset as usize > df_len {
+                            *offset -= df_len as i64;
+                            Ok(df.slice(0, 0))
+                        } else {
+                            let out =
+                                sort_accumulated(df, self.sort_idx, self.reverse, current_slice);
+                            *len = len.saturating_sub(df_len);
+                            *offset = 0;
+                            out
+                        };
+                        if *len == 0 {
+                            self.finished = true;
+                        }
+                        out
+                    }
+                }?;
+
+                // convert to chunks
+                // TODO: make utility functions to save these allocations
+                let chunk_offset = self.chunk_offset;
+                let dfs = split_df(&mut df, self.n_threads)?;
+                self.chunk_offset += dfs.len() as IdxSize;
+                let batch = dfs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, df)| DataChunk {
+                        chunk_index: chunk_offset + i as IdxSize,
+                        data: df,
+                    })
+                    .collect();
+
+                Ok(SourceResult::GotMoreData(batch))
+            }
+        }
+    }
+
+    fn fmt(&self) -> &str {
+        "sort_source"
+    }
+}
