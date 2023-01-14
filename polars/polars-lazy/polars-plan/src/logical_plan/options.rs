@@ -15,6 +15,7 @@ use crate::prelude::Expr;
 
 pub type FileCount = u32;
 
+#[cfg(feature = "csv-file")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
