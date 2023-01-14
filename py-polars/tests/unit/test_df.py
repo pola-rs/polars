@@ -2611,6 +2611,15 @@ def test_glimpse() -> None:
     )
     assert result == expected
 
+    reprs = pl.List(pl.Utf8).string_repr()
+    assert reprs == "List[Utf8]"
+
+    reprs = pl.List(pl.Date).string_repr()
+    assert reprs == "List[Date]"
+
+    reprs = pl.List(pl.Int32).string_repr()
+    assert reprs == "List[Int32]"
+
 
 def test_item() -> None:
     df = pl.DataFrame({"a": [1]})
