@@ -564,25 +564,22 @@ impl PyExpr {
         tz_aware: bool,
         tu: Option<Wrap<TimeUnit>>,
     ) -> PyExpr {
-        let result_tu = if let Some(value) = tu {
-            value.0
-        } else {
-            match fmt {
-                Some(ref fmt) => {
-                    if fmt.contains("%.9f")
-                        || fmt.contains("%9f")
-                        || fmt.contains("%f")
-                        || fmt.contains("%.f")
-                    {
-                        TimeUnit::Nanoseconds
-                    } else if fmt.contains("%.3f") || fmt.contains("%3f") {
-                        TimeUnit::Milliseconds
-                    } else {
-                        TimeUnit::Microseconds
-                    }
+        let result_tu = match (&fmt, tu) {
+            (_, Some(tu)) => tu.0,
+            (Some(fmt), None) => {
+                if fmt.contains("%.9f")
+                    || fmt.contains("%9f")
+                    || fmt.contains("%f")
+                    || fmt.contains("%.f")
+                {
+                    TimeUnit::Nanoseconds
+                } else if fmt.contains("%.3f") || fmt.contains("%3f") {
+                    TimeUnit::Milliseconds
+                } else {
+                    TimeUnit::Microseconds
                 }
-                None => TimeUnit::Microseconds,
             }
+            (None, None) => TimeUnit::Microseconds,
         };
         self.inner
             .clone()
