@@ -3579,12 +3579,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def drop_nulls(self: LDF, subset: list[str] | str | None = None) -> LDF:
         """
-        Drop rows with null values from this LazyFrame.
+        Return a new LazyFrame where rows with null values are dropped.
 
         Parameters
         ----------
         subset
-            Subset of column(s) on which ``drop_nulls`` will be applied.
+            Subset of column(s) for which null values are considered.
 
         Examples
         --------
@@ -3606,7 +3606,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        This method only drops nulls row-wise if any single value of the row is null.
+        This method drops a row if any single value of the row is null.
 
         Below are some example snippets that show how you could drop null values based
         on other conditions:
@@ -3633,13 +3633,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Drop a row only if all values are null:
 
-        >>> df.filter(
-        ...     ~pl.fold(
-        ...         acc=True,
-        ...         f=lambda acc, s: acc & s.is_null(),
-        ...         exprs=pl.all(),
-        ...     )
-        ... )
+        >>> df.filter(~pl.all(pl.all().is_null()))
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
