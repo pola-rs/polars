@@ -562,28 +562,13 @@ impl PyExpr {
         exact: bool,
         cache: bool,
         tz_aware: bool,
+        tu: Wrap<TimeUnit>,
     ) -> PyExpr {
-        let tu = match fmt {
-            Some(ref fmt) => {
-                if fmt.contains("%.9f")
-                    || fmt.contains("%9f")
-                    || fmt.contains("%f")
-                    || fmt.contains("%.f")
-                {
-                    TimeUnit::Nanoseconds
-                } else if fmt.contains("%.3f") || fmt.contains("%3f") {
-                    TimeUnit::Milliseconds
-                } else {
-                    TimeUnit::Microseconds
-                }
-            }
-            None => TimeUnit::Microseconds,
-        };
         self.inner
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(tu, None),
+                date_dtype: DataType::Datetime(tu.0, None),
                 fmt,
                 strict,
                 exact,
