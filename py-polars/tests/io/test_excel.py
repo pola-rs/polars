@@ -56,3 +56,17 @@ def test_basic_datatypes_openpyxl_write_excel() -> None:
     df_read = pl.read_excel(filename, use_openpyxl=True)  # type: ignore[call-overload]
     assert_frame_equal(df, df_read)
     os.remove(filename)
+
+
+def test_write_excel_bytes() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+        }
+    )
+    excel_bytes = df.write_excel(None)
+    assert isinstance(excel_bytes, bytes)
+    df_read = pl.read_excel(  # type: ignore[call-overload]
+        excel_bytes, use_openpyxl=True
+    )
+    assert_frame_equal(df, df_read)

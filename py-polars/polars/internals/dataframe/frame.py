@@ -2112,7 +2112,7 @@ class DataFrame:
         has_header: bool = True,
         float_precision: int | None = None,
         null_value: str | None = None,
-    ) -> str:
+    ) -> bytes:
         ...
 
     @overload
@@ -2131,7 +2131,7 @@ class DataFrame:
         has_header: bool = True,
         float_precision: int | None = None,
         null_value: str | None = None,
-    ) -> str | None:
+    ) -> bytes | None:
         """
         Write to an Excel (XLSX, XLS) file.
 
@@ -2168,10 +2168,7 @@ class DataFrame:
             self._write_excel(
                 buffer, has_header, self.columns, float_precision, null_value
             )
-            return str(buffer.getvalue(), encoding="utf-8")
-
-        if isinstance(file, (str, Path)):
-            file = format_path(file)
+            return buffer.getvalue()
 
         self._write_excel(file, has_header, self.columns, float_precision, null_value)
         return None

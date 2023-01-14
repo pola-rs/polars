@@ -1230,6 +1230,8 @@ def read_excel(
     """
     if isinstance(file, (str, Path)):
         file = format_path(file)
+    elif isinstance(file, bytes):
+        file = BytesIO(file)
 
     if not xlsx2csv_options:
         xlsx2csv_options = {}
