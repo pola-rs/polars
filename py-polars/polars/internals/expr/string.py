@@ -106,17 +106,6 @@ class ExprStringNameSpace:
             return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
-            if tu is None:
-                if fmt is None:
-                    tu = "us"
-                elif any(
-                    directive in fmt for directive in ("%.9f", "%9f", "%f", "%.f")
-                ):
-                    tu = "ns"
-                elif any(directive in fmt for directive in ("%.3f", "%3f")):
-                    tu = "ms"
-                else:
-                    tu = "us"
             dtcol = pli.wrap_expr(
                 self._pyexpr.str_parse_datetime(fmt, strict, exact, cache, tz_aware, tu)
             )
