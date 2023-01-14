@@ -2746,3 +2746,14 @@ def test_unique(
     result = df.unique(maintain_order=True, subset=subset, keep=keep)
     expected = df.filter(expected_mask)
     assert_frame_equal(result, expected)
+
+
+def test_string_repr() -> None:
+    reprs = pl.List(pl.Utf8).string_repr()
+    assert reprs == "List[Utf8]"
+
+    reprs = pl.List(pl.Date).string_repr()
+    assert reprs == "List[Date]"
+
+    reprs = pl.List(pl.Int32).string_repr()
+    assert reprs == "List[Int32]"
