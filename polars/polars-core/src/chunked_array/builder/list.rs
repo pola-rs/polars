@@ -541,6 +541,7 @@ impl<'a> AnonymousListBuilder<'a> {
 
     #[inline]
     pub fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null();
     }
 
@@ -570,6 +571,7 @@ impl<'a> AnonymousListBuilder<'a> {
     }
 
     pub fn finish(&mut self) -> ListChunked {
+        // don't use self from here on one
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
             ListChunked::full_null_with_dtype(&slf.name, 0, &slf.dtype.unwrap_or(DataType::Null))
@@ -579,7 +581,7 @@ impl<'a> AnonymousListBuilder<'a> {
             let dtype = DataType::from(arr.data_type());
             let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
-            if self.fast_explode {
+            if slf.fast_explode {
                 ca.set_fast_explode();
             }
 
@@ -631,10 +633,12 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
 
     #[inline]
     fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null()
     }
 
     fn finish(&mut self) -> ListChunked {
+        // don't use self from here on one
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
             // not really empty, there were empty null list added probably e.g. []
@@ -660,7 +664,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             // safety: same type
             let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
-            if self.fast_explode {
+            if slf.fast_explode {
                 ca.set_fast_explode();
             }
 

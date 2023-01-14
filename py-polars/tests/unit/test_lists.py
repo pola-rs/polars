@@ -621,3 +621,38 @@ def test_list_take() -> None:
         [42, 1, 2, None],
         [5, 6, 7, None],
     ]
+
+
+def test_fast_explode_on_list_struct_6208() -> None:
+    data = [
+        {
+            "label": "l",
+            "tag": "t",
+            "ref": 1,
+            "parent": [{"ref": 1, "tag": "t", "ratio": 62.3}],
+        },
+        {"label": "l", "tag": "t", "ref": 1, "parent": None},
+    ]
+
+    df = pl.DataFrame(
+        data,
+        columns={
+            "label": pl.Utf8,
+            "tag": pl.Utf8,
+            "ref": pl.Int64,
+            "parents": pl.List(
+                pl.Struct({"ref": pl.Int64, "tag": pl.Utf8, "ratio": pl.Float64})
+            ),
+        },
+    )
+
+    assert not df["parents"].flags["FAST_EXPLODE"]
+    assert df.explode("parents").to_dict(False) == {
+        "label": ["l", "l"],
+        "tag": ["t", "t"],
+        "ref": [1, 1],
+        "parents": [
+            {"ref": 1, "tag": "t", "ratio": 62.3},
+            {"ref": None, "tag": None, "ratio": None},
+        ],
+    }
