@@ -3,6 +3,7 @@ use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -1685,6 +1686,14 @@ impl PyExpr {
     }
     pub fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
+    }
+    pub fn set_sorted_flag(&self, reverse: bool) -> Self {
+        let is_sorted = if reverse {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 }
 
