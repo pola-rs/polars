@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
+#[cfg(feature = "csv-file")]
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
