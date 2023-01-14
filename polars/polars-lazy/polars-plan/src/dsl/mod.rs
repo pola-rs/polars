@@ -637,6 +637,7 @@ impl Expr {
                 fmt_str: "map",
                 cast_to_supertypes: false,
                 allow_rename: false,
+                pass_name_to_apply: false,
             },
         }
     }
@@ -2129,6 +2130,10 @@ impl Expr {
                 )
             }),
         )
+        .with_function_options(|mut opts| {
+            opts.pass_name_to_apply = true;
+            opts
+        })
         .with_fmt("value_counts")
     }
 

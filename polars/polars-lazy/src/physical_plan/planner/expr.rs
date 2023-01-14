@@ -552,6 +552,7 @@ pub(crate) fn create_physical_expr(
                 collect_groups: options.collect_groups,
                 auto_explode: options.auto_explode,
                 allow_rename: options.allow_rename,
+                pass_name_to_apply: options.pass_name_to_apply,
             }))
         }
         Function {
@@ -569,6 +570,7 @@ pub(crate) fn create_physical_expr(
                 collect_groups: options.collect_groups,
                 auto_explode: options.auto_explode,
                 allow_rename: options.allow_rename,
+                pass_name_to_apply: options.pass_name_to_apply,
             }))
         }
         Slice {

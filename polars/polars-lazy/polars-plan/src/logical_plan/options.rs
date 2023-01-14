@@ -197,6 +197,9 @@ pub struct FunctionOptions {
     pub cast_to_supertypes: bool,
     // apply physical expression may rename the output of this function
     pub allow_rename: bool,
+    // if set, then the `Series` passed to the function in the groupby operation
+    // will ensure the name is set. This is an extra heap allocation per group.
+    pub pass_name_to_apply: bool,
 }
 
 impl Default for FunctionOptions {
@@ -208,6 +211,7 @@ impl Default for FunctionOptions {
             fmt_str: "",
             cast_to_supertypes: false,
             allow_rename: false,
+            pass_name_to_apply: false,
         }
     }
 }

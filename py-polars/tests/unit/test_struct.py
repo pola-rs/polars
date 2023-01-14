@@ -138,6 +138,15 @@ def test_value_counts_expr() -> None:
         {"id": "a", "counts": 1},
     ]
 
+    # nested value counts. Then the series needs the name
+    # 6200
+
+    df = pl.DataFrame({"session": [1, 1, 1], "id": [2, 2, 3]})
+
+    assert df.groupby("session").agg(
+        [pl.col("id").value_counts(sort=True).first()]
+    ).to_dict(False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
+
 
 def test_value_counts_logical_type() -> None:
     # test logical type
