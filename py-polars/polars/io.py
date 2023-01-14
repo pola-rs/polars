@@ -31,7 +31,7 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltal
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
-from polars.utils import deprecated_alias, format_path, handle_projection_columns
+from polars.utils import deprecated_alias, handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
@@ -556,7 +556,7 @@ def scan_csv(
     _check_arg_is_1byte("quote_char", quote_char, True)
 
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return LazyFrame._scan_csv(
         file=file,
@@ -683,7 +683,7 @@ def scan_parquet(
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return LazyFrame._scan_parquet(
         file=file,
@@ -736,7 +736,7 @@ def scan_ndjson(
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return LazyFrame._scan_ndjson(
         file=file,
@@ -775,7 +775,7 @@ def read_avro(
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
@@ -1229,7 +1229,7 @@ def read_excel(
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
     elif isinstance(file, bytes):
         file = BytesIO(file)
 

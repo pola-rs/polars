@@ -3,7 +3,7 @@ use arrow::io::parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
 };
-#[cfg(feature = "parquet-async")]
+#[cfg(feature = "async")]
 use polars_core::datatypes::PlHashMap;
 
 use super::*;
@@ -21,7 +21,7 @@ use super::*;
 ///    d. when all the data is available deserialize on multiple threads, for example using rayon
 pub enum ColumnStore<'a> {
     Local(&'a [u8]),
-    #[cfg(feature = "parquet-async")]
+    #[cfg(feature = "async")]
     Fetched(PlHashMap<u64, Vec<u8>>),
 }
 
@@ -45,7 +45,7 @@ fn _mmap_single_column<'a>(
     let (start, len) = meta.byte_range();
     let chunk = match store {
         ColumnStore::Local(file) => &file[start as usize..(start + len) as usize],
-        #[cfg(feature = "parquet-async")]
+        #[cfg(all(feature = "async", feature = "parquet"))]
         ColumnStore::Fetched(fetched) => {
             let entry = fetched.get(&start).unwrap_or_else(|| {
                 panic!(

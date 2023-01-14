@@ -4,6 +4,8 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "parquet")]
+use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
@@ -96,14 +98,17 @@ pub enum LogicalPlan {
         predicate: Option<Expr>,
     },
     #[cfg(feature = "parquet")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     /// Scan a Parquet file
     ParquetScan {
         path: PathBuf,
         file_info: FileInfo,
         predicate: Option<Expr>,
         options: ParquetOptions,
+        cloud_options: Option<CloudOptions>,
     },
     #[cfg(feature = "ipc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     IpcScan {
         path: PathBuf,
         file_info: FileInfo,

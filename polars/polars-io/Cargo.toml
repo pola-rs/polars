@@ -31,7 +31,10 @@ dtype-binary = ["polars-core/dtype-binary"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
-parquet-async = ["parquet", "async-trait", "futures", "object_store", "tokio", "url"]
+async = ["async-trait", "futures", "object_store", "tokio", "url"]
+aws = ["object_store/aws", "async", "polars-core/aws"]
+azure = ["object_store/azure", "async", "polars-core/azure"]
+gcp = ["object_store/gcp", "async", "polars-core/gcp"]
 partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 # don't use this
@@ -51,7 +54,7 @@ lexical-core = { version = "0.8", optional = true }
 memchr = "2.5"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num.workspace = true
-object_store = { version = "0.5.2", features = ["aws"], optional = true }
+object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell = "1"
 polars-arrow = { version = "0.26.1", path = "../polars-arrow" }
 polars-core = { version = "0.26.1", path = "../polars-core", features = ["private"], default-features = false }

@@ -54,6 +54,7 @@ pub enum NullStrategy {
 pub enum UniqueKeepStrategy {
     First,
     Last,
+    None,
 }
 
 /// A contiguous growable collection of `Series` that have the same length.
@@ -2778,6 +2779,7 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmin(&self) -> PolarsResult<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| {
             let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
@@ -2807,6 +2809,7 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmax(&self) -> PolarsResult<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| {
             let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
@@ -3045,19 +3048,18 @@ impl DataFrame {
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
     ) -> PolarsResult<Self> {
-        use UniqueKeepStrategy::*;
         let names = match &subset {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
         };
 
         let columns = match (keep, maintain_order) {
-            (First, true) => {
+            (UniqueKeepStrategy::First, true) => {
                 let gb = self.groupby_stable(names)?;
                 let groups = gb.get_groups();
                 self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
             }
-            (Last, true) => {
+            (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
                 let gb = self.groupby(names)?;
@@ -3073,15 +3075,20 @@ impl DataFrame {
                 let last_idx = last_idx.sort(false);
                 return Ok(unsafe { self.take_unchecked(&last_idx) });
             }
-            (First, false) => {
+            (UniqueKeepStrategy::First, false) => {
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
                 self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
             }
-            (Last, false) => {
+            (UniqueKeepStrategy::Last, false) => {
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
                 self.apply_columns_par(&|s| unsafe { s.agg_last(groups) })
+            }
+            (UniqueKeepStrategy::None, _) => {
+                let df_part = self.select(names)?;
+                let mask = df_part.is_unique()?;
+                return self.filter(&mask);
             }
         };
         Ok(DataFrame::new_no_checks(columns))
@@ -3303,6 +3310,7 @@ impl DataFrame {
 
     /// Split into multiple DataFrames partitioned by groups
     #[cfg(feature = "partition_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, false)
@@ -3311,6 +3319,7 @@ impl DataFrame {
     /// Split into multiple DataFrames partitioned by groups
     /// Order of the groups are maintained.
     #[cfg(feature = "partition_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, true)
@@ -3319,6 +3328,7 @@ impl DataFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     pub fn unnest<I: IntoVec<String>>(&self, cols: I) -> PolarsResult<DataFrame> {
         let cols = cols.into_vec();
         self.unnest_impl(cols.into_iter().collect())

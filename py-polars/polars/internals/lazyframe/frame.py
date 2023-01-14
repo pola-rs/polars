@@ -53,7 +53,7 @@ from polars.utils import (
     _process_null_values,
     _timedelta_to_pl_duration,
     deprecated_alias,
-    format_path,
+    normalise_filepath,
 )
 
 try:
@@ -246,7 +246,7 @@ class LazyFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         # try fsspec scanner
         if not pli._is_local_file(file):
@@ -342,7 +342,7 @@ class LazyFrame:
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         return wrap_ldf(PyLazyFrame.read_json(file))
 
@@ -562,7 +562,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             to_string = False
 
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
@@ -2395,10 +2395,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def with_columns(
         self: LDF,
         exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: pli.Expr | pli.Series | str,
+        **named_exprs: Any,
     ) -> LDF:
         """
-        Add or overwrite multiple columns in a DataFrame.
+        Return a new LazyFrame with the columns added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new LazyFrame using this method does not create a new copy of
+        existing data.
 
         Parameters
         ----------
@@ -2435,9 +2440,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        >>> # Support for kwarg expressions is considered EXPERIMENTAL.
-        >>> # Currently requires opt-in via `pl.Config` boolean flag:
-        >>>
+        Support for kwarg expressions is considered EXPERIMENTAL. Currently
+        requires opt-in via `pl.Config` boolean flag:
+
         >>> pl.Config.with_columns_kwargs = True
         >>> ldf.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
@@ -2471,7 +2476,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             else ([exprs] if isinstance(exprs, pli.Expr) else list(exprs))
         )
         exprs.extend(
-            (pli.lit(expr).alias(name) if isinstance(expr, str) else expr.alias(name))
+            pli.expr_to_lit_or_expr(expr).alias(name)
             for name, expr in named_exprs.items()
         )
         pyexprs = []
@@ -2550,7 +2555,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def with_column(self: LDF, column: pli.Series | pli.Expr) -> LDF:
         """
-        Add or overwrite column in a DataFrame.
+        Return a new LazyFrame with the column added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new LazyFrame using this method does not create a new copy of
+        existing data.
 
         Parameters
         ----------
@@ -3488,28 +3498,31 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def unique(
         self: LDF,
         maintain_order: bool = True,
-        subset: str | list[str] | None = None,
+        subset: str | Sequence[str] | None = None,
         keep: UniqueKeepStrategy = "first",
     ) -> LDF:
         """
         Drop duplicate rows from this DataFrame.
 
-        Note that this fails if there is a column of type `List` in the DataFrame or
-        subset.
-
         Parameters
         ----------
         maintain_order
-            Keep the same order as the original DataFrame. This requires more work to
+            Keep the same order as the original DataFrame. This is more expensive to
             compute.
         subset
-            Subset to use to compare rows.
-        keep : {'first', 'last'}
+            Columns to consider for identifying duplicates. Defaults to using all
+            columns.
+        keep : {'first', 'last', 'none'}
             Which of the duplicate rows to keep.
 
         Returns
         -------
-        DataFrame with unique rows
+        DataFrame with unique rows.
+
+        Warnings
+        --------
+        This method will fail if there is a column of type `List` in the DataFrame or
+        subset.
 
         Examples
         --------
@@ -3553,8 +3566,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        if subset is not None and not isinstance(subset, list):
-            subset = [subset]
+        if subset is not None:
+            if isinstance(subset, str):
+                subset = [subset]
+            elif not isinstance(subset, list):
+                subset = list(subset)
+
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
     def drop_nulls(self: LDF, subset: list[str] | str | None = None) -> LDF:

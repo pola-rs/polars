@@ -2,6 +2,7 @@ use crate::prelude::*;
 use crate::series::ops::NullBehavior;
 
 impl Series {
+    #[cfg_attr(docsrs, doc(cfg(feature = "pct_change")))]
     pub fn pct_change(&self, n: usize) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Float64 | DataType::Float32 => {}

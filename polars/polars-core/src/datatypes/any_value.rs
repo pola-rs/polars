@@ -653,7 +653,7 @@ impl PartialOrd for AnyValue<'_> {
             (Float64(l), Float64(r)) => l.partial_cmp(r),
             (Utf8(l), Utf8(r)) => l.partial_cmp(*r),
             #[cfg(feature = "dtype-binary")]
-            (Binary(l), Binary(r)) => l.partial_cmp(r),
+            (Binary(l), Binary(r)) => l.partial_cmp(*r),
             _ => None,
         }
     }

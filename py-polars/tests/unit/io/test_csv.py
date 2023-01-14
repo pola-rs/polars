@@ -18,6 +18,7 @@ from polars.testing import (
     assert_frame_equal_local_categoricals,
     assert_series_equal,
 )
+from polars.utils import normalise_filepath
 
 
 def test_quoted_date() -> None:
@@ -27,9 +28,7 @@ def test_quoted_date() -> None:
     "2022-01-02",2
     """
     )
-
     expected = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2)], "b": [1, 2]})
-
     assert pl.read_csv(csv.encode(), parse_dates=True).frame_equal(expected)
 
 
@@ -40,12 +39,10 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
     buf.seek(0)
 
     read_df = pl.read_csv(buf, parse_dates=True)
-
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
     assert_frame_equal_local_categoricals(df, read_df)
-
     with pytest.raises(AssertionError):
         assert_frame_equal_local_categoricals(df.select(["time", "cat"]), read_df)
 
@@ -58,11 +55,14 @@ def test_to_from_file(io_test_dir: str, df_no_lists: pl.DataFrame) -> None:
     df.write_csv(f)
 
     read_df = pl.read_csv(f, parse_dates=True)
-
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
     assert_frame_equal_local_categoricals(df, read_df)
+    with pytest.raises(IsADirectoryError):
+        normalise_filepath(io_test_dir)
+
+    assert normalise_filepath(io_test_dir, check_not_directory=False) == io_test_dir
 
 
 def test_read_web_file() -> None:

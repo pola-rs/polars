@@ -136,6 +136,7 @@ impl<'a> IterBroadCast<'a> {
 /// The concatenated strings are separated by a `delimiter`.
 /// If no `delimiter` is needed, an empty &str should be passed as argument.
 #[cfg(feature = "concat_str")]
+#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
     if s.is_empty() {
         return Err(PolarsError::NoData(
@@ -211,6 +212,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
 
 /// Concat `[DataFrame]`s horizontally.
 #[cfg(feature = "horizontal_concat")]
+#[cfg_attr(docsrs, doc(cfg(feature = "horizontal_concat")))]
 /// Concat horizontally and extend with null values if lengths don't match
 pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let max_len = dfs
@@ -251,6 +253,7 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
 
 /// Concat `[DataFrame]`s diagonally.
 #[cfg(feature = "diagonal_concat")]
+#[cfg_attr(docsrs, doc(cfg(feature = "diagonal_concat")))]
 /// Concat diagonally thereby combining different schemas.
 pub fn diag_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     // TODO! replace with lazy only?

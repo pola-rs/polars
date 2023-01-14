@@ -196,6 +196,7 @@ impl DataFrame {
 
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
     /// The keys must be sorted to perform an asof join
+    #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
     pub fn join_asof(
         &self,
         other: &DataFrame,

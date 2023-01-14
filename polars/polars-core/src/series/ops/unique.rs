@@ -8,6 +8,7 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 
 #[cfg(feature = "unique_counts")]
+#[cfg_attr(docsrs, doc(cfg(feature = "unique_counts")))]
 fn unique_counts<I, J>(items: I) -> IdxCa
 where
     I: Iterator<Item = J>,
@@ -28,6 +29,7 @@ where
 impl Series {
     /// Returns a count of the unique values in the order of appearance.
     #[cfg(feature = "unique_counts")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unique_counts")))]
     pub fn unique_counts(&self) -> IdxCa {
         if self.dtype().to_physical().is_numeric() {
             if self.bit_repr_is_large() {

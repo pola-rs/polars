@@ -66,11 +66,11 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
-    format_path,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
+    normalise_filepath,
     range_to_slice,
     scale_bytes,
 )
@@ -527,7 +527,7 @@ class DataFrame:
 
         path: str | None
         if isinstance(file, (str, Path)):
-            path = format_path(file)
+            path = normalise_filepath(file)
         else:
             path = None
             if isinstance(file, BytesIO):
@@ -644,7 +644,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -709,7 +709,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_avro(file, columns, projection, n_rows)
@@ -755,7 +755,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -807,7 +807,7 @@ class DataFrame:
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(file, False)
@@ -828,7 +828,7 @@ class DataFrame:
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_ndjson(file)
@@ -1868,7 +1868,7 @@ class DataFrame:
             to_string = False
 
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
@@ -1915,7 +1915,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -2051,7 +2051,7 @@ class DataFrame:
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self._df.write_csv(
             file,
@@ -2206,7 +2206,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self._df.write_avro(file, compression)
 
@@ -2243,7 +2243,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         self._df.write_ipc(file, compression)
 
@@ -2310,7 +2310,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = format_path(file)
+            file = normalise_filepath(file)
 
         if use_pyarrow:
             tbl = self.to_arrow()
@@ -3075,9 +3075,9 @@ class DataFrame:
         """
         return self.head(n)
 
-    def head(self: DF, n: int = 5) -> DF:
+    def head(self: DF, n: int | None = 5) -> DF:
         """
-        Get the first `n` rows.
+        Get the first `n` rows (if negative, returns all rows except the last `n`).
 
         Parameters
         ----------
@@ -3086,7 +3086,7 @@ class DataFrame:
 
         See Also
         --------
-        tail, glimpse
+        tail, glimpse, slice
 
         Examples
         --------
@@ -3109,12 +3109,26 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
+        Negative values of ``head`` return all rows _except_ the last abs(n).
+
+        >>> df.head(-3)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        └─────┴─────┴─────┘
         """
+        if n and n < 0:
+            n = len(self) + n
         return self._from_pydf(self._df.head(n))
 
-    def tail(self: DF, n: int = 5) -> DF:
+    def tail(self: DF, n: int | None = 5) -> DF:
         """
-        Get the last `n` rows.
+        Get the last `n` rows (if negative, returns all rows except the first `n`).
 
         Parameters
         ----------
@@ -3123,7 +3137,7 @@ class DataFrame:
 
         See Also
         --------
-        head
+        head, slice
 
         Examples
         --------
@@ -3146,7 +3160,21 @@ class DataFrame:
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
 
+        Negative values of ``tail`` return all rows _except_ the first abs(n).
+
+        >>> df.tail(-3)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 4   ┆ 9   ┆ d   │
+        │ 5   ┆ 10  ┆ e   │
+        └─────┴─────┴─────┘
         """
+        if n and n < 0:
+            n = len(self) + n
         return self._from_pydf(self._df.tail(n))
 
     def drop_nulls(self: DF, subset: str | Sequence[str] | None = None) -> DF:
@@ -4270,7 +4298,12 @@ class DataFrame:
 
     def with_column(self, column: pli.Series | pli.Expr) -> DataFrame:
         """
-        Return a new DataFrame with the column added or replaced.
+        Return a new DataFrame with the column added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new DataFrame using this method does not create a new copy of
+        existing data.
 
         Parameters
         ----------
@@ -5559,10 +5592,15 @@ class DataFrame:
     def with_columns(
         self,
         exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: pli.Expr | pli.Series,
+        **named_exprs: Any,
     ) -> DataFrame:
         """
-        Add or overwrite multiple columns in a DataFrame.
+        Return a new DataFrame with the columns added, if new, or replaced.
+
+        Notes
+        -----
+        Creating a new DataFrame using this method does not create a new copy of
+        existing data.
 
         Parameters
         ----------
@@ -5599,9 +5637,9 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        >>> # Support for kwarg expressions is considered EXPERIMENTAL.
-        >>> # Currently requires opt-in via `pl.Config` boolean flag:
-        >>>
+        Support for kwarg expressions is considered EXPERIMENTAL. Currently
+        requires opt-in via `pl.Config` boolean flag:
+
         >>> pl.Config.with_columns_kwargs = True
         >>> df.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
@@ -6120,47 +6158,66 @@ class DataFrame:
         """
         Drop duplicate rows from this DataFrame.
 
-        Warnings
-        --------
-        Note that this fails if there is a column of type `List` in the DataFrame or
-        subset.
-
         Parameters
         ----------
         maintain_order
-            Keep the same order as the original DataFrame. This requires more work to
+            Keep the same order as the original DataFrame. This is more expensive to
             compute.
         subset
-            Subset to use to compare rows.
-        keep : {'first', 'last'}
-            Which of the duplicate rows to keep (in conjunction with ``subset``).
+            Columns to consider for identifying duplicates. Defaults to using all
+            columns.
+        keep : {'first', 'last', 'none'}
+            Which of the duplicate rows to keep.
 
         Returns
         -------
-        DataFrame with unique rows
+        DataFrame with unique rows.
+
+        Warnings
+        --------
+        This method will fail if there is a column of type `List` in the DataFrame or
+        subset.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 1, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 1.0, 2.0, 3.0, 3.0],
-        ...         "c": [True, True, True, False, True, True],
+        ...         "foo": [1, 2, 3, 1],
+        ...         "bar": ["a", "a", "a", "a"],
+        ...         "ham": ["b", "b", "b", "b"],
         ...     }
         ... )
         >>> df.unique()
-        shape: (5, 3)
-        ┌─────┬─────┬───────┐
-        │ a   ┆ b   ┆ c     │
-        │ --- ┆ --- ┆ ---   │
-        │ i64 ┆ f64 ┆ bool  │
-        ╞═════╪═════╪═══════╡
-        │ 1   ┆ 0.5 ┆ true  │
-        │ 2   ┆ 1.0 ┆ true  │
-        │ 3   ┆ 2.0 ┆ false │
-        │ 4   ┆ 3.0 ┆ true  │
-        │ 5   ┆ 3.0 ┆ true  │
-        └─────┴─────┴───────┘
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
+        >>> df.unique(subset=["bar", "ham"])
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
+        >>> df.unique(keep="last")
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ a   ┆ b   │
+        │ 3   ┆ a   ┆ b   │
+        │ 1   ┆ a   ┆ b   │
+        └─────┴─────┴─────┘
 
         """
         if subset is not None:

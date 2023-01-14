@@ -1076,6 +1076,7 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
         let parsed = match ob.extract::<&str>()? {
             "first" => UniqueKeepStrategy::First,
             "last" => UniqueKeepStrategy::Last,
+            "none" => UniqueKeepStrategy::None,
             v => {
                 return Err(PyValueError::new_err(format!(
                     "keep must be one of {{'first', 'last'}}, got {v}",

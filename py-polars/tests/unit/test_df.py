@@ -6,7 +6,7 @@ import typing
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Iterator, cast
+from typing import TYPE_CHECKING, Any, Iterator, Sequence, cast
 
 import numpy as np
 import pyarrow as pa
@@ -20,7 +20,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import columns
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import JoinStrategy
+    from polars.internals.type_aliases import JoinStrategy, UniqueKeepStrategy
 
 
 def test_version() -> None:
@@ -467,11 +467,12 @@ def test_slice() -> None:
 
 def test_head_tail_limit() -> None:
     df = pl.DataFrame({"a": range(10), "b": range(10)})
-    assert df.head(5).height == 5
-    assert df.limit(5).height == 5
-    assert df.tail(5).height == 5
 
+    assert df.head(5).rows() == [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)]
+    assert df.limit(5).frame_equal(df.head(5))
+    assert df.tail(5).rows() == [(5, 5), (6, 6), (7, 7), (8, 8), (9, 9)]
     assert not df.head(5).frame_equal(df.tail(5))
+
     # check if it doesn't fail when out of bounds
     assert df.head(100).height == 10
     assert df.limit(100).height == 10
@@ -479,6 +480,12 @@ def test_head_tail_limit() -> None:
 
     # limit is an alias of head
     assert df.head(5).frame_equal(df.limit(5))
+
+    # negative values
+    assert df.head(-7).rows() == [(0, 0), (1, 1), (2, 2)]
+    assert len(df.head(-2)) == 8
+    assert df.tail(-8).rows() == [(8, 8), (9, 9)]
+    assert len(df.tail(-6)) == 4
 
 
 def test_drop_nulls() -> None:
@@ -489,7 +496,6 @@ def test_drop_nulls() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-
     result = df.drop_nulls()
     expected = pl.DataFrame(
         {
@@ -1062,6 +1068,18 @@ def test_lazy_functions() -> None:
     expected = 3
     assert np.isclose(out.to_series(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
+
+    # regex selection
+    out = df.select(
+        [
+            pl.struct(pl.max("^a|b$")).alias("x"),
+            pl.struct(pl.min("^.*[bc]$")).alias("y"),
+            pl.struct(pl.sum("^[^b]$")).alias("z"),
+        ]
+    )
+    assert out.rows() == [
+        ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
+    ]
 
 
 def test_multiple_column_sort() -> None:
@@ -2401,6 +2419,8 @@ def test_selection_regex_and_multicol() -> None:
 
 
 def test_with_columns() -> None:
+    import datetime
+
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4],
@@ -2419,12 +2439,28 @@ def test_with_columns() -> None:
             "d": [0.5, 8.0, 30.0, 52.0],
             "e": [False, False, True, False],
             "f": [3, 2, 1, 0],
+            "g": True,
+            "h": pl.Series(values=[1, 1, 1, 1], dtype=pl.Int32),
+            "i": 3.2,
+            "j": "d",
+            "k": pl.Series(values=[None, None, None, None], dtype=pl.Boolean),
+            "l": datetime.datetime(2001, 1, 1, 0, 0),
         }
     )
 
     # as exprs list
     dx = df.with_columns(
-        [(pl.col("a") * pl.col("b")).alias("d"), ~pl.col("c").alias("e"), srs_named]
+        [
+            (pl.col("a") * pl.col("b")).alias("d"),
+            ~pl.col("c").alias("e"),
+            srs_named,
+            pl.lit(True).alias("g"),
+            pl.lit(1).alias("h"),
+            pl.lit(3.2).alias("i"),
+            pl.lit("d").alias("j"),
+            pl.lit(None).alias("k"),
+            pl.lit(datetime.datetime(2001, 1, 1, 0, 0)).alias("l"),
+        ]
     )
     assert_frame_equal(dx, expected)
 
@@ -2435,6 +2471,12 @@ def test_with_columns() -> None:
         d=pl.col("a") * pl.col("b"),
         e=~pl.col("c"),
         f=srs_unnamed,
+        g=True,
+        h=1,
+        i=3.2,
+        j="d",
+        k=None,
+        l=datetime.datetime(2001, 1, 1, 0, 0),
     )
     assert_frame_equal(dx, expected)
 
@@ -2443,6 +2485,12 @@ def test_with_columns() -> None:
         [(pl.col("a") * pl.col("b")).alias("d")],
         e=~pl.col("c"),
         f=srs_unnamed,
+        g=True,
+        h=1,
+        i=3.2,
+        j="d",
+        k=None,
+        l=datetime.datetime(2001, 1, 1, 0, 0),
     )
     assert_frame_equal(dx, expected)
 
@@ -2652,3 +2700,23 @@ def test_item() -> None:
     df = pl.DataFrame({})
     with pytest.raises(ValueError):
         df.item()
+
+
+@pytest.mark.parametrize(
+    ("subset", "keep", "expected_mask"),
+    [
+        (None, "first", [True, True, True, False]),
+        ("a", "first", [True, True, False, False]),
+        (["a", "b"], "first", [True, True, False, False]),
+        (("a", "b"), "last", [True, False, False, True]),
+        (("a", "b"), "none", [True, False, False, False]),
+    ],
+)
+def test_unique(
+    subset: str | Sequence[str], keep: UniqueKeepStrategy, expected_mask: list[bool]
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
+
+    result = df.unique(maintain_order=True, subset=subset, keep=keep)
+    expected = df.filter(expected_mask)
+    assert_frame_equal(result, expected)

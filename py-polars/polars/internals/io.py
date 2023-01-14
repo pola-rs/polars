@@ -9,7 +9,7 @@ from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 import polars.internals as pli
 from polars.datatypes import DataType
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
-from polars.utils import format_path
+from polars.utils import normalise_filepath
 
 with suppress(ImportError):
     from polars.polars import ipc_schema as _ipc_schema
@@ -93,16 +93,20 @@ def _prepare_file_arg(
             return BytesIO(file.decode(encoding_str).encode("utf8"))
         if use_pyarrow:
             return BytesIO(file)
+
     if isinstance(file, StringIO):
         return BytesIO(file.getvalue().encode("utf8"))
+
     if isinstance(file, BytesIO):
         if has_non_utf8_non_utf8_lossy_encoding:
             return BytesIO(file.getvalue().decode(encoding_str).encode("utf8"))
         return managed_file(file)
+
     if isinstance(file, Path):
         if has_non_utf8_non_utf8_lossy_encoding:
             return BytesIO(file.read_bytes().decode(encoding_str).encode("utf8"))
-        return managed_file(format_path(file))
+        return managed_file(normalise_filepath(file))
+
     if isinstance(file, str):
         # make sure that this is before fsspec
         # as fsspec needs requests to be installed
@@ -114,23 +118,26 @@ def _prepare_file_arg(
 
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if infer_storage_options(file)["protocol"] == "file":
-                    return managed_file(format_path(file))
+                    return managed_file(normalise_filepath(file))
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
+
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:
             from fsspec.utils import infer_storage_options
 
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                    return managed_file([format_path(f) for f in file])
+                    return managed_file([normalise_filepath(f) for f in file])
             kwargs["encoding"] = encoding
             return fsspec.open_files(file, **kwargs)
+
     if isinstance(file, str):
-        file = format_path(file)
+        file = normalise_filepath(file)
         if has_non_utf8_non_utf8_lossy_encoding:
             with open(file, encoding=encoding_str) as f:
                 return BytesIO(f.read().encode("utf8"))
+
     return managed_file(file)
 
 
@@ -149,7 +156,7 @@ def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, type[DataT
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return _ipc_schema(file)
 
@@ -171,7 +178,7 @@ def read_parquet_schema(
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return _parquet_schema(file)
 

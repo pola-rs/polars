@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 aws-creds = "0.34.0"
-polars = { path = "../../polars", features = ["lazy", "parquet-async"] }
+polars = { path = "../../polars", features = ["lazy", "aws"] }

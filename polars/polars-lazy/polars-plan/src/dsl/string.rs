@@ -51,6 +51,7 @@ impl StringNameSpace {
     /// rather than before.
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn zfill(self, alignment: usize) -> Expr {
         self.0.map_private(StringFunction::Zfill(alignment).into())
     }
@@ -59,6 +60,7 @@ impl StringNameSpace {
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn ljust(self, width: usize, fillchar: char) -> Expr {
         self.0
             .map_private(StringFunction::LJust { width, fillchar }.into())
@@ -68,6 +70,7 @@ impl StringNameSpace {
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn rjust(self, width: usize, fillchar: char) -> Expr {
         self.0
             .map_private(StringFunction::RJust { width, fillchar }.into())

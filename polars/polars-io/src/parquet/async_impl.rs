@@ -11,15 +11,16 @@ use futures::lock::Mutex;
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
+use polars_core::cloud::CloudOptions;
 use polars_core::datatypes::PlHashMap;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 
+use super::cloud::{build, CloudLocation, CloudReader};
 use super::mmap;
 use super::mmap::ColumnStore;
 use super::read_impl::FetchRowGroups;
-use crate::object_store::{build, CloudLocation, CloudReader};
 
 pub struct ParquetObjectStore {
     store: Arc<Mutex<Box<dyn ObjectStore>>>,
@@ -29,8 +30,8 @@ pub struct ParquetObjectStore {
 }
 
 impl ParquetObjectStore {
-    pub fn from_uri(uri: &str) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build(uri)?;
+    pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
+        let (CloudLocation { prefix, .. }, store) = build(uri, options)?;
         let store = Arc::new(Mutex::from(store));
 
         Ok(ParquetObjectStore {

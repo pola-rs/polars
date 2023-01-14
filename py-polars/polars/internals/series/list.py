@@ -85,7 +85,7 @@ class ListNameSpace:
         """
 
     def take(
-        self, index: pli.Series | list[int], null_on_oob: bool = False
+        self, index: pli.Series | list[int] | list[list[int]], null_on_oob: bool = False
     ) -> pli.Series:
         """
         Take sublists by multiple indices.

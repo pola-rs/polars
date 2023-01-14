@@ -131,6 +131,7 @@ impl SlicePushDown {
                 output_schema,
                 predicate,
                 options,
+                cloud_options,
 
             },
                 // TODO! we currently skip slice pushdown if there is a predicate.
@@ -143,7 +144,8 @@ impl SlicePushDown {
                     file_info,
                     output_schema,
                     predicate,
-                    options
+                    options,
+                    cloud_options,
                 };
 
                 Ok(lp)

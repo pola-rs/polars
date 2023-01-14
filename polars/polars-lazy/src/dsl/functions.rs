@@ -51,6 +51,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
 }
 
 #[cfg(feature = "diagonal_concat")]
+#[cfg_attr(docsrs, doc(cfg(feature = "diagonal_concat")))]
 /// Concat [LazyFrame]s diagonally.
 /// Calls [concat] internally.
 pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(

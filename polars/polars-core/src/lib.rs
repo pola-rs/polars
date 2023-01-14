@@ -1,9 +1,10 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate core;
 
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;
+pub mod cloud;
 pub(crate) mod config;
 pub mod datatypes;
 #[cfg(feature = "docs")]
@@ -17,6 +18,7 @@ mod named_from;
 pub mod prelude;
 pub mod schema;
 #[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;
 pub mod series;
 pub mod testing;
