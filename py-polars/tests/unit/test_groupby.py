@@ -264,3 +264,17 @@ def test_groupby_null_propagation_6185() -> None:
         df_1.groupby("B").agg((expr - expr.mean()).mean()).sort("B").to_dict(False)
         == expected
     )
+
+
+def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
+    df = pl.DataFrame(
+        {"code": ["a", "b", "b", "b", "a"], "xx": [1.0, -1.5, -0.2, -3.9, 3.0]}
+    )
+    assert (
+        df.groupby("code", maintain_order=True).agg(
+            [pl.when(pl.col("xx") > pl.min("xx")).then(True).otherwise(False)]
+        )
+    ).to_dict(False) == {
+        "code": ["a", "b"],
+        "literal": [[False, True], [True, True, False]],
+    }
