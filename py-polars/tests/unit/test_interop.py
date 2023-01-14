@@ -119,6 +119,12 @@ def test_from_pandas() -> None:
         (False, False, 3, 3.0, 3.0, 3.0, "ham", "ham", "ham"),
     ]
 
+    # partial dtype overrides from pandas
+    overrides = {"int": pl.Int8, "int_nulls": pl.Int32, "floats": pl.Float32}
+    out = pl.from_pandas(df, schema_overrides=overrides)
+    for col, dtype in overrides.items():
+        assert out.schema[col] == dtype
+
 
 def test_from_pandas_nan_to_none() -> None:
     df = pd.DataFrame(
@@ -264,7 +270,7 @@ def test_from_dicts() -> None:
 def test_from_dict_no_inference() -> None:
     schema = {"a": pl.Utf8}
     data = [{"a": "aa"}]
-    pl.from_dicts(data, schema=schema, infer_schema_length=0)
+    pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
 
 
 def test_from_dicts_schema_override() -> None:
@@ -333,9 +339,15 @@ def test_from_records() -> None:
 
 def test_from_numpy() -> None:
     data = np.array([[1, 2, 3], [4, 5, 6]])
-    df = pl.from_numpy(data, columns=["a", "b"], orient="col")
+    df = pl.from_numpy(
+        data,
+        columns=["a", "b"],
+        orient="col",
+        schema_overrides={"a": pl.UInt32, "b": pl.UInt32},
+    )
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
+    assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
 
 
 def test_from_arrow() -> None:
@@ -347,6 +359,12 @@ def test_from_arrow() -> None:
     # if not a PyArrow type, raise a ValueError
     with pytest.raises(ValueError):
         _ = pl.from_arrow([1, 2])
+
+    df = pl.from_arrow(
+        data, schema=["a", "b"], schema_overrides={"a": pl.UInt32, "b": pl.UInt64}
+    )
+    assert df.rows() == [(1, 4), (2, 5), (3, 6)]  # type: ignore[union-attr]
+    assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
 
 
 def test_from_pandas_dataframe() -> None:

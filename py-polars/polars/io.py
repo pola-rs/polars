@@ -25,7 +25,7 @@ else:
 
 import polars.internals as pli
 from polars.convert import from_arrow
-from polars.datatypes import N_INFER_DEFAULT, DataType, PolarsDataType, Utf8
+from polars.datatypes import N_INFER_DEFAULT, DataType, SchemaDict, Utf8
 from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
@@ -282,7 +282,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = cast(DataFrame, from_arrow(tbl, rechunk))
+        df = cast(DataFrame, from_arrow(tbl, rechunk=rechunk))
         if new_columns:
             return pli._update_columns(df, new_columns)
         return df
@@ -421,7 +421,7 @@ def scan_csv(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: dict[str, PolarsDataType] | None = None,
+    dtypes: SchemaDict | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Callable, Generic, Sequence, TypeVar
 
 import polars.internals as pli
-from polars.datatypes import Schema
+from polars.datatypes import SchemaDict
 from polars.internals import selection_to_pyexpr_list
 from polars.utils import is_expr_sequence
 
@@ -154,7 +154,7 @@ class LazyGroupBy(Generic[LDF]):
         return self._lazyframe_class._from_pyldf(self.lgb.tail(n))
 
     def apply(
-        self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: Schema | None
+        self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: SchemaDict | None
     ) -> LDF:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.

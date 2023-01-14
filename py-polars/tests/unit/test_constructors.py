@@ -547,7 +547,9 @@ def test_from_dicts_schema() -> None:
 
     # let polars infer the dtypes
     # but inform about a 3rd column
-    df = pl.from_dicts(data, schema={"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32})
+    df = pl.from_dicts(
+        data, schema_overrides={"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32}
+    )
     assert df.dtypes == [pl.Int64, pl.Int64, pl.Int32]
     assert df.to_dict(False) == {
         "a": [1, 2, 3],
