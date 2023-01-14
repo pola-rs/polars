@@ -202,6 +202,13 @@ pub struct FunctionOptions {
     pub pass_name_to_apply: bool,
 }
 
+impl FunctionOptions {
+    /// Whether this can simply applied elementwise
+    pub fn is_mappable(&self) -> bool {
+        !matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+    }
+}
+
 impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
