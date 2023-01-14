@@ -564,7 +564,9 @@ impl PyExpr {
         tz_aware: bool,
         tu: Option<Wrap<TimeUnit>>,
     ) -> PyExpr {
-        let result_tu = if tu.is_none() {
+        let result_tu = if let Some(value) = tu {
+            value.0
+        } else {
             match fmt {
                 Some(ref fmt) => {
                     if fmt.contains("%.9f")
@@ -581,8 +583,6 @@ impl PyExpr {
                 }
                 None => TimeUnit::Microseconds,
             }
-        } else {
-            tu.unwrap().0
         };
         self.inner
             .clone()
