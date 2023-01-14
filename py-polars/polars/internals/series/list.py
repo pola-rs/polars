@@ -193,7 +193,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.diff()
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [null, 1, ... 1]
             [null, -8, -1]
@@ -215,7 +215,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.shift()
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [null, 1, ... 3]
             [null, 10, 2]
@@ -240,7 +240,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.slice(1, 2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [2, 3]
             [2, 1]
@@ -262,7 +262,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.head(2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [1, 2]
             [10, 2]
@@ -284,7 +284,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.tail(2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [3, 4]
             [2, 1]

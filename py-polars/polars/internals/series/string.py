@@ -406,7 +406,7 @@ class StringNameSpace:
         >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
         >>> s.str.extract_all(r"(\d+)")
         shape: (2,)
-        Series: 'foo' [list]
+        Series: 'foo' [list[str]]
         [
             ["123", "45"]
             ["678", "910"]

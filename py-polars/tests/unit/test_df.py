@@ -1664,7 +1664,7 @@ def test_groupby_cat_list() -> None:
     assert (
         str(grouped)
         == """shape: (3,)
-Series: 'cat_column' [list]
+Series: 'cat_column' [list[cat]]
 [
 	["a", "b"]
 	["b", "a"]

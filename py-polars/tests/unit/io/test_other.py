@@ -39,7 +39,7 @@ def test_date_list_fmt() -> None:
     assert (
         str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
         == """shape: (3,)
-Series: 'mydate' [list]
+Series: 'mydate' [list[date]]
 [
 	[2020-01-01]
 	[2020-01-02]
