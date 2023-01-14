@@ -123,7 +123,7 @@ class DataTypeClass(type):
 
     @classmethod
     def string_repr(cls) -> str:
-        return dtype_str_repr(cls,None)
+        return dtype_str_repr(cls, None)
 
 
 class DataType(metaclass=DataTypeClass):
@@ -146,7 +146,7 @@ class DataType(metaclass=DataTypeClass):
         inner_dtype = None
         if cls == List:
             inner_dtype = cls.inner
-        return dtype_str_repr(cls,inner_dtype)
+        return dtype_str_repr(cls, inner_dtype)
 
 
 class NumericType(DataType):
