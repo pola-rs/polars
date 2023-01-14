@@ -111,6 +111,11 @@ pub struct AggregationContext<'a> {
     /// This is true when the Series and GroupsProxy still have all
     /// their original values. Not the case when filtered
     original_len: bool,
+    // special state that just should propagate nulls on aggregations.
+    // this is needed as (expr - expr.mean()) could leave nulls but is
+    // not really a final aggregation as left is still a list, but right only
+    // contains null and thus propagates that.
+    null_propagated: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -218,6 +223,7 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
+            null_propagated: false,
         }
     }
 
@@ -228,6 +234,7 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
+            null_propagated: false,
         }
     }
 

@@ -50,7 +50,7 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.series().name().to_string();
 
         let check_flat = || {
-            if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
+            if !ac.null_propagated && matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
                 Err(PolarsError::ComputeError(
                     format!(
                         "Cannot aggregate as {}. The column is already aggregated.",

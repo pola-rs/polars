@@ -286,7 +286,18 @@ impl PhysicalExpr for BinaryExpr {
                 match null_propagate_empty(ac_l.series(), ac_r.series()) {
                     Some(null_prop) => {
                         ac_l.with_update_groups(UpdateGroups::No);
+                        // this null prop can exist due to:
+                        // assuming 2 rows
+                        //
+                        // expr = col().filter(false)
+                        //
+                        // this would null propagate
+                        // (expr - expr.mean()) -> [None, None]
+                        //
+                        // but adding another aggregation is valid:
+                        // (expr - expr.mean()).mean()
                         ac_l.with_series(null_prop, true);
+                        ac_l.null_propagated = true;
                     }
                     None => {
                         let out = null_propagate_empty(ac_l.series(), ac_r.series())
