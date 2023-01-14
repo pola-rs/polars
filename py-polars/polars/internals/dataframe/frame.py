@@ -211,12 +211,28 @@ class DataFrame:
     │ 2.0  ┆ 4    │
     └──────┴──────┘
 
+    The `columns` parameter could also be set with a `dict` containing the schema of the
+    expected DataFrame
+
+    >>> data = {"col1": [0, 2], "col2": [3, 7]}
+    >>> df4 = pl.DataFrame(data, columns={"col1": pl.Float32, "col2": pl.Int64})
+    >>> df4
+    shape: (2, 2)
+    ┌──────┬──────┐
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 0.0  ┆ 3    │
+    │ 2.0  ┆ 7    │
+    └──────┴──────┘
+
     Constructing a DataFrame from a numpy ndarray, specifying column names:
 
     >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
-    >>> df4 = pl.DataFrame(data, columns=["a", "b"], orient="col")
-    >>> df4
+    >>> df5 = pl.DataFrame(data, columns=["a", "b"], orient="col")
+    >>> df5
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -230,8 +246,8 @@ class DataFrame:
     Constructing a DataFrame from a list of lists, row orientation inferred:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> df4 = pl.DataFrame(data, columns=["a", "b", "c"])
-    >>> df4
+    >>> df6 = pl.DataFrame(data, columns=["a", "b", "c"])
+    >>> df6
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
