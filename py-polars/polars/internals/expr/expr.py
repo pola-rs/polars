@@ -5908,7 +5908,7 @@ class Expr:
         └────────┘
 
         """
-        return self.map(lambda s: s.set_sorted(reverse))
+        return wrap_expr(self._pyexpr.set_sorted_flag(reverse))
 
     # Keep the `list` and `str` methods below at the end of the definition of Expr,
     # as to not confuse mypy with the type annotation `str` and `list`
