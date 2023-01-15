@@ -8,9 +8,6 @@ use polars_core::frame::_duplicate_err;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
-#[cfg(feature = "csv-file")]
-use polars_io::csv::utils::infer_file_schema;
-use polars_io::csv::CsvEncoding;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
@@ -20,7 +17,8 @@ use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
-    csv::utils::{get_reader_bytes, is_compressed},
+    csv::utils::{get_reader_bytes, infer_file_schema, is_compressed},
+    csv::CsvEncoding,
     csv::NullValues,
 };
 

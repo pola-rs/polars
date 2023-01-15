@@ -11,11 +11,13 @@ use polars_utils::arena::{Arena, Node};
 
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
+#[cfg(feature = "csv-file")]
+use crate::logical_plan::CsvParserOptions;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
-use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
+use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
