@@ -305,7 +305,7 @@ polars-time = { version = "0.26.1", path = "./polars-time", default-features = f
 features = ["js"]
 
 [dev-dependencies]
-ahash = "0.7"
+ahash = "0.8"
 criterion = "0.3"
 rand = "0.8"
 
