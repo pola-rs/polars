@@ -62,7 +62,7 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
                 b'Y' => {
                     (year, offset) = update_and_parse(4, offset, val)?;
                     if negative {
-                        year = year * -1
+                        year *= -1
                     }
                 }
                 b'm' => {
