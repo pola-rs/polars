@@ -107,7 +107,7 @@ class ExprStringNameSpace:
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
             dtcol = pli.wrap_expr(
-                self._pyexpr.str_parse_datetime(fmt, strict, exact, cache, tz_aware)
+                self._pyexpr.str_parse_datetime(fmt, strict, exact, cache, tz_aware, tu)
             )
             return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
         elif datatype == Time:

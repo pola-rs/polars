@@ -977,6 +977,19 @@ def test_strptime_precision() -> None:
         assert ds.dt.nanosecond().to_list() == expected_values
 
 
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [("ms", "123000000"), ("us", "123456000"), ("ns", "123456789")],
+)
+@pytest.mark.parametrize("fmt", ["%Y-%m-%d %H:%M:%S.%f", None])
+def test_strptime_precision_with_time_unit(
+    unit: TimeUnit, expected: str, fmt: str
+) -> None:
+    ser = pl.Series(["2020-01-01 00:00:00.123456789"])
+    result = ser.str.strptime(pl.Datetime(unit), fmt=fmt).dt.strftime("%f")[0]
+    assert result == expected
+
+
 def test_asof_join_tolerance_grouper() -> None:
     from datetime import date
 
