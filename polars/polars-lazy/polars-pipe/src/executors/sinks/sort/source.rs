@@ -130,8 +130,12 @@ impl Source for SortSource {
             Some((partition, path)) => {
                 let files = std::fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
 
-                let lower = self.partitions.get(partition as usize).unwrap();
-                if let Ok(upper) = self.partitions.get(partition as usize + 1) {
+                // both lower and upper can fail.
+                // lower can fail because the search_sorted can add the sort idx at the end of the array, which is i == len
+                if let (Ok(lower), Ok(upper)) = (
+                    self.partitions.get(partition as usize),
+                    self.partitions.get(partition as usize + 1),
+                ) {
                     if lower == upper && !files.is_empty() {
                         let files = files.into_iter();
                         self.sorted_directory_in_process = Some(files);
