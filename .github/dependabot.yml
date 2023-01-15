@@ -5,7 +5,9 @@ updates:
     directory: '/'
     schedule:
       interval: monthly
-    labels: [ci, skip-changelog]
+    commit-message:
+      prefix: ci
+    labels: [skip-changelog]
     reviewers: [stinodego]
 
   # Rust Polars
@@ -16,115 +18,10 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-algo
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-arrow
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-core
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-io
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-lazy
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-lazy/polars-pipe
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-lazy/polars-plan
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-ops
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-sql
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-time
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
-
-  - package-ecosystem: cargo
-    directory: polars/polars-utils
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, rust, skip-changelog]
+    commit-message:
+      prefix: build(rust)
+      prefix-development: chore(rust)
+    labels: [skip-changelog]
 
   # Python Polars
   - package-ecosystem: pip
@@ -134,17 +31,9 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types: ['version-update:semver-patch']
-    labels: [build, python, skip-changelog]
-    reviewers: [stinodego]
-
-  - package-ecosystem: pip
-    directory: py-polars/docs
-    schedule:
-      interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-patch']
-    labels: [build, python, skip-changelog]
+    commit-message:
+      prefix: chore(python)
+    labels: [skip-changelog]
     reviewers: [stinodego]
 
   - package-ecosystem: cargo
@@ -154,4 +43,7 @@ updates:
     ignore:
       - dependency-name: '*'
         update-types: ['version-update:semver-patch']
-    labels: [build, python, skip-changelog]
+    commit-message:
+      prefix: build(python)
+      prefix-development: chore(python)
+    labels: [skip-changelog]
