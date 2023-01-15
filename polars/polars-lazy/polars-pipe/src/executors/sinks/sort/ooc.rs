@@ -45,8 +45,8 @@ pub(super) fn sort_ooc(
                 let assigned_parts = det_partitions(sort_col, &partitions, reverse);
 
                 // partition the dataframe into proper buckets
-                let (iter, partition) = partition_df(df, &assigned_parts)?;
-                io_thread.dump_iter(Some(partition), iter);
+                let (iter, unique_assigned_parts) = partition_df(df, &assigned_parts)?;
+                io_thread.dump_iter(Some(unique_assigned_parts), iter);
             }
             PolarsResult::Ok(())
         })
@@ -71,7 +71,7 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, reverse, slice);
+    let source = SortSource::new(files, idx, reverse, slice, partitions);
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 

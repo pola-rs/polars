@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
-use arrow::array::{PrimitiveArray, Utf8Array};
+use arrow::array::{Array, PrimitiveArray, Utf8Array};
 use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::*;
 use polars_core::prelude::*;
@@ -163,11 +163,19 @@ where
 
     let mut out = Vec::with_capacity(search_values.len());
 
-    for opt_v in search_values {
-        match opt_v {
-            None => out.push(0),
-            Some(search_value) => {
-                binary_search_array(side, &mut out, arr, ca.len(), search_value, reverse)
+    for search_arr in search_values.downcast_iter() {
+        if search_arr.null_count() == 0 {
+            for search_value in search_arr.values_iter() {
+                binary_search_array(side, &mut out, arr, ca.len(), *search_value, reverse)
+            }
+        } else {
+            for opt_v in search_arr.into_iter() {
+                match opt_v {
+                    None => out.push(0),
+                    Some(search_value) => {
+                        binary_search_array(side, &mut out, arr, ca.len(), *search_value, reverse)
+                    }
+                }
             }
         }
     }
@@ -185,11 +193,19 @@ fn search_sorted_utf8_array(
 
     let mut out = Vec::with_capacity(search_values.len());
 
-    for opt_v in search_values {
-        match opt_v {
-            None => out.push(0),
-            Some(search_value) => {
-                binary_search_array(side, &mut out, arr, ca.len(), search_value, reverse);
+    for search_arr in search_values.downcast_iter() {
+        if search_arr.null_count() == 0 {
+            for search_value in search_arr.values_iter() {
+                binary_search_array(side, &mut out, arr, ca.len(), search_value, reverse)
+            }
+        } else {
+            for opt_v in search_arr.into_iter() {
+                match opt_v {
+                    None => out.push(0),
+                    Some(search_value) => {
+                        binary_search_array(side, &mut out, arr, ca.len(), search_value, reverse)
+                    }
+                }
             }
         }
     }

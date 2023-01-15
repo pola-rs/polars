@@ -55,7 +55,7 @@ impl SortSink {
             dist_sample: vec![],
         };
         if ooc {
-            eprintln!("Out of core sort forced");
+            eprintln!("OOC sort forced");
             out.init_ooc().unwrap();
         }
         out
