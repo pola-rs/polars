@@ -55,7 +55,7 @@ impl SortSink {
             dist_sample: vec![],
         };
         if ooc {
-            eprintln!("Out of core sort forced");
+            eprintln!("OOC sort forced");
             out.init_ooc().unwrap();
         }
         out
@@ -101,8 +101,11 @@ impl SortSink {
         while let Some(df) = self.chunks.pop_front() {
             if df.height() > 0 {
                 // safety: we just asserted height > 0
-                let sample = unsafe { df.get_columns()[self.sort_idx].get_unchecked(0) };
-                self.dist_sample.push(sample.into_static().unwrap());
+                let sample = unsafe {
+                    let s = &df.get_columns()[self.sort_idx];
+                    s.to_physical_repr().get_unchecked(0).into_static().unwrap()
+                };
+                self.dist_sample.push(sample);
 
                 let iot = self.io_thread.lock().unwrap();
                 let iot = iot.as_ref().unwrap();
