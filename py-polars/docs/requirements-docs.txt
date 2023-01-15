@@ -6,7 +6,7 @@ pyarrow
 
 hypothesis==6.57.1
 
-autodocsumm==0.2.9
+autodocsumm==0.2.10
 commonmark==0.9.1
 ghp-import==2.1.0
 numpydoc==1.5.0
