@@ -2351,7 +2351,7 @@ class Series:
         >>> optional_members = pl.Series("optional_members", [1, 2, 3])
         >>> print(sets)
         shape: (3,)
-        Series: 'sets' [list]
+        Series: 'sets' [list[i64]]
         [
             [1, 2, 3]
             [1, 2]

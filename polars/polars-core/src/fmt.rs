@@ -259,7 +259,8 @@ impl Debug for Series {
                 format_array!(f, self.duration().unwrap(), &dt, self.name(), "Series")
             }
             DataType::List(_) => {
-                format_array!(f, self.list().unwrap(), "list", self.name(), "Series")
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
             }
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
@@ -940,7 +941,7 @@ mod test {
 
         assert_eq!(
             r#"shape: (2,)
-Series: 'a' [list]
+Series: 'a' [list[i32]]
 [
 	[1, 2, 3]
 	null
