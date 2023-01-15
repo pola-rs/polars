@@ -306,7 +306,7 @@ features = ["js"]
 
 [dev-dependencies]
 ahash = "0.8"
-criterion = "0.3"
+criterion = "0.4"
 rand = "0.8"
 
 [build-dependencies]
