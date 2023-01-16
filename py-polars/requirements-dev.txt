@@ -15,7 +15,7 @@ deltalake
 
 # Tooling
 hypothesis==6.62.1
-maturin==0.13.7
+maturin==0.14.10
 mypy==0.991
 pytest==7.2.0
 pytest-cov==4.0.0
