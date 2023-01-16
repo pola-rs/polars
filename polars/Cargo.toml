@@ -306,35 +306,10 @@ features = ["js"]
 
 [dev-dependencies]
 ahash = "0.8"
-criterion = "0.3"
 rand = "0.8"
 
 [build-dependencies]
 version_check = "0.9.4"
-
-# see: https://bheisler.github.io/criterion.rs/book/faq.html
-[lib]
-bench = false
-
-[[bench]]
-name = "csv"
-harness = false
-
-[[bench]]
-name = "groupby"
-harness = false
-
-[[bench]]
-name = "collect"
-harness = false
-
-[[bench]]
-name = "take"
-harness = false
-
-[[bench]]
-name = "sort"
-harness = false
 
 [package.metadata.docs.rs]
 # all-features = true
