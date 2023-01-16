@@ -64,12 +64,11 @@ pub trait DatetimeMethods: AsDatetime {
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Int8Chunked {
         cast_and_apply(self.as_datetime(), |array: &dyn Array| {
-            Ok(PrimitiveArray::<i8>::from_vec(
+            Ok(PrimitiveArray::<i8>::from_values(
                 temporal::month(array)
                     .unwrap()
                     .into_iter()
-                    .map(|v| v.unwrap() as i8)
-                    .collect::<Vec<_>>(),
+                    .map(|v| v.unwrap() as i8),
             ))
         })
     }
@@ -78,12 +77,11 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the weekday number where monday = 1 and sunday = 7
     fn weekday(&self) -> Int8Chunked {
         cast_and_apply(self.as_datetime(), |array: &dyn Array| {
-            Ok(PrimitiveArray::<i8>::from_vec(
+            Ok(PrimitiveArray::<i8>::from_values(
                 temporal::weekday(array)
                     .unwrap()
                     .into_iter()
-                    .map(|v| v.unwrap() as i8)
-                    .collect::<Vec<_>>(),
+                    .map(|v| v.unwrap() as i8),
             ))
         })
     }
@@ -92,12 +90,11 @@ pub trait DatetimeMethods: AsDatetime {
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {
         cast_and_apply(self.as_datetime(), |array: &dyn Array| {
-            Ok(PrimitiveArray::<i8>::from_vec(
+            Ok(PrimitiveArray::<i8>::from_values(
                 temporal::iso_week(array)
                     .unwrap()
                     .into_iter()
-                    .map(|v| v.unwrap() as i8)
-                    .collect::<Vec<_>>(),
+                    .map(|v| v.unwrap() as i8),
             ))
         })
     }
@@ -108,12 +105,11 @@ pub trait DatetimeMethods: AsDatetime {
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Int8Chunked {
         cast_and_apply(self.as_datetime(), |array: &dyn Array| {
-            Ok(PrimitiveArray::<i8>::from_vec(
+            Ok(PrimitiveArray::<i8>::from_values(
                 temporal::day(array)
                     .unwrap()
                     .into_iter()
-                    .map(|v| v.unwrap() as i8)
-                    .collect::<Vec<_>>(),
+                    .map(|v| v.unwrap() as i8),
             ))
         })
     }
@@ -122,12 +118,11 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> Int8Chunked {
         cast_and_apply(self.as_datetime(), |array: &dyn Array| {
-            Ok(PrimitiveArray::<i8>::from_vec(
+            Ok(PrimitiveArray::<i8>::from_values(
                 temporal::hour(array)
                     .unwrap()
                     .into_iter()
-                    .map(|v| v.unwrap() as i8)
-                    .collect::<Vec<_>>(),
+                    .map(|v| v.unwrap() as i8),
             ))
         })
     }
@@ -136,12 +131,11 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the minute number from 0 to 59.
     fn minute(&self) -> Int8Chunked {
         cast_and_apply(self.as_datetime(), |array: &dyn Array| {
-            Ok(PrimitiveArray::<i8>::from_vec(
+            Ok(PrimitiveArray::<i8>::from_values(
                 temporal::minute(array)
                     .unwrap()
                     .into_iter()
-                    .map(|v| v.unwrap() as i8)
-                    .collect::<Vec<_>>(),
+                    .map(|v| v.unwrap() as i8),
             ))
         })
     }
@@ -150,12 +144,11 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the second number from 0 to 59.
     fn second(&self) -> Int8Chunked {
         cast_and_apply(self.as_datetime(), |array: &dyn Array| {
-            Ok(PrimitiveArray::<i8>::from_vec(
+            Ok(PrimitiveArray::<i8>::from_values(
                 temporal::second(array)
                     .unwrap()
                     .into_iter()
-                    .map(|v| v.unwrap() as i8)
-                    .collect::<Vec<_>>(),
+                    .map(|v| v.unwrap() as i8),
             ))
         })
     }
