@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Sequence, overload
 
@@ -330,7 +329,6 @@ def date_range(
     ...
 
 
-@typing.no_type_check
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
@@ -436,9 +434,9 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if isinstance(low, pli.Expr) or isinstance(high, pli.Expr) or lazy:
-        low = pli.expr_to_lit_or_expr(low, str_to_lit=True)._pyexpr
-        high = pli.expr_to_lit_or_expr(high, str_to_lit=True)._pyexpr
+    if isinstance(low, (str, pli.Expr)) or isinstance(high, (str, pli.Expr)) or lazy:
+        low = pli.expr_to_lit_or_expr(low, str_to_lit=False)._pyexpr
+        high = pli.expr_to_lit_or_expr(high, str_to_lit=False)._pyexpr
         return pli.wrap_expr(
             _py_date_range_lazy(low, high, interval, closed, name, time_zone)
         )
