@@ -31,6 +31,7 @@ def test_null_count() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", None]})
     assert df.null_count().shape == (1, 2)
     assert df.null_count().row(0) == (0, 1)
+    assert df.null_count().row(np.int64(0)) == (0, 1)  # type: ignore[call-overload]
 
 
 def test_init_empty() -> None:

@@ -6503,13 +6503,19 @@ class DataFrame:
         if named:
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
 
-        if isinstance(index, int):
+        if index is not None:
             row = self._df.row_tuple(index)
             if named:
                 return Row(*row)
             else:
                 return row
-        elif isinstance(by_predicate, pli.Expr):
+
+        elif by_predicate is not None:
+            if not isinstance(by_predicate, pli.Expr):
+                raise TypeError(
+                    f"Expected 'by_predicate to be an expression; "
+                    f"found {type(by_predicate)}"
+                )
             rows = self.filter(by_predicate).rows()
             n_rows = len(rows)
             if n_rows > 1:
@@ -6518,6 +6524,7 @@ class DataFrame:
                 )
             elif n_rows == 0:
                 raise NoRowsReturned(f"Predicate <{by_predicate!s}> returned no rows")
+
             row = rows[0]
             if named:
                 return Row(*row)
