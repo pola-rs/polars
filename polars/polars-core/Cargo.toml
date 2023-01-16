@@ -157,7 +157,7 @@ docs-selection = [
 ahash.workspace = true
 anyhow.workspace = true
 arrow.workspace = true
-base64 = { version = "0.13", optional = true }
+base64 = { version = "0.21", optional = true }
 bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.8", optional = true }

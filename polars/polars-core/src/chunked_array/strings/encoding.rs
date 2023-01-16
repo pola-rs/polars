@@ -1,4 +1,6 @@
-use {base64, hex};
+use base64::engine::general_purpose;
+use base64::Engine as _;
+use hex;
 
 use crate::prelude::*;
 
@@ -34,6 +36,6 @@ impl Utf8Chunked {
 
     #[must_use]
     pub fn base64_encode(&self) -> Utf8Chunked {
-        self.apply(|s| base64::encode(s).into())
+        self.apply(|s| general_purpose::STANDARD.encode(s).into())
     }
 }
