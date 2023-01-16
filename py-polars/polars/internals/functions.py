@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Sequence, overload
 
@@ -273,7 +272,7 @@ def _interval_granularity(interval: str) -> str:
 @overload
 def date_range(
     low: pli.Expr,
-    high: date | datetime | pli.Expr | str,
+    high: date | datetime | pli.Expr,
     interval: str | timedelta,
     *,
     lazy: Literal[False] = ...,
@@ -287,7 +286,7 @@ def date_range(
 
 @overload
 def date_range(
-    low: date | datetime | pli.Expr | str,
+    low: date | datetime | pli.Expr,
     high: pli.Expr,
     interval: str | timedelta,
     *,
@@ -302,8 +301,8 @@ def date_range(
 
 @overload
 def date_range(
-    low: date | datetime | str,
-    high: date | datetime | str,
+    low: date | datetime,
+    high: date | datetime,
     interval: str | timedelta,
     *,
     lazy: Literal[False] = ...,
@@ -317,8 +316,8 @@ def date_range(
 
 @overload
 def date_range(
-    low: date | datetime | pli.Expr | str,
-    high: date | datetime | pli.Expr | str,
+    low: date | datetime | pli.Expr,
+    high: date | datetime | pli.Expr,
     interval: str | timedelta,
     *,
     lazy: Literal[True],
@@ -330,10 +329,9 @@ def date_range(
     ...
 
 
-@typing.no_type_check
 def date_range(
-    low: date | datetime | pli.Expr | str,
-    high: date | datetime | pli.Expr | str,
+    low: date | datetime | pli.Expr,
+    high: date | datetime | pli.Expr,
     interval: str | timedelta,
     *,
     lazy: bool = False,
