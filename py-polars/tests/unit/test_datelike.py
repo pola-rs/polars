@@ -1792,6 +1792,44 @@ def test_date_parse_omit_day() -> None:
     ).item() == datetime(2022, 1, 1)
 
 
+@pytest.mark.parametrize(
+    (
+        "ts",
+        "fmt",
+        "exp_year",
+        "exp_month",
+        "exp_day",
+        "exp_hour",
+        "exp_minute",
+        "exp_second",
+    ),
+    [
+        ("-0031-04-24 22:13:20", "%Y-%m-%d %H:%M:%S", -31, 4, 24, 22, 13, 20),
+        ("-0031-04-24", "%Y-%m-%d", -31, 4, 24, 0, 0, 0),
+    ],
+)
+def test_parse_negative_dates(
+    ts: str,
+    fmt: str,
+    exp_year: int,
+    exp_month: int,
+    exp_day: int,
+    exp_hour: int,
+    exp_minute: int,
+    exp_second: int,
+) -> None:
+    ser = pl.Series([ts])
+    result = ser.str.strptime(pl.Datetime("ms"), fmt=fmt)
+    # Python datetime.datetime doesn't support negative dates, so comparing
+    # with `result.item()` directly won't work.
+    assert result.dt.year().item() == exp_year
+    assert result.dt.month().item() == exp_month
+    assert result.dt.day().item() == exp_day
+    assert result.dt.hour().item() == exp_hour
+    assert result.dt.minute().item() == exp_minute
+    assert result.dt.second().item() == exp_second
+
+
 def test_shift_and_fill_group_logicals() -> None:
     df = pl.from_records(
         [

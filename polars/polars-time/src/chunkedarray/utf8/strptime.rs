@@ -47,6 +47,12 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
     let mut fmt_iter = fmt.iter();
 
     let mut offset = 0;
+    let mut negative = false;
+
+    if val.starts_with(b"-") && fmt.starts_with(b"%Y") {
+        offset = 1;
+        negative = true;
+    }
 
     while let Some(fmt_b) = fmt_iter.next() {
         debug_assert!(offset < val.len());
@@ -55,6 +61,9 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
             match fmt_iter.next().expect("invalid fmt") {
                 b'Y' => {
                     (year, offset) = update_and_parse(4, offset, val)?;
+                    if negative {
+                        year *= -1
+                    }
                 }
                 b'm' => {
                     (month, offset) = update_and_parse(2, offset, val)?;
