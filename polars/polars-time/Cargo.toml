@@ -10,7 +10,7 @@ description = "Time related code for the polars dataframe library"
 
 [dependencies]
 chrono = "0.4"
-chrono-tz = { version = "0.6", optional = true }
+chrono-tz = { version = "0.8", optional = true }
 lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 now = "0.1"
 polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["compute", "temporal"] }
