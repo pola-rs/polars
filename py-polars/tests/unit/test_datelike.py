@@ -553,18 +553,13 @@ def test_date_range_lazy_with_literals() -> None:
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])
 @pytest.mark.parametrize("high", ["stop", pl.col("stop")])
-def test_date_range_lazy_with_expressions(low: str | pl.Expr, high: pl.Expr) -> None:
+def test_date_range_lazy_with_expressions(
+    low: str | pl.Expr, high: str | pl.Expr
+) -> None:
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
         .with_columns(
-            pl.date_range(
-                low,
-                high,
-                interval="678d",
-                lazy=True,
-            )
-            .list()
-            .alias("dts")
+            pl.date_range(low, high, interval="678d", lazy=True).list().alias("dts")
         )
         .lazy()
     )
