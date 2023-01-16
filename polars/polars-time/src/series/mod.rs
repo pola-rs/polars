@@ -123,7 +123,7 @@ impl AsSeries for Series {
 pub trait TemporalMethods: AsSeries {
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> PolarsResult<UInt32Chunked> {
+    fn hour(&self) -> PolarsResult<Int8Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]
@@ -138,7 +138,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
-    fn minute(&self) -> PolarsResult<UInt32Chunked> {
+    fn minute(&self) -> PolarsResult<Int8Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]
@@ -153,7 +153,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
-    fn second(&self) -> PolarsResult<UInt32Chunked> {
+    fn second(&self) -> PolarsResult<Int8Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]
@@ -185,7 +185,7 @@ pub trait TemporalMethods: AsSeries {
     /// Returns the day of month starting from 1.
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    fn day(&self) -> PolarsResult<UInt32Chunked> {
+    fn day(&self) -> PolarsResult<Int8Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -197,8 +197,8 @@ pub trait TemporalMethods: AsSeries {
             )),
         }
     }
-    /// Returns the weekday number where monday = 0 and sunday = 6
-    fn weekday(&self) -> PolarsResult<UInt32Chunked> {
+    /// Returns the weekday number where Monday = 0 and Sunday = 6
+    fn weekday(&self) -> PolarsResult<Int8Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -213,7 +213,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-    fn week(&self) -> PolarsResult<UInt32Chunked> {
+    fn week(&self) -> PolarsResult<Int8Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -229,7 +229,7 @@ pub trait TemporalMethods: AsSeries {
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    fn ordinal_day(&self) -> PolarsResult<UInt32Chunked> {
+    fn ordinal_day(&self) -> PolarsResult<Int16Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -287,7 +287,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
-    fn quarter(&self) -> PolarsResult<UInt32Chunked> {
+    fn quarter(&self) -> PolarsResult<Int8Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -304,7 +304,7 @@ pub trait TemporalMethods: AsSeries {
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
-    fn month(&self) -> PolarsResult<UInt32Chunked> {
+    fn month(&self) -> PolarsResult<Int8Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]

@@ -14,7 +14,7 @@ chrono-tz = { version = "0.6", optional = true }
 lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 now = "0.1"
 polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["compute", "temporal"] }
-polars-core = { version = "0.26.1", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+polars-core = { version = "0.26.1", path = "../polars-core", default-features = false, features = ["private", "dtype-date", "dtype-datetime", "dtype-duration", "dtype-i8", "dtype-i16", "dtype-time"] }
 polars-ops = { version = "0.26.1", path = "../polars-ops" }
 polars-utils = { version = "0.26.1", path = "../polars-utils" }
 serde = { version = "1", features = ["derive"], optional = true }

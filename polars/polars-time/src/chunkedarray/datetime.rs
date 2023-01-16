@@ -53,7 +53,7 @@ pub trait DatetimeMethods: AsDatetime {
 
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
-    fn quarter(&self) -> UInt32Chunked {
+    fn quarter(&self) -> Int8Chunked {
         let months = self.month();
         months_to_quarters(months)
     }
@@ -62,46 +62,102 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
-    fn month(&self) -> UInt32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::month)
+    fn month(&self) -> Int8Chunked {
+        cast_and_apply(self.as_datetime(), |array: &dyn Array| {
+            Ok(PrimitiveArray::<i8>::from_vec(
+                temporal::month(array)
+                    .unwrap()
+                    .into_iter()
+                    .map(|v| v.unwrap() as i8)
+                    .collect::<Vec<_>>(),
+            ))
+        })
     }
 
     /// Extract ISO weekday from underlying NaiveDateTime representation.
     /// Returns the weekday number where monday = 1 and sunday = 7
-    fn weekday(&self) -> UInt32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::weekday)
+    fn weekday(&self) -> Int8Chunked {
+        cast_and_apply(self.as_datetime(), |array: &dyn Array| {
+            Ok(PrimitiveArray::<i8>::from_vec(
+                temporal::weekday(array)
+                    .unwrap()
+                    .into_iter()
+                    .map(|v| v.unwrap() as i8)
+                    .collect::<Vec<_>>(),
+            ))
+        })
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-    fn week(&self) -> UInt32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::iso_week)
+    fn week(&self) -> Int8Chunked {
+        cast_and_apply(self.as_datetime(), |array: &dyn Array| {
+            Ok(PrimitiveArray::<i8>::from_vec(
+                temporal::iso_week(array)
+                    .unwrap()
+                    .into_iter()
+                    .map(|v| v.unwrap() as i8)
+                    .collect::<Vec<_>>(),
+            ))
+        })
     }
 
     /// Extract day from underlying NaiveDateTime representation.
     /// Returns the day of month starting from 1.
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    fn day(&self) -> UInt32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::day)
+    fn day(&self) -> Int8Chunked {
+        cast_and_apply(self.as_datetime(), |array: &dyn Array| {
+            Ok(PrimitiveArray::<i8>::from_vec(
+                temporal::day(array)
+                    .unwrap()
+                    .into_iter()
+                    .map(|v| v.unwrap() as i8)
+                    .collect::<Vec<_>>(),
+            ))
+        })
     }
 
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> UInt32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::hour)
+    fn hour(&self) -> Int8Chunked {
+        cast_and_apply(self.as_datetime(), |array: &dyn Array| {
+            Ok(PrimitiveArray::<i8>::from_vec(
+                temporal::hour(array)
+                    .unwrap()
+                    .into_iter()
+                    .map(|v| v.unwrap() as i8)
+                    .collect::<Vec<_>>(),
+            ))
+        })
     }
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
-    fn minute(&self) -> UInt32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::minute)
+    fn minute(&self) -> Int8Chunked {
+        cast_and_apply(self.as_datetime(), |array: &dyn Array| {
+            Ok(PrimitiveArray::<i8>::from_vec(
+                temporal::minute(array)
+                    .unwrap()
+                    .into_iter()
+                    .map(|v| v.unwrap() as i8)
+                    .collect::<Vec<_>>(),
+            ))
+        })
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
-    fn second(&self) -> UInt32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::second)
+    fn second(&self) -> Int8Chunked {
+        cast_and_apply(self.as_datetime(), |array: &dyn Array| {
+            Ok(PrimitiveArray::<i8>::from_vec(
+                temporal::second(array)
+                    .unwrap()
+                    .into_iter()
+                    .map(|v| v.unwrap() as i8)
+                    .collect::<Vec<_>>(),
+            ))
+        })
     }
 
     /// Extract second from underlying NaiveDateTime representation.
@@ -114,14 +170,14 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    fn ordinal(&self) -> UInt32Chunked {
+    fn ordinal(&self) -> Int16Chunked {
         let ca = self.as_datetime();
         let f = match ca.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_ordinal_ns,
             TimeUnit::Microseconds => datetime_to_ordinal_us,
             TimeUnit::Milliseconds => datetime_to_ordinal_ms,
         };
-        ca.apply_kernel_cast::<UInt32Type>(&f)
+        ca.apply_kernel_cast::<Int16Type>(&f)
     }
 
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked {
