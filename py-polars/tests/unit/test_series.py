@@ -15,6 +15,8 @@ from polars.datatypes import (
     Datetime,
     Field,
     Float64,
+    Int8,
+    Int16,
     Int32,
     Int64,
     PolarsDataType,
@@ -1921,12 +1923,12 @@ def test_dt_year_month_week_day_ordinal_day() -> None:
     exp = pl.Series("a", [1997, 2024, 2052], dtype=Int32)
     verify_series_and_expr_api(a, exp, "dt.year")
 
-    verify_series_and_expr_api(a, pl.Series("a", [5, 10, 2], dtype=UInt32), "dt.month")
-    verify_series_and_expr_api(a, pl.Series("a", [1, 5, 2], dtype=UInt32), "dt.weekday")
-    verify_series_and_expr_api(a, pl.Series("a", [21, 40, 8], dtype=UInt32), "dt.week")
-    verify_series_and_expr_api(a, pl.Series("a", [19, 4, 20], dtype=UInt32), "dt.day")
+    verify_series_and_expr_api(a, pl.Series("a", [5, 10, 2], dtype=Int8), "dt.month")
+    verify_series_and_expr_api(a, pl.Series("a", [1, 5, 2], dtype=Int8), "dt.weekday")
+    verify_series_and_expr_api(a, pl.Series("a", [21, 40, 8], dtype=Int8), "dt.week")
+    verify_series_and_expr_api(a, pl.Series("a", [19, 4, 20], dtype=Int8), "dt.day")
     verify_series_and_expr_api(
-        a, pl.Series("a", [139, 278, 51], dtype=UInt32), "dt.ordinal_day"
+        a, pl.Series("a", [139, 278, 51], dtype=Int16), "dt.ordinal_day"
     )
 
     assert a.dt.median() == date(2024, 10, 4)
@@ -1938,9 +1940,9 @@ def test_dt_datetimes() -> None:
     s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
     # hours, minutes, seconds, milliseconds, microseconds, and nanoseconds
-    verify_series_and_expr_api(s, pl.Series("", [0, 3], dtype=UInt32), "dt.hour")
-    verify_series_and_expr_api(s, pl.Series("", [0, 20], dtype=UInt32), "dt.minute")
-    verify_series_and_expr_api(s, pl.Series("", [0, 10], dtype=UInt32), "dt.second")
+    verify_series_and_expr_api(s, pl.Series("", [0, 3], dtype=Int8), "dt.hour")
+    verify_series_and_expr_api(s, pl.Series("", [0, 20], dtype=Int8), "dt.minute")
+    verify_series_and_expr_api(s, pl.Series("", [0, 10], dtype=Int8), "dt.second")
     verify_series_and_expr_api(
         s, pl.Series("", [0, 987], dtype=UInt32), "dt.millisecond"
     )
