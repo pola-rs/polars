@@ -146,9 +146,6 @@ class DataFrame:
     columns : Sequence of str, (str,DataType) pairs, or {str:DataType,} dict
         Column labels (with optional type) to use for resulting DataFrame. If specified,
         overrides any labels already present in the data. Must match data dimensions.
-    schema_overrides : dict, default None
-        Support type specification or override of one or more columns; note that
-        any dtypes inferred from the columns param will be overridden.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -156,6 +153,9 @@ class DataFrame:
     infer_schema_length : int, default None
         Maximum number of rows to read for schema inference; only applies if the input
         data is a sequence or generator of rows; other input is read as-is.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the columns param will be overridden.
 
     Examples
     --------
@@ -289,9 +289,10 @@ class DataFrame:
             | None
         ) = None,
         columns: SchemaDefinition | None = None,
-        schema_overrides: SchemaDict | None = None,
         orient: Orientation | None = None,
+        *,
         infer_schema_length: int | None = N_INFER_DEFAULT,
+        schema_overrides: SchemaDict | None = None,
     ):
         if data is None:
             self._df = dict_to_pydf(
