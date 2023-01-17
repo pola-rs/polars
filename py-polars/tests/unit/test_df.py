@@ -6,6 +6,7 @@ import typing
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
+from operator import floordiv, truediv
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
 
 import numpy as np
@@ -2748,6 +2749,41 @@ def test_init_physical_with_timezone() -> None:
                 datetime(2022, 10, 12, 21, 30, tzinfo=zoneinfo.ZoneInfo(tz_asia)),
             )
         ]
+
+
+@pytest.mark.parametrize("divop", [floordiv, truediv])
+def test_floordiv_truediv(divop: Callable[..., Any]) -> None:
+    # validate truediv/floordiv dataframe ops against python
+    df1 = pl.DataFrame(
+        data={
+            "x": [0, -1, -2, -3],
+            "y": [-0.0, -3.0, 5.0, -7.0],
+            "z": [10, 3, -5, 7],
+        }
+    )
+
+    # scalar
+    for n in (3, 3.0, -3, -3.0):
+        py_div = [tuple(divop(elem, n) for elem in row) for row in df1.rows()]
+        df_div = divop(df1, n).rows()
+        assert py_div == df_div
+
+    # series
+    xdf, s = df1["x"].to_frame(), pl.Series([2] * 4)
+    assert list(divop(xdf, s)["x"]) == [divop(x, 2) for x in list(df1["x"])]
+
+    # frame
+    df2 = pl.DataFrame(
+        data={
+            "x": [2, -2, 2, 3],
+            "y": [4, 4, -4, 8],
+            "z": [0.5, 2.0, -2.0, -3],
+        }
+    )
+    df_div = divop(df1, df2).rows()
+    for i, (row1, row2) in enumerate(zip(df1.rows(), df2.rows())):
+        for j, (elem1, elem2) in enumerate(zip(row1, row2)):
+            assert divop(elem1, elem2) == df_div[i][j]
 
 
 def test_glimpse() -> None:

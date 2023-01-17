@@ -346,9 +346,9 @@ def date_range(
     Parameters
     ----------
     low
-        Lower bound of the date range.
+        Lower bound of the date range, given as a date, datetime, Expr, or column name.
     high
-        Upper bound of the date range.
+        Upper bound of the date range, given as a date, datetime, Expr, or column name.
     interval
         Interval periods. It can be a python timedelta object, like
         ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``

@@ -432,6 +432,22 @@ class Unknown(DataType):
     """Type representing Datatype values that could not be determined statically."""
 
 
+TEMPORAL_DTYPES = frozenset([Datetime, Date, Time, Duration])
+FLOAT_DTYPES = frozenset([Float32, Float64])
+INTEGER_DTYPES = frozenset(
+    [
+        Int8,
+        Int16,
+        Int32,
+        Int64,
+        UInt8,
+        UInt16,
+        UInt32,
+        UInt64,
+    ]
+)
+
+
 T = TypeVar("T")
 
 
