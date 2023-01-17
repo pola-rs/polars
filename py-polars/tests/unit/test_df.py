@@ -16,7 +16,11 @@ import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.dependencies import zoneinfo
 from polars.internals.construction import iterable_to_pydf
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import (
+    assert_frame_equal,
+    assert_frame_not_equal,
+    assert_series_equal,
+)
 from polars.testing.parametric import columns
 
 if TYPE_CHECKING:
@@ -188,6 +192,7 @@ def test_from_arrow() -> None:
             "b": pa.array([1, 2], pa.timestamp("ms")),
             "c": pa.array([1, 2], pa.timestamp("us")),
             "d": pa.array([1, 2], pa.timestamp("ns")),
+            "e": pa.array([1, 2], pa.int32()),
             "decimal1": pa.array([1, 2], pa.decimal128(2, 1)),
         }
     )
@@ -196,6 +201,7 @@ def test_from_arrow() -> None:
         "b": pl.Datetime("ms"),
         "c": pl.Datetime("us"),
         "d": pl.Datetime("ns"),
+        "e": pl.Int32,
         "decimal1": pl.Float64,
     }
     expected_data = [
@@ -204,6 +210,7 @@ def test_from_arrow() -> None:
             datetime(1970, 1, 1, 0, 0, 0, 1000),
             datetime(1970, 1, 1, 0, 0, 0, 1),
             datetime(1970, 1, 1, 0, 0),
+            1,
             1.0,
         ),
         (
@@ -211,6 +218,7 @@ def test_from_arrow() -> None:
             datetime(1970, 1, 1, 0, 0, 0, 2000),
             datetime(1970, 1, 1, 0, 0, 0, 2),
             datetime(1970, 1, 1, 0, 0),
+            2,
             2.0,
         ),
     ]
@@ -224,26 +232,39 @@ def test_from_arrow() -> None:
     assert df.schema == expected_schema
     assert df.rows() == []
 
+    # try a single column dtype override
+    for t in (tbl, empty_tbl):
+        df = pl.DataFrame(t, schema_overrides={"e": pl.Int8})
+        override_schema = expected_schema.copy()
+        override_schema["e"] = pl.Int8
+        assert df.schema == override_schema
+        assert df.rows() == expected_data[: (len(df))]
 
-def test_from_dict_with_dict_columns() -> None:
-    # expect schema order to take precedence
+
+def test_from_dict_with_column_order() -> None:
+    # expect schema/columns order to take precedence
     schema = {"a": pl.UInt8, "b": pl.UInt32}
-    df = pl.DataFrame({"b": [3, 4], "a": [1, 2]}, columns=schema)
-    # ┌─────┬─────┐
-    # │ a   ┆ b   │
-    # │ --- ┆ --- │
-    # │ u8  ┆ u32 │
-    # ╞═════╪═════╡
-    # │ 1   ┆ 3   │
-    # │ 2   ┆ 4   │
-    # └─────┴─────┘
-    assert df.columns == ["a", "b"]
-    assert df.rows() == [(1, 3), (2, 4)]
+    data = {"b": [3, 4], "a": [1, 2]}
+    for df in (
+        pl.DataFrame(data, columns=schema),
+        pl.DataFrame(data, columns=["a", "b"], schema_overrides=schema),
+    ):
+        # ┌─────┬─────┐
+        # │ a   ┆ b   │
+        # │ --- ┆ --- │
+        # │ u8  ┆ u32 │
+        # ╞═════╪═════╡
+        # │ 1   ┆ 3   │
+        # │ 2   ┆ 4   │
+        # └─────┴─────┘
+        assert df.columns == ["a", "b"]
+        assert df.schema == {"a": pl.UInt8, "b": pl.UInt32}
+        assert df.rows() == [(1, 3), (2, 4)]
 
-    # expected error
-    mismatched_schema = {"x": pl.UInt8, "b": pl.UInt32}
-    with pytest.raises(ValueError):
-        pl.DataFrame({"b": [3, 4], "a": [1, 2]}, columns=mismatched_schema)
+        # expect an error
+        mismatched_schema = {"x": pl.UInt8, "b": pl.UInt32}
+        with pytest.raises(ValueError):
+            pl.DataFrame({"b": [3, 4], "a": [1, 2]}, columns=mismatched_schema)
 
 
 def test_from_dict_with_scalars() -> None:
@@ -289,6 +310,7 @@ def test_from_dict_with_scalars() -> None:
             "key": pl.Int8,
         },
     )
+    assert df4.columns == ["value", "other", "misc", "key"]
     assert df4.to_dict(False) == {
         "value": ["x", "y", "z"],
         "other": [7.0, 8.0, 9.0],
@@ -303,16 +325,22 @@ def test_from_dict_with_scalars() -> None:
     }
 
     # mixed with struct cols
-    df5 = pl.from_dict(
-        {"x": {"b": [1, 3], "c": [2, 4]}, "y": [5, 6], "z": "x"},
-        columns=["x", ("y", pl.Int8), "z"],  # type: ignore[list-item]
-    )
-    assert df5.rows() == [({"b": 1, "c": 2}, 5, "x"), ({"b": 3, "c": 4}, 6, "x")]
-    assert df5.schema == {
-        "x": pl.Struct([pl.Field("b", pl.Int64), pl.Field("c", pl.Int64)]),
-        "y": pl.Int8,
-        "z": pl.Utf8,
-    }
+    for df5 in (
+        pl.from_dict(
+            {"x": {"b": [1, 3], "c": [2, 4]}, "y": [5, 6], "z": "x"},
+            schema_overrides={"y": pl.Int8},
+        ),
+        pl.from_dict(
+            {"x": {"b": [1, 3], "c": [2, 4]}, "y": [5, 6], "z": "x"},
+            columns=["x", ("y", pl.Int8), "z"],
+        ),
+    ):
+        assert df5.rows() == [({"b": 1, "c": 2}, 5, "x"), ({"b": 3, "c": 4}, 6, "x")]
+        assert df5.schema == {
+            "x": pl.Struct([pl.Field("b", pl.Int64), pl.Field("c", pl.Int64)]),
+            "y": pl.Int8,
+            "z": pl.Utf8,
+        }
 
 
 def test_dataclasses_and_namedtuple() -> None:
@@ -351,7 +379,19 @@ def test_dataclasses_and_namedtuple() -> None:
             }
             assert df.rows() == raw_data
 
-        # in conjunction with 'columns' override (rename/downcast)
+            # partial dtypes override
+            df = DF(  # type: ignore[operator]
+                data=trades,
+                schema_overrides={"timestamp": pl.Datetime("ms"), "size": pl.Int32},
+            )
+            assert df.schema == {
+                "timestamp": pl.Datetime("ms"),
+                "ticker": pl.Utf8,
+                "price": pl.Float64,
+                "size": pl.Int32,
+            }
+
+        # in conjunction with full 'columns' override (rename/downcast)
         df = pl.DataFrame(
             data=trades,
             columns=[
@@ -1198,11 +1238,18 @@ def test_string_cache_eager_lazy() -> None:
 
         # also check row-wise categorical insert.
         # (column-wise is preferred, but this shouldn't fail)
-        df3 = pl.DataFrame(
-            data=[["reg1"], ["reg2"], ["reg3"], ["reg4"], ["reg5"]],
-            columns=[("region_ids", pl.Categorical)],
-        )
-        assert_frame_equal(df1, df3)
+        for params in (
+            {"columns": [("region_ids", pl.Categorical)]},
+            {
+                "columns": ["region_ids"],
+                "schema_overrides": {"region_ids": pl.Categorical},
+            },
+        ):
+            df3 = pl.DataFrame(  # type: ignore[arg-type]
+                data=[["reg1"], ["reg2"], ["reg3"], ["reg4"], ["reg5"]],
+                **params,
+            )
+            assert_frame_equal(df1, df3)
 
 
 def test_assign() -> None:
@@ -1249,7 +1296,8 @@ def test_literal_series() -> None:
                 [datetime(2022, 8, 16), datetime(2022, 8, 17), datetime(2022, 8, 18)],
                 dtype="<M8[ns]",
             ),
-        }
+        },
+        schema_overrides={"a": pl.Float64},
     )
     out = (
         df.lazy()
@@ -1258,7 +1306,7 @@ def test_literal_series() -> None:
         .collect()
     )
     expected_schema = {
-        "a": pl.Float32,
+        "a": pl.Float64,
         "b": pl.Int8,
         "c": pl.Utf8,
         "d": pl.Datetime("ns"),
@@ -1416,16 +1464,17 @@ def test_from_rows() -> None:
     )
     df = pl.from_records(
         [[1, datetime.fromtimestamp(100)], [2, datetime.fromtimestamp(2398754908)]],
+        schema_overrides={"column_0": pl.UInt32},
         orient="row",
     )
-    assert df.dtypes == [pl.Int64, pl.Datetime]
+    assert df.dtypes == [pl.UInt32, pl.Datetime]
 
 
 def test_repeat_by() -> None:
     df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
-
     out = df.select(pl.col("n").repeat_by("n"))
     s = out["n"]
+
     assert s[0].to_list() == [2, 2]
     assert s[1].to_list() == [3, 3, 3]
 
@@ -2169,7 +2218,6 @@ def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
             "optional": [28, 300, None, 2, -30],
         }
     )
-
     s = df.to_dict(as_series=as_series)
     assert isinstance(s, dict)
     for v in s.values():
@@ -2178,9 +2226,11 @@ def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
 
 
 def test_df_broadcast() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    out = df.with_column(pl.Series([[1, 2]]))
+    df = pl.DataFrame({"a": [1, 2, 3]}, schema_overrides={"a": pl.UInt8})
+    out = df.with_column(pl.Series("s", [[1, 2]]))
     assert out.shape == (3, 2)
+    assert out.schema == {"a": pl.UInt8, "s": pl.List(pl.Int64)}
+    assert out.rows() == [(1, [1, 2]), (2, [1, 2]), (3, [1, 2])]
 
 
 def test_product() -> None:
@@ -2190,11 +2240,16 @@ def test_product() -> None:
             "flt": [-1.0, 12.0, 9.0],
             "bool_0": [True, False, True],
             "bool_1": [True, True, True],
-        }
+        },
+        schema_overrides={
+            "int": pl.UInt16,
+            "flt": pl.Float32,
+        },
     )
     out = df.product()
     expected = pl.DataFrame({"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1]})
-    assert out.frame_equal(expected)
+    assert_frame_not_equal(out, expected, check_dtype=True)
+    assert_frame_equal(out, expected, check_dtype=False)
 
 
 def test_first_last_expression(fruits_cars: pl.DataFrame) -> None:
@@ -2645,20 +2700,31 @@ def test_init_datetimes_with_timezone() -> None:
 
     dtm = datetime(2022, 10, 12, 12, 30, tzinfo=zoneinfo.ZoneInfo("UTC"))
     for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
-        df = pl.DataFrame(
-            data={"d1": [dtm], "d2": [dtm]},
-            columns=[
-                ("d1", pl.Datetime(tu, tz_us)),
-                ("d2", pl.Datetime(tu, tz_europe)),
-            ],
-        )
-        assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
-        assert df.rows() == [
-            (
-                datetime(2022, 10, 12, 8, 30, tzinfo=zoneinfo.ZoneInfo(tz_us)),
-                datetime(2022, 10, 12, 14, 30, tzinfo=zoneinfo.ZoneInfo(tz_europe)),
+        for type_overrides in (
+            {
+                "columns": [
+                    ("d1", pl.Datetime(tu, tz_us)),
+                    ("d2", pl.Datetime(tu, tz_europe)),
+                ]
+            },
+            {
+                "schema_overrides": {
+                    "d1": pl.Datetime(tu, tz_us),
+                    "d2": pl.Datetime(tu, tz_europe),
+                }
+            },
+        ):
+            df = pl.DataFrame(  # type: ignore[arg-type]
+                data={"d1": [dtm], "d2": [dtm]},
+                **type_overrides,
             )
-        ]
+            assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
+            assert df.rows() == [
+                (
+                    datetime(2022, 10, 12, 8, 30, tzinfo=zoneinfo.ZoneInfo(tz_us)),
+                    datetime(2022, 10, 12, 14, 30, tzinfo=zoneinfo.ZoneInfo(tz_europe)),
+                )
+            ]
 
 
 def test_init_physical_with_timezone() -> None:

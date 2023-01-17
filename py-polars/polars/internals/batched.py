@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Sequence
 
 import polars.internals as pli
-from polars.datatypes import N_INFER_DEFAULT, PolarsDataType, py_type_to_dtype
+from polars.datatypes import (
+    N_INFER_DEFAULT,
+    PolarsDataType,
+    SchemaDict,
+    py_type_to_dtype,
+)
 from polars.internals.type_aliases import CsvEncoding
 from polars.utils import (
     _prepare_row_count_args,
@@ -31,7 +36,7 @@ class BatchedCsvReader:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: None | (Mapping[str, PolarsDataType] | Sequence[PolarsDataType]) = None,
+        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         null_values: str | list[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,

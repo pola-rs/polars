@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -14,6 +14,7 @@ from polars.datatypes import (
     Duration,
     Int64,
     PolarsDataType,
+    SchemaDict,
     Struct,
     Time,
     UInt32,
@@ -2278,7 +2279,7 @@ def select(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[True],
-    schema: Mapping[str, PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pli.Series:
     ...
 
@@ -2287,7 +2288,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[False],
-    schema: Mapping[str, PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pli.Expr:
     ...
 
@@ -2296,7 +2297,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
-    schema: Mapping[str, PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pli.Expr | pli.Series:
     ...
 
@@ -2304,7 +2305,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
-    schema: Mapping[str, PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pli.Expr | pli.Series:
     """
     Collect several columns into a Series of dtype Struct.

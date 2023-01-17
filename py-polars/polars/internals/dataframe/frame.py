@@ -32,13 +32,13 @@ from polars._html import NotebookFormatter
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
-    ColumnsType,
     Int8,
     Int16,
     Int32,
     Int64,
     PolarsDataType,
-    Schema,
+    SchemaDefinition,
+    SchemaDict,
     UInt8,
     UInt16,
     UInt32,
@@ -153,6 +153,9 @@ class DataFrame:
     infer_schema_length : int, default None
         Maximum number of rows to read for schema inference; only applies if the input
         data is a sequence or generator of rows; other input is read as-is.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the columns param will be overridden.
 
     Examples
     --------
@@ -285,39 +288,55 @@ class DataFrame:
             | pli.Series
             | None
         ) = None,
-        columns: ColumnsType | None = None,
+        columns: SchemaDefinition | None = None,
         orient: Orientation | None = None,
+        *,
         infer_schema_length: int | None = N_INFER_DEFAULT,
+        schema_overrides: SchemaDict | None = None,
     ):
         if data is None:
-            self._df = dict_to_pydf({}, columns=columns)
+            self._df = dict_to_pydf(
+                {}, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif isinstance(data, dict):
-            self._df = dict_to_pydf(data, columns=columns)
+            self._df = dict_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
                 data,
                 columns=columns,
+                schema_overrides=schema_overrides,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
         elif isinstance(data, pli.Series):
-            self._df = series_to_pydf(data, columns=columns)
+            self._df = series_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
-            self._df = numpy_to_pydf(data, columns=columns, orient=orient)
+            self._df = numpy_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides, orient=orient
+            )
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
-            self._df = arrow_to_pydf(data, columns=columns)
+            self._df = arrow_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
-            self._df = pandas_to_pydf(data, columns=columns)
+            self._df = pandas_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
             self._df = iterable_to_pydf(
                 data,
                 columns=columns,
+                schema_overrides=schema_overrides,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
@@ -338,9 +357,9 @@ class DataFrame:
         cls: type[DF],
         data: Sequence[dict[str, Any]],
         infer_schema_length: int | None = N_INFER_DEFAULT,
-        schema: Schema | None = None,
+        schema_overrides: SchemaDict | None = None,
     ) -> DF:
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema_overrides)
         return cls._from_pydf(pydf)
 
     @classmethod
@@ -349,7 +368,8 @@ class DataFrame:
         data: Mapping[
             str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series
         ],
-        columns: Sequence[str] | None = None,
+        schema: SchemaDefinition | None = None,
+        schema_overrides: SchemaDict | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a dictionary of sequences.
@@ -357,24 +377,30 @@ class DataFrame:
         Parameters
         ----------
         data : dict of sequences
-            Two-dimensional data represented as a dictionary. dict must contain
-            Sequences.
-        columns : Sequence of str, default None
-            Column labels to use for resulting DataFrame. If specified, overrides any
-            labels already present in the data. Must match data dimensions.
+          Two-dimensional data represented as a dictionary. dict must contain
+          Sequences.
+        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+          Column labels to use for resulting DataFrame. If specified, overrides any
+          labels already present in the data. Must match data dimensions.
+        schema_overrides : dict, default None
+          Support type specification or override of one or more columns; note that
+          any dtypes inferred from the columns param will be overridden.
 
         Returns
         -------
         DataFrame
 
         """
-        return cls._from_pydf(dict_to_pydf(data, columns=columns))
+        return cls._from_pydf(
+            dict_to_pydf(data, columns=schema, schema_overrides=schema_overrides)
+        )
 
     @classmethod
     def _from_records(
         cls: type[DF],
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
+        schema_overrides: SchemaDict | None = None,
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> DF:
@@ -388,6 +414,9 @@ class DataFrame:
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. Must match data dimensions.
             If not specified, columns will be named `column_0`, `column_1`, etc.
+        schema_overrides : dict, default None
+            Support type specification or override of one or more columns; note that
+            any dtypes inferred from the columns param will be overridden.
         orient : {'col', 'row'}, default None
             Whether to interpret two-dimensional data as columns or as rows. If None,
             the orientation is inferred by matching the columns and data dimensions. If
@@ -404,6 +433,7 @@ class DataFrame:
             sequence_to_pydf(
                 data,
                 columns=columns,
+                schema_overrides=schema_overrides,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
@@ -414,6 +444,7 @@ class DataFrame:
         cls: type[DF],
         data: np.ndarray[Any, Any],
         columns: Sequence[str] | None = None,
+        schema_overrides: SchemaDict | None = None,
         orient: Orientation | None = None,
     ) -> DF:
         """
@@ -426,6 +457,9 @@ class DataFrame:
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. Must match data dimensions.
             If not specified, columns will be named `column_0`, `column_1`, etc.
+        schema_overrides : dict, default None
+            Support type specification or override of one or more columns; note that
+            any dtypes inferred from the columns param will be overridden.
         orient : {'col', 'row'}, default None
             Whether to interpret two-dimensional data as columns or as rows. If None,
             the orientation is inferred by matching the columns and data dimensions. If
@@ -436,13 +470,18 @@ class DataFrame:
         DataFrame
 
         """
-        return cls._from_pydf(numpy_to_pydf(data, columns=columns, orient=orient))
+        return cls._from_pydf(
+            numpy_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides, orient=orient
+            )
+        )
 
     @classmethod
     def _from_arrow(
         cls: type[DF],
         data: pa.Table,
         columns: Sequence[str] | None = None,
+        schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
     ) -> DF:
         """
@@ -453,12 +492,15 @@ class DataFrame:
 
         Parameters
         ----------
-        data : numpy ndarray or Sequence of sequences
-            Two-dimensional data represented as Arrow table.
+        data : arrow table, array, or sequence of sequences
+            Data representing an Arrow Table or Array.
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. Must match data dimensions.
             If not specified, existing Array table columns are used, with missing names
             named as `column_0`, `column_1`, etc.
+        schema_overrides : dict, default None
+            Support type specification or override of one or more columns; note that
+            any dtypes inferred from the columns param will be overridden.
         rechunk : bool, default True
             Make sure that all data is in contiguous memory.
 
@@ -467,13 +509,21 @@ class DataFrame:
         DataFrame
 
         """
-        return cls._from_pydf(arrow_to_pydf(data, columns=columns, rechunk=rechunk))
+        return cls._from_pydf(
+            arrow_to_pydf(
+                data,
+                columns=columns,
+                schema_overrides=schema_overrides,
+                rechunk=rechunk,
+            )
+        )
 
     @classmethod
     def _from_pandas(
         cls: type[DF],
         data: pd.DataFrame,
         columns: Sequence[str] | None = None,
+        schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
         nan_to_none: bool = True,
     ) -> DF:
@@ -487,6 +537,9 @@ class DataFrame:
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. If specified, overrides any
             labels already present in the data. Must match data dimensions.
+        schema_overrides : dict, default None
+            Support type specification or override of one or more columns; note that
+            any dtypes inferred from the columns param will be overridden.
         rechunk : bool, default True
             Make sure that all data is in contiguous memory.
         nan_to_none : bool, default True
@@ -505,13 +558,18 @@ class DataFrame:
                 if pd_series.dtype == np.dtype("O"):
                     series.append(pli.Series(name, [], dtype=Utf8))
                 else:
-                    col = pli.Series(name, pd_series)
+                    dtype = (schema_overrides or {}).get(name)
+                    col = pli.Series(name, pd_series, dtype=dtype)
                     series.append(pli.Series(name, col))
             return cls(series)
 
         return cls._from_pydf(
             pandas_to_pydf(
-                data, columns=columns, rechunk=rechunk, nan_to_none=nan_to_none
+                data,
+                columns=columns,
+                schema_overrides=schema_overrides,
+                rechunk=rechunk,
+                nan_to_none=nan_to_none,
             )
         )
 
@@ -525,7 +583,7 @@ class DataFrame:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: None | (Mapping[str, PolarsDataType] | Sequence[PolarsDataType]) = None,
+        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         null_values: str | list[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
@@ -993,7 +1051,7 @@ class DataFrame:
         return self._df.dtypes()
 
     @property
-    def schema(self) -> dict[str, PolarsDataType]:
+    def schema(self) -> SchemaDict:
         """
         Get a dict[column name, DataType].
 

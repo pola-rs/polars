@@ -85,12 +85,12 @@ PythonDataType: TypeAlias = Union[
     Type[Decimal],
 ]
 
-ColumnsType: TypeAlias = Union[
+SchemaDefinition: TypeAlias = Union[
     Sequence[str],
     Mapping[str, Union[PolarsDataType, PythonDataType]],
     Sequence[Union[str, Tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
 ]
-Schema: TypeAlias = Mapping[str, PolarsDataType]
+SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
 DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
 
@@ -375,7 +375,7 @@ class Field:
 
 
 class Struct(NestedType):
-    def __init__(self, fields: Sequence[Field] | Mapping[str, PolarsDataType]):
+    def __init__(self, fields: Sequence[Field] | SchemaDict):
         """
         Struct composite type.
 
@@ -415,7 +415,7 @@ class Struct(NestedType):
         class_name = self.__class__.__name__
         return f"{class_name}({self.fields})"
 
-    def to_schema(self) -> dict[str, PolarsDataType] | None:
+    def to_schema(self) -> SchemaDict | None:
         """Return Struct dtype as a schema dict."""
         return dict(self)
 
@@ -510,7 +510,7 @@ class _DataTypeMappings:
 
     @property
     @cache
-    def PY_STR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
+    def PY_STR_TO_DTYPE(self) -> SchemaDict:
         return {str(tp.__name__): dtype for tp, dtype in self.PY_TYPE_TO_DTYPE.items()}
 
     @property
@@ -539,7 +539,7 @@ class _DataTypeMappings:
 
     @property
     @cache
-    def NUMPY_CHAR_CODE_TO_DTYPE(self) -> dict[str, PolarsDataType]:
+    def NUMPY_CHAR_CODE_TO_DTYPE(self) -> SchemaDict:
         # Note: Windows behaves differently from other platforms as C long
         # is only 32-bit on Windows, while it is 64-bit on other platforms.
         # See: https://numpy.org/doc/stable/reference/arrays.scalars.html

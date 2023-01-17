@@ -35,7 +35,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     PolarsDataType,
-    Schema,
+    SchemaDict,
     Time,
     UInt8,
     UInt16,
@@ -122,7 +122,7 @@ class LazyFrame:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: dict[str, PolarsDataType] | None = None,
+        dtypes: SchemaDict | None = None,
         null_values: str | list[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
@@ -417,7 +417,7 @@ class LazyFrame:
         return self._ldf.dtypes()
 
     @property
-    def schema(self) -> Schema:
+    def schema(self) -> SchemaDict:
         """
         Get a dict[column name, DataType].
 
@@ -3723,7 +3723,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         projection_pushdown: bool = True,
         slice_pushdown: bool = True,
         no_optimizations: bool = False,
-        schema: None | Schema = None,
+        schema: None | SchemaDict = None,
         validate_output_schema: bool = True,
     ) -> LDF:
         """
