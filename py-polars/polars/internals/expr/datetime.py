@@ -38,21 +38,23 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        The `every` and `offset` argument are created with the
-        the following small string formatting language:
+        The ``every`` and ``offset`` argument are created with the
+        the following string language:
 
-        1ns  # 1 nanosecond
-        1us  # 1 microsecond
-        1ms  # 1 millisecond
-        1s   # 1 second
-        1m   # 1 minute
-        1h   # 1 hour
-        1d   # 1 day
-        1w   # 1 calendar week starting at Monday
-        1mo  # 1 calendar month
-        1y   # 1 calendar year
+        - 1ns # 1 nanosecond
+        - 1us # 1 microsecond
+        - 1ms # 1 millisecond
+        - 1s  # 1 second
+        - 1m  # 1 minute
+        - 1h  # 1 hour
+        - 1d  # 1 day
+        - 1w  # 1 calendar week
+        - 1mo # 1 calendar month
+        - 1y  # 1 calendar year
 
-        eg: 3d12h4m25s  # 3 days, 12 hours, 4 minutes, and 25 seconds
+        These strings can be combined:
+
+        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         Returns
         -------
