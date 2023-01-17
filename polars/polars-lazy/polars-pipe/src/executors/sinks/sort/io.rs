@@ -72,7 +72,7 @@ impl IOThread {
                         path.push(format!("{count}.ipc"));
 
                         let file = std::fs::File::create(path).unwrap();
-                        let mut writer = IpcWriter::new(file);
+                        let writer = IpcWriter::new(file);
                         let mut writer = writer.batched(&schema).unwrap();
                         writer.write_batch(&df).unwrap();
                         writer.finish().unwrap();
@@ -83,7 +83,7 @@ impl IOThread {
                     path.push(format!("{count}.ipc"));
 
                     let file = std::fs::File::create(path).unwrap();
-                    let mut writer = IpcWriter::new(file);
+                    let writer = IpcWriter::new(file);
                     let mut writer = writer.batched(&schema).unwrap();
 
                     for df in iter {

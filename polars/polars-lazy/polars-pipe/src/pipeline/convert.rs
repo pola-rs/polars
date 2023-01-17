@@ -123,6 +123,9 @@ where
                     Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
                         as Box<dyn Sink>
                 }
+                FileType::Ipc(options) => {
+                    Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn Sink>
+                }
             }
         }
         Join {
