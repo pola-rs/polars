@@ -30,8 +30,11 @@ from warnings import warn
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
     N_INFER_DEFAULT,
     Boolean,
+    Float64,
     Int8,
     Int16,
     Int32,
@@ -1130,6 +1133,43 @@ class DataFrame:
         else:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
+    def _div(self: DF, other: Any, floordiv: bool) -> DF:
+        if isinstance(other, pli.Series):
+            other = other.to_frame()
+        elif not isinstance(other, DataFrame):
+            s = _prepare_other_arg(other, length=len(self))
+            other = DataFrame([s.rename(f"n{i}") for i in range(len(self.columns))])
+
+        orig_dtypes = other.dtypes
+        other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
+        df = self._from_pydf(self._df.div_df(other._df))
+        df = (
+            df  # type: ignore[assignment]
+            if not floordiv
+            else df.with_columns([s.floor() for s in df if s.dtype() in FLOAT_DTYPES])
+        )
+        if floordiv:
+            int_casts = [
+                pli.col(col).cast(tp)
+                for i, (col, tp) in enumerate(self.schema.items())
+                if tp in INTEGER_DTYPES and orig_dtypes[i] in INTEGER_DTYPES
+            ]
+            if int_casts:
+                return df.with_columns(int_casts)  # type: ignore[return-value]
+        return df
+
+    def _cast_all_from_to(
+        self, df: DataFrame, from_: frozenset[PolarsDataType], to: PolarsDataType
+    ) -> DataFrame:
+        casts = [s.cast(to).alias(s.name) for s in df if s.dtype() in from_]
+        return df.with_columns(casts) if casts else df
+
+    def __floordiv__(self: DF, other: DF | pli.Series | int | float) -> DF:
+        return self._div(other, floordiv=True)
+
+    def __truediv__(self: DF, other: DF | pli.Series | int | float) -> DF:
+        return self._div(other, floordiv=False)
+
     def __bool__(self) -> NoReturn:
         raise ValueError(
             "The truth value of a DataFrame is ambiguous. "
@@ -1160,22 +1200,15 @@ class DataFrame:
     def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
         self._df = DataFrame(state)._df
 
-    def __mul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+    def __mul__(self: DF, other: DataFrame | pli.Series | int | float) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.mul_df(other._df))
 
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.mul(other._s))
 
-    def __rmul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+    def __rmul__(self: DF, other: DataFrame | pli.Series | int | float) -> DF:
         return self * other
-
-    def __truediv__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
-        if isinstance(other, DataFrame):
-            return self._from_pydf(self._df.div_df(other._df))
-
-        other = _prepare_other_arg(other)
-        return self._from_pydf(self._df.div(other._s))
 
     def __add__(
         self: DF, other: DataFrame | pli.Series | int | float | bool | str
@@ -1192,13 +1225,13 @@ class DataFrame:
             return self.select((pli.lit(other) + pli.col("*")).keep_name())
         return self + other
 
-    def __sub__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+    def __sub__(self: DF, other: DataFrame | pli.Series | int | float) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.sub_df(other._df))
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.sub(other._s))
 
-    def __mod__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+    def __mod__(self: DF, other: DataFrame | pli.Series | int | float) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.rem_df(other._df))
         other = _prepare_other_arg(other)
@@ -6989,13 +7022,17 @@ class DataFrame:
         )
 
 
-def _prepare_other_arg(other: Any) -> pli.Series:
+def _prepare_other_arg(other: Any, length: int | None = None) -> pli.Series:
     # if not a series create singleton series such that it will broadcast
+    value = other
     if not isinstance(other, pli.Series):
         if isinstance(other, str):
             pass
         elif isinstance(other, Sequence):
             raise ValueError("Operation not supported.")
-
         other = pli.Series("", [other])
+
+    if length and length > 1:
+        other = other.extend_constant(value=value, n=length - 1)
+
     return other
