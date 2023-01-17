@@ -47,6 +47,7 @@ fn init_writer_thread(
 
                 if last_write {
                     writer.finish().unwrap();
+                    return;
                 }
             }
         }
