@@ -5,7 +5,7 @@ use std::ops::Deref;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 #[cfg(feature = "serde")]
 use erased_serde;
 
