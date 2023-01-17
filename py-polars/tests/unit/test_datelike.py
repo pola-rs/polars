@@ -516,8 +516,7 @@ def test_date_range() -> None:
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
 
-def test_date_range_lazy() -> None:
-    # lazy date range with literals
+def test_date_range_lazy_with_literals() -> None:
     df = pl.DataFrame({"misc": ["x"]}).with_columns(
         pl.date_range(
             date(2000, 1, 1),
@@ -551,18 +550,16 @@ def test_date_range_lazy() -> None:
         ).date.tolist()
     )
 
-    # lazy date range with expressions
+
+@pytest.mark.parametrize("low", ["start", pl.col("start")])
+@pytest.mark.parametrize("high", ["stop", pl.col("stop")])
+def test_date_range_lazy_with_expressions(
+    low: str | pl.Expr, high: str | pl.Expr
+) -> None:
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
         .with_columns(
-            pl.date_range(
-                pl.col("start"),
-                pl.col("stop"),
-                interval="678d",
-                lazy=True,
-            )
-            .list()
-            .alias("dts")
+            pl.date_range(low, high, interval="678d", lazy=True).list().alias("dts")
         )
         .lazy()
     )
@@ -588,8 +585,8 @@ def test_date_range_lazy() -> None:
         }
     ).with_columns(
         pl.date_range(
-            pl.col("start"),
-            pl.col("stop"),
+            low,
+            high,
             interval="1d",
         ).alias("dts")
     ).to_dict(
@@ -610,8 +607,8 @@ def test_date_range_lazy() -> None:
         }
     ).with_columns(
         pl.date_range(
-            pl.col("start"),
-            pl.col("stop"),
+            low,
+            high,
             interval="1d",
         ).alias("dts")
     ).to_dict(
