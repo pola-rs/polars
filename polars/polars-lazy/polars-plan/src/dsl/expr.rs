@@ -6,6 +6,8 @@ use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+use erased_serde;
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
@@ -13,6 +15,14 @@ use crate::prelude::*;
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait SeriesUdf: Send + Sync {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series>;
+    #[cfg(feature = "serde")]
+    /// This method allows serialization of downstream SeriesUdf types that are also serde serializable.
+    /// For this to work, just add the following implementation of the method to your type's SeriesUdf impl block:
+    /// ```
+    /// fn as_maybe_serialize(&self) -> Option<&dyn erased_serde::Serialize> { self }
+    /// ```
+    /// Types that should not be serialized must keep the default implementation of the method (i.e. return None).
+    fn as_maybe_serialize(&self) -> Option<&dyn erased_serde::Serialize> { None }
 }
 
 impl<F> SeriesUdf for F
@@ -28,6 +38,17 @@ impl Debug for dyn SeriesUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "SeriesUdf")
     }
+}
+
+// Serialization of SeriesUdf:
+// - types whose as_maybe_serialize method returns a Serialize trait object are serialized using serde,
+// - types whose as_maybe_serialize method returns None return a serialization error.
+#[cfg(feature = "serde")]
+fn serialize_series_udf<S>(f: &SpecialEq<Arc<dyn SeriesUdf>>, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer,
+{
+    let data = f.0.as_maybe_serialize().ok_or(S::Error::custom("Cannot serialize rename alias function."))?;
+    data.serialize(serializer)
 }
 
 /// A wrapper trait for any binary closure `Fn(Series, Series) -> PolarsResult<Series>`
@@ -65,6 +86,14 @@ impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
 
 pub trait RenameAliasFn: Send + Sync {
     fn call(&self, name: &str) -> PolarsResult<String>;
+    #[cfg(feature = "serde")]
+    /// This method allows serialization of downstream RenameAliasFn types that are also serde serializable.
+    /// For this to work, just add the following implementation of the method to your type's SeriesUdf impl block:
+    /// ```
+    /// fn as_maybe_serialize(&self) -> Option<&dyn erased_serde::Serialize> { self }
+    /// ```
+    /// Types that should not be serialized must keep the default implementation of the method (i.e. return None).
+    fn as_maybe_serialize(&self) -> Option<&dyn erased_serde::Serialize> { None }
 }
 
 impl<F: Fn(&str) -> PolarsResult<String> + Send + Sync> RenameAliasFn for F {
@@ -77,6 +106,17 @@ impl Debug for dyn RenameAliasFn {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "RenameAliasFn")
     }
+}
+
+// Serialization of RenameAliasFn:
+// - types whose as_maybe_serialize method returns a Serialize trait object are serialized using serde,
+// - types whose as_maybe_serialize method returns None return a serialization error.
+#[cfg(feature = "serde")]
+fn serialize_rename_alias_fn<S>(f: &SpecialEq<Arc<dyn RenameAliasFn>>, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer,
+{
+    let data = f.0.as_maybe_serialize().ok_or(S::Error::custom("Cannot serialize rename alias function."))?;
+    data.serialize(serializer)
 }
 
 #[derive(Clone)]
@@ -348,12 +388,12 @@ pub enum Expr {
     /// Take the nth column in the `DataFrame`
     Nth(i64),
     // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "serde", serde(serialize_with = serialize_rename_alias_fn))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Box<Expr>,
     },
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "serde", serde(serialize_with = serialize_series_udf))]
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
