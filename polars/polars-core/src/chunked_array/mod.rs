@@ -30,10 +30,8 @@ mod from;
 pub(crate) mod list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 pub mod object;
 #[cfg(feature = "random")]
-#[cfg_attr(docsrs, doc(cfg(feature = "random")))]
 mod random;
 pub mod strings;
 #[cfg(any(
@@ -41,7 +39,6 @@ pub mod strings;
     feature = "dtype-datetime",
     feature = "dtype-date"
 ))]
-#[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;

@@ -2,7 +2,6 @@ use crate::prelude::*;
 use crate::series::ops::NullBehavior;
 
 impl Series {
-    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
     pub fn diff(&self, n: usize, null_behavior: NullBehavior) -> Series {
         use DataType::*;
         let s = match self.dtype() {

@@ -154,7 +154,6 @@ impl LazyFrame {
 
     /// Toggle common subplan elimination optimization on or off
     #[cfg(feature = "cse")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "cse")))]
     pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
         self.opt_state.common_subplan_elimination = toggle;
         self
@@ -725,7 +724,6 @@ impl LazyFrame {
     /// individual values and are not of constant intervals. For constant intervals use
     /// *groupby_dynamic*
     #[cfg(feature = "dynamic_groupby")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dynamic_groupby")))]
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -758,7 +756,6 @@ impl LazyFrame {
     /// The `by` argument should be empty `[]` if you don't want to combine this
     /// with a ordinary groupby on these keys.
     #[cfg(feature = "dynamic_groupby")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dynamic_groupby")))]
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -1195,7 +1192,6 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
         self.map_private(FunctionNode::Unnest {
             columns: Arc::new(cols.into_iter().map(|s| Arc::from(s.as_ref())).collect()),

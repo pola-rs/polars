@@ -38,7 +38,7 @@ jobs:
 
       - name: Build Rust documentation
         env:
-          RUSTFLAGS: --cfg docsrs
+          RUSTDOCFLAGS: --cfg docsrs
         run: cargo doc --features=docs-selection --package polars
 
       - name: Prepare deployment

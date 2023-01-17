@@ -619,7 +619,6 @@ fn dispatch_join<T: PolarsNumericType>(
 }
 
 impl DataFrame {
-    #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
     #[allow(clippy::too_many_arguments)]
     #[doc(hidden)]
     pub fn _join_asof_by(
@@ -704,7 +703,6 @@ impl DataFrame {
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
     /// The keys must be sorted to perform an asof join. This is a special implementation of an asof join
     /// that searches for the nearest keys within a subgroup set by `by`.
-    #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
     #[allow(clippy::too_many_arguments)]
     pub fn join_asof_by<I, S>(
         &self,

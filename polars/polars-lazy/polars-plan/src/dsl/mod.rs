@@ -876,7 +876,6 @@ impl Expr {
     }
 
     /// Get an array with the cumulative sum computed at every element
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cumsum(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cumsum(reverse)),
@@ -901,7 +900,6 @@ impl Expr {
     }
 
     /// Get an array with the cumulative product computed at every element
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cumprod(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cumprod(reverse)),
@@ -920,7 +918,6 @@ impl Expr {
     }
 
     /// Get an array with the cumulative min computed at every element
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cummin(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cummin(reverse)),
@@ -930,7 +927,6 @@ impl Expr {
     }
 
     /// Get an array with the cumulative max computed at every element
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cummax(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cummax(reverse)),
@@ -940,7 +936,6 @@ impl Expr {
     }
 
     /// Get the product aggregation of an expression
-    #[cfg_attr(docsrs, doc(cfg(feature = "product")))]
     pub fn product(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
@@ -983,7 +978,6 @@ impl Expr {
 
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn round(self, decimals: u32) -> Self {
         self.map(move |s: Series| s.round(decimals), GetOutput::same_type())
             .with_fmt("round")
@@ -991,7 +985,6 @@ impl Expr {
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn floor(self) -> Self {
         self.map(move |s: Series| s.floor(), GetOutput::same_type())
             .with_fmt("floor")
@@ -999,7 +992,6 @@ impl Expr {
 
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn ceil(self) -> Self {
         self.map(move |s: Series| s.ceil(), GetOutput::same_type())
             .with_fmt("ceil")
@@ -1007,7 +999,6 @@ impl Expr {
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn clip(self, min: AnyValue<'_>, max: AnyValue<'_>) -> Self {
         self.map_private(FunctionExpr::Clip {
             min: Some(min.into_static().unwrap()),
@@ -1017,7 +1008,6 @@ impl Expr {
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn clip_max(self, max: AnyValue<'_>) -> Self {
         self.map_private(FunctionExpr::Clip {
             min: None,
@@ -1027,7 +1017,6 @@ impl Expr {
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn clip_min(self, min: AnyValue<'_>) -> Self {
         self.map_private(FunctionExpr::Clip {
             min: Some(min.into_static().unwrap()),
@@ -1037,7 +1026,6 @@ impl Expr {
 
     /// Convert all values to their absolute/positive value.
     #[cfg(feature = "abs")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
     pub fn abs(self) -> Self {
         self.map(move |s: Series| s.abs(), GetOutput::same_type())
             .with_fmt("abs")
@@ -1381,7 +1369,6 @@ impl Expr {
     /// Check if the values of the left expression are in the lists of the right expr.
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_in")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
     pub fn is_in<E: Into<Expr>>(self, other: E) -> Self {
         let other = other.into();
         let has_literal = has_root_literal_expr(&other);
@@ -1438,7 +1425,6 @@ impl Expr {
     }
 
     #[cfg(feature = "repeat_by")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
     /// Repeat the column `n` times, where `n` is determined by the values in `by`.
     /// This yields an `Expr` of dtype `List`
     pub fn repeat_by<E: Into<Expr>>(self, by: E) -> Expr {
@@ -1446,7 +1432,6 @@ impl Expr {
     }
 
     #[cfg(feature = "is_first")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
@@ -1466,13 +1451,11 @@ impl Expr {
     }
 
     #[cfg(feature = "dot_product")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
     pub fn dot<E: Into<Expr>>(self, other: E) -> Expr {
         self.dot_impl(other.into())
     }
 
     #[cfg(feature = "mode")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
     /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
         self.apply(
@@ -1562,7 +1545,6 @@ impl Expr {
 
     // Interpolate None values
     #[cfg(feature = "interpolate")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
     pub fn interpolate(self, method: InterpolationMethod) -> Expr {
         self.apply_private(FunctionExpr::Interpolate(method))
     }
@@ -1633,7 +1615,6 @@ impl Expr {
 
     /// Apply a rolling min See:
     /// [ChunkedArray::rolling_min]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_min(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1646,7 +1627,6 @@ impl Expr {
 
     /// Apply a rolling max See:
     /// [ChunkedArray::rolling_max]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_max(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1659,7 +1639,6 @@ impl Expr {
 
     /// Apply a rolling mean See:
     /// [ChunkedArray::rolling_mean]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_mean(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1672,7 +1651,6 @@ impl Expr {
 
     /// Apply a rolling sum See:
     /// [ChunkedArray::rolling_sum]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_sum(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1685,7 +1663,6 @@ impl Expr {
 
     /// Apply a rolling median See:
     /// [`ChunkedArray::rolling_median`]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1698,7 +1675,6 @@ impl Expr {
 
     /// Apply a rolling quantile See:
     /// [`ChunkedArray::rolling_quantile`]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_quantile(
         self,
@@ -1715,7 +1691,6 @@ impl Expr {
     }
 
     /// Apply a rolling variance
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1727,7 +1702,6 @@ impl Expr {
     }
 
     /// Apply a rolling std-dev
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
@@ -1739,14 +1713,12 @@ impl Expr {
     }
 
     /// Apply a rolling skew
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "rolling_window", feature = "moment"))))]
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]
     pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
         self.apply_private(FunctionExpr::RollingSkew { window_size, bias })
     }
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
@@ -1763,7 +1735,6 @@ impl Expr {
         .with_fmt("rolling_apply")
     }
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// Prefer this over rolling_apply in case of floating point numbers as this is faster.
@@ -1803,7 +1774,6 @@ impl Expr {
     }
 
     #[cfg(feature = "rank")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
     pub fn rank(self, options: RankOptions) -> Expr {
         self.apply(
             move |s| Ok(s.rank(options)),
@@ -1816,13 +1786,11 @@ impl Expr {
     }
 
     #[cfg(feature = "diff")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
     pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))
     }
 
     #[cfg(feature = "pct_change")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "pct_change")))]
     pub fn pct_change(self, n: usize) -> Expr {
         use DataType::*;
         self.apply(
@@ -1836,7 +1804,6 @@ impl Expr {
     }
 
     #[cfg(feature = "moment")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
     /// Compute the sample skewness of a data set.
     ///
     /// For normally distributed data, the skewness should be about zero. For
@@ -1859,7 +1826,6 @@ impl Expr {
     }
 
     #[cfg(feature = "moment")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
     pub fn kurtosis(self, fisher: bool, bias: bool) -> Expr {
         self.apply(
             move |s| {
@@ -2114,7 +2080,6 @@ impl Expr {
     }
 
     #[cfg(feature = "dtype-struct")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     /// Count all unique values and create a struct mapping value to count
     /// Note that it is better to turn multithreaded off in the aggregation context
     pub fn value_counts(self, multithreaded: bool, sorted: bool) -> Self {
@@ -2138,7 +2103,6 @@ impl Expr {
     }
 
     #[cfg(feature = "unique_counts")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "unique_counts")))]
     /// Returns a count of the unique values in the order of appearance.
     /// This method differs from [`Expr::value_counts]` in that it does not return the
     /// values, only the counts and might be faster
@@ -2151,7 +2115,6 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     /// Compute the logarithm to a given base
     pub fn log(self, base: f64) -> Self {
         self.map(
@@ -2168,7 +2131,6 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     /// Calculate the exponential of all elements in the input array
     pub fn exp(self) -> Self {
         self.map(
@@ -2185,7 +2147,6 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     /// Compute the entropy as `-sum(pk * log(pk)`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {

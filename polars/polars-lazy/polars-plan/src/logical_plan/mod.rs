@@ -143,7 +143,6 @@ pub enum LogicalPlan {
         predicate: Option<Expr>,
     },
     #[cfg(feature = "parquet")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     /// Scan a Parquet file
     ParquetScan {
         path: PathBuf,
@@ -153,7 +152,6 @@ pub enum LogicalPlan {
         cloud_options: Option<CloudOptions>,
     },
     #[cfg(feature = "ipc")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     IpcScan {
         path: PathBuf,
         file_info: FileInfo,

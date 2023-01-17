@@ -174,7 +174,6 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     #[cfg(feature = "diff")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
     fn lst_diff(&self, n: usize, null_behavior: NullBehavior) -> ListChunked {
         let ca = self.as_list();
         ca.apply_amortized(|s| s.as_ref().diff(n, null_behavior))

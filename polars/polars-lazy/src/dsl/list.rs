@@ -25,7 +25,6 @@ impl IntoListNameSpace for ListNameSpace {
 pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
     /// Run any [`Expr`] on these lists elements
     #[cfg(feature = "list_eval")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "list_eval")))]
     fn eval(self, expr: Expr, parallel: bool) -> Expr {
         let this = self.into_list_name_space();
 
