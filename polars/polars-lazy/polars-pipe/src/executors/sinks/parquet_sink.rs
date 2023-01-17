@@ -1,8 +1,9 @@
 use std::any::Any;
 use std::path::Path;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+// use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::thread::JoinHandle;
 
+use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
 use polars_io::parquet::{BatchedWriter, ParquetWriter};
 use polars_plan::prelude::ParquetWriteOptions;
@@ -57,7 +58,7 @@ fn init_writer_thread(
 // Ensure the data is return in the order it was streamed
 #[derive(Clone)]
 pub struct ParquetSink {
-    sender: SyncSender<Option<DataChunk>>,
+    sender: Sender<Option<DataChunk>>,
     io_thread_handle: Arc<Option<JoinHandle<()>>>,
 }
 
@@ -73,7 +74,7 @@ impl ParquetSink {
 
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;
-        let (sender, receiver) = sync_channel(backpressure);
+        let (sender, receiver) = bounded(backpressure);
 
         let io_thread_handle = Arc::new(Some(init_writer_thread(
             receiver,

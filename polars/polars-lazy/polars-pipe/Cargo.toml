@@ -9,6 +9,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+crossbeam-channel = "0.5"
 enum_dispatch = "0.3"
 hashbrown.workspace = true
 num.workspace = true

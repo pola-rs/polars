@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crossbeam_channel::{bounded, Sender};
 use polars_core::prelude::*;
 use polars_core::{POOL, PROCESS_ID};
 use polars_io::prelude::*;
@@ -13,7 +13,7 @@ pub(super) type DfIter = Box<dyn ExactSizeIterator<Item = DataFrame> + Sync + Se
 type Payload = (Option<IdxCa>, DfIter);
 
 pub(super) struct IOThread {
-    sender: SyncSender<Payload>,
+    sender: Sender<Payload>,
     pub(super) dir: PathBuf,
     pub(super) sent: Arc<AtomicUsize>,
     pub(super) total: Arc<AtomicUsize>,
@@ -53,8 +53,7 @@ impl IOThread {
         std::fs::create_dir_all(&dir)?;
 
         // we need some pushback otherwise we still could go OOM.
-        let (sender, receiver) =
-            std::sync::mpsc::sync_channel::<Payload>(POOL.current_num_threads() * 2);
+        let (sender, receiver) = bounded::<Payload>(POOL.current_num_threads() * 2);
 
         let sent: Arc<AtomicUsize> = Default::default();
         let total: Arc<AtomicUsize> = Default::default();
