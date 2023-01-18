@@ -2794,7 +2794,18 @@ def test_glimpse() -> None:
             "c": [True, False, True],
             "d": [None, "b", "c"],
             "e": ["usd", "eur", None],
-            "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
+            "f": pl.date_range(
+                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="us"
+            ),
+            "g": pl.date_range(
+                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="ms"
+            ),
+            "h": pl.date_range(
+                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="ns"
+            ),
+            "i": [[5, 6], [3, 4], [9, 8]],
+            "j": [[5.0, 6.0], [3.0, 4.0], [9.0, 8.0]],
+            "k": [["A", "a"], ["B", "b"], ["C", "c"]],
         }
     )
     result = df.glimpse()
@@ -2802,13 +2813,18 @@ def test_glimpse() -> None:
     expected = textwrap.dedent(
         """\
         Rows: 3
-        Columns: 6
-        $ a  <f64> 1.0, 2.8, 3.0
-        $ b  <i64> 4, 5, None
-        $ c <bool> True, False, True
-        $ d  <str> None, b, c
-        $ e  <str> usd, eur, None
-        $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
+        Columns: 11
+        $ a          <f64> 1.0, 2.8, 3.0
+        $ b          <i64> 4, 5, None
+        $ c         <bool> True, False, True
+        $ d          <str> None, b, c
+        $ e          <str> usd, eur, None
+        $ f <datetime[μs]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
+        $ g <datetime[ms]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
+        $ h <datetime[ns]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
+        $ i    <list[i64]> [5, 6], [3, 4], [9, 8]
+        $ j    <list[f64]> [5.0, 6.0], [3.0, 4.0], [9.0, 8.0]
+        $ k    <list[str]> ['A', 'a'], ['B', 'b'], ['C', 'c']
         """
     )
     assert result == expected
