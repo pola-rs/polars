@@ -79,7 +79,13 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: str | Sequence[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType,
+    name: str
+    | Sequence[str]
+    | Sequence[PolarsDataType]
+    | set[PolarsDataType]
+    | frozenset[PolarsDataType]
+    | pli.Series
+    | PolarsDataType,
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
@@ -196,13 +202,23 @@ def col(
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))
 
-    elif not isinstance(name, str) and isinstance(name, (list, tuple, Sequence)):
-        if len(name) == 0 or isinstance(name[0], str):
+    elif not isinstance(name, str) and isinstance(
+        name, (list, tuple, set, frozenset, Sequence)
+    ):
+        if len(name) == 0:
             return pli.wrap_expr(pycols(name))
-        elif is_polars_dtype(name[0]):
-            return pli.wrap_expr(_dtype_cols(name))
         else:
-            raise ValueError("Expected list values to be all `str` or all `DataType`")
+            names = list(name)
+            item = names[0]
+            if isinstance(item, str):
+                return pli.wrap_expr(pycols(names))
+            elif is_polars_dtype(item):
+                return pli.wrap_expr(_dtype_cols(names))
+            else:
+                raise ValueError(
+                    "Expected list values to be all `str` or all `DataType`"
+                )
+
     return pli.wrap_expr(pycol(name))
 
 
