@@ -28,7 +28,7 @@ def test_struct_pyarrow_dataset_5796() -> None:
         assert pl.from_arrow(tbl).frame_equal(df)
 
 
-def test_sink_parquet(io_test_dir: str) -> None:
+def test_sink_parquet_ipc(io_test_dir: str) -> None:
     if os.name != "nt":
         file = os.path.join(io_test_dir, "..", "files", "small.parquet")
 
@@ -36,6 +36,11 @@ def test_sink_parquet(io_test_dir: str) -> None:
         pl.scan_parquet(file).sink_parquet(dst)
         with pl.StringCache():
             assert pl.read_parquet(dst).frame_equal(pl.read_parquet(file))
+
+        dst = "/tmp/test_sink.ipc"
+        pl.scan_parquet(file).sink_ipc(dst)
+        with pl.StringCache():
+            assert pl.read_ipc(dst).frame_equal(pl.read_parquet(file))
 
 
 def test_fetch_union() -> None:

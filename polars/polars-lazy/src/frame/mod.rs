@@ -15,7 +15,7 @@ mod anonymous_scan;
 pub mod pivot;
 
 use std::borrow::Cow;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -592,6 +592,29 @@ impl LazyFrame {
             payload: FileSinkOptions {
                 path: Arc::new(path),
                 file_type: FileType::Parquet(options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+
+        if is_streaming {
+            let _ = physical_plan.execute(&mut state)?;
+            Ok(())
+        } else {
+            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
+        }
+    }
+
+    //// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
+    /// into memory. This methods will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(feature = "ipc")]
+    pub fn sink_ipc(mut self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::FileSink {
+            input: Box::new(self.logical_plan),
+            payload: FileSinkOptions {
+                path: Arc::new(path),
+                file_type: FileType::Ipc(options),
             },
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;

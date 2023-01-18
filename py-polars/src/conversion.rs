@@ -1087,6 +1087,21 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<IpcCompression> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "zstd" => IpcCompression::ZSTD,
+            "lz4" => IpcCompression::LZ4,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'zstd', 'lz4'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<SearchSortedSide> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

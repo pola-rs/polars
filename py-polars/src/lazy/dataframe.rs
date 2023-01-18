@@ -469,6 +469,28 @@ impl PyLazyFrame {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn sink_ipc(
+        &self,
+        py: Python,
+        path: PathBuf,
+        compression: Option<Wrap<IpcCompression>>,
+        maintain_order: bool,
+    ) -> PyResult<()> {
+        let options = IpcWriterOptions {
+            compression: compression.map(|c| c.0),
+            maintain_order,
+        };
+
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_ipc(path, options).map_err(PyPolarsErr::from)
+        })?;
+        Ok(())
+    }
+
     pub fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
         let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;

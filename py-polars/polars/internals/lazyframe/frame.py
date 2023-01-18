@@ -1267,6 +1267,77 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    def sink_ipc(
+        self,
+        path: str,
+        *,
+        compression: str | None = "zstd",
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+    ) -> pli.DataFrame:
+        """
+        Persists a LazyFrame at the provided path.
+
+        This allows streaming results that are larger than RAM to be written to disk.
+
+        Parameters
+        ----------
+        path
+            File path to which the file should be written.
+        compression : {'lz4', 'zstd'}
+            Choose "zstd" for good compression performance.
+            Choose "lz4" for fast compression/decompression.
+        maintain_order
+            Maintain the order in which data is processed.
+            Setting this to `False` will  be slightly faster.
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        >>> ldf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> ldf.sink_ipc("/tmp/out.arrow")  # doctest: +SKIP
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            cse=False,
+            streaming=True,
+        )
+        return ldf.sink_ipc(
+            path=path,
+            compression=compression,
+            maintain_order=maintain_order,
+        )
+
     @deprecated_alias(allow_streaming="streaming")
     def fetch(
         self,

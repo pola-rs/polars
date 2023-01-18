@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use polars_core::prelude::*;
 #[cfg(feature = "csv-file")]
 use polars_io::csv::{CsvEncoding, NullValues};
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
 use polars_io::RowCount;
@@ -64,6 +66,16 @@ pub struct ParquetWriteOptions {
     pub row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
     pub data_pagesize_limit: Option<usize>,
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
+}
+
+#[cfg(feature = "ipc")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcWriterOptions {
+    /// Data page compression
+    pub compression: Option<IpcCompression>,
     /// maintain the order the data was processed
     pub maintain_order: bool,
 }
@@ -278,12 +290,15 @@ pub struct FileSinkOptions {
     pub file_type: FileType,
 }
 
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum FileType {
+    #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),
+    #[cfg(feature = "ipc")]
+    Ipc(IpcWriterOptions),
 }
 
-#[cfg(not(feature = "parquet"))]
+#[cfg(not(any(feature = "parquet", feature = "ipc")))]
 pub type FileType = ();
