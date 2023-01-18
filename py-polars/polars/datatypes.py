@@ -126,7 +126,6 @@ class DataTypeClass(type):
     def __repr__(cls) -> str:
         return cls.__name__
 
-    @classmethod
     def string_repr(cls) -> str:
         return dtype_str_repr(cls)
 
@@ -144,9 +143,8 @@ class DataType(metaclass=DataTypeClass):
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
 
-    @classmethod
-    def string_repr(cls) -> str:
-        return dtype_str_repr(cls)
+    def string_repr(self) -> str:
+        return dtype_str_repr(self)
 
 
 class NumericType(DataType):
