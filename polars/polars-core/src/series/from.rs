@@ -268,31 +268,34 @@ impl Series {
                     }};
                 }
 
-                let (keys, values) = match key_type {
-                    IntegerType::Int8 => {
-                        unpack_keys_values!(i8)
-                    }
-                    IntegerType::UInt8 => {
-                        unpack_keys_values!(u8)
-                    }
-                    IntegerType::Int16 => {
-                        unpack_keys_values!(i16)
-                    }
-                    IntegerType::UInt16 => {
-                        unpack_keys_values!(u16)
-                    }
-                    IntegerType::Int32 => {
-                        unpack_keys_values!(i32)
-                    }
-                    IntegerType::UInt32 => {
-                        unpack_keys_values!(u32)
-                    }
-                    _ => {
-                        return Err(PolarsError::ComputeError(
-                            "dictionaries with 64 bits keys are not supported by polars".into(),
-                        ))
-                    }
-                };
+                let (keys, values) =
+                    match key_type {
+                        IntegerType::Int8 => {
+                            unpack_keys_values!(i8)
+                        }
+                        IntegerType::UInt8 => {
+                            unpack_keys_values!(u8)
+                        }
+                        IntegerType::Int16 => {
+                            unpack_keys_values!(i16)
+                        }
+                        IntegerType::UInt16 => {
+                            unpack_keys_values!(u16)
+                        }
+                        IntegerType::Int32 => {
+                            unpack_keys_values!(i32)
+                        }
+                        IntegerType::UInt32 => {
+                            unpack_keys_values!(u32)
+                        }
+                        IntegerType::Int64 => {
+                            unpack_keys_values!(i64)
+                        }
+                        _ => return Err(PolarsError::ComputeError(
+                            "dictionaries with unsigned 64 bits keys are not supported by polars"
+                                .into(),
+                        )),
+                    };
                 let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
                 let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
 
@@ -419,9 +422,10 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
                 .map(convert_inner_types)
                 .collect::<Vec<_>>();
 
-            let fields = fields
+            let fields = values
                 .iter()
-                .map(|f| ArrowField::new(&f.name, DataType::from(&f.data_type).to_arrow(), true))
+                .zip(fields.iter())
+                .map(|(arr, field)| ArrowField::new(&field.name, arr.data_type().clone(), true))
                 .collect();
             Box::new(StructArray::new(
                 ArrowDataType::Struct(fields),
