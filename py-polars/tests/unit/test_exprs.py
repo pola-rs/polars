@@ -8,7 +8,12 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES, TEMPORAL_DTYPES
+from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    TEMPORAL_DTYPES,
+)
 from polars.testing import assert_series_equal
 from polars.testing._private import verify_series_and_expr_api
 
@@ -320,6 +325,18 @@ def test_dtype_col_selection() -> None:
         "n",
     }
     assert set(df.select(pl.col(FLOAT_DTYPES)).columns) == {"i", "j"}
+    assert set(df.select(pl.col(NUMERIC_DTYPES)).columns) == {
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+    }
     assert set(df.select(pl.col(TEMPORAL_DTYPES)).columns) == {
         "a1",
         "a2",

@@ -457,6 +457,8 @@ INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
     ]
 )
 FLOAT_DTYPES: frozenset[PolarsDataType] = frozenset([Float32, Float64])
+NUMERIC_DTYPES: frozenset[PolarsDataType] = FLOAT_DTYPES | INTEGER_DTYPES
+
 
 T = TypeVar("T")
 
