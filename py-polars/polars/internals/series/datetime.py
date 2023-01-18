@@ -1340,28 +1340,32 @@ class DateTimeNameSpace:
 
         Each date/datetime is mapped to the start of its bucket.
 
-        The `every` and `offset` argument are created with the
-        the following string language:
-
-        1ns # 1 nanosecond
-        1us # 1 microsecond
-        1ms # 1 millisecond
-        1s  # 1 second
-        1m  # 1 minute
-        1h  # 1 hour
-        1d  # 1 day
-        1w  # 1 calendar week
-        1mo # 1 calendar month
-        1y  # 1 calendar year
-
-        3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
         Parameters
         ----------
         every
             Every interval start and period length
         offset
             Offset the window
+
+        Notes
+        -----
+        The ``every`` and ``offset`` argument are created with the
+        the following string language:
+
+        - 1ns # 1 nanosecond
+        - 1us # 1 microsecond
+        - 1ms # 1 millisecond
+        - 1s  # 1 second
+        - 1m  # 1 minute
+        - 1h  # 1 hour
+        - 1d  # 1 day
+        - 1w  # 1 calendar week
+        - 1mo # 1 calendar month
+        - 1y  # 1 calendar year
+
+        These strings can be combined:
+
+        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         Returns
         -------
