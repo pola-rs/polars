@@ -15,7 +15,7 @@ mod anonymous_scan;
 pub mod pivot;
 
 use std::borrow::Cow;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 

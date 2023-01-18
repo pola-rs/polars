@@ -300,5 +300,5 @@ pub enum FileType {
     Ipc(IpcWriterOptions),
 }
 
-#[cfg(not(feature = "parquet"))]
+#[cfg(not(any(feature = "parquet", feature = "ipc")))]
 pub type FileType = ();
