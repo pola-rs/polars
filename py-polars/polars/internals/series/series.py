@@ -4265,7 +4265,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.hash(seed=42)
+        >>> s.hash(seed=42)  # doctest: +IGNORE_RESULT
         shape: (3,)
         Series: 'a' [u64]
         [
