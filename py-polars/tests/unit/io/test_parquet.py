@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -342,3 +344,35 @@ def test_parquet_nesting_structs_list() -> None:
     f.seek(0)
 
     assert pl.read_parquet(f).frame_equal(df)
+
+
+@typing.no_type_check
+def test_parquet_nested_dictionaries_6217() -> None:
+    _type = pa.dictionary(pa.int64(), pa.string())
+
+    fields = [
+        ("a_type", _type),
+    ]
+    struct_type = pa.struct(fields)
+
+    col1 = pa.StructArray.from_arrays(
+        [
+            pa.DictionaryArray.from_arrays([0, 0, 1], ["A", "B"]),
+        ],
+        fields=struct_type,
+    )
+
+    table = pa.table(
+        {
+            "Col1": col1,
+        }
+    )
+
+    with pl.StringCache():
+        df = pl.from_arrow(table)
+
+        f = io.BytesIO()
+        pq.write_table(table, f, compression="snappy")
+        f.seek(0)
+        read = pl.read_parquet(f)
+        assert read.frame_equal(df)
