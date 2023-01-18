@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -1448,7 +1448,7 @@ class DateTimeNameSpace:
 
         Each date/datetime in the first half of the interval
         is mapped to the start of its bucket.
-        Each date/datetime in the seconod half of the interval
+        Each date/datetime in the second half of the interval
         is mapped to the end of its bucket.
 
         The `every` and `offset` argument are created with the
@@ -1534,6 +1534,37 @@ class DateTimeNameSpace:
                 2001-01-01 00:30:00
                 2001-01-01 01:00:00
                 2001-01-01 01:00:00
+        ]
+
+        """
+
+    def combine(self, tm: time | pli.Series, tu: TimeUnit = "us") -> pli.Expr:
+        """
+        Create a naive Datetime from an existing Date/Datetime expression and a Time.
+
+        If the underlying expression is a Datetime then its time component is replaced,
+        and if it is a Date then a new Datetime is created by combining the two values.
+
+        Parameters
+        ----------
+        tm
+            A python time literal or Series of the same length as this Series.
+        tu : {'ns', 'us', 'ms'}
+            Time unit.
+
+        Examples
+        --------
+        >>> from datetime import datetime, time
+        >>> s = pl.Series(
+        ...     "dtm",
+        ...     [datetime(2022, 12, 31, 10, 30, 45), datetime(2023, 7, 5, 23, 59, 59)],
+        ... )
+        >>> s.dt.combine(time(1, 2, 3, 456000))
+        shape: (2,)
+        Series: 'dtm' [datetime[μs]]
+        [
+            2022-12-31 01:02:03.456
+            2023-07-05 01:02:03.456
         ]
 
         """

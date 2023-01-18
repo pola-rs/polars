@@ -159,6 +159,7 @@ impl FunctionExpr {
                     #[cfg(feature = "timezones")]
                     CastTimezone(tz) | TzLocalize(tz) => return cast_tz(tz),
                     DateRange { .. } => return super_type(),
+                    Combine(tu) => DataType::Datetime(*tu, None),
                 };
                 with_dtype(dtype)
             }

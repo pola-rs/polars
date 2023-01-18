@@ -11,6 +11,7 @@ The following methods are available under the `Series.dt` attribute.
 
     Series.dt.cast_time_unit
     Series.dt.cast_time_zone
+    Series.dt.combine
     Series.dt.day
     Series.dt.days
     Series.dt.epoch
