@@ -131,6 +131,10 @@ impl Schema {
             .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
     }
 
+    pub fn remove(&mut self, name: &str) -> Option<DataType> {
+        self.inner.remove(name)
+    }
+
     pub fn get_full(&self, name: &str) -> Option<(usize, &String, &DataType)> {
         self.inner.get_full(name)
     }
@@ -170,8 +174,18 @@ impl Schema {
         Some(())
     }
 
-    pub fn with_column(&mut self, name: String, dtype: DataType) {
-        self.inner.insert(name, dtype);
+    /// Insert a new column in the [`Schema`]
+    ///
+    /// If an equivalent name already exists in the schema: the name remains and
+    /// retains in its place in the order, its corresponding value is updated
+    /// with [`DataType`] and the older dtype is returned inside `Some(_)`.
+    ///
+    /// If no equivalent key existed in the map: the new name-dtype pair is
+    /// inserted, last in order, and `None` is returned.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn with_column(&mut self, name: String, dtype: DataType) -> Option<DataType> {
+        self.inner.insert(name, dtype)
     }
 
     pub fn merge(&mut self, other: Self) {

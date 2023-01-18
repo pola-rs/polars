@@ -255,7 +255,7 @@ impl<'a> LazyCsvReader<'a> {
         // the dtypes set may be for the new names, so update again
         if let Some(overwrite_schema) = self.schema_overwrite {
             for (name, dtype) in overwrite_schema.iter() {
-                schema.with_column(name.clone(), dtype.clone())
+                schema.with_column(name.clone(), dtype.clone());
             }
         }
 

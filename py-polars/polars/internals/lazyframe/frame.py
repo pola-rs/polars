@@ -2736,6 +2736,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         mapping
             Key value pairs that map from old name to new name.
 
+        Notes
+        -----
+        If names are swapped. E.g. 'A' points to 'B' and 'B' points to 'A', polars
+        will block projection and predicate pushdowns at this node.
+
         Examples
         --------
         >>> df = pl.DataFrame(

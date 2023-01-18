@@ -77,7 +77,7 @@ impl PyDataFrame {
                         *dtype_ = dtype;
                     }
                 } else {
-                    schema.with_column(name, dtype)
+                    schema.with_column(name, dtype);
                 }
             }
         }
