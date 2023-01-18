@@ -879,7 +879,7 @@ impl PyLazyFrame {
 
         let udf_schema =
             schema.map(move |s| Arc::new(move |_: &Schema| Ok(s.clone())) as Arc<dyn UdfSchema>);
-        ldf.map(function, Some(opt), udf_schema, None).into()
+        ldf.map(function, opt, udf_schema, None).into()
     }
 
     pub fn drop_columns(&self, cols: Vec<String>) -> Self {

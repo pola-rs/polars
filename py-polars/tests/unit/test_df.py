@@ -1915,6 +1915,41 @@ def test_rename_swap() -> None:
     )
     assert out.frame_equal(expected)
 
+    # 6195
+    ldf = pl.DataFrame(
+        {
+            "weekday": [
+                1,
+            ],
+            "priority": [
+                2,
+            ],
+            "roundNumber": [
+                3,
+            ],
+            "flag": [
+                4,
+            ],
+        }
+    ).lazy()
+
+    # Rename some columns (note: swapping two columns)
+    rename_dict = {
+        "weekday": "priority",
+        "priority": "weekday",
+        "roundNumber": "round_number",
+    }
+    ldf = ldf.rename(rename_dict)
+
+    # Select some columns
+    ldf = ldf.select(["priority", "weekday", "round_number"])
+
+    assert ldf.collect().to_dict(False) == {
+        "priority": [1],
+        "weekday": [2],
+        "round_number": [3],
+    }
+
 
 def test_rename_same_name() -> None:
     df = pl.DataFrame(

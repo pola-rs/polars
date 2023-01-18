@@ -107,7 +107,7 @@ impl FunctionNode {
                             if let DataType::Struct(flds) = dtype {
                                 for fld in flds {
                                     new_schema
-                                        .with_column(fld.name().clone(), fld.data_type().clone())
+                                        .with_column(fld.name().clone(), fld.data_type().clone());
                                 }
                             } else {
                                 return Err(PolarsError::ComputeError(
@@ -115,7 +115,7 @@ impl FunctionNode {
                                 ));
                             }
                         } else {
-                            new_schema.with_column(name.clone(), dtype.clone())
+                            new_schema.with_column(name.clone(), dtype.clone());
                         }
                     }
 

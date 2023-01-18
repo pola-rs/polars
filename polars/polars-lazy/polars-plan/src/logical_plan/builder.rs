@@ -378,7 +378,7 @@ impl LogicalPlanBuilder {
 
             for fld in other_schema.iter_fields() {
                 if schema.get(fld.name()).is_none() {
-                    schema.with_column(fld.name, fld.dtype)
+                    schema.with_column(fld.name, fld.dtype);
                 }
             }
         }
@@ -550,7 +550,7 @@ impl LogicalPlanBuilder {
                 if let Expr::Column(name) = e {
                     if let Some(DataType::List(inner)) = schema.get(name) {
                         let inner = *inner.clone();
-                        schema.with_column(name.to_string(), inner)
+                        schema.with_column(name.to_string(), inner);
                     }
 
                     (**name).to_owned()

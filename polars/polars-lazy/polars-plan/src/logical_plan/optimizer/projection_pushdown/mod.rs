@@ -134,7 +134,7 @@ fn update_scan_schema(
         new_cols.sort_unstable_by_key(|item| item.0);
     }
     for item in new_cols {
-        new_schema.with_column(item.1.clone(), item.2.clone())
+        new_schema.with_column(item.1.clone(), item.2.clone());
     }
     Ok(new_schema)
 }
@@ -718,7 +718,7 @@ impl ProjectionPushDown {
                     let other_schema = lp_arena.get(*node).schema(lp_arena);
                     for fld in other_schema.iter_fields() {
                         if new_schema.get(fld.name()).is_none() {
-                            new_schema.with_column(fld.name, fld.dtype)
+                            new_schema.with_column(fld.name, fld.dtype);
                         }
                     }
                 }

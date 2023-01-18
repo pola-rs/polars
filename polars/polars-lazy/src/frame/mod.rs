@@ -278,7 +278,9 @@ impl LazyFrame {
             // schema after renaming
             for (old, new) in existing2.iter().zip(new2.iter()) {
                 let dtype = old_schema.try_get(old)?;
-                new_schema.with_column(new.clone(), dtype.clone());
+                if new_schema.with_column(new.clone(), dtype.clone()).is_none() {
+                    new_schema.remove(old);
+                }
             }
             Ok(Arc::new(new_schema))
         };
@@ -297,7 +299,12 @@ impl LazyFrame {
                 let columns = std::mem::take(df.get_columns_mut());
                 DataFrame::new(columns)
             },
-            None,
+            // Don't allow optimizations. Swapping names are opaque to the optimizer
+            AllowedOptimizations {
+                projection_pushdown: false,
+                predicate_pushdown: false,
+                ..Default::default()
+            },
             Some(Arc::new(udf_schema)),
             Some("RENAME_SWAPPING"),
         )
@@ -343,7 +350,7 @@ impl LazyFrame {
                 cols.truncate(cols.len() - (existing.len() - removed_count));
                 Ok(df)
             },
-            None,
+            Default::default(),
             Some(Arc::new(udf_schema)),
             Some("RENAME"),
         )
@@ -1118,7 +1125,7 @@ impl LazyFrame {
     pub fn map<F>(
         self,
         function: F,
-        optimizations: Option<AllowedOptimizations>,
+        optimizations: AllowedOptimizations,
         schema: Option<Arc<dyn UdfSchema>>,
         name: Option<&'static str>,
     ) -> LazyFrame
@@ -1130,7 +1137,7 @@ impl LazyFrame {
             .get_plan_builder()
             .map(
                 function,
-                optimizations.unwrap_or_default(),
+                optimizations,
                 schema,
                 name.unwrap_or("ANONYMOUS UDF"),
             )
@@ -1206,7 +1213,7 @@ impl LazyFrame {
                     Ok(df)
                 }
             },
-            Some(opt),
+            opt,
             Some(Arc::new(udf_schema)),
             Some("WITH ROW COUNT"),
         )
