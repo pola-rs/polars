@@ -1392,8 +1392,53 @@ def test_from_time_arrow() -> None:
     ]
 
 
-def test_datetime_strptime_patterns() -> None:
+@pytest.mark.parametrize(
+    ("time_string", "expected"),
+    [
+        ("09-05-2019", datetime(2019, 5, 9)),
+        ("2018-09-05", datetime(2018, 9, 5)),
+        ("2018-09-05T04:05:01", datetime(2018, 9, 5, 4, 5, 1)),
+        ("2018-09-05T04:24:01.9", datetime(2018, 9, 5, 4, 24, 1, 900000)),
+        ("2018-09-05T04:24:02.11", datetime(2018, 9, 5, 4, 24, 2, 110000)),
+        ("2018-09-05T14:24:02.123", datetime(2018, 9, 5, 14, 24, 2, 123000)),
+        ("2018-09-05T14:24:02.123Z", datetime(2018, 9, 5, 14, 24, 2, 123000)),
+        ("2019-04-18T02:45:55.555000000", datetime(2019, 4, 18, 2, 45, 55, 555000)),
+        ("2019-04-18T22:45:55.555123", datetime(2019, 4, 18, 22, 45, 55, 555123)),
+    ],
+)
+def test_datetime_strptime_patterns_single(time_string: str, expected: str) -> None:
+    result = pl.Series([time_string]).str.strptime(pl.Datetime).item()
+    assert result == expected
+
+
+def test_datetime_strptime_patterns_consistent() -> None:
     # note that all should be year first
+    df = pl.Series(
+        "date",
+        [
+            "2018-09-05",
+            "2018-09-05T04:05:01",
+            "2018-09-05T04:24:01.9",
+            "2018-09-05T04:24:02.11",
+            "2018-09-05T14:24:02.123",
+            "2018-09-05T14:24:02.123Z",
+            "2019-04-18T02:45:55.555000000",
+            "2019-04-18T22:45:55.555123",
+        ],
+    ).to_frame()
+    s = df.with_columns(
+        [
+            pl.col("date")
+            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .alias("parsed"),
+        ]
+    )["parsed"]
+    assert s.null_count() == 0
+
+
+def test_datetime_strptime_patterns_inconsistent() -> None:
+    # note that the pattern is inferred from the first element to
+    # be DatetimeDMY, and so the others (correctly) parse as `null`.
     df = pl.Series(
         "date",
         [
@@ -1415,8 +1460,8 @@ def test_datetime_strptime_patterns() -> None:
             .alias("parsed"),
         ]
     )["parsed"]
-    assert s.null_count() == 1
-    assert s[0] is None
+    assert s.null_count() == 8
+    assert s[0] is not None
 
 
 def test_timedelta_from() -> None:

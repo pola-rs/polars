@@ -199,15 +199,15 @@ pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
 }
 
 fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
-    if patterns::DATETIME_D_M_Y
-        .iter()
-        .any(|fmt| NaiveDateTime::parse_from_str(val, fmt).is_ok())
-    {
+    if patterns::DATETIME_D_M_Y.iter().any(|fmt| {
+        NaiveDateTime::parse_from_str(val, fmt).is_ok()
+            || NaiveDate::parse_from_str(val, fmt).is_ok()
+    }) {
         Some(Pattern::DatetimeDMY)
-    } else if patterns::DATETIME_Y_M_D
-        .iter()
-        .any(|fmt| NaiveDateTime::parse_from_str(val, fmt).is_ok())
-    {
+    } else if patterns::DATETIME_Y_M_D.iter().any(|fmt| {
+        NaiveDateTime::parse_from_str(val, fmt).is_ok()
+            || NaiveDate::parse_from_str(val, fmt).is_ok()
+    }) {
         Some(Pattern::DatetimeYMD)
     } else {
         None
