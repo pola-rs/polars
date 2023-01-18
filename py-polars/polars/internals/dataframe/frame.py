@@ -6,6 +6,7 @@ import os
 import random
 import sys
 import typing
+import warnings
 from collections import namedtuple
 from collections.abc import Sized
 from datetime import timedelta
@@ -25,7 +26,6 @@ from typing import (
     TypeVar,
     overload,
 )
-from warnings import warn
 
 from polars import internals as pli
 from polars._html import NotebookFormatter
@@ -1972,7 +1972,7 @@ class DataFrame:
 
         """
         if json_lines is not None:
-            warn(
+            warnings.warn(
                 "`json_lines` argument for `DataFrame.write_json` will be removed in a"
                 " future version. Remove the argument or use `DataFrame.write_ndjson`.",
                 DeprecationWarning,
@@ -1982,7 +1982,7 @@ class DataFrame:
             json_lines = False
 
         if to_string is not None:
-            warn(
+            warnings.warn(
                 "`to_string` argument for `DataFrame.write_json` will be removed in a"
                 " future version. Remove the argument and set `file=None`.",
                 DeprecationWarning,
@@ -6597,6 +6597,12 @@ class DataFrame:
             raise TypeError("Expressions should be passed to the 'by_predicate' param")
 
         if named:
+            warnings.warn(
+                "Named rows will be changed from a namedtuple to a dictionary in the"
+                " next breaking release.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
 
         if index is not None:
@@ -6671,6 +6677,12 @@ class DataFrame:
 
         """
         if named:
+            warnings.warn(
+                "Named rows will be changed from a namedtuple to a dictionary in the"
+                " next breaking release.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
             return [Row(*row) for row in self._df.row_tuples()]
         else:
@@ -6738,6 +6750,12 @@ class DataFrame:
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if named:
+            warnings.warn(
+                "Named rows will be changed from a namedtuple to a dictionary in the"
+                " next breaking release.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
         if buffer_size:
             for offset in range(0, self.height, buffer_size):
