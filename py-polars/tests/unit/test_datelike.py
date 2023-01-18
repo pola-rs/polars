@@ -1411,7 +1411,7 @@ def test_datetime_strptime_patterns_single(time_string: str, expected: str) -> N
     assert result == expected
 
 
-def test_datetime_strptime_patterns() -> None:
+def test_datetime_strptime_patterns_consistent() -> None:
     # note that all should be year first
     df = pl.Series(
         "date",
@@ -1434,6 +1434,34 @@ def test_datetime_strptime_patterns() -> None:
         ]
     )["parsed"]
     assert s.null_count() == 0
+
+
+def test_datetime_strptime_patterns_inconsistent() -> None:
+    # note that the pattern is inferred from the first element to
+    # be DatetimeDMY, and so the others (correctly) parse as `null`.
+    df = pl.Series(
+        "date",
+        [
+            "09-05-2019",
+            "2018-09-05",
+            "2018-09-05T04:05:01",
+            "2018-09-05T04:24:01.9",
+            "2018-09-05T04:24:02.11",
+            "2018-09-05T14:24:02.123",
+            "2018-09-05T14:24:02.123Z",
+            "2019-04-18T02:45:55.555000000",
+            "2019-04-18T22:45:55.555123",
+        ],
+    ).to_frame()
+    s = df.with_columns(
+        [
+            pl.col("date")
+            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .alias("parsed"),
+        ]
+    )["parsed"]
+    assert s.null_count() == 8
+    assert s[0] is not None
 
 
 def test_timedelta_from() -> None:
