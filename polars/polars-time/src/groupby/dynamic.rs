@@ -214,6 +214,10 @@ impl Wrap<&DataFrame> {
         tu: TimeUnit,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+        if dt.is_empty() {
+            return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
+        }
+
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
         let tz = dt.time_zone();
