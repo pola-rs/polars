@@ -34,6 +34,7 @@ pub enum TemporalFunction {
         closed: ClosedWindow,
         tz: Option<TimeZone>,
     },
+    Combine(TimeUnit),
 }
 
 impl Display for TemporalFunction {
@@ -62,6 +63,7 @@ impl Display for TemporalFunction {
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
+            Combine(_) => "combine",
         };
         write!(f, "dt.{s}")
     }

@@ -4,7 +4,7 @@ from datetime import time, timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Duration, Int32
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
@@ -253,7 +253,7 @@ class ExprDateTimeNameSpace:
             )
         )
 
-    def combine(self, tm: time | pli.Expr) -> pli.Expr:
+    def combine(self, tm: time | pli.Expr, tu: TimeUnit = "us") -> pli.Expr:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
 
@@ -264,6 +264,8 @@ class ExprDateTimeNameSpace:
         ----------
         tm
             A python time literal or polars expression/column that resolves to a time.
+        tu : {'ns', 'us', 'ms'}
+            Time unit.
 
         Examples
         --------
@@ -309,10 +311,8 @@ class ExprDateTimeNameSpace:
             raise TypeError(
                 f"Expected 'tm' to be a python time or polars expression, found {tm!r}"
             )
-        duration = pli.expr_to_lit_or_expr(tm).cast(Duration)
-        return pli.wrap_expr(
-            self._pyexpr.cast(Date, True).cast(Datetime, True) + duration._pyexpr
-        )
+        tm = pli.expr_to_lit_or_expr(tm)
+        return pli.wrap_expr(self._pyexpr.dt_combine(tm._pyexpr, tu))
 
     def strftime(self, fmt: str) -> pli.Expr:
         """
@@ -905,7 +905,7 @@ class ExprDateTimeNameSpace:
 
         Parameters
         ----------
-        tu : {'us', 'ns', 'ms', 's', 'd'}
+        tu : {'ns', 'us', 'ms', 's', 'd'}
             Time unit.
 
         Examples
@@ -950,7 +950,7 @@ class ExprDateTimeNameSpace:
 
         Parameters
         ----------
-        tu : {'us', 'ns', 'ms'}
+        tu : {'ns', 'us', 'ms'}
             Time unit.
 
         Examples

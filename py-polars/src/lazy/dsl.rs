@@ -1029,6 +1029,10 @@ impl PyExpr {
         self.inner.clone().dt().round(every, offset).into()
     }
 
+    pub fn dt_combine(&self, time: PyExpr, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().combine(time.inner, tu.0).into()
+    }
+
     pub fn rolling_apply(
         &self,
         py: Python,

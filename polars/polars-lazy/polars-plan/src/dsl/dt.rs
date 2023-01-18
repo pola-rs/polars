@@ -222,4 +222,12 @@ impl DateLikeNameSpace {
                 tz,
             )))
     }
+
+    pub fn combine(self, time: Expr, tu: TimeUnit) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Combine(tu)),
+            &[time],
+            false,
+        )
+    }
 }

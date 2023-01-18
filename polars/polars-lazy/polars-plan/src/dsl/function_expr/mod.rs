@@ -459,6 +459,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             CastTimezone(tz) => map!(datetime::cast_timezone, &tz),
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
+            Combine(tu) => map_as_slice!(temporal::combine, tu),
             DateRange {
                 name,
                 every,
