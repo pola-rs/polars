@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::iter::{FromIterator, Iterator};
 use std::{mem, ops};
 
-use ahash::{AHashSet, RandomState};
+use ahash::AHashSet;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
@@ -440,9 +440,14 @@ impl DataFrame {
         match chunk_lenghts.next() {
             None => false,
             Some(first_chunk_lengths) => {
+                // Fast Path for single Chunk Series
+                if first_chunk_lengths.len() == 1 {
+                    return chunk_lenghts.any(|cl| cl.len() != 1);
+                }
+                // Slow Path for multi Chunk series
                 let v: Vec<_> = first_chunk_lengths.collect();
                 for cl in chunk_lenghts {
-                    if !cl.enumerate().all(|(idx, el)| Some(&el) == v.get(idx)) {
+                    if cl.enumerate().any(|(idx, el)| Some(&el) != v.get(idx)) {
                         return true;
                     }
                 }
@@ -3136,7 +3141,7 @@ impl DataFrame {
     #[cfg(feature = "row_hash")]
     pub fn hash_rows(
         &mut self,
-        hasher_builder: Option<RandomState>,
+        hasher_builder: Option<ahash::RandomState>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
         let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder)?;
