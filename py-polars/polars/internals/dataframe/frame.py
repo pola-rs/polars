@@ -6552,7 +6552,7 @@ class DataFrame:
         index: int | None = ...,
         *,
         by_predicate: pli.Expr | None = ...,
-        named: Literal[True] = ...,
+        named: Literal[True],
     ) -> dict[str, Any]:
         ...
 
@@ -6668,7 +6668,7 @@ class DataFrame:
         ...
 
     @overload
-    def rows(self, named: Literal[True] = ...) -> list[dict[str, Any]]:
+    def rows(self, named: Literal[True]) -> list[dict[str, Any]]:
         ...
 
     def rows(self, named: bool = False) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
@@ -6723,7 +6723,7 @@ class DataFrame:
 
     @overload
     def iter_rows(
-        self, named: Literal[True] = ..., buffer_size: int = ...
+        self, named: Literal[True], buffer_size: int = ...
     ) -> Iterator[dict[str, Any]]:
         ...
 
