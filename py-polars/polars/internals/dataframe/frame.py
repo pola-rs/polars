@@ -554,19 +554,6 @@ class DataFrame:
         DataFrame
 
         """
-        # path for table without rows that keeps datatype
-        if data.shape[0] == 0:
-            series = []
-            for name in data.columns:
-                pd_series = data[name]
-                if pd_series.dtype == np.dtype("O"):
-                    series.append(pli.Series(name, [], dtype=Utf8))
-                else:
-                    dtype = (schema_overrides or {}).get(name)
-                    col = pli.Series(name, pd_series, dtype=dtype)
-                    series.append(pli.Series(name, col))
-            return cls(series)
-
         return cls._from_pydf(
             pandas_to_pydf(
                 data,

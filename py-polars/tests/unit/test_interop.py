@@ -459,12 +459,29 @@ def test_from_empty_pandas() -> None:
     assert polars_df.dtypes == [pl.Float64, pl.Float64]
 
 
-def test_from_empty_pandas_strings() -> None:
+def test_from_empty_pandas_with_dtypes() -> None:
     df = pd.DataFrame(columns=["a", "b"])
     df["a"] = df["a"].astype(str)
     df["b"] = df["b"].astype(float)
-    df_pl = pl.from_pandas(df)
-    assert df_pl.dtypes == [pl.Utf8, pl.Float64]
+    assert pl.from_pandas(df).dtypes == [pl.Utf8, pl.Float64]
+
+    df = pl.DataFrame(
+        data=[],
+        columns={
+            "a": pl.Int32,
+            "b": pl.Datetime,
+            "c": pl.Float32,
+            "d": pl.Duration,
+            "e": pl.Utf8,
+        },
+    ).to_pandas()
+    assert pl.from_pandas(df).dtypes == [
+        pl.Int32,
+        pl.Datetime,
+        pl.Float32,
+        pl.Duration,
+        pl.Utf8,
+    ]
 
 
 def test_from_empty_arrow() -> None:
