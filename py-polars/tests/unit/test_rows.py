@@ -12,7 +12,7 @@ def test_row_tuple() -> None:
     assert df.row(1) == ("bar", 2, 2.0)
     assert df.row(-1) == ("2", 3, 3.0)
 
-    # return row by index as namedtuple
+    # return named row by index
     row = df.row(0, named=True)
     assert row == {"a": "foo", "b": 1, "c": 1.0}
 
@@ -20,7 +20,7 @@ def test_row_tuple() -> None:
     assert df.row(by_predicate=pl.col("a") == "bar") == ("bar", 2, 2.0)
     assert df.row(by_predicate=pl.col("b").is_in([2, 4, 6])) == ("bar", 2, 2.0)
 
-    # return row by predicate as namedtuple
+    # return named row by predicate
     row = df.row(by_predicate=pl.col("a") == "bar", named=True)
     assert row == {"a": "bar", "b": 2, "c": 2.0}
 
@@ -82,7 +82,7 @@ def test_iterrows() -> None:
         with pytest.raises(StopIteration):
             next(it)
 
-        # Return rows as namedtuples
+        # Return named rows
         it_named = df.iter_rows(named=True, buffer_size=sz)
 
         row = next(it_named)
