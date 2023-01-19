@@ -91,6 +91,10 @@ def test_groupby_iteration() -> None:
     result = list(df.groupby(["a", "b", "c"]))
     assert len(result) == 6
 
+    # Iterating over groups should also work when grouping by expressions
+    result = list(df.groupby(["a", pl.col("b") * pl.col("c")]))
+    assert len(result) == 5
+
 
 def bad_agg_parameters() -> list[Any]:
     return [[("b", "sum")], [("b", ["sum"])], {"b": "sum"}, {"b": ["sum"]}]
