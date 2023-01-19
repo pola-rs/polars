@@ -233,7 +233,7 @@ def test_lazy_self_join_file_cache_prop_3979(io_test_dir: str) -> None:
     assert b.join(a, how="cross").collect().shape == (3, 17)
 
 
-def recursive_logical_type() -> None:
+def test_recursive_logical_type() -> None:
     df = pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
     df = df.with_column(pl.col("str").cast(pl.Categorical))
 
