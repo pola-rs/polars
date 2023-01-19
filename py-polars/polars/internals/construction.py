@@ -476,7 +476,7 @@ def _pandas_series_to_arrow(
 
     """
     dtype = getattr(values, "dtype", None)
-    if dtype == "object" and len(values) > 0:
+    if dtype == "object":
         first_non_none = _get_first_non_none(values.values)  # type: ignore[arg-type]
 
         if isinstance(first_non_none, str):
