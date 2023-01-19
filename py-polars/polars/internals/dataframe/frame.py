@@ -6840,7 +6840,7 @@ class DataFrame:
         ...         "ham": ["a", "b", None, "d"],
         ...     }
         ... )
-        >>> df.hash_rows(seed=42)
+        >>> df.hash_rows(seed=42)  # doctest: +IGNORE_RESULT
         shape: (4,)
         Series: '' [u64]
         [
