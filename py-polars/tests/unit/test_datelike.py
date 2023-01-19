@@ -1986,6 +1986,25 @@ def test_short_formats() -> None:
     assert s.str.strptime(pl.Date, "%foo", strict=False).to_list() == [None, None]
 
 
+@pytest.mark.parametrize(
+    ("time_string", "fmt", "datatype", "expected"),
+    [
+        ("Jul/2020", "%b/%Y", pl.Date, date(2020, 7, 1)),
+        ("Jan/2020", "%b/%Y", pl.Date, date(2020, 1, 1)),
+        ("02/Apr/2020", "%d/%b/%Y", pl.Date, date(2020, 4, 2)),
+        ("Dec/2020", "%b/%Y", pl.Datetime, datetime(2020, 12, 1, 0, 0)),
+        ("Nov/2020", "%b/%Y", pl.Datetime, datetime(2020, 11, 1, 0, 0)),
+        ("02/Feb/2020", "%d/%b/%Y", pl.Datetime, datetime(2020, 2, 2, 0, 0)),
+    ],
+)
+def test_abbrev_month(
+    time_string: str, fmt: str, datatype: PolarsTemporalType, expected: date
+) -> None:
+    s = pl.Series([time_string])
+    result = s.str.strptime(datatype, fmt).item()
+    assert result == expected
+
+
 def test_iso_year() -> None:
     assert pl.Series([datetime(2022, 1, 1, 7, 8, 40)]).dt.iso_year()[0] == 2021
     assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
