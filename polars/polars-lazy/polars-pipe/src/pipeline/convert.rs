@@ -114,15 +114,17 @@ where
 {
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
-        #[cfg(feature = "parquet")]
+        #[cfg(any(feature = "parquet", feature = "ipc"))]
         FileSink { input, payload } => {
             let path = payload.path.as_ref().as_path();
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             match &payload.file_type {
+                #[cfg(feature = "parquet")]
                 FileType::Parquet(options) => {
                     Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
                         as Box<dyn Sink>
                 }
+                #[cfg(feature = "ipc")]
                 FileType::Ipc(options) => {
                     Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn Sink>
                 }
