@@ -3022,6 +3022,8 @@ class Expr:
         self,
         f: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
+        skip_nulls: bool = True,
+        pass_name: bool = False,
     ) -> Expr:
         """
         Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
@@ -3055,6 +3057,12 @@ class Expr:
             Dtype of the output Series.
             If not set, polars will assume that
             the dtype remains unchanged.
+        skip_nulls
+            Don't apply the function over values
+            that contain nulls. This is faster.
+        pass_name
+            Pass the Series name to the custom function
+            This is more expensive.
 
         Examples
         --------
@@ -3125,10 +3133,23 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
-        def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
-            return x.apply(f, return_dtype=return_dtype)
+        if pass_name:
 
-        return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
+            def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
+                def inner(s: pli.Series) -> pli.Series:  # pragma: no cover
+                    s.rename(x.name, in_place=True)
+                    return f(s)
+
+                return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
+
+            return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
+
+        else:
+
+            def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
+                return x.apply(f, return_dtype=return_dtype, skip_nulls=skip_nulls)
+
+            return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
 
     def flatten(self) -> Expr:
         """
