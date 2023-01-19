@@ -14,7 +14,7 @@ categories:
       - build
       - chore
       - ci
-      - docs
+      - documentation
       - refactor
       - revert
       - style
@@ -55,7 +55,7 @@ autolabeler:
   - label: ci
     title:
       - '/^ci/'
-  - label: docs
+  - label: documentation
     title:
       - '/^docs/'
   - label: enhancement
