@@ -85,6 +85,10 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["IPython.*"]
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
 module = ["polars.*"]
 # We exclude the polars module from warn_return_any, because the PyO3 api does not have Python
 # type annotations. See https://github.com/PyO3/pyo3/issues/1112 for a discussion on adding
