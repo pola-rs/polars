@@ -457,12 +457,9 @@ def test_struct_comparison() -> None:
 
 
 def test_struct_order() -> None:
-    with pytest.raises(pl.ComputeError, match="struct orders must remain the same"):
-        pl.DataFrame(
-            {
-                "col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],
-            }
-        )
+    assert pl.DataFrame({"col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],}).to_dict(
+        False
+    ) == {"col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]}
 
     # null values should not trigger this
     assert (
