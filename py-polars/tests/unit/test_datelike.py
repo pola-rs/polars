@@ -1998,7 +1998,7 @@ def test_short_formats() -> None:
     ],
 )
 def test_abbrev_month(
-    time_string: str, fmt: str, datatype: type[pl.TemporalType], expected: date
+    time_string: str, fmt: str, datatype: PolarsTemporalType, expected: date
 ) -> None:
     s = pl.Series([time_string])
     result = s.str.strptime(datatype, fmt).item()
