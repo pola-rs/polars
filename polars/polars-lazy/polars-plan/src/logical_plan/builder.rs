@@ -602,6 +602,19 @@ impl LogicalPlanBuilder {
         right_on: Vec<Expr>,
         options: JoinOptions,
     ) -> Self {
+        for e in left_on.iter().chain(right_on.iter()) {
+            if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
+                return LogicalPlan::Error {
+                    input: Box::new(self.0),
+                    err: PolarsError::ComputeError(
+                        "'alias' is not allowed in a join key. Use 'with_columns' first.".into(),
+                    )
+                    .into(),
+                }
+                .into();
+            }
+        }
+
         let schema_left = try_delayed!(self.0.schema(), &self.0, into);
         let schema_right = try_delayed!(other.schema(), &self.0, into);
 
