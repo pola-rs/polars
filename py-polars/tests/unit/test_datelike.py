@@ -1989,15 +1989,17 @@ def test_short_formats() -> None:
 @pytest.mark.parametrize(
     ("time_string", "fmt", "datatype", "expected"),
     [
-        ('Jul/2020', '%b/%Y', pl.Date, date(2020, 7, 1)),
-        ('Jan/2020', '%b/%Y', pl.Date, date(2020, 1, 1)),
-        ('02/Apr/2020', '%d/%b/%Y', pl.Date, date(2020, 4, 2)),
-        ('Dec/2020', '%b/%Y', pl.Datetime, datetime(2020, 12, 1, 0, 0)),
-        ('Nov/2020', '%b/%Y', pl.Datetime, datetime(2020, 11, 1, 0, 0)),
-        ('02/Feb/2020', '%d/%b/%Y', pl.Datetime, datetime(2020, 2, 2, 0, 0)),
-    ]
+        ("Jul/2020", "%b/%Y", pl.Date, date(2020, 7, 1)),
+        ("Jan/2020", "%b/%Y", pl.Date, date(2020, 1, 1)),
+        ("02/Apr/2020", "%d/%b/%Y", pl.Date, date(2020, 4, 2)),
+        ("Dec/2020", "%b/%Y", pl.Datetime, datetime(2020, 12, 1, 0, 0)),
+        ("Nov/2020", "%b/%Y", pl.Datetime, datetime(2020, 11, 1, 0, 0)),
+        ("02/Feb/2020", "%d/%b/%Y", pl.Datetime, datetime(2020, 2, 2, 0, 0)),
+    ],
 )
-def test_abbrev_month(time_string: str, fmt: str, datatype: pl.Expr, expected: date) -> None:
+def test_abbrev_month(
+    time_string: str, fmt: str, datatype: type[pl.TemporalType], expected: date
+) -> None:
     s = pl.Series([time_string])
     result = s.str.strptime(datatype, fmt).item()
     assert result == expected

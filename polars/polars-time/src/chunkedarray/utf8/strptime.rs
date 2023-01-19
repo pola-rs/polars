@@ -15,7 +15,6 @@ fn update_and_parse<T: lexical::FromLexical>(
         .map(|v| (v, new_offset))
 }
 
-
 #[inline]
 fn parse_month_abbrev(val: &[u8], offset: usize) -> (u32, usize) {
     let new_offset = offset + 3;
@@ -32,7 +31,7 @@ fn parse_month_abbrev(val: &[u8], offset: usize) -> (u32, usize) {
         b"Oct" => (10, new_offset),
         b"Nov" => (11, new_offset),
         b"Dec" => (12, new_offset),
-        _ => (999, new_offset),  // todo figure out how to properly raise?
+        _ => (999, new_offset), // todo figure out how to properly raise?
     }
 }
 
