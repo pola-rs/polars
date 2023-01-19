@@ -54,7 +54,7 @@ def test_explode_empty_list_4107() -> None:
     )
 
 
-def explode_correct_for_slice() -> None:
+def test_explode_correct_for_slice() -> None:
     df = pl.DataFrame({"b": [[1, 1], [2, 2], [3, 3], [4, 4]]})
     assert df.slice(2, 2).explode(["b"])["b"].to_list() == [3, 3, 4, 4]
 

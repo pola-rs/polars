@@ -486,7 +486,7 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
-def groupby_list_column() -> None:
+def test_groupby_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
         .with_column(pl.col("a").cast(pl.Categorical))

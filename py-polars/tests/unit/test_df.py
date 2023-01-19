@@ -1536,7 +1536,7 @@ def test_str_concat() -> None:
     assert out["graduated_name"][1] == "Dr. spam"
 
 
-def dot_product() -> None:
+def test_dot_product() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
