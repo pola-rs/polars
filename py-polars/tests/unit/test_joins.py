@@ -475,64 +475,6 @@ def test_join_chunks_alignment_4720() -> None:
     }
 
 
-def test_join_inline_alias_4694() -> None:
-    df = pl.DataFrame(
-        [
-            {"ts": datetime(2021, 2, 1, 9, 20), "a1": 1.04, "a2": 0.9},
-            {"ts": datetime(2021, 2, 1, 9, 50), "a1": 1.04, "a2": 0.9},
-            {"ts": datetime(2021, 2, 2, 10, 20), "a1": 1.04, "a2": 0.9},
-            {"ts": datetime(2021, 2, 2, 11, 20), "a1": 1.08, "a2": 0.9},
-            {"ts": datetime(2021, 2, 3, 11, 50), "a1": 1.08, "a2": 0.9},
-            {"ts": datetime(2021, 2, 3, 13, 20), "a1": 1.16, "a2": 0.8},
-            {"ts": datetime(2021, 2, 4, 13, 50), "a1": 1.18, "a2": 0.8},
-        ]
-    ).lazy()
-
-    join_against = pl.DataFrame(
-        [
-            {"d": datetime(2021, 2, 3, 0, 0), "ets": datetime(2021, 2, 4, 0, 0)},
-            {"d": datetime(2021, 2, 3, 0, 0), "ets": datetime(2021, 2, 5, 0, 0)},
-            {"d": datetime(2021, 2, 3, 0, 0), "ets": datetime(2021, 2, 6, 0, 0)},
-        ]
-    ).lazy()
-
-    # this adds "dd" column to the lhs followed by a projection
-    # the projection optimizer must realize that this column is added inline and ensure
-    # it is not dropped.
-    assert df.join(
-        join_against,
-        left_on=pl.col("ts").dt.truncate("1d").alias("dd"),
-        right_on=pl.col("d"),
-    ).select(pl.all()).collect().to_dict(False) == {
-        "ts": [
-            datetime(2021, 2, 3, 11, 50),
-            datetime(2021, 2, 3, 11, 50),
-            datetime(2021, 2, 3, 11, 50),
-            datetime(2021, 2, 3, 13, 20),
-            datetime(2021, 2, 3, 13, 20),
-            datetime(2021, 2, 3, 13, 20),
-        ],
-        "a1": [1.08, 1.08, 1.08, 1.16, 1.16, 1.16],
-        "a2": [0.9, 0.9, 0.9, 0.8, 0.8, 0.8],
-        "dd": [
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-        ],
-        "ets": [
-            datetime(2021, 2, 4, 0, 0),
-            datetime(2021, 2, 5, 0, 0),
-            datetime(2021, 2, 6, 0, 0),
-            datetime(2021, 2, 4, 0, 0),
-            datetime(2021, 2, 5, 0, 0),
-            datetime(2021, 2, 6, 0, 0),
-        ],
-    }
-
-
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
     dfa = pl.DataFrame(
