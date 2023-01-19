@@ -600,6 +600,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "erased-serde"
+version = "0.3.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4ca605381c017ec7a5fef5e548f1cfaa419ed0f6df6367339300db74c92aa7d"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "ethnum"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1686,6 +1695,7 @@ name = "polars-plan"
 version = "0.26.1"
 dependencies = [
  "ahash",
+ "erased-serde",
  "polars-arrow",
  "polars-core",
  "polars-io",

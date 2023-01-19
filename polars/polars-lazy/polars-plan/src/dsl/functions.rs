@@ -844,6 +844,24 @@ where
     }
 }
 
+pub fn custom_series_flat_udf_fn<E: AsRef<[Expr]>, F: SeriesUdf + FunctionOutputField + 'static>(
+    f: Arc<F>,
+    exprs: E,
+) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
+    Expr::AnonymousFunction {
+        input: exprs,
+        function: SpecialEq::new(Arc::clone(&f) as _),
+        output_type: SpecialEq::new(f),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            fmt_str: "hello",
+            ..Default::default()
+        },
+    }
+}
+
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
 pub fn cumreduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr

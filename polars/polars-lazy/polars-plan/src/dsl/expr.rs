@@ -5,24 +5,46 @@ use std::ops::Deref;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize, Serializer};
-#[cfg(feature = "serde")]
-use erased_serde;
+use serde::{Deserialize, Serialize};
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
+#[cfg(feature = "serde")]
+use crate::udf_registry::{RegistryDeserializable, UdfSerializeRegistry};
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait SeriesUdf: Send + Sync {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series>;
+
     #[cfg(feature = "serde")]
-    /// This method allows serialization of downstream SeriesUdf types that are also serde serializable.
-    /// For this to work, just add the following implementation of the method to your type's SeriesUdf impl block:
-    /// ```
-    /// fn as_maybe_serialize(&self) -> Option<&dyn erased_serde::Serialize> { self }
-    /// ```
-    /// Types that should not be serialized must keep the default implementation of the method (i.e. return None).
-    fn as_maybe_serialize(&self) -> Option<&dyn erased_serde::Serialize> { None }
+    fn as_serialize(&self) -> Option<(&str, &dyn erased_serde::Serialize)> {
+        None
+    }
+}
+
+// implementing it for SpecialEq to avoid orphan rule issues [temporary]
+#[cfg(feature = "serde")]
+impl serde::Serialize for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (ty, obj) = self.as_serialize().ok_or_else(|| {
+            serde::ser::Error::custom("Cannot serialize SeriesUdf without a serializer")
+        })?;
+
+        crate::udf_registry::serialize_udf(ty, obj, serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> RegistryDeserializable<'de> for Arc<dyn SeriesUdf> {
+    fn deserialize_with_registry<D: serde::de::Deserializer<'de>>(
+        deser: D,
+        registry: &UdfSerializeRegistry,
+    ) -> Result<Self, D::Error>
+    where
+        Self: Sized,
+    {
+        crate::udf_registry::deserialize_udf(deser, &registry.expr_series_udf)
+    }
 }
 
 impl<F> SeriesUdf for F
@@ -38,17 +60,6 @@ impl Debug for dyn SeriesUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "SeriesUdf")
     }
-}
-
-// Serialization of SeriesUdf:
-// - types whose as_maybe_serialize method returns a Serialize trait object are serialized using serde,
-// - types whose as_maybe_serialize method returns None return a serialization error.
-#[cfg(feature = "serde")]
-fn serialize_series_udf<S>(f: &SpecialEq<Arc<dyn SeriesUdf>>, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer,
-{
-    let data = f.0.as_maybe_serialize().ok_or(S::Error::custom("Cannot serialize rename alias function."))?;
-    data.serialize(serializer)
 }
 
 /// A wrapper trait for any binary closure `Fn(Series, Series) -> PolarsResult<Series>`
@@ -86,14 +97,36 @@ impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
 
 pub trait RenameAliasFn: Send + Sync {
     fn call(&self, name: &str) -> PolarsResult<String>;
+
     #[cfg(feature = "serde")]
-    /// This method allows serialization of downstream RenameAliasFn types that are also serde serializable.
-    /// For this to work, just add the following implementation of the method to your type's SeriesUdf impl block:
-    /// ```
-    /// fn as_maybe_serialize(&self) -> Option<&dyn erased_serde::Serialize> { self }
-    /// ```
-    /// Types that should not be serialized must keep the default implementation of the method (i.e. return None).
-    fn as_maybe_serialize(&self) -> Option<&dyn erased_serde::Serialize> { None }
+    fn as_serialize(&self) -> Option<(&str, &dyn erased_serde::Serialize)> {
+        None
+    }
+}
+
+// implementing it for SpecialEq to avoid orphan rule issues [temporary]
+#[cfg(feature = "serde")]
+impl serde::Serialize for SpecialEq<Arc<dyn RenameAliasFn>> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (ty, obj) = self.as_serialize().ok_or_else(|| {
+            serde::ser::Error::custom("Cannot serialize RenameAliasFn without a serializer")
+        })?;
+
+        crate::udf_registry::serialize_udf(ty, obj, serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> RegistryDeserializable<'de> for Arc<dyn RenameAliasFn> {
+    fn deserialize_with_registry<D: serde::de::Deserializer<'de>>(
+        deser: D,
+        registry: &UdfSerializeRegistry,
+    ) -> Result<Self, D::Error>
+    where
+        Self: Sized,
+    {
+        crate::udf_registry::deserialize_udf(deser, &registry.expr_rename_alias)
+    }
 }
 
 impl<F: Fn(&str) -> PolarsResult<String> + Send + Sync> RenameAliasFn for F {
@@ -106,17 +139,6 @@ impl Debug for dyn RenameAliasFn {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "RenameAliasFn")
     }
-}
-
-// Serialization of RenameAliasFn:
-// - types whose as_maybe_serialize method returns a Serialize trait object are serialized using serde,
-// - types whose as_maybe_serialize method returns None return a serialization error.
-#[cfg(feature = "serde")]
-fn serialize_rename_alias_fn<S>(f: &SpecialEq<Arc<dyn RenameAliasFn>>, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer,
-{
-    let data = f.0.as_maybe_serialize().ok_or(S::Error::custom("Cannot serialize rename alias function."))?;
-    data.serialize(serializer)
 }
 
 #[derive(Clone)]
@@ -183,6 +205,36 @@ where
 
 pub trait FunctionOutputField: Send + Sync {
     fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
+
+    #[cfg(feature = "serde")]
+    fn as_serialize(&self) -> Option<(&str, &dyn erased_serde::Serialize)> {
+        None
+    }
+}
+
+// implementing it for SpecialEq to avoid orphan rule issues [temporary]
+#[cfg(feature = "serde")]
+impl serde::Serialize for SpecialEq<Arc<dyn FunctionOutputField>> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (ty, obj) = self.as_serialize().ok_or_else(|| {
+            serde::ser::Error::custom("Cannot serialize FunctionOutputField without a serializer")
+        })?;
+
+        crate::udf_registry::serialize_udf(ty, obj, serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> RegistryDeserializable<'de> for Arc<dyn FunctionOutputField> {
+    fn deserialize_with_registry<D: serde::de::Deserializer<'de>>(
+        deser: D,
+        registry: &UdfSerializeRegistry,
+    ) -> Result<Self, D::Error>
+    where
+        Self: Sized,
+    {
+        crate::udf_registry::deserialize_udf(deser, &registry.expr_fn_output_field)
+    }
 }
 
 pub type GetOutput = SpecialEq<Arc<dyn FunctionOutputField>>;
@@ -388,12 +440,12 @@ pub enum Expr {
     /// Take the nth column in the `DataFrame`
     Nth(i64),
     // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(serialize_with = serialize_rename_alias_fn))]
+    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Box<Expr>,
     },
-    #[cfg_attr(feature = "serde", serde(serialize_with = serialize_series_udf))]
+    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,

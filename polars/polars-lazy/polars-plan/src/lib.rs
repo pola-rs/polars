@@ -6,4 +6,6 @@ pub mod frame;
 pub mod global;
 pub mod logical_plan;
 pub mod prelude;
+#[cfg(feature = "serde")]
+pub mod udf_registry;
 pub mod utils;

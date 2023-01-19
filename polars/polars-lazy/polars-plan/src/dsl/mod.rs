@@ -5,6 +5,8 @@ pub mod cat;
 pub use cat::*;
 #[cfg(feature = "dtype-binary")]
 pub mod binary;
+#[cfg(feature = "serde")]
+mod deser;
 #[cfg(feature = "temporal")]
 mod dt;
 mod expr;

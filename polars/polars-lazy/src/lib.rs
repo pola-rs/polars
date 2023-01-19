@@ -194,3 +194,5 @@ pub mod prelude;
 #[cfg(test)]
 mod tests;
 pub mod utils;
+#[cfg(feature = "serde")]
+pub use polars_plan::udf_registry;
