@@ -6710,8 +6710,9 @@ class DataFrame:
 
         """
         if named:
-            columns = self.columns
-            return [dict(zip(columns, row)) for row in self._df.row_tuples()]
+            # Load these into the local namespace for a minor performance boost
+            dict_, zip_, columns = dict, zip, self.columns
+            return [dict_(zip_(columns, row)) for row in self._df.row_tuples()]
         else:
             return self._df.row_tuples()
 
@@ -6784,16 +6785,18 @@ class DataFrame:
             for offset in range(0, self.height, buffer_size):
                 rows_chunk = self.slice(offset, buffer_size).rows(named=False)
                 if named:
-                    columns = self.columns
+                    # Load these into the local namespace for a minor performance boost
+                    dict_, zip_, columns = dict, zip, self.columns
                     for row in rows_chunk:
-                        yield dict(zip(columns, row))
+                        yield dict_(zip_(columns, row))
                 else:
                     yield from rows_chunk
 
         elif named:
-            columns = self.columns
+            # Load these into the local namespace for a minor performance boost
+            dict_, zip_, columns = dict, zip, self.columns
             for i in range(self.height):
-                yield dict(zip(columns, self.row(i)))
+                yield dict_(zip_(columns, self.row(i)))
         else:
             for i in range(self.height):
                 yield self.row(i)
