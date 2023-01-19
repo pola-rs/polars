@@ -106,6 +106,7 @@ class GroupBy(Generic[DF]):
             groups_df = self.agg(pli.col(non_by_col).agg_groups())
             group_indices = groups_df.select(non_by_col).to_series()
         else:
+            # TODO: Properly handle expression input
             group_indices = pli.Series([[i] for i in range(self._df.height())])
 
         self._group_indices = group_indices
