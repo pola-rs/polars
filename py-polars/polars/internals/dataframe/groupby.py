@@ -84,13 +84,25 @@ class GroupBy(Generic[DF]):
         self.maintain_order = maintain_order
 
     def __iter__(self) -> GroupBy[DF]:
+        warnings.warn(
+            "Return type of groupby iteration will change in the next breaking release."
+            " Iteration will returns tuples of (group_key, data) instead of just data.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
+
         by = [self.by] if not isinstance(self.by, Sequence) else self.by
 
-        # Aggregate groups for any single column that is not specified as 'by'
+        # Find any single column that is not specified as 'by'
         columns = self._df.columns()
-        if len(by) < len(columns):
-            by_names = {c if isinstance(c, str) else c.meta.output_name for c in by}
+        by_names = {c if isinstance(c, str) else c.meta.output_name() for c in by}
+        try:
             non_by_col = next(c for c in columns if c not in by_names)
+        except StopIteration:
+            non_by_col = None
+
+        # Get the group indices using that column
+        if non_by_col is not None:
             groups_df = self.agg(pli.col(non_by_col).agg_groups())
             group_indices = groups_df.select(non_by_col).to_series()
         else:
