@@ -1669,7 +1669,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def groupby(
         self: LDF,
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        by: str | pli.Expr | Sequence[str | pli.Expr],
         maintain_order: bool = False,
     ) -> LazyGroupBy[LDF]:
         """
@@ -1721,7 +1721,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
         Create rolling groups based on a time column.
@@ -1840,7 +1840,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         start_by: StartBy = "window",
     ) -> LazyGroupBy[LDF]:
         """
