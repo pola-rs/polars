@@ -490,13 +490,13 @@ def test_groupby_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
         .with_column(pl.col("a").cast(pl.Categorical))
-        .groupby("a")
+        .groupby("a", maintain_order=True)
         .agg(pl.col("a").list().alias("a_list"))
     )
 
     assert df.groupby("a_list", maintain_order=True).first().to_dict(False) == {
-        "a_list": [["b"], ["a", "a"]],
-        "a": ["b", "a"],
+        "a_list": [["a", "a"], ["b"]],
+        "a": ["a", "b"],
     }
 
 
