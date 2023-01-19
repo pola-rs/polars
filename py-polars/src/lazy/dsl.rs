@@ -355,12 +355,12 @@ impl PyExpr {
             .with_fmt("take_every")
             .into()
     }
-    pub fn tail(&self, n: Option<usize>) -> PyExpr {
-        self.clone().inner.tail(n).into()
+    pub fn tail(&self, n: usize) -> PyExpr {
+        self.clone().inner.tail(Some(n)).into()
     }
 
-    pub fn head(&self, n: Option<usize>) -> PyExpr {
-        self.clone().inner.head(n).into()
+    pub fn head(&self, n: usize) -> PyExpr {
+        self.clone().inner.head(Some(n)).into()
     }
 
     pub fn slice(&self, offset: PyExpr, length: PyExpr) -> PyExpr {

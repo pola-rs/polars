@@ -3089,7 +3089,7 @@ class DataFrame:
         """
         return self.head(n)
 
-    def head(self: DF, n: int | None = 5) -> DF:
+    def head(self: DF, n: int = 5) -> DF:
         """
         Get the first `n` rows (if negative, returns all rows except the last `n`).
 
@@ -3136,11 +3136,11 @@ class DataFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
         """
-        if n and n < 0:
+        if n < 0:
             n = len(self) + n
         return self._from_pydf(self._df.head(n))
 
-    def tail(self: DF, n: int | None = 5) -> DF:
+    def tail(self: DF, n: int = 5) -> DF:
         """
         Get the last `n` rows (if negative, returns all rows except the first `n`).
 
@@ -3187,7 +3187,7 @@ class DataFrame:
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
         """
-        if n and n < 0:
+        if n < 0:
             n = len(self) + n
         return self._from_pydf(self._df.tail(n))
 
