@@ -1021,13 +1021,13 @@ impl PyDataFrame {
         df.into()
     }
 
-    pub fn head(&self, length: Option<usize>) -> Self {
-        let df = self.df.head(length);
+    pub fn head(&self, n: usize) -> Self {
+        let df = self.df.head(Some(n));
         PyDataFrame::new(df)
     }
 
-    pub fn tail(&self, length: Option<usize>) -> Self {
-        let df = self.df.tail(length);
+    pub fn tail(&self, n: usize) -> Self {
+        let df = self.df.tail(Some(n));
         PyDataFrame::new(df)
     }
 

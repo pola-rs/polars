@@ -964,12 +964,12 @@ def last(column: str | pli.Series | None = None) -> pli.Expr:
 
 
 @overload
-def head(column: str, n: int = 10) -> pli.Expr:
+def head(column: str, n: int = ...) -> pli.Expr:
     ...
 
 
 @overload
-def head(column: pli.Series, n: int = 10) -> pli.Series:
+def head(column: pli.Series, n: int = ...) -> pli.Series:
     ...
 
 
@@ -1023,12 +1023,12 @@ def head(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
 
 
 @overload
-def tail(column: str, n: int = 10) -> pli.Expr:
+def tail(column: str, n: int = ...) -> pli.Expr:
     ...
 
 
 @overload
-def tail(column: pli.Series, n: int = 10) -> pli.Series:
+def tail(column: pli.Series, n: int = ...) -> pli.Series:
     ...
 
 
