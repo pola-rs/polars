@@ -51,7 +51,12 @@ from polars.datatypes import (
     get_idx_type,
     py_type_to_dtype,
 )
-from polars.dependencies import _check_for_numpy, _check_for_pandas, _check_for_pyarrow
+from polars.dependencies import (
+    _PYARROW_AVAILABLE,
+    _check_for_numpy,
+    _check_for_pandas,
+    _check_for_pyarrow,
+)
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -2260,7 +2265,7 @@ class DataFrame:
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
-        use_pyarrow: bool = False,
+        use_pyarrow: bool = _PYARROW_AVAILABLE,
         pyarrow_options: dict[str, object] | None = None,
     ) -> None:
         """

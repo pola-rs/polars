@@ -41,7 +41,7 @@ def test_to_from_buffer(
             buf = io.BytesIO()
             # Writing lzo compressed parquet files is not supported for now.
             with pytest.raises(pl.ArrowError):
-                df.write_parquet(buf, compression=compression)
+                df.write_parquet(buf, compression=compression, use_pyarrow=False)
             buf.seek(0)
             # Invalid parquet file as writing failed.
             with pytest.raises(pl.ArrowError):
@@ -78,7 +78,7 @@ def test_to_from_file(
         if compression == "lzo":
             # Writing lzo compressed parquet files is not supported for now.
             with pytest.raises(pl.ArrowError):
-                df.write_parquet(f, compression=compression)
+                df.write_parquet(f, compression=compression, use_pyarrow=False)
             # Invalid parquet file as writing failed.
             with pytest.raises(pl.ArrowError):
                 _ = pl.read_parquet(f)
