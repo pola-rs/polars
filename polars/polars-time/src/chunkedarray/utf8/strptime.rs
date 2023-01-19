@@ -15,6 +15,27 @@ fn update_and_parse<T: lexical::FromLexical>(
         .map(|v| (v, new_offset))
 }
 
+
+#[inline]
+fn parse_month_abbrev(val: &[u8], offset: usize) -> (u32, usize) {
+    let new_offset = offset + 3;
+    match &val[offset..new_offset] {
+        b"Jan" => (1, new_offset),
+        b"Feb" => (2, new_offset),
+        b"Mar" => (3, new_offset),
+        b"Apr" => (4, new_offset),
+        b"May" => (5, new_offset),
+        b"Jun" => (6, new_offset),
+        b"Jul" => (7, new_offset),
+        b"Aug" => (8, new_offset),
+        b"Sep" => (9, new_offset),
+        b"Oct" => (10, new_offset),
+        b"Nov" => (11, new_offset),
+        b"Dec" => (12, new_offset),
+        _ => (999, new_offset),  // todo figure out how to properly raise?
+    }
+}
+
 /// Tries to convert a chrono `fmt` to a `fmt` that the polars parser consumes.
 /// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
 /// year, day, month distinctively with %Y, %d, %m.
@@ -67,6 +88,9 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
                 }
                 b'm' => {
                     (month, offset) = update_and_parse(2, offset, val)?;
+                }
+                b'b' => {
+                    (month, offset) = parse_month_abbrev(val, offset);
                 }
                 b'd' => {
                     (day, offset) = update_and_parse(2, offset, val)?;
@@ -138,6 +162,7 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                 b'y' => cnt += 2,
                 b'd' => cnt += 2,
                 b'm' => cnt += 2,
+                b'b' => cnt += 3,
                 b'H' => cnt += 2,
                 b'M' => cnt += 2,
                 b'S' => cnt += 2,
