@@ -64,7 +64,7 @@ def test_semi_anti_join() -> None:
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
-        columns=[("column", pl.Categorical), ("more", pl.Int32)],
+        schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
     df_agg = df.groupby("column").agg(pl.col("more").mean())
     assert df.join(df_agg, on="column").to_dict(False) == {

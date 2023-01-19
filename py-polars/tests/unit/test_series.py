@@ -136,7 +136,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
     # numpy not available
     monkeypatch.setattr(pl.internals.series.series, "_check_for_numpy", lambda x: False)
     with pytest.raises(ValueError):
-        pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
+        pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
 
 def test_init_dataclass_namedtuple() -> None:

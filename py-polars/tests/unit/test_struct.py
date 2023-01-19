@@ -773,7 +773,7 @@ def test_empty_with_schema_struct() -> None:
         for frame_data in (dict_data, dataclass_data):
             df = pl.DataFrame(
                 data=frame_data,
-                columns=frame_schema,  # type: ignore[arg-type]
+                schema=frame_schema,  # type: ignore[arg-type]
             )
             assert df.schema == frame_schema
             assert df.unnest("y").columns == ["x", "a", "b", "c"]

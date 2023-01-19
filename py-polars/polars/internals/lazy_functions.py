@@ -2543,7 +2543,7 @@ def coalesce(
     ...         (None, None, 3.0),
     ...         (None, None, None),
     ...     ],
-    ...     columns=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
+    ...     schema=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
     ... )
     >>> df.with_column(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
     shape: (4, 4)

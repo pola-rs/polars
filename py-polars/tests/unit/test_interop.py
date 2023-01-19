@@ -296,7 +296,7 @@ def test_from_dicts_schema_override() -> None:
     for n_infer in (0, 3, 5, 8, 10, 100):
         df = pl.DataFrame(
             data=(data1 + data2),
-            columns=schema,  # type: ignore[arg-type]
+            schema=schema,  # type: ignore[arg-type]
             infer_schema_length=n_infer,
         )
         assert df.schema == schema
@@ -332,7 +332,7 @@ def test_from_dicts_struct() -> None:
 
 def test_from_records() -> None:
     data = [[1, 2, 3], [4, 5, 6]]
-    df = pl.from_records(data, columns=["a", "b"])
+    df = pl.from_records(data, schema=["a", "b"])
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
 
@@ -341,7 +341,7 @@ def test_from_numpy() -> None:
     data = np.array([[1, 2, 3], [4, 5, 6]])
     df = pl.from_numpy(
         data,
-        columns=["a", "b"],
+        schema=["a", "b"],
         orient="col",
         schema_overrides={"a": pl.UInt32, "b": pl.UInt32},
     )
@@ -393,7 +393,7 @@ def test_from_optional_not_available() -> None:
 
     np = _LazyModule("numpy", module_available=False)
     with pytest.raises(ImportError, match=r"np\.array requires 'numpy'"):
-        pl.from_numpy(np.array([[1, 2], [3, 4]]), columns=["a", "b"])
+        pl.from_numpy(np.array([[1, 2], [3, 4]]), schema=["a", "b"])
 
     pa = _LazyModule("pyarrow", module_available=False)
     with pytest.raises(ImportError, match=r"pa\.table requires 'pyarrow'"):
@@ -467,7 +467,7 @@ def test_from_empty_pandas_with_dtypes() -> None:
 
     df = pl.DataFrame(
         data=[],
-        columns={
+        schema={
             "a": pl.Int32,
             "b": pl.Datetime,
             "c": pl.Float32,

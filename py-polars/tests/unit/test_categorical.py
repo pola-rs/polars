@@ -128,7 +128,7 @@ def test_cat_to_dummies() -> None:
 def test_comp_categorical_lit_dtype() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
-        columns=[("column", pl.Categorical), ("more", pl.Int32)],
+        schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
 
     assert df.with_column(

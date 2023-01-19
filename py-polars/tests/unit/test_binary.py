@@ -22,7 +22,7 @@ def test_contains() -> None:
             (2, b"(with) special\n * chars"),
             (3, b"**etc...?$"),
         ],
-        columns=["idx", "bin"],
+        schema=["idx", "bin"],
     )
     for pattern, expected in (
         (b"e * ", [True, False, False]),

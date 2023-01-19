@@ -177,7 +177,7 @@ def test_groupby_agg_equals_zero_3535() -> None:
             ("cc", -99, 10.5),
             ("cc", None, 0.0),
         ],
-        columns=[
+        schema=[
             ("key", pl.Utf8),
             ("val1", pl.Int16),
             ("val2", pl.Float32),

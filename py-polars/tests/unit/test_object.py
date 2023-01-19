@@ -24,7 +24,7 @@ def test_object_empty_filter_5911() -> None:
         data=[
             (1, "dog", {}),
         ],
-        columns=[
+        schema=[
             ("pet_id", pl.Int64),
             ("pet_type", pl.Categorical),
             ("pet_obj", pl.Object),
@@ -57,7 +57,7 @@ def test_empty_sort() -> None:
             ({"name": "bar", "sort_key": 2},),
             ({"name": "foo", "sort_key": 1},),
         ],
-        columns=[
+        schema=[
             ("blob", pl.Object),
         ],
         orient="row",

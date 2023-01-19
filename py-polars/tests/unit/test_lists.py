@@ -85,7 +85,7 @@ def test_dtype() -> None:
             "dt": [[date(2022, 12, 31)]],
             "dtm": [[datetime(2022, 12, 31, 1, 2, 3)]],
         },
-        columns=[
+        schema=[
             ("i", pl.List(pl.Int8)),
             ("tm", pl.List(pl.Time)),
             ("dt", pl.List(pl.Date)),
@@ -355,7 +355,7 @@ def test_empty_list_construction() -> None:
         False
     ) == {"array": [[]], "not_array": [1234]}
 
-    df = pl.DataFrame(columns=[("col", pl.List)])
+    df = pl.DataFrame(schema=[("col", pl.List)])
     assert df.schema == {"col": pl.List}
     assert df.rows() == []
 
@@ -636,7 +636,7 @@ def test_fast_explode_on_list_struct_6208() -> None:
 
     df = pl.DataFrame(
         data,
-        columns={
+        schema={
             "label": pl.Utf8,
             "tag": pl.Utf8,
             "ref": pl.Int64,

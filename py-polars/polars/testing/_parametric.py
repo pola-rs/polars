@@ -251,8 +251,8 @@ def columns(
     >>> from string import punctuation
     >>>
     >>> def test_special_char_colname_init() -> None:
-    ...     cols = [(c.name, c.dtype) for c in columns(punctuation)]
-    ...     df = pl.DataFrame(columns=cols)
+    ...     schema = [(c.name, c.dtype) for c in columns(punctuation)]
+    ...     df = pl.DataFrame(schema=schema)
     ...     assert len(cols) == len(df.columns)
     ...     assert 0 == len(df.rows())
     ...
@@ -617,7 +617,7 @@ def dataframes(
                 )
                 for c in coldefs
             },
-            columns=frame_columns,  # type: ignore[arg-type]
+            schema=frame_columns,  # type: ignore[arg-type]
         )
         # optionally generate frames with n_chunks > 1
         if series_size > 1 and chunked is True:
