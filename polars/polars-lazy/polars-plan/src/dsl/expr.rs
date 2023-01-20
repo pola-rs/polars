@@ -369,7 +369,7 @@ pub enum Expr {
 // Because PartialEq will have a lot of `false`, e.g. on Function
 // Types, this may lead to many file reads, as we use predicate comparison
 // to check if we can cache a file
-#[allow(clippy::derive_hash_xor_eq)]
+#[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Expr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let s = format!("{self:?}");

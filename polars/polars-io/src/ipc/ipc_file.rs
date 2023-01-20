@@ -356,19 +356,14 @@ impl<W: Write> BatchedWriter<W> {
 }
 
 /// Compression codec
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum IpcCompression {
     /// LZ4 (framed)
     LZ4,
     /// ZSTD
+    #[default]
     ZSTD,
-}
-
-impl Default for IpcCompression {
-    fn default() -> Self {
-        IpcCompression::ZSTD
-    }
 }
 
 impl From<IpcCompression> for write::Compression {

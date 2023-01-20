@@ -21,7 +21,7 @@ use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ParallelStrategy {
     /// Don't parallelize
@@ -32,13 +32,8 @@ pub enum ParallelStrategy {
     RowGroups,
     /// Automatically determine over which unit to parallelize
     /// This will choose the most occurring unit.
+    #[default]
     Auto,
-}
-
-impl Default for ParallelStrategy {
-    fn default() -> Self {
-        ParallelStrategy::Auto
-    }
 }
 
 /// Read Apache parquet format into a DataFrame.

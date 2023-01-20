@@ -63,20 +63,15 @@ where
     ))
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QuantileInterpolOptions {
+    #[default]
     Nearest,
     Lower,
     Higher,
     Midpoint,
     Linear,
-}
-
-impl Default for QuantileInterpolOptions {
-    fn default() -> Self {
-        QuantileInterpolOptions::Nearest
-    }
 }
 
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(

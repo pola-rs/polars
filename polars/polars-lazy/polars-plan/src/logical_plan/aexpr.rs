@@ -39,7 +39,7 @@ pub enum AAggExpr {
 }
 
 // AExpr representation of Nodes which are allocated in an Arena
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum AExpr {
     Explode(Node),
     Alias(Node, Arc<str>),
@@ -97,6 +97,7 @@ pub enum AExpr {
         order_by: Option<Node>,
         options: WindowOptions,
     },
+    #[default]
     Wildcard,
     Slice {
         input: Node,
@@ -105,12 +106,6 @@ pub enum AExpr {
     },
     Count,
     Nth(i64),
-}
-
-impl Default for AExpr {
-    fn default() -> Self {
-        AExpr::Wildcard
-    }
 }
 
 impl AExpr {

@@ -1626,7 +1626,7 @@ impl DataFrame {
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
         if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: NoNull<IdxCa> = iter.into_iter().map(|idx| idx as IdxSize).collect();
+            let idx_ca: NoNull<IdxCa> = iter.map(|idx| idx as IdxSize).collect();
             let idx_ca = idx_ca.into_inner();
             return self.take_unchecked(&idx_ca);
         }
@@ -1664,10 +1664,7 @@ impl DataFrame {
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
         if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: IdxCa = iter
-                .into_iter()
-                .map(|opt| opt.map(|v| v as IdxSize))
-                .collect();
+            let idx_ca: IdxCa = iter.map(|opt| opt.map(|v| v as IdxSize)).collect();
             return self.take_unchecked(&idx_ca);
         }
 

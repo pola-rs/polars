@@ -16,17 +16,12 @@ mod unique;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NullBehavior {
     /// drop nulls
     Drop,
     /// ignore nulls
+    #[default]
     Ignore,
-}
-
-impl Default for NullBehavior {
-    fn default() -> Self {
-        NullBehavior::Ignore
-    }
 }

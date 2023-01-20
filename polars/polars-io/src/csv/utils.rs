@@ -515,9 +515,8 @@ fn decompress_impl<R: Read>(
                         break;
                     }
                     // now that we have enough, we compute the number of fields (also takes embedding into account)
-                    expected_fields = SplitFields::new(&out, delimiter, quote_char, eol_char)
-                        .into_iter()
-                        .count();
+                    expected_fields =
+                        SplitFields::new(&out, delimiter, quote_char, eol_char).count();
                     break;
                 }
             }
