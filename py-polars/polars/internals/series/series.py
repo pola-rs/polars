@@ -18,6 +18,7 @@ from warnings import warn
 from polars import internals as pli
 from polars.datatypes import (
     Boolean,
+    Categorical,
     DataType,
     Date,
     Datetime,
@@ -434,6 +435,8 @@ class Series:
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return wrap_s(f(d))
+        if self.dtype == Categorical and not isinstance(other, Series):
+            other = Series([other])
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)

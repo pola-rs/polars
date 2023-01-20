@@ -103,3 +103,33 @@ def test_binary_simplification_5971() -> None:
         True,
         True,
     ]
+
+
+def test_categorical_string_comparison_6283() -> None:
+    scores = pl.DataFrame(
+        {
+            "zone": pl.Series(
+                [
+                    "North",
+                    "North",
+                    "North",
+                    "South",
+                    "South",
+                    "East",
+                    "East",
+                    "East",
+                    "East",
+                ]
+            ).cast(pl.Categorical),
+            "funding": pl.Series(
+                ["yes", "yes", "no", "yes", "no", "no", "no", "yes", "yes"]
+            ).cast(pl.Categorical),
+            "score": [78, 39, 76, 56, 67, 89, 100, 55, 80],
+        }
+    )
+
+    assert scores.filter(scores["zone"] == "North").to_dict(False) == {
+        "zone": ["North", "North", "North"],
+        "funding": ["yes", "yes", "no"],
+        "score": [78, 39, 76],
+    }
