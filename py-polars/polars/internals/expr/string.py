@@ -81,16 +81,12 @@ class ExprStringNameSpace:
         ...         "Sun Jul  8 00:34:60 2001",
         ...     ],
         ... )
-        >>> (
-        ...     s.to_frame().with_columns(
-        ...         pl.col("date")
-        ...         .str.strptime(pl.Date, "%F", strict=False)
-        ...         .fill_null(
-        ...             pl.col("date").str.strptime(pl.Date, "%F %T", strict=False)
-        ...         )
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
-        ...     )
+        >>> s.to_frame().with_columns(
+        ...     pl.col("date")
+        ...     .str.strptime(pl.Date, "%F", strict=False)
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%F %T", strict=False))
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
         ... )
         shape: (4, 1)
         ┌────────────┐

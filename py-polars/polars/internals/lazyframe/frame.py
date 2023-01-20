@@ -794,11 +794,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         --------
         >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]}).lazy()
         >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("foo").cumsum().alias("bar"),
-        ...         ]
-        ...     )
+        ...     df.select(pl.col("foo").cumsum().alias("bar"))
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
@@ -1483,7 +1479,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... ).lazy()
-        >>> (df.clone())  # doctest: +ELLIPSIS
+        >>> df.clone()  # doctest: +ELLIPSIS
         <polars.LazyFrame object at ...>
 
         """
@@ -1889,6 +1885,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday'}
             The strategy to determine the start of the first window by.
+
             * 'window': Truncate the start of the window with the 'every' argument.
             * 'datapoint': Start from the first encountered data point.
             * 'monday': Start the window on the monday before the first data point.
@@ -1929,15 +1926,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
-        >>> (
-        ...     df.lazy()
-        ...     .groupby_dynamic("time", every="1h", closed="right")
-        ...     .agg(
-        ...         [
-        ...             pl.col("time").min().alias("time_min"),
-        ...             pl.col("time").max().alias("time_max"),
-        ...         ]
-        ...     )
+        >>> df.lazy().groupby_dynamic("time", every="1h", closed="right").agg(
+        ...     [
+        ...         pl.col("time").min().alias("time_min"),
+        ...         pl.col("time").max().alias("time_max"),
+        ...     ]
         ... ).collect()
         shape: (4, 3)
         ┌─────────────────────┬─────────────────────┬─────────────────────┐
@@ -1953,13 +1946,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         The window boundaries can also be added to the aggregation result
 
-        >>> (
-        ...     df.lazy()
-        ...     .groupby_dynamic(
-        ...         "time", every="1h", include_boundaries=True, closed="right"
-        ...     )
-        ...     .agg([pl.col("time").count().alias("time_count")])
-        ... ).collect()
+        >>> df.lazy().groupby_dynamic(
+        ...     "time", every="1h", include_boundaries=True, closed="right"
+        ... ).agg([pl.col("time").count().alias("time_count")]).collect()
         shape: (4, 4)
         ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
@@ -1975,15 +1964,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         When closed="left", should not include right end of interval
         [lower_bound, upper_bound)
 
-        >>> (
-        ...     df.lazy()
-        ...     .groupby_dynamic("time", every="1h", closed="left")
-        ...     .agg(
-        ...         [
-        ...             pl.col("time").count().alias("time_count"),
-        ...             pl.col("time").alias("time_agg_list"),
-        ...         ]
-        ...     )
+        >>> df.lazy().groupby_dynamic("time", every="1h", closed="left").agg(
+        ...     [
+        ...         pl.col("time").count().alias("time_count"),
+        ...         pl.col("time").alias("time_agg_list"),
+        ...     ]
         ... ).collect()
         shape: (4, 3)
         ┌─────────────────────┬────────────┬─────────────────────────────────────┐
@@ -1999,10 +1984,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
-        >>> (
-        ...     df.lazy()
-        ...     .groupby_dynamic("time", every="1h", closed="both")
-        ...     .agg([pl.col("time").count().alias("time_count")])
+        >>> df.lazy().groupby_dynamic("time", every="1h", closed="both").agg(
+        ...     pl.col("time").count().alias("time_count")
         ... ).collect()
         shape: (5, 2)
         ┌─────────────────────┬────────────┐
@@ -2045,16 +2028,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 2021-12-16 03:00:00 ┆ a      │
         └─────────────────────┴────────┘
         >>> (
-        ...     df.lazy()
-        ...     .groupby_dynamic(
+        ...     df.lazy().groupby_dynamic(
         ...         "time",
         ...         every="1h",
         ...         closed="both",
         ...         by="groups",
         ...         include_boundaries=True,
         ...     )
-        ...     .agg([pl.col("time").count().alias("time_count")])
-        ... ).collect()
+        ... ).agg([pl.col("time").count().alias("time_count")]).collect()
         shape: (7, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
@@ -2079,16 +2060,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     }
         ... )
         >>> (
-        ...     df.lazy()
-        ...     .groupby_dynamic(
+        ...     df.lazy().groupby_dynamic(
         ...         "idx",
         ...         every="2i",
         ...         period="3i",
         ...         include_boundaries=True,
         ...         closed="right",
         ...     )
-        ...     .agg(pl.col("A").alias("A_agg_list"))
-        ... ).collect()
+        ... ).agg(pl.col("A").alias("A_agg_list")).collect()
         shape: (3, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
@@ -2597,10 +2576,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         --------
         >>> df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
         >>> df_other = pl.DataFrame({"c": ["foo", "ham"]})
-        >>> (
-        ...     df_a.with_context(df_other.lazy()).select(
-        ...         [pl.col("b") + pl.col("c").first()]
-        ...     )
+        >>> df_a.with_context(df_other.lazy()).select(
+        ...     [pl.col("b") + pl.col("c").first()]
         ... ).collect()
         shape: (3, 1)
         ┌──────┐
@@ -2621,10 +2598,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         >>> test_df = pl.DataFrame(
         ...     {"feature_0": [-1.0, None, 1], "feature_1": [-1.0, 0, 1]}
         ... ).lazy()
-        >>> (
-        ...     test_df.with_context(train_df.select(pl.all().suffix("_train"))).select(
-        ...         pl.col("feature_0").fill_null(pl.col("feature_0_train").median())
-        ...     )
+        >>> test_df.with_context(train_df.select(pl.all().suffix("_train"))).select(
+        ...     pl.col("feature_0").fill_null(pl.col("feature_0_train").median())
         ... ).collect()
         shape: (3, 1)
         ┌───────────┐
