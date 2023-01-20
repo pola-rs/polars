@@ -175,7 +175,6 @@ impl Series {
                             _ => field_avs.push(AnyValue::Null),
                         }
                     }
-                    println!("fld name: {}", field.name());
                     series_fields.push(Series::new(field.name(), &field_avs))
                 }
                 return Ok(StructChunked::new(name, &series_fields)
