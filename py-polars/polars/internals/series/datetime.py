@@ -939,6 +939,30 @@ class DateTimeNameSpace:
             2020-05-01 01:00:00 BST
         ]
 
+        If starting from a naive Datetime, then conversion will happen
+        as if starting from UTC:
+
+        >>> brussels_ts = date.dt.with_time_zone(tz="Europe/Brussels").alias("Brussels")
+        >>> brussels_ts
+        shape: (3,)
+        Series: 'Brussels' [datetime[μs, Europe/Brussels]]
+        [
+                2020-03-01 01:00:00 CET
+                2020-04-01 02:00:00 CEST
+                2020-05-01 02:00:00 CEST
+        ]
+
+        If starting from a tz-aware Datetime, then passing ``tz=None``
+        will make the result timezone-naive:
+
+        >>> brussels_ts.dt.with_time_zone(tz=None).alias("")
+        shape: (3,)
+        Series: '' [datetime[μs]]
+        [
+                2020-03-01 00:00:00
+                2020-04-01 00:00:00
+                2020-05-01 00:00:00
+        ]
         """
 
     def cast_time_zone(self, tz: str) -> pli.Series:
