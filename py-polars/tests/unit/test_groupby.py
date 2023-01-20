@@ -77,23 +77,30 @@ def test_groupby_iteration() -> None:
             "baz": [6, 5, 4, 3, 2, 1],
         }
     )
-    expected_shapes = [(2, 3), (3, 3), (1, 3)]
+    expected_names = ["a", "b", "c"]
     expected_rows = [
         [("a", 1, 6), ("a", 3, 4)],
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    for i, group in enumerate(df.groupby("foo", maintain_order=True)):
-        assert group.shape == expected_shapes[i]
-        assert group.rows() == expected_rows[i]
+    for i, (group, data) in enumerate(df.groupby("foo", maintain_order=True)):
+        assert group == expected_names[i]
+        assert data.rows() == expected_rows[i]
 
     # Grouped by ALL columns should give groups of a single row
     result = list(df.groupby(["foo", "bar", "baz"]))
     assert len(result) == 6
 
     # Iterating over groups should also work when grouping by expressions
-    result = list(df.groupby(["foo", pl.col("bar") * pl.col("baz")]))
-    assert len(result) == 5
+    result2 = list(df.groupby(["foo", pl.col("bar") * pl.col("baz")]))
+    assert len(result2) == 5
+
+    # Single column, alias in groupby
+    df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6]})
+    gb = df.groupby((pl.col("foo") // 2).alias("bar"), maintain_order=True)
+    result3 = [(group, df.rows()) for group, df in gb]
+    expected3 = [(0, [(1,)]), (1, [(2,), (3,)]), (2, [(4,), (5,)]), (3, [(6,)])]
+    assert result3 == expected3
 
 
 def bad_agg_parameters() -> list[Any]:
