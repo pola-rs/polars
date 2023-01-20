@@ -119,8 +119,7 @@ impl Series {
             DataType::Struct(dtype_fields) => {
                 // fast path for empty structs
                 if dtype_fields.is_empty() {
-                    let s = vec![Series::full_null("", av.len(), &DataType::Null)];
-                    return Ok(StructChunked::new_unchecked(name, &s).into_series());
+                    return Ok(StructChunked::full_null(name, av.len()).into_series());
                 }
                 // the physical series fields of the struct
                 let mut series_fields = Vec::with_capacity(dtype_fields.len());

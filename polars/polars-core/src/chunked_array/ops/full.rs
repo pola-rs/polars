@@ -117,6 +117,13 @@ impl ListChunked {
     }
 }
 
+impl ChunkFullNull for StructChunked {
+    fn full_null(name: &str, length: usize) -> StructChunked {
+        let s = vec![Series::full_null("", length, &DataType::Null)];
+        StructChunked::new_unchecked(name, &s)
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkFull<T> for ObjectChunked<T> {
     fn full(name: &str, value: T, length: usize) -> Self
