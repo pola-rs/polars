@@ -5,98 +5,142 @@ use std::sync::Arc;
 pub use erased_serde::{
     Deserializer as ErasedDeserializer, Error as ErasedError, Serialize as ErasedSerialize,
 };
-use serde::de::{DeserializeSeed, Visitor};
+use polars_core::export::once_cell::sync::OnceCell;
+use serde::de::{DeserializeOwned, DeserializeSeed, Error, MapAccess, Visitor};
 use serde::ser::SerializeMap;
 pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+pub static UDF_DESERIALIZE_REGISTRY: OnceCell<UdfSerializeRegistry> = OnceCell::new();
+
+// Serialization
 
 pub fn serialize_udf<S: Serializer>(
     ty: &str,
     obj: &dyn erased_serde::Serialize,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    // { <type>: <value> }
-    let mut map = serializer.serialize_map(Some(1))?;
-    map.serialize_key(ty)?;
-    map.serialize_value(obj)?;
+    // { "type": <type>, "data": <data> }
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("type", ty)?;
+    map.serialize_entry("data", obj)?;
     map.end()
 }
 
-mod deser {
-    use super::*;
-
-    struct DeserSeedWrapper<T> {
-        f: DeserializeFn<T>,
-    }
-
-    impl<'de, T: 'static> DeserializeSeed<'de> for DeserSeedWrapper<T> {
-        type Value = T;
-
-        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let mut erased = <dyn erased_serde::Deserializer>::erase(deserializer);
-            (self.f)(&mut erased).map_err(serde::de::Error::custom)
-        }
-    }
-    pub(super) struct MapLookupVisitor<'a, T> {
-        pub(super) registry: &'a Registry<T>,
-    }
-
-    impl<'de, 'a, T: 'static> Visitor<'de> for MapLookupVisitor<'a, T> {
-        type Value = T;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            write!(formatter, "{{user defined function}}")
-        }
-
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: serde::de::MapAccess<'de>,
-        {
-            let k = map
-                .next_key::<&str>()?
-                .ok_or_else(|| serde::de::Error::missing_field("type"))?;
-
-            let func = self
-                .registry
-                .map
-                .get(k)
-                .ok_or_else(|| serde::de::Error::unknown_variant(k, &[]))?;
-
-            let val = map.next_value_seed(DeserSeedWrapper { f: *func })?;
-
-            Ok(val)
-        }
-    }
+// Deserialization
+struct MapLookupVisitor<T: 'static> {
+    registry: &'static Registry<T>,
 }
 
-pub fn deserialize_udf<'de, D: serde::de::Deserializer<'de>, T: 'static>(
-    deser: D,
-    registry: &Registry<T>,
-) -> Result<T, D::Error> {
-    deser.deserialize_map(deser::MapLookupVisitor { registry })
-}
+impl<'de, T: 'static> Visitor<'de> for MapLookupVisitor<T> {
+    type Value = T;
 
-pub trait RegistryDeserializable<'de> {
-    fn deserialize_with_registry<D: Deserializer<'de>>(
-        deser: D,
-        registry: &UdfSerializeRegistry,
-    ) -> Result<Self, D::Error>
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{{user defined function}}")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
     where
-        Self: Sized;
+        A: MapAccess<'de>,
+    {
+        // { "type": <type>, "data": <data> }
+        let k = map
+            .next_key::<&str>()?
+            .ok_or_else(|| Error::missing_field("type"))?;
+        if k != "type" {
+            Err(Error::unknown_field(k, &["type", "data"]))?
+        }
+
+        let k = map.next_value::<&str>()?;
+
+        let v = map
+            .next_key::<&str>()?
+            .ok_or_else(|| Error::missing_field("data"))?;
+        if v != "data" {
+            Err(Error::unknown_field(v, &["type", "data"]))?
+        }
+
+        let func = self
+            .registry
+            .map
+            .get(k)
+            .ok_or_else(|| Error::unknown_variant(k, &self.registry.variants))?;
+
+        // Deserialize the data
+        struct DeserSeedWrapper<'f, T> {
+            f: &'f DeserializeFn<T>,
+        }
+
+        impl<'de, 'f, T: 'static> DeserializeSeed<'de> for DeserSeedWrapper<'f, T> {
+            type Value = T;
+
+            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let mut erased = <dyn erased_serde::Deserializer>::erase(deserializer);
+                (self.f)(&mut erased).map_err(Error::custom)
+            }
+        }
+        let val = map.next_value_seed(DeserSeedWrapper { f: func })?;
+
+        Ok(val)
+    }
 }
 
-pub type DeserializeFn<T> =
-    fn(&mut dyn erased_serde::Deserializer) -> Result<T, erased_serde::Error>;
+pub fn deserialize_udf<'de, D: Deserializer<'de>, T: 'static>(
+    deser: D,
+    registry: &'static Registry<T>,
+) -> Result<T, D::Error> {
+    deser.deserialize_map(MapLookupVisitor { registry })
+}
+
+// Deserialization: Registry
+
+pub type DeserializeFn<T> = Box<
+    dyn Fn(&mut dyn erased_serde::Deserializer) -> Result<T, erased_serde::Error> + Send + Sync,
+>;
 
 pub struct Registry<T> {
-    pub map: HashMap<String, DeserializeFn<T>>,
+    map: HashMap<&'static str, DeserializeFn<T>>,
+    variants: Vec<&'static str>,
 }
 
 impl<T> Registry<T> {
-    pub fn new(map: HashMap<String, DeserializeFn<T>>) -> Self {
-        Self { map }
+    pub fn new(map: HashMap<&'static str, DeserializeFn<T>>) -> Self {
+        let variants = map.keys().copied().collect();
+        Self { map, variants }
+    }
+
+    pub fn map(&self) -> &HashMap<&'static str, DeserializeFn<T>> {
+        &self.map
+    }
+
+    pub fn map_mut(&mut self) -> &HashMap<&'static str, DeserializeFn<T>> {
+        &mut self.map
+    }
+
+    pub fn with<D: DeserializeOwned>(
+        mut self,
+        key: &'static str,
+        make_t: impl Fn(D) -> T + Send + Sync + 'static,
+    ) -> Self {
+        self.insert::<D>(key, make_t);
+        self
+    }
+
+    pub fn insert<D: DeserializeOwned>(
+        &mut self,
+        key: &'static str,
+        make_t: impl Fn(D) -> T + Send + Sync + 'static,
+    ) -> &mut Self {
+        self.map.insert(
+            key,
+            Box::new(move |deser: &mut dyn erased_serde::Deserializer| {
+                D::deserialize(deser).map(&make_t)
+            }),
+        );
+
+        self
     }
 }
 
@@ -104,6 +148,7 @@ impl<T> Default for Registry<T> {
     fn default() -> Self {
         Self {
             map: HashMap::new(),
+            variants: Default::default(),
         }
     }
 }

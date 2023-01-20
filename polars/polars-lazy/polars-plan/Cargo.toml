@@ -24,12 +24,12 @@ serde = { version = "1", features = ["derive", "rc"], optional = true }
 erased-serde = { version = "0.3", optional = true }
 
 [features]
-serde = ["serde", "erased-serde"]
+serde = ["dep:serde", "erased-serde"]
 python = ["pyo3"]
 # make sure we don't compile unneeded things even though
 # this dependency gets activated
 compile = []
-default = ["compile", "private"]
+default = ["compile", "private", "serde"]
 streaming = []
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 async = []

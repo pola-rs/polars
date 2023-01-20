@@ -9,8 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
-#[cfg(feature = "serde")]
-use crate::udf_registry::{RegistryDeserializable, UdfSerializeRegistry};
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait SeriesUdf: Send + Sync {
@@ -35,15 +33,20 @@ impl serde::Serialize for SpecialEq<Arc<dyn SeriesUdf>> {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> RegistryDeserializable<'de> for Arc<dyn SeriesUdf> {
-    fn deserialize_with_registry<D: serde::de::Deserializer<'de>>(
-        deser: D,
-        registry: &UdfSerializeRegistry,
-    ) -> Result<Self, D::Error>
-    where
-        Self: Sized,
-    {
-        crate::udf_registry::deserialize_udf(deser, &registry.expr_series_udf)
+impl<'de> Deserialize<'de> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn deserialize<D: serde::de::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
+        crate::udf_registry::deserialize_udf(
+            deser,
+            &crate::udf_registry::UDF_DESERIALIZE_REGISTRY
+                .get()
+                .ok_or_else(|| {
+                    serde::de::Error::custom(
+                        "Cannot deserialize SeriesUdf without a deserializer in the registry",
+                    )
+                })?
+                .expr_series_udf,
+        )
+        .map(SpecialEq::new)
     }
 }
 
@@ -117,15 +120,20 @@ impl serde::Serialize for SpecialEq<Arc<dyn RenameAliasFn>> {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> RegistryDeserializable<'de> for Arc<dyn RenameAliasFn> {
-    fn deserialize_with_registry<D: serde::de::Deserializer<'de>>(
-        deser: D,
-        registry: &UdfSerializeRegistry,
-    ) -> Result<Self, D::Error>
-    where
-        Self: Sized,
-    {
-        crate::udf_registry::deserialize_udf(deser, &registry.expr_rename_alias)
+impl<'de> Deserialize<'de> for SpecialEq<Arc<dyn RenameAliasFn>> {
+    fn deserialize<D: serde::de::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
+        crate::udf_registry::deserialize_udf(
+            deser,
+            &crate::udf_registry::UDF_DESERIALIZE_REGISTRY
+                .get()
+                .ok_or_else(|| {
+                    serde::de::Error::custom(
+                        "Cannot deserialize RenameAliasFn without a deserializer in the registry",
+                    )
+                })?
+                .expr_rename_alias,
+        )
+        .map(SpecialEq::new)
     }
 }
 
@@ -225,15 +233,20 @@ impl serde::Serialize for SpecialEq<Arc<dyn FunctionOutputField>> {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> RegistryDeserializable<'de> for Arc<dyn FunctionOutputField> {
-    fn deserialize_with_registry<D: serde::de::Deserializer<'de>>(
-        deser: D,
-        registry: &UdfSerializeRegistry,
-    ) -> Result<Self, D::Error>
-    where
-        Self: Sized,
-    {
-        crate::udf_registry::deserialize_udf(deser, &registry.expr_fn_output_field)
+impl<'de> Deserialize<'de> for SpecialEq<Arc<dyn FunctionOutputField>> {
+    fn deserialize<D: serde::de::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
+        crate::udf_registry::deserialize_udf(
+            deser,
+            &crate::udf_registry::UDF_DESERIALIZE_REGISTRY
+                .get()
+                .ok_or_else(|| {
+                    serde::de::Error::custom(
+                        "Cannot deserialize FunctionOutputField without a deserializer in the registry",
+                    )
+                })?
+                .expr_fn_output_field,
+        )
+        .map(SpecialEq::new)
     }
 }
 
@@ -440,12 +453,10 @@ pub enum Expr {
     /// Take the nth column in the `DataFrame`
     Nth(i64),
     // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Box<Expr>,
     },
-    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
