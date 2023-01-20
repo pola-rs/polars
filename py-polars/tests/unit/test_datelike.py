@@ -2542,3 +2542,27 @@ def test_datetime_cum_agg_schema() -> None:
             datetime(2023, 1, 4, 0, 0),
         ],
     }
+
+
+def test_rolling_groupby_empty_groups_by_take_6330() -> None:
+    df = pl.DataFrame({"Event": ["Rain", "Sun"]}).join(
+        pl.DataFrame(
+            {
+                "Date": [1, 2, 3, 4],
+            }
+        ),
+        how="cross",
+    )
+    assert (
+        df.groupby_rolling(
+            index_column="Date",
+            period="2i",
+            offset="-2i",
+            by="Event",
+            closed="left",
+        ).agg([pl.count()])
+    ).to_dict(False) == {
+        "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
+        "Date": [1, 2, 3, 4, 1, 2, 3, 4],
+        "count": [0, 1, 2, 2, 0, 1, 2, 2],
+    }

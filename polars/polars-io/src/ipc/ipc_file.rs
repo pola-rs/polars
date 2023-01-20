@@ -314,7 +314,7 @@ where
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
-            &df.schema().to_arrow(),
+            df.schema().to_arrow(),
             None,
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),

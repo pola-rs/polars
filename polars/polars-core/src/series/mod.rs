@@ -433,6 +433,15 @@ impl Series {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> PolarsResult<Series> {
+        let idx = IdxCa::borrowed_from_slice("", idx);
+        self.take_unchecked(&idx)
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
     pub unsafe fn take_unchecked_threaded(
         &self,
         idx: &IdxCa,

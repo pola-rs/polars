@@ -115,4 +115,21 @@ where
         out.compute_len();
         out
     }
+
+    /// Create a temporary [`ChunkedArray`] from a slice.
+    ///
+    /// # Safety
+    /// The lifetime will be bound to the lifetime of the slice.
+    /// This will not be checked by the borrowchecker.
+    pub unsafe fn borrowed_from_slice(name: &str, values: &[T::Native]) -> Self {
+        let arr = Box::new(PrimitiveArray::borrowed_from_slice(values));
+        let mut out = ChunkedArray {
+            field: Arc::new(Field::new(name, T::get_dtype())),
+            chunks: vec![arr],
+            phantom: PhantomData,
+            ..Default::default()
+        };
+        out.compute_len();
+        out
+    }
 }
