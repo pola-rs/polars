@@ -3442,18 +3442,13 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
+        # Explicitly handle case where user mistakenly calls `groupby("a", "b")`
         if not isinstance(maintain_order, bool):
             raise TypeError(
                 f"invalid input for groupby arg `maintain_order`: {maintain_order}."
             )
-        if isinstance(by, str):
-            by = [by]
-        return GroupBy(
-            self._df,
-            by,  # type: ignore[arg-type]
-            dataframe_class=self.__class__,
-            maintain_order=maintain_order,
-        )
+
+        return GroupBy(self._df, by, self.__class__, maintain_order=maintain_order)
 
     def groupby_rolling(
         self: DF,
@@ -3462,7 +3457,7 @@ class DataFrame:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
     ) -> RollingGroupBy[DF]:
         """
         Create rolling groups based on a time column.
@@ -3571,7 +3566,7 @@ class DataFrame:
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         start_by: StartBy = "window",
     ) -> DynamicGroupBy[DF]:
         """

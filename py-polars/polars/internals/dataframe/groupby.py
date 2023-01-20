@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Callable, Generic, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.internals.dataframe.pivot import PivotOps
-from polars.utils import _timedelta_to_pl_duration
+from polars.utils import _timedelta_to_pl_duration, is_str_sequence
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -56,7 +56,7 @@ class GroupBy(Generic[DF]):
     def __init__(
         self,
         df: PyDataFrame,
-        by: str | list[str],
+        by: str | pli.Expr | Sequence[str | pli.Expr],
         dataframe_class: type[DF],
         maintain_order: bool = False,
     ):
@@ -84,15 +84,29 @@ class GroupBy(Generic[DF]):
         self.maintain_order = maintain_order
 
     def __iter__(self) -> GroupBy[DF]:
-        by = {self.by} if isinstance(self.by, str) else set(self.by)
+        warnings.warn(
+            "Return type of groupby iteration will change in the next breaking release."
+            " Iteration will returns tuples of (group_key, data) instead of just data.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
 
-        # Aggregate groups for any single column that is not specified as 'by'
+        by = [self.by] if isinstance(self.by, (str, pli.Expr)) else self.by
+
+        # Find any single column that is not specified as 'by'
         columns = self._df.columns()
-        if len(by) < len(columns):
-            non_by_col = next(c for c in columns if c not in by)
+        by_names = {c if isinstance(c, str) else c.meta.output_name() for c in by}
+        try:
+            non_by_col = next(c for c in columns if c not in by_names)
+        except StopIteration:
+            non_by_col = None
+
+        # Get the group indices using that column
+        if non_by_col is not None:
             groups_df = self.agg(pli.col(non_by_col).agg_groups())
             group_indices = groups_df.select(non_by_col).to_series()
         else:
+            # TODO: Properly handle expression input
             group_indices = pli.Series([[i] for i in range(self._df.height())])
 
         self._group_indices = group_indices
@@ -181,7 +195,15 @@ class GroupBy(Generic[DF]):
         ... )  # doctest: +IGNORE_RESULT
 
         """
-        return self._dataframe_class._from_pydf(self._df.groupby_apply(self.by, f))
+        by: Sequence[str]
+        if isinstance(self.by, str):
+            by = [self.by]
+        elif is_str_sequence(self.by):
+            by = self.by
+        else:
+            raise TypeError("Cannot call `apply` when grouping by an expression.")
+
+        return self._dataframe_class._from_pydf(self._df.groupby_apply(by, f))
 
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         """
@@ -398,7 +420,7 @@ class GroupBy(Generic[DF]):
             values_column = [values_column]
         return PivotOps(
             self._df,
-            self.by,
+            self.by,  # type: ignore[arg-type]
             pivot_column,
             values_column,
             dataframe_class=self._dataframe_class,
@@ -737,7 +759,7 @@ class RollingGroupBy(Generic[DF]):
         period: str | timedelta,
         offset: str | timedelta | None,
         closed: ClosedInterval = "none",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -782,10 +804,9 @@ class DynamicGroupBy(Generic[DF]):
         truncate: bool = True,
         include_boundaries: bool = True,
         closed: ClosedInterval = "none",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         start_by: StartBy = "window",
     ):
-
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
         every = _timedelta_to_pl_duration(every)

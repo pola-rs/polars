@@ -1,11 +1,178 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+
+
+def test_groupby() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "b", "b", "c"],
+            "b": [1, 2, 3, 4, 5, 6],
+            "c": [6, 5, 4, 3, 2, 1],
+        }
+    )
+
+    assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
+
+    # Use lazy API in eager groupby
+    assert sorted(df.groupby("a").agg([pl.sum("b")]).rows()) == [
+        ("a", 4),
+        ("b", 11),
+        ("c", 6),
+    ]
+    # test if it accepts a single expression
+    assert df.groupby("a", maintain_order=True).agg(pl.sum("b")).rows() == [
+        ("a", 4),
+        ("b", 11),
+        ("c", 6),
+    ]
+
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": ["a", "a", "b", "b", "b"],
+            "c": [None, 1, None, 1, None],
+        }
+    )
+
+    # check if this query runs and thus column names propagate
+    df.groupby("b").agg(pl.col("c").forward_fill()).explode("c")
+
+    # get a specific column
+    result = df.groupby("b", maintain_order=True).agg(pl.count("a"))
+    assert result.rows() == [("a", 2), ("b", 3)]
+    assert result.columns == ["b", "a"]
+
+    # make sure all the methods below run
+    assert sorted(df.groupby("b").first().rows()) == [("a", 1, None), ("b", 3, None)]
+    assert sorted(df.groupby("b").last().rows()) == [("a", 2, 1), ("b", 5, None)]
+    assert sorted(df.groupby("b").max().rows()) == [("a", 2, 1), ("b", 5, 1)]
+    assert sorted(df.groupby("b").min().rows()) == [("a", 1, 1), ("b", 3, 1)]
+    assert sorted(df.groupby("b").count().rows()) == [("a", 2), ("b", 3)]
+    assert sorted(df.groupby("b").mean().rows()) == [("a", 1.5, 1.0), ("b", 4.0, 1.0)]
+    assert sorted(df.groupby("b").n_unique().rows()) == [("a", 2, 2), ("b", 3, 2)]
+    assert sorted(df.groupby("b").median().rows()) == [("a", 1.5, 1.0), ("b", 4.0, 1.0)]
+    assert sorted(df.groupby("b").agg_list().rows()) == [
+        ("a", [1, 2], [None, 1]),
+        ("b", [3, 4, 5], [None, 1, None]),
+    ]
+    # assert sorted(df.groupby("b").quantile(0.5).rows()) == ...
+
+    # Invalid input: `by` not specified as a sequence
+    with pytest.raises(TypeError):
+        df.groupby("a", "b")  # type: ignore[arg-type]
+
+
+def test_groupby_iteration() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["a", "b", "a", "b", "b", "c"],
+            "bar": [1, 2, 3, 4, 5, 6],
+            "baz": [6, 5, 4, 3, 2, 1],
+        }
+    )
+    expected_shapes = [(2, 3), (3, 3), (1, 3)]
+    expected_rows = [
+        [("a", 1, 6), ("a", 3, 4)],
+        [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
+        [("c", 6, 1)],
+    ]
+    for i, group in enumerate(df.groupby("foo", maintain_order=True)):
+        assert group.shape == expected_shapes[i]
+        assert group.rows() == expected_rows[i]
+
+    # Grouped by ALL columns should give groups of a single row
+    result = list(df.groupby(["foo", "bar", "baz"]))
+    assert len(result) == 6
+
+    # Iterating over groups should also work when grouping by expressions
+    result = list(df.groupby(["foo", pl.col("bar") * pl.col("baz")]))
+    assert len(result) == 5
+
+
+def bad_agg_parameters() -> list[Any]:
+    return [[("b", "sum")], [("b", ["sum"])], {"b": "sum"}, {"b": ["sum"]}]
+
+
+def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
+    return [
+        [pl.col("b").sum()],
+        pl.col("b").sum(),
+    ]
+
+
+@pytest.mark.parametrize("lazy", [True, False])
+def test_groupby_agg_input_types(lazy: bool) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
+
+    for bad_param in bad_agg_parameters():
+        with pytest.raises(TypeError):  # noqa: PT012
+            result = df_or_lazy.groupby("a").agg(bad_param)
+            if lazy:
+                result.collect()  # type: ignore[union-attr]
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
+
+    for good_param in good_agg_parameters():
+        result = df_or_lazy.groupby("a", maintain_order=True).agg(good_param)
+        if lazy:
+            result = result.collect()  # type: ignore[union-attr]
+        assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("lazy", [True, False])
+def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
+    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]})
+    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
+
+    for bad_param in bad_agg_parameters():
+        with pytest.raises(TypeError):  # noqa: PT012
+            result = df_or_lazy.groupby_rolling(
+                index_column="index_column", period="2i"
+            ).agg(bad_param)
+            if lazy:
+                result.collect()  # type: ignore[union-attr]
+
+    expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
+
+    for good_param in good_agg_parameters():
+        result = df_or_lazy.groupby_rolling(
+            index_column="index_column", period="2i"
+        ).agg(good_param)
+        if lazy:
+            result = result.collect()  # type: ignore[union-attr]
+        assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("lazy", [True, False])
+def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
+    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]})
+    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
+
+    for bad_param in bad_agg_parameters():
+        with pytest.raises(TypeError):  # noqa: PT012
+            result = df_or_lazy.groupby_dynamic(
+                index_column="index_column", every="2i", closed="right"
+            ).agg(bad_param)
+            if lazy:
+                result.collect()  # type: ignore[union-attr]
+
+    expected = pl.DataFrame({"index_column": [-2, 0, 2], "b": [1, 4, 2]})
+
+    for good_param in good_agg_parameters():
+        result = df_or_lazy.groupby_dynamic(
+            index_column="index_column", every="2i", closed="right"
+        ).agg(good_param)
+        if lazy:
+            result = result.collect()  # type: ignore[union-attr]
+        assert_frame_equal(result, expected)
 
 
 def test_groupby_sorted_empty_dataframe_3680() -> None:
