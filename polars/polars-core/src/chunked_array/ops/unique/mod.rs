@@ -23,7 +23,6 @@ fn finish_is_unique_helper(
     let mut unique_idx_iter = unique_idx.into_iter();
     let mut next_unique_idx = unique_idx_iter.next();
     (0..len)
-        .into_iter()
         .map(|idx| match next_unique_idx {
             Some(unique_idx) => {
                 if idx == unique_idx {

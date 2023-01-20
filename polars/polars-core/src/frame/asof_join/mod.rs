@@ -46,19 +46,14 @@ fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AsofStrategy {
     /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key
+    #[default]
     Backward,
     /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
     Forward,
-}
-
-impl Default for AsofStrategy {
-    fn default() -> Self {
-        AsofStrategy::Backward
-    }
 }
 
 impl<T> ChunkedArray<T>

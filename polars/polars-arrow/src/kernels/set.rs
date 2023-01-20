@@ -25,15 +25,13 @@ where
     let validity = BooleanArray::from_data_default(validity.clone(), None);
 
     let mut av = Vec::with_capacity(array.len());
-    BinaryMaskedSliceIterator::new(&validity)
-        .into_iter()
-        .for_each(|(lower, upper, truthy)| {
-            if truthy {
-                av.extend_from_slice(&values[lower..upper])
-            } else {
-                av.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
-            }
-        });
+    BinaryMaskedSliceIterator::new(&validity).for_each(|(lower, upper, truthy)| {
+        if truthy {
+            av.extend_from_slice(&values[lower..upper])
+        } else {
+            av.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
+        }
+    });
 
     PrimitiveArray::new(array.data_type().clone(), av.into(), None)
 }
@@ -48,15 +46,13 @@ pub fn set_with_mask<T: NativeType>(
     let values = array.values();
 
     let mut buf = Vec::with_capacity(array.len());
-    BinaryMaskedSliceIterator::new(mask)
-        .into_iter()
-        .for_each(|(lower, upper, truthy)| {
-            if truthy {
-                buf.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
-            } else {
-                buf.extend_from_slice(&values[lower..upper])
-            }
-        });
+    BinaryMaskedSliceIterator::new(mask).for_each(|(lower, upper, truthy)| {
+        if truthy {
+            buf.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
+        } else {
+            buf.extend_from_slice(&values[lower..upper])
+        }
+    });
     // make sure that where the mask is set to true, the validity buffer is also set to valid
     // after we have applied the or operation we have new buffer with no offsets
     let validity = array.validity().as_ref().map(|valid| {

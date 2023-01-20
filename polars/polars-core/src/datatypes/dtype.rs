@@ -2,7 +2,7 @@ use super::*;
 
 pub type TimeZone = String;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -42,13 +42,8 @@ pub enum DataType {
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
+    #[default]
     Unknown,
-}
-
-impl Default for DataType {
-    fn default() -> Self {
-        DataType::Unknown
-    }
 }
 
 impl Hash for DataType {

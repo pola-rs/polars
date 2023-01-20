@@ -55,11 +55,8 @@ pub(crate) fn next_line_position(
         let new_input = unsafe { input.get_unchecked(pos..) };
         let line = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char).next();
 
-        let count_fields = |line: &[u8]| {
-            SplitFields::new(line, delimiter, quote_char, eol_char)
-                .into_iter()
-                .count()
-        };
+        let count_fields =
+            |line: &[u8]| SplitFields::new(line, delimiter, quote_char, eol_char).count();
 
         match (line, expected_fields) {
             // count the fields, and determine if they are equal to what we expect from the schema

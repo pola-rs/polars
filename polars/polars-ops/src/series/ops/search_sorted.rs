@@ -9,19 +9,15 @@ use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum SearchSortedSide {
+    #[default]
     Any,
     Left,
     Right,
 }
 
-impl Default for SearchSortedSide {
-    fn default() -> Self {
-        SearchSortedSide::Any
-    }
-}
 // Utility trait to make generics work
 trait GetArray<T> {
     unsafe fn _get_value_unchecked(&self, i: usize) -> Option<T>;

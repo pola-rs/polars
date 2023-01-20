@@ -120,7 +120,6 @@ impl<T: NativeType> DatetimeInfer<T> {
     fn coerce_utf8(&mut self, ca: &Utf8Chunked) -> Series {
         let chunks = ca
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let iter = array
                     .into_iter()

@@ -171,7 +171,6 @@ where
     {
         let chunks = self
             .data_views()
-            .into_iter()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
                 let values = slice.iter().copied().map(f);
@@ -188,7 +187,6 @@ where
     {
         let mut ca: ChunkedArray<T> = self
             .data_views()
-            .into_iter()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
                 let vec: PolarsResult<Vec<_>> = slice.iter().copied().map(f).collect();
@@ -361,7 +359,6 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.values_iter().map(f);
                 let values = Vec::<_>::from_trusted_len_iter(values);
@@ -378,7 +375,6 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.into_iter().map(f);
                 let values = Vec::<_>::from_trusted_len_iter(values);
@@ -455,7 +451,6 @@ impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.values_iter().map(f);
                 let values = Vec::<_>::from_trusted_len_iter(values);
@@ -472,7 +467,6 @@ impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.into_iter().map(f);
                 let values = Vec::<_>::from_trusted_len_iter(values);
@@ -542,7 +536,7 @@ impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
 
 impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
     fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
+        let chunks = self.downcast_iter().map(f).collect();
         unsafe { Self::from_chunks(self.name(), chunks) }
     }
 
@@ -550,7 +544,7 @@ impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
     where
         S: PolarsDataType,
     {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
+        let chunks = self.downcast_iter().map(f).collect();
         unsafe { ChunkedArray::<S>::from_chunks(self.name(), chunks) }
     }
 }
@@ -569,7 +563,7 @@ where
     where
         S: PolarsDataType,
     {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
+        let chunks = self.downcast_iter().map(f).collect();
         unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
@@ -583,7 +577,7 @@ impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
     where
         S: PolarsDataType,
     {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
+        let chunks = self.downcast_iter().map(f).collect();
         unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
@@ -598,7 +592,7 @@ impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
     where
         S: PolarsDataType,
     {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
+        let chunks = self.downcast_iter().map(f).collect();
         unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
@@ -612,7 +606,6 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         let dtype = self.inner_dtype();
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 unsafe {
                     let values = array
@@ -642,7 +635,6 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         let dtype = self.inner_dtype();
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.iter().map(|x| {
                     let x = x.map(|x| {

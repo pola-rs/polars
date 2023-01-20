@@ -50,7 +50,7 @@ impl GzipLevel {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ParquetCompression {
     Uncompressed,
@@ -59,13 +59,8 @@ pub enum ParquetCompression {
     Lzo,
     Brotli(Option<BrotliLevel>),
     Zstd(Option<ZstdLevel>),
+    #[default]
     Lz4Raw,
-}
-
-impl Default for ParquetCompression {
-    fn default() -> Self {
-        ParquetCompression::Lz4Raw
-    }
 }
 
 impl From<ParquetCompression> for CompressionOptions {
