@@ -11,10 +11,10 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn hex_decode(&self) -> PolarsResult<BinaryChunked> {
+    pub fn hex_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
         self.cast_unchecked(&DataType::Binary)?
             .binary()?
-            .hex_decode()
+            .hex_decode(strict)
     }
 
     #[must_use]
@@ -28,10 +28,10 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn base64_decode(&self) -> PolarsResult<BinaryChunked> {
+    pub fn base64_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
         self.cast_unchecked(&DataType::Binary)?
             .binary()?
-            .base64_decode()
+            .base64_decode(strict)
     }
 
     #[must_use]

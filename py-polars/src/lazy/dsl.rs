@@ -739,11 +739,11 @@ impl PyExpr {
             .with_fmt("str.hex_encode")
             .into()
     }
-    pub fn str_hex_decode(&self) -> PyExpr {
+    pub fn str_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.utf8()?.hex_decode().map(|s| s.into_series()),
+                move |s| s.utf8()?.hex_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("str.hex_decode")
@@ -760,11 +760,11 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_base64_decode(&self) -> PyExpr {
+    pub fn str_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.utf8()?.base64_decode().map(|s| s.into_series()),
+                move |s| s.utf8()?.base64_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("str.base64_decode")
@@ -781,11 +781,11 @@ impl PyExpr {
             .with_fmt("binary.hex_encode")
             .into()
     }
-    pub fn binary_hex_decode(&self) -> PyExpr {
+    pub fn binary_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.binary()?.hex_decode().map(|s| s.into_series()),
+                move |s| s.binary()?.hex_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("binary.hex_decode")
@@ -802,11 +802,11 @@ impl PyExpr {
             .into()
     }
 
-    pub fn binary_base64_decode(&self) -> PyExpr {
+    pub fn binary_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.binary()?.base64_decode().map(|s| s.into_series()),
+                move |s| s.binary()?.base64_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("binary.base64_decode")

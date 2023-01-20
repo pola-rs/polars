@@ -665,7 +665,7 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
-    def decode(self, encoding: TransferEncoding) -> pli.Expr:
+    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> pli.Expr:
         """
         Decode a value using the provided encoding.
 
@@ -673,12 +673,15 @@ class ExprStringNameSpace:
         ----------
         encoding : {'hex', 'base64'}
             The encoding to use.
+        strict
+            Raise an error if the underlying value cannot be decoded,
+            otherwise mask out with a null value.
 
         """
         if encoding == "hex":
-            return pli.wrap_expr(self._pyexpr.str_hex_decode())
+            return pli.wrap_expr(self._pyexpr.str_hex_decode(strict))
         elif encoding == "base64":
-            return pli.wrap_expr(self._pyexpr.str_base64_decode())
+            return pli.wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
