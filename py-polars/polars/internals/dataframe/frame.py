@@ -5024,7 +5024,7 @@ class DataFrame:
             Values to use as identifier variables.
             If `value_vars` is empty all columns that are not in `id_vars` will be used.
         variable_name
-            Name to give to the `value` column. Defaults to "variable"
+            Name to give to the `variable` column. Defaults to "variable"
         value_name
             Name to give to the `value` column. Defaults to "value"
 
