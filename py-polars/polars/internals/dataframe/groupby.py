@@ -91,7 +91,7 @@ class GroupBy(Generic[DF]):
             stacklevel=2,
         )
 
-        by = [self.by] if not isinstance(self.by, Sequence) else self.by
+        by = [self.by] if isinstance(self.by, (str, pli.Expr)) else self.by
 
         # Find any single column that is not specified as 'by'
         columns = self._df.columns()

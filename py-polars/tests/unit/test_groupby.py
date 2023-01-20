@@ -72,9 +72,9 @@ def test_groupby() -> None:
 def test_groupby_iteration() -> None:
     df = pl.DataFrame(
         {
-            "a": ["a", "b", "a", "b", "b", "c"],
-            "b": [1, 2, 3, 4, 5, 6],
-            "c": [6, 5, 4, 3, 2, 1],
+            "foo": ["a", "b", "a", "b", "b", "c"],
+            "bar": [1, 2, 3, 4, 5, 6],
+            "baz": [6, 5, 4, 3, 2, 1],
         }
     )
     expected_shapes = [(2, 3), (3, 3), (1, 3)]
@@ -83,16 +83,16 @@ def test_groupby_iteration() -> None:
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    for i, group in enumerate(df.groupby("a", maintain_order=True)):
+    for i, group in enumerate(df.groupby("foo", maintain_order=True)):
         assert group.shape == expected_shapes[i]
         assert group.rows() == expected_rows[i]
 
     # Grouped by ALL columns should give groups of a single row
-    result = list(df.groupby(["a", "b", "c"]))
+    result = list(df.groupby(["foo", "bar", "baz"]))
     assert len(result) == 6
 
     # Iterating over groups should also work when grouping by expressions
-    result = list(df.groupby(["a", pl.col("b") * pl.col("c")]))
+    result = list(df.groupby(["foo", pl.col("bar") * pl.col("baz")]))
     assert len(result) == 5
 
 
