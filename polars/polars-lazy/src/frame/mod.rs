@@ -15,7 +15,7 @@ mod anonymous_scan;
 pub mod pivot;
 
 use std::borrow::Cow;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -154,7 +154,6 @@ impl LazyFrame {
 
     /// Toggle common subplan elimination optimization on or off
     #[cfg(feature = "cse")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "cse")))]
     pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
         self.opt_state.common_subplan_elimination = toggle;
         self
@@ -279,7 +278,9 @@ impl LazyFrame {
             // schema after renaming
             for (old, new) in existing2.iter().zip(new2.iter()) {
                 let dtype = old_schema.try_get(old)?;
-                new_schema.with_column(new.clone(), dtype.clone());
+                if new_schema.with_column(new.clone(), dtype.clone()).is_none() {
+                    new_schema.remove(old);
+                }
             }
             Ok(Arc::new(new_schema))
         };
@@ -298,7 +299,12 @@ impl LazyFrame {
                 let columns = std::mem::take(df.get_columns_mut());
                 DataFrame::new(columns)
             },
-            None,
+            // Don't allow optimizations. Swapping names are opaque to the optimizer
+            AllowedOptimizations {
+                projection_pushdown: false,
+                predicate_pushdown: false,
+                ..Default::default()
+            },
             Some(Arc::new(udf_schema)),
             Some("RENAME_SWAPPING"),
         )
@@ -344,7 +350,7 @@ impl LazyFrame {
                 cols.truncate(cols.len() - (existing.len() - removed_count));
                 Ok(df)
             },
-            None,
+            Default::default(),
             Some(Arc::new(udf_schema)),
             Some("RENAME"),
         )
@@ -587,11 +593,35 @@ impl LazyFrame {
     /// streaming fashion.
     #[cfg(feature = "parquet")]
     pub fn sink_parquet(mut self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::FileSink {
             input: Box::new(self.logical_plan),
             payload: FileSinkOptions {
                 path: Arc::new(path),
                 file_type: FileType::Parquet(options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+
+        if is_streaming {
+            let _ = physical_plan.execute(&mut state)?;
+            Ok(())
+        } else {
+            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
+        }
+    }
+
+    //// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
+    /// into memory. This methods will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(feature = "ipc")]
+    pub fn sink_ipc(mut self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::FileSink {
+            input: Box::new(self.logical_plan),
+            payload: FileSinkOptions {
+                path: Arc::new(path),
+                file_type: FileType::Ipc(options),
             },
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
@@ -724,7 +754,6 @@ impl LazyFrame {
     /// individual values and are not of constant intervals. For constant intervals use
     /// *groupby_dynamic*
     #[cfg(feature = "dynamic_groupby")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dynamic_groupby")))]
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -757,7 +786,6 @@ impl LazyFrame {
     /// The `by` argument should be empty `[]` if you don't want to combine this
     /// with a ordinary groupby on these keys.
     #[cfg(feature = "dynamic_groupby")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dynamic_groupby")))]
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -1097,7 +1125,7 @@ impl LazyFrame {
     pub fn map<F>(
         self,
         function: F,
-        optimizations: Option<AllowedOptimizations>,
+        optimizations: AllowedOptimizations,
         schema: Option<Arc<dyn UdfSchema>>,
         name: Option<&'static str>,
     ) -> LazyFrame
@@ -1109,7 +1137,7 @@ impl LazyFrame {
             .get_plan_builder()
             .map(
                 function,
-                optimizations.unwrap_or_default(),
+                optimizations,
                 schema,
                 name.unwrap_or("ANONYMOUS UDF"),
             )
@@ -1185,7 +1213,7 @@ impl LazyFrame {
                     Ok(df)
                 }
             },
-            Some(opt),
+            opt,
             Some(Arc::new(udf_schema)),
             Some("WITH ROW COUNT"),
         )
@@ -1194,7 +1222,6 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
         self.map_private(FunctionNode::Unnest {
             columns: Arc::new(cols.into_iter().map(|s| Arc::from(s.as_ref())).collect()),

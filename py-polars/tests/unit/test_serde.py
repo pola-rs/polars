@@ -13,7 +13,7 @@ def test_pickling_simple_expression() -> None:
     assert str(pickle.loads(buf)) == str(e)
 
 
-def serde_lazy_frame_lp() -> None:
+def test_serde_lazy_frame_lp() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
     json = lf.write_json(to_string=True)
 

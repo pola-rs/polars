@@ -123,6 +123,7 @@ where
     comment_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValues>,
+    missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
@@ -221,6 +222,12 @@ where
     /// will not be escaped, so if quotation marks are part of the null value you should include them.
     pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
         self.null_values = null_values;
+        self
+    }
+
+    /// Treat missing fields as null.
+    pub fn with_missing_is_null(mut self, missing_is_null: bool) -> Self {
+        self.missing_is_null = missing_is_null;
         self
     }
 
@@ -353,6 +360,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.quote_char,
             self.eol_char,
             std::mem::take(&mut self.null_values),
+            self.missing_is_null,
             std::mem::take(&mut self.predicate),
             to_cast,
             self.skip_rows_after_header,
@@ -476,6 +484,7 @@ where
             comment_char: None,
             eol_char: b'\n',
             null_values: None,
+            missing_is_null: true,
             predicate: None,
             quote_char: Some(b'"'),
             skip_rows_after_header: 0,

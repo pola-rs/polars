@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::iter::{FromIterator, Iterator};
 use std::{mem, ops};
 
-use ahash::{AHashSet, RandomState};
+use ahash::AHashSet;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
@@ -28,8 +28,6 @@ pub mod hash_join;
 pub mod row;
 mod upstream_traits;
 
-use std::hash::{BuildHasher, Hash, Hasher};
-
 pub use chunks::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -38,7 +36,6 @@ use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
 use crate::series::IsSorted;
-use crate::vector_hasher::_boost_hash_combine;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
@@ -437,36 +434,26 @@ impl DataFrame {
         self
     }
 
-    /// Estimates of the DataFrames columns consist of the same chunk sizes
+    /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
-        let hb = RandomState::default();
-        let hb2 = RandomState::with_seeds(392498, 98132457, 0, 412059);
-        !self
-            .columns
-            .iter()
-            // The idea is that we create a hash of the chunk lengths.
-            // Consisting of the combined hash + the sum (assuming collision probability is nihil)
-            // if not, we can add more hashes or at worst case we do an extra rechunk.
-            // the old solution to this was clone all lengths to a vec and compare the vecs
-            .map(|s| {
-                s.chunk_lengths().map(|i| i as u64).fold(
-                    (0u64, 0u64, s.n_chunks()),
-                    |(lhash, lh2, n), rval| {
-                        let mut h = hb.build_hasher();
-                        rval.hash(&mut h);
-                        let rhash = h.finish();
-                        let mut h = hb2.build_hasher();
-                        rval.hash(&mut h);
-                        let rh2 = h.finish();
-                        (
-                            _boost_hash_combine(lhash, rhash),
-                            _boost_hash_combine(lh2, rh2),
-                            n,
-                        )
-                    },
-                )
-            })
-            .all_equal()
+        let mut chunk_lenghts = self.columns.iter().map(|s| s.chunk_lengths());
+        match chunk_lenghts.next() {
+            None => false,
+            Some(first_chunk_lengths) => {
+                // Fast Path for single Chunk Series
+                if first_chunk_lengths.len() == 1 {
+                    return chunk_lenghts.any(|cl| cl.len() != 1);
+                }
+                // Slow Path for multi Chunk series
+                let v: Vec<_> = first_chunk_lengths.collect();
+                for cl in chunk_lenghts {
+                    if cl.enumerate().any(|(idx, el)| Some(&el) != v.get(idx)) {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
@@ -1639,7 +1626,7 @@ impl DataFrame {
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
         if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: NoNull<IdxCa> = iter.into_iter().map(|idx| idx as IdxSize).collect();
+            let idx_ca: NoNull<IdxCa> = iter.map(|idx| idx as IdxSize).collect();
             let idx_ca = idx_ca.into_inner();
             return self.take_unchecked(&idx_ca);
         }
@@ -1677,10 +1664,7 @@ impl DataFrame {
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
         if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: IdxCa = iter
-                .into_iter()
-                .map(|opt| opt.map(|v| v as IdxSize))
-                .collect();
+            let idx_ca: IdxCa = iter.map(|opt| opt.map(|v| v as IdxSize)).collect();
             return self.take_unchecked(&idx_ca);
         }
 
@@ -1780,8 +1764,6 @@ impl DataFrame {
         by_column: impl IntoVec<String>,
         reverse: impl IntoVec<bool>,
     ) -> PolarsResult<&mut Self> {
-        // a lot of indirection in both sorting and take
-        self.as_single_chunk_par();
         let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
         self.columns = self
@@ -1803,6 +1785,9 @@ impl DataFrame {
         if self.height() == 0 {
             return Ok(self.clone());
         }
+        // a lot of indirection in both sorting and take
+        let mut df = self.clone();
+        let df = df.as_single_chunk_par();
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
 
@@ -1821,7 +1806,7 @@ impl DataFrame {
                 // fast path for a frame with a single series
                 // no need to compute the sort indices and then take by these indices
                 // simply sort and return as frame
-                if self.width() == 1 && self.check_name_to_idx(s.name()).is_ok() {
+                if df.width() == 1 && df.check_name_to_idx(s.name()).is_ok() {
                     let mut out = s.sort_with(options);
                     if let Some((offset, len)) = slice {
                         out = out.slice(offset, len);
@@ -1850,7 +1835,7 @@ impl DataFrame {
 
         // Safety:
         // the created indices are in bounds
-        let mut df = unsafe { self.take_unchecked_impl(&take, parallel) };
+        let mut df = unsafe { df.take_unchecked_impl(&take, parallel) };
         // Mark the first sort column as sorted
         // if the column did not exists it is ok, because we sorted by an expression
         // not present in the dataframe
@@ -1893,8 +1878,6 @@ impl DataFrame {
     /// Sort the `DataFrame` by a single column with extra options.
     pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> PolarsResult<Self> {
         let mut df = self.clone();
-        // a lot of indirection in both sorting and take
-        df.as_single_chunk_par();
         let by_column = vec![df.column(by_column)?.clone()];
         let reverse = vec![options.descending];
         df.columns = df
@@ -2779,7 +2762,6 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmin(&self) -> PolarsResult<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| {
             let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
@@ -2809,7 +2791,6 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmax(&self) -> PolarsResult<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| {
             let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
@@ -3157,7 +3138,7 @@ impl DataFrame {
     #[cfg(feature = "row_hash")]
     pub fn hash_rows(
         &mut self,
-        hasher_builder: Option<RandomState>,
+        hasher_builder: Option<ahash::RandomState>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
         let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder)?;
@@ -3310,7 +3291,6 @@ impl DataFrame {
 
     /// Split into multiple DataFrames partitioned by groups
     #[cfg(feature = "partition_by")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, false)
@@ -3319,7 +3299,6 @@ impl DataFrame {
     /// Split into multiple DataFrames partitioned by groups
     /// Order of the groups are maintained.
     #[cfg(feature = "partition_by")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, true)
@@ -3328,7 +3307,6 @@ impl DataFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     pub fn unnest<I: IntoVec<String>>(&self, cols: I) -> PolarsResult<DataFrame> {
         let cols = cols.into_vec();
         self.unnest_impl(cols.into_iter().collect())
@@ -3516,6 +3494,32 @@ mod test {
         let df = create_frame();
         let sliced_df = df.slice(0, 2);
         assert_eq!(sliced_df.shape(), (2, 2));
+    }
+
+    #[test]
+    fn rechunk_false() {
+        let df = create_frame();
+        assert!(!df.should_rechunk())
+    }
+
+    #[test]
+    fn rechunk_true() -> PolarsResult<()> {
+        let mut base = df!(
+            "a" => [1, 2, 3],
+            "b" => [1, 2, 3]
+        )?;
+
+        // Create a series with multiple chunks
+        let mut s = Series::new("foo", 0..2);
+        let s2 = Series::new("bar", 0..1);
+        s.append(&s2)?;
+
+        // Append series to frame
+        let out = base.with_column(s)?;
+
+        // Now we should rechunk
+        assert!(out.should_rechunk());
+        Ok(())
     }
 
     #[test]

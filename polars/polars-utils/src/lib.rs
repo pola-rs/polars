@@ -1,4 +1,4 @@
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![cfg_attr(feature = "nightly", feature(build_hasher_simple_hash_one))]
 
 pub mod arena;
@@ -12,6 +12,8 @@ pub mod mem;
 pub mod slice;
 pub mod sort;
 pub mod sync;
+#[cfg(feature = "sysinfo")]
+pub mod sys;
 pub mod unwrap;
 
 pub use functions::*;

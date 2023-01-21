@@ -6,6 +6,7 @@ import os
 import random
 import sys
 import typing
+import warnings
 from collections import namedtuple
 from collections.abc import Sized
 from datetime import timedelta
@@ -25,19 +26,23 @@ from typing import (
     TypeVar,
     overload,
 )
-from warnings import warn
 
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    N_INFER_DEFAULT,
     Boolean,
-    ColumnsType,
+    DataTypeClass,
+    Float64,
     Int8,
     Int16,
     Int32,
     Int64,
     PolarsDataType,
-    Schema,
+    SchemaDefinition,
+    SchemaDict,
     UInt8,
     UInt16,
     UInt32,
@@ -46,7 +51,12 @@ from polars.datatypes import (
     get_idx_type,
     py_type_to_dtype,
 )
-from polars.dependencies import _check_for_numpy, _check_for_pandas, _check_for_pyarrow
+from polars.dependencies import (
+    _PYARROW_AVAILABLE,
+    _check_for_numpy,
+    _check_for_pandas,
+    _check_for_pyarrow,
+)
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
@@ -96,7 +106,7 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
-        ClosedWindow,
+        ClosedInterval,
         ComparisonOperator,
         CsvEncoding,
         FillNullStrategy,
@@ -149,6 +159,12 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
+    infer_schema_length : int, default None
+        Maximum number of rows to read for schema inference; only applies if the input
+        data is a sequence or generator of rows; other input is read as-is.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the columns param will be overridden.
 
     Examples
     --------
@@ -207,12 +223,28 @@ class DataFrame:
     │ 2.0  ┆ 4    │
     └──────┴──────┘
 
+    The `columns` parameter could also be set with a `dict` containing the schema of the
+    expected DataFrame
+
+    >>> data = {"col1": [0, 2], "col2": [3, 7]}
+    >>> df4 = pl.DataFrame(data, columns={"col1": pl.Float32, "col2": pl.Int64})
+    >>> df4
+    shape: (2, 2)
+    ┌──────┬──────┐
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 0.0  ┆ 3    │
+    │ 2.0  ┆ 7    │
+    └──────┴──────┘
+
     Constructing a DataFrame from a numpy ndarray, specifying column names:
 
     >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
-    >>> df4 = pl.DataFrame(data, columns=["a", "b"], orient="col")
-    >>> df4
+    >>> df5 = pl.DataFrame(data, columns=["a", "b"], orient="col")
+    >>> df5
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -226,8 +258,8 @@ class DataFrame:
     Constructing a DataFrame from a list of lists, row orientation inferred:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> df4 = pl.DataFrame(data, columns=["a", "b", "c"])
-    >>> df4
+    >>> df6 = pl.DataFrame(data, columns=["a", "b", "c"])
+    >>> df6
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
@@ -265,33 +297,58 @@ class DataFrame:
             | pli.Series
             | None
         ) = None,
-        columns: ColumnsType | None = None,
+        columns: SchemaDefinition | None = None,
         orient: Orientation | None = None,
+        *,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
+        schema_overrides: SchemaDict | None = None,
     ):
         if data is None:
-            self._df = dict_to_pydf({}, columns=columns)
+            self._df = dict_to_pydf(
+                {}, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif isinstance(data, dict):
-            self._df = dict_to_pydf(data, columns=columns)
+            self._df = dict_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
-                data, columns=columns, orient=orient, infer_schema_length=50
+                data,
+                columns=columns,
+                schema_overrides=schema_overrides,
+                orient=orient,
+                infer_schema_length=infer_schema_length,
             )
         elif isinstance(data, pli.Series):
-            self._df = series_to_pydf(data, columns=columns)
+            self._df = series_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
-            self._df = numpy_to_pydf(data, columns=columns, orient=orient)
+            self._df = numpy_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides, orient=orient
+            )
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
-            self._df = arrow_to_pydf(data, columns=columns)
+            self._df = arrow_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
-            self._df = pandas_to_pydf(data, columns=columns)
+            self._df = pandas_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides
+            )
 
         elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
-            self._df = iterable_to_pydf(data, columns=columns, orient=orient)
+            self._df = iterable_to_pydf(
+                data,
+                columns=columns,
+                schema_overrides=schema_overrides,
+                orient=orient,
+                infer_schema_length=infer_schema_length,
+            )
         else:
             raise ValueError(
                 f"DataFrame constructor called with unsupported type; got {type(data)}"
@@ -308,10 +365,10 @@ class DataFrame:
     def _from_dicts(
         cls: type[DF],
         data: Sequence[dict[str, Any]],
-        infer_schema_length: int | None = 100,
-        schema: Schema | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
+        schema_overrides: SchemaDict | None = None,
     ) -> DF:
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema_overrides)
         return cls._from_pydf(pydf)
 
     @classmethod
@@ -320,7 +377,8 @@ class DataFrame:
         data: Mapping[
             str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series
         ],
-        columns: Sequence[str] | None = None,
+        schema: SchemaDefinition | None = None,
+        schema_overrides: SchemaDict | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a dictionary of sequences.
@@ -328,26 +386,32 @@ class DataFrame:
         Parameters
         ----------
         data : dict of sequences
-            Two-dimensional data represented as a dictionary. dict must contain
-            Sequences.
-        columns : Sequence of str, default None
-            Column labels to use for resulting DataFrame. If specified, overrides any
-            labels already present in the data. Must match data dimensions.
+          Two-dimensional data represented as a dictionary. dict must contain
+          Sequences.
+        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+          Column labels to use for resulting DataFrame. If specified, overrides any
+          labels already present in the data. Must match data dimensions.
+        schema_overrides : dict, default None
+          Support type specification or override of one or more columns; note that
+          any dtypes inferred from the columns param will be overridden.
 
         Returns
         -------
         DataFrame
 
         """
-        return cls._from_pydf(dict_to_pydf(data, columns=columns))
+        return cls._from_pydf(
+            dict_to_pydf(data, columns=schema, schema_overrides=schema_overrides)
+        )
 
     @classmethod
     def _from_records(
         cls: type[DF],
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
+        schema_overrides: SchemaDict | None = None,
         orient: Orientation | None = None,
-        infer_schema_length: int | None = 50,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> DF:
         """
         Construct a DataFrame from a sequence of sequences.
@@ -359,6 +423,9 @@ class DataFrame:
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. Must match data dimensions.
             If not specified, columns will be named `column_0`, `column_1`, etc.
+        schema_overrides : dict, default None
+            Support type specification or override of one or more columns; note that
+            any dtypes inferred from the columns param will be overridden.
         orient : {'col', 'row'}, default None
             Whether to interpret two-dimensional data as columns or as rows. If None,
             the orientation is inferred by matching the columns and data dimensions. If
@@ -375,6 +442,7 @@ class DataFrame:
             sequence_to_pydf(
                 data,
                 columns=columns,
+                schema_overrides=schema_overrides,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
@@ -385,6 +453,7 @@ class DataFrame:
         cls: type[DF],
         data: np.ndarray[Any, Any],
         columns: Sequence[str] | None = None,
+        schema_overrides: SchemaDict | None = None,
         orient: Orientation | None = None,
     ) -> DF:
         """
@@ -397,6 +466,9 @@ class DataFrame:
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. Must match data dimensions.
             If not specified, columns will be named `column_0`, `column_1`, etc.
+        schema_overrides : dict, default None
+            Support type specification or override of one or more columns; note that
+            any dtypes inferred from the columns param will be overridden.
         orient : {'col', 'row'}, default None
             Whether to interpret two-dimensional data as columns or as rows. If None,
             the orientation is inferred by matching the columns and data dimensions. If
@@ -407,13 +479,18 @@ class DataFrame:
         DataFrame
 
         """
-        return cls._from_pydf(numpy_to_pydf(data, columns=columns, orient=orient))
+        return cls._from_pydf(
+            numpy_to_pydf(
+                data, columns=columns, schema_overrides=schema_overrides, orient=orient
+            )
+        )
 
     @classmethod
     def _from_arrow(
         cls: type[DF],
         data: pa.Table,
         columns: Sequence[str] | None = None,
+        schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
     ) -> DF:
         """
@@ -424,12 +501,15 @@ class DataFrame:
 
         Parameters
         ----------
-        data : numpy ndarray or Sequence of sequences
-            Two-dimensional data represented as Arrow table.
+        data : arrow table, array, or sequence of sequences
+            Data representing an Arrow Table or Array.
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. Must match data dimensions.
             If not specified, existing Array table columns are used, with missing names
             named as `column_0`, `column_1`, etc.
+        schema_overrides : dict, default None
+            Support type specification or override of one or more columns; note that
+            any dtypes inferred from the columns param will be overridden.
         rechunk : bool, default True
             Make sure that all data is in contiguous memory.
 
@@ -438,13 +518,21 @@ class DataFrame:
         DataFrame
 
         """
-        return cls._from_pydf(arrow_to_pydf(data, columns=columns, rechunk=rechunk))
+        return cls._from_pydf(
+            arrow_to_pydf(
+                data,
+                columns=columns,
+                schema_overrides=schema_overrides,
+                rechunk=rechunk,
+            )
+        )
 
     @classmethod
     def _from_pandas(
         cls: type[DF],
         data: pd.DataFrame,
         columns: Sequence[str] | None = None,
+        schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
         nan_to_none: bool = True,
     ) -> DF:
@@ -458,6 +546,9 @@ class DataFrame:
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. If specified, overrides any
             labels already present in the data. Must match data dimensions.
+        schema_overrides : dict, default None
+            Support type specification or override of one or more columns; note that
+            any dtypes inferred from the columns param will be overridden.
         rechunk : bool, default True
             Make sure that all data is in contiguous memory.
         nan_to_none : bool, default True
@@ -468,21 +559,13 @@ class DataFrame:
         DataFrame
 
         """
-        # path for table without rows that keeps datatype
-        if data.shape[0] == 0:
-            series = []
-            for name in data.columns:
-                pd_series = data[name]
-                if pd_series.dtype == np.dtype("O"):
-                    series.append(pli.Series(name, [], dtype=Utf8))
-                else:
-                    col = pli.Series(name, pd_series)
-                    series.append(pli.Series(name, col))
-            return cls(series)
-
         return cls._from_pydf(
             pandas_to_pydf(
-                data, columns=columns, rechunk=rechunk, nan_to_none=nan_to_none
+                data,
+                columns=columns,
+                schema_overrides=schema_overrides,
+                rechunk=rechunk,
+                nan_to_none=nan_to_none,
             )
         )
 
@@ -496,12 +579,13 @@ class DataFrame:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: None | (Mapping[str, PolarsDataType] | Sequence[PolarsDataType]) = None,
+        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         null_values: str | list[str] | dict[str, str] | None = None,
+        missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
         parse_dates: bool = False,
         n_threads: int | None = None,
-        infer_schema_length: int | None = 100,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 8192,
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",
@@ -571,6 +655,7 @@ class DataFrame:
                 skip_rows=skip_rows,
                 dtypes=dtypes_dict,
                 null_values=null_values,
+                missing_utf8_is_empty_string=missing_utf8_is_empty_string,
                 ignore_errors=ignore_errors,
                 infer_schema_length=infer_schema_length,
                 n_rows=n_rows,
@@ -614,6 +699,7 @@ class DataFrame:
             comment_char,
             quote_char,
             processed_null_values,
+            missing_utf8_is_empty_string,
             parse_dates,
             skip_rows_after_header,
             _prepare_row_count_args(row_count_name, row_count_offset),
@@ -961,7 +1047,7 @@ class DataFrame:
         return self._df.dtypes()
 
     @property
-    def schema(self) -> dict[str, PolarsDataType]:
+    def schema(self) -> SchemaDict:
         """
         Get a dict[column name, DataType].
 
@@ -1040,6 +1126,43 @@ class DataFrame:
         else:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
+    def _div(self: DF, other: Any, floordiv: bool) -> DF:
+        if isinstance(other, pli.Series):
+            other = other.to_frame()
+        elif not isinstance(other, DataFrame):
+            s = _prepare_other_arg(other, length=len(self))
+            other = DataFrame([s.rename(f"n{i}") for i in range(len(self.columns))])
+
+        orig_dtypes = other.dtypes
+        other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
+        df = self._from_pydf(self._df.div_df(other._df))
+        df = (
+            df  # type: ignore[assignment]
+            if not floordiv
+            else df.with_columns([s.floor() for s in df if s.dtype() in FLOAT_DTYPES])
+        )
+        if floordiv:
+            int_casts = [
+                pli.col(col).cast(tp)
+                for i, (col, tp) in enumerate(self.schema.items())
+                if tp in INTEGER_DTYPES and orig_dtypes[i] in INTEGER_DTYPES
+            ]
+            if int_casts:
+                return df.with_columns(int_casts)  # type: ignore[return-value]
+        return df
+
+    def _cast_all_from_to(
+        self, df: DataFrame, from_: frozenset[PolarsDataType], to: PolarsDataType
+    ) -> DataFrame:
+        casts = [s.cast(to).alias(s.name) for s in df if s.dtype() in from_]
+        return df.with_columns(casts) if casts else df
+
+    def __floordiv__(self: DF, other: DF | pli.Series | int | float) -> DF:
+        return self._div(other, floordiv=True)
+
+    def __truediv__(self: DF, other: DF | pli.Series | int | float) -> DF:
+        return self._div(other, floordiv=False)
+
     def __bool__(self) -> NoReturn:
         raise ValueError(
             "The truth value of a DataFrame is ambiguous. "
@@ -1070,22 +1193,15 @@ class DataFrame:
     def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
         self._df = DataFrame(state)._df
 
-    def __mul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+    def __mul__(self: DF, other: DataFrame | pli.Series | int | float) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.mul_df(other._df))
 
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.mul(other._s))
 
-    def __rmul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+    def __rmul__(self: DF, other: DataFrame | pli.Series | int | float) -> DF:
         return self * other
-
-    def __truediv__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
-        if isinstance(other, DataFrame):
-            return self._from_pydf(self._df.div_df(other._df))
-
-        other = _prepare_other_arg(other)
-        return self._from_pydf(self._df.div(other._s))
 
     def __add__(
         self: DF, other: DataFrame | pli.Series | int | float | bool | str
@@ -1102,13 +1218,13 @@ class DataFrame:
             return self.select((pli.lit(other) + pli.col("*")).keep_name())
         return self + other
 
-    def __sub__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+    def __sub__(self: DF, other: DataFrame | pli.Series | int | float) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.sub_df(other._df))
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.sub(other._s))
 
-    def __mod__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+    def __mod__(self: DF, other: DataFrame | pli.Series | int | float) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.rem_df(other._df))
         other = _prepare_other_arg(other)
@@ -1848,7 +1964,7 @@ class DataFrame:
 
         """
         if json_lines is not None:
-            warn(
+            warnings.warn(
                 "`json_lines` argument for `DataFrame.write_json` will be removed in a"
                 " future version. Remove the argument or use `DataFrame.write_ndjson`.",
                 DeprecationWarning,
@@ -1858,7 +1974,7 @@ class DataFrame:
             json_lines = False
 
         if to_string is not None:
-            warn(
+            warnings.warn(
                 "`to_string` argument for `DataFrame.write_json` will be removed in a"
                 " future version. Remove the argument and set `file=None`.",
                 DeprecationWarning,
@@ -2255,7 +2371,7 @@ class DataFrame:
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
-        use_pyarrow: bool = False,
+        use_pyarrow: bool = _PYARROW_AVAILABLE,
         pyarrow_options: dict[str, object] | None = None,
     ) -> None:
         """
@@ -2713,7 +2829,11 @@ class DataFrame:
         max_num_values = min(10, self.height)
 
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
-            dtype_str = f"<{dtype.string_repr()}>"
+            dtype_str = (
+                f"<{DataTypeClass.string_repr(dtype)}>"
+                if isinstance(dtype, DataTypeClass)
+                else f"<{dtype.string_repr()}>"
+            )
             val = self[:max_num_values][col_name].to_list()
             val_str = ", ".join(map(str, val))
             return col_name, dtype_str, val_str
@@ -3075,7 +3195,7 @@ class DataFrame:
         """
         return self.head(n)
 
-    def head(self: DF, n: int | None = 5) -> DF:
+    def head(self: DF, n: int = 5) -> DF:
         """
         Get the first `n` rows (if negative, returns all rows except the last `n`).
 
@@ -3122,11 +3242,11 @@ class DataFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
         """
-        if n and n < 0:
+        if n < 0:
             n = len(self) + n
         return self._from_pydf(self._df.head(n))
 
-    def tail(self: DF, n: int | None = 5) -> DF:
+    def tail(self: DF, n: int = 5) -> DF:
         """
         Get the last `n` rows (if negative, returns all rows except the first `n`).
 
@@ -3173,18 +3293,18 @@ class DataFrame:
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
         """
-        if n and n < 0:
+        if n < 0:
             n = len(self) + n
         return self._from_pydf(self._df.tail(n))
 
     def drop_nulls(self: DF, subset: str | Sequence[str] | None = None) -> DF:
         """
-        Return a new DataFrame where the null values are dropped.
+        Return a new DataFrame where rows with null values are dropped.
 
         Parameters
         ----------
         subset
-            Subset of column(s) on which ``drop_nulls`` will be applied.
+            Subset of column(s) for which null values are considered.
 
         Examples
         --------
@@ -3206,7 +3326,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        This method only drops nulls row-wise if any single value of the row is null.
+        This method drops rows where any single value of the row is null.
 
         Below are some example snippets that show how you could drop null values based
         on other conditions
@@ -3233,13 +3353,7 @@ class DataFrame:
 
         Drop a row only if all values are null:
 
-        >>> df.filter(
-        ...     ~pl.fold(
-        ...         acc=True,
-        ...         f=lambda acc, s: acc & s.is_null(),
-        ...         exprs=pl.all(),
-        ...     )
-        ... )
+        >>> df.filter(~pl.all(pl.all().is_null()))
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
@@ -3434,18 +3548,13 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
+        # Explicitly handle case where user mistakenly calls `groupby("a", "b")`
         if not isinstance(maintain_order, bool):
             raise TypeError(
                 f"invalid input for groupby arg `maintain_order`: {maintain_order}."
             )
-        if isinstance(by, str):
-            by = [by]
-        return GroupBy(
-            self._df,
-            by,  # type: ignore[arg-type]
-            dataframe_class=self.__class__,
-            maintain_order=maintain_order,
-        )
+
+        return GroupBy(self._df, by, self.__class__, maintain_order=maintain_order)
 
     def groupby_rolling(
         self: DF,
@@ -3453,8 +3562,8 @@ class DataFrame:
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
-        closed: ClosedWindow = "right",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        closed: ClosedInterval = "right",
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
     ) -> RollingGroupBy[DF]:
         """
         Create rolling groups based on a time column.
@@ -3504,7 +3613,7 @@ class DataFrame:
         offset
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
 
@@ -3562,8 +3671,8 @@ class DataFrame:
         offset: str | timedelta | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: ClosedWindow = "left",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        closed: ClosedInterval = "left",
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         start_by: StartBy = "window",
     ) -> DynamicGroupBy[DF]:
         """
@@ -3627,8 +3736,8 @@ class DataFrame:
             Add the lower and upper bound of the window to the "_lower_bound" and
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
-        closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday'}
@@ -5016,7 +5125,7 @@ class DataFrame:
             Values to use as identifier variables.
             If `value_vars` is empty all columns that are not in `id_vars` will be used.
         variable_name
-            Name to give to the `value` column. Defaults to "variable"
+            Name to give to the `variable` column. Defaults to "variable"
         value_name
             Name to give to the `value` column. Defaults to "value"
 
@@ -6581,15 +6690,27 @@ class DataFrame:
             raise TypeError("Expressions should be passed to the 'by_predicate' param")
 
         if named:
+            warnings.warn(
+                "Named rows will be changed from a namedtuple to a dictionary in the"
+                " next breaking release.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
 
-        if isinstance(index, int):
+        if index is not None:
             row = self._df.row_tuple(index)
             if named:
                 return Row(*row)
             else:
                 return row
-        elif isinstance(by_predicate, pli.Expr):
+
+        elif by_predicate is not None:
+            if not isinstance(by_predicate, pli.Expr):
+                raise TypeError(
+                    f"Expected 'by_predicate to be an expression; "
+                    f"found {type(by_predicate)}"
+                )
             rows = self.filter(by_predicate).rows()
             n_rows = len(rows)
             if n_rows > 1:
@@ -6598,6 +6719,7 @@ class DataFrame:
                 )
             elif n_rows == 0:
                 raise NoRowsReturned(f"Predicate <{by_predicate!s}> returned no rows")
+
             row = rows[0]
             if named:
                 return Row(*row)
@@ -6648,6 +6770,12 @@ class DataFrame:
 
         """
         if named:
+            warnings.warn(
+                "Named rows will be changed from a namedtuple to a dictionary in the"
+                " next breaking release.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
             return [Row(*row) for row in self._df.row_tuples()]
         else:
@@ -6715,6 +6843,12 @@ class DataFrame:
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if named:
+            warnings.warn(
+                "Named rows will be changed from a namedtuple to a dictionary in the"
+                " next breaking release.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
             Row = namedtuple("Row", self.columns)  # type: ignore[misc]
         if buffer_size:
             for offset in range(0, self.height, buffer_size):
@@ -6799,7 +6933,7 @@ class DataFrame:
         ...         "ham": ["a", "b", None, "d"],
         ...     }
         ... )
-        >>> df.hash_rows(seed=42)
+        >>> df.hash_rows(seed=42)  # doctest: +IGNORE_RESULT
         shape: (4,)
         Series: '' [u64]
         [
@@ -7004,13 +7138,17 @@ class DataFrame:
         )
 
 
-def _prepare_other_arg(other: Any) -> pli.Series:
+def _prepare_other_arg(other: Any, length: int | None = None) -> pli.Series:
     # if not a series create singleton series such that it will broadcast
+    value = other
     if not isinstance(other, pli.Series):
         if isinstance(other, str):
             pass
         elif isinstance(other, Sequence):
             raise ValueError("Operation not supported.")
-
         other = pli.Series("", [other])
+
+    if length and length > 1:
+        other = other.extend_constant(value=value, n=length - 1)
+
     return other

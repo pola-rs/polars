@@ -4,12 +4,18 @@ import pytest
 
 import polars as pl
 from polars.exceptions import InvalidAssert
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import (
+    assert_frame_equal,
+    assert_series_equal,
+    assert_series_not_equal,
+)
 
 
 def test_compare_series_value_mismatch() -> None:
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.Series([2, 3, 4])
+
+    assert_series_not_equal(srs1, srs2)
     with pytest.raises(AssertionError, match="Series are different\n\nValue mismatch"):
         assert_series_equal(srs1, srs2)
 
@@ -17,7 +23,10 @@ def test_compare_series_value_mismatch() -> None:
 def test_compare_series_empty_equal() -> None:
     srs1 = pl.Series([])
     srs2 = pl.Series(())
+
     assert_series_equal(srs1, srs2)
+    with pytest.raises(AssertionError):
+        assert_series_not_equal(srs1, srs2)
 
 
 def test_compare_series_nans_assert_equal() -> None:
@@ -34,8 +43,11 @@ def test_compare_series_nans_assert_equal() -> None:
 
     with pytest.raises(AssertionError):
         assert_series_equal(srs1, srs1, nans_compare_equal=False)
+    assert_series_not_equal(srs1, srs1, nans_compare_equal=False)
+
     with pytest.raises(AssertionError):
         assert_series_equal(srs1, srs1, nans_compare_equal=False, check_exact=True)
+    assert_series_not_equal(srs1, srs1, nans_compare_equal=False, check_exact=True)
 
     for check_exact, nans_equal in (
         (False, False),
@@ -64,6 +76,7 @@ def test_compare_series_nans_assert_equal() -> None:
     assert_series_equal(srs4, srs6, check_dtype=False)
     with pytest.raises(AssertionError):
         assert_series_equal(srs5, srs6, check_dtype=False)
+    assert_series_not_equal(srs5, srs6, check_dtype=True)
 
 
 def test_compare_series_nulls() -> None:
@@ -73,6 +86,7 @@ def test_compare_series_nulls() -> None:
 
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.Series([1, None, None])
+
     with pytest.raises(AssertionError, match="Value mismatch"):
         assert_series_equal(srs1, srs2)
     with pytest.raises(AssertionError, match="Exact value mismatch"):

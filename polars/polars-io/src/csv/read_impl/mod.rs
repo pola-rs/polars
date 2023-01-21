@@ -97,6 +97,7 @@ pub(crate) struct CoreReader<'a> {
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValuesCompiled>,
+    missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_count: Option<RowCount>,
@@ -184,6 +185,7 @@ impl<'a> CoreReader<'a> {
         quote_char: Option<u8>,
         eol_char: u8,
         null_values: Option<NullValues>,
+        missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         to_cast: Vec<Field>,
         skip_rows_after_header: usize,
@@ -279,6 +281,7 @@ impl<'a> CoreReader<'a> {
             quote_char,
             eol_char,
             null_values,
+            missing_is_null,
             predicate,
             to_cast,
             row_count,
@@ -538,7 +541,6 @@ impl<'a> CoreReader<'a> {
 
                         let mut read = bytes_offset_thread;
                         let mut dfs = Vec::with_capacity(256);
-
                         let mut last_read = usize::MAX;
                         loop {
                             if read >= stop_at_nbytes || read == last_read {
@@ -567,6 +569,7 @@ impl<'a> CoreReader<'a> {
                                 self.quote_char,
                                 self.eol_char,
                                 self.null_values.as_ref(),
+                                self.missing_is_null,
                                 projection,
                                 &mut buffers,
                                 ignore_errors,
@@ -637,6 +640,7 @@ impl<'a> CoreReader<'a> {
                             &str_capacities,
                             self.encoding,
                             self.null_values.as_ref(),
+                            self.missing_is_null,
                             usize::MAX,
                             stop_at_nbytes,
                             starting_point_offset,
@@ -714,6 +718,7 @@ fn read_chunk(
     str_capacities: &[RunningSize],
     encoding: CsvEncoding,
     null_values: Option<&NullValuesCompiled>,
+    missing_is_null: bool,
     chunk_size: usize,
     stop_at_nbytes: usize,
     starting_point_offset: Option<usize>,
@@ -746,6 +751,7 @@ fn read_chunk(
             quote_char,
             eol_char,
             null_values,
+            missing_is_null,
             projection,
             &mut buffers,
             ignore_errors,

@@ -16,8 +16,9 @@ impl Clone for OwnedObject {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum AnyValue<'a> {
+    #[default]
     Null,
     /// A binary true or false.
     Boolean(bool),
@@ -80,12 +81,6 @@ pub enum AnyValue<'a> {
     Binary(&'a [u8]),
     #[cfg(feature = "dtype-binary")]
     BinaryOwned(Vec<u8>),
-}
-
-impl Default for AnyValue<'static> {
-    fn default() -> Self {
-        AnyValue::Null
-    }
 }
 
 #[cfg(feature = "serde")]

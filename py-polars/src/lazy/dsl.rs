@@ -3,6 +3,7 @@ use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -354,12 +355,12 @@ impl PyExpr {
             .with_fmt("take_every")
             .into()
     }
-    pub fn tail(&self, n: Option<usize>) -> PyExpr {
-        self.clone().inner.tail(n).into()
+    pub fn tail(&self, n: usize) -> PyExpr {
+        self.clone().inner.tail(Some(n)).into()
     }
 
-    pub fn head(&self, n: Option<usize>) -> PyExpr {
-        self.clone().inner.head(n).into()
+    pub fn head(&self, n: usize) -> PyExpr {
+        self.clone().inner.head(Some(n)).into()
     }
 
     pub fn slice(&self, offset: PyExpr, length: PyExpr) -> PyExpr {
@@ -561,9 +562,11 @@ impl PyExpr {
         exact: bool,
         cache: bool,
         tz_aware: bool,
+        tu: Option<Wrap<TimeUnit>>,
     ) -> PyExpr {
-        let tu = match fmt {
-            Some(ref fmt) => {
+        let result_tu = match (&fmt, tu) {
+            (_, Some(tu)) => tu.0,
+            (Some(fmt), None) => {
                 if fmt.contains("%.9f")
                     || fmt.contains("%9f")
                     || fmt.contains("%f")
@@ -576,13 +579,13 @@ impl PyExpr {
                     TimeUnit::Microseconds
                 }
             }
-            None => TimeUnit::Microseconds,
+            (None, None) => TimeUnit::Microseconds,
         };
         self.inner
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(tu, None),
+                date_dtype: DataType::Datetime(result_tu, None),
                 fmt,
                 strict,
                 exact,
@@ -736,11 +739,11 @@ impl PyExpr {
             .with_fmt("str.hex_encode")
             .into()
     }
-    pub fn str_hex_decode(&self) -> PyExpr {
+    pub fn str_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.utf8()?.hex_decode().map(|s| s.into_series()),
+                move |s| s.utf8()?.hex_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("str.hex_decode")
@@ -757,11 +760,11 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_base64_decode(&self) -> PyExpr {
+    pub fn str_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.utf8()?.base64_decode().map(|s| s.into_series()),
+                move |s| s.utf8()?.base64_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("str.base64_decode")
@@ -778,11 +781,11 @@ impl PyExpr {
             .with_fmt("binary.hex_encode")
             .into()
     }
-    pub fn binary_hex_decode(&self) -> PyExpr {
+    pub fn binary_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.binary()?.hex_decode().map(|s| s.into_series()),
+                move |s| s.binary()?.hex_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("binary.hex_decode")
@@ -799,11 +802,11 @@ impl PyExpr {
             .into()
     }
 
-    pub fn binary_base64_decode(&self) -> PyExpr {
+    pub fn binary_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
-                move |s| s.binary()?.base64_decode().map(|s| s.into_series()),
+                move |s| s.binary()?.base64_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
             .with_fmt("binary.base64_decode")
@@ -1024,6 +1027,10 @@ impl PyExpr {
 
     pub fn dt_round(&self, every: &str, offset: &str) -> PyExpr {
         self.inner.clone().dt().round(every, offset).into()
+    }
+
+    pub fn dt_combine(&self, time: PyExpr, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().combine(time.inner, tu.0).into()
     }
 
     pub fn rolling_apply(
@@ -1685,6 +1692,14 @@ impl PyExpr {
     }
     pub fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
+    }
+    pub fn set_sorted_flag(&self, reverse: bool) -> Self {
+        let is_sorted = if reverse {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 }
 

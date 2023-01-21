@@ -12,17 +12,17 @@ fn join_nans_outer() -> PolarsResult<()> {
         .lazy();
     let a1 = df1
         .clone()
-        .groupby(vec![col("w").alias("w"), col("t").alias("t")])
+        .groupby(vec![col("w").alias("w"), col("t")])
         .agg(vec![col("c").sum().alias("c_sum")]);
     let a2 = df1
-        .groupby(vec![col("w").alias("w"), col("t").alias("t")])
+        .groupby(vec![col("w").alias("w"), col("t")])
         .agg(vec![col("c").max().alias("c_max")]);
 
     let res = a1
         .join_builder()
         .with(a2)
-        .left_on(vec![col("w").alias("w"), col("t").alias("t")])
-        .right_on(vec![col("w").alias("w"), col("t").alias("t")])
+        .left_on(vec![col("w"), col("t")])
+        .right_on(vec![col("w"), col("t")])
         .how(JoinType::Outer)
         .finish()
         .collect()?;

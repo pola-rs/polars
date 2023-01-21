@@ -23,6 +23,7 @@ pub struct ApplyExpr {
     pub collect_groups: ApplyOptions,
     pub auto_explode: bool,
     pub allow_rename: bool,
+    pub pass_name_to_apply: bool,
 }
 
 impl ApplyExpr {
@@ -39,6 +40,7 @@ impl ApplyExpr {
             collect_groups,
             auto_explode: false,
             allow_rename: false,
+            pass_name_to_apply: false,
         }
     }
 
@@ -162,7 +164,10 @@ impl PhysicalExpr for ApplyExpr {
                         .unwrap()
                         .par_iter()
                         .map(|opt_s| {
-                            opt_s.and_then(|s| {
+                            opt_s.and_then(|mut s| {
+                                if self.pass_name_to_apply {
+                                    s.rename(&name);
+                                }
                                 let mut container = [s];
                                 self.function.call_udf(&mut container).ok()
                             })

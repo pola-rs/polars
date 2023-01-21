@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import time, timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -38,21 +38,23 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        The `every` and `offset` argument are created with the
-        the following small string formatting language:
+        The ``every`` and ``offset`` argument are created with the
+        the following string language:
 
-        1ns  # 1 nanosecond
-        1us  # 1 microsecond
-        1ms  # 1 millisecond
-        1s   # 1 second
-        1m   # 1 minute
-        1h   # 1 hour
-        1d   # 1 day
-        1w   # 1 calendar week starting at Monday
-        1mo  # 1 calendar month
-        1y   # 1 calendar year
+        - 1ns # 1 nanosecond
+        - 1us # 1 microsecond
+        - 1ms # 1 millisecond
+        - 1s  # 1 second
+        - 1m  # 1 minute
+        - 1h  # 1 hour
+        - 1d  # 1 day
+        - 1w  # 1 calendar week
+        - 1mo # 1 calendar month
+        - 1y  # 1 calendar year
 
-        eg: 3d12h4m25s  # 3 days, 12 hours, 4 minutes, and 25 seconds
+        These strings can be combined:
+
+        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         Returns
         -------
@@ -141,7 +143,7 @@ class ExprDateTimeNameSpace:
 
         Each date/datetime in the first half of the interval
         is mapped to the start of its bucket.
-        Each date/datetime in the seconod half of the interval
+        Each date/datetime in the second half of the interval
         is mapped to the end of its bucket.
 
         Parameters
@@ -251,9 +253,70 @@ class ExprDateTimeNameSpace:
             )
         )
 
+    def combine(self, tm: time | pli.Expr, tu: TimeUnit = "us") -> pli.Expr:
+        """
+        Create a naive Datetime from an existing Date/Datetime expression and a Time.
+
+        If the underlying expression is a Datetime then its time component is replaced,
+        and if it is a Date then a new Datetime is created by combining the two values.
+
+        Parameters
+        ----------
+        tm
+            A python time literal or polars expression/column that resolves to a time.
+        tu : {'ns', 'us', 'ms'}
+            Time unit.
+
+        Examples
+        --------
+        >>> from datetime import datetime, date, time
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dtm": [
+        ...             datetime(2022, 12, 31, 10, 30, 45),
+        ...             datetime(2023, 7, 5, 23, 59, 59),
+        ...         ],
+        ...         "dt": [date(2022, 10, 10), date(2022, 7, 5)],
+        ...         "tm": [time(1, 2, 3, 456000), time(7, 8, 9, 101000)],
+        ...     }
+        ... )
+        >>> df
+        shape: (2, 3)
+        ┌─────────────────────┬────────────┬──────────────┐
+        │ dtm                 ┆ dt         ┆ tm           │
+        │ ---                 ┆ ---        ┆ ---          │
+        │ datetime[μs]        ┆ date       ┆ time         │
+        ╞═════════════════════╪════════════╪══════════════╡
+        │ 2022-12-31 10:30:45 ┆ 2022-10-10 ┆ 01:02:03.456 │
+        │ 2023-07-05 23:59:59 ┆ 2022-07-05 ┆ 07:08:09.101 │
+        └─────────────────────┴────────────┴──────────────┘
+        >>> df.select(
+        ...     [
+        ...         pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),
+        ...         pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),
+        ...         pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),
+        ...     ]
+        ... )
+        shape: (2, 3)
+        ┌─────────────────────────┬─────────────────────────┬─────────────────────┐
+        │ d1                      ┆ d2                      ┆ d3                  │
+        │ ---                     ┆ ---                     ┆ ---                 │
+        │ datetime[μs]            ┆ datetime[μs]            ┆ datetime[μs]        │
+        ╞═════════════════════════╪═════════════════════════╪═════════════════════╡
+        │ 2022-12-31 01:02:03.456 ┆ 2022-10-10 01:02:03.456 ┆ 2022-10-10 04:05:06 │
+        │ 2023-07-05 07:08:09.101 ┆ 2022-07-05 07:08:09.101 ┆ 2022-07-05 04:05:06 │
+        └─────────────────────────┴─────────────────────────┴─────────────────────┘
+        """
+        if not isinstance(tm, (time, pli.Expr)):
+            raise TypeError(
+                f"Expected 'tm' to be a python time or polars expression, found {tm!r}"
+            )
+        tm = pli.expr_to_lit_or_expr(tm)
+        return pli.wrap_expr(self._pyexpr.dt_combine(tm._pyexpr, tu))
+
     def strftime(self, fmt: str) -> pli.Expr:
         """
-        Format Date/datetime with a formatting rule.
+        Format Date/Datetime with a formatting rule.
 
         See `chrono strftime/strptime
         <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
@@ -842,7 +905,7 @@ class ExprDateTimeNameSpace:
 
         Parameters
         ----------
-        tu : {'us', 'ns', 'ms', 's', 'd'}
+        tu : {'ns', 'us', 'ms', 's', 'd'}
             Time unit.
 
         Examples
@@ -887,7 +950,7 @@ class ExprDateTimeNameSpace:
 
         Parameters
         ----------
-        tu : {'us', 'ns', 'ms'}
+        tu : {'ns', 'us', 'ms'}
             Time unit.
 
         Examples

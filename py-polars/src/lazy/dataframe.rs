@@ -205,6 +205,7 @@ impl PyLazyFrame {
         comment_char: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
+        missing_utf8_is_empty_string: bool,
         infer_schema_length: Option<usize>,
         with_schema_modify: Option<PyObject>,
         rechunk: bool,
@@ -219,7 +220,6 @@ impl PyLazyFrame {
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let delimiter = sep.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
-
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
@@ -246,7 +246,8 @@ impl PyLazyFrame {
             .with_encoding(encoding.0)
             .with_row_count(row_count)
             .with_parse_dates(parse_dates)
-            .with_null_values(null_values);
+            .with_null_values(null_values)
+            .with_missing_is_null(!missing_utf8_is_empty_string);
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
@@ -464,6 +465,28 @@ impl PyLazyFrame {
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
             ldf.sink_parquet(path, options).map_err(PyPolarsErr::from)
+        })?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn sink_ipc(
+        &self,
+        py: Python,
+        path: PathBuf,
+        compression: Option<Wrap<IpcCompression>>,
+        maintain_order: bool,
+    ) -> PyResult<()> {
+        let options = IpcWriterOptions {
+            compression: compression.map(|c| c.0),
+            maintain_order,
+        };
+
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_ipc(path, options).map_err(PyPolarsErr::from)
         })?;
         Ok(())
     }
@@ -856,7 +879,7 @@ impl PyLazyFrame {
 
         let udf_schema =
             schema.map(move |s| Arc::new(move |_: &Schema| Ok(s.clone())) as Arc<dyn UdfSchema>);
-        ldf.map(function, Some(opt), udf_schema, None).into()
+        ldf.map(function, opt, udf_schema, None).into()
     }
 
     pub fn drop_columns(&self, cols: Vec<String>) -> Self {

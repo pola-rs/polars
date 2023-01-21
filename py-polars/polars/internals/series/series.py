@@ -18,6 +18,7 @@ from warnings import warn
 from polars import internals as pli
 from polars.datatypes import (
     Boolean,
+    Categorical,
     DataType,
     Date,
     Datetime,
@@ -434,6 +435,8 @@ class Series:
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return wrap_s(f(d))
+        if self.dtype == Categorical and not isinstance(other, Series):
+            other = Series([other])
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
@@ -2351,7 +2354,7 @@ class Series:
         >>> optional_members = pl.Series("optional_members", [1, 2, 3])
         >>> print(sets)
         shape: (3,)
-        Series: 'sets' [list]
+        Series: 'sets' [list[i64]]
         [
             [1, 2, 3]
             [1, 2]
@@ -4265,7 +4268,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.hash(seed=42)
+        >>> s.hash(seed=42)  # doctest: +IGNORE_RESULT
         shape: (3,)
         Series: 'a' [u64]
         [

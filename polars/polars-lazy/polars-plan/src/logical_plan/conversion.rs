@@ -401,8 +401,7 @@ pub fn to_alp(
         LogicalPlan::Error { err, .. } => {
             // We just take the error. The LogicalPlan should not be used anymore once this
             // is taken.
-            let mut err = err.lock().unwrap();
-            return Err(err.take().unwrap());
+            return Err(err.take());
         }
         LogicalPlan::ExtContext {
             input,

@@ -547,7 +547,9 @@ def test_from_dicts_schema() -> None:
 
     # let polars infer the dtypes
     # but inform about a 3rd column
-    df = pl.from_dicts(data, schema={"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32})
+    df = pl.from_dicts(
+        data, schema_overrides={"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32}
+    )
     assert df.dtypes == [pl.Int64, pl.Int64, pl.Int32]
     assert df.to_dict(False) == {
         "a": [1, 2, 3],
@@ -624,3 +626,32 @@ def test_nested_read_dict_4143() -> None:
             ],
         ],
     }
+
+
+@typing.no_type_check
+def test_from_records_nullable_structs() -> None:
+    records = [
+        {"id": 1, "items": [{"item_id": 100, "description": None}]},
+        {"id": 1, "items": [{"item_id": 100, "description": "hi"}]},
+    ]
+
+    schema = [
+        ("id", pl.UInt16),
+        (
+            "items",
+            pl.List(
+                pl.Struct(
+                    [pl.Field("item_id", pl.UInt32), pl.Field("description", pl.Utf8)]
+                )
+            ),
+        ),
+    ]
+
+    for columns in [schema, None]:
+        assert pl.DataFrame(records, orient="row", columns=columns).to_dict(False) == {
+            "id": [1, 1],
+            "items": [
+                [{"item_id": 100, "description": None}],
+                [{"item_id": 100, "description": "hi"}],
+            ],
+        }

@@ -486,17 +486,17 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
-def groupby_list_column() -> None:
+def test_groupby_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
         .with_column(pl.col("a").cast(pl.Categorical))
-        .groupby("a")
+        .groupby("a", maintain_order=True)
         .agg(pl.col("a").list().alias("a_list"))
     )
 
     assert df.groupby("a_list", maintain_order=True).first().to_dict(False) == {
-        "a_list": [["b"], ["a", "a"]],
-        "a": ["b", "a"],
+        "a_list": [["a", "a"], ["b"]],
+        "a": ["a", "b"],
     }
 
 
@@ -621,3 +621,38 @@ def test_list_take() -> None:
         [42, 1, 2, None],
         [5, 6, 7, None],
     ]
+
+
+def test_fast_explode_on_list_struct_6208() -> None:
+    data = [
+        {
+            "label": "l",
+            "tag": "t",
+            "ref": 1,
+            "parent": [{"ref": 1, "tag": "t", "ratio": 62.3}],
+        },
+        {"label": "l", "tag": "t", "ref": 1, "parent": None},
+    ]
+
+    df = pl.DataFrame(
+        data,
+        columns={
+            "label": pl.Utf8,
+            "tag": pl.Utf8,
+            "ref": pl.Int64,
+            "parents": pl.List(
+                pl.Struct({"ref": pl.Int64, "tag": pl.Utf8, "ratio": pl.Float64})
+            ),
+        },
+    )
+
+    assert not df["parents"].flags["FAST_EXPLODE"]
+    assert df.explode("parents").to_dict(False) == {
+        "label": ["l", "l"],
+        "tag": ["t", "t"],
+        "ref": [1, 1],
+        "parents": [
+            {"ref": 1, "tag": "t", "ratio": 62.3},
+            {"ref": None, "tag": None, "ratio": None},
+        ],
+    }

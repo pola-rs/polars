@@ -15,6 +15,26 @@ fn update_and_parse<T: lexical::FromLexical>(
         .map(|v| (v, new_offset))
 }
 
+#[inline]
+fn parse_month_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)> {
+    let new_offset = offset + 3;
+    match &val[offset..new_offset] {
+        b"Jan" => Some((1, new_offset)),
+        b"Feb" => Some((2, new_offset)),
+        b"Mar" => Some((3, new_offset)),
+        b"Apr" => Some((4, new_offset)),
+        b"May" => Some((5, new_offset)),
+        b"Jun" => Some((6, new_offset)),
+        b"Jul" => Some((7, new_offset)),
+        b"Aug" => Some((8, new_offset)),
+        b"Sep" => Some((9, new_offset)),
+        b"Oct" => Some((10, new_offset)),
+        b"Nov" => Some((11, new_offset)),
+        b"Dec" => Some((12, new_offset)),
+        _ => None,
+    }
+}
+
 /// Tries to convert a chrono `fmt` to a `fmt` that the polars parser consumes.
 /// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
 /// year, day, month distinctively with %Y, %d, %m.
@@ -47,6 +67,12 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
     let mut fmt_iter = fmt.iter();
 
     let mut offset = 0;
+    let mut negative = false;
+
+    if val.starts_with(b"-") && fmt.starts_with(b"%Y") {
+        offset = 1;
+        negative = true;
+    }
 
     while let Some(fmt_b) = fmt_iter.next() {
         debug_assert!(offset < val.len());
@@ -55,9 +81,15 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
             match fmt_iter.next().expect("invalid fmt") {
                 b'Y' => {
                     (year, offset) = update_and_parse(4, offset, val)?;
+                    if negative {
+                        year *= -1
+                    }
                 }
                 b'm' => {
                     (month, offset) = update_and_parse(2, offset, val)?;
+                }
+                b'b' => {
+                    (month, offset) = parse_month_abbrev(val, offset)?;
                 }
                 b'd' => {
                     (day, offset) = update_and_parse(2, offset, val)?;
@@ -129,6 +161,7 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                 b'y' => cnt += 2,
                 b'd' => cnt += 2,
                 b'm' => cnt += 2,
+                b'b' => cnt += 3,
                 b'H' => cnt += 2,
                 b'M' => cnt += 2,
                 b'S' => cnt += 2,

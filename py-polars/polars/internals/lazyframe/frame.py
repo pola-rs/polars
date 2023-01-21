@@ -21,6 +21,7 @@ from polars import internals as pli
 from polars.cfg import Config
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
+    N_INFER_DEFAULT,
     Boolean,
     Categorical,
     DataType,
@@ -34,7 +35,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     PolarsDataType,
-    Schema,
+    SchemaDict,
     Time,
     UInt8,
     UInt16,
@@ -67,7 +68,7 @@ except ImportError:
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
-        ClosedWindow,
+        ClosedInterval,
         CsvEncoding,
         FillNullStrategy,
         JoinStrategy,
@@ -121,12 +122,13 @@ class LazyFrame:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: dict[str, PolarsDataType] | None = None,
+        dtypes: SchemaDict | None = None,
         null_values: str | list[str] | dict[str, str] | None = None,
+        missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
         cache: bool = True,
         with_column_names: Callable[[list[str]], list[str]] | None = None,
-        infer_schema_length: int | None = 100,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",
         low_memory: bool = False,
@@ -168,6 +170,7 @@ class LazyFrame:
             comment_char,
             quote_char,
             processed_null_values,
+            missing_utf8_is_empty_string,
             infer_schema_length,
             with_column_names,
             rechunk,
@@ -414,7 +417,7 @@ class LazyFrame:
         return self._ldf.dtypes()
 
     @property
-    def schema(self) -> Schema:
+    def schema(self) -> SchemaDict:
         """
         Get a dict[column name, DataType].
 
@@ -1264,6 +1267,77 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    def sink_ipc(
+        self,
+        path: str,
+        *,
+        compression: str | None = "zstd",
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+    ) -> pli.DataFrame:
+        """
+        Persists a LazyFrame at the provided path.
+
+        This allows streaming results that are larger than RAM to be written to disk.
+
+        Parameters
+        ----------
+        path
+            File path to which the file should be written.
+        compression : {'lz4', 'zstd'}
+            Choose "zstd" for good compression performance.
+            Choose "lz4" for fast compression/decompression.
+        maintain_order
+            Maintain the order in which data is processed.
+            Setting this to `False` will  be slightly faster.
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        >>> ldf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> ldf.sink_ipc("/tmp/out.arrow")  # doctest: +SKIP
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            cse=False,
+            streaming=True,
+        )
+        return ldf.sink_ipc(
+            path=path,
+            compression=compression,
+            maintain_order=maintain_order,
+        )
+
     @deprecated_alias(allow_streaming="streaming")
     def fetch(
         self,
@@ -1595,7 +1669,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def groupby(
         self: LDF,
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        by: str | pli.Expr | Sequence[str | pli.Expr],
         maintain_order: bool = False,
     ) -> LazyGroupBy[LDF]:
         """
@@ -1646,8 +1720,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
-        closed: ClosedWindow = "right",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        closed: ClosedInterval = "right",
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
         Create rolling groups based on a time column.
@@ -1697,7 +1771,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         offset
             offset of the window. Default is -period
         closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
 
@@ -1765,8 +1839,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         offset: str | timedelta | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: ClosedWindow = "left",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        closed: ClosedInterval = "left",
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         start_by: StartBy = "window",
     ) -> LazyGroupBy[LDF]:
         """
@@ -1831,7 +1905,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
         closed : {'right', 'left', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday'}
@@ -2661,6 +2735,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ----------
         mapping
             Key value pairs that map from old name to new name.
+
+        Notes
+        -----
+        If names are swapped. E.g. 'A' points to 'B' and 'B' points to 'A', polars
+        will block projection and predicate pushdowns at this node.
 
         Examples
         --------
@@ -3576,12 +3655,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def drop_nulls(self: LDF, subset: list[str] | str | None = None) -> LDF:
         """
-        Drop rows with null values from this LazyFrame.
+        Return a new LazyFrame where rows with null values are dropped.
 
         Parameters
         ----------
         subset
-            Subset of column(s) on which ``drop_nulls`` will be applied.
+            Subset of column(s) for which null values are considered.
 
         Examples
         --------
@@ -3603,7 +3682,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        This method only drops nulls row-wise if any single value of the row is null.
+        This method drops a row if any single value of the row is null.
 
         Below are some example snippets that show how you could drop null values based
         on other conditions:
@@ -3630,13 +3709,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Drop a row only if all values are null:
 
-        >>> df.filter(
-        ...     ~pl.fold(
-        ...         acc=True,
-        ...         f=lambda acc, s: acc & s.is_null(),
-        ...         exprs=pl.all(),
-        ...     )
-        ... )
+        >>> df.filter(~pl.all(pl.all().is_null()))
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
@@ -3678,7 +3751,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Values to use as identifier variables.
             If `value_vars` is empty all columns that are not in `id_vars` will be used.
         variable_name
-            Name to give to the `value` column. Defaults to "variable"
+            Name to give to the `variable` column. Defaults to "variable"
         value_name
             Name to give to the `value` column. Defaults to "value"
 
@@ -3726,7 +3799,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         projection_pushdown: bool = True,
         slice_pushdown: bool = True,
         no_optimizations: bool = False,
-        schema: None | Schema = None,
+        schema: None | SchemaDict = None,
         validate_output_schema: bool = True,
     ) -> LDF:
         """

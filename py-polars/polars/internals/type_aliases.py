@@ -21,7 +21,6 @@ ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq
 # The following all have an equivalent Rust enum with the same name
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
-ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
 StartBy: TypeAlias = Literal["window", "datapoint", "monday"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 FillNullStrategy: TypeAlias = Literal[
@@ -56,6 +55,7 @@ SizeUnit: TypeAlias = Literal[
 
 # The following have a Rust enum equivalent with a different name
 AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
+ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions

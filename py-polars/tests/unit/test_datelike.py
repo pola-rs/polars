@@ -516,8 +516,7 @@ def test_date_range() -> None:
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
 
-def test_date_range_lazy() -> None:
-    # lazy date range with literals
+def test_date_range_lazy_with_literals() -> None:
     df = pl.DataFrame({"misc": ["x"]}).with_columns(
         pl.date_range(
             date(2000, 1, 1),
@@ -551,18 +550,16 @@ def test_date_range_lazy() -> None:
         ).date.tolist()
     )
 
-    # lazy date range with expressions
+
+@pytest.mark.parametrize("low", ["start", pl.col("start")])
+@pytest.mark.parametrize("high", ["stop", pl.col("stop")])
+def test_date_range_lazy_with_expressions(
+    low: str | pl.Expr, high: str | pl.Expr
+) -> None:
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
         .with_columns(
-            pl.date_range(
-                pl.col("start"),
-                pl.col("stop"),
-                interval="678d",
-                lazy=True,
-            )
-            .list()
-            .alias("dts")
+            pl.date_range(low, high, interval="678d", lazy=True).list().alias("dts")
         )
         .lazy()
     )
@@ -588,8 +585,8 @@ def test_date_range_lazy() -> None:
         }
     ).with_columns(
         pl.date_range(
-            pl.col("start"),
-            pl.col("stop"),
+            low,
+            high,
             interval="1d",
         ).alias("dts")
     ).to_dict(
@@ -610,8 +607,8 @@ def test_date_range_lazy() -> None:
         }
     ).with_columns(
         pl.date_range(
-            pl.col("start"),
-            pl.col("stop"),
+            low,
+            high,
             interval="1d",
         ).alias("dts")
     ).to_dict(
@@ -977,6 +974,19 @@ def test_strptime_precision() -> None:
         assert ds.dt.nanosecond().to_list() == expected_values
 
 
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [("ms", "123000000"), ("us", "123456000"), ("ns", "123456789")],
+)
+@pytest.mark.parametrize("fmt", ["%Y-%m-%d %H:%M:%S.%f", None])
+def test_strptime_precision_with_time_unit(
+    unit: TimeUnit, expected: str, fmt: str
+) -> None:
+    ser = pl.Series(["2020-01-01 00:00:00.123456789"])
+    result = ser.str.strptime(pl.Datetime(unit), fmt=fmt).dt.strftime("%f")[0]
+    assert result == expected
+
+
 def test_asof_join_tolerance_grouper() -> None:
     from datetime import date
 
@@ -1076,6 +1086,44 @@ def test_date_duration_offset() -> None:
         "sub_days": [date(9, 1, 1), date(2000, 6, 28), date(9991, 1, 31)],
         "add_weeks": [date(16, 12, 30), date(2000, 8, 23), date(9990, 5, 28)],
         "sub_weeks": [date(3, 1, 3), date(2000, 5, 17), date(9991, 8, 5)],
+    }
+
+
+def test_date_time_combine() -> None:
+    # test combining datetime/date and time (as expr/col and as literal)
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(2022, 12, 31, 10, 30, 45),
+                datetime(2023, 7, 5, 23, 59, 59),
+            ],
+            "dt": [date(2022, 10, 10), date(2022, 7, 5)],
+            "tm": [time(1, 2, 3, 456000), time(7, 8, 9, 101000)],
+        }
+    ).select(
+        [
+            pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),
+            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),
+            pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),
+        ]
+    )
+    # if combining with datetime, the time component should be overwritten.
+    # if combining with date, should write both parts 'as-is' into the new datetime.
+    assert df.to_dict(False) == {
+        "d1": [
+            datetime(2022, 12, 31, 1, 2, 3, 456000),
+            datetime(2023, 7, 5, 7, 8, 9, 101000),
+        ],
+        "d2": [
+            datetime(2022, 10, 10, 1, 2, 3, 456000),
+            datetime(2022, 7, 5, 7, 8, 9, 101000),
+        ],
+        "d3": [datetime(2022, 10, 10, 4, 5, 6), datetime(2022, 7, 5, 4, 5, 6)],
+    }
+    assert df.schema == {
+        "d1": pl.Datetime("us"),
+        "d2": pl.Datetime("us"),
+        "d3": pl.Datetime("us"),
     }
 
 
@@ -1382,8 +1430,53 @@ def test_from_time_arrow() -> None:
     ]
 
 
-def test_datetime_strptime_patterns() -> None:
+@pytest.mark.parametrize(
+    ("time_string", "expected"),
+    [
+        ("09-05-2019", datetime(2019, 5, 9)),
+        ("2018-09-05", datetime(2018, 9, 5)),
+        ("2018-09-05T04:05:01", datetime(2018, 9, 5, 4, 5, 1)),
+        ("2018-09-05T04:24:01.9", datetime(2018, 9, 5, 4, 24, 1, 900000)),
+        ("2018-09-05T04:24:02.11", datetime(2018, 9, 5, 4, 24, 2, 110000)),
+        ("2018-09-05T14:24:02.123", datetime(2018, 9, 5, 14, 24, 2, 123000)),
+        ("2018-09-05T14:24:02.123Z", datetime(2018, 9, 5, 14, 24, 2, 123000)),
+        ("2019-04-18T02:45:55.555000000", datetime(2019, 4, 18, 2, 45, 55, 555000)),
+        ("2019-04-18T22:45:55.555123", datetime(2019, 4, 18, 22, 45, 55, 555123)),
+    ],
+)
+def test_datetime_strptime_patterns_single(time_string: str, expected: str) -> None:
+    result = pl.Series([time_string]).str.strptime(pl.Datetime).item()
+    assert result == expected
+
+
+def test_datetime_strptime_patterns_consistent() -> None:
     # note that all should be year first
+    df = pl.Series(
+        "date",
+        [
+            "2018-09-05",
+            "2018-09-05T04:05:01",
+            "2018-09-05T04:24:01.9",
+            "2018-09-05T04:24:02.11",
+            "2018-09-05T14:24:02.123",
+            "2018-09-05T14:24:02.123Z",
+            "2019-04-18T02:45:55.555000000",
+            "2019-04-18T22:45:55.555123",
+        ],
+    ).to_frame()
+    s = df.with_columns(
+        [
+            pl.col("date")
+            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .alias("parsed"),
+        ]
+    )["parsed"]
+    assert s.null_count() == 0
+
+
+def test_datetime_strptime_patterns_inconsistent() -> None:
+    # note that the pattern is inferred from the first element to
+    # be DatetimeDMY, and so the others (correctly) parse as `null`.
     df = pl.Series(
         "date",
         [
@@ -1405,8 +1498,8 @@ def test_datetime_strptime_patterns() -> None:
             .alias("parsed"),
         ]
     )["parsed"]
-    assert s.null_count() == 1
-    assert s[0] is None
+    assert s.null_count() == 8
+    assert s[0] is not None
 
 
 def test_timedelta_from() -> None:
@@ -1779,6 +1872,44 @@ def test_date_parse_omit_day() -> None:
     ).item() == datetime(2022, 1, 1)
 
 
+@pytest.mark.parametrize(
+    (
+        "ts",
+        "fmt",
+        "exp_year",
+        "exp_month",
+        "exp_day",
+        "exp_hour",
+        "exp_minute",
+        "exp_second",
+    ),
+    [
+        ("-0031-04-24 22:13:20", "%Y-%m-%d %H:%M:%S", -31, 4, 24, 22, 13, 20),
+        ("-0031-04-24", "%Y-%m-%d", -31, 4, 24, 0, 0, 0),
+    ],
+)
+def test_parse_negative_dates(
+    ts: str,
+    fmt: str,
+    exp_year: int,
+    exp_month: int,
+    exp_day: int,
+    exp_hour: int,
+    exp_minute: int,
+    exp_second: int,
+) -> None:
+    ser = pl.Series([ts])
+    result = ser.str.strptime(pl.Datetime("ms"), fmt=fmt)
+    # Python datetime.datetime doesn't support negative dates, so comparing
+    # with `result.item()` directly won't work.
+    assert result.dt.year().item() == exp_year
+    assert result.dt.month().item() == exp_month
+    assert result.dt.day().item() == exp_day
+    assert result.dt.hour().item() == exp_hour
+    assert result.dt.minute().item() == exp_minute
+    assert result.dt.second().item() == exp_second
+
+
 def test_shift_and_fill_group_logicals() -> None:
     df = pl.from_records(
         [
@@ -1853,6 +1984,25 @@ def test_short_formats() -> None:
         date(2020, 1, 1),
     ]
     assert s.str.strptime(pl.Date, "%foo", strict=False).to_list() == [None, None]
+
+
+@pytest.mark.parametrize(
+    ("time_string", "fmt", "datatype", "expected"),
+    [
+        ("Jul/2020", "%b/%Y", pl.Date, date(2020, 7, 1)),
+        ("Jan/2020", "%b/%Y", pl.Date, date(2020, 1, 1)),
+        ("02/Apr/2020", "%d/%b/%Y", pl.Date, date(2020, 4, 2)),
+        ("Dec/2020", "%b/%Y", pl.Datetime, datetime(2020, 12, 1, 0, 0)),
+        ("Nov/2020", "%b/%Y", pl.Datetime, datetime(2020, 11, 1, 0, 0)),
+        ("02/Feb/2020", "%d/%b/%Y", pl.Datetime, datetime(2020, 2, 2, 0, 0)),
+    ],
+)
+def test_abbrev_month(
+    time_string: str, fmt: str, datatype: PolarsTemporalType, expected: date
+) -> None:
+    s = pl.Series([time_string])
+    result = s.str.strptime(datatype, fmt).item()
+    assert result == expected
 
 
 def test_iso_year() -> None:
@@ -2391,4 +2541,28 @@ def test_datetime_cum_agg_schema() -> None:
             datetime(2023, 1, 3, 0, 0),
             datetime(2023, 1, 4, 0, 0),
         ],
+    }
+
+
+def test_rolling_groupby_empty_groups_by_take_6330() -> None:
+    df = pl.DataFrame({"Event": ["Rain", "Sun"]}).join(
+        pl.DataFrame(
+            {
+                "Date": [1, 2, 3, 4],
+            }
+        ),
+        how="cross",
+    )
+    assert (
+        df.groupby_rolling(
+            index_column="Date",
+            period="2i",
+            offset="-2i",
+            by="Event",
+            closed="left",
+        ).agg([pl.count()])
+    ).to_dict(False) == {
+        "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
+        "Date": [1, 2, 3, 4, 1, 2, 3, 4],
+        "count": [0, 1, 2, 2, 0, 1, 2, 2],
     }

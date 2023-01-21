@@ -149,6 +149,7 @@ impl PhysicalExpr for TernaryExpr {
 
         let mask_s = ac_mask.flat_naive();
 
+        // BIG TODO: find which branches are never hit and remove them
         use AggState::*;
         match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
             // all branches are aggregated-flat or literal
@@ -271,6 +272,32 @@ impl PhysicalExpr for TernaryExpr {
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series an apply the operators
             _ => {
+                // inspect the predicate and if it is consisting
+                // if arity/binary and some aggreation we apply as iters as
+                // it gets complicated quickly.
+                // For instance:
+                //  when(col(..) > min(..)).then(..).otherwise(..)
+                if let Some(expr) = self.predicate.as_expression() {
+                    let mut has_arity = false;
+                    let mut has_agg = false;
+                    for e in expr.into_iter() {
+                        match e {
+                            Expr::BinaryExpr { .. } | Expr::Ternary { .. } => has_arity = true,
+                            Expr::Agg(_) => has_agg = true,
+                            Expr::Function { options, .. }
+                            | Expr::AnonymousFunction { options, .. }
+                                if !options.is_mappable() =>
+                            {
+                                has_agg = true
+                            }
+                            _ => {}
+                        }
+                    }
+                    if has_arity && has_agg {
+                        return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
+                    }
+                }
+
                 if !aggregation_predicate {
                     // experimental elementwise behavior tested in `test_binary_agg_context_1`
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);

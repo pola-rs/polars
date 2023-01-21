@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -14,6 +14,7 @@ from polars.datatypes import (
     Duration,
     Int64,
     PolarsDataType,
+    SchemaDict,
     Struct,
     Time,
     UInt32,
@@ -78,7 +79,13 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: str | Sequence[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType,
+    name: str
+    | Sequence[str]
+    | Sequence[PolarsDataType]
+    | set[PolarsDataType]
+    | frozenset[PolarsDataType]
+    | pli.Series
+    | PolarsDataType,
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
@@ -195,13 +202,23 @@ def col(
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))
 
-    elif not isinstance(name, str) and isinstance(name, (list, tuple, Sequence)):
-        if len(name) == 0 or isinstance(name[0], str):
+    elif not isinstance(name, str) and isinstance(
+        name, (list, tuple, set, frozenset, Sequence)
+    ):
+        if len(name) == 0:
             return pli.wrap_expr(pycols(name))
-        elif is_polars_dtype(name[0]):
-            return pli.wrap_expr(_dtype_cols(name))
         else:
-            raise ValueError("Expected list values to be all `str` or all `DataType`")
+            names = list(name)
+            item = names[0]
+            if isinstance(item, str):
+                return pli.wrap_expr(pycols(names))
+            elif is_polars_dtype(item):
+                return pli.wrap_expr(_dtype_cols(names))
+            else:
+                raise ValueError(
+                    "Expected list values to be all `str` or all `DataType`"
+                )
+
     return pli.wrap_expr(pycol(name))
 
 
@@ -947,12 +964,12 @@ def last(column: str | pli.Series | None = None) -> pli.Expr:
 
 
 @overload
-def head(column: str, n: int = 10) -> pli.Expr:
+def head(column: str, n: int = ...) -> pli.Expr:
     ...
 
 
 @overload
-def head(column: pli.Series, n: int = 10) -> pli.Series:
+def head(column: pli.Series, n: int = ...) -> pli.Series:
     ...
 
 
@@ -1006,12 +1023,12 @@ def head(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
 
 
 @overload
-def tail(column: str, n: int = 10) -> pli.Expr:
+def tail(column: str, n: int = ...) -> pli.Expr:
     ...
 
 
 @overload
-def tail(column: pli.Series, n: int = 10) -> pli.Series:
+def tail(column: pli.Series, n: int = ...) -> pli.Series:
     ...
 
 
@@ -2278,7 +2295,7 @@ def select(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[True],
-    schema: Mapping[str, PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pli.Series:
     ...
 
@@ -2287,7 +2304,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[False],
-    schema: Mapping[str, PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pli.Expr:
     ...
 
@@ -2296,7 +2313,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
-    schema: Mapping[str, PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pli.Expr | pli.Series:
     ...
 
@@ -2304,7 +2321,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
-    schema: Mapping[str, PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pli.Expr | pli.Series:
     """
     Collect several columns into a Series of dtype Struct.

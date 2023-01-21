@@ -134,18 +134,22 @@ fn update_scan_schema(
         new_cols.sort_unstable_by_key(|item| item.0);
     }
     for item in new_cols {
-        new_schema.with_column(item.1.clone(), item.2.clone())
+        new_schema.with_column(item.1.clone(), item.2.clone());
     }
     Ok(new_schema)
 }
 
 pub struct ProjectionPushDown {
-    pub(crate) changed: bool,
+    pub(crate) has_joins_or_unions: bool,
+    pub(crate) has_cache: bool,
 }
 
 impl ProjectionPushDown {
     pub(super) fn new() -> Self {
-        Self { changed: false }
+        Self {
+            has_joins_or_unions: false,
+            has_cache: false,
+        }
     }
 
     /// Projection will be done at this node, but we continue optimization
@@ -307,19 +311,16 @@ impl ProjectionPushDown {
         use ALogicalPlan::*;
 
         match logical_plan {
-            Projection { expr, input, .. } => {
-                self.changed = true;
-                process_projection(
-                    self,
-                    input,
-                    expr,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )
-            }
+            Projection { expr, input, .. } => process_projection(
+                self,
+                input,
+                expr,
+                acc_projections,
+                projected_names,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            ),
             LocalProjection { expr, input, .. } => {
                 self.pushdown_and_assign(
                     input,
@@ -718,7 +719,7 @@ impl ProjectionPushDown {
                     let other_schema = lp_arena.get(*node).schema(lp_arena);
                     for fld in other_schema.iter_fields() {
                         if new_schema.get(fld.name()).is_none() {
-                            new_schema.with_column(fld.name, fld.dtype)
+                            new_schema.with_column(fld.name, fld.dtype);
                         }
                     }
                 }
@@ -786,8 +787,20 @@ impl ProjectionPushDown {
                     )
                 }
             }
-            // Slice and Unions have only inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Union { .. } | lp @ FileSink { .. } => process_generic(
+            lp @ Union { .. } => {
+                self.has_joins_or_unions = true;
+                process_generic(
+                    self,
+                    lp,
+                    acc_projections,
+                    projected_names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )
+            }
+            // These nodes only have inputs and exprs, so we can use same logic.
+            lp @ Slice { .. } | lp @ FileSink { .. } => process_generic(
                 self,
                 lp,
                 acc_projections,
@@ -797,6 +810,7 @@ impl ProjectionPushDown {
                 expr_arena,
             ),
             Cache { .. } => {
+                self.has_cache = true;
                 // projections above this cache will be accumulated and pushed down
                 // later
                 // the redundant projection will be cleaned in the fast projection optimization

@@ -125,25 +125,11 @@ impl Series {
                     for av in av.iter() {
                         match av {
                             AnyValue::StructOwned(payload) => {
+                                // TODO: optimize
                                 let av_fields = &payload.1;
                                 let av_values = &payload.0;
 
-                                // all fields are available in this single value
-                                // we can use the index to get value
-                                if dtype_fields.len() == av_fields.len() {
-                                    for (l, r) in dtype_fields.iter().zip(av_fields.iter()) {
-                                        if l.name() != r.name() {
-                                            return Err(PolarsError::ComputeError(
-                                                "struct orders must remain the same".into(),
-                                            ));
-                                        }
-                                    }
-                                    let av_val =
-                                        av_values.get(i).cloned().unwrap_or(AnyValue::Null);
-                                    field_avs.push(av_val)
-                                }
-                                // not all fields are available, we search the proper field
-                                else {
+                                let mut append_by_search = || {
                                     // search for the name
                                     let mut pushed = false;
                                     for (av_fld, av_val) in av_fields.iter().zip(av_values) {
@@ -156,6 +142,29 @@ impl Series {
                                     if !pushed {
                                         field_avs.push(AnyValue::Null)
                                     }
+                                };
+
+                                // all fields are available in this single value
+                                // we can use the index to get value
+                                if dtype_fields.len() == av_fields.len() {
+                                    let mut search = false;
+                                    for (l, r) in dtype_fields.iter().zip(av_fields.iter()) {
+                                        if l.name() != r.name() {
+                                            search = true;
+                                        }
+                                    }
+                                    if search {
+                                        append_by_search()
+                                    } else {
+                                        let av_val =
+                                            av_values.get(i).cloned().unwrap_or(AnyValue::Null);
+                                        field_avs.push(av_val)
+                                    }
+                                }
+                                // not all fields are available, we search the proper field
+                                else {
+                                    // search for the name
+                                    append_by_search()
                                 }
                             }
                             _ => field_avs.push(AnyValue::Null),

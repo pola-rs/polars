@@ -157,10 +157,10 @@ docs-selection = [
 ahash.workspace = true
 anyhow.workspace = true
 arrow.workspace = true
-base64 = { version = "0.13", optional = true }
+base64 = { version = "0.21", optional = true }
 bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
-chrono-tz = { version = "0.6", optional = true }
+chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
 hashbrown.workspace = true
 hex = { version = "0.4", optional = true }
@@ -168,7 +168,7 @@ indexmap = { version = "1", features = ["std"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num.workspace = true
 object_store = { version = "0.5.3", default-features = false, optional = true }
-once_cell = "1"
+once_cell.workspace = true
 polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["compute"] }
 polars-utils = { version = "0.26.1", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }

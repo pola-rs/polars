@@ -30,7 +30,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// rather than before.
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     fn zfill<'a>(&'a self, alignment: usize) -> Utf8Chunked {
         let ca = self.as_utf8();
 
@@ -62,7 +61,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     fn ljust<'a>(&'a self, width: usize, fillchar: char) -> Utf8Chunked {
         let ca = self.as_utf8();
 
@@ -86,7 +84,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     fn rjust<'a>(&'a self, width: usize, fillchar: char) -> Utf8Chunked {
         let ca = self.as_utf8();
 

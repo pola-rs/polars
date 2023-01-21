@@ -1,7 +1,6 @@
 use std::io::{Read, Seek};
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 #[cfg(feature = "parquet")]
 use polars_core::cloud::CloudOptions;
@@ -9,9 +8,6 @@ use polars_core::frame::_duplicate_err;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
-#[cfg(feature = "csv-file")]
-use polars_io::csv::utils::infer_file_schema;
-use polars_io::csv::CsvEncoding;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
@@ -21,7 +17,8 @@ use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
-    csv::utils::{get_reader_bytes, is_compressed},
+    csv::utils::{get_reader_bytes, infer_file_schema, is_compressed},
+    csv::CsvEncoding,
     csv::NullValues,
 };
 
@@ -56,7 +53,7 @@ macro_rules! try_delayed {
             Err(err) => {
                 return LogicalPlan::Error {
                     input: Box::new($input.clone()),
-                    err: Arc::new(Mutex::new(Some(err))),
+                    err: err.into(),
                 }
                 .$convert()
             }
@@ -100,7 +97,6 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet<P: Into<PathBuf>>(
         path: P,
@@ -163,7 +159,6 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "ipc")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
@@ -383,7 +378,7 @@ impl LogicalPlanBuilder {
 
             for fld in other_schema.iter_fields() {
                 if schema.get(fld.name()).is_none() {
-                    schema.with_column(fld.name, fld.dtype)
+                    schema.with_column(fld.name, fld.dtype);
                 }
             }
         }
@@ -555,7 +550,7 @@ impl LogicalPlanBuilder {
                 if let Expr::Column(name) = e {
                     if let Some(DataType::List(inner)) = schema.get(name) {
                         let inner = *inner.clone();
-                        schema.with_column(name.to_string(), inner)
+                        schema.with_column(name.to_string(), inner);
                     }
 
                     (**name).to_owned()
@@ -607,6 +602,19 @@ impl LogicalPlanBuilder {
         right_on: Vec<Expr>,
         options: JoinOptions,
     ) -> Self {
+        for e in left_on.iter().chain(right_on.iter()) {
+            if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
+                return LogicalPlan::Error {
+                    input: Box::new(self.0),
+                    err: PolarsError::ComputeError(
+                        "'alias' is not allowed in a join key. Use 'with_columns' first.".into(),
+                    )
+                    .into(),
+                }
+                .into();
+            }
+        }
+
         let schema_left = try_delayed!(self.0.schema(), &self.0, into);
         let schema_right = try_delayed!(other.schema(), &self.0, into);
 

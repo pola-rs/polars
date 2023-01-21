@@ -382,14 +382,6 @@ impl ChunkExplode for ListChunked {
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
 
-        // all empty
-        if offsets[offsets.len() - 1] == 0 {
-            return Ok((
-                Series::new_empty(self.name(), &self.inner_dtype()),
-                OffsetsBuffer::new(),
-            ));
-        }
-
         let mut s = if ca._can_fast_explode() {
             // ensure that the value array is sliced
             // as a list only slices its offsets on a slice operation
@@ -617,23 +609,6 @@ mod test {
             Vec::from(out.utf8().unwrap()),
             &[None, Some("b"), Some("c"), None]
         );
-        Ok(())
-    }
-
-    #[test]
-    fn test_explode_empty_list() -> PolarsResult<()> {
-        let mut builder = get_list_builder(&DataType::Int32, 1, 1, "a")?;
-
-        let vals: [i32; 0] = [];
-
-        builder.append_series(&Series::new("", &vals));
-        let ca = builder.finish();
-
-        // normal explode
-        let exploded = ca.explode()?;
-        assert_eq!(exploded.len(), 0);
-        assert_eq!(exploded.dtype(), &DataType::Int32);
-
         Ok(())
     }
 

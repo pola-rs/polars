@@ -129,7 +129,7 @@ def test_streaming_non_streaming_gb() -> None:
     assert q.collect(streaming=True).frame_equal(q.collect())
 
 
-def streaming_groupby_sorted_fast_path() -> None:
+def test_streaming_groupby_sorted_fast_path() -> None:
     a = np.random.randint(0, 20, 80)
     df = pl.DataFrame(
         {

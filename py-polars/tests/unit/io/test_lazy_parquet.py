@@ -136,7 +136,7 @@ def test_parquet_statistics(io_test_dir: str, capfd: CaptureFixture[str]) -> Non
     assert df.n_chunks("all") == [4, 4]
 
     if not os.path.exists(fname):
-        df.write_parquet(fname, statistics=True)
+        df.write_parquet(fname, statistics=True, use_pyarrow=False)
 
     for pred in [
         pl.col("idx") < 50,

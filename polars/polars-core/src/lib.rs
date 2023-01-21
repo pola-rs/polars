@@ -1,4 +1,4 @@
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 extern crate core;
 
 #[macro_use]
@@ -18,7 +18,6 @@ mod named_from;
 pub mod prelude;
 pub mod schema;
 #[cfg(feature = "serde")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;
 pub mod series;
 pub mod testing;
@@ -27,7 +26,6 @@ mod tests;
 pub(crate) mod vector_hasher;
 
 use std::sync::Mutex;
-#[cfg(feature = "object")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
@@ -36,8 +34,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::stringcache::*;
 
-#[cfg(feature = "object")]
-pub(crate) static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
+pub static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

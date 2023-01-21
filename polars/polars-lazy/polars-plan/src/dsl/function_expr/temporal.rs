@@ -1,7 +1,6 @@
 #[cfg(feature = "date_offset")]
 use polars_time::prelude::*;
 
-#[cfg(feature = "date_offset")]
 use super::*;
 
 #[cfg(feature = "date_offset")]
@@ -32,4 +31,15 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
             format!("cannot use 'date_offset' on Series of dtype: {dt:?}").into(),
         )),
     }
+}
+
+pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
+    let date = &s[0];
+    let time = &s[1];
+
+    let date = date.cast(&DataType::Date)?;
+    let datetime = date.cast(&DataType::Datetime(tu, None)).unwrap();
+
+    let duration = time.cast(&DataType::Duration(tu))?;
+    Ok(datetime + duration)
 }

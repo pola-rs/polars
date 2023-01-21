@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -39,7 +41,7 @@ def test_to_from_buffer(
             buf = io.BytesIO()
             # Writing lzo compressed parquet files is not supported for now.
             with pytest.raises(pl.ArrowError):
-                df.write_parquet(buf, compression=compression)
+                df.write_parquet(buf, compression=compression, use_pyarrow=False)
             buf.seek(0)
             # Invalid parquet file as writing failed.
             with pytest.raises(pl.ArrowError):
@@ -76,7 +78,7 @@ def test_to_from_file(
         if compression == "lzo":
             # Writing lzo compressed parquet files is not supported for now.
             with pytest.raises(pl.ArrowError):
-                df.write_parquet(f, compression=compression)
+                df.write_parquet(f, compression=compression, use_pyarrow=False)
             # Invalid parquet file as writing failed.
             with pytest.raises(pl.ArrowError):
                 _ = pl.read_parquet(f)
@@ -231,7 +233,7 @@ def test_lazy_self_join_file_cache_prop_3979(io_test_dir: str) -> None:
     assert b.join(a, how="cross").collect().shape == (3, 17)
 
 
-def recursive_logical_type() -> None:
+def test_recursive_logical_type() -> None:
     df = pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
     df = df.with_column(pl.col("str").cast(pl.Categorical))
 
@@ -342,3 +344,35 @@ def test_parquet_nesting_structs_list() -> None:
     f.seek(0)
 
     assert pl.read_parquet(f).frame_equal(df)
+
+
+@typing.no_type_check
+def test_parquet_nested_dictionaries_6217() -> None:
+    _type = pa.dictionary(pa.int64(), pa.string())
+
+    fields = [
+        ("a_type", _type),
+    ]
+    struct_type = pa.struct(fields)
+
+    col1 = pa.StructArray.from_arrays(
+        [
+            pa.DictionaryArray.from_arrays([0, 0, 1], ["A", "B"]),
+        ],
+        fields=struct_type,
+    )
+
+    table = pa.table(
+        {
+            "Col1": col1,
+        }
+    )
+
+    with pl.StringCache():
+        df = pl.from_arrow(table)
+
+        f = io.BytesIO()
+        pq.write_table(table, f, compression="snappy")
+        f.seek(0)
+        read = pl.read_parquet(f)
+        assert read.frame_equal(df)

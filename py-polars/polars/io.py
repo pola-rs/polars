@@ -26,7 +26,7 @@ else:
 
 import polars.internals as pli
 from polars.convert import from_arrow
-from polars.datatypes import DataType, PolarsDataType, Utf8
+from polars.datatypes import N_INFER_DEFAULT, DataType, SchemaDict, Utf8
 from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
@@ -72,10 +72,11 @@ def read_csv(
     skip_rows: int = 0,
     dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
+    missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     parse_dates: bool = False,
     n_threads: int | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 8192,
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
@@ -139,6 +140,9 @@ def read_csv(
         - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
+    missing_utf8_is_empty_string
+        By default a missing value is considered to be null; if you would prefer missing
+        utf8 values to be treated as the empty string you can set this param True.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
@@ -279,7 +283,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = cast(DataFrame, from_arrow(tbl, rechunk))
+        df = cast(DataFrame, from_arrow(tbl, rechunk=rechunk))
         if new_columns:
             return pli._update_columns(df, new_columns)
         return df
@@ -388,6 +392,7 @@ def read_csv(
             skip_rows=skip_rows,
             dtypes=dtypes,
             null_values=null_values,
+            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             ignore_errors=ignore_errors,
             parse_dates=parse_dates,
             n_threads=n_threads,
@@ -417,12 +422,13 @@ def scan_csv(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: dict[str, PolarsDataType] | None = None,
+    dtypes: SchemaDict | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
+    missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     cache: bool = True,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
@@ -469,6 +475,9 @@ def scan_csv(
         - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
+    missing_utf8_is_empty_string
+        By default a missing value is considered to be null; if you would prefer missing
+        utf8 values to be treated as the empty string you can set this param True.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
@@ -567,6 +576,7 @@ def scan_csv(
         skip_rows=skip_rows,
         dtypes=dtypes,
         null_values=null_values,
+        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
         cache=cache,
         with_column_names=with_column_names,
@@ -700,7 +710,7 @@ def scan_parquet(
 
 def scan_ndjson(
     file: str | Path,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
@@ -1730,10 +1740,11 @@ def read_csv_batched(
     skip_rows: int = 0,
     dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
+    missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     parse_dates: bool = False,
     n_threads: int | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 50_000,
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
@@ -1800,6 +1811,9 @@ def read_csv_batched(
         - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
+    missing_utf8_is_empty_string
+        By default a missing value is considered to be null; if you would prefer missing
+        utf8 values to be treated as the empty string you can set this param True.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
@@ -1968,6 +1982,7 @@ def read_csv_batched(
         skip_rows=skip_rows,
         dtypes=dtypes,
         null_values=null_values,
+        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
         parse_dates=parse_dates,
         n_threads=n_threads,

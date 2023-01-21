@@ -10,7 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import ClosedWindow
+    from polars.internals.type_aliases import ClosedInterval
 
 
 def test_rolling_kernels_and_groupby_rolling() -> None:
@@ -35,9 +35,8 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
         timedelta(days=2),
         timedelta(days=3),
     ]:
-        closed_windows: list[ClosedWindow] = ["left", "right", "none", "both"]
+        closed_windows: list[ClosedInterval] = ["left", "right", "none", "both"]
         for closed in closed_windows:
-
             out1 = df.select(
                 [
                     pl.col("dt"),
@@ -515,3 +514,12 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
         ],
         "value": [4, 10, 2, 12],
     }
+
+    # test empty
+    result_empty = (
+        df.filter(pl.col("date") == "z")
+        .groupby_dynamic("date", every="1w", offset="1d", by="label", start_by="monday")
+        .agg(pl.col("value").sum())
+    )
+    print(result_empty, result)
+    assert result_empty.schema == result.schema

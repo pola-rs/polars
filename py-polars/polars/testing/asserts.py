@@ -29,7 +29,7 @@ def assert_frame_equal(
     check_row_order: bool = True,
 ) -> None:
     """
-    Raise detailed AssertionError if `left` does not equal `right`.
+    Raise detailed AssertionError if `left` does NOT equal `right`.
 
     Parameters
     ----------
@@ -49,10 +49,10 @@ def assert_frame_equal(
     nans_compare_equal
         if your assert/test requires float NaN != NaN, set this to False.
     check_column_order
-        if False, allows the assert/test to succeed if the required columns are present,
+        if False, frames will compare equal if the required columns are present,
         irrespective of the order in which they appear.
     check_row_order
-        if False, allows the assert/test to succeed if the required rows are present,
+        if False, frames will compare equal if the required rows are present,
         irrespective of the order in which they appear; as this requires
         sorting, you cannot set on frames that contain unsortable columns.
 
@@ -114,6 +114,71 @@ def assert_frame_equal(
         )
 
 
+def assert_frame_not_equal(
+    left: pli.DataFrame | pli.LazyFrame,
+    right: pli.DataFrame | pli.LazyFrame,
+    check_dtype: bool = True,
+    check_exact: bool = False,
+    rtol: float = 1.0e-5,
+    atol: float = 1.0e-8,
+    nans_compare_equal: bool = True,
+    check_column_order: bool = True,
+    check_row_order: bool = True,
+) -> None:
+    """
+    Raise AssertionError if `left` DOES equal `right`.
+
+    Parameters
+    ----------
+    left
+        the dataframe to compare.
+    right
+        the dataframe to compare with.
+    check_dtype
+        if True, data types need to match exactly.
+    check_exact
+        if False, test if values are within tolerance of each other
+        (see `rtol` & `atol`).
+    rtol
+        relative tolerance for inexact checking. Fraction of values in `right`.
+    atol
+        absolute tolerance for inexact checking.
+    nans_compare_equal
+        if your assert/test requires float NaN != NaN, set this to False.
+    check_column_order
+        if False, frames will compare equal if the required columns are present,
+        irrespective of the order in which they appear.
+    check_row_order
+        if False, frames will compare equal if the required rows are present,
+        irrespective of the order in which they appear; as this requires
+        sorting, you cannot set on frames that contain unsortable columns.
+
+    Examples
+    --------
+    >>> from polars.testing import assert_frame_not_equal
+    >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
+    >>> df2 = pl.DataFrame({"a": [2, 3, 4]})
+    >>> assert_frame_not_equal(df1, df2)
+
+    """
+    try:
+        assert_frame_equal(
+            left=left,
+            right=right,
+            check_dtype=check_dtype,
+            check_exact=check_exact,
+            rtol=rtol,
+            atol=atol,
+            nans_compare_equal=nans_compare_equal,
+            check_column_order=check_column_order,
+            check_row_order=check_row_order,
+        )
+    except AssertionError:
+        return
+
+    raise AssertionError("Expected the two frames to compare unequal")
+
+
 def assert_series_equal(
     left: pli.Series,
     right: pli.Series,
@@ -125,7 +190,7 @@ def assert_series_equal(
     nans_compare_equal: bool = True,
 ) -> None:
     """
-    Raise detailed AssertionError if `left` does not equal `right`.
+    Raise detailed AssertionError if `left` does NOT equal `right`.
 
     Parameters
     ----------
@@ -173,6 +238,64 @@ def assert_series_equal(
     _assert_series_inner(
         left, right, check_dtype, check_exact, nans_compare_equal, atol, rtol, obj
     )
+
+
+def assert_series_not_equal(
+    left: pli.Series,
+    right: pli.Series,
+    check_dtype: bool = True,
+    check_names: bool = True,
+    check_exact: bool = False,
+    rtol: float = 1.0e-5,
+    atol: float = 1.0e-8,
+    nans_compare_equal: bool = True,
+) -> None:
+    """
+    Raise AssertionError if `left` DOES equal `right`.
+
+    Parameters
+    ----------
+    left
+        the series to compare.
+    right
+        the series to compare with.
+    check_dtype
+        if True, data types need to match exactly.
+    check_names
+        if True, names need to match.
+    check_exact
+        if False, test if values are within tolerance of each other
+        (see `rtol` & `atol`).
+    rtol
+        relative tolerance for inexact checking. Fraction of values in `right`.
+    atol
+        absolute tolerance for inexact checking.
+    nans_compare_equal
+        if your assert/test requires float NaN != NaN, set this to False.
+
+    Examples
+    --------
+    >>> from polars.testing import assert_series_not_equal
+    >>> s1 = pl.Series([1, 2, 3])
+    >>> s2 = pl.Series([2, 3, 4])
+    >>> assert_series_not_equal(s1, s2)
+
+    """
+    try:
+        assert_series_equal(
+            left=left,
+            right=right,
+            check_dtype=check_dtype,
+            check_names=check_names,
+            check_exact=check_exact,
+            rtol=rtol,
+            atol=atol,
+            nans_compare_equal=nans_compare_equal,
+        )
+    except AssertionError:
+        return
+
+    raise AssertionError("Expected the two series to compare unequal")
 
 
 def _assert_series_inner(

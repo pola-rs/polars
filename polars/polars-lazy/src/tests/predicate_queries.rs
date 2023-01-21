@@ -107,7 +107,7 @@ fn filter_blocked_by_map() -> PolarsResult<()> {
     };
     let q = df
         .lazy()
-        .map(|df| Ok(df), Some(allowed), None, None)
+        .map(|df| Ok(df), allowed, None, None)
         .filter(col("A").gt(lit(2i32)));
 
     assert!(!predicate_at_scan(q.clone()));

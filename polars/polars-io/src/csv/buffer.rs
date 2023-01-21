@@ -60,6 +60,7 @@ trait ParsedBuffer {
         bytes: &[u8],
         ignore_errors: bool,
         _needs_escaping: bool,
+        _missing_is_null: bool,
     ) -> PolarsResult<()>;
 }
 
@@ -73,6 +74,7 @@ where
         bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
+        _missing_is_null: bool,
     ) -> PolarsResult<()> {
         if bytes.is_empty() {
             self.append_null()
@@ -93,7 +95,12 @@ where
                     // try again without whitespace
                     if !bytes.is_empty() && is_whitespace(bytes[0]) {
                         let bytes = skip_whitespace(bytes);
-                        return self.parse_bytes(bytes, ignore_errors, needs_escaping);
+                        return self.parse_bytes(
+                            bytes,
+                            ignore_errors,
+                            needs_escaping,
+                            _missing_is_null,
+                        );
                     }
                     if ignore_errors || bytes.is_empty() {
                         self.append_null()
@@ -161,11 +168,12 @@ impl ParsedBuffer for Utf8Field {
         bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
+        missing_is_null: bool,
     ) -> PolarsResult<()> {
         if bytes.is_empty() {
             // append null
             self.offsets.push(self.data.len() as i64);
-            self.validity.push(false);
+            self.validity.push(!missing_is_null);
             return Ok(());
         }
 
@@ -268,6 +276,7 @@ impl<'a> CategoricalField<'a> {
         bytes: &'a [u8],
         ignore_errors: bool,
         needs_escaping: bool,
+        _missing_is_null: bool,
     ) -> PolarsResult<()> {
         if bytes.is_empty() {
             self.builder.append_null();
@@ -299,7 +308,7 @@ impl<'a> CategoricalField<'a> {
                 // there will be cleared next iteration/call, so we cannot use the
                 // `key` naively
                 //
-                // if the `key` not yet exits, we allocate a `String` and we store that in a
+                // if the `key` does not exist yet, we allocate a `String` and we store that in a
                 // `Vec` that may grow. If the `Vec` reallocates, the pointers to the `String` will
                 // still be valid.
                 //
@@ -350,6 +359,7 @@ impl ParsedBuffer for BooleanChunkedBuilder {
         bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
+        _missing_is_null: bool,
     ) -> PolarsResult<()> {
         let bytes = if needs_escaping {
             &bytes[1..bytes.len() - 1]
@@ -449,6 +459,7 @@ where
         mut bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
+        _missing_is_null: bool,
     ) -> PolarsResult<()> {
         if needs_escaping && bytes.len() > 2 {
             bytes = &bytes[1..bytes.len() - 1]
@@ -641,7 +652,7 @@ impl<'a> Buffer<'a> {
         Ok(s)
     }
 
-    pub(crate) fn add_null(&mut self) {
+    pub(crate) fn add_null(&mut self, valid: bool) {
         match self {
             Buffer::Boolean(v) => v.append_null(),
             Buffer::Int32(v) => v.append_null(),
@@ -652,7 +663,7 @@ impl<'a> Buffer<'a> {
             Buffer::Float64(v) => v.append_null(),
             Buffer::Utf8(v) => {
                 v.offsets.push(v.data.len() as i64);
-                v.validity.push(false);
+                v.validity.push(valid);
             }
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { buf, .. } => buf.builder.append_null(),
@@ -664,7 +675,6 @@ impl<'a> Buffer<'a> {
                 {
                     cat_builder.builder.append_null()
                 }
-
                 #[cfg(not(feature = "dtype-categorical"))]
                 {
                     panic!("activate 'dtype-categorical' feature")
@@ -707,6 +717,7 @@ impl<'a> Buffer<'a> {
         bytes: &'a [u8],
         ignore_errors: bool,
         needs_escaping: bool,
+        missing_is_null: bool,
     ) -> PolarsResult<()> {
         use Buffer::*;
         match self {
@@ -715,52 +726,64 @@ impl<'a> Buffer<'a> {
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
             Int32(buf) => <PrimitiveChunkedBuilder<Int32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
             Int64(buf) => <PrimitiveChunkedBuilder<Int64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
             UInt64(buf) => <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
             UInt32(buf) => <PrimitiveChunkedBuilder<UInt32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
             Float32(buf) => <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
             Float64(buf) => <PrimitiveChunkedBuilder<Float64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
-            Utf8(buf) => {
-                <Utf8Field as ParsedBuffer>::parse_bytes(buf, bytes, ignore_errors, needs_escaping)
-            }
+            Utf8(buf) => <Utf8Field as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+            ),
             #[cfg(feature = "dtype-datetime")]
             Datetime { buf, .. } => <DatetimeField<Int64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
             #[cfg(feature = "dtype-date")]
             Date(buf) => <DatetimeField<Int32Type> as ParsedBuffer>::parse_bytes(
@@ -768,12 +791,13 @@ impl<'a> Buffer<'a> {
                 bytes,
                 ignore_errors,
                 needs_escaping,
+                missing_is_null,
             ),
             #[allow(unused_variables)]
             Categorical(buf) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    buf.parse_bytes(bytes, ignore_errors, needs_escaping)
+                    buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null)
                 }
 
                 #[cfg(not(feature = "dtype-categorical"))]

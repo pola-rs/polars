@@ -101,7 +101,7 @@ pub fn optimize(
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
 
-        if projection_pushdown_opt.changed {
+        if projection_pushdown_opt.has_joins_or_unions && projection_pushdown_opt.has_cache {
             cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
         }
     }

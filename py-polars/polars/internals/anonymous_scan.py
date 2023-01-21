@@ -118,7 +118,7 @@ def _scan_ipc_fsspec(
 
 
 def _scan_parquet_impl(  # noqa: D417
-    uri: str, with_columns: list[str] | None, *args: Any
+    uri: str, with_columns: list[str] | None, *args: Any, **kwargs: Any
 ) -> pli.DataFrame:
     """
     Take the projected columns and materialize an arrow table.
@@ -133,14 +133,14 @@ def _scan_parquet_impl(  # noqa: D417
     """
     import polars as pl
 
-    return pl.read_parquet(uri, with_columns)
+    return pl.read_parquet(uri, with_columns, *args, **kwargs)
 
 
 def _scan_parquet_fsspec(
     file: str,
     storage_options: dict[str, object] | None = None,
 ) -> pli.LazyFrame:
-    func = partial(_scan_parquet_impl, file)
+    func = partial(_scan_parquet_impl, file, storage_options=storage_options)
     func_serialized = pickle.dumps(func)
 
     storage_options = storage_options or {}

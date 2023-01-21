@@ -116,7 +116,6 @@ where
             // apply binary kernel.
             let chunks = left
                 .downcast_iter()
-                .into_iter()
                 .zip(mask.downcast_iter())
                 .map(|(arr, mask)| {
                     let a = set_with_mask(arr, mask, value, T::get_dtype().to_arrow());

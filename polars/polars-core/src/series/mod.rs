@@ -228,11 +228,16 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        let len = self.len();
-        if self.null_count() == len {
-            Ok(Series::full_null(self.name(), len, dtype))
-        } else {
-            self.0.cast(dtype)
+        match self.0.cast(dtype) {
+            Ok(out) => Ok(out),
+            Err(err) => {
+                let len = self.len();
+                if self.null_count() == len {
+                    Ok(Series::full_null(self.name(), len, dtype))
+                } else {
+                    Err(err)
+                }
+            }
         }
     }
 
@@ -370,7 +375,6 @@ impl Series {
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
     /// from `other` where the mask evaluates `false`
     #[cfg(feature = "zip_with")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let (lhs, rhs) = coerce_lhs_rhs(self, other)?;
         lhs.zip_with_same_type(mask, rhs.as_ref())
@@ -428,6 +432,15 @@ impl Series {
         });
 
         Ok(self.finish_take_threaded(series?, rechunk))
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> PolarsResult<Series> {
+        let idx = IdxCa::borrowed_from_slice("", idx);
+        self.take_unchecked(&idx)
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
@@ -511,7 +524,6 @@ impl Series {
     }
 
     #[cfg(feature = "dot_product")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
     pub fn dot(&self, other: &Series) -> Option<f64> {
         (self * other).sum::<f64>()
     }
@@ -536,7 +548,6 @@ impl Series {
     }
 
     /// Get an array with the cumulative max computed at every element
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cummax(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
@@ -549,7 +560,6 @@ impl Series {
     }
 
     /// Get an array with the cumulative min computed at every element
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cummin(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
@@ -565,7 +575,6 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     #[allow(unused_variables)]
     pub fn cumsum(&self, reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
@@ -614,7 +623,6 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16, Int32, UInt32}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     #[allow(unused_variables)]
     pub fn cumprod(&self, reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
@@ -655,7 +663,6 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    #[cfg_attr(docsrs, doc(cfg(feature = "product")))]
     pub fn product(&self) -> Series {
         #[cfg(feature = "product")]
         {
@@ -688,7 +695,6 @@ impl Series {
     }
 
     #[cfg(feature = "rank")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
     pub fn rank(&self, options: RankOptions) -> Series {
         rank(self, options.method, options.descending)
     }
@@ -807,7 +813,6 @@ impl Series {
     }
 
     #[cfg(feature = "abs")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
     /// convert numerical values to their absolute value
     pub fn abs(&self) -> PolarsResult<Series> {
         let a = self.to_physical_repr();

@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
+#[cfg(feature = "csv-file")]
 use polars_io::csv::{CsvEncoding, NullValues};
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
 use polars_io::RowCount;
@@ -14,6 +17,7 @@ use crate::prelude::Expr;
 
 pub type FileCount = u32;
 
+#[cfg(feature = "csv-file")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
@@ -51,7 +55,7 @@ pub struct ParquetOptions {
 }
 
 #[cfg(feature = "parquet")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetWriteOptions {
     /// Data page compression
@@ -62,6 +66,16 @@ pub struct ParquetWriteOptions {
     pub row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
     pub data_pagesize_limit: Option<usize>,
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
+}
+
+#[cfg(feature = "ipc")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcWriterOptions {
+    /// Data page compression
+    pub compression: Option<IpcCompression>,
     /// maintain the order the data was processed
     pub maintain_order: bool,
 }
@@ -197,6 +211,16 @@ pub struct FunctionOptions {
     pub cast_to_supertypes: bool,
     // apply physical expression may rename the output of this function
     pub allow_rename: bool,
+    // if set, then the `Series` passed to the function in the groupby operation
+    // will ensure the name is set. This is an extra heap allocation per group.
+    pub pass_name_to_apply: bool,
+}
+
+impl FunctionOptions {
+    /// Whether this can simply applied elementwise
+    pub fn is_mappable(&self) -> bool {
+        !matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+    }
 }
 
 impl Default for FunctionOptions {
@@ -208,6 +232,7 @@ impl Default for FunctionOptions {
             fmt_str: "",
             cast_to_supertypes: false,
             allow_rename: false,
+            pass_name_to_apply: false,
         }
     }
 }
@@ -265,12 +290,15 @@ pub struct FileSinkOptions {
     pub file_type: FileType,
 }
 
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum FileType {
+    #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),
+    #[cfg(feature = "ipc")]
+    Ipc(IpcWriterOptions),
 }
 
-#[cfg(not(feature = "parquet"))]
+#[cfg(not(any(feature = "parquet", feature = "ipc")))]
 pub type FileType = ();

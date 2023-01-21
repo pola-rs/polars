@@ -129,6 +129,7 @@ fn read_ndjson_with_trailing_newline() {
     assert!(expected.frame_equal(&df));
 }
 #[test]
+#[cfg(feature = "dtype-struct")]
 fn test_read_ndjson_iss_5875() {
     let jsonlines = r#"
     {"struct": {"int_inner": [1, 2, 3], "float_inner": 5.0, "str_inner": ["a", "b", "c"]}}
@@ -158,6 +159,7 @@ fn test_read_ndjson_iss_5875() {
 }
 
 #[test]
+#[cfg(feature = "dtype-struct")]
 fn test_read_ndjson_iss_5875_part2() {
     let jsonlines = r#"
     {"struct": {"int_list_inner": [4, 5, 6]}}
@@ -188,6 +190,7 @@ fn test_read_ndjson_iss_5875_part2() {
     assert_eq!(schema, df.unwrap().schema());
 }
 #[test]
+#[cfg(feature = "dtype-struct")]
 fn test_read_ndjson_iss_5875_part3() {
     let jsonlines = r#"
     {"key1":"value1", "key2": "value2", "key3": {"k1": 2, "k3": "value5", "k10": 5}}

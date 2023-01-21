@@ -64,13 +64,13 @@ def test_rename_fields() -> None:
     ]
 
 
-def struct_unnesting() -> None:
+def test_struct_unnesting() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     out = df.select(
         [
             pl.all().alias("a_original"),
             pl.col("a")
-            .apply(lambda x: (x, x * 2, x % 2 == 0))
+            .apply(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
             .struct.rename_fields(["a", "a_squared", "mod2eq0"])
             .alias("foo"),
         ]
@@ -93,7 +93,7 @@ def struct_unnesting() -> None:
             [
                 pl.all().alias("a_original"),
                 pl.col("a")
-                .apply(lambda x: (x, x * 2, x % 2 == 0))
+                .apply(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
                 .struct.rename_fields(["a", "a_squared", "mod2eq0"])
                 .alias("foo"),
             ]
@@ -137,6 +137,15 @@ def test_value_counts_expr() -> None:
         {"id": "d", "counts": 2},
         {"id": "a", "counts": 1},
     ]
+
+    # nested value counts. Then the series needs the name
+    # 6200
+
+    df = pl.DataFrame({"session": [1, 1, 1], "id": [2, 2, 3]})
+
+    assert df.groupby("session").agg(
+        [pl.col("id").value_counts(sort=True).first()]
+    ).to_dict(False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
 
 
 def test_value_counts_logical_type() -> None:
@@ -448,12 +457,9 @@ def test_struct_comparison() -> None:
 
 
 def test_struct_order() -> None:
-    with pytest.raises(pl.ComputeError, match="struct orders must remain the same"):
-        pl.DataFrame(
-            {
-                "col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],
-            }
-        )
+    assert pl.DataFrame({"col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],}).to_dict(
+        False
+    ) == {"col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]}
 
     # null values should not trigger this
     assert (

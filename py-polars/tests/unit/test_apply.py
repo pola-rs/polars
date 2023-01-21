@@ -287,3 +287,23 @@ def test_apply_dict() -> None:
     ).select(pl.col("Col").apply(json.loads)).to_dict(False) == {
         "Col": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
     }
+
+
+def test_apply_pass_name() -> None:
+    df = pl.DataFrame(
+        {
+            "bar": [1, 1, 2],
+            "foo": [1, 2, 3],
+        }
+    )
+
+    mapper = {"foo": "foo1"}
+
+    def applyer(s: pl.Series) -> pl.Series:
+        return pl.Series([mapper[s.name]])
+
+    assert df.groupby("bar", maintain_order=True).agg(
+        [
+            pl.col("foo").apply(applyer, pass_name=True),
+        ]
+    ).to_dict(False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}

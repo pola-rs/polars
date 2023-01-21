@@ -44,6 +44,14 @@ fn to_physical_piped_expr(
         .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
 
+fn is_streamable_sort(args: &SortArguments) -> bool {
+    let positive_slice = match args.slice {
+        Some((offset, _)) => offset >= 0,
+        None => true,
+    };
+    positive_slice && !args.nulls_last
+}
+
 fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     // check weather leaf colum is Col or Lit
     let mut seen_column = false;
@@ -80,6 +88,12 @@ fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 
 fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     exprs.iter().all(|node| is_streamable(*node, expr_arena))
+}
+
+fn all_column(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    exprs
+        .iter()
+        .all(|node| matches!(expr_arena.get(*node), AExpr::Column(_)))
 }
 
 fn streamable_join(join_type: &JoinType) -> bool {
@@ -148,6 +162,18 @@ pub(crate) fn insert_streaming_nodes(
                 stack.push((*input, state, current_idx))
             }
             FileSink { input, .. } => {
+                state.streamable = true;
+                state.operators_sinks.push((true, false, root));
+                stack.push((*input, state, current_idx))
+            }
+            Sort {
+                input,
+                by_column,
+                args,
+            } if is_streamable_sort(args)
+                && by_column.len() == 1
+                && all_column(by_column, expr_arena) =>
+            {
                 state.streamable = true;
                 state.operators_sinks.push((true, false, root));
                 stack.push((*input, state, current_idx))
@@ -325,6 +351,7 @@ pub(crate) fn insert_streaming_nodes(
             if (branches_in_tree - 1) != joins_in_tree {
                 continue;
             }
+            let verbose = std::env::var("POLARS_VERBOSE").is_ok();
 
             for branch in tree {
                 // should be reset for every branch
@@ -383,6 +410,7 @@ pub(crate) fn insert_streaming_nodes(
                     lp_arena,
                     expr_arena,
                     to_physical_piped_expr,
+                    verbose,
                 )?;
                 pipelines.push_back(pipeline);
             }

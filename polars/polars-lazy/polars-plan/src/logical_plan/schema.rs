@@ -197,7 +197,7 @@ pub(crate) fn det_join_schema(
 
             for (name, dtype) in schema_left.iter() {
                 names.insert(name.as_str());
-                new_schema.with_column(name.to_string(), dtype.clone())
+                new_schema.with_column(name.to_string(), dtype.clone());
             }
 
             // make sure that expression are assigned to the schema

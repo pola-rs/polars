@@ -8,6 +8,12 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    TEMPORAL_DTYPES,
+)
 from polars.testing import assert_series_equal
 from polars.testing._private import verify_series_and_expr_api
 
@@ -280,6 +286,69 @@ def test_dot_in_groupby() -> None:
         .agg(pl.col("x").dot("y").alias("dot"))
         .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
     )
+
+
+def test_dtype_col_selection() -> None:
+    df = pl.DataFrame(
+        data=[],
+        columns={
+            "a1": pl.Datetime,
+            "a2": pl.Datetime("ms"),
+            "a3": pl.Datetime("ms"),
+            "a4": pl.Datetime("ns"),
+            "b": pl.Date,
+            "c": pl.Time,
+            "d1": pl.Duration,
+            "d2": pl.Duration("ms"),
+            "d3": pl.Duration("us"),
+            "d4": pl.Duration("ns"),
+            "e": pl.Int8,
+            "f": pl.Int16,
+            "g": pl.Int32,
+            "h": pl.Int64,
+            "i": pl.Float32,
+            "j": pl.Float64,
+            "k": pl.UInt8,
+            "l": pl.UInt16,
+            "m": pl.UInt32,
+            "n": pl.UInt64,
+        },
+    )
+    assert set(df.select(pl.col(INTEGER_DTYPES)).columns) == {
+        "e",
+        "f",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+    }
+    assert set(df.select(pl.col(FLOAT_DTYPES)).columns) == {"i", "j"}
+    assert set(df.select(pl.col(NUMERIC_DTYPES)).columns) == {
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+    }
+    assert set(df.select(pl.col(TEMPORAL_DTYPES)).columns) == {
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+        "b",
+        "c",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+    }
 
 
 def test_list_eval_expression() -> None:

@@ -24,6 +24,7 @@ pub struct LazyCsvReader<'a> {
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValues>,
+    missing_is_null: bool,
     infer_schema_length: Option<usize>,
     rechunk: bool,
     skip_rows_after_header: usize,
@@ -50,6 +51,7 @@ impl<'a> LazyCsvReader<'a> {
             quote_char: Some(b'"'),
             eol_char: b'\n',
             null_values: None,
+            missing_is_null: true,
             infer_schema_length: Some(100),
             rechunk: true,
             skip_rows_after_header: 0,
@@ -161,6 +163,12 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Treat missing fields as null.
+    pub fn with_missing_is_null(mut self, missing_is_null: bool) -> Self {
+        self.missing_is_null = missing_is_null;
+        self
+    }
+
     /// Cache the DataFrame after reading.
     #[must_use]
     pub fn with_cache(mut self, cache: bool) -> Self {
@@ -247,7 +255,7 @@ impl<'a> LazyCsvReader<'a> {
         // the dtypes set may be for the new names, so update again
         if let Some(overwrite_schema) = self.schema_overwrite {
             for (name, dtype) in overwrite_schema.iter() {
-                schema.with_column(name.clone(), dtype.clone())
+                schema.with_column(name.clone(), dtype.clone());
             }
         }
 

@@ -81,7 +81,6 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     #[deprecated(note = "please use `concat_lf` instead")]
     pub fn scan_parquet_files<P: AsRef<Path>>(
         paths: Vec<P>,
@@ -107,7 +106,6 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
         let path = path.as_ref();
         let path_str = path.to_string_lossy();

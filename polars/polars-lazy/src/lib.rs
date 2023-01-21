@@ -182,7 +182,7 @@
 //!      )
 //! }
 //! ```
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 extern crate core;
 
 #[cfg(feature = "dot_diagram")]

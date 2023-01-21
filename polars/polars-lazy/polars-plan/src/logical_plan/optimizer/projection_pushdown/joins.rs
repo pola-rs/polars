@@ -53,6 +53,7 @@ pub(super) fn process_join(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<ALogicalPlan> {
+    proj_pd.has_joins_or_unions = true;
     let n = acc_projections.len() + 5;
     let mut pushdown_left = Vec::with_capacity(n);
     let mut pushdown_right = Vec::with_capacity(n);

@@ -153,6 +153,7 @@ fn test_projection_5086() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-struct")]
 fn test_unnest_pushdown() -> PolarsResult<()> {
     let df = df![
         "collection" => Series::full_null("", 1, &DataType::Int32),

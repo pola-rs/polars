@@ -1,3 +1,5 @@
+use polars_core::utils::NoNull;
+
 use super::*;
 
 fn get_csv_file() -> LazyFrame {

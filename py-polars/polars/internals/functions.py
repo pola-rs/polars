@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Sequence, overload
 
@@ -30,7 +29,7 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import ClosedWindow, ConcatMethod, TimeUnit
+    from polars.internals.type_aliases import ClosedInterval, ConcatMethod, TimeUnit
 
 
 def get_dummies(
@@ -277,7 +276,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -292,7 +291,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -307,7 +306,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -322,7 +321,7 @@ def date_range(
     interval: str | timedelta,
     *,
     lazy: Literal[True],
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -330,14 +329,13 @@ def date_range(
     ...
 
 
-@typing.no_type_check
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
     interval: str | timedelta,
     *,
     lazy: bool = False,
-    closed: ClosedWindow = "both",
+    closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
@@ -348,9 +346,9 @@ def date_range(
     Parameters
     ----------
     low
-        Lower bound of the date range.
+        Lower bound of the date range, given as a date, datetime, Expr, or column name.
     high
-        Upper bound of the date range.
+        Upper bound of the date range, given as a date, datetime, Expr, or column name.
     interval
         Interval periods. It can be a python timedelta object, like
         ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``
@@ -436,9 +434,9 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if isinstance(low, pli.Expr) or isinstance(high, pli.Expr) or lazy:
-        low = pli.expr_to_lit_or_expr(low, str_to_lit=True)._pyexpr
-        high = pli.expr_to_lit_or_expr(high, str_to_lit=True)._pyexpr
+    if isinstance(low, (str, pli.Expr)) or isinstance(high, (str, pli.Expr)) or lazy:
+        low = pli.expr_to_lit_or_expr(low, str_to_lit=False)._pyexpr
+        high = pli.expr_to_lit_or_expr(high, str_to_lit=False)._pyexpr
         return pli.wrap_expr(
             _py_date_range_lazy(low, high, interval, closed, name, time_zone)
         )

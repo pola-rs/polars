@@ -290,7 +290,8 @@ fn expand_function_inputs(mut expr: Expr, schema: &Schema) -> Expr {
             if options.input_wildcard_expansion =>
         {
             *input = rewrite_projections(input.clone(), schema, &[]).unwrap();
-            false
+            // continue iteration, there might be more functions.
+            true
         }
         _ => true,
     });
