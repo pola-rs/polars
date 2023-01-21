@@ -2029,6 +2029,15 @@ def test_cast_timezone() -> None:
     }
 
 
+def test_with_time_zone_none() -> None:
+    brussels = pl.Series("dt", [datetime(2001, 1, 1)]).dt.with_time_zone(
+        tz="Europe/Brussels"
+    )
+    result = brussels.dt.with_time_zone(None)
+    assert result.dtype == pl.Datetime("us", None)
+    assert result.item() == datetime(2001, 1, 1, 0, 0)
+
+
 def test_tz_aware_get_idx_5010() -> None:
     when = int(
         datetime(2022, 1, 1, 12, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai")).timestamp()
