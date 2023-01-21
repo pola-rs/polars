@@ -1144,11 +1144,12 @@ def read_excel(
 
 def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
-    sheet_id: int | None = 1,
+    sheet_id: int | None = 0,
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
-    use_openpyxl: bool = False,
+    use_openpyxl: bool = False,  # convert to engine
+    engine: str = "xlsx2csv",
 ) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
@@ -1163,7 +1164,8 @@ def read_excel(
         By file-like object, we refer to objects with a ``read()`` method, such as a
         file handler (e.g. via builtin ``open`` function) or ``BytesIO``.
     sheet_id
-        Sheet number to convert (0 for all sheets).
+        Sheet number to convert. If neither `sheet_id` or `sheet_name` is provided, all
+        sheets will be converted as dictionary of sheet names.
     sheet_name
         Sheet name to convert.
     xlsx2csv_options
@@ -1182,7 +1184,7 @@ def read_excel(
 
     Returns
     -------
-    DataFrame
+    DataFrame | dict[str, DataFrame]
 
     Examples
     --------
@@ -1239,7 +1241,7 @@ def read_excel(
     if not read_csv_options:
         read_csv_options = {}
 
-    reader_fn: Any = None  # make mypy happy
+    reader_fn: Any  # make mypy happy
     # do conditions imports
     if use_openpyxl:
         try:
@@ -1249,10 +1251,10 @@ def read_excel(
                 "openpyxl is not installed. Please run `pip install openpyxl`."
             ) from None
         parser = openpyxl.load_workbook(file, read_only=True)
-        sheets = [
-            {"index": i + 1, "name": sheet.title} for i, sheet in enumerate(parser)
-        ]
+        sheets = [{"index": i, "name": sheet.title} for i, sheet in enumerate(parser)]
         reader_fn = _read_excel_sheet_openpyxl
+        # setup good defaults for the sheet id
+        engine_sheet_id = sheet_id
     else:
         try:
             import xlsx2csv  # type: ignore[import]
@@ -1264,14 +1266,17 @@ def read_excel(
         parser = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
         sheets = parser.workbook.sheets
         reader_fn = _read_excel_sheet_xlsx2csv
+        # setup good defaults for the sheet id
+        engine_sheet_id = 1 if sheet_id == 0 else sheet_id
 
-    if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id >= 0)):
-        ret_val = reader_fn(parser, sheet_id, sheet_name, read_csv_options)
-    else:
+    if sheet_id is None and sheet_name is None:
         ret_val = {
             sheet["name"]: reader_fn(parser, sheet["index"], None, read_csv_options)
             for sheet in sheets
         }
+    else:
+        ret_val = reader_fn(parser, engine_sheet_id, sheet_name, read_csv_options)
+
     if use_openpyxl:
         # close iterator
         parser.close()
@@ -1288,7 +1293,7 @@ def _read_excel_sheet_openpyxl(
     if sheet_name is not None:
         ws = parser[sheet_name]
     elif sheet_id is not None:
-        ws = parser.worksheets[sheet_id - 1]
+        ws = parser.worksheets[sheet_id]
     else:
         ws = parser.active
 

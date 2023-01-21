@@ -8,11 +8,18 @@ from polars.testing import assert_frame_equal
 
 def test_read_excel() -> None:
     example_file = Path(__file__).parent.parent / "files" / "example.xlsx"
-    df = pl.read_excel(example_file, sheet_name="Sheet1", sheet_id=None)
+    df_by_sheet_name = pl.read_excel(  # type: ignore[call-overload]
+        example_file, sheet_name="Sheet1"
+    )
+    # test read by sheet id
+    df_by_sheet_id = pl.read_excel(  # type: ignore[call-overload]
+        example_file, sheet_id=1
+    )
 
     expected = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
 
-    assert_frame_equal(df, expected)
+    assert_frame_equal(df_by_sheet_name, expected)
+    assert_frame_equal(df_by_sheet_id, expected)
 
 
 def test_read_excel_all_sheets() -> None:
@@ -53,9 +60,20 @@ def test_basic_datatypes_openpyxl_write_excel() -> None:
     df.write_excel(filename)
     # check if can be read as it was written
     # we use openpyxl because type inference is better
-    df_read = pl.read_excel(filename, use_openpyxl=True)  # type: ignore[call-overload]
-    assert_frame_equal(df, df_read)
+    df_by_default = pl.read_excel(  # type: ignore[call-overload]
+        filename, use_openpyxl=True
+    )
+    df_by_sheet_id = pl.read_excel(  # type: ignore[call-overload]
+        filename, sheet_id=0, use_openpyxl=True
+    )
+    df_by_sheet_name = pl.read_excel(  # type: ignore[call-overload]
+        filename, sheet_name="Sheet", use_openpyxl=True
+    )
     os.remove(filename)
+
+    assert_frame_equal(df, df_by_default)
+    assert_frame_equal(df, df_by_sheet_id)
+    assert_frame_equal(df, df_by_sheet_name)
 
 
 def test_write_excel_bytes() -> None:
