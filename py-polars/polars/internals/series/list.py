@@ -294,7 +294,7 @@ class ListNameSpace:
 
     def explode(self) -> pli.Series:
         """
-        Returns a new row for each element in the list.
+        Returns a column with a separate row for every list element.
 
         Returns
         -------

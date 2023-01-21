@@ -879,7 +879,7 @@ class StringNameSpace:
 
     def explode(self) -> pli.Series:
         """
-        Returns a new row for each character in the string.
+        Returns a column with a separate row for every string character.
 
         Returns
         -------
