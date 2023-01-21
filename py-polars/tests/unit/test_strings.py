@@ -241,6 +241,6 @@ def test_starts_ends_with() -> None:
     ).to_dict(False) == {
         "ends_pop": [False, False, True],
         "starts_ham": [True, False, False],
-        "starts_None": [None, None, None],
-        "starts_sub": [True, False, None],
+        "starts_None": [False, False, False],
+        "starts_sub": [True, False, False],
     }

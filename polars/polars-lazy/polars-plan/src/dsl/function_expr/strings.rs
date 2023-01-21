@@ -116,27 +116,23 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = &s[0].utf8()?;
     let sub = &s[1].utf8()?;
 
-    match sub.len() {
-        1 => {
-            let out: BooleanChunked = match sub.get(0) {
-                Some(s) => ca.starts_with(s),
-                None => BooleanChunked::new(ca.name(), vec![None; ca.len()]),
-            };
-            Ok(out.into_series())
-        }
-        _ => {
-            let out: BooleanChunked = ca
-                .into_iter()
-                .zip(sub.into_iter())
-                .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                    (Some(src), Some(val)) => Some(src.starts_with(val)),
-                    _ => None,
-                })
-                .collect();
+    let mut out: BooleanChunked = match sub.len() {
+        1 => match sub.get(0) {
+            Some(s) => ca.starts_with(s),
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => ca
+            .into_iter()
+            .zip(sub.into_iter())
+            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                (Some(src), Some(val)) => src.starts_with(val),
+                _ => false,
+            })
+            .collect_trusted(),
+    };
 
-            Ok(out.into_series())
-        }
-    }
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
 
 /// Extract a regex pattern from the a string value.
