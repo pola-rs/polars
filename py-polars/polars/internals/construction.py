@@ -1178,9 +1178,11 @@ def pandas_to_pydf(
 
 
 def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
+    import pyarrow.compute as pc
+
     # note: Decimal256 could not be cast to float
     if isinstance(array.type, pa.Decimal128Type):
-        array = pa.compute.cast(array, pa.float64())
+        array = pc.cast(array, pa.float64())
 
     if hasattr(array, "num_chunks") and array.num_chunks > 1 and rechunk:
         # small integer keys can often not be combined, so let's already cast
@@ -1192,7 +1194,7 @@ def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
             or pa.types.is_uint16(array.type.index_type)
             or pa.types.is_int32(array.type.index_type)
         ):
-            array = pa.compute.cast(
+            array = pc.cast(
                 array, pa.dictionary(pa.uint32(), pa.large_string())
             ).combine_chunks()
     return array
