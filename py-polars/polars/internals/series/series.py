@@ -2462,24 +2462,18 @@ class Series:
 
         This means that every item is expanded to a new row.
 
-        Examples
-        --------
-        >>> s = pl.Series("a", [[1, 2], [3, 4], [9, 10]])
-        >>> s.explode()
-        shape: (6,)
-        Series: 'a' [i64]
-        [
-                1
-                2
-                3
-                4
-                9
-                10
-        ]
+        .. deprecated:: 0.15.16
+            `Series.explode` will be removed in favour of `Series.arr.explode` and
+            `Series.str.explode`.
 
         Returns
         -------
         Exploded Series of same dtype
+
+        See Also
+        --------
+        ListNameSpace.explode : Explode a list column
+        StringNameSpace.explode : Explode a string column
 
         """
 
