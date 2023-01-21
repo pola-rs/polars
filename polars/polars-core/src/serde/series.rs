@@ -33,10 +33,13 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.list() {
             ca.serialize(serializer)
-        } else if let Ok(ca) = self.struct_() {
-            ca.serialize(serializer)
         } else {
             match self.dtype() {
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(_) => {
+                    let ca = self.struct_().unwrap();
+                    ca.serialize(serializer)
+                }
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => {
                     let ca = self.date().unwrap();
