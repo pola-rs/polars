@@ -3158,6 +3158,10 @@ class Expr:
         Explode a list or utf8 Series. This means that every item is expanded to a new
         row.
 
+        .. deprecated:: 0.15.16
+            `Expr.flatten` will be removed in favour of `Expr.arr.explode` and
+            `Expr.str.explode`.
+
         Returns
         -------
         Exploded Series of same dtype
@@ -3200,6 +3204,13 @@ class Expr:
         └───────┘
 
         """
+        warnings.warn(
+            "`Expr.flatten()` is deprecated in favor of `explode`"
+            " under the list and string namespaces. Use `.arr.explode()` or"
+            " `.str.explode()` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return wrap_expr(self._pyexpr.explode())
 
     def explode(self) -> Expr:
