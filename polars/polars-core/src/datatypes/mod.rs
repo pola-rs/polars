@@ -82,6 +82,8 @@ impl_polars_datatype!(Int8Type, Int8, i8);
 impl_polars_datatype!(Int16Type, Int16, i16);
 impl_polars_datatype!(Int32Type, Int32, i32);
 impl_polars_datatype!(Int64Type, Int64, i64);
+#[cfg(feature = "dtype-i128")]
+impl_polars_datatype!(Int128Type, Unknown, i128);
 impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
@@ -150,6 +152,8 @@ pub type Int8Chunked = ChunkedArray<Int8Type>;
 pub type Int16Chunked = ChunkedArray<Int16Type>;
 pub type Int32Chunked = ChunkedArray<Int32Type>;
 pub type Int64Chunked = ChunkedArray<Int64Type>;
+#[cfg(feature = "dtype-i128")]
+pub type Int128Chunked = ChunkedArray<Int128Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
