@@ -1032,6 +1032,14 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-struct")]
+    fn new_series_from_empty_structs() {
+        let dtype = DataType::Struct(vec![]);
+        let empties = vec![AnyValue::StructOwned(Box::new((vec![], vec![]))); 3];
+        let s = Series::from_any_values_and_dtype("", &empties, &dtype).unwrap();
+        assert_eq!(s.len(), 3);
+    }
+    #[test]
     fn new_series_from_arrow_primitive_array() {
         let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Box::new(array);

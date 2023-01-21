@@ -117,6 +117,10 @@ impl Series {
             DataType::List(inner) => any_values_to_list(av, inner).into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(dtype_fields) => {
+                // fast path for empty structs
+                if dtype_fields.is_empty() {
+                    return Ok(StructChunked::full_null(name, av.len()).into_series());
+                }
                 // the physical series fields of the struct
                 let mut series_fields = Vec::with_capacity(dtype_fields.len());
                 for (i, field) in dtype_fields.iter().enumerate() {

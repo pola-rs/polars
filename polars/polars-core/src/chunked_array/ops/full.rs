@@ -116,6 +116,13 @@ impl ListChunked {
         unsafe { ListChunked::from_chunks(name, vec![arr]) }
     }
 }
+#[cfg(feature = "dtype-struct")]
+impl ChunkFullNull for StructChunked {
+    fn full_null(name: &str, length: usize) -> StructChunked {
+        let s = vec![Series::full_null("", length, &DataType::Null)];
+        StructChunked::new_unchecked(name, &s)
+    }
+}
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkFull<T> for ObjectChunked<T> {

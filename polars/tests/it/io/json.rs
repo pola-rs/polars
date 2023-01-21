@@ -202,3 +202,14 @@ fn test_read_ndjson_iss_5875_part3() {
     let df = JsonLineReader::new(cursor).finish();
     assert!(df.is_ok());
 }
+
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_read_ndjson_iss_6148() {
+    let json = b"{\"a\":1,\"b\":{}}\n{\"a\":2,\"b\":{}}\n";
+
+    let cursor = Cursor::new(json);
+
+    let df = JsonLineReader::new(cursor).finish();
+    assert!(df.is_ok());
+}
