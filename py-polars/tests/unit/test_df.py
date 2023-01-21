@@ -1545,7 +1545,7 @@ def test_groupby_cat_list() -> None:
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
-    out = grouped.explode()
+    out = grouped.str.explode()
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 
@@ -1679,12 +1679,12 @@ def test_extension() -> None:
 
     out = df.groupby("groups", maintain_order=True).agg(pl.col("a").list().alias("a"))
     assert sys.getrefcount(foos[0]) == base_count + 2
-    s = out["a"].explode()
+    s = out["a"].arr.explode()
     assert sys.getrefcount(foos[0]) == base_count + 3
     del s
     assert sys.getrefcount(foos[0]) == base_count + 2
 
-    assert out["a"].explode().to_list() == foos
+    assert out["a"].arr.explode().to_list() == foos
     assert sys.getrefcount(foos[0]) == base_count + 2
     del out
     assert sys.getrefcount(foos[0]) == base_count + 1
