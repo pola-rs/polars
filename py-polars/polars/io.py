@@ -1158,8 +1158,7 @@ def read_excel(
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
-    use_openpyxl: bool = False,  # convert to engine
-    engine: str = "xlsx2csv",
+    use_openpyxl: bool = False,
 ) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
