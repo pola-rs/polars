@@ -99,7 +99,7 @@ impl PySeries {
         })
     }
 
-    pub fn struct_to_frame(&self) -> PyResult<PyDataFrame> {
+    pub fn struct_unnest(&self) -> PyResult<PyDataFrame> {
         let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
         let df: DataFrame = ca.clone().into();
         Ok(df.into())

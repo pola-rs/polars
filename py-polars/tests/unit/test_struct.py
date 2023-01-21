@@ -23,7 +23,7 @@ def test_struct_various() -> None:
     assert s.struct.field("list").to_list() == [[1, 2], [3]]
     assert s.struct.field("int").to_list() == [1, 2]
 
-    assert df.to_struct("my_struct").struct.to_frame().frame_equal(df)
+    assert df.to_struct("my_struct").struct.unnest().frame_equal(df)
     assert s.struct._ipython_key_completions_() == s.struct.fields
 
 
@@ -36,11 +36,11 @@ def test_struct_to_list() -> None:
     ]
 
 
-def test_apply_to_struct() -> None:
+def test_apply_unnest() -> None:
     df = (
         pl.Series([None, 2, 3, 4])
         .apply(lambda x: {"a": x, "b": x * 2, "c": True, "d": [1, 2], "e": "foo"})
-        .struct.to_frame()
+        .struct.unnest()
     )
 
     expected = pl.DataFrame(
