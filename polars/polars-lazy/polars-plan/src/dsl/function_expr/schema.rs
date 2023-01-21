@@ -122,7 +122,7 @@ impl FunctionExpr {
             StringExpr(s) => {
                 use StringFunction::*;
                 match s {
-                    Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
+                    Contains { .. } | EndsWith(_) | StartsWith => with_dtype(DataType::Boolean),
                     Extract { .. } => same_type(),
                     ExtractAll => with_dtype(DataType::List(Box::new(DataType::Utf8))),
                     CountMatch(_) => with_dtype(DataType::UInt32),

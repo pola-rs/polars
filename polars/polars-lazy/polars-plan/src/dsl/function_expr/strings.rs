@@ -15,7 +15,7 @@ pub enum StringFunction {
         pat: String,
         literal: bool,
     },
-    StartsWith(String),
+    StartsWith,
     EndsWith(String),
     Extract {
         pat: String,
@@ -59,7 +59,7 @@ impl Display for StringFunction {
         use self::*;
         let s = match self {
             StringFunction::Contains { .. } => "contains",
-            StringFunction::StartsWith(_) => "starts_with",
+            StringFunction::StartsWith { .. } => "starts_with",
             StringFunction::EndsWith(_) => "ends_with",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "string_justify")]
@@ -112,9 +112,27 @@ pub(super) fn ends_with(s: &Series, sub: &str) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.ends_with(sub).into_series())
 }
-pub(super) fn starts_with(s: &Series, sub: &str) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca.starts_with(sub).into_series())
+pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
+    let ca = &s[0].utf8()?;
+    let sub = &s[1].utf8()?;
+
+    let mut out: BooleanChunked = match sub.len() {
+        1 => match sub.get(0) {
+            Some(s) => ca.starts_with(s),
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => ca
+            .into_iter()
+            .zip(sub.into_iter())
+            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                (Some(src), Some(val)) => src.starts_with(val),
+                _ => false,
+            })
+            .collect_trusted(),
+    };
+
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
 
 /// Extract a regex pattern from the a string value.

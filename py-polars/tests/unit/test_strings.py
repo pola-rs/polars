@@ -226,9 +226,21 @@ def test_format_empty_df() -> None:
 
 
 def test_starts_ends_with() -> None:
-    assert pl.DataFrame({"a": ["hamburger", "nuts", "lollypop"]}).select(
+    df = pl.DataFrame(
+        {"a": ["hamburger", "nuts", "lollypop"], "sub": ["ham", "foo", None]}
+    )
+
+    assert df.select(
         [
-            pl.col("a").str.ends_with("pop").alias("pop"),
-            pl.col("a").str.starts_with("ham").alias("ham"),
+            # TODO allow Expr for ends_with
+            pl.col("a").str.ends_with("pop").alias("ends_pop"),
+            pl.col("a").str.starts_with("ham").alias("starts_ham"),
+            pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
+            pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
         ]
-    ).to_dict(False) == {"pop": [False, False, True], "ham": [True, False, False]}
+    ).to_dict(False) == {
+        "ends_pop": [False, False, True],
+        "starts_ham": [True, False, False],
+        "starts_None": [False, False, False],
+        "starts_sub": [True, False, False],
+    }
