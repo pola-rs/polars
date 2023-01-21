@@ -1123,7 +1123,7 @@ def read_excel(
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None,
     read_csv_options: dict[str, Any] | None,
-    use_openpyxl: bool = False,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
 ) -> dict[str, DataFrame]:
     ...
 
@@ -1135,7 +1135,7 @@ def read_excel(
     sheet_name: str,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
-    use_openpyxl: bool = False,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
 ) -> DataFrame:
     ...
 
@@ -1147,7 +1147,7 @@ def read_excel(
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
-    use_openpyxl: bool = False,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
 ) -> DataFrame:
     ...
 
@@ -1158,7 +1158,7 @@ def read_excel(
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
-    use_openpyxl: bool = False,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
 ) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
@@ -1185,7 +1185,7 @@ def read_excel(
         ``xlsx2csv.Xlsx2csv().convert()``
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
         "infer_schema_length": None}``
-    use_openpyxl
+    engine
         Library used to parse Excel, either openpyxl or xlsx2csv (default is xlsx2csv).
         Please not that xlsx2csv converts first to csv, making type inference worse
         than openpyxl. To remedy that, you can use the extra options defined on
@@ -1252,7 +1252,7 @@ def read_excel(
 
     reader_fn: Any  # make mypy happy
     # do conditions imports
-    if use_openpyxl:
+    if engine == "openpyxl":
         try:
             import openpyxl  # type: ignore[import]
         except ImportError:
@@ -1264,7 +1264,7 @@ def read_excel(
         reader_fn = _read_excel_sheet_openpyxl
         # setup good defaults for the sheet id
         engine_sheet_id = sheet_id
-    else:
+    elif engine == "xlsx2csv" or engine is None:  # default
         try:
             import xlsx2csv  # type: ignore[import]
         except ImportError:
@@ -1277,6 +1277,8 @@ def read_excel(
         reader_fn = _read_excel_sheet_xlsx2csv
         # setup good defaults for the sheet id
         engine_sheet_id = 1 if sheet_id == 0 else sheet_id
+    else:
+        raise NotImplementedError(f"Cannot find the {engine} engine")
 
     if sheet_id is None and sheet_name is None:
         ret_val = {
@@ -1286,7 +1288,7 @@ def read_excel(
     else:
         ret_val = reader_fn(parser, engine_sheet_id, sheet_name, read_csv_options)
 
-    if use_openpyxl:
+    if engine == "openpyxl":
         # close iterator
         parser.close()
     return ret_val
