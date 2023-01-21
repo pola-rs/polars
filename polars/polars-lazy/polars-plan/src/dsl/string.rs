@@ -34,9 +34,12 @@ impl StringNameSpace {
     }
 
     /// Check if a string value starts with the `sub` string.
-    pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
-        let sub = sub.as_ref().into();
-        self.0.map_private(StringFunction::StartsWith(sub).into())
+    pub fn starts_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StartsWith),
+            &[sub],
+            true,
+        )
     }
 
     /// Extract a regex pattern from the a string value.

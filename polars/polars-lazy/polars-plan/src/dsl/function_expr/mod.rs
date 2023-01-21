@@ -372,9 +372,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             EndsWith(sub) => {
                 map!(strings::ends_with, &sub)
             }
-            StartsWith(sub) => {
-                map!(strings::starts_with, &sub)
-            }
+            StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract { pat, group_index } => {
                 map!(strings::extract, &pat, group_index)
             }
