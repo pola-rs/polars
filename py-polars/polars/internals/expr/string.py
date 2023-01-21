@@ -1148,3 +1148,32 @@ class ExprStringNameSpace:
 
         """
         return pli.wrap_expr(self._pyexpr.str_slice(offset, length))
+
+    def explode(self) -> pli.Expr:
+        """
+        Returns a new row for each character in the string.
+
+        Returns
+        -------
+        Exploded column with string datatype.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": ["foo", "bar"]})
+        >>> df.select(pl.col("a").str.explode())
+        shape: (6, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ f   │
+        │ o   │
+        │ o   │
+        │ b   │
+        │ a   │
+        │ r   │
+        └─────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.explode())
