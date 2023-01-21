@@ -29,6 +29,7 @@ enum DeDataType<'a> {
     Object(&'a str),
     Null,
     Categorical,
+    Struct,
 }
 
 impl From<&DataType> for DeDataType<'_> {
@@ -50,6 +51,8 @@ impl From<&DataType> for DeDataType<'_> {
             DataType::List(_) => DeDataType::List,
             #[cfg(feature = "object")]
             DataType::Object(s) => DeDataType::Object(s),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => DeDataType::Struct,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => DeDataType::Categorical,
             _ => unimplemented!(),
@@ -125,7 +128,44 @@ mod test {
         let out = serde_json::from_reader::<_, DataFrame>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
         assert!(df.frame_equal_missing(&out));
     }
+    #[test]
+    #[cfg(feature = "dtype-struct")]
+    fn test_serde_struct_series_owned_json() {
+        let row_1 = AnyValue::StructOwned(Box::new((
+            vec![AnyValue::Utf8("1:1"), AnyValue::Null, AnyValue::Utf8("1:3")],
+            vec![
+                Field::new("fld_1", DataType::Utf8),
+                Field::new("fld_2", DataType::Utf8),
+                Field::new("fld_3", DataType::Utf8),
+            ],
+        )));
+        let dtype = DataType::Struct(vec![
+            Field::new("fld_1", DataType::Utf8),
+            Field::new("fld_2", DataType::Utf8),
+            Field::new("fld_3", DataType::Utf8),
+        ]);
+        let row_2 = AnyValue::StructOwned(Box::new((
+            vec![
+                AnyValue::Utf8("2:1"),
+                AnyValue::Utf8("2:2"),
+                AnyValue::Utf8("2:3"),
+            ],
+            vec![
+                Field::new("fld_1", DataType::Utf8),
+                Field::new("fld_2", DataType::Utf8),
+                Field::new("fld_3", DataType::Utf8),
+            ],
+        )));
+        let row_3 = AnyValue::Null;
 
+        let s =
+            Series::from_any_values_and_dtype("item", &vec![row_1, row_2, row_3], &dtype).unwrap();
+        let df = DataFrame::new(vec![s]).unwrap();
+
+        let df_str = serde_json::to_string(&df).unwrap();
+        let out = serde_json::from_str::<DataFrame>(&df_str).unwrap();
+        assert!(df.frame_equal_missing(&out));
+    }
     /// test using the `DeserializedOwned` trait
     #[test]
     fn test_serde_df_owned_bincode() {

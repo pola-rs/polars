@@ -33,6 +33,8 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.list() {
             ca.serialize(serializer)
+        } else if let Ok(ca) = self.struct_() {
+            ca.serialize(serializer)
         } else {
             match self.dtype() {
                 #[cfg(feature = "dtype-date")]
@@ -195,6 +197,14 @@ impl<'de> Deserialize<'de> for Series {
                     DeDataType::List => {
                         let values: Vec<Option<Series>> = map.next_value()?;
                         Ok(Series::new(&name, values))
+                    }
+                    #[cfg(feature = "dtype-struct")]
+                    DeDataType::Struct => {
+                        let values: Vec<Series> = map.next_value()?;
+                        let ca = StructChunked::new(&name, &values).unwrap();
+                        let mut s = ca.into_series();
+                        s.rename(&name);
+                        Ok(s)
                     }
                     #[cfg(feature = "dtype-categorical")]
                     DeDataType::Categorical => {
