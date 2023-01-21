@@ -305,14 +305,14 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
         >>> s.arr.explode()
         shape: (6,)
-        Series: 'b' [i64]
+        Series: 'a' [i64]
         [
-                1
-                2
-                3
-                4
-                5
-                6
+            1
+            2
+            3
+            4
+            5
+            6
         ]
 
         """

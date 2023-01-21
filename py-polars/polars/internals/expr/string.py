@@ -1165,7 +1165,7 @@ class ExprStringNameSpace:
         ┌─────┐
         │ a   │
         │ --- │
-        │ i64 │
+        │ str │
         ╞═════╡
         │ f   │
         │ o   │
