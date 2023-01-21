@@ -63,17 +63,6 @@ def test_filter_where() -> None:
     assert result_filter.frame_equal(expected)
 
 
-def test_flatten_explode() -> None:
-    df = pl.Series("a", ["Hello", "World"])
-    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
-
-    result = df.to_frame().select(pl.col("a").flatten())[:, 0]
-    assert_series_equal(result, expected)
-
-    result = df.to_frame().select(pl.col("a").explode())[:, 0]
-    assert_series_equal(result, expected)
-
-
 def test_min_nulls_consistency() -> None:
     df = pl.DataFrame({"a": [None, 2, 3], "b": [4, None, 6], "c": [7, 5, 0]})
     out = df.select([pl.min(["a", "b", "c"])]).to_series()

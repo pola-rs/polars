@@ -3,7 +3,15 @@ from __future__ import annotations
 import pyarrow as pa
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+
+
+def test_explode_string() -> None:
+    df = pl.Series("a", ["Hello", "World"])
+    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
+
+    result = df.to_frame().select(pl.col("a").str.explode()).to_series()
+    assert_series_equal(result, expected)
 
 
 def test_explode_empty_df_3402() -> None:
@@ -84,26 +92,26 @@ def test_explode_correct_for_slice() -> None:
 
 def test_sliced_null_explode() -> None:
     s = pl.Series("", [[1], [2], [3], [4], [], [6]])
-    assert s.slice(2, 4).explode().to_list() == [3, 4, None, 6]
-    assert s.slice(2, 2).explode().to_list() == [3, 4]
+    assert s.slice(2, 4).arr.explode().to_list() == [3, 4, None, 6]
+    assert s.slice(2, 2).arr.explode().to_list() == [3, 4]
     assert pl.Series("", [[1], [2], None, [4], [], [6]]).slice(
         2, 4
-    ).explode().to_list() == [None, 4, None, 6]
+    ).arr.explode().to_list() == [None, 4, None, 6]
 
     s = pl.Series("", [["a"], ["b"], ["c"], ["d"], [], ["e"]])
-    assert s.slice(2, 4).explode().to_list() == ["c", "d", None, "e"]
-    assert s.slice(2, 2).explode().to_list() == ["c", "d"]
+    assert s.slice(2, 4).arr.explode().to_list() == ["c", "d", None, "e"]
+    assert s.slice(2, 2).arr.explode().to_list() == ["c", "d"]
     assert pl.Series("", [["a"], ["b"], None, ["d"], [], ["e"]]).slice(
         2, 4
-    ).explode().to_list() == [None, "d", None, "e"]
+    ).arr.explode().to_list() == [None, "d", None, "e"]
 
     s = pl.Series("", [[False], [False], [True], [False], [], [True]])
-    assert s.slice(2, 2).explode().to_list() == [True, False]
-    assert s.slice(2, 4).explode().to_list() == [True, False, None, True]
+    assert s.slice(2, 2).arr.explode().to_list() == [True, False]
+    assert s.slice(2, 4).arr.explode().to_list() == [True, False, None, True]
 
 
 def test_utf8_explode() -> None:
-    assert pl.Series(["foobar", None]).explode().to_list() == [
+    assert pl.Series(["foobar", None]).str.explode().to_list() == [
         "f",
         "o",
         "o",
@@ -112,7 +120,7 @@ def test_utf8_explode() -> None:
         "r",
         None,
     ]
-    assert pl.Series([None, "foo", "bar"]).explode().to_list() == [
+    assert pl.Series([None, "foo", "bar"]).str.explode().to_list() == [
         None,
         "f",
         "o",
@@ -121,7 +129,7 @@ def test_utf8_explode() -> None:
         "a",
         "r",
     ]
-    assert pl.Series([None, "foo", "bar", None, "ham"]).explode().to_list() == [
+    assert pl.Series([None, "foo", "bar", None, "ham"]).str.explode().to_list() == [
         None,
         "f",
         "o",
@@ -134,7 +142,7 @@ def test_utf8_explode() -> None:
         "a",
         "m",
     ]
-    assert pl.Series(["foo", "bar", "ham"]).explode().to_list() == [
+    assert pl.Series(["foo", "bar", "ham"]).str.explode().to_list() == [
         "f",
         "o",
         "o",
@@ -145,7 +153,7 @@ def test_utf8_explode() -> None:
         "a",
         "m",
     ]
-    assert pl.Series(["", None, "foo", "bar"]).explode().to_list() == [
+    assert pl.Series(["", None, "foo", "bar"]).str.explode().to_list() == [
         "",
         None,
         "f",
@@ -155,7 +163,7 @@ def test_utf8_explode() -> None:
         "a",
         "r",
     ]
-    assert pl.Series(["", "foo", "bar"]).explode().to_list() == [
+    assert pl.Series(["", "foo", "bar"]).str.explode().to_list() == [
         "",
         "f",
         "o",
@@ -177,10 +185,22 @@ def test_explode_in_agg_context() -> None:
         .groupby("row_nr")
         .agg(
             [
-                pl.col("array").explode(),
+                pl.col("array").arr.explode(),
             ]
         )
     ).to_dict(False) == {
         "row_nr": [0, 1, 2],
         "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],
     }
+
+
+def test_explode_inner_lists_3985() -> None:
+    df = pl.DataFrame(
+        data={"id": [1, 1, 1], "categories": [["a"], ["b"], ["a", "c"]]}
+    ).lazy()
+
+    assert (
+        df.groupby("id")
+        .agg(pl.col("categories"))
+        .with_column(pl.col("categories").arr.eval(pl.element().arr.explode()))
+    ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}

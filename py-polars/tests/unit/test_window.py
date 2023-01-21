@@ -74,14 +74,14 @@ def test_window_function_cache() -> None:
             pl.col("values")
             .list()
             .over("groups")
-            .flatten()
+            .arr.explode()
             .alias("values_flat"),  # aggregation to list + explode and concat back
             pl.col("values")
             .reverse()
             .list()
             .over("groups")
-            .flatten()
-            .alias("values_rev"),  # use flatten to reverse within a group
+            .arr.explode()
+            .alias("values_rev"),  # use explode to reverse within a group
         ]
     )
 

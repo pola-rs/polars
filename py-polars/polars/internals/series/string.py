@@ -876,3 +876,28 @@ class StringNameSpace:
         return (
             s.to_frame().select(pli.col(s.name).str.slice(offset, length)).to_series()
         )
+
+    def explode(self) -> pli.Series:
+        """
+        Returns a column with a separate row for every string character.
+
+        Returns
+        -------
+        Exploded column with string datatype.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", ["foo", "bar"])
+        >>> s.str.explode()
+        shape: (6,)
+        Series: 'a' [str]
+        [
+                "f"
+                "o"
+                "o"
+                "b"
+                "a"
+                "r"
+        ]
+
+        """

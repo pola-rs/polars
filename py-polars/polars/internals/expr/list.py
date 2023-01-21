@@ -598,6 +598,35 @@ class ExprListNameSpace:
         offset = -pli.expr_to_lit_or_expr(n, str_to_lit=False)
         return self.slice(offset, n)
 
+    def explode(self) -> pli.Expr:
+        """
+        Returns a column with a separate row for every list element.
+
+        Returns
+        -------
+        Exploded column with the datatype of the list elements.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
+        >>> df.select(pl.col("a").arr.explode())
+        shape: (6, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        │ 4   │
+        │ 5   │
+        │ 6   │
+        └─────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.explode())
+
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",

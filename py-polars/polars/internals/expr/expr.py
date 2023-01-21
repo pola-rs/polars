@@ -3158,6 +3158,10 @@ class Expr:
         Explode a list or utf8 Series. This means that every item is expanded to a new
         row.
 
+        .. deprecated:: 0.15.16
+            `Expr.flatten` will be removed in favour of `Expr.arr.explode` and
+            `Expr.str.explode`.
+
         Returns
         -------
         Exploded Series of same dtype
@@ -3200,6 +3204,13 @@ class Expr:
         └───────┘
 
         """
+        warnings.warn(
+            "`Expr.flatten()` is deprecated in favor of `explode`"
+            " under the list and string namespaces. Use `.arr.explode()` or"
+            " `.str.explode()` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return wrap_expr(self._pyexpr.explode())
 
     def explode(self) -> Expr:
@@ -3208,29 +3219,27 @@ class Expr:
 
         This means that every item is expanded to a new row.
 
+        .. deprecated:: 0.15.16
+            `Expr.explode` will be removed in favour of `Expr.arr.explode` and
+            `Expr.str.explode`.
+
         Returns
         -------
         Exploded Series of same dtype
 
-        Examples
+        See Also
         --------
-        >>> df = pl.DataFrame({"b": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("b").explode())
-        shape: (6, 1)
-        ┌─────┐
-        │ b   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 1   │
-        │ 2   │
-        │ 3   │
-        │ 4   │
-        │ 5   │
-        │ 6   │
-        └─────┘
+        ExprListNameSpace.explode : Explode a list column
+        ExprStringNameSpace.explode : Explode a string column
 
         """
+        warnings.warn(
+            "`Series/Expr.explode()` is deprecated in favor of the identical method"
+            " under the list and string namespaces. Use `.arr.explode()` or"
+            " `.str.explode()` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return wrap_expr(self._pyexpr.explode())
 
     def take_every(self, n: int) -> Expr:

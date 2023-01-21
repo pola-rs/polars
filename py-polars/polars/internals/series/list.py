@@ -292,6 +292,31 @@ class ListNameSpace:
 
         """
 
+    def explode(self) -> pli.Series:
+        """
+        Returns a column with a separate row for every list element.
+
+        Returns
+        -------
+        Exploded column with the datatype of the list elements.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
+        >>> s.arr.explode()
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+            6
+        ]
+
+        """
+
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
