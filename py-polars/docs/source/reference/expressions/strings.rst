@@ -15,6 +15,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.decode
     Expr.str.encode
     Expr.str.ends_with
+    Expr.str.explode
     Expr.str.extract
     Expr.str.extract_all
     Expr.str.json_path_match
