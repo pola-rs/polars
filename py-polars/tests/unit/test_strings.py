@@ -232,7 +232,6 @@ def test_starts_ends_with() -> None:
 
     assert df.select(
         [
-            # TODO allow Expr for ends_with
             pl.col("a").str.ends_with("pop").alias("ends_pop"),
             pl.col("a").str.ends_with(pl.lit(None)).alias("ends_None"),
             pl.col("a").str.ends_with(pl.col("sub")).alias("ends_sub"),
