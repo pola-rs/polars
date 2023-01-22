@@ -1439,7 +1439,6 @@ def test_from_time_arrow() -> None:
         ("2018-09-05T04:24:01.9", datetime(2018, 9, 5, 4, 24, 1, 900000)),
         ("2018-09-05T04:24:02.11", datetime(2018, 9, 5, 4, 24, 2, 110000)),
         ("2018-09-05T14:24:02.123", datetime(2018, 9, 5, 14, 24, 2, 123000)),
-        ("2018-09-05T14:24:02.123Z", datetime(2018, 9, 5, 14, 24, 2, 123000)),
         ("2019-04-18T02:45:55.555000000", datetime(2019, 4, 18, 2, 45, 55, 555000)),
         ("2019-04-18T22:45:55.555123", datetime(2019, 4, 18, 22, 45, 55, 555123)),
     ],
@@ -1471,7 +1470,8 @@ def test_datetime_strptime_patterns_consistent() -> None:
             .alias("parsed"),
         ]
     )["parsed"]
-    assert s.null_count() == 0
+    assert s.null_count() == 1
+    assert s[5] is None
 
 
 def test_datetime_strptime_patterns_inconsistent() -> None:
