@@ -771,7 +771,7 @@ class RollingGroupBy(Generic[DF]):
         self.closed = closed
         self.by = by
 
-    def __iter__(self) -> GroupBy[DF]:
+    def __iter__(self) -> RollingGroupBy[DF]:
         groups_df = (
             self.df.lazy()
             .with_row_count(name="indices")
@@ -862,7 +862,7 @@ class DynamicGroupBy(Generic[DF]):
         self.by = by
         self.start_by = start_by
 
-    def __iter__(self) -> GroupBy[DF]:
+    def __iter__(self) -> DynamicGroupBy[DF]:
         groups_df = (
             self.df.lazy()
             .with_row_count(name="indices")
