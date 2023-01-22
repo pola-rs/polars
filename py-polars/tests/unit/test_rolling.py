@@ -534,7 +534,7 @@ def test_groupby_rolling_iter() -> None:
         }
     )
 
-    # Without specifying 'by'
+    # Without 'by' argument
     result1 = [
         (name, data.shape)
         for name, data in df.groupby_rolling(index_column="date", period="2d")
@@ -546,7 +546,7 @@ def test_groupby_rolling_iter() -> None:
     ]
     assert result1 == expected1
 
-    # With specifying 'by'
+    # With 'by' argument
     result2 = [
         (name, data.shape)
         for name, data in df.groupby_rolling(index_column="date", period="2d", by="a")

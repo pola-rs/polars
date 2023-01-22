@@ -862,6 +862,50 @@ class DynamicGroupBy(Generic[DF]):
         self.by = by
         self.start_by = start_by
 
+    def __iter__(self) -> GroupBy[DF]:
+        groups_df = (
+            self.df.lazy()
+            .with_row_count(name="indices")
+            .groupby_dynamic(
+                index_column=self.time_column,
+                every=self.every,
+                period=self.period,
+                offset=self.offset,
+                truncate=self.truncate,
+                include_boundaries=self.include_boundaries,
+                closed=self.closed,
+                by=self.by,
+                start_by=self.start_by,
+            )
+            .agg(pli.col("indices").list())
+            .collect(no_optimization=True)
+        )
+
+        group_names = groups_df.select(pli.all().exclude("indices"))
+
+        # When grouping by a single column, group name is a single value
+        # When grouping by multiple columns, group name is a tuple of values
+        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
+        if self.by is None:
+            self._group_names = iter(group_names.to_series())
+        else:
+            self._group_names = group_names.iterrows()
+
+        self._group_indices = groups_df.select("indices").to_series()
+        self._current_index = 0
+
+        return self
+
+    def __next__(self) -> tuple[object, DF] | tuple[tuple[object, ...], DF]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+
+        group_name = next(self._group_names)
+        group_data = self.df[self._group_indices[self._current_index]]
+        self._current_index += 1
+
+        return group_name, group_data
+
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         return (
             self.df.lazy()
