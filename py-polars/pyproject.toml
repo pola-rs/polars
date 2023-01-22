@@ -34,10 +34,10 @@ classifiers = [
 ]
 
 [project.urls]
-homepage = "https://www.pola.rs/"
-documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/"
-repository = "https://github.com/pola-rs/polars"
-changelog = "https://github.com/pola-rs/polars/releases"
+Homepage = "https://www.pola.rs/"
+Documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/"
+Repository = "https://github.com/pola-rs/polars"
+Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # the Arrow memory format is stable between 4.0 and 5.0-SNAPSHOTS
