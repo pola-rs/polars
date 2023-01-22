@@ -523,3 +523,37 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
     )
     print(result_empty, result)
     assert result_empty.schema == result.schema
+
+
+def test_groupby_rolling_iter() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 5)],
+            "a": [1, 2, 2],
+            "b": [4, 5, 6],
+        }
+    )
+
+    # Without 'by' argument
+    result1 = [
+        (name, data.shape)
+        for name, data in df.groupby_rolling(index_column="date", period="2d")
+    ]
+    expected1 = [
+        (date(2020, 1, 1), (1, 3)),
+        (date(2020, 1, 2), (2, 3)),
+        (date(2020, 1, 5), (1, 3)),
+    ]
+    assert result1 == expected1
+
+    # With 'by' argument
+    result2 = [
+        (name, data.shape)
+        for name, data in df.groupby_rolling(index_column="date", period="2d", by="a")
+    ]
+    expected2 = [
+        ((1, date(2020, 1, 1)), (1, 3)),
+        ((2, date(2020, 1, 2)), (1, 3)),
+        ((2, date(2020, 1, 5)), (1, 3)),
+    ]
+    assert result2 == expected2

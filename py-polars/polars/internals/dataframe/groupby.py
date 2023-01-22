@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from datetime import timedelta
-from typing import TYPE_CHECKING, Callable, Generic, Sequence, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, Iterator, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.internals.dataframe.pivot import PivotOps
@@ -58,7 +58,7 @@ class GroupBy(Generic[DF]):
         df: PyDataFrame,
         by: str | pli.Expr | Sequence[str | pli.Expr],
         dataframe_class: type[DF],
-        maintain_order: bool = False,
+        maintain_order: bool,
     ):
         """
         Construct class representing a group by operation over the given dataframe.
@@ -758,8 +758,8 @@ class RollingGroupBy(Generic[DF]):
         index_column: str,
         period: str | timedelta,
         offset: str | timedelta | None,
-        closed: ClosedInterval = "none",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        closed: ClosedInterval,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -770,6 +770,47 @@ class RollingGroupBy(Generic[DF]):
         self.offset = offset
         self.closed = closed
         self.by = by
+
+    def __iter__(self) -> RollingGroupBy[DF]:
+        temp_col = "__POLARS_GB_GROUP_INDICES"
+        groups_df = (
+            self.df.lazy()
+            .with_row_count(name=temp_col)
+            .groupby_rolling(
+                index_column=self.time_column,
+                period=self.period,
+                offset=self.offset,
+                closed=self.closed,
+                by=self.by,
+            )
+            .agg(pli.col(temp_col).list())
+            .collect(no_optimization=True)
+        )
+
+        group_names = groups_df.select(pli.all().exclude(temp_col))
+
+        # When grouping by a single column, group name is a single value
+        # When grouping by multiple columns, group name is a tuple of values
+        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
+        if self.by is None:
+            self._group_names = iter(group_names.to_series())
+        else:
+            self._group_names = group_names.iterrows()
+
+        self._group_indices = groups_df.select(temp_col).to_series()
+        self._current_index = 0
+
+        return self
+
+    def __next__(self) -> tuple[object, DF] | tuple[tuple[object, ...], DF]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+
+        group_name = next(self._group_names)
+        group_data = self.df[self._group_indices[self._current_index]]
+        self._current_index += 1
+
+        return group_name, group_data
 
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         return (
@@ -801,11 +842,11 @@ class DynamicGroupBy(Generic[DF]):
         every: str | timedelta,
         period: str | timedelta | None,
         offset: str | timedelta | None,
-        truncate: bool = True,
-        include_boundaries: bool = True,
-        closed: ClosedInterval = "none",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-        start_by: StartBy = "window",
+        truncate: bool,
+        include_boundaries: bool,
+        closed: ClosedInterval,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None,
+        start_by: StartBy,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -821,6 +862,51 @@ class DynamicGroupBy(Generic[DF]):
         self.closed = closed
         self.by = by
         self.start_by = start_by
+
+    def __iter__(self) -> DynamicGroupBy[DF]:
+        temp_col = "__POLARS_GB_GROUP_INDICES"
+        groups_df = (
+            self.df.lazy()
+            .with_row_count(name=temp_col)
+            .groupby_dynamic(
+                index_column=self.time_column,
+                every=self.every,
+                period=self.period,
+                offset=self.offset,
+                truncate=self.truncate,
+                include_boundaries=self.include_boundaries,
+                closed=self.closed,
+                by=self.by,
+                start_by=self.start_by,
+            )
+            .agg(pli.col(temp_col).list())
+            .collect(no_optimization=True)
+        )
+
+        group_names = groups_df.select(pli.all().exclude(temp_col))
+
+        # When grouping by a single column, group name is a single value
+        # When grouping by multiple columns, group name is a tuple of values
+        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
+        if self.by is None:
+            self._group_names = iter(group_names.to_series())
+        else:
+            self._group_names = group_names.iterrows()
+
+        self._group_indices = groups_df.select(temp_col).to_series()
+        self._current_index = 0
+
+        return self
+
+    def __next__(self) -> tuple[object, DF] | tuple[tuple[object, ...], DF]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+
+        group_name = next(self._group_names)
+        group_data = self.df[self._group_indices[self._current_index]]
+        self._current_index += 1
+
+        return group_name, group_data
 
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         return (
