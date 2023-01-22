@@ -58,7 +58,7 @@ class GroupBy(Generic[DF]):
         df: PyDataFrame,
         by: str | pli.Expr | Sequence[str | pli.Expr],
         dataframe_class: type[DF],
-        maintain_order: bool = False,
+        maintain_order: bool,
     ):
         """
         Construct class representing a group by operation over the given dataframe.
@@ -758,8 +758,8 @@ class RollingGroupBy(Generic[DF]):
         index_column: str,
         period: str | timedelta,
         offset: str | timedelta | None,
-        closed: ClosedInterval = "none",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        closed: ClosedInterval,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -801,11 +801,11 @@ class DynamicGroupBy(Generic[DF]):
         every: str | timedelta,
         period: str | timedelta | None,
         offset: str | timedelta | None,
-        truncate: bool = True,
-        include_boundaries: bool = True,
-        closed: ClosedInterval = "none",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-        start_by: StartBy = "window",
+        truncate: bool,
+        include_boundaries: bool,
+        closed: ClosedInterval,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None,
+        start_by: StartBy,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
