@@ -1485,7 +1485,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┴──────┘
 
         """
-        return pli.DataFrame(columns=self.schema).lazy()
+        return pli.DataFrame(schema=self.schema).lazy()
 
     def clone(self: LDF) -> LDF:
         """

@@ -55,12 +55,17 @@ def test_init_empty() -> None:
 def test_special_char_colname_init() -> None:
     from string import punctuation
 
-    cols = [(c.name, c.dtype) for c in columns(punctuation)]
-    df = pl.DataFrame(columns=cols)
+    with pl.StringCache():
+        cols = [(c.name, c.dtype) for c in columns(punctuation)]
+        df = pl.DataFrame(schema=cols)
 
-    assert len(cols) == len(df.columns)
-    assert len(df.rows()) == 0
-    assert df.is_empty()
+        assert len(cols) == len(df.columns)
+        assert len(df.rows()) == 0
+        assert df.is_empty()
+
+        # remove once 'columns' -> 'schema' transition complete
+        df2 = pl.DataFrame(columns=cols)  # type: ignore[call-arg]
+        assert_frame_equal(df, df2)
 
 
 def test_comparisons() -> None:
@@ -247,8 +252,8 @@ def test_from_dict_with_column_order() -> None:
     schema = {"a": pl.UInt8, "b": pl.UInt32}
     data = {"b": [3, 4], "a": [1, 2]}
     for df in (
-        pl.DataFrame(data, columns=schema),
-        pl.DataFrame(data, columns=["a", "b"], schema_overrides=schema),
+        pl.DataFrame(data, schema=schema),
+        pl.DataFrame(data, schema=["a", "b"], schema_overrides=schema),
     ):
         # ┌─────┬─────┐
         # │ a   ┆ b   │
@@ -265,7 +270,7 @@ def test_from_dict_with_column_order() -> None:
         # expect an error
         mismatched_schema = {"x": pl.UInt8, "b": pl.UInt32}
         with pytest.raises(ValueError):
-            pl.DataFrame({"b": [3, 4], "a": [1, 2]}, columns=mismatched_schema)
+            pl.DataFrame({"b": [3, 4], "a": [1, 2]}, schema=mismatched_schema)
 
 
 def test_from_dict_with_scalars() -> None:
@@ -304,7 +309,7 @@ def test_from_dict_with_scalars() -> None:
             "other": map(float, [7, 8, 9]),
             "value": {0: "x", 1: "y", 2: "z"}.values(),
         },
-        columns={
+        schema={
             "value": pl.Utf8,
             "other": pl.Float32,
             "misc": pl.Int32,
@@ -333,7 +338,7 @@ def test_from_dict_with_scalars() -> None:
         ),
         pl.from_dict(
             {"x": {"b": [1, 3], "c": [2, 4]}, "y": [5, 6], "z": "x"},
-            columns=["x", ("y", pl.Int8), "z"],
+            schema=["x", ("y", pl.Int8), "z"],
         ),
     ):
         assert df5.rows() == [({"b": 1, "c": 2}, 5, "x"), ({"b": 3, "c": 4}, 6, "x")]
@@ -395,7 +400,7 @@ def test_dataclasses_and_namedtuple() -> None:
         # in conjunction with full 'columns' override (rename/downcast)
         df = pl.DataFrame(
             data=trades,
-            columns=[
+            schema=[
                 ("ts", pl.Datetime("ms")),
                 ("tk", pl.Categorical),
                 ("pc", pl.Float32),
@@ -824,7 +829,7 @@ def test_get_dummies() -> None:
 
     df = pl.DataFrame(
         {"i": [1, 2, 3], "category": ["dog", "cat", "cat"]},
-        columns={"i": pl.Int32, "category": pl.Categorical},
+        schema={"i": pl.Int32, "category": pl.Categorical},
     )
     expected = pl.DataFrame(
         {
@@ -832,7 +837,7 @@ def test_get_dummies() -> None:
             "category_cat": [0, 1, 1],
             "category_dog": [1, 0, 0],
         },
-        columns={"i": pl.Int32, "category_cat": pl.UInt8, "category_dog": pl.UInt8},
+        schema={"i": pl.Int32, "category_cat": pl.UInt8, "category_dog": pl.UInt8},
     )
     result = pl.get_dummies(df, columns=["category"])
     assert result.frame_equal(expected)
@@ -1158,7 +1163,7 @@ def test_literal_series() -> None:
                 (21.8, 3, "reg2", datetime(2022, 8, 17, 0), 1),
                 (21.0, 2, "reg3", datetime(2022, 8, 18, 0), 3),
             ],
-            columns=expected_schema,  # type: ignore[arg-type]
+            schema=expected_schema,  # type: ignore[arg-type]
         ),
         out,
         atol=0.00001,
@@ -1223,12 +1228,12 @@ def test_from_generator_or_iterable() -> None:
     )
     # check init from row-oriented generators (more common)
     expected = pl.DataFrame(
-        data=list(gen(4)), columns=["a", "b", "c", "d"], orient="row"
+        data=list(gen(4)), schema=["a", "b", "c", "d"], orient="row"
     )
     for generated_frame in (
-        pl.DataFrame(data=gen(4), columns=["a", "b", "c", "d"]),
-        pl.DataFrame(data=Rows(4), columns=["a", "b", "c", "d"]),
-        pl.DataFrame(data=(x for x in Rows(4)), columns=["a", "b", "c", "d"]),
+        pl.DataFrame(data=gen(4), schema=["a", "b", "c", "d"]),
+        pl.DataFrame(data=Rows(4), schema=["a", "b", "c", "d"]),
+        pl.DataFrame(data=(x for x in Rows(4)), schema=["a", "b", "c", "d"]),
     ):
         assert_frame_equal(expected, generated_frame)
         assert generated_frame.schema == {
@@ -1255,14 +1260,14 @@ def test_from_generator_or_iterable() -> None:
         {"data": gen(4), "infer_schema_length": 3, "chunk_size": 2},
         {"data": gen(4), "infer_schema_length": None, "chunk_size": 3},
     ):
-        d = iterable_to_pydf(columns=cols, **params)  # type: ignore[arg-type]
+        d = iterable_to_pydf(schema=cols, **params)  # type: ignore[arg-type]
         assert expected_data == d.row_tuples()
         assert expected_schema == list(zip(d.columns(), d.dtypes()))
 
     # empty iterator
     assert_frame_equal(
-        pl.DataFrame(data=gen(0), columns=["a", "b", "c", "d"]),
-        pl.DataFrame(columns=["a", "b", "c", "d"]),
+        pl.DataFrame(data=gen(0), schema=["a", "b", "c", "d"]),
+        pl.DataFrame(schema=["a", "b", "c", "d"]),
     )
 
     # dict-related generator-views
@@ -2610,7 +2615,7 @@ def test_init_physical_with_timezone() -> None:
         dtm = {"ms": dtm_us // 1_000, "ns": dtm_us * 1_000}.get(str(tu), dtm_us)
         df = pl.DataFrame(
             data={"d1": [dtm], "d2": [dtm]},
-            columns=[
+            schema=[
                 ("d1", pl.Datetime(tu, tz_uae)),
                 ("d2", pl.Datetime(tu, tz_asia)),
             ],

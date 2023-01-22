@@ -40,7 +40,7 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_cumcount() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], columns=["A"])
+    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
 
     out = df.groupby("A", maintain_order=True).agg(
         [pl.col("A").cumcount(reverse=False).alias("foo")]
@@ -280,7 +280,7 @@ def test_dot_in_groupby() -> None:
 def test_dtype_col_selection() -> None:
     df = pl.DataFrame(
         data=[],
-        columns={
+        schema={
             "a1": pl.Datetime,
             "a2": pl.Datetime("ms"),
             "a3": pl.Datetime("ms"),
@@ -526,7 +526,7 @@ def test_ewm_with_multiple_chunks() -> None:
             ("y", 4.0, 3.0),
             ("z", 3.0, 4.0),
         ],
-        columns=["a", "b", "c"],
+        schema=["a", "b", "c"],
     ).with_columns(
         [
             pl.col(pl.Float64).log().diff().prefix("ld_"),

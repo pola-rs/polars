@@ -64,7 +64,7 @@ def test_fill_null_temporal() -> None:
             [dtm, dtm_ms, dtm, dtm, dt, tm, td, td, td, td],
             [None] * 10,
         ],
-        columns=[
+        schema=[
             ("a", pl.Datetime),
             ("b", pl.Datetime("ms")),
             ("c", pl.Datetime("us")),
@@ -1325,7 +1325,7 @@ def test_asof_join() -> None:
 def test_temporal_dtypes_apply() -> None:
     df = pl.DataFrame(
         {"timestamp": [1284286794000, None, 1234567890000]},
-        columns=[("timestamp", pl.Datetime("ms"))],
+        schema=[("timestamp", pl.Datetime("ms"))],
     )
     const_dtm = datetime(2010, 9, 12)
 
@@ -1354,7 +1354,7 @@ def test_temporal_dtypes_apply() -> None:
                     time(23, 31, 30),
                 ),
             ],
-            columns={
+            schema={
                 "timestamp": pl.Datetime("ms"),
                 "const_dtm": pl.Datetime("us"),
                 "date": pl.Date,
@@ -1380,7 +1380,7 @@ def test_timedelta_timeunit_init() -> None:
 
     df = pl.DataFrame(
         [[td_us, td_us, td_us]],
-        columns=[
+        schema=[
             ("x", pl.Duration("ms")),
             ("y", pl.Duration("us")),
             ("z", pl.Duration("ns")),
@@ -1597,7 +1597,7 @@ def test_datetime_instance_selection() -> None:
     }
     df = pl.DataFrame(
         data=test_data,
-        columns=[
+        schema=[
             ("ns", pl.Datetime("ns")),
             ("us", pl.Datetime("us")),
             ("ms", pl.Datetime("ms")),
@@ -1919,7 +1919,7 @@ def test_shift_and_fill_group_logicals() -> None:
             (date(2001, 1, 3), "B"),
             (date(2001, 1, 4), "B"),
         ],
-        columns=["d", "s"],
+        schema=["d", "s"],
     )
     assert df.select(
         pl.col("d").shift_and_fill(-1, pl.col("d").max()).over("s")
@@ -1958,7 +1958,7 @@ def test_datetime_string_casts() -> None:
             "y": [1661855445123456],
             "z": [1661855445123456789],
         },
-        columns=[
+        schema=[
             ("x", pl.Datetime("ms")),
             ("y", pl.Datetime("us")),
             ("z", pl.Datetime("ns")),
@@ -2053,7 +2053,7 @@ def test_tz_datetime_duration_arithm_5221() -> None:
     ]
     out = pl.DataFrame(
         data={"run_datetime": run_datetimes},
-        columns=[("run_datetime", pl.Datetime(time_zone="UTC"))],
+        schema=[("run_datetime", pl.Datetime(time_zone="UTC"))],
     )
     utc = zoneinfo.ZoneInfo("UTC")
     assert out.to_dict(False) == {

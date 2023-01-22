@@ -41,7 +41,7 @@ def test_cse_schema_6081() -> None:
             [date(2022, 12, 12), 1, 2],
             [date(2022, 12, 13), 5, 2],
         ],
-        columns=["date", "id", "value"],
+        schema=["date", "id", "value"],
         orient="row",
     ).lazy()
 

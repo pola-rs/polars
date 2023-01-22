@@ -27,7 +27,7 @@ def test_auto_explode() -> None:
 def test_contains() -> None:
     df = pl.DataFrame(
         data=[(1, "some * * text"), (2, "(with) special\n * chars"), (3, "**etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
     )
     for pattern, as_literal, expected in (
         (r"\* \*", False, [True, False, False]),
@@ -67,7 +67,7 @@ def test_null_comparisons() -> None:
 def test_replace() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
         orient="row",
     )
     for pattern, replacement, as_literal, expected in (
@@ -97,7 +97,7 @@ def test_replace() -> None:
 def test_replace_all() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special * chars **etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
         orient="row",
     )
     for pattern, replacement, as_literal, expected in (

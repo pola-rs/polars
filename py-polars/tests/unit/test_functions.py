@@ -73,7 +73,7 @@ def test_all_any_horizontally() -> None:
             [False, None, True],
             [None, None, False],
         ],
-        columns=["var1", "var2", "var3"],
+        schema=["var1", "var2", "var3"],
     )
     expected = pl.DataFrame(
         {

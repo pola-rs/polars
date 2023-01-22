@@ -23,7 +23,7 @@ def test_repr(df: pl.DataFrame) -> None:
         min_size=1, min_cols=1, null_probability=0.25, excluded_dtypes=[pl.Utf8]
     )
 )
-@example(df=pl.DataFrame(columns=["x", "y", "z"]))
+@example(df=pl.DataFrame(schema=["x", "y", "z"]))
 @example(df=pl.DataFrame())
 def test_null_count(df: pl.DataFrame) -> None:
     # note: the zero-row and zero-col cases are always passed as explicit examples

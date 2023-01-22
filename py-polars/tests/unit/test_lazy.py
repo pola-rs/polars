@@ -1543,10 +1543,8 @@ def test_lazy_cache_hit(capfd: Any) -> None:
 
 
 def test_quadratic_behavior_4736() -> None:
-    # we don't assert anything.
-    # If this function does not stall
-    # our tests it has passed.
-    df = pl.DataFrame(columns=list(ascii_letters))
+    # no assert; if this function does not stall our tests it has passed!
+    df = pl.DataFrame(schema=list(ascii_letters))
     df.lazy().select(reduce(add, (pl.col(fld) for fld in df.columns)))
 
 

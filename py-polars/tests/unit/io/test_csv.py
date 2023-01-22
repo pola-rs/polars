@@ -887,7 +887,7 @@ def test_datetime_format_inferred_precision(
             "x": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
             "y": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
         },
-        columns=[
+        schema=[
             ("x", pl.Datetime(tu1)),
             ("y", pl.Datetime(tu2)),
         ],

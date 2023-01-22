@@ -27,7 +27,7 @@ def test_pivot() -> None:
             ("B", None, None, 2, 4, None),
             ("C", None, None, None, None, 2),
         ],
-        columns=["foo", "k", "l", "m", "n", "o"],
+        schema=["foo", "k", "l", "m", "n", "o"],
     )
     assert_frame_equal(result, expected)
 
@@ -122,7 +122,7 @@ def test_pivot_categorical_3968() -> None:
 def test_pivot_categorical_index() -> None:
     df = pl.DataFrame(
         {"A": ["Fire", "Water", "Water", "Fire"], "B": ["Car", "Car", "Car", "Ship"]},
-        columns=[("A", pl.Categorical), ("B", pl.Categorical)],
+        schema=[("A", pl.Categorical), ("B", pl.Categorical)],
     )
 
     result = df.pivot(values="B", index=["A"], columns="B", aggregate_fn="count")
@@ -139,7 +139,7 @@ def test_pivot_categorical_index() -> None:
             "B": ["Car", "Car", "Car", "Ship"],
             "C": ["Paper", "Paper", "Paper", "Paper"],
         },
-        columns=[("A", pl.Categorical), ("B", pl.Categorical), ("C", pl.Categorical)],
+        schema=[("A", pl.Categorical), ("B", pl.Categorical), ("C", pl.Categorical)],
     )
     result = df.pivot(values="B", index=["A", "C"], columns="B", aggregate_fn="count")
     expected = {

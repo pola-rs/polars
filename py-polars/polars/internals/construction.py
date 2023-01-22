@@ -90,7 +90,10 @@ def include_unknowns(
     schema: SchemaDict, cols: Sequence[str]
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
-    return {col: schema.get(col, Unknown) for col in cols}
+    return {
+        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
+        for col in cols
+    }
 
 
 ################################
@@ -307,7 +310,7 @@ def sequence_to_pyseries(
         empty = {}  # type: ignore[var-annotated]
         return sequence_to_pydf(
             data=[(empty if v is None else v) for v in values],
-            columns=struct_schema,
+            schema=struct_schema,
             orient="row",
         ).to_struct(name)
     else:
@@ -478,12 +481,10 @@ def _pandas_series_to_arrow(
     dtype = getattr(values, "dtype", None)
     if dtype == "object":
         first_non_none = _get_first_non_none(values.values)  # type: ignore[arg-type]
-
         if isinstance(first_non_none, str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
-        if first_non_none is None:
+        elif first_non_none is None:
             return pa.nulls(min_len, pa.large_utf8())
-
         return pa.array(values, from_pandas=nan_to_none)
     elif dtype:
         return pa.array(values, from_pandas=nan_to_none)
@@ -543,7 +544,7 @@ def _post_apply_columns(
 ) -> PyDataFrame:
     """Apply 'columns' param _after_ PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
-    columns, dtypes = _unpack_columns(
+    columns, dtypes = _unpack_schema(
         (columns or pydf_columns), schema_overrides=schema_overrides
     )
     column_subset: list[str] = []
@@ -573,11 +574,12 @@ def _post_apply_columns(
     return pydf
 
 
-def _unpack_columns(
-    columns: SchemaDefinition | None,
+def _unpack_schema(
+    schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None = None,
     n_expected: int | None = None,
     lookup_names: Iterable[str] | None = None,
+    include_overrides_in_columns: bool = False,
 ) -> tuple[list[str], SchemaDict]:
     """
     Unpack column names and create dtype lookup.
@@ -585,11 +587,11 @@ def _unpack_columns(
     Works for any (name, dtype) pairs or schema dict input,
     overriding any inferred dtypes with explicit dtypes if supplied.
     """
-    if isinstance(columns, dict):
-        columns = list(columns.items())
+    if isinstance(schema, dict):
+        schema = list(schema.items())
     column_names = [
         (col or f"column_{i}") if isinstance(col, str) else col[0]
-        for i, col in enumerate(columns or [])
+        for i, col in enumerate(schema or [])
     ]
     if not column_names and n_expected:
         column_names = [f"column_{i}" for i in range(n_expected)]
@@ -598,11 +600,15 @@ def _unpack_columns(
     }
     column_dtypes = {
         lookup.get(col[0], col[0]): col[1]
-        for col in (columns or [])
+        for col in (schema or [])
         if not isinstance(col, str) and col[1]
     }
     if schema_overrides:
         column_dtypes.update(schema_overrides)
+        if schema and include_overrides_in_columns:
+            column_names = column_names + [
+                col for col in column_dtypes if col not in column_names
+            ]
 
     return (
         column_names or None,  # type: ignore[return-value]
@@ -660,23 +666,23 @@ def _expand_dict_scalars(
 
 def dict_to_pydf(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series],
-    columns: SchemaDefinition | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
-    if not columns:
-        columns = list(data)
-    if columns:
+    if not schema:
+        schema = list(data)
+    if schema:
         # the columns arg may also set the dtype/column order of the series
-        if isinstance(columns, dict) and data:
-            if not all((col in columns) for col in data):
+        if isinstance(schema, dict) and data:
+            if not all((col in schema) for col in data):
                 raise ValueError(
                     "The given column-schema names do not match the data dictionary"
                 )
-            data = {col: data[col] for col in columns}
+            data = {col: data[col] for col in schema}
 
-        columns, schema_overrides = _unpack_columns(
-            columns, lookup_names=data.keys(), schema_overrides=schema_overrides
+        columns, schema_overrides = _unpack_schema(
+            schema, lookup_names=data.keys(), schema_overrides=schema_overrides
         )
         if not data and schema_overrides:
             data_series = [
@@ -724,7 +730,7 @@ def dict_to_pydf(
 
 def sequence_to_pydf(
     data: Sequence[Any],
-    columns: SchemaDefinition | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
     orient: Orientation | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
@@ -732,30 +738,30 @@ def sequence_to_pydf(
     """Construct a PyDataFrame from a sequence."""
     data_series: list[PySeries]
     if len(data) == 0:
-        return dict_to_pydf({}, columns=columns, schema_overrides=schema_overrides)
+        return dict_to_pydf({}, schema=schema, schema_overrides=schema_overrides)
 
     if isinstance(data[0], Generator):
         data = [list(row) for row in data]
 
     if isinstance(data[0], pli.Series):
         series_names = [s.name for s in data]
-        columns, schema_overrides = _unpack_columns(
-            columns or series_names,
+        column_names, schema_overrides = _unpack_schema(
+            schema or series_names,
             schema_overrides=schema_overrides,
             n_expected=len(data),
         )
         data_series = []
         for i, s in enumerate(data):
             if not s.name:  # TODO: Replace by `if s.name is None` once allowed
-                s.rename(columns[i], in_place=True)
-            new_dtype = schema_overrides.get(columns[i])
+                s.rename(column_names[i], in_place=True)
+            new_dtype = schema_overrides.get(column_names[i])
             if new_dtype and new_dtype != s.dtype:
                 s = s.cast(new_dtype)
             data_series.append(s._s)
 
     elif isinstance(data[0], dict):
-        column_names, schema_overrides = _unpack_columns(
-            columns, schema_overrides=schema_overrides
+        column_names, schema_overrides = _unpack_schema(
+            schema, schema_overrides=schema_overrides
         )
         dtypes = (
             include_unknowns(schema_overrides, column_names)
@@ -769,22 +775,22 @@ def sequence_to_pydf(
 
     elif isinstance(data[0], (list, tuple, Sequence)) and not isinstance(data[0], str):
         if is_namedtuple(data[0]):
-            if columns is None:
-                columns = data[0]._fields  # type: ignore[attr-defined]
-                if len(data[0].__annotations__) == len(columns):
-                    columns = [
+            if schema is None:
+                schema = data[0]._fields  # type: ignore[attr-defined]
+                if len(data[0].__annotations__) == len(schema):
+                    schema = [
                         (name, py_type_to_dtype(tp, raise_unmatched=False))
                         for name, tp in data[0].__annotations__.items()
                     ]
             elif orient is None:
                 orient = "row"
 
-        if orient is None and columns is not None:
-            orient = "col" if len(columns) == len(data) else "row"
+        if orient is None and schema is not None:
+            orient = "col" if len(schema) == len(data) else "row"
 
         if orient == "row":
-            column_names, schema_overrides = _unpack_columns(
-                columns, schema_overrides=schema_overrides, n_expected=len(data[0])
+            column_names, schema_overrides = _unpack_schema(
+                schema, schema_overrides=schema_overrides, n_expected=len(data[0])
             )
             schema_override = (
                 include_unknowns(schema_overrides, column_names)
@@ -810,11 +816,13 @@ def sequence_to_pydf(
             return pydf
 
         elif orient == "col" or orient is None:
-            columns, schema_overrides = _unpack_columns(
-                columns, schema_overrides=schema_overrides, n_expected=len(data)
+            column_names, schema_overrides = _unpack_schema(
+                schema, schema_overrides=schema_overrides, n_expected=len(data)
             )
             data_series = [
-                pli.Series(columns[i], data[i], schema_overrides.get(columns[i]))._s
+                pli.Series(
+                    column_names[i], data[i], schema_overrides.get(column_names[i])
+                )._s
                 for i in range(len(data))
             ]
         else:
@@ -823,15 +831,15 @@ def sequence_to_pydf(
             )
 
     elif is_dataclass(data[0]):
-        if columns:
-            columns, schema_overrides = _unpack_columns(
-                columns, schema_overrides=schema_overrides
+        if schema:
+            column_names, schema_overrides = _unpack_schema(
+                schema, schema_overrides=schema_overrides
             )
             schema_override = {
-                col: schema_overrides.get(col, Unknown) for col in columns
+                col: schema_overrides.get(col, Unknown) for col in column_names
             }
         else:
-            columns = None
+            column_names = None
             schema_override = {
                 col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
                 for col, tp in dataclass_type_hints(data[0].__class__).items()
@@ -850,44 +858,46 @@ def sequence_to_pydf(
                 col: tp for col, tp in schema_override.items() if isinstance(tp, Struct)
             }
             pydf = _post_apply_columns(
-                pydf, columns, structs, schema_overrides=schema_overrides
+                pydf, column_names, structs, schema_overrides=schema_overrides
             )
         return pydf
 
     elif _check_for_pandas(data[0]) and isinstance(
         data[0], (pd.Series, pd.DatetimeIndex)
     ):
-        if columns is not None:
-            columns, schema_overrides = _unpack_columns(
-                columns, schema_overrides=schema_overrides, n_expected=1
+        if schema is None:
+            column_names = None
+        else:
+            column_names, schema_overrides = _unpack_schema(
+                schema, schema_overrides=schema_overrides, n_expected=1
             )
 
         schema_overrides = schema_overrides or {}
         data_series = []
         for i, s in enumerate(data):
-            name = columns[i] if columns else s.name
+            name = column_names[i] if column_names else s.name
             dtype = schema_overrides.get(name, None)
             pyseries = pandas_to_pyseries(name=name, values=s)
             if dtype is not None and dtype != pyseries.dtype():
                 pyseries = pyseries.cast(dtype, strict=True)
             data_series.append(pyseries)
 
-        columns = None
+        column_names = None
     else:
-        columns, schema_overrides = _unpack_columns(
-            columns, schema_overrides=schema_overrides, n_expected=1
+        column_names, schema_overrides = _unpack_schema(
+            schema, schema_overrides=schema_overrides, n_expected=1
         )
         data_series = [
-            pli.Series(columns[0], data, schema_overrides.get(columns[0]))._s
+            pli.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
         ]
 
-    data_series = _handle_columns_arg(data_series, columns=columns)
+    data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
 
 
 def numpy_to_pydf(
     data: np.ndarray[Any, Any],
-    columns: SchemaDefinition | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
     orient: Orientation | None = None,
 ) -> PyDataFrame:
@@ -904,13 +914,13 @@ def numpy_to_pydf(
     elif len(shape) == 2:
         # default convention
         # first axis is rows, second axis is columns
-        if orient is None and columns is None:
+        if orient is None and schema is None:
             n_columns = shape[1]
             orient = "row"
 
         # Infer orientation if columns argument is given
-        elif orient is None and columns is not None:
-            if len(columns) == shape[0]:
+        elif orient is None and schema is not None:
+            if len(schema) == shape[0]:
                 orient = "col"
                 n_columns = shape[0]
             else:
@@ -930,11 +940,11 @@ def numpy_to_pydf(
             "Cannot create DataFrame from numpy array with more than two dimensions."
         )
 
-    if columns is not None and len(columns) != n_columns:
+    if schema is not None and len(schema) != n_columns:
         raise ValueError("Dimensions of columns arg must match data dimensions.")
 
-    columns, schema_overrides = _unpack_columns(
-        columns, schema_overrides=schema_overrides, n_expected=n_columns
+    column_names, schema_overrides = _unpack_schema(
+        schema, schema_overrides=schema_overrides, n_expected=n_columns
     )
 
     # Convert data to series
@@ -943,39 +953,43 @@ def numpy_to_pydf(
 
     elif len(shape) == 1:
         data_series = [
-            pli.Series(columns[0], data, schema_overrides.get(columns[0]))._s
+            pli.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
         ]
 
     else:
         if orient == "row":
             data_series = [
-                pli.Series(columns[i], data[:, i], schema_overrides.get(columns[i]))._s
+                pli.Series(
+                    column_names[i], data[:, i], schema_overrides.get(column_names[i])
+                )._s
                 for i in range(n_columns)
             ]
         else:
             data_series = [
-                pli.Series(columns[i], data[i], schema_overrides.get(columns[i]))._s
+                pli.Series(
+                    column_names[i], data[i], schema_overrides.get(column_names[i])
+                )._s
                 for i in range(n_columns)
             ]
 
-    data_series = _handle_columns_arg(data_series, columns=columns)
+    data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
 
 
 def arrow_to_pydf(
     data: pa.Table,
-    columns: SchemaDefinition | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an Arrow Table."""
-    original_columns = columns
-    columns, schema_overrides = _unpack_columns(
-        (columns or data.column_names), schema_overrides=schema_overrides
+    original_schema = schema
+    column_names, schema_overrides = _unpack_schema(
+        (schema or data.column_names), schema_overrides=schema_overrides
     )
     try:
-        if columns and columns != data.column_names:
-            data = data.rename_columns(columns)
+        if column_names and column_names != data.column_names:
+            data = data.rename_columns(column_names)
     except pa.lib.ArrowInvalid as e:
         raise ValueError("Dimensions of columns arg must match data dimensions.") from e
 
@@ -1039,16 +1053,16 @@ def arrow_to_pydf(
         df = df[names]
         pydf = df._df
 
-    if columns != original_columns and (schema_overrides or original_columns):
+    if column_names != original_schema and (schema_overrides or original_schema):
         pydf = _post_apply_columns(
-            pydf, original_columns, schema_overrides=schema_overrides
+            pydf, original_schema, schema_overrides=schema_overrides
         )
     elif schema_overrides:
         for col, dtype in zip(pydf.columns(), pydf.dtypes()):
             override_dtype = schema_overrides.get(col)
             if override_dtype is not None and dtype != override_dtype:
                 pydf = _post_apply_columns(
-                    pydf, original_columns, schema_overrides=schema_overrides
+                    pydf, original_schema, schema_overrides=schema_overrides
                 )
                 break
 
@@ -1057,69 +1071,69 @@ def arrow_to_pydf(
 
 def series_to_pydf(
     data: pli.Series,
-    columns: SchemaDefinition | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a Polars Series."""
     data_series = [data._s]
     series_name = [s.name() for s in data_series]
-    columns, schema_overrides = _unpack_columns(
-        columns or series_name, schema_overrides=schema_overrides, n_expected=1
+    colum_names, schema_overrides = _unpack_schema(
+        schema or series_name, schema_overrides=schema_overrides, n_expected=1
     )
     if schema_overrides:
         new_dtype = list(schema_overrides.values())[0]
         if new_dtype != data.dtype:
             data_series[0] = data_series[0].cast(new_dtype, True)
 
-    data_series = _handle_columns_arg(data_series, columns=columns)
+    data_series = _handle_columns_arg(data_series, columns=colum_names)
     return PyDataFrame(data_series)
 
 
 def iterable_to_pydf(
     data: Iterable[Any],
-    columns: SchemaDefinition | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
     orient: Orientation | None = None,
     chunk_size: int | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an iterable/generator."""
-    original_columns = columns
+    original_schema, column_names = schema, None
     dtypes_by_idx: dict[int, PolarsDataType] = {}
-    if columns is not None:
-        columns, schema_overrides = _unpack_columns(
-            columns, schema_overrides=schema_overrides
+    if schema is not None:
+        column_names, schema_overrides = _unpack_schema(
+            schema, schema_overrides=schema_overrides
         )
     elif schema_overrides:
-        _columns, schema_overrides = _unpack_columns(
-            columns, schema_overrides=schema_overrides
+        _column_names, schema_overrides = _unpack_schema(
+            schema, schema_overrides=schema_overrides
         )
 
     if not isinstance(data, Generator):
         data = iter(data)
 
     if orient == "col":
-        if columns and schema_overrides:
+        if column_names and schema_overrides:
             dtypes_by_idx = {
                 idx: schema_overrides.get(col, Unknown)
-                for idx, col in enumerate(columns)
+                for idx, col in enumerate(column_names)
             }
 
         return pli.DataFrame(
             {
-                (f"column_{idx}" if columns is None else columns[idx]): pli.Series(
-                    coldata, dtype=dtypes_by_idx.get(idx)
-                )
+                (
+                    f"column_{idx}" if column_names is None else column_names[idx]
+                ): pli.Series(coldata, dtype=dtypes_by_idx.get(idx))
                 for idx, coldata in enumerate(data)
             }
         )._df
 
     def to_frame_chunk(
-        values: list[Any], columns: SchemaDefinition | None
+        values: list[Any], schema: SchemaDefinition | None
     ) -> pli.DataFrame:
         return pli.DataFrame(
             data=values,
-            columns=columns,
+            schema=schema,
             orient="row",
             infer_schema_length=infer_schema_length,
         )
@@ -1129,8 +1143,8 @@ def iterable_to_pydf(
 
     if chunk_size:
         adaptive_chunk_size = chunk_size
-    elif columns:
-        adaptive_chunk_size = n_chunk_elems // len(columns)
+    elif column_names:
+        adaptive_chunk_size = n_chunk_elems // len(column_names)
     else:
         adaptive_chunk_size = None
 
@@ -1139,11 +1153,11 @@ def iterable_to_pydf(
         values = list(islice(data, adaptive_chunk_size or 1000))
         if not values:
             break
-        frame_chunk = to_frame_chunk(values, original_columns)
+        frame_chunk = to_frame_chunk(values, original_schema)
         if df is None:
             df = frame_chunk
-            if not original_columns:
-                original_columns = list(df.schema.items())
+            if not original_schema:
+                original_schema = list(df.schema.items())
             if not adaptive_chunk_size:
                 adaptive_chunk_size = n_chunk_elems // len(df.columns)
         else:
@@ -1151,14 +1165,14 @@ def iterable_to_pydf(
             n_chunks += 1
 
     if df is None:
-        df = to_frame_chunk([], original_columns)
+        df = to_frame_chunk([], original_schema)
 
     return (df.rechunk() if n_chunks > 0 else df)._df
 
 
 def pandas_to_pydf(
     data: pd.DataFrame,
-    columns: SchemaDefinition | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
     nan_to_none: bool = True,
@@ -1173,7 +1187,7 @@ def pandas_to_pydf(
     }
     arrow_table = pa.table(arrow_dict)
     return arrow_to_pydf(
-        arrow_table, columns=columns, schema_overrides=schema_overrides, rechunk=rechunk
+        arrow_table, schema=schema, schema_overrides=schema_overrides, rechunk=rechunk
     )
 
 

@@ -15,7 +15,7 @@ assert (time.time() - t0) < 1
 # test mean overflow issues
 np.random.seed(1)
 mean = 769.5607652
-df = pl.DataFrame(np.random.randint(500, 1040, 5000000), columns=["value"])
+df = pl.DataFrame(np.random.randint(500, 1040, 5000000), schema=["value"])
 assert np.isclose(df.with_column(pl.mean("value"))[0, 0], mean)
 assert np.isclose(
     df.with_column(pl.col("value").cast(pl.Int32)).with_column(pl.mean("value"))[0, 0],

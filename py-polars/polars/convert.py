@@ -7,31 +7,40 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, Series
+from polars.internals.construction import _unpack_schema, include_unknowns
 from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import Orientation
 
 
+@deprecated_alias(columns="schema")
 def from_dict(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
-    columns: SchemaDefinition | None = None,
+    schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a dictionary of sequences.
 
-    This operation clones data, unless you pass in a ``Dict[str, pl.Series]``.
+    This operation clones data, unless you pass a ``{str: pl.Series,}`` dict.
 
     Parameters
     ----------
     data : dict of sequences
         Two-dimensional data represented as a dictionary. dict must contain
         Sequences.
-    columns : Sequence of str, default None
-        Column labels to use for resulting DataFrame. If specified, overrides any
-        labels already present in the data. Must match data dimensions.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the columns param will be overridden.
@@ -56,15 +65,15 @@ def from_dict(
 
     """
     return DataFrame._from_dict(
-        data=data, schema=columns, schema_overrides=schema_overrides
+        data=data, schema=schema, schema_overrides=schema_overrides
     )
 
 
-@deprecated_alias(schema="schema_overrides")
 def from_dicts(
     dicts: Sequence[dict[str, Any]],
     infer_schema_length: int | None = N_INFER_DEFAULT,
     *,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     """
@@ -76,7 +85,17 @@ def from_dicts(
         Sequence with dictionaries mapping column name to value
     infer_schema_length
         How many dictionaries/rows to scan to determine the data types
-        if set to `None` all rows are scanned. This will be slow.
+        if set to `None` then ALL dicts are scanned; this will be slow.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
 
@@ -100,24 +119,9 @@ def from_dicts(
     │ 3   ┆ 6   │
     └─────┴─────┘
 
-    >>> # overwrite first column name and dtype
-    >>> pl.from_dicts(data, schema_overrides={"c": pl.Int32})
-    shape: (3, 2)
-    ┌─────┬─────┐
-    │ c   ┆ b   │
-    │ --- ┆ --- │
-    │ i32 ┆ i64 │
-    ╞═════╪═════╡
-    │ 1   ┆ 4   │
-    │ 2   ┆ 5   │
-    │ 3   ┆ 6   │
-    └─────┴─────┘
-
-    >>> # let polars infer the dtypes
-    >>> # but inform about a 3rd column
-    >>> pl.from_dicts(
-    ...     data, schema_overrides={"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32}
-    ... )
+    >>> # let polars infer the first two column dtypes, and
+    >>> # explicitly inform the constructor about a third column
+    >>> pl.from_dicts(data, schema=["a", "b"], schema_overrides={"c": pl.Int32})
     shape: (3, 3)
     ┌─────┬─────┬──────┐
     │ a   ┆ b   ┆ c    │
@@ -130,15 +134,21 @@ def from_dicts(
     └─────┴─────┴──────┘
 
     """
+    columns, schema = _unpack_schema(
+        schema, schema_overrides=schema_overrides, include_overrides_in_columns=True
+    )
+    schema_overrides = include_unknowns(schema, columns or list(schema))
     return DataFrame._from_dicts(
         dicts, infer_schema_length, schema_overrides=schema_overrides
     )
 
 
+@deprecated_alias(columns="schema")
 def from_records(
     data: Sequence[Sequence[Any]],
-    columns: Sequence[str] | None = None,
+    schema: Sequence[str] | None = None,
     orient: Orientation | None = None,
+    *,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
@@ -151,9 +161,16 @@ def from_records(
     ----------
     data : Sequence of sequences
         Two-dimensional data represented as a sequence of sequences.
-    columns : Sequence of str, default None
-        Column labels to use for resulting DataFrame. Must match data dimensions.
-        If not specified, columns will be named `column_0`, `column_1`, etc.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
     orient : {None, 'col', 'row'}
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -172,7 +189,7 @@ def from_records(
     Examples
     --------
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> df = pl.from_records(data, columns=["a", "b"])
+    >>> df = pl.from_records(data, schema=["a", "b"])
     >>> df
     shape: (3, 2)
     ┌─────┬─────┐
@@ -188,16 +205,17 @@ def from_records(
     """
     return DataFrame._from_records(
         data,
-        columns=columns,
+        schema=schema,
         schema_overrides=schema_overrides,
         orient=orient,
         infer_schema_length=infer_schema_length,
     )
 
 
+@deprecated_alias(columns="schema")
 def from_numpy(
     data: np.ndarray[Any, Any],
-    columns: Sequence[str] | None = None,
+    schema: SchemaDefinition | None = None,
     orient: Orientation | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
@@ -210,9 +228,16 @@ def from_numpy(
     ----------
     data : :class:`numpy.ndarray`
         Two-dimensional data represented as a numpy ndarray.
-    columns : Sequence of str, default None
-        Column labels to use for resulting DataFrame. Must match data dimensions.
-        If not specified, columns will be named `column_0`, `column_1`, etc.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
     orient : {None, 'col', 'row'}
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -229,7 +254,7 @@ def from_numpy(
     --------
     >>> import numpy as np
     >>> data = np.array([[1, 2, 3], [4, 5, 6]])
-    >>> df = pl.from_numpy(data, columns=["a", "b"], orient="col")
+    >>> df = pl.from_numpy(data, schema=["a", "b"], orient="col")
     >>> df
     shape: (3, 2)
     ┌─────┬─────┐
@@ -244,7 +269,7 @@ def from_numpy(
 
     """
     return DataFrame._from_numpy(
-        data, columns=columns, orient=orient, schema_overrides=schema_overrides
+        data, schema=schema, orient=orient, schema_overrides=schema_overrides
     )
 
 
@@ -271,14 +296,14 @@ def from_arrow(
         If not specified, existing Array table columns are used, with missing names
         named as `column_0`, `column_1`, etc.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-        The resulting DataFrame schema may be declared in several ways:
+        The DataFrame schema may be declared in several ways:
 
-        * As a dict of {name:type} pairs; if the type is None, it will be auto-inferred.
-        * As a list of column names; in this case types are all automatically inferred.
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
-        underlying data, the names supplied here will overwrite them. The number
+        underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
 
     schema_overrides : dict, default None
@@ -325,7 +350,7 @@ def from_arrow(
     """
     if isinstance(a, pa.Table):
         return DataFrame._from_arrow(
-            a, rechunk=rechunk, columns=schema, schema_overrides=schema_overrides
+            a, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
         )
     elif isinstance(a, (pa.Array, pa.ChunkedArray)):
         return Series._from_arrow("", a, rechunk)
