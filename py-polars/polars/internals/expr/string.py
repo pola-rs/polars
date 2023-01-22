@@ -490,7 +490,7 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
-    def contains(self, pattern: str, literal: bool = False) -> pli.Expr:
+    def contains(self, pattern: str | pli.Expr, literal: bool = False) -> pli.Expr:
         """
         Check if string contains a substring that matches a regex.
 
@@ -529,6 +529,7 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal))
 
     def ends_with(self, sub: str | pli.Expr) -> pli.Expr:

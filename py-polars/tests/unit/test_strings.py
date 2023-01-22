@@ -58,6 +58,34 @@ def test_contains() -> None:
         )
 
 
+def test_contains_expr() -> None:
+
+    df = pl.DataFrame(
+        {
+            "text": ["some text", "(with) special\n .* chars", "**etc...?$", None, "b"],
+            "pattern": [r"[me]", r".*", r"^\(", "a", None],
+        }
+    )
+
+    assert (
+        df.with_columns(
+            [
+                pl.col("text")
+                .str.contains(pl.col("pattern"), literal=False)
+                .alias("contains"),
+                pl.col("text")
+                .str.contains(pl.col("pattern"), literal=True)
+                .alias("contains_lit"),
+            ]
+        )
+    ).to_dict(False) == {
+        "text": ["some text", "(with) special\n .* chars", "**etc...?$", None, "b"],
+        "pattern": ["[me]", ".*", "^\\(", "a", None],
+        "contains": [True, True, False, False, False],
+        "contains_lit": [False, True, False, False, False],
+    }
+
+
 def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])
     assert (s.shift() == s).null_count() == 0
@@ -239,6 +267,7 @@ def test_starts_ends_with() -> None:
             pl.col("a").str.starts_with("ham").alias("starts_ham"),
             pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
             pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
+            pl.col("a").str.contains(pl.col("sub")).alias("contains_sub"),
         ]
     ).to_dict(False) == {
         "ends_pop": [False, False, True],
@@ -247,4 +276,5 @@ def test_starts_ends_with() -> None:
         "starts_ham": [True, False, False],
         "starts_None": [False, False, False],
         "starts_sub": [True, False, False],
+        "contains_sub": [True, True, False],
     }

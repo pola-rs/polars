@@ -5,14 +5,12 @@ use polars_arrow::utils::CustomIterTools;
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
     Contains {
-        pat: String,
         literal: bool,
     },
     StartsWith,
@@ -99,13 +97,35 @@ pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
     Ok(ca.to_lowercase().into_series())
 }
 
-pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    if literal {
-        ca.contains_literal(pat).map(|ca| ca.into_series())
-    } else {
-        ca.contains(pat).map(|ca| ca.into_series())
-    }
+pub(super) fn contains(s: &[Series], literal: bool) -> PolarsResult<Series> {
+    let ca = &s[0].utf8()?;
+    let pat = &s[1].utf8()?;
+
+    let mut out: BooleanChunked = match pat.len() {
+        1 => match pat.get(0) {
+            Some(pat) => {
+                if literal {
+                    ca.contains_literal(pat)?
+                } else {
+                    ca.contains(pat)?
+                }
+            }
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => {
+            let f = |s: &str, pat: &str| {
+                if literal {
+                    s.contains(pat)
+                } else {
+                    Regex::new(pat).unwrap().is_match(s)
+                }
+            };
+            iter_and_check(ca, pat, f)
+        }
+    };
+
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
@@ -330,6 +350,23 @@ fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
     pat.get(0).ok_or_else(|| {
         PolarsError::ComputeError("pattern may not be 'null' in 'replace' expression".into())
     })
+}
+
+fn iter_and_check<F>(ca: &Utf8Chunked, val: &Utf8Chunked, f: F) -> BooleanChunked
+where
+    F: Fn(&str, &str) -> bool,
+{
+    let mut out: BooleanChunked = ca
+        .into_iter()
+        .zip(val.into_iter())
+        .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+            (Some(src), Some(val)) => f(src, val),
+            _ => false,
+        })
+        .collect_trusted();
+
+    out.rename(ca.name());
+    out
 }
 
 // used only if feature="regex"
