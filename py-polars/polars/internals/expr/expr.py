@@ -3153,64 +3153,30 @@ class Expr:
 
     def flatten(self) -> Expr:
         """
-        Alias for :func:`explode`.
+        Flatten a list or string column.
 
-        Explode a list or utf8 Series. This means that every item is expanded to a new
-        row.
-
-        .. deprecated:: 0.15.16
-            `Expr.flatten` will be removed in favour of `Expr.arr.explode` and
-            `Expr.str.explode`.
-
-        Returns
-        -------
-        Exploded Series of same dtype
+        Alias for :func:`polars.internals.expr.list.ExprListNameSpace.explode`.
 
         Examples
         --------
-        The following example turns each character into a separate row:
-
-        >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-        >>> (df.select(pl.col("foo").flatten()))
-        shape: (10, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ h   │
-        │ e   │
-        │ l   │
-        │ l   │
-        │ ... │
-        │ o   │
-        │ r   │
-        │ l   │
-        │ d   │
-        └─────┘
-
-        This example turns each word into a separate row:
-
-        >>> df = pl.DataFrame({"foo": ["hello world"]})
-        >>> (df.select(pl.col("foo").str.split(by=" ").flatten()))
-        shape: (2, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │ hello │
-        │ world │
-        └───────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": ["a", "b", "b"],
+        ...         "values": [[1, 2], [2, 3], [4]],
+        ...     }
+        ... )
+        >>> df.groupby("group").agg(pl.col("values").flatten())  # doctest: +SKIP
+        shape: (2, 2)
+        ┌───────┬───────────┐
+        │ group ┆ values    │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[i64] │
+        ╞═══════╪═══════════╡
+        │ a     ┆ [1, 2]    │
+        │ b     ┆ [2, 3, 4] │
+        └───────┴───────────┘
 
         """
-        warnings.warn(
-            "`Expr.flatten()` is deprecated in favor of `explode`"
-            " under the list and string namespaces. Use `.arr.explode()` or"
-            " `.str.explode()` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return wrap_expr(self._pyexpr.explode())
 
     def explode(self) -> Expr:
