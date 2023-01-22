@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pyarrow as pa
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -8,10 +9,33 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 def test_explode_string() -> None:
     df = pl.Series("a", ["Hello", "World"])
-    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
-
     result = df.to_frame().select(pl.col("a").str.explode()).to_series()
+
+    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
     assert_series_equal(result, expected)
+
+
+def test_groupby_flatten_list() -> None:
+    df = pl.DataFrame({"group": ["a", "b", "b"], "values": [[1, 2], [2, 3], [4]]})
+    result = df.groupby("group", maintain_order=True).agg(pl.col("values").flatten())
+
+    expected = pl.DataFrame({"group": ["a", "b"], "values": [[1, 2], [2, 3, 4]]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.skip(
+    "This does not work due to a bug. Fix it then remove this marker!"
+    "See: https://github.com/pola-rs/polars/issues/6369"
+)
+def test_groupby_flatten_string() -> None:
+    df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
+
+    result = df.groupby("group", maintain_order=True).agg(pl.col("values").flatten())
+
+    expected = pl.DataFrame(
+        {"group": ["a", "b"], "values": [list("foo"), list("barbaz")]}
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_explode_empty_df_3402() -> None:
@@ -183,11 +207,7 @@ def test_explode_in_agg_context() -> None:
         df.with_row_count("row_nr")
         .explode("idxs")
         .groupby("row_nr")
-        .agg(
-            [
-                pl.col("array").arr.explode(),
-            ]
-        )
+        .agg(pl.col("array").flatten())
     ).to_dict(False) == {
         "row_nr": [0, 1, 2],
         "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],

@@ -3153,18 +3153,28 @@ class Expr:
 
     def flatten(self) -> Expr:
         """
+        Flatten a list or string column.
+
         Alias for :func:`polars.internals.expr.list.ExprListNameSpace.explode`.
-
-        Explode a list or utf8 Series. This means that every item is expanded to a new
-        row.
-
-        Returns
-        -------
-        Exploded Series of same dtype
 
         Examples
         --------
-        ...
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": ["a", "b", "b"],
+        ...         "values": [[1, 2], [2, 3], [4]],
+        ...     }
+        ... )
+        >>> df.groupby("group").agg(pl.col("values").flatten())  # doctest: +SKIP
+        shape: (2, 2)
+        ┌───────┬───────────┐
+        │ group ┆ values    │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[i64] │
+        ╞═══════╪═══════════╡
+        │ a     ┆ [1, 2]    │
+        │ b     ┆ [2, 3, 4] │
+        └───────┴───────────┘
 
         """
         return wrap_expr(self._pyexpr.explode())
