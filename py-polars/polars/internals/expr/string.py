@@ -532,7 +532,7 @@ class ExprStringNameSpace:
         pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal))
 
-    def ends_with(self, sub: str | pli.Expr) -> pli.Expr:
+    def ends_with(self, sub: str) -> pli.Expr:
         """
         Check if string values end with a substring.
 
@@ -576,7 +576,6 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        sub = pli.expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_ends_with(sub))
 
     def starts_with(self, sub: str | pli.Expr) -> pli.Expr:

@@ -27,12 +27,9 @@ impl StringNameSpace {
     }
 
     /// Check if a string value ends with the `sub` string.
-    pub fn ends_with(self, sub: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::EndsWith),
-            &[sub],
-            true,
-        )
+    pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
+        let sub = sub.as_ref().into();
+        self.0.map_private(StringFunction::EndsWith(sub).into())
     }
 
     /// Check if a string value starts with the `sub` string.

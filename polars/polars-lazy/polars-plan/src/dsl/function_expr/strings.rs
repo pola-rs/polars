@@ -14,7 +14,7 @@ pub enum StringFunction {
         literal: bool,
     },
     StartsWith,
-    EndsWith,
+    EndsWith(String),
     Extract {
         pat: String,
         group_index: usize,
@@ -58,7 +58,7 @@ impl Display for StringFunction {
         let s = match self {
             StringFunction::Contains { .. } => "contains",
             StringFunction::StartsWith { .. } => "starts_with",
-            StringFunction::EndsWith { .. } => "ends_with",
+            StringFunction::EndsWith(_) => "ends_with",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "string_justify")]
             StringFunction::Zfill(_) => "zfill",
@@ -128,29 +128,10 @@ pub(super) fn contains(s: &[Series], literal: bool) -> PolarsResult<Series> {
     Ok(out.into_series())
 }
 
-pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = &s[0].utf8()?;
-    let sub = &s[1].utf8()?;
-
-    let mut out: BooleanChunked = match sub.len() {
-        1 => match sub.get(0) {
-            Some(s) => ca.ends_with(s),
-            None => BooleanChunked::full(ca.name(), false, ca.len()),
-        },
-        _ => ca
-            .into_iter()
-            .zip(sub.into_iter())
-            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                (Some(src), Some(val)) => src.ends_with(val),
-                _ => false,
-            })
-            .collect_trusted(),
-    };
-
-    out.rename(ca.name());
-    Ok(out.into_series())
+pub(super) fn ends_with(s: &Series, sub: &str) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.ends_with(sub).into_series())
 }
-
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = &s[0].utf8()?;
     let sub = &s[1].utf8()?;
