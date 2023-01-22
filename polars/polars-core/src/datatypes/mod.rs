@@ -22,7 +22,6 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 use ahash::RandomState;
 pub use aliases::*;
 pub use any_value::*;
-use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
@@ -41,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 pub use time_unit::*;
 
+use crate::chunked_array::arithmetic::ArrayArithmetics;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -179,7 +179,7 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + IsFloat
-    + NativeArithmetics
+    + ArrayArithmetics
 {
     type POLARSTYPE: PolarsNumericType;
 }
