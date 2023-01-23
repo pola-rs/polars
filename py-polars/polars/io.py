@@ -167,7 +167,7 @@ def read_csv(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -202,9 +202,28 @@ def read_csv(
     -------
     DataFrame
 
+ddddd
     See Also
     --------
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> df = pl.read_csv("file.csv", sep=",")
+    >>> df
+    shape: (5, 3)
+    ┌─────┬─────┬─────┐
+    │ foo ┆ bar ┆ ham │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ str │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 6   ┆ a   │
+    │ 2   ┆ 7   ┆ b   │
+    │ 3   ┆ 8   ┆ c   │
+    │ 4   ┆ 9   ┆ d   │
+    │ 5   ┆ 10  ┆ e   │
+    └─────┴─────┴─────┘
 
     """
     _check_arg_is_1byte("sep", sep, False)
@@ -1797,7 +1816,7 @@ def read_csv_batched(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
