@@ -1370,6 +1370,7 @@ def scan_delta(
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
         Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Use this parameter when filtering on partitioned columns.
 
     Returns
     -------
@@ -1383,10 +1384,18 @@ def scan_delta(
     >>> table_path = "/path/to/delta-table/"
     >>> pl.scan_delta(table_path).collect()  # doctest: +SKIP
 
+    Use the `pyarrow_options` parameter to read only certain partitions.
+    Note: This should be preferred over using an equivalent `.filter()` on the resulting
+    dataframe, as this avoids reading the data at all.
+
+    >>> pl.scan_delta(  # doctest: +SKIP
+    ...     table_path,
+    ...     pyarrow_options={"partitions": [("year", "=", "2021")]},
+    ... )
+
     Creates a scan for a specific version of the Delta table from local filesystem.
     Note: This will fail if the provided version of the delta table does not exist.
 
-    >>> table_path = "/path/to/delta-table/"
     >>> pl.scan_delta(table_path, version=1).collect()  # doctest: +SKIP
 
     Creates a scan for a Delta table from AWS S3.
@@ -1538,6 +1547,7 @@ def read_delta(
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
         Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Use this parameter when filtering on partitioned columns.
 
     Returns
     -------
@@ -1551,10 +1561,18 @@ def read_delta(
     >>> table_path = "/path/to/delta-table/"
     >>> pl.read_delta(table_path)  # doctest: +SKIP
 
+    Use the `pyarrow_options` parameter to read only certain partitions.
+    Note: This should be preferred over using an equivalent `.filter()` on the resulting
+    dataframe, as this avoids reading the data at all.
+
+    >>> pl.read_delta(  # doctest: +SKIP
+    ...     table_path,
+    ...     pyarrow_options={"partitions": [("year", "=", "2021")]},
+    ... )
+
     Reads a specific version of the Delta table from local filesystem.
     Note: This will fail if the provided version of the delta table does not exist.
 
-    >>> table_path = "/path/to/delta-table/"
     >>> pl.read_delta(table_path, version=1)  # doctest: +SKIP
 
     Reads a Delta table from AWS S3.
@@ -1709,7 +1727,31 @@ def read_csv_batched(
     >>> reader = pl.read_csv_batched(
     ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", parse_dates=True
     ... )  # doctest: +SKIP
-    >>> reader.next_batches(5)  # doctest: +SKIP
+    >>> batches = reader.next_batches(5)  # doctest: +SKIP
+    >>> for df in batches:  # doctest: +SKIP
+    ...     print(df)
+    ...
+
+    Read big CSV file in batches and write a CSV file for each "group" of interest.
+
+    >>> seen_groups = set()
+    >>> reader = pl.read_csv_batched("big_file.csv")  # doctest: +SKIP
+    >>> batches = reader.next_batches(100)  # doctest: +SKIP
+
+    >>> while batches:  # doctest: +SKIP
+    ...     df_current_batches = pl.concat(batches)
+    ...     partition_dfs = df_current_batches.partition_by("group", as_dict=True)
+    ...
+    ...     for group, df in partition_dfs.items():
+    ...         if group in seen_groups:
+    ...             with open(f"./data/{group}.csv", "a") as fh:
+    ...                 fh.write(df.write_csv(file=None, has_header=False))
+    ...         else:
+    ...             df.write_csv(file=f"./data/{group}.csv", has_header=True)
+    ...         seen_groups.add(group)
+    ...
+    ...     batches = reader.next_batches(100)
+    ...
 
     Parameters
     ----------

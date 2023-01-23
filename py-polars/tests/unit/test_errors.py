@@ -343,3 +343,32 @@ def test_alias_in_join_keys() -> None:
         match=r"'alias' is not allowed in a join key. Use 'with_columns' first",
     ):
         df.join(df, on=pl.col("A").alias("foo"))
+
+
+def test_sort_by_different_lengths() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a"] * 3 + ["b"] * 3,
+            "col1": [1, 2, 3, 300, 200, 100],
+            "col2": [1, 2, 3, 300, 1, 1],
+        }
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"The expression in 'sort_by' argument must lead to the same length",
+    ):
+        df.groupby("group").agg(
+            [
+                pl.col("col1").sort_by(pl.col("col2").unique()),
+            ]
+        )
+
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"The expression in 'sort_by' argument must lead to the same length",
+    ):
+        df.groupby("group").agg(
+            [
+                pl.col("col1").sort_by(pl.col("col2").arg_unique()),
+            ]
+        )

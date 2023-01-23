@@ -887,7 +887,7 @@ def test_datetime_format_inferred_precision(
             "x": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
             "y": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
         },
-        columns=[
+        schema=[
             ("x", pl.Datetime(tu1)),
             ("y", pl.Datetime(tu2)),
         ],
@@ -1030,6 +1030,13 @@ def test_batched_csv_reader_all_batches(foods_csv: str) -> None:
 
         batched_concat_df = pl.concat(batched_dfs, rechunk=True)
         assert_frame_equal(out, batched_concat_df)
+
+
+def test_batched_csv_reader_no_batches(foods_csv: str) -> None:
+    reader = pl.read_csv_batched(foods_csv, batch_size=4)
+    batches = reader.next_batches(0)
+
+    assert batches is None
 
 
 def test_csv_single_categorical_null() -> None:

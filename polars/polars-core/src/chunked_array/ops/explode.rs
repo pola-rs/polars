@@ -463,13 +463,14 @@ impl ChunkExplode for Utf8Chunked {
             // capacity estimate
             let capacity = self.get_values_size() + validity.unset_bits();
 
+            let old_offsets = old_offsets.as_slice();
+            let mut old_offset = old_offsets[0];
             let mut new_offsets = Vec::with_capacity(capacity + 1);
-            new_offsets.push(0i64);
+            new_offsets.push(old_offset);
 
             let mut bitmap = MutableBitmap::with_capacity(capacity);
             let values = values.as_slice();
-            let mut old_offset = 0i64;
-            for (&offset, valid) in old_offsets.as_slice()[1..].iter().zip(validity) {
+            for (&offset, valid) in old_offsets[1..].iter().zip(validity) {
                 // safety:
                 // new_offsets already has a single value, so -1 is always in bounds
                 let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };
@@ -513,12 +514,13 @@ impl ChunkExplode for Utf8Chunked {
 
             // capacity estimate
             let capacity = self.get_values_size();
+            let old_offsets = old_offsets.as_slice();
+            let mut old_offset = old_offsets[0];
             let mut new_offsets = Vec::with_capacity(capacity + 1);
-            new_offsets.push(0i64);
+            new_offsets.push(old_offset);
 
             let values = values.as_slice();
-            let mut old_offset = 0i64;
-            for &offset in &old_offsets.as_slice()[1..] {
+            for &offset in &old_offsets[1..] {
                 // safety:
                 // new_offsets already has a single value, so -1 is always in bounds
                 let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };

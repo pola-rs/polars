@@ -142,13 +142,13 @@ def test_compare_frame_equal_nans() -> None:
 
     df1 = pl.DataFrame(
         data={"x": [1.0, nan], "y": [nan, 2.0]},
-        columns=[("x", pl.Float32), ("y", pl.Float64)],
+        schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
     assert_frame_equal(df1, df1, check_exact=True)
 
     df2 = pl.DataFrame(
         data={"x": [1.0, nan], "y": [None, 2.0]},
-        columns=[("x", pl.Float32), ("y", pl.Float64)],
+        schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
     with pytest.raises(
         AssertionError, match="DataFrames are different\n\nExact value mismatch"

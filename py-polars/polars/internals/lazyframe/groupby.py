@@ -176,10 +176,9 @@ class LazyGroupBy(Generic[LDF]):
         f
             Function to apply over each group of the `LazyFrame`.
         schema
-            Schema of the output function. This has to be known statically.
-            If the schema provided is incorrect, this is a bug in the callers
-            query and may lead to errors.
-            If set to None, polars assumes the schema is unchanged.
+            Schema of the output function. This has to be known statically. If the
+            given schema is incorrect, this is a bug in the caller's query and may
+            lead to errors. If set to None, polars assumes the schema is unchanged.
 
 
         Examples

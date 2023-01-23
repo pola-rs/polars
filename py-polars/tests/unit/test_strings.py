@@ -27,7 +27,7 @@ def test_auto_explode() -> None:
 def test_contains() -> None:
     df = pl.DataFrame(
         data=[(1, "some * * text"), (2, "(with) special\n * chars"), (3, "**etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
     )
     for pattern, as_literal, expected in (
         (r"\* \*", False, [True, False, False]),
@@ -107,7 +107,7 @@ def test_null_comparisons() -> None:
 def test_replace() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
         orient="row",
     )
     for pattern, replacement, as_literal, expected in (
@@ -137,7 +137,7 @@ def test_replace() -> None:
 def test_replace_all() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special * chars **etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
         orient="row",
     )
     for pattern, replacement, as_literal, expected in (
@@ -267,19 +267,22 @@ def test_format_empty_df() -> None:
 
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
-        {"a": ["hamburger", "nuts", "lollypop"], "sub": ["ham", "foo", None]}
+        {"a": ["hamburger", "nuts", "lollypop"], "sub": ["ham", "ts", None]}
     )
 
     assert df.select(
         [
-            # TODO allow Expr for ends_with
             pl.col("a").str.ends_with("pop").alias("ends_pop"),
+            pl.col("a").str.ends_with(pl.lit(None)).alias("ends_None"),
+            pl.col("a").str.ends_with(pl.col("sub")).alias("ends_sub"),
             pl.col("a").str.starts_with("ham").alias("starts_ham"),
             pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
             pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
         ]
     ).to_dict(False) == {
         "ends_pop": [False, False, True],
+        "ends_None": [False, False, False],
+        "ends_sub": [False, True, False],
         "starts_ham": [True, False, False],
         "starts_None": [False, False, False],
         "starts_sub": [True, False, False],

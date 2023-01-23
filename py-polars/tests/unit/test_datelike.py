@@ -64,7 +64,7 @@ def test_fill_null_temporal() -> None:
             [dtm, dtm_ms, dtm, dtm, dt, tm, td, td, td, td],
             [None] * 10,
         ],
-        columns=[
+        schema=[
             ("a", pl.Datetime),
             ("b", pl.Datetime("ms")),
             ("c", pl.Datetime("us")),
@@ -1325,7 +1325,7 @@ def test_asof_join() -> None:
 def test_temporal_dtypes_apply() -> None:
     df = pl.DataFrame(
         {"timestamp": [1284286794000, None, 1234567890000]},
-        columns=[("timestamp", pl.Datetime("ms"))],
+        schema=[("timestamp", pl.Datetime("ms"))],
     )
     const_dtm = datetime(2010, 9, 12)
 
@@ -1354,7 +1354,7 @@ def test_temporal_dtypes_apply() -> None:
                     time(23, 31, 30),
                 ),
             ],
-            columns={
+            schema={
                 "timestamp": pl.Datetime("ms"),
                 "const_dtm": pl.Datetime("us"),
                 "date": pl.Date,
@@ -1380,7 +1380,7 @@ def test_timedelta_timeunit_init() -> None:
 
     df = pl.DataFrame(
         [[td_us, td_us, td_us]],
-        columns=[
+        schema=[
             ("x", pl.Duration("ms")),
             ("y", pl.Duration("us")),
             ("z", pl.Duration("ns")),
@@ -1439,7 +1439,6 @@ def test_from_time_arrow() -> None:
         ("2018-09-05T04:24:01.9", datetime(2018, 9, 5, 4, 24, 1, 900000)),
         ("2018-09-05T04:24:02.11", datetime(2018, 9, 5, 4, 24, 2, 110000)),
         ("2018-09-05T14:24:02.123", datetime(2018, 9, 5, 14, 24, 2, 123000)),
-        ("2018-09-05T14:24:02.123Z", datetime(2018, 9, 5, 14, 24, 2, 123000)),
         ("2019-04-18T02:45:55.555000000", datetime(2019, 4, 18, 2, 45, 55, 555000)),
         ("2019-04-18T22:45:55.555123", datetime(2019, 4, 18, 22, 45, 55, 555123)),
     ],
@@ -1471,7 +1470,8 @@ def test_datetime_strptime_patterns_consistent() -> None:
             .alias("parsed"),
         ]
     )["parsed"]
-    assert s.null_count() == 0
+    assert s.null_count() == 1
+    assert s[5] is None
 
 
 def test_datetime_strptime_patterns_inconsistent() -> None:
@@ -1597,7 +1597,7 @@ def test_datetime_instance_selection() -> None:
     }
     df = pl.DataFrame(
         data=test_data,
-        columns=[
+        schema=[
             ("ns", pl.Datetime("ns")),
             ("us", pl.Datetime("us")),
             ("ms", pl.Datetime("ms")),
@@ -1919,7 +1919,7 @@ def test_shift_and_fill_group_logicals() -> None:
             (date(2001, 1, 3), "B"),
             (date(2001, 1, 4), "B"),
         ],
-        columns=["d", "s"],
+        schema=["d", "s"],
     )
     assert df.select(
         pl.col("d").shift_and_fill(-1, pl.col("d").max()).over("s")
@@ -1958,7 +1958,7 @@ def test_datetime_string_casts() -> None:
             "y": [1661855445123456],
             "z": [1661855445123456789],
         },
-        columns=[
+        schema=[
             ("x", pl.Datetime("ms")),
             ("y", pl.Datetime("us")),
             ("z", pl.Datetime("ns")),
@@ -2053,7 +2053,7 @@ def test_tz_datetime_duration_arithm_5221() -> None:
     ]
     out = pl.DataFrame(
         data={"run_datetime": run_datetimes},
-        columns=[("run_datetime", pl.Datetime(time_zone="UTC"))],
+        schema=[("run_datetime", pl.Datetime(time_zone="UTC"))],
     )
     utc = zoneinfo.ZoneInfo("UTC")
     assert out.to_dict(False) == {
@@ -2575,3 +2575,35 @@ def test_rolling_groupby_empty_groups_by_take_6330() -> None:
         "Date": [1, 2, 3, 4, 1, 2, 3, 4],
         "count": [0, 1, 2, 2, 0, 1, 2, 2],
     }
+
+
+def test_infer_iso8601(iso8601_format: str) -> None:
+    # construct an example time string
+    time_string = (
+        iso8601_format.replace("%Y", "2134")
+        .replace("%m", "12")
+        .replace("%d", "13")
+        .replace("%H", "01")
+        .replace("%M", "12")
+        .replace("%S", "34")
+        .replace("%3f", "123")
+        .replace("%6f", "123456")
+        .replace("%9f", "123456789")
+        .replace("%Z", "Z")
+    )
+    parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
+    assert parsed.dt.year().item() == 2134
+    assert parsed.dt.month().item() == 12
+    assert parsed.dt.day().item() == 13
+    if "%H" in iso8601_format:
+        assert parsed.dt.hour().item() == 1
+    if "%M" in iso8601_format:
+        assert parsed.dt.minute().item() == 12
+    if "%S" in iso8601_format:
+        assert parsed.dt.second().item() == 34
+    if "%9f" in iso8601_format:
+        assert parsed.dt.nanosecond().item() == 123456789
+    if "%6f" in iso8601_format:
+        assert parsed.dt.nanosecond().item() == 123456000
+    if "%3f" in iso8601_format:
+        assert parsed.dt.nanosecond().item() == 123000000

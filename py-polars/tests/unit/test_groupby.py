@@ -445,3 +445,42 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
         "code": ["a", "b"],
         "literal": [[False, True], [True, True, False]],
     }
+
+
+def test_groupby_dynamic_iter() -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": [
+                datetime(2020, 1, 1, 10, 0),
+                datetime(2020, 1, 1, 10, 50),
+                datetime(2020, 1, 1, 11, 10),
+            ],
+            "a": [1, 2, 2],
+            "b": [4, 5, 6],
+        }
+    )
+
+    # Without 'by' argument
+    result1 = [
+        (name, data.shape)
+        for name, data in df.groupby_dynamic("datetime", every="1h", closed="left")
+    ]
+    expected1 = [
+        (datetime(2020, 1, 1, 10), (2, 3)),
+        (datetime(2020, 1, 1, 11), (1, 3)),
+    ]
+    assert result1 == expected1
+
+    # With 'by' argument
+    result2 = [
+        (name, data.shape)
+        for name, data in df.groupby_dynamic(
+            "datetime", every="1h", closed="left", by="a"
+        )
+    ]
+    expected2 = [
+        ((1, datetime(2020, 1, 1, 10)), (1, 3)),
+        ((2, datetime(2020, 1, 1, 10)), (1, 3)),
+        ((2, datetime(2020, 1, 1, 11)), (1, 3)),
+    ]
+    assert result2 == expected2
