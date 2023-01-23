@@ -44,7 +44,7 @@ class StringNameSpace:
             for specification. Example: ``"%y-%m-%d"``.
             Note that the ``Z`` suffix for "Zulu time" is not (yet!) supported:
             you should instead insert a ``Z`` in your ``fmt`` string and then
-            use with ``dt.with_time_zone``.
+            use ``dt.with_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
