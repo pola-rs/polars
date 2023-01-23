@@ -202,7 +202,6 @@ def read_csv(
     -------
     DataFrame
 
-ddddd
     See Also
     --------
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
