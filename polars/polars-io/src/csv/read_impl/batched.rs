@@ -86,6 +86,9 @@ pub struct BatchedCsvReader<'a> {
 
 impl<'a> BatchedCsvReader<'a> {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<(IdxSize, DataFrame)>>> {
+        if n == 0 {
+            return Ok(None);
+        }
         if self.chunk_offset == self.file_chunks.len() as IdxSize {
             return Ok(None);
         }

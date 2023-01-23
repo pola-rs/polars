@@ -590,10 +590,9 @@ pub(crate) fn create_physical_expr(
         }
         Explode(expr) => {
             let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
-            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                let s = std::mem::take(&mut s[0]);
-                s.explode()
-            }) as Arc<dyn SeriesUdf>);
+            let function = SpecialEq::new(
+                Arc::new(move |s: &mut [Series]| s[0].explode()) as Arc<dyn SeriesUdf>
+            );
             Ok(Arc::new(ApplyExpr::new_minimal(
                 vec![input],
                 function,

@@ -45,6 +45,9 @@ class ExprStringNameSpace:
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
+            Note that the ``Z`` suffix for "Zulu time" is not (yet!) supported:
+            you should instead insert a ``Z`` in your ``fmt`` string and then
+            use ``dt.with_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -531,7 +534,7 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal))
 
-    def ends_with(self, sub: str) -> pli.Expr:
+    def ends_with(self, sub: str | pli.Expr) -> pli.Expr:
         """
         Check if string values end with a substring.
 
@@ -575,6 +578,7 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
+        sub = pli.expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_ends_with(sub))
 
     def starts_with(self, sub: str | pli.Expr) -> pli.Expr:

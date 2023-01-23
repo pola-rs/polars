@@ -85,7 +85,7 @@ impl NullValues {
 /// use std::fs::File;
 ///
 /// fn example() -> PolarsResult<DataFrame> {
-///     CsvReader::from_path("iris_csv")?
+///     CsvReader::from_path("iris.csv")?
 ///             .has_header(true)
 ///             .finish()
 /// }

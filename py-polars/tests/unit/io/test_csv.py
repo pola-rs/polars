@@ -1032,6 +1032,13 @@ def test_batched_csv_reader_all_batches(foods_csv: str) -> None:
         assert_frame_equal(out, batched_concat_df)
 
 
+def test_batched_csv_reader_no_batches(foods_csv: str) -> None:
+    reader = pl.read_csv_batched(foods_csv, batch_size=4)
+    batches = reader.next_batches(0)
+
+    assert batches is None
+
+
 def test_csv_single_categorical_null() -> None:
     f = io.BytesIO()
     pl.DataFrame(
