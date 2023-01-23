@@ -490,7 +490,9 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
-    def contains(self, pattern: str | pli.Expr, literal: bool = False) -> pli.Expr:
+    def contains(
+        self, pattern: str | pli.Expr, literal: bool = False, strict: bool = True
+    ) -> pli.Expr:
         """
         Check if string contains a substring that matches a regex.
 
@@ -500,6 +502,9 @@ class ExprStringNameSpace:
             A valid regex pattern.
         literal
             Treat pattern as a literal string.
+        strict
+            Raise an error if the underlying pattern is not a valid regex expression,
+            otherwise mask out with a null value.
 
         Examples
         --------
@@ -530,7 +535,7 @@ class ExprStringNameSpace:
 
         """
         pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
-        return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal))
+        return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
     def ends_with(self, sub: str) -> pli.Expr:
         """

@@ -62,8 +62,15 @@ def test_contains_expr() -> None:
 
     df = pl.DataFrame(
         {
-            "text": ["some text", "(with) special\n .* chars", "**etc...?$", None, "b"],
-            "pattern": [r"[me]", r".*", r"^\(", "a", None],
+            "text": [
+                "some text",
+                "(with) special\n .* chars",
+                "**etc...?$",
+                None,
+                "b",
+                "invalid_regex",
+            ],
+            "pattern": [r"[me]", r".*", r"^\(", "a", None, "*"],
         }
     )
 
@@ -71,7 +78,7 @@ def test_contains_expr() -> None:
         df.with_columns(
             [
                 pl.col("text")
-                .str.contains(pl.col("pattern"), literal=False)
+                .str.contains(pl.col("pattern"), literal=False, strict=False)
                 .alias("contains"),
                 pl.col("text")
                 .str.contains(pl.col("pattern"), literal=True)
@@ -84,6 +91,11 @@ def test_contains_expr() -> None:
         "contains": [True, True, False, False, False],
         "contains_lit": [False, True, False, False, False],
     }
+
+    with pytest.raises(pl.ComputeError):
+        df.select(
+            pl.col("text").str.contains(pl.col("pattern"), literal=False, strict=True)
+        )
 
 
 def test_null_comparisons() -> None:

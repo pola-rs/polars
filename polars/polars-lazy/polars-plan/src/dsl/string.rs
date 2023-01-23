@@ -11,16 +11,22 @@ impl StringNameSpace {
     /// Check if a string value contains a literal substring.
     pub fn contains_literal(self, pat: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Contains { literal: true }),
+            FunctionExpr::StringExpr(StringFunction::Contains {
+                literal: true,
+                strict: false,
+            }),
             &[pat],
             true,
         )
     }
 
     /// Check if a string value contains a Regex substring.
-    pub fn contains(self, pat: Expr) -> Expr {
+    pub fn contains(self, pat: Expr, strict: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Contains { literal: false }),
+            FunctionExpr::StringExpr(StringFunction::Contains {
+                literal: false,
+                strict: strict,
+            }),
             &[pat],
             true,
         )

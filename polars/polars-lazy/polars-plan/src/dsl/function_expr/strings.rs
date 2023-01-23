@@ -13,6 +13,7 @@ use super::*;
 pub enum StringFunction {
     Contains {
         literal: bool,
+        strict: bool,
     },
     StartsWith,
     EndsWith(String),
@@ -98,7 +99,8 @@ pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
     Ok(ca.to_lowercase().into_series())
 }
 
-pub(super) fn contains(s: &[Series], literal: bool) -> PolarsResult<Series> {
+#[cfg(feature = "regex")]
+pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
     let ca = &s[0].utf8()?;
     let pat = &s[1].utf8()?;
 
@@ -116,9 +118,21 @@ pub(super) fn contains(s: &[Series], literal: bool) -> PolarsResult<Series> {
         _ => {
             let f = |s: &str, pat: &str| {
                 if literal {
-                    s.contains(pat)
+                    Some(s.contains(pat))
                 } else {
-                    Regex::new(pat).unwrap().is_match(s)
+                    let re = Regex::new(pat);
+                    if strict {
+                        Some(
+                            re.map_err(|e| PolarsError::ComputeError(e.to_string().into()))
+                                .ok()?
+                                .is_match(s),
+                        )
+                    } else {
+                        match re {
+                            Ok(re) => Some(re.is_match(s)),
+                            Err(_e) => None,
+                        }
+                    }
                 }
             };
             iter_and_check(ca, pat, f)
@@ -336,14 +350,14 @@ fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
 
 fn iter_and_check<F>(ca: &Utf8Chunked, val: &Utf8Chunked, f: F) -> BooleanChunked
 where
-    F: Fn(&str, &str) -> bool,
+    F: Fn(&str, &str) -> Option<bool>,
 {
     let mut out: BooleanChunked = ca
         .into_iter()
         .zip(val.into_iter())
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
             (Some(src), Some(val)) => f(src, val),
-            _ => false,
+            _ => Some(false),
         })
         .collect_trusted();
 
