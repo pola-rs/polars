@@ -1300,7 +1300,7 @@ def test_from_generator_or_iterable() -> None:
 
 
 def test_from_rows() -> None:
-    df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]], orient="row")
+    df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]])
     assert df.frame_equal(
         pl.DataFrame(
             {"column_0": [1, 2], "column_1": [2, 3], "column_2": ["foo", "bar"]}
@@ -1312,6 +1312,11 @@ def test_from_rows() -> None:
         orient="row",
     )
     assert df.dtypes == [pl.UInt32, pl.Datetime]
+
+    # auto-inference with same num rows/cols
+    data = [(1, 2, "foo"), (2, 3, "bar"), (3, 4, "baz")]
+    df = pl.from_records(data)
+    assert data == df.rows()
 
 
 def test_repeat_by() -> None:
