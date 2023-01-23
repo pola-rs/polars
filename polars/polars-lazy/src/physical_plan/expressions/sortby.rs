@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use polars_core::frame::groupby::{GroupsIndicator, GroupsProxy};
@@ -96,15 +97,18 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
+        // if the length of the sort_by argument differs
+        // we raise an error
+        let invalid = AtomicBool::new(false);
+
+        if self.by.len() > 1 {
+            let msg = "This expression is supported for more than two sort columns.";
+            return Err(expression_err!(msg, self.expr, ComputeError));
+        }
 
         // the groups of the lhs of the expressions do not match the series values
         // we must take the slower path.
         if !matches!(ac_in.update_groups, UpdateGroups::No) {
-            if self.by.len() > 1 {
-                let msg = "This expression is not yet supported for more than two sort columns. \
-                Consider opeingin a feature request.";
-                return Err(expression_err!(msg, self.expr, ComputeError));
-            }
             let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
             let sort_by = ac_sort_by.aggregated();
             let mut sort_by = sort_by.list().unwrap().clone();
@@ -118,6 +122,7 @@ impl PhysicalExpr for SortByExpr {
                 .map(|(opt_s, s_sort_by)| match (opt_s, s_sort_by) {
                     (Some(s), Some(s_sort_by)) => {
                         if s.len() != s_sort_by.len() {
+                            invalid.store(true, Ordering::Relaxed);
                             None
                         } else {
                             let idx = s_sort_by.argsort(SortOptions {
@@ -137,9 +142,13 @@ impl PhysicalExpr for SortByExpr {
         } else {
             let reverse = prepare_reverse(&self.reverse, self.by.len());
 
-            let (groups, ordered_by_group_operation) = if self.by.len() == 1 {
+            let (groups, ordered_by_group_operation) = {
                 let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
                 let sort_by_s = ac_sort_by.flat_naive().into_owned();
+                if sort_by_s.len() != ac_in.flat_naive().len() {
+                    let msg = "The expression in 'sort_by' argument must lead to the same length.";
+                    return Err(expression_err!(msg, self.expr, ComputeError));
+                }
 
                 let ordered_by_group_operation = matches!(
                     ac_sort_by.update_groups,
@@ -180,58 +189,11 @@ impl PhysicalExpr for SortByExpr {
                     .collect();
 
                 (GroupsProxy::Idx(groups), ordered_by_group_operation)
-            } else {
-                let mut ac_sort_by = self
-                    .by
-                    .iter()
-                    .map(|e| e.evaluate_on_groups(df, groups, state))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-                let sort_by_s = ac_sort_by
-                    .iter()
-                    .map(|s| s.flat_naive().into_owned())
-                    .collect::<Vec<_>>();
-
-                let ordered_by_group_operation = matches!(
-                    ac_sort_by[0].update_groups,
-                    UpdateGroups::WithSeriesLen | UpdateGroups::WithGroupsLen
-                );
-                let groups = ac_sort_by[0].groups();
-
-                let groups = groups
-                    .par_iter()
-                    .map(|indicator| {
-                        let new_idx = match indicator {
-                            GroupsIndicator::Idx((_first, idx)) => {
-                                // Safety:
-                                // Group tuples are always in bounds
-                                let groups = sort_by_s
-                                    .iter()
-                                    .map(|s| unsafe {
-                                        s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
-                                    })
-                                    .collect::<Vec<_>>();
-
-                                let sorted_idx =
-                                    groups[0].argsort_multiple(&groups[1..], &reverse).unwrap();
-                                map_sorted_indices_to_group_idx(&sorted_idx, idx)
-                            }
-                            GroupsIndicator::Slice([first, len]) => {
-                                let groups = sort_by_s
-                                    .iter()
-                                    .map(|s| s.slice(first as i64, len as usize))
-                                    .collect::<Vec<_>>();
-                                let sorted_idx =
-                                    groups[0].argsort_multiple(&groups[1..], &reverse).unwrap();
-                                map_sorted_indices_to_group_slice(&sorted_idx, first)
-                            }
-                        };
-
-                        (new_idx[0], new_idx)
-                    })
-                    .collect();
-
-                (GroupsProxy::Idx(groups), ordered_by_group_operation)
             };
+            if invalid.load(Ordering::Relaxed) {
+                let msg = "The expression in 'sort_by' argument must lead to the same length.";
+                return Err(expression_err!(msg, self.expr, ComputeError));
+            }
 
             // if the rhs is already aggregated once,
             // it is reordered by the groupby operation
