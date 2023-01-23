@@ -224,3 +224,19 @@ def test_explode_inner_lists_3985() -> None:
         .agg(pl.col("categories"))
         .with_column(pl.col("categories").arr.eval(pl.element().arr.explode()))
     ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}
+
+
+def test_utf8_sliced_explode() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "b", "b"],
+            "values": ["foo", "bar", "baz"],
+        }
+    )
+
+    assert df.groupby("group", maintain_order=True).agg(
+        pl.col("values").flatten()
+    ).to_dict(False) == {
+        "group": ["a", "b"],
+        "values": [["f", "o", "o"], ["b", "a", "r", "b", "a", "z"]],
+    }
