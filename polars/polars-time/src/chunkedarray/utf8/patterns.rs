@@ -124,13 +124,9 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     // ---
     // other
     // ---
-    // 2019-04-18T02:45:55Z
-    "%Y-%m-%dT%H:%M:%SZ",
     // 21/12/31 12:54:48
     "%y/%m/%d %H:%M:%S",
     // 21/12/31 24:58:01
-    "%y/%m/%d %H:%M:%S",
-    //210319 23:58:50
     "%y%m%d %H:%M:%S",
     // 2021/12/31 11:54:48 PM
     "%Y/%m/%d %I:%M:%S %p",
@@ -139,11 +135,9 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%Y/%m/%d %I:%M %p",
     "%Y-%m-%d %I:%M %p",
     // ---
-    // not supported by polars' parser
-    // ---
-    "%+",
     // we cannot know this one, because polars needs to know
     // the length of the parsed fmt
+    // ---
     "%FT%H:%M:%S%.f",
 ];
 
