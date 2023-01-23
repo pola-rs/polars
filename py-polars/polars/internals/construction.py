@@ -789,8 +789,8 @@ def sequence_to_pydf(
             # note: limit type-checking to smaller data; larger values are much more
             # likely to indicate col orientation anyway, so minimise extra checks.
             if len(data[0]) > 1000:
-                orient = "col" if columns and len(columns) == len(data) else "row"
-            elif (columns is not None and len(columns) == len(data)) or not columns:
+                orient = "col" if schema and len(schema) == len(data) else "row"
+            elif (schema is not None and len(schema) == len(data)) or not schema:
                 # check if element types in the first 'row' resolve to a single dtype.
                 row_types = {type(value) for value in data[0] if value is not None}
                 if int in row_types and float in row_types:
