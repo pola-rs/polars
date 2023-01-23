@@ -3405,8 +3405,8 @@ class Expr:
 
     def is_between(
         self,
-        start: Expr | datetime | date | int | float,
-        end: Expr | datetime | date | int | float,
+        start: Expr | datetime | date | time | int | float,
+        end: Expr | datetime | date | time | int | float,
         include_bounds: bool | tuple[bool, bool] | None = None,
         closed: ClosedInterval | None = None,
     ) -> Expr:
