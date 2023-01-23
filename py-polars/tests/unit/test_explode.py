@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pyarrow as pa
-import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -23,17 +22,15 @@ def test_groupby_flatten_list() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.skip(
-    "This does not work due to a bug. Fix it then remove this marker!"
-    "See: https://github.com/pola-rs/polars/issues/6369"
-)
 def test_groupby_flatten_string() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
-
     result = df.groupby("group", maintain_order=True).agg(pl.col("values").flatten())
 
     expected = pl.DataFrame(
-        {"group": ["a", "b"], "values": [list("foo"), list("barbaz")]}
+        {
+            "group": ["a", "b"],
+            "values": [["f", "o", "o"], ["b", "a", "r", "b", "a", "z"]],
+        }
     )
     assert_frame_equal(result, expected)
 
@@ -224,19 +221,3 @@ def test_explode_inner_lists_3985() -> None:
         .agg(pl.col("categories"))
         .with_column(pl.col("categories").arr.eval(pl.element().arr.explode()))
     ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}
-
-
-def test_utf8_sliced_explode() -> None:
-    df = pl.DataFrame(
-        {
-            "group": ["a", "b", "b"],
-            "values": ["foo", "bar", "baz"],
-        }
-    )
-
-    assert df.groupby("group", maintain_order=True).agg(
-        pl.col("values").flatten()
-    ).to_dict(False) == {
-        "group": ["a", "b"],
-        "values": [["f", "o", "o"], ["b", "a", "r", "b", "a", "z"]],
-    }

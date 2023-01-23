@@ -86,7 +86,7 @@ class GroupBy(Generic[DF]):
     def __iter__(self) -> GroupBy[DF]:
         warnings.warn(
             "Return type of groupby iteration will change in the next breaking release."
-            " Iteration will returns tuples of (group_key, data) instead of just data.",
+            " Iteration will return tuples of (group_key, data) instead of just data.",
             category=FutureWarning,
             stacklevel=2,
         )
