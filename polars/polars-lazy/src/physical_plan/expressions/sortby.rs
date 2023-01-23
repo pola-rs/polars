@@ -101,14 +101,13 @@ impl PhysicalExpr for SortByExpr {
         // we raise an error
         let invalid = AtomicBool::new(false);
 
-        if self.by.len() > 1 {
-            let msg = "This expression is supported for more than two sort columns.";
-            return Err(expression_err!(msg, self.expr, ComputeError));
-        }
-
         // the groups of the lhs of the expressions do not match the series values
         // we must take the slower path.
         if !matches!(ac_in.update_groups, UpdateGroups::No) {
+            if self.by.len() > 1 {
+                let msg = "This expression is not supported for more than two sort columns.";
+                return Err(expression_err!(msg, self.expr, ComputeError));
+            }
             let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
             let sort_by = ac_sort_by.aggregated();
             let mut sort_by = sort_by.list().unwrap().clone();
