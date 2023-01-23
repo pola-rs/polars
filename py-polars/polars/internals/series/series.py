@@ -312,6 +312,16 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
         )
 
+    def _get_ptr(self) -> int:
+        """
+        Get a pointer to the start of the values buffer of a numeric Series.
+
+        This will raise an error if the
+        ``Series`` contains multiple chunks
+
+        """
+        return self._s.get_ptr()
+
     @property
     def dtype(self) -> type[DataType]:
         """

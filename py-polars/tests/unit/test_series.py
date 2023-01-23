@@ -2544,3 +2544,15 @@ def test_item() -> None:
     s = pl.Series("a", [])
     with pytest.raises(ValueError):
         s.item()
+
+
+def test_ptr() -> None:
+    # not much to test on the ptr value itself.
+    s = pl.Series([1, None, 3])
+
+    ptr = s._get_ptr()
+    assert isinstance(ptr, int)
+    s2 = s.append(pl.Series([1, 2]))
+
+    ptr2 = s2.rechunk()._get_ptr()
+    assert ptr != ptr2
