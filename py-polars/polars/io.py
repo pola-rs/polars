@@ -209,8 +209,8 @@ def read_csv(
     Examples
     --------
     >>> import polars as pl
-    >>> df = pl.read_csv("file.csv", sep=",")
-    >>> df
+    >>> df = pl.read_csv("file.csv", sep=",") # doctest: +SKIP
+    >>> df # doctest: +SKIP
     shape: (5, 3)
     ┌─────┬─────┬─────┐
     │ foo ┆ bar ┆ ham │
