@@ -176,10 +176,10 @@ def from_dicts(
 def from_records(
     data: Sequence[Sequence[Any]],
     schema: Sequence[str] | None = None,
-    orient: Orientation | None = None,
     *,
-    infer_schema_length: int | None = N_INFER_DEFAULT,
     schema_overrides: SchemaDict | None = None,
+    orient: Orientation | None = None,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
     Construct a DataFrame from a sequence of sequences. This operation clones data.
@@ -200,6 +200,9 @@ def from_records(
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the columns param will be overridden.
     orient : {None, 'col', 'row'}
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -207,9 +210,6 @@ def from_records(
     infer_schema_length
         How many dictionaries/rows to scan to determine the data types
         if set to `None` all rows are scanned. This will be slow.
-    schema_overrides : dict, default None
-        Support type specification or override of one or more columns; note that
-        any dtypes inferred from the columns param will be overridden.
 
     Returns
     -------
@@ -245,8 +245,9 @@ def from_records(
 def from_numpy(
     data: np.ndarray[Any, Any],
     schema: SchemaDefinition | None = None,
-    orient: Orientation | None = None,
+    *,
     schema_overrides: SchemaDict | None = None,
+    orient: Orientation | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray. This operation clones data.
@@ -267,13 +268,13 @@ def from_numpy(
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the columns param will be overridden.
     orient : {None, 'col', 'row'}
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
-    schema_overrides : dict, default None
-        Support type specification or override of one or more columns; note that
-        any dtypes inferred from the columns param will be overridden.
 
     Returns
     -------
@@ -334,7 +335,6 @@ def from_arrow(
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
-
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
