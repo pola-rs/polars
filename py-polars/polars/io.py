@@ -1727,7 +1727,31 @@ def read_csv_batched(
     >>> reader = pl.read_csv_batched(
     ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", parse_dates=True
     ... )  # doctest: +SKIP
-    >>> reader.next_batches(5)  # doctest: +SKIP
+    >>> batches = reader.next_batches(5)  # doctest: +SKIP
+    >>> for df in batches:  # doctest: +SKIP
+    ...     print(df)
+    ...
+
+    Read big CSV file in batches and write a CSV file for each "group" of interest.
+
+    >>> seen_groups = set()
+    >>> reader = pl.read_csv_batched("big_file.csv")  # doctest: +SKIP
+    >>> batches = reader.next_batches(100)  # doctest: +SKIP
+
+    >>> while batches:  # doctest: +SKIP
+    ...     df_current_batches = pl.concat(batches)
+    ...     partition_dfs = df_current_batches.partition_by("group", as_dict=True)
+    ...
+    ...     for group, df in partition_dfs.items():
+    ...         if group in seen_groups:
+    ...             with open(f"./data/{group}.csv", "a") as fh:
+    ...                 fh.write(df.write_csv(file=None, has_header=False))
+    ...         else:
+    ...             df.write_csv(file=f"./data/{group}.csv", has_header=True)
+    ...         seen_groups.add(group)
+    ...
+    ...     batches = reader.next_batches(100)
+    ...
 
     Parameters
     ----------
