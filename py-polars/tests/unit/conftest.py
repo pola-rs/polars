@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import List, cast
 
 import pytest
 
@@ -139,3 +140,26 @@ def fruits_cars() -> pl.DataFrame:
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
         }
     )
+
+
+ISO8601_FORMATS = []
+for T in ["T", " "]:
+    for hms in (
+        [
+            f"{T}%H:%M:%S",
+            f"{T}%H%M%S",
+            f"{T}%H:%M",
+            f"{T}%H%M",
+        ]
+        + [f"{T}%H:%M:%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
+        + [f"{T}%H%M%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
+        + [""]
+    ):
+        for date_sep in ("/", "-", ""):
+            fmt = f"%Y{date_sep}%m{date_sep}%d{hms}"
+            ISO8601_FORMATS.append(fmt)
+
+
+@pytest.fixture(params=ISO8601_FORMATS)
+def iso8601_format(request: pytest.FixtureRequest) -> list[str]:
+    return cast(List[str], request.param)

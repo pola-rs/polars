@@ -2575,3 +2575,35 @@ def test_rolling_groupby_empty_groups_by_take_6330() -> None:
         "Date": [1, 2, 3, 4, 1, 2, 3, 4],
         "count": [0, 1, 2, 2, 0, 1, 2, 2],
     }
+
+
+def test_infer_iso8601(iso8601_format: str) -> None:
+    # construct an example time string
+    time_string = (
+        iso8601_format.replace("%Y", "2134")
+        .replace("%m", "12")
+        .replace("%d", "13")
+        .replace("%H", "01")
+        .replace("%M", "12")
+        .replace("%S", "34")
+        .replace("%3f", "123")
+        .replace("%6f", "123456")
+        .replace("%9f", "123456789")
+        .replace("%Z", "Z")
+    )
+    parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
+    assert parsed.dt.year().item() == 2134
+    assert parsed.dt.month().item() == 12
+    assert parsed.dt.day().item() == 13
+    if "%H" in iso8601_format:
+        assert parsed.dt.hour().item() == 1
+    if "%M" in iso8601_format:
+        assert parsed.dt.minute().item() == 12
+    if "%S" in iso8601_format:
+        assert parsed.dt.second().item() == 34
+    if "%9f" in iso8601_format:
+        assert parsed.dt.nanosecond().item() == 123456789
+    if "%6f" in iso8601_format:
+        assert parsed.dt.nanosecond().item() == 123456000
+    if "%3f" in iso8601_format:
+        assert parsed.dt.nanosecond().item() == 123000000

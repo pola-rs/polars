@@ -55,46 +55,90 @@ pub(super) static DATETIME_D_M_Y: &[&str] = &[
 /// NOTE: don't use single letter dates like %F
 /// polars parsers does not support them, so it will be slower
 pub(super) static DATETIME_Y_M_D: &[&str] = &[
+    // ---
+    // ISO8601, generated via the `iso8601_format` test fixture
+    // ---
+    "%Y/%m/%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y%m%dT%H:%M:%S",
+    "%Y/%m/%dT%H%M%S",
+    "%Y-%m-%dT%H%M%S",
+    "%Y%m%dT%H%M%S",
+    "%Y/%m/%dT%H:%M",
+    "%Y-%m-%dT%H:%M",
+    "%Y%m%dT%H:%M",
+    "%Y/%m/%dT%H%M",
+    "%Y-%m-%dT%H%M",
+    "%Y%m%dT%H%M",
+    "%Y/%m/%dT%H:%M:%S.%9f",
+    "%Y-%m-%dT%H:%M:%S.%9f",
+    "%Y%m%dT%H:%M:%S.%9f",
+    "%Y/%m/%dT%H:%M:%S.%6f",
+    "%Y-%m-%dT%H:%M:%S.%6f",
+    "%Y%m%dT%H:%M:%S.%6f",
+    "%Y/%m/%dT%H:%M:%S.%3f",
+    "%Y-%m-%dT%H:%M:%S.%3f",
+    "%Y%m%dT%H:%M:%S.%3f",
+    "%Y/%m/%dT%H%M%S.%9f",
+    "%Y-%m-%dT%H%M%S.%9f",
+    "%Y%m%dT%H%M%S.%9f",
+    "%Y/%m/%dT%H%M%S.%6f",
+    "%Y-%m-%dT%H%M%S.%6f",
+    "%Y%m%dT%H%M%S.%6f",
+    "%Y/%m/%dT%H%M%S.%3f",
+    "%Y-%m-%dT%H%M%S.%3f",
+    "%Y%m%dT%H%M%S.%3f",
+    "%Y/%m/%d",
+    "%Y-%m-%d",
+    "%Y%m%d",
+    "%Y/%m/%d %H:%M:%S",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y%m%d %H:%M:%S",
+    "%Y/%m/%d %H%M%S",
+    "%Y-%m-%d %H%M%S",
+    "%Y%m%d %H%M%S",
+    "%Y/%m/%d %H:%M",
+    "%Y-%m-%d %H:%M",
+    "%Y%m%d %H:%M",
+    "%Y/%m/%d %H%M",
+    "%Y-%m-%d %H%M",
+    "%Y%m%d %H%M",
+    "%Y/%m/%d %H:%M:%S.%9f",
+    "%Y-%m-%d %H:%M:%S.%9f",
+    "%Y%m%d %H:%M:%S.%9f",
+    "%Y/%m/%d %H:%M:%S.%6f",
+    "%Y-%m-%d %H:%M:%S.%6f",
+    "%Y%m%d %H:%M:%S.%6f",
+    "%Y/%m/%d %H:%M:%S.%3f",
+    "%Y-%m-%d %H:%M:%S.%3f",
+    "%Y%m%d %H:%M:%S.%3f",
+    "%Y/%m/%d %H%M%S.%9f",
+    "%Y-%m-%d %H%M%S.%9f",
+    "%Y%m%d %H%M%S.%9f",
+    "%Y/%m/%d %H%M%S.%6f",
+    "%Y-%m-%d %H%M%S.%6f",
+    "%Y%m%d %H%M%S.%6f",
+    "%Y/%m/%d %H%M%S.%3f",
+    "%Y-%m-%d %H%M%S.%3f",
+    "%Y%m%d %H%M%S.%3f",
+    // ---
+    // other
+    // ---
+    // 2019-04-18T02:45:55Z
+    "%Y-%m-%dT%H:%M:%SZ",
     // 21/12/31 12:54:48
     "%y/%m/%d %H:%M:%S",
-    // 2021-12-31 24:58:01
-    "%Y-%m-%d %H:%M:%S",
     // 21/12/31 24:58:01
     "%y/%m/%d %H:%M:%S",
     //210319 23:58:50
     "%y%m%d %H:%M:%S",
-    // 2019-04-18T02:45:55
-    // 2021/12/31 12:54:98
-    "%Y/%m/%d %H:%M:%S",
-    // 2021-12-31 24:58:01
-    "%Y-%m-%d %H:%M:%S",
-    // 2021/12/31 24:58:01
-    "%Y/%m/%d %H:%M:%S",
-    // 20210319 23:58:50
-    "%Y%m%d %H:%M:%S",
-    // 2019-04-18T02:45:55
-    "%Y-%m-%dT%H:%M:%S",
-    "%Y-%m-%dT%H:%M:%SZ",
-    // 2019-04-18T02:45:55.555[000000]
-    // nanoseconds
-    "%Y-%m-%d %H:%M:%S.%9f",
-    "%Y-%m-%dT%H:%M:%S.%9f",
-    // microseconds
-    "%Y-%m-%d %H:%M:%S.%6f",
-    "%Y-%m-%dT%H:%M:%S.%6f",
-    // milliseconds
-    "%Y-%m-%d %H:%M:%S.%3f",
-    "%Y-%m-%dT%H:%M:%S.%3f",
-    // no times
-    "%Y-%m-%d",
-    "%Y/%m/%d",
     // 2021/12/31 11:54:48 PM
     "%Y/%m/%d %I:%M:%S %p",
     "%Y-%m-%d %I:%M:%S %p",
     // 2021/12/31 11:54 PM
     "%Y/%m/%d %I:%M %p",
     "%Y-%m-%d %I:%M %p",
-    // --
+    // ---
     // not supported by polars' parser
     // ---
     "%+",
