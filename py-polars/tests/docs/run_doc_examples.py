@@ -33,6 +33,7 @@ import doctest
 import importlib
 import sys
 import unittest
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType
@@ -96,7 +97,14 @@ if __name__ == "__main__":
         tests = [
             doctest.DocTestSuite(
                 m,
-                extraglobs={"pl": polars, "dirpath": Path(tmpdir)},
+                extraglobs={
+                    "pl": polars,
+                    "dirpath": Path(tmpdir),
+                    "datetime": datetime,
+                    "date": date,
+                    "time": time,
+                    "timedelta": timedelta,
+                },
                 optionflags=1,
                 tearDown=doctest_teardown,
             )

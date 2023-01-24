@@ -2748,3 +2748,18 @@ def test_unique(
     result = df.unique(maintain_order=True, subset=subset, keep=keep)
     expected = df.filter(expected_mask)
     assert_frame_equal(result, expected)
+
+
+def test_iterbatches() -> None:
+    df = pl.DataFrame(
+        {
+            "a": range(95),
+            "b": date(2023, 1, 1),
+            "c": "klmnopqrstuvwxyz",
+        }
+    )
+    batches = list(df.iterbatches(batch_size=50))
+
+    assert len(batches[0]) == 50
+    assert len(batches[1]) == 45
+    assert [tuple(x.values()) for x in batches[1].to_pylist()] == df.slice(50).rows()

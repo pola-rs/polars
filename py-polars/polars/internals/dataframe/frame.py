@@ -104,6 +104,8 @@ else:
     from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
+    from pyarrow import RecordBatch
+
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -6719,6 +6721,42 @@ class DataFrame:
             return [Row(*row) for row in self._df.row_tuples()]
         else:
             return self._df.row_tuples()
+
+    def iterbatches(self, batch_size: int = 50_000) -> Iterator[RecordBatch]:
+        """
+        Returns a non-copying RecordBatch iterator over the DataFrame.
+
+        Parameters
+        ----------
+        batch_size
+            Determines the number of rows contained in each RecordBatch.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": range(95_000),
+        ...         "b": date(2023, 1, 1),
+        ...         "c": "klmnoopqrstuvwxyz",
+        ...     }
+        ... )
+        >>> for b in df.iterbatches():
+        ...     print(type(b), len(b))
+        ...
+        <class 'pyarrow.lib.RecordBatch'> 50000
+        <class 'pyarrow.lib.RecordBatch'> 45000
+
+        See Also
+        --------
+        iterrows : Row iterator over frame data (does not materialise all rows).
+
+        """
+        if not _PYARROW_AVAILABLE:
+            raise ImportError("'pyarrow' is required for 'iterbatches()' method")
+        else:
+            for offset in range(0, self.height, batch_size):
+                arrow_slice = self.slice(offset, batch_size).to_arrow()
+                yield arrow_slice.to_batches()[0]
 
     @overload
     def iterrows(
