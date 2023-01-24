@@ -3049,7 +3049,7 @@ impl DataFrame {
                     .iter()
                     .map(|g| match g {
                         GroupsIndicator::Idx((_first, idx)) => idx[idx.len() - 1],
-                        GroupsIndicator::Slice([first, len]) => first + len,
+                        GroupsIndicator::Slice([first, len]) => first + len - 1,
                     })
                     .collect();
 

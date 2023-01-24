@@ -1261,6 +1261,14 @@ def test_unique() -> None:
     assert s0.unique().to_list() == [None, 1, 2]
 
 
+def test_unique_on_sorted() -> None:
+    assert (
+        pl.DataFrame({"a": [1, 1, 3], "b": [1, 2, 3]})
+        .with_columns([pl.col("a").set_sorted()])
+        .unique(subset="a", keep="last")
+    ).to_dict(False) == {"a": [1, 3], "b": [2, 3]}
+
+
 def test_lazy_concat(df: pl.DataFrame) -> None:
     shape = df.shape
     shape = (shape[0] * 2, shape[1])
