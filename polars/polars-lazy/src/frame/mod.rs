@@ -865,7 +865,10 @@ impl LazyFrame {
         self.join(other, vec![], vec![], JoinType::Cross)
     }
 
-    /// Generic join function that can join on multiple columns.
+    /// Generic join function that can join on multiple columns, given as two list of expressions, and with a [`JoinType`]
+    /// specified by `how`.
+    /// Non-joined column names in the right DataFrame that already exist in this DataFrame are suffixed with `"_right"`.
+    /// For control over how columns are renamed and parallelization options, use [`join_builder`](LazyFrame::join_builder).
     ///
     /// # Example
     ///
@@ -898,12 +901,14 @@ impl LazyFrame {
             .finish()
     }
 
-    /// Control more join options with the join builder.
+    /// Consume `self` and return a [`JoinBuilder`] to customize a join on this LazyFrame.
+    /// After the `JoinBuilder` has been created and set up, calling `finish()` on it will give back the `LazyFrame`
+    /// representing the `join` operation.
     pub fn join_builder(self) -> JoinBuilder {
         JoinBuilder::new(self)
     }
 
-    /// Add a column to a DataFrame
+    /// Add a column, given as an expression, to a DataFrame.
     ///
     /// # Example
     ///
@@ -917,7 +922,7 @@ impl LazyFrame {
     ///             .then(lit(10))
     ///             .otherwise(lit(1))
     ///             .alias("new_column_name"),
-    ///             )
+    ///         )
     /// }
     /// ```
     pub fn with_column(self, expr: Expr) -> LazyFrame {
@@ -926,7 +931,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Add multiple columns to a DataFrame.
+    /// Add multiple columns, given as expressions, to a DataFrame.
     ///
     /// # Example
     ///
@@ -958,27 +963,39 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Aggregate all the columns as their maximum values.
+    /// Aggregate all the columns as their maximum values. Aggregated columns will have the same names as the original columns.
     pub fn max(self) -> LazyFrame {
         self.select_local(vec![col("*").max()])
     }
 
-    /// Aggregate all the columns as their minimum values.
+    /// Aggregate all the columns as their minimum values. Aggregated columns will have the same names as the original columns.
     pub fn min(self) -> LazyFrame {
         self.select_local(vec![col("*").min()])
     }
 
-    /// Aggregate all the columns as their sum values.
+    /// Aggregate all the columns as their sum values. Aggregated columns will have the same names as the original columns.
+    ///
+    /// - Boolean columns will sum to a `u32` containing the number of `true`s.
+    /// - For integer columns, the ordinary checks for overflow are performed: if running in `debug` mode, overflows will
+    /// panic, whereas in `release` mode overflows will silently wrap.
+    /// - String columns will sum to None.
     pub fn sum(self) -> LazyFrame {
         self.select_local(vec![col("*").sum()])
     }
 
     /// Aggregate all the columns as their mean values.
+    ///
+    /// - Boolean and integer columns are converted to `f64` before computing the mean.
+    /// - String columns will have a mean of None.
     pub fn mean(self) -> LazyFrame {
         self.select_local(vec![col("*").mean()])
     }
 
     /// Aggregate all the columns as their median values.
+    ///
+    /// - Boolean and integer results are converted to `f64`. However, they are still susceptible to overflow before
+    ///   this conversion occurs.
+    /// - String columns will sum to None.
     pub fn median(self) -> LazyFrame {
         self.select_local(vec![col("*").median()])
     }
@@ -988,12 +1005,25 @@ impl LazyFrame {
         self.select_local(vec![col("*").quantile(quantile, interpol)])
     }
 
-    /// Aggregate all the columns as their standard deviation values.
+    /// Aggregate all the columns as their standard deviation values. `ddof` is the "Delta Degrees of Freedom"; `N -
+    /// ddof` will be the denominator when computing the variance, where `N` is the number of rows.
+    /// > In standard statistical practice, `ddof=1` provides an unbiased estimator of the variance of a hypothetical
+    /// > infinite population. `ddof=0` provides a maximum likelihood estimate of the variance for normally distributed
+    /// > variables. The standard deviation computed in this function is the square root of the estimated variance, so
+    /// > even with `ddof=1`, it will not be an unbiased estimate of the standard deviation per se.
+    ///
+    /// Source: [Numpy](https://numpy.org/doc/stable/reference/generated/numpy.std.html#)
     pub fn std(self, ddof: u8) -> LazyFrame {
         self.select_local(vec![col("*").std(ddof)])
     }
 
-    /// Aggregate all the columns as their variance values.
+    /// Aggregate all the columns as their variance values. `ddof` is the "Delta Degrees of Freedom"; `N - ddof` will be
+    /// the denominator when computing the variance, where `N` is the number of rows.
+    /// > In standard statistical practice, `ddof=1` provides an unbiased estimator of the variance of a hypothetical
+    /// > infinite population. `ddof=0` provides a maximum likelihood estimate of the variance for normally distributed
+    /// > variables.
+    ///
+    /// Source: [Numpy](https://numpy.org/doc/stable/reference/generated/numpy.var.html#)
     pub fn var(self, ddof: u8) -> LazyFrame {
         self.select_local(vec![col("*").var(ddof)])
     }
@@ -1010,7 +1040,8 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Keep unique rows and maintain order
+    /// Drop non-unique rows and maintain the order of kept rows. `subset` is an optional `Vec` of column names to
+    /// consider for uniqueness; if None, all columns are considered.
     pub fn unique_stable(
         self,
         subset: Option<Vec<String>>,
@@ -1026,7 +1057,9 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Keep unique rows, do not maintain order
+    /// Drop non-unique rows. The order of the kept rows may change; to maintain the original row order, use
+    /// [`unique_stable`](LazyFrame::unique_stable). `subset` is an optional `Vec` of column names to consider for
+    /// uniqueness; if None, all columns are considered.
     pub fn unique(
         self,
         subset: Option<Vec<String>>,
@@ -1042,7 +1075,8 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Drop null rows.
+    /// Drop rows containing None. `subset` is an optional `Vec` of column names to consider for nulls; if None, all
+    /// columns are considered.
     ///
     /// Equal to `LazyFrame::filter(col("*").is_not_null())`
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
@@ -1056,30 +1090,36 @@ impl LazyFrame {
         }
     }
 
-    /// Slice the DataFrame.
+    /// Slice the DataFrame using an offset (starting row) and a length.
+    /// If `offset` is negative, it is counted from the end of the DataFrame.
+    /// For instance, `lf.slice(-5, 3)` gets three rows, starting at the row fifth from the end.
+    ///
+    /// If `offset` and `len` are such that the slice extends beyond the end of the DataFrame, the portion between
+    /// `offset` and the end will be returned.
+    /// In this case, the number of rows in the returned DataFrame will be less than `len`.
     pub fn slice(self, offset: i64, len: IdxSize) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().slice(offset, len).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Get the first row.
+    /// Get the first row. Equivalent to `self.slice(0, 1)`.
     pub fn first(self) -> LazyFrame {
         self.slice(0, 1)
     }
 
-    /// Get the last row
+    /// Get the last row. Equivalent to `self.slice(-1, 1)`.
     pub fn last(self) -> LazyFrame {
         self.slice(-1, 1)
     }
 
-    /// Get the last `n` rows
+    /// Get the last `n` rows. Equivalent to `self.slice(-(n as i64), n)`.
     pub fn tail(self, n: IdxSize) -> LazyFrame {
         let neg_tail = -(n as i64);
         self.slice(neg_tail, n)
     }
 
-    /// Melt the DataFrame from wide to long format
+    /// Melt the DataFrame from wide to long format. See [`MeltArgs`] for information on how to melt a DataFrame.
     pub fn melt(self, args: MeltArgs) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().melt(Arc::new(args)).build();
@@ -1087,12 +1127,16 @@ impl LazyFrame {
     }
 
     /// Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
-    /// use [fetch](LazyFrame::fetch).
+    /// use [`fetch`](LazyFrame::fetch).
     pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
 
-    /// Apply a function/closure once the logical plan get executed.
+    /// Apply a function/closure once the logical plan get executed. The function has access to the whole materialized
+    /// DataFrame at the time it is called.
+    ///
+    /// To apply specific functions to specific columns, use [`Expr::map`] in conjunction with `LazyFrame::with_column`
+    /// or `with_columns`.
     ///
     /// ## Warning
     /// This can blow up in your face if the schema is changed due to the operation. The optimizer
@@ -1129,6 +1173,8 @@ impl LazyFrame {
     }
 
     /// Add a new column at index 0 that counts the rows.
+    ///
+    /// `name` is the name of the new column. `offset` is where to start counting from; if `None`, it is set to `0`.
     ///
     /// # Warning
     /// This can have a negative effect on query performance.
