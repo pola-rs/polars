@@ -698,7 +698,7 @@ impl LazyFrame {
         Ok(())
     }
 
-    /// Filter by some predicate expression.
+    /// Filter by some predicate expression. The expression must yield boolean values.
     ///
     /// # Example
     ///
