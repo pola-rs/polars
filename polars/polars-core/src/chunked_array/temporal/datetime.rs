@@ -69,7 +69,7 @@ impl DatetimeChunked {
 
         if let Some(from) = self.time_zone() {
             let old: Tz = from.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{tz}'").into())
+                PolarsError::ComputeError(format!("Could not parse timezone: '{from}'").into())
             })?;
             let new: Tz = tz.parse().map_err(|_| {
                 PolarsError::ComputeError(format!("Could not parse timezone: '{tz}'").into())
