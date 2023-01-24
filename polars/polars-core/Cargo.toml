@@ -25,12 +25,8 @@ performant = ["polars-arrow/performant"]
 
 # extra utilities for Utf8Chunked
 strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
-string_encoding = ["base64", "hex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
-
-# extra utilities for BinaryChunked
-binary_encoding = ["base64", "hex", "dtype-binary"]
 
 fmt = ["comfy-table/tty"]
 fmt_no_tty = ["comfy-table"]
@@ -138,7 +134,6 @@ docs-selection = [
   "horizontal_concat",
   "abs",
   "dataframe_arithmetic",
-  "string_encoding",
   "product",
   "unique_counts",
   "describe",
@@ -157,13 +152,11 @@ docs-selection = [
 ahash.workspace = true
 anyhow.workspace = true
 arrow.workspace = true
-base64 = { version = "0.21", optional = true }
 bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
 hashbrown.workspace = true
-hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num.workspace = true
