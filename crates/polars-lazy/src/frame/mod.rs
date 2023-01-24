@@ -396,7 +396,6 @@ impl LazyFrame {
         for (existing, new) in iter.zip(new) {
             let existing = existing.as_ref();
             let new = new.as_ref();
-
             if new != existing {
                 existing_vec.push(existing.into());
                 new_vec.push(new.into());
