@@ -24,6 +24,10 @@
 //! performed on a `LazyFrame`, such as mapping over a column, filtering, or groupby-aggregation.
 //! `Expr` and the functions that produce them can be found in the [dsl module](crate::dsl).
 //!
+//! Most operations on a `LazyFrame` consume the `LazyFrame` and return a new `LazyFrame` with the updated plan.
+//! If you need to use the same `LazyFrame` multiple times, you should [`clone`](std::iter::Clone) it, and optionally
+//! [`cache`](crate::frame::LazyFrame::cache) it beforehand.
+//!
 //! ## Examples
 //!
 //! #### Adding a new column to a lazy DataFrame
