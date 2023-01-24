@@ -24,6 +24,7 @@ use pyo3::{PyAny, PyResult};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::lazy::dataframe::PyLazyFrame;
+#[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::POLARS;

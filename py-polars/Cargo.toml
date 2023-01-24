@@ -61,6 +61,7 @@ timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
 list_take = ["polars/list_take"]
+binary_encoding = ["polars/binary_encoding"]
 
 all = [
   "json",
@@ -91,7 +92,7 @@ all = [
   "polars/groupby_list",
   "sql",
   "polars/dtype-binary",
-  "polars/binary_encoding",
+  "binary_encoding",
   "streaming",
   "performant",
   "list_take",

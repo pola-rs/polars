@@ -1,11 +1,17 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "string_encoding")]
+use base64::engine::general_purpose;
+#[cfg(feature = "string_encoding")]
+use base64::Engine as _;
 use polars_arrow::export::arrow::compute::substring::substring;
 use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
 use polars_core::export::regex::{escape, Regex};
 
 use super::*;
+#[cfg(feature = "string_encoding")]
+use crate::chunked_array::binary::BinaryNameSpaceImpl;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
     reg.captures(input)
@@ -13,6 +19,46 @@ fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Optio
 }
 
 pub trait Utf8NameSpaceImpl: AsUtf8 {
+    #[cfg(not(feature = "binary_encoding"))]
+    fn hex_decode(&self) -> PolarsResult<Utf8Chunked> {
+        panic!("activate 'dtype-binary' feature")
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    fn hex_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
+        let ca = self.as_utf8();
+        ca.cast_unchecked(&DataType::Binary)?
+            .binary()?
+            .hex_decode(strict)
+    }
+
+    #[must_use]
+    #[cfg(feature = "string_encoding")]
+    fn hex_encode(&self) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        ca.apply(|s| hex::encode(s).into())
+    }
+
+    #[cfg(not(feature = "binary_encoding"))]
+    fn base64_decode(&self) -> PolarsResult<Utf8Chunked> {
+        panic!("activate 'dtype-binary' feature")
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    fn base64_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
+        let ca = self.as_utf8();
+        ca.cast_unchecked(&DataType::Binary)?
+            .binary()?
+            .base64_decode(strict)
+    }
+
+    #[must_use]
+    #[cfg(feature = "string_encoding")]
+    fn base64_encode(&self) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        ca.apply(|s| general_purpose::STANDARD.encode(s).into())
+    }
+
     /// Get the length of the string values as number of chars.
     fn str_n_chars(&self) -> UInt32Chunked {
         let ca = self.as_utf8();

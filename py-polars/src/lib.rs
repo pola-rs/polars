@@ -26,6 +26,7 @@ pub mod file;
 pub mod lazy;
 mod list_construction;
 pub mod npy;
+#[cfg(feature = "object")]
 mod object;
 pub mod prelude;
 pub(crate) mod py_modules;

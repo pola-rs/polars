@@ -1578,13 +1578,11 @@ dependencies = [
  "ahash",
  "anyhow",
  "arrow2",
- "base64 0.21.0",
  "bitflags",
  "chrono",
  "chrono-tz 0.8.1",
  "comfy-table",
  "hashbrown 0.13.2",
- "hex",
  "indexmap",
  "ndarray",
  "num",
@@ -1655,6 +1653,8 @@ name = "polars-ops"
 version = "0.26.1"
 dependencies = [
  "arrow2",
+ "base64 0.21.0",
+ "hex",
  "jsonpath_lib",
  "memchr",
  "polars-arrow",

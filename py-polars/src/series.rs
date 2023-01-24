@@ -797,17 +797,21 @@ impl PySeries {
 
             macro_rules! dispatch_apply {
                 ($self:expr, $method:ident, $($args:expr),*) => {
-                    if matches!($self.dtype(), DataType::Object(_)) {
-                        let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
-                        ca.$method($($args),*)
-                    } else {
-                        apply_method_all_arrow_series2!(
-                            $self,
-                            $method,
-                            $($args),*
-                        )
-                    }
+                    match $self.dtype() {
+                        #[cfg(feature = "object")]
+                        DataType::Object(_) => {
+                            let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
+                            ca.$method($($args),*)
+                        },
+                        _ => {
+                            apply_method_all_arrow_series2!(
+                                $self,
+                                $method,
+                                $($args),*
+                            )
+                        }
 
+                    }
                 }
 
             }

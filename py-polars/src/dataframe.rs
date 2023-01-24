@@ -53,6 +53,7 @@ impl PyDataFrame {
         schema_overwrite: Option<Schema>,
     ) -> PyResult<Self> {
         // object builder must be registered.
+        #[cfg(feature = "object")]
         crate::object::register_object_builder();
 
         let schema =
