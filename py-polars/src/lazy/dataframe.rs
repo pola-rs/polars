@@ -439,6 +439,7 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "streaming")]
     pub fn sink_parquet(
         &self,
         py: Python,
@@ -470,6 +471,7 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "streaming")]
     pub fn sink_ipc(
         &self,
         py: Python,
@@ -923,6 +925,7 @@ impl PyLazyFrame {
         Ok(self.get_schema()?.len())
     }
 
+    #[cfg(feature = "merge_sorted")]
     pub fn merge_sorted(&self, other: PyLazyFrame, key: &str) -> PyResult<Self> {
         let out = self
             .ldf

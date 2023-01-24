@@ -739,6 +739,7 @@ impl PyExpr {
             .with_fmt("str.hex_encode")
             .into()
     }
+    #[cfg(feature = "binary_encoding")]
     pub fn str_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
@@ -760,6 +761,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "binary_encoding")]
     pub fn str_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
@@ -771,6 +773,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "binary_encoding")]
     pub fn binary_hex_encode(&self) -> PyExpr {
         self.clone()
             .inner
@@ -781,6 +784,7 @@ impl PyExpr {
             .with_fmt("binary.hex_encode")
             .into()
     }
+    #[cfg(feature = "binary_encoding")]
     pub fn binary_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
@@ -791,6 +795,8 @@ impl PyExpr {
             .with_fmt("binary.hex_decode")
             .into()
     }
+
+    #[cfg(feature = "binary_encoding")]
     pub fn binary_base64_encode(&self) -> PyExpr {
         self.clone()
             .inner
@@ -802,6 +808,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "binary_encoding")]
     pub fn binary_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
