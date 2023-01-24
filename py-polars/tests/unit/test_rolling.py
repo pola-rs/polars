@@ -557,3 +557,9 @@ def test_groupby_rolling_iter() -> None:
         ((2, date(2020, 1, 5)), (1, 3)),
     ]
     assert result2 == expected2
+
+
+def test_rolling_skew_window_offset() -> None:
+    assert (pl.arange(0, 20, eager=True) ** 2).rolling_skew(20)[
+        -1
+    ] == 0.6612545648596286
