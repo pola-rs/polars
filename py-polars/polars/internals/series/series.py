@@ -4303,7 +4303,7 @@ class Series:
 
         Parameters
         ----------
-        method : {'linear', 'linear'}
+        method : {'linear', 'nearest'}
             Interpolation method
 
         Examples
