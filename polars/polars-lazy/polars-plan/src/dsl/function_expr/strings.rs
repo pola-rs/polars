@@ -116,24 +116,37 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
             None => BooleanChunked::full(ca.name(), false, ca.len()),
         },
         _ => {
-            let f = |s: &str, pat: &str| {
-                if literal {
-                    Ok(Some(s.contains(pat)))
-                } else {
-                    let re = Regex::new(pat);
-                    match re {
-                        Ok(re) => Ok(Some(re.is_match(s))),
-                        Err(e) => {
-                            if strict {
-                                Ok(None)
-                            } else {
-                                Err(PolarsError::ComputeError(e.to_string().into()))
-                            }
-                        },
-                    }
-                }
-            };
-            iter_and_check(ca, pat, f)
+            if literal {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => src.contains(pat),
+                        _ => false,
+                    })
+                    .collect_trusted()
+            } else if strict {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => {
+                            let re = Regex::new(pat)?;
+                            Ok(re.is_match(src))
+                        }
+                        _ => Ok(false),
+                    })
+                    .collect::<PolarsResult<_>>()?
+            } else {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => {
+                            let re = Regex::new(pat).ok()?;
+                            Some(re.is_match(src))
+                        }
+                        _ => Some(false),
+                    })
+                    .collect_trusted()
+            }
         }
     };
 
@@ -363,23 +376,6 @@ fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
     pat.get(0).ok_or_else(|| {
         PolarsError::ComputeError("pattern may not be 'null' in 'replace' expression".into())
     })
-}
-
-fn iter_and_check<F, PolarsError>(ca: &Utf8Chunked, val: &Utf8Chunked, f: F) -> BooleanChunked
-where
-    F: Fn(&str, &str) -> Result<Option<bool>, PolarsError>,
-{
-    let mut out: BooleanChunked = ca
-        .into_iter()
-        .zip(val.into_iter())
-        .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-            (Some(src), Some(val)) => f(src, val),
-            _ => Ok(Some(false)),
-        })
-        .collect_trusted();
-
-    out.rename(ca.name());
-    out
 }
 
 // used only if feature="regex"

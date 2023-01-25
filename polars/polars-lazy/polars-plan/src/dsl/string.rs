@@ -25,7 +25,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Contains {
                 literal: false,
-                strict: strict,
+                strict,
             }),
             &[pat],
             true,

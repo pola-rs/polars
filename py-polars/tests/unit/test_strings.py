@@ -59,7 +59,6 @@ def test_contains() -> None:
 
 
 def test_contains_expr() -> None:
-
     df = pl.DataFrame(
         {
             "text": [
@@ -74,22 +73,18 @@ def test_contains_expr() -> None:
         }
     )
 
-    assert (
-        df.with_columns(
-            [
-                pl.col("text")
-                .str.contains(pl.col("pattern"), literal=False, strict=False)
-                .alias("contains"),
-                pl.col("text")
-                .str.contains(pl.col("pattern"), literal=True)
-                .alias("contains_lit"),
-            ]
-        )
+    assert df.select(
+        [
+            pl.col("text")
+            .str.contains(pl.col("pattern"), literal=False, strict=False)
+            .alias("contains"),
+            pl.col("text")
+            .str.contains(pl.col("pattern"), literal=True)
+            .alias("contains_lit"),
+        ]
     ).to_dict(False) == {
-        "text": ["some text", "(with) special\n .* chars", "**etc...?$", None, "b"],
-        "pattern": ["[me]", ".*", "^\\(", "a", None],
-        "contains": [True, True, False, False, False],
-        "contains_lit": [False, True, False, False, False],
+        "contains": [True, True, False, False, False, None],
+        "contains_lit": [False, True, False, False, False, False],
     }
 
     with pytest.raises(pl.ComputeError):
