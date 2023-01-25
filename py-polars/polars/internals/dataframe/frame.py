@@ -6805,8 +6805,8 @@ class DataFrame:
             for i in range(self.height):
                 yield self.row(i)
 
-    def iterslices(self, n_rows: int = 10_000) -> Iterator[DataFrame]:
-        """
+    def iter_slices(self, n_rows: int = 10_000) -> Iterator[DataFrame]:
+        r"""
         Returns a non-copying iterator of slices over the underlying DataFrame.
 
         Parameters
@@ -6825,27 +6825,29 @@ class DataFrame:
         ...     },
         ...     schema_overrides={"a": pl.Int32},
         ... )
-        >>> for idx, frame in enumerate(df.iterslices()):
+        >>> for idx, frame in enumerate(df.iter_slices()):
         ...     print(f"{type(frame).__name__}:[{idx}]:{len(frame)}")
         ...
         DataFrame:[0]:10000
         DataFrame:[1]:7500
 
-        Working with ``iterslices`` is an efficient way to chunk-iterate over DataFrames
-        and any supported frame export/conversion types; for example, as RecordBatches:
+        Using ``iter_slices`` is an efficient way to chunk-iterate over DataFrames and
+        any supported frame export/conversion types; for example, as RecordBatches:
 
-        >>> for frame in df.iterslices(n_rows=15_000):
+        >>> for frame in df.iter_slices(n_rows=15_000):
         ...     record_batch = frame.to_arrow().to_batches()[0]
-        ...     print(record_batch, len(record_batch))
+        ...     print(record_batch, "\n<< ", len(record_batch))
         ...
         pyarrow.RecordBatch
         a: int32
         b: date32[day]
-        c: large_string 15000
+        c: large_string
+        << 15000
         pyarrow.RecordBatch
         a: int32
         b: date32[day]
-        c: large_string 2500
+        c: large_string
+        << 2500
 
         See Also
         --------

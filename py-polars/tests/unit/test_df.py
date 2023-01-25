@@ -2750,7 +2750,7 @@ def test_unique(
     assert_frame_equal(result, expected)
 
 
-def test_iterslices() -> None:
+def test_iter_slices() -> None:
     df = pl.DataFrame(
         {
             "a": range(95),
@@ -2758,7 +2758,7 @@ def test_iterslices() -> None:
             "c": "klmnopqrstuvwxyz",
         }
     )
-    batches = list(df.iterslices(n_rows=50))
+    batches = list(df.iter_slices(n_rows=50))
 
     assert len(batches[0]) == 50
     assert len(batches[1]) == 45
