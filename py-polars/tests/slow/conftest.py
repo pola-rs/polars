@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 
@@ -8,5 +9,5 @@ IO_TEST_DIR = os.path.abspath(
 
 
 @pytest.fixture()
-def io_test_dir() -> str:
-    return IO_TEST_DIR
+def io_files_dir() -> Path:
+    return Path(IO_TEST_DIR) / "files"

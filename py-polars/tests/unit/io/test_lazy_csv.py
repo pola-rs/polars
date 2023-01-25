@@ -9,14 +9,14 @@ import pytest
 import polars as pl
 
 
-def test_scan_csv() -> None:
-    df = pl.scan_csv(Path(__file__).parent.parent / "files" / "small.csv")
+def test_scan_csv(io_files_path: Path) -> None:
+    df = pl.scan_csv(io_files_path / "small.csv")
     assert df.collect().shape == (4, 3)
 
 
-def test_scan_empty_csv() -> None:
+def test_scan_empty_csv(io_files_path: Path) -> None:
     with pytest.raises(Exception) as excinfo:
-        pl.scan_csv(Path(__file__).parent.parent / "files" / "empty.csv").collect()
+        pl.scan_csv(io_files_path / "empty.csv").collect()
     assert str(excinfo.value) == "empty csv"
 
 

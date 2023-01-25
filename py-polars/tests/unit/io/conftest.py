@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
 import polars as pl
 
-IO_TEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "io"))
+IO_TEST_DIR = os.path.abspath(os.path.dirname(__file__))
 
 EXAMPLES_DIR = os.path.abspath(
     os.path.join(
         os.path.dirname(__file__),
+        "..",
         "..",
         "..",
         "..",
@@ -49,6 +51,11 @@ FOODS_NDJSON = os.path.join(
 @pytest.fixture()
 def io_test_dir() -> str:
     return IO_TEST_DIR
+
+
+@pytest.fixture()
+def io_files_path() -> Path:
+    return Path(IO_TEST_DIR) / "files"
 
 
 @pytest.fixture()

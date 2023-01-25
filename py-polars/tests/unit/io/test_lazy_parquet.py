@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import pytest
 from _pytest.capture import CaptureFixture
 
 import polars as pl
@@ -14,8 +15,13 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import ParallelStrategy
 
 
-def test_scan_parquet() -> None:
-    df = pl.scan_parquet(Path(__file__).parent.parent / "files" / "small.parquet")
+@pytest.fixture()
+def parquet_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "small.parquet"
+
+
+def test_scan_parquet(parquet_file_path: Path) -> None:
+    df = pl.scan_parquet(parquet_file_path)
     assert df.collect().shape == (4, 3)
 
 
@@ -119,10 +125,11 @@ def test_parquet_stats(io_test_dir: str) -> None:
     )
 
 
-def test_row_count_schema(io_test_dir: str) -> None:
-    f = os.path.join(io_test_dir, "..", "files", "small.parquet")
+def test_row_count_schema(parquet_file_path: Path) -> None:
     assert (
-        pl.scan_parquet(f, row_count_name="id").select(["id", "b"]).collect()
+        pl.scan_parquet(str(parquet_file_path), row_count_name="id")
+        .select(["id", "b"])
+        .collect()
     ).dtypes == [pl.UInt32, pl.Utf8]
 
 

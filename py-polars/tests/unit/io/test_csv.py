@@ -415,7 +415,7 @@ def test_column_rename_and_dtype_overwrite() -> None:
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
 
 
-def test_compressed_csv() -> None:
+def test_compressed_csv(io_files_path: Path) -> None:
     # gzip compression
     csv = textwrap.dedent(
         """\
@@ -437,7 +437,7 @@ def test_compressed_csv() -> None:
     assert out.frame_equal(expected)
 
     # now from disk
-    csv_file = Path(__file__).parent.parent / "files" / "gzipped.csv"
+    csv_file = io_files_path / "gzipped.csv"
     out = pl.read_csv(str(csv_file))
     assert out.frame_equal(expected)
 
@@ -1060,25 +1060,27 @@ def test_csv_single_categorical_null() -> None:
 
 
 def test_csv_quoted_missing() -> None:
-    csv = '''"col1"|"col2"|"col3"|"col4"
-"0"|"Free text with a line
-break"|"123"|"456"
-"1"|"Free text without a linebreak"|""|"789"
-"0"|"Free text with 
-two 
-linebreaks"|"101112"|"131415"'''  # noqa: W291
-    assert pl.read_csv(csv.encode(), sep="|", dtypes={"col3": pl.Int32}).to_dict(
-        False
-    ) == {
-        "col1": [0, 1, 0],
-        "col2": [
-            "Free text with a line\nbreak",
-            "Free text without a linebreak",
-            "Free text with \ntwo \nlinebreaks",
-        ],
-        "col3": [123, None, 101112],
-        "col4": [456, 789, 131415],
-    }
+    csv = (
+        '"col1"|"col2"|"col3"|"col4"\n'
+        '"0"|"Free text with a line\nbreak"|"123"|"456"\n'
+        '"1"|"Free text without a linebreak"|""|"789"\n'
+        '"0"|"Free text with \ntwo \nlinebreaks"|"101112"|"131415"'
+    )
+    result = pl.read_csv(csv.encode(), sep="|", dtypes={"col3": pl.Int32})
+    expected = pl.DataFrame(
+        {
+            "col1": [0, 1, 0],
+            "col2": [
+                "Free text with a line\nbreak",
+                "Free text without a linebreak",
+                "Free text with \ntwo \nlinebreaks",
+            ],
+            "col3": [123, None, 101112],
+            "col4": [456, 789, 131415],
+        },
+        schema_overrides={"col3": pl.Int32},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_csv_write_tz_aware() -> None:
