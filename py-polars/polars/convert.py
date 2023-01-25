@@ -93,9 +93,13 @@ def from_dicts(
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
-        If you supply a list of column names that does not match the names in the
-        underlying data, the names given here will overwrite them. The number
-        of names given in the schema should match the underlying data dimensions.
+        If a list of column names is supplied that does NOT match the names in the
+        underlying data, the names given here will overwrite the actual fields in
+        the order that they appear - however, in this case it is typically clearer
+        to rename after loading the frame.
+
+        If you want to drop some of the fields found in the input dictionaries, a
+        _partial_ schema can be declared; omitted fields will not be loaded.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
 

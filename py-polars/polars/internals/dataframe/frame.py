@@ -161,8 +161,11 @@ class DataFrame:
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
-        underlying data, the names given here will overwrite them. The number
-        of names given in the schema should match the underlying data dimensions.
+        underlying data, the names given here will overwrite them.
+
+        The number of entries in the schema should match the underlying data
+        dimensions, unless a sequence of dictionaries is being passed, in which case
+        a _partial_ schema can be declared to prevent specific fields from being loaded.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
