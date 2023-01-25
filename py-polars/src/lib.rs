@@ -582,6 +582,22 @@ fn get_idx_type(py: Python) -> PyObject {
     Wrap(IDX_DTYPE).to_object(py)
 }
 
+#[pyfunction]
+fn set_float_fmt(fmt: &str) -> PyResult<()> {
+    use polars_core::fmt::{set_float_fmt, FloatFmt};
+    let fmt = match fmt {
+        "full" => FloatFmt::Full,
+        "mixed" => FloatFmt::Mixed,
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "fmt must be one of {{'full', 'mixed'}}, got {e}",
+            )))
+        }
+    };
+    set_float_fmt(fmt);
+    Ok(())
+}
+
 #[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add("NotFoundError", py.get_type::<NotFoundError>())
@@ -669,5 +685,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(arg_where)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_idx_type)).unwrap();
     m.add_wrapped(wrap_pyfunction!(coalesce_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
     Ok(())
 }

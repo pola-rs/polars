@@ -2,6 +2,7 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 #[cfg(any(
     feature = "dtype-date",
@@ -24,6 +25,26 @@ use crate::config::*;
 use crate::prelude::*;
 
 const LIMIT: usize = 25;
+
+#[derive(Copy, Clone)]
+#[repr(u8)]
+pub enum FloatFmt {
+    Mixed,
+    Full,
+}
+static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
+
+fn get_float_fmt() -> FloatFmt {
+    match FLOAT_FMT.load(Ordering::Relaxed) {
+        0 => FloatFmt::Mixed,
+        1 => FloatFmt::Full,
+        _ => panic!(),
+    }
+}
+
+pub fn set_float_fmt(fmt: FloatFmt) {
+    FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
+}
 
 macro_rules! format_array {
     ($f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
@@ -580,6 +601,10 @@ fn fmt_integer<T: Num + NumCast + Display>(
 const SCIENTIFIC_BOUND: f64 = 999999.0;
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
+    if matches!(get_float_fmt(), FloatFmt::Full) {
+        return write!(f, "{v:>width$}");
+    }
+
     // show integers as 0.0, 1.0 ... 101.0
     if v.fract() == 0.0 && v.abs() < SCIENTIFIC_BOUND {
         write!(f, "{v:>width$.1}")

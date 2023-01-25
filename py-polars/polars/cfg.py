@@ -10,6 +10,13 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Literal
 
+try:
+    from polars.polars import set_float_fmt as _set_float_fmt
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
+
 
 # note: register all Config-specific environment variable names here; need to constrain
 # which 'POLARS_' environment variables are recognised, as there are other lower-level
@@ -106,6 +113,7 @@ class Config:
             os.environ.pop(var, None)
         for flag, value in POLARS_CFG_LOCAL_VARS.items():
             setattr(cls, flag, value)
+        cls.set_fmt_float()
         return cls
 
     @classmethod
@@ -547,4 +555,18 @@ class Config:
     def set_verbose(cls, active: bool = True) -> type[Config]:
         """Enable additional verbose/debug logging."""
         os.environ["POLARS_VERBOSE"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_fmt_float(cls, fmt: str = "mixed") -> type[Config]:
+        """
+        Control how floating  point values are displayed.
+
+        Parameters
+        ----------
+        fmt : {"mixed", "full"}
+            How to format floating point numbers
+
+        """
+        _set_float_fmt(fmt)
         return cls
