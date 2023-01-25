@@ -10,7 +10,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, PanicException
 
 if sys.version_info >= (3, 9):
     import zoneinfo
@@ -2047,6 +2047,19 @@ def test_with_time_zone_none() -> None:
     result = brussels.dt.with_time_zone(None)
     assert result.dtype == pl.Datetime("us", None)
     assert result.item() == datetime(2001, 1, 1, 0, 0)
+
+
+def test_with_time_zone_invalid() -> None:
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    with pytest.raises(PanicException, match="time zone foo not supported"):
+        ts.dt.with_time_zone("foo")
+
+
+def test_with_time_zone_fixed_offset() -> None:
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    result = ts.dt.with_time_zone("+00:00")
+    assert result.dtype == pl.Datetime("us", "+00:00")
+    assert result.item() == datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
 
 
 def test_tz_aware_get_idx_5010() -> None:

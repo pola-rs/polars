@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 #[cfg(feature = "timezones")]
 use polars_arrow::kernels::cast_timezone;
@@ -10,6 +10,18 @@ use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
+
+#[cfg(feature = "timezones")]
+fn validate_time_zone(tz: TimeZone) {
+    use chrono_tz::Tz;
+    match parse_offset(&tz) {
+        Ok(_) => (),
+        Err(_) => match tz.parse::<Tz>() {
+            Ok(_) => (),
+            Err(_) => panic!("time zone {tz} not supported"),
+        },
+    };
+}
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(
@@ -210,6 +222,10 @@ impl DatetimeChunked {
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
     pub fn set_time_zone(&mut self, tz: Option<TimeZone>) {
+        match &tz {
+            None => (),
+            Some(tz) => validate_time_zone(tz.to_string()),
+        };
         self.2 = Some(Datetime(self.time_unit(), tz))
     }
     pub fn with_time_zone(mut self, tz: Option<TimeZone>) -> Self {
