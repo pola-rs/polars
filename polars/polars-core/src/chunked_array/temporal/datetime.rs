@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use arrow::temporal_conversions::{
-    parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 #[cfg(feature = "timezones")]
 use polars_arrow::kernels::cast_timezone;
@@ -13,6 +13,7 @@ use crate::prelude::*;
 
 #[cfg(feature = "timezones")]
 fn validate_time_zone(tz: TimeZone) {
+    use arrow::temporal_conversions::parse_offset;
     use chrono_tz::Tz;
     match parse_offset(&tz) {
         Ok(_) => (),
