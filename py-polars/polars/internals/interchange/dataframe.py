@@ -14,20 +14,11 @@ if TYPE_CHECKING:
 
 
 class PolarsDataFrameXchg(DataFrameXchg):
-    """
-    DataFrame class with only the methods required by the interchange protocol defined.
-
-    Instances of this (private) class are returned from ``pl.DataFrame.__dataframe__``
-    as objects with the methods and attributes defined on this class.
-    """
+    """A dataframe represented by a Polars DataFrame."""
 
     def __init__(
         self, df: pl.DataFrame, nan_as_null: bool = False, allow_copy: bool = True
     ):
-        """
-        Constructor - an instance of this (private) class is returned from
-        `pd.DataFrame.__dataframe__`.
-        """
         self._df = df
         self._nan_as_null = nan_as_null  # Has no effect for now
         self._allow_copy = allow_copy

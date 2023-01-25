@@ -21,16 +21,7 @@ if TYPE_CHECKING:
 
 
 class PolarsColumn(Column):
-    """
-    A column object, with only the methods and properties required by the
-    interchange protocol defined.
-    A column can contain one or more chunks. Each chunk can contain up to three
-    buffers - a data buffer, a mask buffer (depending on null representation),
-    and an offsets buffer (if variable-size binary; e.g., variable-length
-    strings).
-    Note: this Column object can only be produced by ``__dataframe__``, so
-          doesn't need its own version or ``__column__`` protocol.
-    """
+    """A column represented by a Polars Series."""
 
     def __init__(self, column: pl.Series, allow_copy: bool = True):
         self._col = column

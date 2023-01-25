@@ -35,7 +35,7 @@ def polars_dtype_to_dtype(dtype: pl.DataType) -> Dtype:
     elif dtype == pl.Boolean:
         return DtypeKind.BOOL, 8, "b", NATIVE_ENDIANNESS
     elif dtype == pl.Utf8:
-        return DtypeKind.STRING, 64, "U", NATIVE_ENDIANNESS
+        return DtypeKind.STRING, 8, "U", NATIVE_ENDIANNESS
     elif dtype == pl.Date:
         return DtypeKind.DATETIME, 32, "tdD", NATIVE_ENDIANNESS
     elif dtype == pl.Time:
@@ -52,4 +52,4 @@ def polars_dtype_to_dtype(dtype: pl.DataType) -> Dtype:
     elif dtype == pl.Categorical:
         return DtypeKind.CATEGORICAL, 32, "I", NATIVE_ENDIANNESS
     else:
-        raise ValueError(f"Data type {dtype} not supported by interchange protocol")
+        raise ValueError(f"Data type {dtype} not supported by interchange protocol.")

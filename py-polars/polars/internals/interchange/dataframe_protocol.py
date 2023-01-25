@@ -1,3 +1,4 @@
+# ruff: noqa
 """
 A verbatim copy (vendored) of the spec from https://github.com/data-apis/dataframe-api
 """
