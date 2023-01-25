@@ -1830,13 +1830,8 @@ class DataFrame:
         [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
 
         """
-        pydf = self._df
-        names = self.columns
-
-        return [
-            {k: v for k, v in zip(names, pydf.row_tuple(i))}
-            for i in range(0, self.height)
-        ]
+        dict_, zip_, columns = dict, zip, self.columns
+        return [dict_(zip_(columns, row)) for row in self.iterrows()]
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """
