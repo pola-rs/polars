@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import sys
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, cast, no_type_check
 
 import numpy as np
@@ -2282,6 +2282,32 @@ def test_tz_aware_truncate() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("ts", "fmt", "expected"),
+    [
+        ("2020-01-01T00:00:00Z", "%+", datetime(2020, 1, 1, tzinfo=timezone.utc)),
+        (
+            "2020-01-01T00:00:00+01:00",
+            "%Y-%m-%dT%H:%M:%S%z",
+            datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
+        ),
+        (
+            "2020-01-01T00:00:00+01:00",
+            "%Y-%m-%dT%H:%M:%S%:z",
+            datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
+        ),
+        (
+            "2020-01-01T00:00:00+01:00",
+            "%Y-%m-%dT%H:%M:%S%#z",
+            datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
+        ),
+    ],
+)
+def test_tz_aware_strptime(ts: str, fmt: str, expected: datetime) -> None:
+    result = pl.Series([ts]).str.strptime(pl.Datetime, fmt).item()
+    assert result == expected
+
+
 def test_tz_aware_strftime() -> None:
     df = pl.DataFrame(
         {
@@ -2600,7 +2626,6 @@ def test_infer_iso8601(iso8601_format: str) -> None:
         .replace("%3f", "123")
         .replace("%6f", "123456")
         .replace("%9f", "123456789")
-        .replace("%Z", "Z")
     )
     parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
     assert parsed.dt.year().item() == 2134

@@ -396,7 +396,7 @@ pub trait Utf8Methods: AsUtf8 {
             None => return infer::to_datetime(utf8_ca, tu),
         };
         // todo! use regex?
-        if fmt.contains("%z") || fmt.contains("%:z") || fmt.contains("%#z") {
+        if fmt.contains("%z") || fmt.contains("%:z") || fmt.contains("%#z") || fmt == "%+" {
             tz_aware = true;
         }
         let fmt = self::strptime::compile_fmt(fmt);
