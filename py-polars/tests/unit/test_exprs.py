@@ -9,6 +9,8 @@ import pytest
 
 import polars as pl
 from polars.datatypes import (
+    DATETIME_DTYPES,
+    DURATION_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
@@ -333,6 +335,18 @@ def test_dtype_col_selection() -> None:
         "a4",
         "b",
         "c",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+    }
+    assert set(df.select(pl.col(DATETIME_DTYPES)).columns) == {
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+    }
+    assert set(df.select(pl.col(DURATION_DTYPES)).columns) == {
         "d1",
         "d2",
         "d3",
