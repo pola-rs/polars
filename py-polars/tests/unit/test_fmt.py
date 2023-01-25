@@ -124,3 +124,4 @@ def test_fmt_float_full() -> None:
         str(pl.Series([1.2304980958725870923]))
         == "shape: (1,)\nSeries: '' [f64]\n[\n\t1.230498095872587\n]"
     )
+    pl.Config.restore_defaults()

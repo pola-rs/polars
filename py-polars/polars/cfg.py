@@ -113,6 +113,7 @@ class Config:
             os.environ.pop(var, None)
         for flag, value in POLARS_CFG_LOCAL_VARS.items():
             setattr(cls, flag, value)
+        cls.set_fmt_float()
         return cls
 
     @classmethod
@@ -557,7 +558,7 @@ class Config:
         return cls
 
     @classmethod
-    def set_fmt_float(cls, fmt: str = "full") -> type[Config]:
+    def set_fmt_float(cls, fmt: str = "mixed") -> type[Config]:
         """
         Control how floating  point values are displayed.
 
