@@ -10,6 +10,8 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
+from polars.exceptions import ComputeError
+
 if sys.version_info >= (3, 9):
     import zoneinfo
 else:
@@ -2027,6 +2029,15 @@ def test_cast_timezone() -> None:
         "a": [datetime(2022, 9, 25, 14, 0)],
         "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
     }
+
+
+def test_cast_timezone_from_fixed_offset() -> None:
+    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.strptime(
+        pl.Datetime, "%Y-%m-%d %H:%M:%S%z"
+    )
+    # TODO: don't raise at all? https://github.com/pola-rs/polars/issues/6410
+    with pytest.raises(ComputeError, match=r"Could not parse timezone: '\+01:00'"):
+        ts.dt.cast_time_zone("Europe/Brussels")
 
 
 def test_with_time_zone_none() -> None:
