@@ -442,6 +442,21 @@ TEMPORAL_DTYPES: frozenset[PolarsDataType] = frozenset(
         Duration("ns"),
     ]
 )
+DATETIME_DTYPES: frozenset[PolarsDataType] = frozenset(
+    [
+        # TODO: ideally need a mechanism to wildcard timezones here too
+        Datetime("ms"),
+        Datetime("us"),
+        Datetime("ns"),
+    ]
+)
+DURATION_DTYPES: frozenset[PolarsDataType] = frozenset(
+    [
+        Duration("ms"),
+        Duration("us"),
+        Duration("ns"),
+    ]
+)
 INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
     [
         UInt8,
