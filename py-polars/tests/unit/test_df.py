@@ -14,7 +14,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.dependencies import zoneinfo
 from polars.internals.construction import iterable_to_pydf
 from polars.testing import (
@@ -1611,6 +1611,8 @@ def test_select_by_dtype(df: pl.DataFrame) -> None:
     assert out.columns == ["strings", "strings_nulls"]
     out = df.select(pl.col([pl.Utf8, pl.Boolean]))
     assert out.columns == ["strings", "strings_nulls", "bools", "bools_nulls"]
+    out = df.select(pl.col(INTEGER_DTYPES))
+    assert out.columns == ["int", "int_nulls"]
 
 
 def test_with_row_count() -> None:
@@ -2397,9 +2399,11 @@ def test_selection_regex_and_multicol() -> None:
     assert test_df.select(pl.col(["a", "b", "c"]) * pl.col(["a", "b", "c"])).to_dict(
         False
     ) == {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
-    assert test_df.select(pl.all().exclude("foo") * pl.all().exclude("foo")).to_dict(
-        False
-    ) == {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
+    assert test_df.select(pl.exclude("foo") * pl.exclude("foo")).to_dict(False) == {
+        "a": [1, 4, 9, 16],
+        "b": [25, 36, 49, 64],
+        "c": [81, 100, 121, 144],
+    }
     assert test_df.select(pl.col("^\\w$") * pl.col("^\\w$")).to_dict(False) == {
         "a": [1, 4, 9, 16],
         "b": [25, 36, 49, 64],

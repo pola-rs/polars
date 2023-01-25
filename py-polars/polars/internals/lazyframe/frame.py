@@ -24,7 +24,6 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
-    DataType,
     Date,
     Datetime,
     Duration,
@@ -352,7 +351,7 @@ class LazyFrame:
     @classmethod
     def _scan_python_function(
         cls,
-        schema: pa.schema | dict[str, type[DataType]],
+        schema: pa.schema | dict[str, PolarsDataType],
         scan_fn: bytes,
         pyarrow: bool = False,
     ) -> LazyFrame:
@@ -393,7 +392,7 @@ class LazyFrame:
         return self._ldf.columns()
 
     @property
-    def dtypes(self) -> list[type[DataType]]:
+    def dtypes(self) -> list[PolarsDataType]:
         """
         Get dtypes of columns in LazyFrame.
 

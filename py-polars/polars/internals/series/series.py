@@ -19,7 +19,6 @@ from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
-    DataType,
     Date,
     Datetime,
     Duration,
@@ -294,7 +293,7 @@ class Series:
 
     @classmethod
     def _repeat(
-        cls, name: str, val: int | float | str | bool, n: int, dtype: type[DataType]
+        cls, name: str, val: int | float | str | bool, n: int, dtype: PolarsDataType
     ) -> Series:
         return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
 
@@ -323,7 +322,7 @@ class Series:
         return self._s.get_ptr()
 
     @property
-    def dtype(self) -> type[DataType]:
+    def dtype(self) -> PolarsDataType:
         """
         Get the data type of this Series.
 
@@ -355,7 +354,7 @@ class Series:
         return out
 
     @property
-    def inner_dtype(self) -> type[DataType] | None:
+    def inner_dtype(self) -> PolarsDataType | None:
         """
         Get the inner dtype in of a List typed Series.
 

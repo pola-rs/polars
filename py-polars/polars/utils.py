@@ -22,7 +22,6 @@ from typing import (
 
 import polars.internals as pli
 from polars.datatypes import (
-    DataType,
     Date,
     Datetime,
     Int64,
@@ -261,7 +260,7 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 
 def _to_python_datetime(
     value: int | float,
-    dtype: type[DataType],
+    dtype: PolarsDataType,
     tu: TimeUnit | None = "ns",
     tz: str | None = None,
 ) -> date | datetime:

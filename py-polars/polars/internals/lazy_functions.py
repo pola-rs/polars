@@ -1082,7 +1082,7 @@ def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
 
 
 def lit(
-    value: Any, dtype: type[DataType] | None = None, allow_object: bool = False
+    value: Any, dtype: PolarsDataType | None = None, allow_object: bool = False
 ) -> pli.Expr:
     """
     Return an expression representing a literal value.
@@ -1383,7 +1383,7 @@ def cov(
 def map(
     exprs: Sequence[str] | Sequence[pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series],
-    return_dtype: type[DataType] | None = None,
+    return_dtype: PolarsDataType | None = None,
 ) -> pli.Expr:
     """
     Map a custom function over multiple columns/expressions.
@@ -1413,7 +1413,7 @@ def map(
 def apply(
     exprs: Sequence[str | pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series | Any],
-    return_dtype: type[DataType] | None = None,
+    return_dtype: PolarsDataType | None = None,
     returns_scalar: bool = True,
 ) -> pli.Expr:
     """
@@ -1591,11 +1591,11 @@ def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
 def exclude(
     columns: (
         str
+        | PolarsDataType
         | Sequence[str]
-        | DataType
-        | type[DataType]
-        | DataType
-        | Sequence[DataType | type[DataType]]
+        | Sequence[PolarsDataType]
+        | set[PolarsDataType]
+        | frozenset[PolarsDataType]
     ),
 ) -> pli.Expr:
     """

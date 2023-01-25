@@ -18,7 +18,7 @@ else:
     from backports import zoneinfo
 
 import polars as pl
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, PolarsTemporalType
+from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, PolarsTemporalType
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing._private import verify_series_and_expr_api
 
@@ -513,7 +513,7 @@ def test_date_range() -> None:
         datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987456321ns"
     )
     assert len(result) == 61
-    assert result.dtype.tu == "ns"  # type: ignore[attr-defined]
+    assert result.dtype.tu == "ns"  # type: ignore[union-attr]
     assert result.dt.second()[-1] == 59
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
@@ -1609,6 +1609,8 @@ def test_datetime_instance_selection() -> None:
         res = df.select(pl.col([pl.Datetime(tu)])).dtypes
         assert res == [pl.Datetime(tu)]
         assert len(df.filter(pl.col(tu) == test_data[tu][0])) == 1
+
+    assert [] == list(df.select(pl.exclude(DATETIME_DTYPES)))
 
 
 def test_unique_counts_on_dates() -> None:
