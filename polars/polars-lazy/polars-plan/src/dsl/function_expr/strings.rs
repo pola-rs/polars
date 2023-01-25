@@ -11,6 +11,7 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
+    #[cfg(feature = "regex")]
     Contains {
         literal: bool,
         strict: bool,
@@ -58,6 +59,7 @@ impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use self::*;
         let s = match self {
+            #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
             StringFunction::StartsWith { .. } => "starts_with",
             StringFunction::EndsWith { .. } => "ends_with",

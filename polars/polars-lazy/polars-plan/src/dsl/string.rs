@@ -9,6 +9,7 @@ pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
     /// Check if a string value contains a literal substring.
+    #[cfg(feature = "regex")]
     pub fn contains_literal(self, pat: Expr) -> Expr {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Contains {
@@ -21,6 +22,7 @@ impl StringNameSpace {
     }
 
     /// Check if a string value contains a Regex substring.
+    #[cfg(feature = "regex")]
     pub fn contains(self, pat: Expr, strict: bool) -> Expr {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Contains {
