@@ -45,9 +45,9 @@ class ExprStringNameSpace:
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
-            Note that the ``Z`` suffix for "Zulu time" is not (yet!) supported:
-            you should instead insert a ``Z`` in your ``fmt`` string and then
-            use ``dt.with_time_zone``.
+            Note that the ``Z`` suffix for "Zulu time" in ISO8601 formats is not (yet!)
+            fully supported: you should first try ``"%+"`` and if that fails, insert a
+            ``Z`` in your ``fmt`` string and then use ``dt.with_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
