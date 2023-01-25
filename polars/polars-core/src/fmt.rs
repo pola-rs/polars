@@ -580,6 +580,11 @@ fn fmt_integer<T: Num + NumCast + Display>(
 const SCIENTIFIC_BOUND: f64 = 999999.0;
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
+    let full_fmt = std::env::var("POLARS_FLOAT_FMT_FULL").is_ok();
+    if full_fmt {
+        return write!(f, "{v:>width$}")
+    }
+
     // show integers as 0.0, 1.0 ... 101.0
     if v.fract() == 0.0 && v.abs() < SCIENTIFIC_BOUND {
         write!(f, "{v:>width$.1}")

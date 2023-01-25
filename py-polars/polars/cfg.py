@@ -29,6 +29,7 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
+    "POLARS_FLOAT_FMT_FULL"
 }
 # register Config-local attributes (with their defaults) here
 POLARS_CFG_LOCAL_VARS = {"with_columns_kwargs": False}
@@ -547,4 +548,21 @@ class Config:
     def set_verbose(cls, active: bool = True) -> type[Config]:
         """Enable additional verbose/debug logging."""
         os.environ["POLARS_VERBOSE"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_fmt_float(cls, fmt: str = "full") -> type[Config]:
+        """
+        Set the number of characters used to draw the table.
+
+        Parameters
+        ----------
+        fmt : {"mixed", "full"}
+            How to format floating point numbers
+
+        """
+        if fmt == "mixed":
+            os.environ.unsetenv("POLARS_FLOAT_FMT_FULL")
+        else:
+            os.environ["POLARS_FLOAT_FMT_FULL"] = "1"
         return cls
