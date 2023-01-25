@@ -544,16 +544,15 @@ def test_from_dicts_schema() -> None:
     data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
 
     # let polars infer the dtypes, but inform it about a 3rd column.
-    # can supply as schema, or as mixed schema/overrides.
     for schema, overrides in (
-        (None, {"a": None, "b": pl.Unknown, "c": pl.Int32}),
-        ({"a": None, "b": pl.Unknown, "c": pl.Int32}, None),
-        ({"a": None, "b": pl.Unknown}, {"c": pl.Int32}),
+        ({"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32}, None),
+        ({"a": None, "b": None, "c": None}, {"c": pl.Int32}),
+        (["a", "b", ("c", pl.Int32)], None),
     ):
         df = pl.from_dicts(
             data,
             schema=schema,  # type: ignore[arg-type]
-            schema_overrides=overrides,  # type: ignore[arg-type]
+            schema_overrides=overrides,
         )
         assert df.dtypes == [pl.Int64, pl.Int64, pl.Int32]
         assert df.to_dict(False) == {

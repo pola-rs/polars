@@ -1324,20 +1324,22 @@ def test_from_rows_of_dicts() -> None:
         {"id": 1, "value": 100, "_meta": "a"},
         {"id": 2, "value": 101, "_meta": "b"},
     ]
-    df1 = pl.DataFrame(records)
-    assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
+    df_init: Callable[..., Any]
+    for df_init in (pl.from_dicts, pl.DataFrame):  # type:ignore[assignment]
+        df1 = df_init(records)
+        assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
 
-    overrides = {
-        "id": pl.Int16,
-        "value": pl.Int32,
-    }
-    df2 = pl.DataFrame(records, schema_overrides=overrides)
-    assert df2.rows() == [(1, 100, "a"), (2, 101, "b")]
-    assert df2.schema == {"id": pl.Int16, "value": pl.Int32, "_meta": pl.Utf8}
+        overrides = {
+            "id": pl.Int16,
+            "value": pl.Int32,
+        }
+        df2 = df_init(records, schema_overrides=overrides)
+        assert df2.rows() == [(1, 100, "a"), (2, 101, "b")]
+        assert df2.schema == {"id": pl.Int16, "value": pl.Int32, "_meta": pl.Utf8}
 
-    df3 = pl.DataFrame(records, schema=overrides)
-    assert df3.rows() == [(1, 100), (2, 101)]
-    assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
+        df3 = df_init(records, schema=overrides)
+        assert df3.rows() == [(1, 100), (2, 101)]
+        assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
 
 
 def test_repeat_by() -> None:

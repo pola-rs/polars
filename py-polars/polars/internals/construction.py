@@ -560,7 +560,7 @@ def _post_apply_columns(
             column_casts.append(pli.col(col).cast(Categorical)._pyexpr)
         elif structs and col in structs and structs[col] != pydf_dtypes[i]:
             column_casts.append(pli.col(col).cast(structs[col])._pyexpr)
-        elif col in dtypes and dtypes[col] != pydf_dtypes[i]:
+        elif dtypes.get(col) not in (None, Unknown) and dtypes[col] != pydf_dtypes[i]:
             column_casts.append(pli.col(col).cast(dtypes[col])._pyexpr)
 
     if column_casts or column_subset:
