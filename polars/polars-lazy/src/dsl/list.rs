@@ -54,10 +54,10 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             }
 
             let lst = s.list()?;
+            // ensure we get the new schema
+            let output_field = eval_field_to_dtype(lst.ref_field(), &expr, true);
             if lst.is_empty() {
-                // ensure we get the new schema
-                let fld = field_to_dtype(lst.ref_field(), &expr);
-                return Ok(Series::new_empty(s.name(), fld.data_type()));
+                return Ok(Series::new_empty(s.name(), output_field.data_type()));
             }
 
             let phys_expr =
@@ -109,46 +109,22 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
 
             ca.rename(s.name());
 
-            match err {
-                None => Ok(ca.into_series()),
-                Some(e) => Err(e),
+            if ca.dtype() != output_field.data_type() {
+                ca.cast(output_field.data_type())
+            } else {
+                match err {
+                    None => Ok(ca.into_series()),
+                    Some(e) => Err(e),
+                }
             }
         };
 
         this.0
             .map(
                 func,
-                GetOutput::map_field(move |f| field_to_dtype(f, &expr2)),
+                GetOutput::map_field(move |f| eval_field_to_dtype(f, &expr2, true)),
             )
             .with_fmt("eval")
-    }
-}
-
-#[cfg(feature = "list_eval")]
-fn field_to_dtype(f: &Field, expr: &Expr) -> Field {
-    // dummy df to determine output dtype
-    let dtype = f
-        .data_type()
-        .inner_dtype()
-        .cloned()
-        .unwrap_or_else(|| f.data_type().clone());
-
-    let df = Series::new_empty("", &dtype).into_frame();
-
-    #[cfg(feature = "python")]
-    let out = {
-        use pyo3::Python;
-        Python::with_gil(|py| py.allow_threads(|| df.lazy().select([expr.clone()]).collect()))
-    };
-    #[cfg(not(feature = "python"))]
-    let out = { df.lazy().select([expr.clone()]).collect() };
-
-    match out {
-        Ok(out) => {
-            let dtype = out.get_columns()[0].dtype();
-            Field::new(f.name(), DataType::List(Box::new(dtype.clone())))
-        }
-        Err(_) => Field::new(f.name(), DataType::Null),
     }
 }
 
