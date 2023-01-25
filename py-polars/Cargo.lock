@@ -85,7 +85,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.15.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=mmap_slice#8067ddc7c300da94cf27a53d87e076d49e889f4d"
+source = "git+https://github.com/ritchie46/arrow2?branch=mmap_slice2#685cf49da02a1c94a501aab65535f6fbbcd7cbd7"
 dependencies = [
  "ahash",
  "arrow-format",
