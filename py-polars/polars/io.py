@@ -728,7 +728,7 @@ def scan_ndjson(
     file
         Path to a file.
     infer_schema_length
-        Infer the schema length from the first ``infer_schema_length`` rows.
+        Infer the schema from the first ``infer_schema_length`` rows.
     batch_size
         Number of rows to read in each batch.
     n_rows

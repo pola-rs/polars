@@ -765,12 +765,16 @@ def sequence_to_pydf(
         )
         dtypes = (
             include_unknowns(schema_overrides, column_names)
-            if schema_overrides
+            if schema_overrides and column_names
             else None
         )
         pydf = PyDataFrame.read_dicts(data, infer_schema_length, dtypes)
-        if column_names:
-            pydf = _post_apply_columns(pydf, column_names)
+        if column_names or schema_overrides:
+            pydf = _post_apply_columns(
+                pydf,
+                columns=column_names,
+                schema_overrides=schema_overrides,
+            )
         return pydf
 
     elif isinstance(data[0], (list, tuple, Sequence)) and not isinstance(data[0], str):
