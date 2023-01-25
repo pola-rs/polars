@@ -11,9 +11,10 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
+    #[cfg(feature = "regex")]
     Contains {
-        pat: String,
         literal: bool,
+        strict: bool,
     },
     StartsWith,
     EndsWith,
@@ -58,6 +59,7 @@ impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use self::*;
         let s = match self {
+            #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
             StringFunction::StartsWith { .. } => "starts_with",
             StringFunction::EndsWith { .. } => "ends_with",
@@ -99,13 +101,59 @@ pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
     Ok(ca.to_lowercase().into_series())
 }
 
-pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    if literal {
-        ca.contains_literal(pat).map(|ca| ca.into_series())
-    } else {
-        ca.contains(pat).map(|ca| ca.into_series())
-    }
+#[cfg(feature = "regex")]
+pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
+    let ca = &s[0].utf8()?;
+    let pat = &s[1].utf8()?;
+
+    let mut out: BooleanChunked = match pat.len() {
+        1 => match pat.get(0) {
+            Some(pat) => {
+                if literal {
+                    ca.contains_literal(pat)?
+                } else {
+                    ca.contains(pat)?
+                }
+            }
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => {
+            if literal {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => src.contains(pat),
+                        _ => false,
+                    })
+                    .collect_trusted()
+            } else if strict {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => {
+                            let re = Regex::new(pat)?;
+                            Ok(re.is_match(src))
+                        }
+                        _ => Ok(false),
+                    })
+                    .collect::<PolarsResult<_>>()?
+            } else {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => {
+                            let re = Regex::new(pat).ok()?;
+                            Some(re.is_match(src))
+                        }
+                        _ => Some(false),
+                    })
+                    .collect_trusted()
+            }
+        }
+    };
+
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
