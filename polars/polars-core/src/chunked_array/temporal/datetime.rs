@@ -221,6 +221,7 @@ impl DatetimeChunked {
     }
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
+    #[cfg(feature = "timezones")]
     pub fn set_time_zone(&mut self, tz: Option<TimeZone>) {
         match &tz {
             None => (),
@@ -228,6 +229,7 @@ impl DatetimeChunked {
         };
         self.2 = Some(Datetime(self.time_unit(), tz))
     }
+    #[cfg(feature = "timezones")]
     pub fn with_time_zone(mut self, tz: Option<TimeZone>) -> Self {
         self.set_time_zone(tz);
         self
