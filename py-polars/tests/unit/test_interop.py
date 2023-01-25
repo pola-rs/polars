@@ -584,3 +584,16 @@ def test_arrow_list_null_5697() -> None:
     assert pl.from_arrow(pa_table,).schema == {  # type: ignore[union-attr]
         "mycol": pl.List(pl.Null)
     }
+
+
+def test_from_pandas_null_struct_6412() -> None:
+    data = [
+        {
+            "a": {
+                "b": None,
+            },
+        },
+        {"a": None},
+    ]
+    df_pandas = pd.DataFrame(data)
+    assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}
