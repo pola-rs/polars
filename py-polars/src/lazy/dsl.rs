@@ -702,10 +702,10 @@ impl PyExpr {
         self.clone().inner.str().rjust(width, fillchar).into()
     }
 
-    pub fn str_contains(&self, pat: String, literal: Option<bool>) -> PyExpr {
+    pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
         match literal {
-            Some(true) => self.inner.clone().str().contains_literal(pat).into(),
-            _ => self.inner.clone().str().contains(pat).into(),
+            Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
+            _ => self.inner.clone().str().contains(pat.inner, strict).into(),
         }
     }
 
