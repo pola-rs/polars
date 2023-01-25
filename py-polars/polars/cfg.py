@@ -10,6 +10,13 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Literal
 
+try:
+    from polars.polars import set_float_fmt as _set_float_fmt
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
+
 
 # note: register all Config-specific environment variable names here; need to constrain
 # which 'POLARS_' environment variables are recognised, as there are other lower-level
@@ -29,7 +36,6 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
-    "POLARS_FLOAT_FMT_FULL"
 }
 # register Config-local attributes (with their defaults) here
 POLARS_CFG_LOCAL_VARS = {"with_columns_kwargs": False}
@@ -561,8 +567,5 @@ class Config:
             How to format floating point numbers
 
         """
-        if fmt == "mixed":
-            os.environ.unsetenv("POLARS_FLOAT_FMT_FULL")
-        else:
-            os.environ["POLARS_FLOAT_FMT_FULL"] = "1"
+        _set_float_fmt(fmt)
         return cls
