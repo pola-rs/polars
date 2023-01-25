@@ -93,9 +93,15 @@ def from_dicts(
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
-        If you supply a list of column names that does not match the names in the
-        underlying data, the names given here will overwrite them. The number
-        of names given in the schema should match the underlying data dimensions.
+        If a list of column names is supplied that does NOT match the names in the
+        underlying data, the names given here will overwrite the actual fields in
+        the order that they appear - however, in this case it is typically clearer
+        to rename after loading the frame.
+
+        If you want to drop some of the fields found in the input dictionaries, a
+        _partial_ schema can be declared, in which case omitted fields will not be
+        loaded. Similarly you can extend the loaded frame with empty columns by adding
+        them to the schema.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
 
@@ -119,27 +125,50 @@ def from_dicts(
     │ 3   ┆ 6   │
     └─────┴─────┘
 
-    >>> # let polars infer the first two column dtypes, and
-    >>> # explicitly inform the constructor about a third column
-    >>> pl.from_dicts(data, schema=["a", "b"], schema_overrides={"c": pl.Int32})
-    shape: (3, 3)
-    ┌─────┬─────┬──────┐
-    │ a   ┆ b   ┆ c    │
-    │ --- ┆ --- ┆ ---  │
-    │ i64 ┆ i64 ┆ i32  │
-    ╞═════╪═════╪══════╡
-    │ 1   ┆ 4   ┆ null │
-    │ 2   ┆ 5   ┆ null │
-    │ 3   ┆ 6   ┆ null │
-    └─────┴─────┴──────┘
+    Declaring a partial ``schema`` will drop the omitted columns.
+
+    >>> df = pl.from_dicts(data, schema={"a": pl.Int32})
+    >>> df
+    shape: (3, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i32 │
+    ╞═════╡
+    │ 1   │
+    │ 2   │
+    │ 3   │
+    └─────┘
+
+    Can also use the ``schema`` param to extend the loaded columns with one
+    or more additional (empty) columns that are not present in the input dicts:
+
+    >>> pl.from_dicts(
+    ...     data,
+    ...     schema=["a", "b", "c", "d"],
+    ...     schema_overrides={"c": pl.Float64, "d": pl.Utf8},
+    ... )
+    shape: (3, 4)
+    ┌─────┬─────┬──────┬──────┐
+    │ a   ┆ b   ┆ c    ┆ d    │
+    │ --- ┆ --- ┆ ---  ┆ ---  │
+    │ i64 ┆ i64 ┆ f64  ┆ str  │
+    ╞═════╪═════╪══════╪══════╡
+    │ 1   ┆ 4   ┆ null ┆ null │
+    │ 2   ┆ 5   ┆ null ┆ null │
+    │ 3   ┆ 6   ┆ null ┆ null │
+    └─────┴─────┴──────┴──────┘
 
     """
-    columns, schema = _unpack_schema(
+    column_names, schema = _unpack_schema(
         schema, schema_overrides=schema_overrides, include_overrides_in_columns=True
     )
-    schema_overrides = include_unknowns(schema, columns or list(schema))
+    schema = include_unknowns(schema, column_names or list(schema))
     return DataFrame._from_dicts(
-        dicts, infer_schema_length, schema_overrides=schema_overrides
+        dicts,
+        infer_schema_length,
+        schema=(column_names and schema),
+        schema_overrides=schema_overrides,
     )
 
 

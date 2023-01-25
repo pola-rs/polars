@@ -62,6 +62,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
 from polars.internals.construction import (
+    _post_apply_columns,
     arrow_to_pydf,
     dict_to_pydf,
     iterable_to_pydf,
@@ -161,8 +162,11 @@ class DataFrame:
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
-        underlying data, the names given here will overwrite them. The number
-        of names given in the schema should match the underlying data dimensions.
+        underlying data, the names given here will overwrite them.
+
+        The number of entries in the schema should match the underlying data
+        dimensions, unless a sequence of dictionaries is being passed, in which case
+        a _partial_ schema can be declared to prevent specific fields from being loaded.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -373,9 +377,14 @@ class DataFrame:
         cls: type[DF],
         data: Sequence[dict[str, Any]],
         infer_schema_length: int | None = N_INFER_DEFAULT,
+        schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDict | None = None,
     ) -> DF:
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema_overrides)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
+        if schema or schema_overrides:
+            pydf = _post_apply_columns(
+                pydf, list(schema or pydf.columns()), schema_overrides=schema_overrides
+            )
         return cls._from_pydf(pydf)
 
     @classmethod
