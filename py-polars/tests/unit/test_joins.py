@@ -738,3 +738,14 @@ def test_join_panic_on_binary_expr_5915() -> None:
 
     z = df_a.join(df_b, left_on=[(pl.col("a") + 1).cast(int)], right_on=[pl.col("b")])
     assert z.collect().to_dict(False) == {"a": [4]}
+
+
+def test_semi_join_projection_pushdown_6423() -> None:
+    df1 = pl.DataFrame({"x": [1]}).lazy()
+    df2 = pl.DataFrame({"y": [1], "x": [1]}).lazy()
+
+    assert (
+        df1.join(df2, left_on="x", right_on="y", how="semi")
+        .join(df2, left_on="x", right_on="y", how="semi")
+        .select(["x"])
+    ).collect().to_dict(False) == {"x": [1]}
