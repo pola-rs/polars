@@ -1,4 +1,4 @@
-//! Domain specific language for the Lazy api.
+//! Domain specific language for the Lazy API.
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
