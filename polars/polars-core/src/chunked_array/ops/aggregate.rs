@@ -4,6 +4,7 @@ use std::ops::Add;
 
 use arrow::compute;
 use arrow::types::simd::Simd;
+use arrow::types::NativeType;
 use num::{Float, ToPrimitive};
 use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -52,6 +53,53 @@ pub trait QuantileAggSeries {
     ) -> PolarsResult<Series>;
 }
 
+fn sum_float_unaligned_slice<T: NumericNative>(values: &[T]) -> Option<T> {
+    Some(values.iter().copied().sum())
+}
+
+fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> Option<T> {
+    if array.len() == 0 {
+        return Some(T::zero());
+    }
+    if array.null_count() == array.len() {
+        return None;
+    }
+    Some(array.into_iter().flatten().copied().sum())
+}
+
+/// Floating point arithmetic is non-associative.
+/// The simd chunks are determined by memory location
+/// e.g.
+///
+/// |HEAD|  - | SIMD | - |TAIL|
+///
+/// The SIMD chunks have a certain alignment and depending of the start of the buffer
+/// head and tail may have different sizes, making a sum non-deterministic for the same
+/// values but different memory locations
+fn stable_sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> Option<T>
+where
+    T: NumericNative + NativeType,
+    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd>
+        + compute::aggregate::Sum<T>
+        + compute::aggregate::SimdOrd<T>,
+{
+    if T::is_float() {
+        use arrow::types::simd::NativeSimd;
+        let values = array.values().as_slice();
+        let (a, _, _) = <T as Simd>::Simd::align(values);
+        // we only choose SIMD path if buffer is aligned to SIMD
+        if a.is_empty() {
+            compute::aggregate::sum_primitive(array)
+        } else if array.null_count() == 0 {
+            sum_float_unaligned_slice(values)
+        } else {
+            sum_float_unaligned(array)
+        }
+    } else {
+        compute::aggregate::sum_primitive(array)
+    }
+}
+
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -61,7 +109,7 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_iter()
-            .map(compute::aggregate::sum_primitive)
+            .map(stable_sum)
             .fold(None, |acc, v| match v {
                 Some(v) => match acc {
                     None => Some(v),
