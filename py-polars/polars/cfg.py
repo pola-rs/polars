@@ -559,7 +559,7 @@ class Config:
     @classmethod
     def set_fmt_float(cls, fmt: str = "full") -> type[Config]:
         """
-        Set the number of characters used to draw the table.
+        Control how floating  point values are displayed.
 
         Parameters
         ----------
