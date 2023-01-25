@@ -194,7 +194,7 @@ def col(
 
     """
     if isinstance(name, pli.Series):
-        name = name.to_list()  # type: ignore[assignment]
+        name = name.to_list()
 
     if isinstance(name, DataTypeClass):
         name = [name]
