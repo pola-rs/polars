@@ -131,6 +131,7 @@ bigidx = ["polars-plan/bigidx"]
 panic_on_schema = ["polars-plan/panic_on_schema"]
 
 test = [
+  "polars-plan/debugging",
   "panic_on_schema",
   "private",
   "rolling_window",

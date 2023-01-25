@@ -7,7 +7,7 @@ fn add_nodes_to_accumulated_state(
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
     // only for left hand side table we add local names
-    left_side: bool,
+    add_local: bool,
 ) {
     add_expr_to_accumulated(expr, acc_projections, projected_names, expr_arena);
     // the projections may do more than simply project.
@@ -15,12 +15,13 @@ fn add_nodes_to_accumulated_state(
     // that means we don't want to execute the projection as that is already done by
     // the JOIN executor
     // we only want to add the `col` and the `alias` as two `col()` expressions.
-    if left_side {
+    if add_local {
         for node in aexpr_to_leaf_nodes(expr, expr_arena) {
             if !local_projection.contains(&node) {
                 local_projection.push(node)
             }
         }
+        // TODO! I think we must remove this, aliases are not allowed in join keys anymore.
         if let AExpr::Alias(_, alias_name) = expr_arena.get(expr) {
             let mut add = true;
             for node in local_projection.as_slice() {
@@ -107,13 +108,19 @@ pub(super) fn process_join(
 
         // We need the join columns so we push the projection downwards
         for e in &left_on {
+            let add = match options.how {
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi | JoinType::Anti => false,
+                _ => true,
+            };
+
             add_nodes_to_accumulated_state(
                 *e,
                 &mut pushdown_left,
                 &mut local_projection,
                 &mut names_left,
                 expr_arena,
-                true,
+                add,
             );
         }
         for e in &right_on {
@@ -128,25 +135,27 @@ pub(super) fn process_join(
         }
 
         for proj in acc_projections {
-            let mut add_local = true;
-
-            // Asof joins don't replace
-            // the right column name with the left one
-            // so the two join columns remain
-            #[cfg(feature = "asof_join")]
-            if matches!(options.how, JoinType::AsOf(_)) {
-                let names = aexpr_to_leaf_names(proj, expr_arena);
-                if names.len() == 1
-                    // we only add to local projection
-                    // if the right join column differs from the left
-                    && names_right.contains(&names[0])
-                    && !names_left.contains(&names[0])
-                    && !local_projection.contains(&proj)
-                {
-                    local_projection.push(proj);
-                    continue;
+            match options.how {
+                #[cfg(feature = "asof_join")]
+                JoinType::AsOf(_) => {
+                    // Asof joins don't replace
+                    // the right column name with the left one
+                    // so the two join columns remain
+                    let names = aexpr_to_leaf_names(proj, expr_arena);
+                    if names.len() == 1
+                        // we only add to local projection
+                        // if the right join column differs from the left
+                        && names_right.contains(&names[0])
+                        && !names_left.contains(&names[0])
+                        && !local_projection.contains(&proj)
+                    {
+                        local_projection.push(proj);
+                        continue;
+                    }
                 }
-            }
+                _ => {}
+            };
+            let mut add_local = true;
 
             // if it is an alias we want to project the leaf column name downwards
             // but we don't want to project it a this level, otherwise we project both
@@ -259,5 +268,6 @@ pub(super) fn process_join(
     }
     let root = lp_arena.add(alp);
     let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
+
     Ok(proj_pd.finish_node(local_projection, builder))
 }
