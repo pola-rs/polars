@@ -358,7 +358,7 @@ def test_list_eval_expression() -> None:
     df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
 
     for parallel in [True, False]:
-        assert df.with_column(
+        assert df.with_columns(
             pl.concat_list(["a", "b"])
             .arr.eval(pl.first().rank(), parallel=parallel)
             .alias("rank")

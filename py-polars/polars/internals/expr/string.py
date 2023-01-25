@@ -79,7 +79,7 @@ class ExprStringNameSpace:
         ...     ],
         ... )
         >>> (
-        ...     s.to_frame().with_column(
+        ...     s.to_frame().with_columns(
         ...         pl.col("date")
         ...         .str.strptime(pl.Date, "%F", strict=False)
         ...         .fill_null(
@@ -404,7 +404,7 @@ class ExprStringNameSpace:
         ...         "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
         ...     }
         ... )
-        >>> df.with_column(pl.col("num").cast(str).str.zfill(5))
+        >>> df.with_columns(pl.col("num").cast(str).str.zfill(5))
         shape: (11, 1)
         ┌─────────┐
         │ num     │
@@ -546,7 +546,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
         ... )
         shape: (3, 2)
@@ -593,7 +593,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
         ... )
         shape: (3, 2)
@@ -1038,7 +1038,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("text").str.replace(r"abc\b", "ABC")
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
@@ -1080,7 +1080,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["abcabc", "123a123"]})
-        >>> df.with_column(pl.col("text").str.replace_all("a", "-"))
+        >>> df.with_columns(pl.col("text").str.replace_all("a", "-"))
         shape: (2, 2)
         ┌─────┬─────────┐
         │ id  ┆ text    │
@@ -1119,7 +1119,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("s").str.slice(-3).alias("s_sliced"),
         ... )
         shape: (4, 2)
@@ -1136,7 +1136,7 @@ class ExprStringNameSpace:
 
         Using the optional `length` parameter
 
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("s").str.slice(4, length=3).alias("s_sliced"),
         ... )
         shape: (4, 2)

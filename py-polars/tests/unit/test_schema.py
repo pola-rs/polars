@@ -31,8 +31,8 @@ def test_schema_on_agg() -> None:
 def test_fill_null_minimal_upcast_4056() -> None:
     df = pl.DataFrame({"a": [-1, 2, None]})
     df = df.with_columns(pl.col("a").cast(pl.Int8))
-    assert df.with_column(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
-    assert df.with_column(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
 
 
 def test_with_column_duplicates() -> None:
@@ -275,7 +275,7 @@ def test_schema_owned_arithmetic_5669() -> None:
         pl.DataFrame({"A": [1, 2, 3]})
         .lazy()
         .filter(pl.col("A") >= 3)
-        .with_column(-pl.col("A").alias("B"))
+        .with_columns(-pl.col("A").alias("B"))
         .collect()
     )
     assert df.columns == ["A", "literal"], df.columns
@@ -297,7 +297,7 @@ def test_lazy_rename() -> None:
 
 def test_all_null_cast_5826() -> None:
     df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.Utf8)])
-    out = df.with_column(pl.col("a").cast(pl.Boolean))
+    out = df.with_columns(pl.col("a").cast(pl.Boolean))
     assert out.dtypes == [pl.Boolean]
     assert out.item() is None
 

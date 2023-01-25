@@ -16,13 +16,15 @@ assert (time.time() - t0) < 1
 np.random.seed(1)
 mean = 769.5607652
 df = pl.DataFrame(np.random.randint(500, 1040, 5000000), schema=["value"])
-assert np.isclose(df.with_column(pl.mean("value"))[0, 0], mean)
+assert np.isclose(df.with_columns(pl.mean("value"))[0, 0], mean)
 assert np.isclose(
-    df.with_column(pl.col("value").cast(pl.Int32)).with_column(pl.mean("value"))[0, 0],
+    df.with_columns(pl.col("value").cast(pl.Int32)).with_columns(pl.mean("value"))[
+        0, 0
+    ],
     mean,
 )
 assert np.isclose(
-    df.with_column(pl.col("value").cast(pl.Int32)).get_column("value").mean(), mean
+    df.with_columns(pl.col("value").cast(pl.Int32)).get_column("value").mean(), mean
 )
 
 # https://github.com/pola-rs/polars/issues/2850

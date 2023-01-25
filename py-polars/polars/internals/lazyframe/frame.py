@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import typing
+import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
@@ -598,7 +599,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Examples
         --------
         >>> def cast_str_to_int(data, col_name):
-        ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
+        ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
         ...
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]}).lazy()
         >>> df.pipe(cast_str_to_int, col_name="b").collect()
@@ -1051,16 +1052,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
                 if max_val > 1e9:
                     unit = "s"
-                    timings_ = timings_.with_column(
+                    timings_ = timings_.with_columns(
                         pli.col(["start", "end"]) / 1_000_000
                     )
                 elif max_val > 1e6:
                     unit = "ms"
-                    timings_ = timings_.with_column(pli.col(["start", "end"]) / 1000)
+                    timings_ = timings_.with_columns(pli.col(["start", "end"]) / 1000)
                 else:
                     unit = "us"
                 if truncate_nodes > 0:
-                    timings_ = timings_.with_column(
+                    timings_ = timings_.with_columns(
                         pli.col("node").str.slice(0, truncate_nodes) + "..."
                     )
 
@@ -1789,7 +1790,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     "2020-01-03 19:45:32",
         ...     "2020-01-08 23:16:43",
         ... ]
-        >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_column(
+        >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
         ...     pl.col("dt").str.strptime(pl.Datetime)
         ... )
         >>> out = df.groupby_rolling(index_column="dt", period="2d").agg(
@@ -2495,6 +2496,40 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...         "c": [True, True, False, True],
         ...     }
         ... ).lazy()
+
+        Passing in a single expression, adding the column as we give it a new name:
+
+        >>> ldf.with_columns((pl.col("a") ** 2).alias("a^2")).collect()
+        shape: (4, 4)
+        ┌─────┬──────┬───────┬──────┐
+        │ a   ┆ b    ┆ c     ┆ a^2  │
+        │ --- ┆ ---  ┆ ---   ┆ ---  │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  │
+        ╞═════╪══════╪═══════╪══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  │
+        │ 3   ┆ 10.0 ┆ false ┆ 9.0  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
+        └─────┴──────┴───────┴──────┘
+
+        We can also override a column, by giving the expression a name that already
+        exists:
+
+        >>> ldf.with_columns((pl.col("a") ** 2).alias("c")).collect()
+        shape: (4, 3)
+        ┌─────┬──────┬──────┐
+        │ a   ┆ b    ┆ c    │
+        │ --- ┆ ---  ┆ ---  │
+        │ i64 ┆ f64  ┆ f64  │
+        ╞═════╪══════╪══════╡
+        │ 1   ┆ 0.5  ┆ 1.0  │
+        │ 2   ┆ 4.0  ┆ 4.0  │
+        │ 3   ┆ 10.0 ┆ 9.0  │
+        │ 4   ┆ 13.0 ┆ 16.0 │
+        └─────┴──────┴──────┘
+
+        Passing in multiple expressions as a list:
+
         >>> ldf.with_columns(
         ...     [
         ...         (pl.col("a") ** 2).alias("a^2"),
@@ -2521,19 +2556,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         >>> ldf.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
         ...     e=pl.col("c").is_not(),
-        ...     f="foo",
         ... ).collect()
-        shape: (4, 6)
-        ┌─────┬──────┬───────┬──────┬───────┬─────┐
-        │ a   ┆ b    ┆ c     ┆ d    ┆ e     ┆ f   │
-        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   ┆ --- │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  ┆ str │
-        ╞═════╪══════╪═══════╪══════╪═══════╪═════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 0.5  ┆ false ┆ foo │
-        │ 2   ┆ 4.0  ┆ true  ┆ 8.0  ┆ false ┆ foo │
-        │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  ┆ foo │
-        │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false ┆ foo │
-        └─────┴──────┴───────┴──────┴───────┴─────┘
+        shape: (4, 5)
+        ┌─────┬──────┬───────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ d    ┆ e     │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 0.5  ┆ false │
+        │ 2   ┆ 4.0  ┆ true  ┆ 8.0  ┆ false │
+        │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
+        └─────┴──────┴───────┴──────┴───────┘
 
         """
         if named_exprs and not Config.with_columns_kwargs:
@@ -2544,11 +2578,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         elif exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
 
-        exprs = (
-            []
-            if exprs is None
-            else ([exprs] if isinstance(exprs, pli.Expr) else list(exprs))
-        )
+        if exprs is None:
+            exprs = []
+        elif isinstance(exprs, pli.Expr):
+            exprs = [exprs]
+        elif isinstance(exprs, pli.Series):
+            exprs = [pli.lit(exprs)]
+        else:
+            exprs = list(exprs)
+
         exprs.extend(
             pli.expr_to_lit_or_expr(expr).alias(name)
             for name, expr in named_exprs.items()
@@ -2636,54 +2674,23 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Creating a new LazyFrame using this method does not create a new copy of
         existing data.
 
+        .. deprecated:: 0.15.14
+            `with_column` will be removed in favor of the more generic `with_columns`
+            in version 0.17.0.
+
         Parameters
         ----------
         column
             Expression that evaluates to column or a Series to use.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... ).lazy()
-        >>> df.with_column((pl.col("b") ** 2).alias("b_squared")).collect()  # added
-        shape: (3, 3)
-        ┌─────┬─────┬───────────┐
-        │ a   ┆ b   ┆ b_squared │
-        │ --- ┆ --- ┆ ---       │
-        │ i64 ┆ i64 ┆ f64       │
-        ╞═════╪═════╪═══════════╡
-        │ 1   ┆ 2   ┆ 4.0       │
-        │ 3   ┆ 4   ┆ 16.0      │
-        │ 5   ┆ 6   ┆ 36.0      │
-        └─────┴─────┴───────────┘
-        >>> df.with_column(pl.col("a") ** 2).collect()  # replaced
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ a    ┆ b   │
-        │ ---  ┆ --- │
-        │ f64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 1.0  ┆ 2   │
-        │ 9.0  ┆ 4   │
-        │ 25.0 ┆ 6   │
-        └──────┴─────┘
-        >>> df.with_column(pl.Series("c", [7, 8, 9])).collect()  # add from a Series
-        shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ 2   ┆ 7   │
-        │ 3   ┆ 4   ┆ 8   │
-        │ 5   ┆ 6   ┆ 9   │
-        └─────┴─────┴─────┘
-
         """
+        warnings.warn(
+            "`with_column` has been deprecated in favor of `with_columns`."
+            " This method will be removed in version 0.17.0",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
+
         if not isinstance(column, (pli.Expr, pli.Series)):
             raise TypeError(
                 "`with_column` expects a single Expr or Series. "
@@ -3304,7 +3311,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 # fallback; anything not explicitly handled above
                 dtypes = [infer_dtype(pli.lit(value))]
 
-            return self.with_column(pli.col(dtypes).fill_null(value, strategy, limit))
+            return self.with_columns(pli.col(dtypes).fill_null(value, strategy, limit))
 
         return self.select(pli.all().fill_null(value, strategy, limit))
 

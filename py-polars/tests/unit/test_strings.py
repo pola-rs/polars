@@ -185,7 +185,7 @@ def test_zfill() -> None:
         None,
     ]
     assert (
-        df.with_column(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
+        df.with_columns(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
         == out
     )
     assert df["num"].cast(str).str.zfill(5).to_list() == out

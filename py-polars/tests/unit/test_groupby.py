@@ -297,7 +297,7 @@ def test_argsort_sort_by_groups_update__4360() -> None:
         }
     )
 
-    out = df.with_column(
+    out = df.with_columns(
         pl.col("col2").arg_sort().over("group").alias("col2_argsort")
     ).with_columns(
         [

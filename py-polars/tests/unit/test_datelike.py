@@ -116,7 +116,7 @@ def test_filter_date() -> None:
     dtcol = pl.col("date")
     df = pl.DataFrame(
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
-    ).with_column(dtcol.str.strptime(pl.Date, "%Y-%m-%d"))
+    ).with_columns(dtcol.str.strptime(pl.Date, "%Y-%m-%d"))
     assert df.rows() == [
         (date(2020, 1, 2), 1),
         (date(2020, 1, 3), 2),
@@ -327,7 +327,7 @@ def test_datetime_consistency() -> None:
         datetime(3099, 12, 31, 23, 59, 59, 123456),
         datetime(9999, 12, 31, 23, 59, 59, 999999),
     ]
-    ddf = pl.DataFrame({"dtm": test_data}).with_column(
+    ddf = pl.DataFrame({"dtm": test_data}).with_columns(
         pl.col("dtm").dt.nanosecond().alias("ns")
     )
     assert ddf.rows() == [
@@ -792,7 +792,7 @@ def test_rolling() -> None:
         "2020-01-08 23:16:43",
     ]
 
-    df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_column(
+    df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
         pl.col("dt").str.strptime(pl.Datetime)
     )
 
@@ -822,7 +822,7 @@ def test_upsample() -> None:
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    ).with_column(pl.col("time").dt.with_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.with_time_zone("UTC"))
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
@@ -853,7 +853,7 @@ def test_upsample() -> None:
             ],
             "test2": [0, 0, 0, 2, 1, 1, 3],
         }
-    ).with_column(pl.col("time").dt.with_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.with_time_zone("UTC"))
 
     assert up.frame_equal(expected)
 
@@ -1200,7 +1200,7 @@ def test_groupby_rolling_mean_3020() -> None:
             ],
             "val": range(7),
         }
-    ).with_column(pl.col("Date").str.strptime(pl.Date))
+    ).with_columns(pl.col("Date").str.strptime(pl.Date))
 
     period: str | timedelta
     for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
@@ -1398,7 +1398,7 @@ def test_duration_filter() -> None:
             "start_date": [date(2022, 1, 1), date(2022, 1, 1), date(2022, 1, 1)],
             "end_date": [date(2022, 1, 7), date(2022, 2, 20), date(2023, 1, 1)],
         }
-    ).with_column((pl.col("end_date") - pl.col("start_date")).alias("time_passed"))
+    ).with_columns((pl.col("end_date") - pl.col("start_date")).alias("time_passed"))
 
     assert df.filter(pl.col("time_passed") < timedelta(days=30)).rows() == [
         (date(2022, 1, 1), date(2022, 1, 7), timedelta(days=6))
@@ -1540,7 +1540,7 @@ def test_duration_aggregations() -> None:
             ],
         }
     )
-    df = df.with_column((pl.col("end") - pl.col("start")).alias("duration"))
+    df = df.with_columns((pl.col("end") - pl.col("start")).alias("duration"))
     assert df.groupby("group", maintain_order=True).agg(
         [
             pl.col("duration").mean().alias("mean"),
@@ -1801,7 +1801,7 @@ def test_date_to_time_cast_5111() -> None:
                 date(2022, 12, 31),
             ]
         }
-    ).with_column(pl.col("xyz").cast(pl.Time))
+    ).with_columns(pl.col("xyz").cast(pl.Time))
     assert df["xyz"].to_list() == [time(0), time(0), time(0), time(0), time(0)]
 
 
@@ -1840,7 +1840,7 @@ def test_supertype_timezones_4174() -> None:
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
-    df.with_column(df["dt_London"].shift_and_fill(1, date_to_fill))
+    df.with_columns(df["dt_London"].shift_and_fill(1, date_to_fill))
 
 
 def test_weekday() -> None:
@@ -2020,7 +2020,7 @@ def test_invalid_date_parsing_4898() -> None:
 
 def test_cast_timezone() -> None:
     ny = zoneinfo.ZoneInfo("America/New_York")
-    assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_column(
+    assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
         pl.col("a")
         .dt.with_time_zone("UTC")
         .dt.cast_time_zone("America/New_York")
@@ -2174,7 +2174,7 @@ def test_tz_aware_truncate() -> None:
             ).dt.tz_localize("America/New_York")
         }
     )
-    assert test.with_column(pl.col("dt").dt.truncate("1d").alias("trunced")).to_dict(
+    assert test.with_columns(pl.col("dt").dt.truncate("1d").alias("trunced")).to_dict(
         False
     ) == {
         "dt": [
@@ -2235,9 +2235,9 @@ def test_tz_aware_truncate() -> None:
             )
         }
     ).lazy()
-    lf = lf.with_column(pl.col("naive").dt.tz_localize("UTC").alias("UTC"))
-    lf = lf.with_column(pl.col("UTC").dt.with_time_zone("US/Central").alias("CST"))
-    lf = lf.with_column(pl.col("CST").dt.truncate("1d").alias("CST truncated"))
+    lf = lf.with_columns(pl.col("naive").dt.tz_localize("UTC").alias("UTC"))
+    lf = lf.with_columns(pl.col("UTC").dt.with_time_zone("US/Central").alias("CST"))
+    lf = lf.with_columns(pl.col("CST").dt.truncate("1d").alias("CST truncated"))
     assert lf.collect().to_dict(False) == {
         "naive": [
             datetime(2021, 12, 31, 23, 0),
@@ -2316,7 +2316,7 @@ def test_tz_aware_strftime() -> None:
             ).dt.tz_localize("America/New_York")
         }
     )
-    assert df.with_column(pl.col("dt").dt.strftime("%c").alias("fmt")).to_dict(
+    assert df.with_columns(pl.col("dt").dt.strftime("%c").alias("fmt")).to_dict(
         False
     ) == {
         "dt": [
@@ -2349,7 +2349,7 @@ def test_tz_aware_filter_lit() -> None:
 
     assert (
         pl.DataFrame({"date": pl.date_range(start, stop, "1h")})
-        .with_column(pl.col("date").dt.tz_localize("America/New_York").alias("nyc"))
+        .with_columns(pl.col("date").dt.tz_localize("America/New_York").alias("nyc"))
         .filter(pl.col("nyc") < dt)
     ).to_dict(False) == {
         "date": [

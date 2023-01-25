@@ -19,7 +19,7 @@ def test_timezone_aware_strptime(tz_string: str, timedelta: timedelta) -> None:
             ]
         }
     )
-    assert times.with_column(
+    assert times.with_columns(
         pl.col("delivery_datetime").str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S%z")
     ).to_dict(False) == {
         "delivery_datetime": [

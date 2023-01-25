@@ -68,7 +68,7 @@ def test_unnest_projection_pushdown() -> None:
 
     mlf = (
         lf.melt()
-        .with_column(pl.col("variable").str.split_exact("|", 2))
+        .with_columns(pl.col("variable").str.split_exact("|", 2))
         .unnest("variable")
     )
     mlf = mlf.select(
@@ -99,7 +99,7 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    q = df.with_column(
+    q = df.with_columns(
         pl.col("genres")
         .str.split("|")
         .arr.to_struct(
@@ -179,7 +179,7 @@ def test_asof_join_projection_() -> None:
                 "c": ["x", "x", "x", "y", "y", "y", "y"],
             }
         )
-        .with_column(pl.col("val").alias("b"))
+        .with_columns(pl.col("val").alias("b"))
         .lazy()
     )
 

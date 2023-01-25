@@ -109,7 +109,7 @@ def test_struct_function_expansion() -> None:
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     )
     struct_schema = {"a": pl.UInt32, "b": pl.Utf8}
-    s = df.with_column(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
+    s = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
 
     assert isinstance(s, pl.Series)
     assert s.struct.fields == ["a", "b"]
@@ -150,7 +150,7 @@ def test_value_counts_expr() -> None:
 
 def test_value_counts_logical_type() -> None:
     # test logical type
-    df = pl.DataFrame({"a": ["b", "c"]}).with_column(
+    df = pl.DataFrame({"a": ["b", "c"]}).with_columns(
         pl.col("a").cast(pl.Categorical).alias("ac")
     )
     out = df.select([pl.all().value_counts()])
@@ -163,7 +163,7 @@ def test_nested_struct() -> None:
     # Nest the dataframe
     nest_l1 = df.to_struct("c").to_frame()
     # Add another column on the same level
-    nest_l1 = nest_l1.with_column(pl.col("c").is_null().alias("b"))
+    nest_l1 = nest_l1.with_columns(pl.col("c").is_null().alias("b"))
     # Nest the dataframe again
     nest_l2 = nest_l1.to_struct("a").to_frame()
 
@@ -534,7 +534,7 @@ def test_struct_arr_eval() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
-    assert df.with_column(
+    assert df.with_columns(
         pl.col("col_struct").arr.eval(pl.element().first()).alias("first")
     ).to_dict(False) == {
         "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
@@ -548,7 +548,7 @@ def test_arr_unique() -> None:
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
     # the order is unpredictable
-    unique = df.with_column(pl.col("col_struct").arr.unique().alias("unique"))[
+    unique = df.with_columns(pl.col("col_struct").arr.unique().alias("unique"))[
         "unique"
     ].to_list()
     assert len(unique) == 1
@@ -720,7 +720,7 @@ def test_struct_any_value_get_after_append() -> None:
 
 
 def test_struct_categorical_5843() -> None:
-    df = pl.DataFrame({"foo": ["a", "b", "c", "a"]}).with_column(
+    df = pl.DataFrame({"foo": ["a", "b", "c", "a"]}).with_columns(
         pl.col("foo").cast(pl.Categorical)
     )
     result = df.select(pl.col("foo").value_counts(sort=True))

@@ -60,7 +60,7 @@ def test_categorical_parquet_statistics(io_test_dir: str) -> None:
                 "user": ["bob", "bob", "bob", "tim", "lucy", "lucy", "lucy", "lucy"],
             }
         )
-        .with_column(pl.col("book").cast(pl.Categorical))
+        .with_columns(pl.col("book").cast(pl.Categorical))
         .write_parquet(file, statistics=True)
     )
 
@@ -129,7 +129,7 @@ def test_row_count_schema(io_test_dir: str) -> None:
 def test_parquet_statistics(io_test_dir: str, capfd: CaptureFixture[str]) -> None:
     os.environ["POLARS_VERBOSE"] = "1"
     fname = os.path.join(io_test_dir, "stats.parquet")
-    df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_column(
+    df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_columns(
         (pl.col("idx") // 25).alias("part")
     )
     df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)

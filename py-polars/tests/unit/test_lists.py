@@ -165,7 +165,7 @@ def test_list_concat_rolling_window() -> None:
 
     # this test proper null behavior of concat list
     out = (
-        df.with_column(pl.col("A").reshape((-1, 1)))  # first turn into a list
+        df.with_columns(pl.col("A").reshape((-1, 1)))  # first turn into a list
         .with_columns(
             [
                 pl.col("A").shift(i).alias(f"A_lag_{i}")
@@ -283,7 +283,7 @@ def test_list_eval_dtype_inference() -> None:
     rank_pct = pl.col("").rank(reverse=True) / pl.col("").count().cast(pl.UInt16)
 
     # the .arr.first() would fail if .arr.eval did not correctly infer the output type
-    assert grades.with_column(
+    assert grades.with_columns(
         pl.concat_list(pl.all().exclude("student")).alias("all_grades")
     ).select(
         [
@@ -368,7 +368,7 @@ def test_list_ternary_concat() -> None:
         }
     )
 
-    assert df.with_column(
+    assert df.with_columns(
         pl.when(pl.col("list1").is_null())
         .then(pl.col("list1").arr.concat(pl.col("list2")))
         .otherwise(pl.col("list2"))
@@ -379,7 +379,7 @@ def test_list_ternary_concat() -> None:
         "result": [["789"], None],
     }
 
-    assert df.with_column(
+    assert df.with_columns(
         pl.when(pl.col("list1").is_null())
         .then(pl.col("list2"))
         .otherwise(pl.col("list1").arr.concat(pl.col("list2")))
@@ -397,7 +397,7 @@ def test_list_concat_nulls() -> None:
             "a": [["a", "b"], None, ["c", "d", "e"], None],
             "t": [["x"], ["y"], None, None],
         }
-    ).with_column(pl.concat_list(["a", "t"]).alias("concat"))["concat"].to_list() == [
+    ).with_columns(pl.concat_list(["a", "t"]).alias("concat"))["concat"].to_list() == [
         ["a", "b", "x"],
         None,
         None,
@@ -409,13 +409,13 @@ def test_list_concat_supertype() -> None:
     df = pl.DataFrame(
         [pl.Series("a", [1, 2], pl.UInt8), pl.Series("b", [10000, 20000], pl.UInt16)]
     )
-    assert df.with_column(pl.concat_list(pl.col(["a", "b"])).alias("concat_list"))[
+    assert df.with_columns(pl.concat_list(pl.col(["a", "b"])).alias("concat_list"))[
         "concat_list"
     ].to_list() == [[1, 10000], [2, 20000]]
 
 
 def test_list_hash() -> None:
-    out = pl.DataFrame({"a": [[1, 2, 3], [3, 4], [1, 2, 3]]}).with_column(
+    out = pl.DataFrame({"a": [[1, 2, 3], [3, 4], [1, 2, 3]]}).with_columns(
         pl.col("a").hash().alias("b")
     )
     assert out.dtypes == [pl.List(pl.Int64), pl.UInt64]
@@ -426,7 +426,7 @@ def test_arr_contains_categorical() -> None:
     df = pl.DataFrame(
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
-    df = df.with_column(pl.col("str").cast(pl.Categorical))
+    df = df.with_columns(pl.col("str").cast(pl.Categorical))
     df_groups = df.groupby("group").agg([pl.col("str").list().alias("str_list")])
     assert df_groups.filter(pl.col("str_list").arr.contains("C")).collect().to_dict(
         False
@@ -489,7 +489,7 @@ def test_inner_type_categorical_on_rechunk() -> None:
 def test_groupby_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
-        .with_column(pl.col("a").cast(pl.Categorical))
+        .with_columns(pl.col("a").cast(pl.Categorical))
         .groupby("a", maintain_order=True)
         .agg(pl.col("a").list().alias("a_list"))
     )
@@ -553,7 +553,7 @@ def test_empty_eval_dtype_5546() -> None:
     dtype = df.dtypes[0]
 
     assert (
-        df.limit(0).with_column(
+        df.limit(0).with_columns(
             pl.col("a")
             .arr.eval(pl.element().filter(pl.first().struct.field("name") == 1))
             .alias("a_filtered")

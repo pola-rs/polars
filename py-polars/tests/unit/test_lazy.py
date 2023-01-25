@@ -20,12 +20,12 @@ from polars.testing.asserts import assert_series_equal
 
 def test_lazy() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    _ = df.lazy().with_column(pl.lit(1).alias("foo")).select([col("a"), col("foo")])
+    _ = df.lazy().with_columns(pl.lit(1).alias("foo")).select([col("a"), col("foo")])
 
     # test if it executes
     _ = (
         df.lazy()
-        .with_column(
+        .with_columns(
             when(pl.col("a") > pl.lit(2))
             .then(pl.lit(10))
             .otherwise(pl.lit(1))
@@ -65,9 +65,9 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
+    new = df.lazy().with_columns(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
-    expected = df.clone().with_column((pl.col("a") * 2).alias("foo"))
+    expected = df.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert new.frame_equal(expected)
 
 
@@ -75,7 +75,7 @@ def test_add_eager_column() -> None:
     ldf = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]}).lazy()
     assert ldf.width == 2
 
-    out = ldf.with_column(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
+    out = ldf.with_columns(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
     assert out["c"].sum() == 6
     assert out.width == 3
 
@@ -84,7 +84,7 @@ def test_set_null() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = (
         df.lazy()
-        .with_column(when(col("a") > 1).then(lit(None)).otherwise(100).alias("foo"))
+        .with_columns(when(col("a") > 1).then(lit(None)).otherwise(100).alias("foo"))
         .collect()
     )
     s = out["foo"]
@@ -205,7 +205,7 @@ def test_apply_custom_function() -> None:
             "cars_count": [3, 2],
         }
     )
-    expected = expected.with_column(pl.col("cars_count").cast(pl.UInt32))
+    expected = expected.with_columns(pl.col("cars_count").cast(pl.UInt32))
     assert a.frame_equal(expected)
 
 
@@ -250,7 +250,7 @@ def test_shift_and_fill() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
     # use exprs
-    out = df.lazy().with_column(col("a").shift_and_fill(-2, col("b").mean())).collect()
+    out = df.lazy().with_columns(col("a").shift_and_fill(-2, col("b").mean())).collect()
     assert out["a"].null_count() == 0
 
     # use df method
@@ -559,7 +559,7 @@ def test_all_expr() -> None:
 
 
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.with_column(pl.col("A").cast(bool)).select(pl.any("A"))[0, 0]
+    assert fruits_cars.with_columns(pl.col("A").cast(bool)).select(pl.any("A"))[0, 0]
     assert fruits_cars.select(pl.any([pl.col("A"), pl.col("B")]))[0, 0]
 
 
@@ -1000,6 +1000,14 @@ def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     assert res.columns[0] == "C"
 
 
+def test_with_columns_single_series() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    result = df.lazy().with_columns(pl.Series("b", [3, 4])).collect()
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    assert_frame_equal(result, expected)
+
+
 def test_reverse() -> None:
     out = pl.DataFrame({"a": [1, 2], "b": [3, 4]}).lazy().reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
@@ -1326,7 +1334,7 @@ def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
 
 def test_nested_min_max() -> None:
     df = pl.DataFrame({"a": [1], "b": [2], "c": [3], "d": [4]})
-    out = df.with_column(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
+    out = df.with_columns(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
     assert out.shape == (1, 5)
     assert out.row(0) == (1, 2, 3, 4, 3)
     assert out.columns == ["a", "b", "c", "d", "t"]
@@ -1370,7 +1378,7 @@ def test_preservation_of_subclasses() -> None:
     # superclass and subclass
     ldf = pl.DataFrame({"column_1": [1, 2, 3]}).lazy()
     ldf.__class__ = SubClassedLazyFrame
-    extended_ldf = ldf.with_column(pl.lit(1).alias("column_2"))
+    extended_ldf = ldf.with_columns(pl.lit(1).alias("column_2"))
     assert isinstance(extended_ldf, pl.LazyFrame)
     assert isinstance(extended_ldf, SubClassedLazyFrame)
 
@@ -1480,6 +1488,18 @@ def test_predicate_count_vstack() -> None:
     assert pl.concat([l1, l2]).filter(pl.count().over("k") == 2).collect()[
         "v"
     ].to_list() == [3, 2, 5, 7]
+
+
+def test_explode_inner_lists_3985() -> None:
+    df = pl.DataFrame(
+        data={"id": [1, 1, 1], "categories": [["a"], ["b"], ["a", "c"]]}
+    ).lazy()
+
+    assert (
+        df.groupby("id")
+        .agg(pl.col("categories"))
+        .with_columns(pl.col("categories").arr.eval(pl.element().explode()))
+    ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}
 
 
 def test_lazy_method() -> None:

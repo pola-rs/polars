@@ -74,7 +74,7 @@ class StringNameSpace:
         ...     ],
         ... )
         >>> (
-        ...     s.to_frame().with_column(
+        ...     s.to_frame().with_columns(
         ...         pl.col("date")
         ...         .str.strptime(pl.Date, "%F", strict=False)
         ...         .fill_null(

@@ -3351,7 +3351,7 @@ class DataFrame:
         Examples
         --------
         >>> def cast_str_to_int(data, col_name):
-        ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
+        ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
         ...
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
         >>> df.pipe(cast_str_to_int, col_name="b")
@@ -3574,7 +3574,7 @@ class DataFrame:
         ...     "2020-01-03 19:45:32",
         ...     "2020-01-08 23:16:43",
         ... ]
-        >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_column(
+        >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
         ...     pl.col("dt").str.strptime(pl.Datetime)
         ... )
         >>> out = df.groupby_rolling(index_column="dt", period="2d").agg(
@@ -4357,44 +4357,23 @@ class DataFrame:
         Creating a new DataFrame using this method does not create a new copy of
         existing data.
 
+        .. deprecated:: 0.15.14
+            `with_column` will be removed in favor of the more generic `with_columns`
+            in version 0.17.0.
+
         Parameters
         ----------
         column
             Series, where the name of the Series refers to the column in the DataFrame.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> df.with_column((pl.col("b") ** 2).alias("b_squared"))  # added
-        shape: (3, 3)
-        ┌─────┬─────┬───────────┐
-        │ a   ┆ b   ┆ b_squared │
-        │ --- ┆ --- ┆ ---       │
-        │ i64 ┆ i64 ┆ f64       │
-        ╞═════╪═════╪═══════════╡
-        │ 1   ┆ 2   ┆ 4.0       │
-        │ 3   ┆ 4   ┆ 16.0      │
-        │ 5   ┆ 6   ┆ 36.0      │
-        └─────┴─────┴───────────┘
-        >>> df.with_column(pl.col("a") ** 2)  # replaced
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ a    ┆ b   │
-        │ ---  ┆ --- │
-        │ f64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 1.0  ┆ 2   │
-        │ 9.0  ┆ 4   │
-        │ 25.0 ┆ 6   │
-        └──────┴─────┘
-
         """
-        return self.lazy().with_column(column).collect(no_optimization=True)
+        warnings.warn(
+            "`with_column` has been deprecated in favor of `with_columns`."
+            " This method will be removed in version 0.17.0",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.lazy().with_columns(column).collect(no_optimization=True)
 
     def hstack(
         self: DF,
@@ -5215,7 +5194,7 @@ class DataFrame:
 
         if how == "horizontal":
             df = (
-                df.with_column(  # type: ignore[assignment]
+                df.with_columns(  # type: ignore[assignment]
                     (pli.arange(0, n_cols * n_rows, eager=True) % n_cols).alias(
                         "__sort_order"
                     ),
@@ -5670,6 +5649,40 @@ class DataFrame:
         ...         "c": [True, True, False, True],
         ...     }
         ... )
+
+        Passing in a single expression, adding the column as we give it a new name:
+
+        >>> df.with_columns((pl.col("a") ** 2).alias("a^2"))
+        shape: (4, 4)
+        ┌─────┬──────┬───────┬──────┐
+        │ a   ┆ b    ┆ c     ┆ a^2  │
+        │ --- ┆ ---  ┆ ---   ┆ ---  │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  │
+        ╞═════╪══════╪═══════╪══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  │
+        │ 3   ┆ 10.0 ┆ false ┆ 9.0  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
+        └─────┴──────┴───────┴──────┘
+
+        We can also override a column, by giving the expression a name that already
+        exists:
+
+        >>> df.with_columns((pl.col("a") ** 2).alias("c"))
+        shape: (4, 3)
+        ┌─────┬──────┬──────┐
+        │ a   ┆ b    ┆ c    │
+        │ --- ┆ ---  ┆ ---  │
+        │ i64 ┆ f64  ┆ f64  │
+        ╞═════╪══════╪══════╡
+        │ 1   ┆ 0.5  ┆ 1.0  │
+        │ 2   ┆ 4.0  ┆ 4.0  │
+        │ 3   ┆ 10.0 ┆ 9.0  │
+        │ 4   ┆ 13.0 ┆ 16.0 │
+        └─────┴──────┴──────┘
+
+        Passing in multiple expressions as a list:
+
         >>> df.with_columns(
         ...     [
         ...         (pl.col("a") ** 2).alias("a^2"),
@@ -5710,8 +5723,6 @@ class DataFrame:
         └─────┴──────┴───────┴──────┴───────┘
 
         """
-        if exprs is not None and not isinstance(exprs, Sequence):
-            exprs = [exprs]
         return (
             self.lazy().with_columns(exprs, **named_exprs).collect(no_optimization=True)
         )
