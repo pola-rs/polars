@@ -158,6 +158,12 @@ def test_cumulative_eval_window_functions() -> None:
         "cumulative_eval_max": [20, 40, 40, 2, 4, 4],
     }
 
+    # 6394
+    df = pl.DataFrame({"group": [1, 1, 2, 3], "value": [1, None, 3, None]})
+    assert df.select(
+        pl.col("value").cumulative_eval(pl.element().mean()).over("group")
+    ).to_dict(False) == {"value": [1.0, 1.0, 3.0, None]}
+
 
 def test_count_window() -> None:
     assert (
