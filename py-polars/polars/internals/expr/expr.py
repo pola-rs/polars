@@ -501,11 +501,11 @@ class Expr:
         self,
         columns: (
             str
+            | PolarsDataType
             | Sequence[str]
-            | DataType
-            | type[DataType]
-            | DataType
-            | Sequence[DataType | type[DataType]]
+            | Sequence[PolarsDataType]
+            | set[PolarsDataType]
+            | frozenset[PolarsDataType]
         ),
     ) -> Expr:
         """
@@ -591,6 +591,8 @@ class Expr:
         if isinstance(columns, str):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude(columns))
+        elif isinstance(columns, (set, frozenset)):
+            return wrap_expr(self._pyexpr.exclude_dtype(list(columns)))
         elif not isinstance(columns, Sequence) or isinstance(columns, DataType):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude_dtype(columns))

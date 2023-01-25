@@ -75,7 +75,7 @@ def test_dtype() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     assert a.dtype == pl.List
     assert a.inner_dtype == pl.Int64
-    assert a.dtype.inner == pl.Int64  # type: ignore[attr-defined]
+    assert a.dtype.inner == pl.Int64  # type: ignore[union-attr]
 
     # explicit
     df = pl.DataFrame(
@@ -266,7 +266,7 @@ def test_cast_inner() -> None:
     # this creates an inner null type
     df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
     assert (
-        df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[attr-defined]
+        df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[union-attr]
     )
 
 

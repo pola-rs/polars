@@ -116,10 +116,10 @@ def test_init_inputs(monkeypatch: Any) -> None:
         s = pl.Series("dates", d64, dtype)
         assert s.to_list() == expected
         assert Datetime == s.dtype
-        assert s.dtype.tu == "ns"  # type: ignore[attr-defined]
+        assert s.dtype.tu == "ns"  # type: ignore[union-attr]
 
     s = pl.Series(values=d64.astype("<M8[ms]"))
-    assert s.dtype.tu == "ms"  # type: ignore[attr-defined]
+    assert s.dtype.tu == "ms"  # type: ignore[union-attr]
     assert expected == s.to_list()
 
     # pandas
@@ -163,7 +163,7 @@ def test_init_dataclass_namedtuple() -> None:
         s = pl.Series("t", [t0, t1])
 
         assert isinstance(s, pl.Series)
-        assert s.dtype.fields == [  # type: ignore[attr-defined]
+        assert s.dtype.fields == [  # type: ignore[union-attr]
             Field("exporter", pl.Utf8),
             Field("importer", pl.Utf8),
             Field("product", pl.Utf8),

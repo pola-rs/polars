@@ -13,7 +13,7 @@ from _pytest.capture import CaptureFixture
 
 import polars as pl
 from polars import col, lit, when
-from polars.datatypes import PolarsDataType
+from polars.datatypes import NUMERIC_DTYPES, PolarsDataType
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -592,6 +592,7 @@ def test_exclude_selection() -> None:
     assert df.select([pl.exclude("a")]).columns == ["b", "c"]
     assert df.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
     assert df.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
+    assert df.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
 
 
 def test_col_series_selection() -> None:
