@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 import polars.internals as pli
 from polars.datatypes import PolarsTemporalType
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -836,7 +835,6 @@ class StringNameSpace:
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
 
-    @deprecated_alias(start="offset")
     def slice(self, offset: int, length: int | None = None) -> pli.Series:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -880,10 +878,6 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame().select(pli.col(s.name).str.slice(offset, length)).to_series()
-        )
 
     def explode(self) -> pli.Series:
         """

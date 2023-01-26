@@ -54,7 +54,6 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
-    deprecated_alias,
     normalise_filepath,
 )
 
@@ -682,7 +681,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             return self._ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
-    @deprecated_alias(allow_streaming="streaming")
     def describe_optimized_plan(
         self,
         type_coercion: bool = True,
@@ -706,7 +704,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return ldf.describe_optimized_plan()
 
-    @deprecated_alias(allow_streaming="streaming")
     def show_graph(
         self,
         optimized: bool = True,
@@ -951,7 +948,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by = pli.selection_to_pyexpr_list(by)
         return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
 
-    @deprecated_alias(allow_streaming="streaming")
     def profile(
         self,
         type_coercion: bool = True,
@@ -1098,7 +1094,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return df, timings
 
-    @deprecated_alias(allow_streaming="streaming")
     def collect(
         self,
         *,
@@ -1353,7 +1348,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             maintain_order=maintain_order,
         )
 
-    @deprecated_alias(allow_streaming="streaming")
     def fetch(
         self,
         n_rows: int = 500,

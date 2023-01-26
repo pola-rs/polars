@@ -24,7 +24,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.utils import _timedelta_to_pl_duration, deprecated_alias, sphinx_accessor
+from polars.utils import _timedelta_to_pl_duration, sphinx_accessor
 
 try:
     from polars.polars import PyExpr
@@ -1968,7 +1968,6 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    @deprecated_alias(index="indices")
     def take(
         self, indices: int | list[int] | Expr | pli.Series | np.ndarray[Any, Any]
     ) -> Expr:

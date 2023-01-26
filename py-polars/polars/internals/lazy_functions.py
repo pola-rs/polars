@@ -28,7 +28,6 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
-    deprecated_alias,
 )
 
 try:
@@ -2176,14 +2175,12 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
     return pli.wrap_expr(_concat_lst(exprs))
 
 
-@deprecated_alias(allow_streaming="streaming")
 def collect_all(
     lazy_frames: Sequence[pli.LazyFrame],
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
-    string_cache: bool = False,
     no_optimization: bool = False,
     slice_pushdown: bool = True,
     common_subplan_elimination: bool = True,
@@ -2206,8 +2203,6 @@ def collect_all(
         Do projection pushdown optimization.
     simplify_expression
         Run simplify expressions optimization.
-    string_cache
-        This argument is deprecated and will be ignored
     no_optimization
         Turn off optimizations.
     slice_pushdown
