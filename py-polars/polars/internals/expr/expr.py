@@ -161,7 +161,8 @@ class Expr:
     def __bool__(self) -> NoReturn:
         raise ValueError(
             "Since Expr are lazy, the truthiness of an Expr is ambiguous. "
-            "Hint: use '&' or '|' to chain Expr together, not and/or."
+            "Hint: use '&' or '|' to logically combine Expr, not 'and'/'or', and "
+            "use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership."
         )
 
     def __abs__(self) -> Expr:
