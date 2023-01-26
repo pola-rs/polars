@@ -5314,7 +5314,7 @@ class Expr:
 
     def shuffle(self, seed: int | None = None) -> Expr:
         """
-        Shuffle the contents of this expr.
+        Shuffle the contents of this expression.
 
         Parameters
         ----------
