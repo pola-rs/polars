@@ -70,7 +70,7 @@ true_div = ["polars-plan/true_div"]
 # operations
 is_in = ["polars-plan/is_in"]
 repeat_by = ["polars-plan/repeat_by"]
-round_series = ["polars-plan/round_series"]
+round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_first = ["polars-plan/is_first"]
 cross_join = ["polars-plan/cross_join", "polars-pipe/cross_join"]
 asof_join = ["polars-plan/asof_join", "polars-time"]

@@ -1,3 +1,5 @@
+#[cfg(feature = "round_series")]
+mod floor_divide;
 #[cfg(feature = "log")]
 mod log;
 #[cfg(feature = "rolling_window")]
@@ -6,6 +8,8 @@ mod rolling;
 mod search_sorted;
 mod various;
 
+#[cfg(feature = "round_series")]
+pub use floor_divide::*;
 #[cfg(feature = "log")]
 pub use log::*;
 use polars_core::prelude::*;

@@ -664,7 +664,7 @@ where
     f(out)
 }
 
-pub(crate) fn align_chunks_binary<'a, T, B>(
+pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
 ) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<B>>)

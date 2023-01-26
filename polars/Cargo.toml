@@ -82,7 +82,7 @@ sort_multiple = ["polars-core/sort_multiple"]
 # extra operations
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
 zip_with = ["polars-core/zip_with"]
-round_series = ["polars-core/round_series", "polars-lazy/round_series"]
+round_series = ["polars-core/round_series", "polars-lazy/round_series", "polars-ops/round_series"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 repeat_by = ["polars-core/repeat_by", "polars-lazy/repeat_by"]
 is_first = ["polars-core/is_first", "polars-lazy/is_first"]

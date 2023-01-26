@@ -1,5 +1,7 @@
 from datetime import date
 
+import numpy as np
+
 import polars as pl
 
 
@@ -80,3 +82,12 @@ def test_simd_float_sum_determinism() -> None:
         0.6579683924555951,
         0.6579683924555951,
     ]
+
+
+def test_floor_division_float_int_consistency() -> None:
+    a = np.random.randn(10) * 10
+
+    assert (pl.Series(a) // 5).to_list() == list((a // 5))
+    assert (pl.Series(a, dtype=pl.Int32) // 5).to_list() == list(
+        (a.astype(int) // 5).astype(int)
+    )
