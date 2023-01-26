@@ -409,9 +409,10 @@ def redirect(from_to: dict[str, str]) -> Callable[[type[T]], type[T]]:
         if isinstance(item, str) and item in from_to:
             new_item = from_to[item]
             warnings.warn(
-                f"`{type(obj).__name__}.{item}` has been renamed and this"
-                f" redirect is temporary; please use `.{new_item}` instead",
+                f"`{type(obj).__name__}.{item}` has been renamed; this"
+                f" redirect is temporary, please use `.{new_item}` instead",
                 category=DeprecationWarning,
+                stacklevel=2,
             )
             item = new_item
         return obj.__getattribute__(item)
