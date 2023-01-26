@@ -4,6 +4,7 @@
 extern crate core;
 extern crate polars;
 
+
 #[cfg(feature = "build_info")]
 #[macro_use]
 extern crate pyo3_built;
@@ -508,8 +509,8 @@ fn py_date_range(
     name: &str,
     tu: Wrap<TimeUnit>,
     tz: Option<TimeZone>,
-) -> PySeries {
-    polars::time::date_range_impl(
+) -> PyResult<PySeries> {
+    match polars::time::date_range_impl(
         name,
         start,
         stop,
@@ -517,9 +518,10 @@ fn py_date_range(
         closed.0,
         tu.0,
         tz.as_ref(),
-    )
-    .into_series()
-    .into()
+    ) {
+        Ok(x) => x?.into_series().into(),
+        Err(_) => Err(PyPolarsErr("foo")),
+    }
 }
 
 #[pyfunction]

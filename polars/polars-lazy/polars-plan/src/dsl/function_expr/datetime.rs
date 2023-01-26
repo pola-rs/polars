@@ -147,13 +147,13 @@ pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
     let ca = s.datetime()?.clone();
     match ca.time_zone() {
         Some(tz) if tz == "UTC" => {
-           Ok(ca.with_time_zone(Some("UTC".into())).into_series())
+           Ok(ca.with_time_zone(Some("UTC".into()))?.into_series())
         }
         Some(tz) if !tz.is_empty() => {
             Err(PolarsError::ComputeError("Cannot localize a tz-aware datetime. Consider using 'dt.with_time_zone' or 'dt.cast_time_zone'".into()))
         },
         _ => {
-            Ok(ca.with_time_zone(Some("UTC".to_string())).cast_time_zone(tz)?.into_series())
+            Ok(ca.with_time_zone(Some("UTC".to_string()))?.cast_time_zone(tz)?.into_series())
         }
     }
 }
@@ -192,7 +192,7 @@ pub(super) fn date_range_dispatch(
                     closed,
                     TimeUnit::Milliseconds,
                     tz.as_ref(),
-                )
+                )?
                 .cast(&DataType::Date)
             }
             DataType::Datetime(tu, _) => {
@@ -202,7 +202,7 @@ pub(super) fn date_range_dispatch(
                 let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
 
                 Ok(
-                    date_range_impl(name, start, stop, every, closed, *tu, tz.as_ref())
+                    date_range_impl(name, start, stop, every, closed, *tu, tz.as_ref())?
                         .into_series(),
                 )
             }
@@ -239,7 +239,7 @@ pub(super) fn date_range_dispatch(
                     match (start, stop) {
                         (Some(start), Some(stop)) => {
                             let date_range =
-                                date_range_impl("", start, stop, every, closed, tu, tz);
+                                date_range_impl("", start, stop, every, closed, tu, tz)?;
                             let date_range = date_range.cast(&DataType::Date).unwrap();
                             let date_range = date_range.to_physical_repr();
                             let date_range = date_range.i32().unwrap();
@@ -262,7 +262,7 @@ pub(super) fn date_range_dispatch(
                     match (start, stop) {
                         (Some(start), Some(stop)) => {
                             let date_range =
-                                date_range_impl("", start, stop, every, closed, tu, tz);
+                                date_range_impl("", start, stop, every, closed, tu, tz)?;
                             builder.append_slice(date_range.cont_slice().unwrap())
                         }
                         _ => builder.append_null(),

@@ -19,14 +19,14 @@ pub fn date_range_impl(
     closed: ClosedWindow,
     tu: TimeUnit,
     _tz: Option<&TimeZone>,
-) -> DatetimeChunked {
+) -> PolarsResult<DatetimeChunked> {
     let mut out = Int64Chunked::new_vec(name, date_range_vec(start, stop, every, closed, tu))
         .into_datetime(tu, None);
 
     #[cfg(feature = "timezones")]
     if let Some(tz) = _tz {
         out = out
-            .with_time_zone(Some("UTC".to_string()))
+            .with_time_zone(Some("UTC".to_string()))?
             .cast_time_zone(tz)
             .unwrap()
     }
@@ -36,7 +36,7 @@ pub fn date_range_impl(
         IsSorted::Ascending
     };
     out.set_sorted_flag(s);
-    out
+    Ok(out)
 }
 
 /// Create a [`DatetimeChunked`] from a given `start` and `stop` date and a given `every` interval.
@@ -48,7 +48,7 @@ pub fn date_range(
     closed: ClosedWindow,
     tu: TimeUnit,
     tz: Option<TimeZone>,
-) -> DatetimeChunked {
+) -> PolarsResult<DatetimeChunked> {
     let (start, stop) = match tu {
         TimeUnit::Nanoseconds => (start.timestamp_nanos(), stop.timestamp_nanos()),
         TimeUnit::Microseconds => (

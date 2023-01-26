@@ -159,8 +159,8 @@ fn upsample_single_impl(
                         ClosedWindow::Both,
                         *tu,
                         None,
-                    )
-                    .with_time_zone(tz.clone())
+                    )?
+                    .with_time_zone(tz.clone())?
                     .into_series()
                     .into_frame();
                     range.join(

@@ -71,7 +71,7 @@ impl DateLikeNameSpace {
             move |s| match s.dtype() {
                 DataType::Datetime(_, _) => {
                     let mut ca = s.datetime().unwrap().clone();
-                    ca.set_time_zone(tz.clone());
+                    ca.set_time_zone(tz.clone())?;
                     Ok(ca.into_series())
                 }
                 dt => Err(PolarsError::ComputeError(
