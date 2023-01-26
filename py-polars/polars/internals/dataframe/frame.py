@@ -5232,8 +5232,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = False,
         *,
+        maintain_order: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[DF]:
         ...
@@ -5242,8 +5242,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = False,
         *,
+        maintain_order: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, DF]:
         ...
@@ -5252,8 +5252,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool,
         *,
+        maintain_order: bool,
         as_dict: bool,
     ) -> list[DF] | dict[Any, DF]:
         ...
@@ -5261,8 +5261,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = True,
         *,
+        maintain_order: bool = True,
         as_dict: bool = False,
     ) -> list[DF] | dict[Any, DF]:
         """
