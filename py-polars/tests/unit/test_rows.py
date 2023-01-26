@@ -69,16 +69,18 @@ def test_iterrows() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [None, False, None]})
 
     # Default iterrows behaviour
-    it = df.iterrows()
-    assert next(it) == (1, None)
-    assert next(it) == (2, False)
-    assert next(it) == (3, None)
-    with pytest.raises(StopIteration):
-        next(it)
+    # TODO: remove reference to deprecated "iterrows" once it is retired
+    for iter_method in ("iter_rows", "iterrows"):
+        it = getattr(df, iter_method)()
+        assert next(it) == (1, None)
+        assert next(it) == (2, False)
+        assert next(it) == (3, None)
+        with pytest.raises(StopIteration):
+            next(it)
 
     # Apply explicit row-buffer size
     for sz in (0, 1, 2, 3, 4):
-        it = df.iterrows(buffer_size=sz)
+        it = df.iter_rows(buffer_size=sz)
         assert next(it) == (1, None)
         assert next(it) == (2, False)
         assert next(it) == (3, None)
@@ -86,7 +88,7 @@ def test_iterrows() -> None:
             next(it)
 
         # Return rows as namedtuples
-        it_named = df.iterrows(named=True, buffer_size=sz)
+        it_named = df.iter_rows(named=True, buffer_size=sz)
 
         row = next(it_named)
         assert row.a == 1

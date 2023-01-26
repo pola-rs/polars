@@ -119,9 +119,11 @@ def test_duration_smallest_units() -> None:
 
 
 def test_fmt_float_full() -> None:
-    pl.Config.set_fmt_float("full")
-    assert (
-        str(pl.Series([1.2304980958725870923]))
-        == "shape: (1,)\nSeries: '' [f64]\n[\n\t1.230498095872587\n]"
-    )
-    pl.Config.restore_defaults()
+    fmt_float_full = "shape: (1,)\nSeries: '' [f64]\n[\n\t1.230498095872587\n]"
+    s = pl.Series([1.2304980958725870923])
+
+    with pl.Config() as cfg:
+        cfg.set_fmt_float("full")
+        assert str(s) == fmt_float_full
+
+    assert str(s) != fmt_float_full

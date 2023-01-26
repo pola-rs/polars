@@ -84,6 +84,7 @@ from polars.utils import (
     is_str_sequence,
     normalise_filepath,
     range_to_slice,
+    redirect,
     scale_bytes,
 )
 
@@ -148,6 +149,7 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
     return DataFrame._from_pydf(df)
 
 
+@redirect({"iterrows": "iter_rows"})
 class DataFrame:
     """
     Two-dimensional data structure representing data as a table with rows and columns.
@@ -1843,7 +1845,7 @@ class DataFrame:
 
         """
         dict_, zip_, columns = dict, zip, self.columns
-        return [dict_(zip_(columns, row)) for row in self.iterrows()]
+        return [dict_(zip_(columns, row)) for row in self.iter_rows()]
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """
@@ -6612,7 +6614,7 @@ class DataFrame:
         Warning
         -------
         You should NEVER use this method to iterate over a DataFrame; if you absolutely
-        require row-iteration you should strongly prefer ``iterrows()`` instead.
+        require row-iteration you should strongly prefer ``iter_rows()`` instead.
 
         Examples
         --------
@@ -6640,7 +6642,7 @@ class DataFrame:
 
         See Also
         --------
-        iterrows : Row iterator over frame data (does not materialise all rows).
+        iter_rows : Row iterator over frame data (does not materialise all rows).
         rows : Materialises all frame data as a list of rows.
 
         """
@@ -6728,7 +6730,7 @@ class DataFrame:
 
         See Also
         --------
-        iterrows : Row iterator over frame data (does not materialise all rows).
+        iter_rows : Row iterator over frame data (does not materialise all rows).
 
         """
         if named:
@@ -6744,18 +6746,18 @@ class DataFrame:
             return self._df.row_tuples()
 
     @overload
-    def iterrows(
+    def iter_rows(
         self, named: Literal[False] = ..., buffer_size: int = ...
     ) -> Iterator[tuple[Any, ...]]:
         ...
 
     @overload
-    def iterrows(
+    def iter_rows(
         self, named: Literal[True] = ..., buffer_size: int = ...
     ) -> Iterator[Any]:
         ...
 
-    def iterrows(
+    def iter_rows(
         self, named: bool = False, buffer_size: int = 500
     ) -> Iterator[tuple[Any, ...]] | Iterator[Any]:
         """
@@ -6792,9 +6794,9 @@ class DataFrame:
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> [row[0] for row in df.iterrows()]
+        >>> [row[0] for row in df.iter_rows()]
         [1, 3, 5]
-        >>> [row.b for row in df.iterrows(named=True)]
+        >>> [row.b for row in df.iter_rows(named=True)]
         [2, 4, 6]
 
         See Also
@@ -6874,7 +6876,7 @@ class DataFrame:
 
         See Also
         --------
-        iterrows : Row iterator over frame data (does not materialise all rows).
+        iter_rows : Row iterator over frame data (does not materialise all rows).
         partition_by : Split into multiple DataFrames, partitioned by groups.
 
         """
