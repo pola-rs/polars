@@ -366,9 +366,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: StringFunction) -> Self {
         use StringFunction::*;
         match func {
-            Contains { pat, literal } => {
-                map!(strings::contains, &pat, literal)
-            }
+            #[cfg(feature = "regex")]
+            Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract { pat, group_index } => {

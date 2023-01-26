@@ -392,7 +392,7 @@ class ListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)

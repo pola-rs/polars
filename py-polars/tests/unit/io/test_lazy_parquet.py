@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import pytest
 from _pytest.capture import CaptureFixture
 
 import polars as pl
@@ -14,8 +15,13 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import ParallelStrategy
 
 
-def test_scan_parquet() -> None:
-    df = pl.scan_parquet(Path(__file__).parent.parent / "files" / "small.parquet")
+@pytest.fixture()
+def parquet_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "small.parquet"
+
+
+def test_scan_parquet(parquet_file_path: Path) -> None:
+    df = pl.scan_parquet(parquet_file_path)
     assert df.collect().shape == (4, 3)
 
 
@@ -60,7 +66,7 @@ def test_categorical_parquet_statistics(io_test_dir: str) -> None:
                 "user": ["bob", "bob", "bob", "tim", "lucy", "lucy", "lucy", "lucy"],
             }
         )
-        .with_column(pl.col("book").cast(pl.Categorical))
+        .with_columns(pl.col("book").cast(pl.Categorical))
         .write_parquet(file, statistics=True)
     )
 
@@ -119,17 +125,18 @@ def test_parquet_stats(io_test_dir: str) -> None:
     )
 
 
-def test_row_count_schema(io_test_dir: str) -> None:
-    f = os.path.join(io_test_dir, "..", "files", "small.parquet")
+def test_row_count_schema(parquet_file_path: Path) -> None:
     assert (
-        pl.scan_parquet(f, row_count_name="id").select(["id", "b"]).collect()
+        pl.scan_parquet(str(parquet_file_path), row_count_name="id")
+        .select(["id", "b"])
+        .collect()
     ).dtypes == [pl.UInt32, pl.Utf8]
 
 
 def test_parquet_statistics(io_test_dir: str, capfd: CaptureFixture[str]) -> None:
     os.environ["POLARS_VERBOSE"] = "1"
     fname = os.path.join(io_test_dir, "stats.parquet")
-    df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_column(
+    df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_columns(
         (pl.col("idx") // 25).alias("part")
     )
     df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)

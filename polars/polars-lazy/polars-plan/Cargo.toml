@@ -23,6 +23,8 @@ regex = { version = "1.6", optional = true }
 serde = { version = "1", features = ["derive", "rc"], optional = true }
 
 [features]
+# debuging utility
+debugging = []
 python = ["pyo3"]
 # make sure we don't compile unneeded things even though
 # this dependency gets activated

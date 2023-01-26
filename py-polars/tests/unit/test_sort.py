@@ -29,7 +29,7 @@ def test_sort_dates_multiples() -> None:
     assert out["values"].to_list() == expected
 
     # Date
-    out = df.with_column(pl.col("date").cast(pl.Date)).sort(["date", "values"])
+    out = df.with_columns(pl.col("date").cast(pl.Date)).sort(["date", "values"])
     assert out["values"].to_list() == expected
 
 
@@ -176,10 +176,10 @@ def test_sorted_join_and_dtypes() -> None:
         df_a = (
             pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
             .with_row_count()
-            .with_column(pl.col("a").cast(dt).set_sorted())
+            .with_columns(pl.col("a").cast(dt).set_sorted())
         )
 
-    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_column(
+    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_columns(
         pl.col("a").cast(dt).set_sorted()
     )
 
@@ -318,7 +318,7 @@ def test_sorted_join_query_5406() -> None:
                 "Value": [1, 2, 1, 1, 2, 1],
             }
         )
-        .with_column(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
+        .with_columns(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
         .with_row_count("RowId")
     )
 
@@ -367,7 +367,7 @@ def test_merge_sorted() -> None:
         pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo")
         .to_frame("range")
         .with_row_count()
-        .with_column(pl.col("row_nr") * 10)
+        .with_columns(pl.col("row_nr") * 10)
     )
     out = df_a.merge_sorted(df_b, key="range")
     assert out["range"].is_sorted()

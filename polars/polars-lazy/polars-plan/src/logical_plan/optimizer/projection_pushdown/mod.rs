@@ -4,9 +4,13 @@ mod hstack;
 mod joins;
 mod melt;
 mod projection;
+#[cfg(feature = "semi_anti_join")]
+mod semi_anti_join;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
+#[cfg(feature = "semi_anti_join")]
+use semi_anti_join::process_semi_anti_join;
 
 use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
@@ -671,19 +675,35 @@ impl ProjectionPushDown {
                 right_on,
                 options,
                 ..
-            } => process_join(
-                self,
-                input_left,
-                input_right,
-                left_on,
-                right_on,
-                options,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
+            } => match options.how {
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi | JoinType::Anti => process_semi_anti_join(
+                    self,
+                    input_left,
+                    input_right,
+                    left_on,
+                    right_on,
+                    options,
+                    acc_projections,
+                    projected_names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                ),
+                _ => process_join(
+                    self,
+                    input_left,
+                    input_right,
+                    left_on,
+                    right_on,
+                    options,
+                    acc_projections,
+                    projected_names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                ),
+            },
             HStack { input, exprs, .. } => process_hstack(
                 self,
                 input,

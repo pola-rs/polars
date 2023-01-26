@@ -25,7 +25,7 @@ else:
 
 import polars.internals as pli
 from polars.convert import from_arrow
-from polars.datatypes import N_INFER_DEFAULT, DataType, SchemaDict, Utf8
+from polars.datatypes import N_INFER_DEFAULT, PolarsDataType, SchemaDict, Utf8
 from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
@@ -69,7 +69,7 @@ def read_csv(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
+    dtypes: Mapping[str, PolarsDataType] | list[PolarsDataType] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -295,7 +295,7 @@ def read_csv(
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[type[DataType]] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):
@@ -1696,7 +1696,7 @@ def read_csv_batched(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
+    dtypes: Mapping[str, PolarsDataType] | list[PolarsDataType] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -1871,7 +1871,7 @@ def read_csv_batched(
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[type[DataType]] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):

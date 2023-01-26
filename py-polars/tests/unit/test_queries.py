@@ -17,7 +17,7 @@ def test_sort_by_bools() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    out = df.with_column((pl.col("foo") % 2 == 1).alias("foo_odd")).sort(
+    out = df.with_columns((pl.col("foo") % 2 == 1).alias("foo_odd")).sort(
         by=["foo_odd", "foo"]
     )
     assert out.rows() == [
@@ -143,7 +143,7 @@ def test_sorted_groupby_optimization() -> None:
     # groups, so this is tests that we hit the sorted optimization
     for reverse in [True, False]:
         sorted_implicit = (
-            df.with_column(pl.col("a").sort(reverse=reverse))
+            df.with_columns(pl.col("a").sort(reverse=reverse))
             .groupby("a")
             .agg(pl.count())
         )
@@ -245,7 +245,7 @@ def test_opaque_filter_on_lists_3784() -> None:
     df = pl.DataFrame(
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
-    df = df.with_column(pl.col("str").cast(pl.Categorical))
+    df = df.with_columns(pl.col("str").cast(pl.Categorical))
 
     df_groups = df.groupby("group").agg([pl.col("str").list().alias("str_list")])
 
@@ -303,7 +303,7 @@ def test_when_then_edge_cases_3994() -> None:
         df.lazy()
         .groupby(["id"])
         .agg(pl.col("type"))
-        .with_column(
+        .with_columns(
             pl.when(pl.col("type").arr.lengths() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
@@ -317,7 +317,7 @@ def test_when_then_edge_cases_3994() -> None:
         df.filter(pl.col("id") == 42)
         .groupby(["id"])
         .agg(pl.col("type"))
-        .with_column(
+        .with_columns(
             pl.when(pl.col("type").arr.lengths() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
@@ -348,9 +348,9 @@ def test_query_4438() -> None:
 
     q = (
         df.lazy()
-        .with_column(pl.col("x").rolling_max(window_size=3).alias("rolling_max"))
+        .with_columns(pl.col("x").rolling_max(window_size=3).alias("rolling_max"))
         .fill_null(strategy="backward")
-        .with_column(
+        .with_columns(
             pl.col("rolling_max").rolling_max(window_size=3).alias("rolling_max_2")
         )
     )

@@ -116,10 +116,10 @@ def test_init_inputs(monkeypatch: Any) -> None:
         s = pl.Series("dates", d64, dtype)
         assert s.to_list() == expected
         assert Datetime == s.dtype
-        assert s.dtype.tu == "ns"  # type: ignore[attr-defined]
+        assert s.dtype.tu == "ns"  # type: ignore[union-attr]
 
     s = pl.Series(values=d64.astype("<M8[ms]"))
-    assert s.dtype.tu == "ms"  # type: ignore[attr-defined]
+    assert s.dtype.tu == "ms"  # type: ignore[union-attr]
     assert expected == s.to_list()
 
     # pandas
@@ -163,7 +163,7 @@ def test_init_dataclass_namedtuple() -> None:
         s = pl.Series("t", [t0, t1])
 
         assert isinstance(s, pl.Series)
-        assert s.dtype.fields == [  # type: ignore[attr-defined]
+        assert s.dtype.fields == [  # type: ignore[union-attr]
             Field("exporter", pl.Utf8),
             Field("importer", pl.Utf8),
             Field("product", pl.Utf8),
@@ -906,19 +906,19 @@ def test_rolling() -> None:
         pl.col("val").rolling_min(window_size=3),
         pl.col("val").rolling_max(window_size=3),
     ]:
-        out = df.with_column(e).to_series()
+        out = df.with_columns(e).to_series()
         assert out.null_count() == 2
         assert np.isnan(out.to_numpy()).sum() == 5
 
     expected = [None, None, 2.0, 3.0, 5.0, 6.0, 6.0]
     assert (
-        df.with_column(pl.col("val").rolling_median(window_size=3))
+        df.with_columns(pl.col("val").rolling_median(window_size=3))
         .to_series()
         .to_list()
         == expected
     )
     assert (
-        df.with_column(pl.col("val").rolling_quantile(0.5, window_size=3))
+        df.with_columns(pl.col("val").rolling_quantile(0.5, window_size=3))
         .to_series()
         .to_list()
         == expected
@@ -2074,7 +2074,7 @@ def test_is_between_datetime() -> None:
     expected = pl.Series("a", [False, True])
 
     # only on the expression api
-    result = s.to_frame().with_column(pl.col("*").is_between(start, end))["is_between"]
+    result = s.to_frame().with_columns(pl.col("*").is_between(start, end))["is_between"]
     assert_series_equal(result.rename("a"), expected)
 
 

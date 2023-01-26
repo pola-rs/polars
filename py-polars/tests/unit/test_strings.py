@@ -58,6 +58,41 @@ def test_contains() -> None:
         )
 
 
+def test_contains_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "text": [
+                "some text",
+                "(with) special\n .* chars",
+                "**etc...?$",
+                None,
+                "b",
+                "invalid_regex",
+            ],
+            "pattern": [r"[me]", r".*", r"^\(", "a", None, "*"],
+        }
+    )
+
+    assert df.select(
+        [
+            pl.col("text")
+            .str.contains(pl.col("pattern"), literal=False, strict=False)
+            .alias("contains"),
+            pl.col("text")
+            .str.contains(pl.col("pattern"), literal=True)
+            .alias("contains_lit"),
+        ]
+    ).to_dict(False) == {
+        "contains": [True, True, False, False, False, None],
+        "contains_lit": [False, True, False, False, False, False],
+    }
+
+    with pytest.raises(pl.ComputeError):
+        df.select(
+            pl.col("text").str.contains(pl.col("pattern"), literal=False, strict=True)
+        )
+
+
 def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])
     assert (s.shift() == s).null_count() == 0
@@ -185,7 +220,7 @@ def test_zfill() -> None:
         None,
     ]
     assert (
-        df.with_column(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
+        df.with_columns(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
         == out
     )
     assert df["num"].cast(str).str.zfill(5).to_list() == out

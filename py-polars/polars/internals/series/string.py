@@ -74,7 +74,7 @@ class StringNameSpace:
         ...     ],
         ... )
         >>> (
-        ...     s.to_frame().with_column(
+        ...     s.to_frame().with_columns(
         ...         pl.col("date")
         ...         .str.strptime(pl.Date, "%F", strict=False)
         ...         .fill_null(
@@ -174,7 +174,9 @@ class StringNameSpace:
 
         """
 
-    def contains(self, pattern: str, literal: bool = False) -> pli.Series:
+    def contains(
+        self, pattern: str, literal: bool = False, strict: bool = True
+    ) -> pli.Series:
         """
         Check if strings in Series contain a substring that matches a regex.
 
@@ -184,6 +186,9 @@ class StringNameSpace:
             A valid regex pattern.
         literal
             Treat pattern as a literal string.
+        strict
+            Raise an error if the underlying pattern is not a valid regex expression,
+            otherwise mask out with a null value.
 
         Returns
         -------

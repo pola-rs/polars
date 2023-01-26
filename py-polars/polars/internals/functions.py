@@ -551,9 +551,9 @@ def cut(
     if labels:
         if len(labels) != len(bins) + 1:
             raise ValueError("expected more labels")
-        cuts_df = cuts_df.with_column(pli.Series(name=category_label, values=labels))
+        cuts_df = cuts_df.with_columns(pli.Series(name=category_label, values=labels))
     else:
-        cuts_df = cuts_df.with_column(
+        cuts_df = cuts_df.with_columns(
             pli.format(
                 "({}, {}]",
                 pli.col(break_point_label).shift_and_fill(1, float("-inf")),
@@ -561,7 +561,7 @@ def cut(
             ).alias(category_label)
         )
 
-    cuts_df = cuts_df.with_column(pli.col(category_label).cast(Categorical))
+    cuts_df = cuts_df.with_columns(pli.col(category_label).cast(Categorical))
 
     result = (
         s.cast(Float64)

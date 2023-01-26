@@ -102,7 +102,7 @@ def test_apply_struct() -> None:
     df = pl.DataFrame(
         {"A": ["a", "a"], "B": [2, 3], "C": [True, False], "D": [12.0, None]}
     )
-    out = df.with_column(pl.struct(df.columns).alias("struct")).select(
+    out = df.with_columns(pl.struct(df.columns).alias("struct")).select(
         [
             pl.col("struct").apply(lambda x: x["A"]).alias("A_field"),
             pl.col("struct").apply(lambda x: x["B"]).alias("B_field"),
@@ -144,7 +144,7 @@ def test_apply_numpy_out_3057() -> None:
 
 def test_apply_numpy_int_out() -> None:
     df = pl.DataFrame({"col1": [2, 4, 8, 16]})
-    assert df.with_column(
+    assert df.with_columns(
         pl.col("col1").apply(lambda x: np.left_shift(x, 8)).alias("result")
     ).frame_equal(
         pl.DataFrame({"col1": [2, 4, 8, 16], "result": [512, 1024, 2048, 4096]})

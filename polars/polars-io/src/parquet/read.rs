@@ -26,9 +26,9 @@ use crate::RowCount;
 pub enum ParallelStrategy {
     /// Don't parallelize
     None,
-    /// Parallelize over the row groups
-    Columns,
     /// Parallelize over the columns
+    Columns,
+    /// Parallelize over the row groups
     RowGroups,
     /// Automatically determine over which unit to parallelize
     /// This will choose the most occurring unit.

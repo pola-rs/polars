@@ -194,7 +194,7 @@ def col(
 
     """
     if isinstance(name, pli.Series):
-        name = name.to_list()  # type: ignore[assignment]
+        name = name.to_list()
 
     if isinstance(name, DataTypeClass):
         name = [name]
@@ -231,7 +231,7 @@ def element() -> pli.Expr:
     A horizontal rank computation by taking the elements of a list
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-    >>> df.with_column(
+    >>> df.with_columns(
     ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
     ... )
     shape: (3, 3)
@@ -248,7 +248,7 @@ def element() -> pli.Expr:
     A mathematical operation on array elements
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-    >>> df.with_column(
+    >>> df.with_columns(
     ...     pl.concat_list(["a", "b"]).arr.eval(pl.element() * 2).alias("a_b_doubled")
     ... )
     shape: (3, 3)
@@ -645,7 +645,7 @@ def sum(
 
     Sum a list of columns/expressions horizontally:
 
-    >>> df.with_column(pl.sum(["a", "c"]))
+    >>> df.with_columns(pl.sum(["a", "c"]))
     shape: (2, 4)
     ┌─────┬─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   ┆ sum │
@@ -1082,7 +1082,7 @@ def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
 
 
 def lit(
-    value: Any, dtype: type[DataType] | None = None, allow_object: bool = False
+    value: Any, dtype: PolarsDataType | None = None, allow_object: bool = False
 ) -> pli.Expr:
     """
     Return an expression representing a literal value.
@@ -1247,7 +1247,7 @@ def cumsum(
 
     Cumulatively sum a list of columns/expressions horizontally:
 
-    >>> df.with_column(pl.cumsum(["a", "c"]))
+    >>> df.with_columns(pl.cumsum(["a", "c"]))
     shape: (2, 4)
     ┌─────┬─────┬─────┬───────────┐
     │ a   ┆ b   ┆ c   ┆ cumsum    │
@@ -1383,7 +1383,7 @@ def cov(
 def map(
     exprs: Sequence[str] | Sequence[pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series],
-    return_dtype: type[DataType] | None = None,
+    return_dtype: PolarsDataType | None = None,
 ) -> pli.Expr:
     """
     Map a custom function over multiple columns/expressions.
@@ -1413,7 +1413,7 @@ def map(
 def apply(
     exprs: Sequence[str | pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series | Any],
-    return_dtype: type[DataType] | None = None,
+    return_dtype: PolarsDataType | None = None,
     returns_scalar: bool = True,
 ) -> pli.Expr:
     """
@@ -1591,11 +1591,11 @@ def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
 def exclude(
     columns: (
         str
+        | PolarsDataType
         | Sequence[str]
-        | DataType
-        | type[DataType]
-        | DataType
-        | Sequence[DataType | type[DataType]]
+        | Sequence[PolarsDataType]
+        | set[PolarsDataType]
+        | frozenset[PolarsDataType]
     ),
 ) -> pli.Expr:
     """
@@ -2360,7 +2360,7 @@ def struct(
     >>> df = pl.DataFrame(
     ...     {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     ... )
-    >>> df.with_column(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
+    >>> df.with_columns(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
     shape: (4, 4)
     ┌─────┬───────┬─────┬─────────────┐
     │ a   ┆ b     ┆ c   ┆ a_and_b     │
@@ -2545,7 +2545,7 @@ def coalesce(
     ...     ],
     ...     schema=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
     ... )
-    >>> df.with_column(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
+    >>> df.with_columns(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
     │ a    ┆ b    ┆ c    ┆ d    │

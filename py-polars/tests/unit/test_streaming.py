@@ -121,10 +121,10 @@ def test_streaming_non_streaming_gb() -> None:
     q = df.lazy().groupby("a").agg(pl.count()).sort("a")
     assert q.collect(streaming=True).frame_equal(q.collect())
 
-    q = df.lazy().with_column(pl.col("a").cast(pl.Utf8))
+    q = df.lazy().with_columns(pl.col("a").cast(pl.Utf8))
     q = q.groupby("a").agg(pl.count()).sort("a")
     assert q.collect(streaming=True).frame_equal(q.collect())
-    q = df.lazy().with_column(pl.col("a").alias("b"))
+    q = df.lazy().with_columns(pl.col("a").alias("b"))
     q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
     assert q.collect(streaming=True).frame_equal(q.collect())
 
@@ -138,7 +138,7 @@ def test_streaming_groupby_sorted_fast_path() -> None:
         }
     ).with_row_count()
 
-    df_sorted = df.with_column(pl.col("a").set_sorted())
+    df_sorted = df.with_columns(pl.col("a").set_sorted())
 
     for streaming in [True, False]:
         results = []
@@ -170,7 +170,7 @@ def test_streaming_categoricals_5921() -> None:
         out_lazy = (
             pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
             .lazy()
-            .with_column(pl.col("X").cast(pl.Categorical))
+            .with_columns(pl.col("X").cast(pl.Categorical))
             .groupby("X")
             .agg(pl.col("Y").min())
             .sort("X")
@@ -179,7 +179,7 @@ def test_streaming_categoricals_5921() -> None:
 
         out_eager = (
             pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
-            .with_column(pl.col("X").cast(pl.Categorical))
+            .with_columns(pl.col("X").cast(pl.Categorical))
             .groupby("X")
             .agg(pl.col("Y").min())
             .sort("X")
@@ -194,6 +194,6 @@ def test_streaming_block_on_literals_6054() -> None:
     df = pl.DataFrame({"col_1": [0] * 5 + [1] * 5})
     s = pl.Series("col_2", list(range(10)))
 
-    assert df.lazy().with_column(s).groupby("col_1").agg(pl.all().first()).collect(
+    assert df.lazy().with_columns(s).groupby("col_1").agg(pl.all().first()).collect(
         streaming=True
     ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}

@@ -41,7 +41,7 @@ def test_error_on_invalid_by_in_asof_join() -> None:
         }
     )
 
-    df2 = df1.with_column(pl.col("a").cast(pl.Categorical))
+    df2 = df1.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
         df1.join_asof(df2, on="b", by=["a", "c"])
 
