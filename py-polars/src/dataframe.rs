@@ -441,15 +441,14 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        let infer_schema_length = std::cmp::max(infer_schema_length.unwrap_or(50), 1);
-        let (rows, mut names) = dicts_to_rows(dicts, infer_schema_length)?;
-
-        // ensure the new names are used
+        // if given, read dict fields in schema order
+        let mut schema_columns = PlIndexSet::new();
         if let Some(schema) = &schema_overwrite {
-            for (new_name, name) in schema.0.iter_names().zip(names.iter_mut()) {
-                *name = new_name.clone();
-            }
+            schema_columns.extend(schema.0.iter_names().map(|n| n.to_string()))
         }
+        let infer_schema_length = std::cmp::max(infer_schema_length.unwrap_or(50), 1);
+        let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
+
         let mut pydf = Self::finish_from_rows(
             rows,
             Some(infer_schema_length),
