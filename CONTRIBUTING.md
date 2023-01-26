@@ -9,6 +9,7 @@ If you're unclear on how to proceed after reading this guide, please contact us 
 - [Suggesting enhancements](#suggesting-enhancements)
 - [Contributing to the codebase](#contributing-to-the-codebase)
 - [Contributing to documentation](#contributing-to-documentation)
+- [License](#license)
 
 ## Reporting bugs
 
@@ -146,11 +147,6 @@ Once all issues are resolved, the maintainer will merge your pull request, and y
 Keep in mind that your work does not have to be perfect right away!
 If you are stuck or unsure about your solution, feel free to open a draft pull request and ask for help.
 
-## Any contributions you make will be under the MIT Software License
-
-In short, when you submit code changes, your submissions are understood to be under the same
-[MIT License](https://choosealicense.com/licenses/mit/) that covers the project.
-
 ## Contributing to documentation
 
 The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars-book/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
@@ -201,3 +197,7 @@ There is a separate tag for each language:
 
 Contributions in the form of well-formulated questions or answers are always welcome!
 If you add a new question, please notify us by adding a [matching issue](https://github.com/pola-rs/polars/issues/new?&labels=question&template=question.yml) to our GitHub issue tracker.
+
+## License
+
+Any contributions you make to this project will fall under the [MIT License](LICENSE) that covers the Polars project.
