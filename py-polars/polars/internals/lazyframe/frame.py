@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import typing
 import warnings
 from datetime import date, datetime, time, timedelta
@@ -64,6 +65,11 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
+if sys.version_info >= (3, 10):
+    from typing import Concatenate, ParamSpec
+else:
+    from typing_extensions import Concatenate, ParamSpec
+
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -77,6 +83,9 @@ if TYPE_CHECKING:
         StartBy,
         UniqueKeepStrategy,
     )
+
+    T = TypeVar("T")
+    P = ParamSpec("P")
 
 
 # Used to type any type or subclass of LazyFrame.
@@ -581,7 +590,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             self._ldf.write_json(file)
         return None
 
-    def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    def pipe(
+        self,
+        func: Callable[Concatenate[LazyFrame, P], T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
         """
         Offers a structured way to apply a sequence of user-defined functions (UDFs).
 

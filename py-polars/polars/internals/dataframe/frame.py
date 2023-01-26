@@ -100,9 +100,9 @@ else:
     from typing_extensions import Literal
 
 if sys.version_info >= (3, 10):
-    from typing import TypeAlias
+    from typing import Concatenate, ParamSpec, TypeAlias
 else:
-    from typing_extensions import TypeAlias
+    from typing_extensions import Concatenate, ParamSpec, TypeAlias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -135,6 +135,9 @@ if TYPE_CHECKING:
     MultiColSelector: TypeAlias = (
         "slice | range | list[int] | list[str] | list[bool] | pli.Series"
     )
+
+    T = TypeVar("T")
+    P = ParamSpec("P")
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
@@ -3328,7 +3331,12 @@ class DataFrame:
             subset = [subset]
         return self._from_pydf(self._df.drop_nulls(subset))
 
-    def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    def pipe(
+        self,
+        func: Callable[Concatenate[DataFrame, P], T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
         """
         Offers a structured way to apply a sequence of user-defined functions (UDFs).
 
