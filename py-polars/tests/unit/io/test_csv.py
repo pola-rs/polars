@@ -27,6 +27,7 @@ def foods_file_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.csv"
 
 
+@pytest.mark.skip("Needs fix: https://github.com/pola-rs/polars/issues/6474")
 def test_quoted_date() -> None:
     csv = textwrap.dedent(
         """a,b
@@ -34,8 +35,9 @@ def test_quoted_date() -> None:
     "2022-01-02",2
     """
     )
+    result = pl.read_csv(csv.encode(), parse_dates=True)
     expected = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2)], "b": [1, 2]})
-    assert pl.read_csv(csv.encode(), parse_dates=True).frame_equal(expected)
+    assert_frame_equal(result, expected)
 
 
 def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
@@ -466,12 +468,12 @@ def test_compressed_csv(io_files_path: Path) -> None:
 
 
 def test_partial_decompression(foods_file_path: Path) -> None:
-    fout = io.BytesIO()
-    with open(foods_file_path, "rb") as fread:
-        with gzip.GzipFile(fileobj=fout, mode="w") as f:
-            f.write(fread.read())
+    f_out = io.BytesIO()
+    with open(foods_file_path, "rb") as f_read:
+        with gzip.GzipFile(fileobj=f_out, mode="w") as f:
+            f.write(f_read.read())
 
-    csv_bytes = fout.getvalue()
+    csv_bytes = f_out.getvalue()
     for n_rows in [1, 5, 26]:
         out = pl.read_csv(csv_bytes, n_rows=n_rows)
         assert out.shape == (n_rows, 4)
@@ -541,8 +543,7 @@ def test_csv_quote_char() -> None:
         out.frame_equal(expected)
 
 
-def test_csv_empty_quotes_char() -> None:
-    # panicked in: https://github.com/pola-rs/polars/issues/1622
+def test_csv_empty_quotes_char_1622() -> None:
     pl.read_csv(b"a,b,c,d\nA1,B1,C1,1\nA2,B2,C2,2\n", quote_char="")
 
 

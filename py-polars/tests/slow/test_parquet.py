@@ -1,6 +1,8 @@
 import io
 import sys
+import tempfile
 import typing
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -19,10 +21,12 @@ def test_struct_pyarrow_dataset_5796() -> None:
     df = pl.from_records(
         [dict(id=i, nested=dict(a=i)) for i in range(num_rows)]  # noqa: C408
     )
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "out.parquet"
+        df.write_parquet(file_path, use_pyarrow=True)
+        tbl = ds.dataset(file_path).to_table()
+        result = pl.from_arrow(tbl)
 
-    df.write_parquet("/tmp/out.parquet", use_pyarrow=True)
-    tbl = ds.dataset("/tmp/out.parquet").to_table()
-    result = pl.from_arrow(tbl)
     assert_frame_equal(result, df)
 
 
