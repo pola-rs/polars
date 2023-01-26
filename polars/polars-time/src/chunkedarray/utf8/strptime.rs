@@ -202,37 +202,67 @@ mod test {
                 "2021-01-01",
                 "%Y-%m-%d",
                 10,
-                Some(NaiveDate::from_ymd(2021, 1, 1).and_hms_nano(0, 0, 0, 0)),
+                Some(
+                    NaiveDate::from_ymd_opt(2021, 1, 1)
+                        .unwrap()
+                        .and_hms_nano_opt(0, 0, 0, 0)
+                        .unwrap(),
+                ),
             ),
             (
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
                 19,
-                Some(NaiveDate::from_ymd(2021, 1, 1).and_hms_nano(7, 45, 12, 0)),
+                Some(
+                    NaiveDate::from_ymd_opt(2021, 1, 1)
+                        .unwrap()
+                        .and_hms_nano_opt(7, 45, 12, 0)
+                        .unwrap(),
+                ),
             ),
             (
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
                 19,
-                Some(NaiveDate::from_ymd(2021, 1, 1).and_hms_nano(7, 45, 12, 0)),
+                Some(
+                    NaiveDate::from_ymd_opt(2021, 1, 1)
+                        .unwrap()
+                        .and_hms_nano_opt(7, 45, 12, 0)
+                        .unwrap(),
+                ),
             ),
             (
                 "2019-04-18T02:45:55.555000000",
                 "%Y-%m-%dT%H:%M:%S.%9f",
                 29,
-                Some(NaiveDate::from_ymd(2019, 4, 18).and_hms_nano(2, 45, 55, 555000000)),
+                Some(
+                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                        .unwrap()
+                        .and_hms_nano_opt(2, 45, 55, 555000000)
+                        .unwrap(),
+                ),
             ),
             (
                 "2019-04-18T02:45:55.555000",
                 "%Y-%m-%dT%H:%M:%S.%6f",
                 26,
-                Some(NaiveDate::from_ymd(2019, 4, 18).and_hms_nano(2, 45, 55, 555000000)),
+                Some(
+                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                        .unwrap()
+                        .and_hms_nano_opt(2, 45, 55, 555000000)
+                        .unwrap(),
+                ),
             ),
             (
                 "2019-04-18T02:45:55.555",
                 "%Y-%m-%dT%H:%M:%S.%3f",
                 23,
-                Some(NaiveDate::from_ymd(2019, 4, 18).and_hms_nano(2, 45, 55, 555000000)),
+                Some(
+                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                        .unwrap()
+                        .and_hms_nano_opt(2, 45, 55, 555000000)
+                        .unwrap(),
+                ),
             ),
         ];
 

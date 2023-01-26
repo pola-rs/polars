@@ -464,9 +464,9 @@ mod test {
     fn test_temporal_df_construction() {
         // check if we can construct.
         let _df = df![
-            "date" => [NaiveDate::from_ymd(2021, 1, 1)],
+            "date" => [NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()],
             "datetime" => [NaiveDate::from_ymd_opt(2021, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap()],
-            "optional_date" => [Some(NaiveDate::from_ymd(2021, 1, 1))],
+            "optional_date" => [Some(NaiveDate::from_ymd_opt(2021, 1, 1).unwrap())],
             "optional_datetime" => [Some(NaiveDate::from_ymd_opt(2021, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap())],
             "time" => [NaiveTime::from_hms_opt(23, 23, 23).unwrap()],
             "optional_time" => [Some(NaiveTime::from_hms_opt(23, 23, 23).unwrap())],
