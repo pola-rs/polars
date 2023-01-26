@@ -1177,11 +1177,10 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
-@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_is_between(fruits_cars: pl.DataFrame) -> None:
     result = fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"]
     assert result.series_equal(
-        pl.Series("is_between", [False, False, True, False, False])
+        pl.Series("is_between", [False, True, True, True, False])
     )
 
     result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="none"))[
@@ -1213,7 +1212,6 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
     )
 
 
-@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_is_between_data_types() -> None:
     df = pl.DataFrame(
         {
@@ -1234,7 +1232,7 @@ def test_is_between_data_types() -> None:
         pl.Series("is_between", [True, True, False]),
     )
     assert_series_equal(
-        df.select(pl.col("int").is_between(1.5, 4))[:, 0],
+        df.select(pl.col("int").is_between(1.5, 3))[:, 0],
         pl.Series("is_between", [True, True, False]),
     )
 

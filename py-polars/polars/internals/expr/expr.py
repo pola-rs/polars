@@ -3411,8 +3411,7 @@ class Expr:
         self,
         start: Expr | datetime | date | time | int | float,
         end: Expr | datetime | date | time | int | float,
-        include_bounds: bool | tuple[bool, bool] | None = None,
-        closed: ClosedInterval | None = None,
+        closed: ClosedInterval = "both",
     ) -> Expr:
         """
         Check if this expression is between start and end.
@@ -3423,16 +3422,7 @@ class Expr:
             Lower bound as primitive type or datetime.
         end
             Upper bound as primitive type or datetime.
-        include_bounds
-            This argument is deprecated. Use ``closed`` instead!
-
-            - False:           Exclude both start and end (default).
-            - True:            Include both start and end.
-            - (False, False):  Exclude start and exclude end.
-            - (True, True):    Include start and include end.
-            - (False, True):   Exclude start and include end.
-            - (True, False):   Include start and exclude end.
-        closed : {'none', 'left', 'right', 'both'}
+        closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 
         Returns
@@ -3450,9 +3440,9 @@ class Expr:
         │ i64 ┆ bool       │
         ╞═════╪════════════╡
         │ 1   ┆ false      │
-        │ 2   ┆ false      │
+        │ 2   ┆ true       │
         │ 3   ┆ true       │
-        │ 4   ┆ false      │
+        │ 4   ┆ true       │
         │ 5   ┆ false      │
         └─────┴────────────┘
 
@@ -3473,37 +3463,6 @@ class Expr:
         └─────┴────────────┘
 
         """
-        if include_bounds is not None:
-            warnings.warn(
-                "The `include_bounds` argument will be replaced in a future version."
-                " Use the `closed` argument to silence this warning.",
-                category=DeprecationWarning,
-            )
-            if isinstance(include_bounds, list):
-                include_bounds = tuple(include_bounds)
-
-            if include_bounds is False or include_bounds == (False, False):
-                closed = "none"
-            elif include_bounds is True or include_bounds == (True, True):
-                closed = "both"
-            elif include_bounds == (False, True):
-                closed = "right"
-            elif include_bounds == (True, False):
-                closed = "left"
-            else:
-                raise ValueError(
-                    "include_bounds should be a bool or tuple[bool, bool]."
-                )
-
-        if closed is None:
-            warnings.warn(
-                "Default behaviour will change from excluding both bounds to including"
-                " both bounds. Provide a value for the `closed` argument to silence"
-                " this warning.",
-                category=FutureWarning,
-            )
-            closed = "none"
-
         if closed == "none":
             return ((self > start) & (self < end)).alias("is_between")
         elif closed == "both":
@@ -3515,7 +3474,7 @@ class Expr:
         else:
             raise ValueError(
                 "closed must be one of {'left', 'right', 'both', 'none'},"
-                f" got {closed}"
+                f" got {closed!r}"
             )
 
     def hash(

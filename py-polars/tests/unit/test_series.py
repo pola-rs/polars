@@ -2066,7 +2066,6 @@ def test_to_physical() -> None:
     verify_series_and_expr_api(a, expected, "to_physical")
 
 
-@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_is_between_datetime() -> None:
     s = pl.Series("a", [datetime(2020, 1, 1, 10, 0, 0), datetime(2020, 1, 1, 20, 0, 0)])
     start = datetime(2020, 1, 1, 12, 0, 0)
