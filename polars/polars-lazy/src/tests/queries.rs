@@ -2011,3 +2011,26 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_foo() -> PolarsResult<()> {
+    let q1 = df![
+        "x" => [1]
+    ]?
+    .lazy();
+
+    let q2 = df![
+        "x" => [1],
+        "y" => [1]
+    ]?
+    .lazy();
+
+    let out = q1
+        .clone()
+        .join(q2.clone(), [col("x")], [col("y")], JoinType::Semi)
+        .join(q2.clone(), [col("x")], [col("y")], JoinType::Semi)
+        .select([col("x")])
+        .collect()?;
+    dbg!(out);
+    Ok(())
+}

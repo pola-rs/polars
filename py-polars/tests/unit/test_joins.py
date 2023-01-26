@@ -749,3 +749,24 @@ def test_semi_join_projection_pushdown_6423() -> None:
         .join(df2, left_on="x", right_on="y", how="semi")
         .select(["x"])
     ).collect().to_dict(False) == {"x": [1]}
+
+
+def test_semi_join_projection_pushdown_6455() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 1, 2],
+            "timestamp": [
+                datetime(2022, 12, 11),
+                datetime(2022, 12, 12),
+                datetime(2022, 1, 1),
+            ],
+            "value": [1, 2, 4],
+        }
+    ).lazy()
+
+    latest = df.groupby("id").agg(pl.col("timestamp").max())
+    df = df.join(latest, on=["id", "timestamp"], how="semi")
+    assert df.select(["id", "value"]).collect().to_dict(False) == {
+        "id": [1, 2],
+        "value": [2, 4],
+    }
