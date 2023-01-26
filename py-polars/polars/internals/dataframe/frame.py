@@ -167,6 +167,11 @@ class DataFrame:
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
         If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the schema param will be overridden.
         underlying data, the names given here will overwrite them.
 
         The number of entries in the schema should match the underlying data
@@ -179,9 +184,6 @@ class DataFrame:
     infer_schema_length : int, default None
         Maximum number of rows to read for schema inference; only applies if the input
         data is a sequence or generator of rows; other input is read as-is.
-    schema_overrides : dict, default None
-        Support type specification or override of one or more columns; note that
-        any dtypes inferred from the schema param will be overridden.
 
     Examples
     --------
@@ -314,10 +316,10 @@ class DataFrame:
             | None
         ) = None,
         schema: SchemaDefinition | None = None,
-        orient: Orientation | None = None,
         *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema_overrides: SchemaDict | None = None,
+        orient: Orientation | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ):
         if data is None:
             self._df = dict_to_pydf(
