@@ -603,7 +603,7 @@ mod test {
     }
 
     #[test]
-    fn test_dynamic_groupby_window() -> PolarsResult<()>{
+    fn test_dynamic_groupby_window() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -697,7 +697,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
@@ -736,7 +736,7 @@ mod test {
     }
 
     #[test]
-    fn test_truncate_offset() -> PolarsResult<()>{
+    fn test_truncate_offset() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 3, 1)
             .unwrap()
             .and_hms_opt(12, 0, 0)
