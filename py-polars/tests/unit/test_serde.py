@@ -15,7 +15,7 @@ def test_pickling_simple_expression() -> None:
 
 def test_serde_lazy_frame_lp() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
-    json = lf.write_json(to_string=True)
+    json = lf.write_json()
 
     assert (
         pl.LazyFrame.from_json(json)

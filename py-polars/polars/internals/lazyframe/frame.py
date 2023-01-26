@@ -17,7 +17,6 @@ from typing import (
     TypeVar,
     overload,
 )
-from warnings import warn
 
 from polars import internals as pli
 from polars.cfg import Config
@@ -333,10 +332,7 @@ class LazyFrame:
         return wrap_ldf(PyLazyFrame.read_json(file))
 
     @classmethod
-    def read_json(
-        cls,
-        file: str | Path | IOBase,
-    ) -> LazyFrame:
+    def read_json(cls, file: str | Path | IOBase) -> LazyFrame:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
 
@@ -512,29 +508,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 """  # noqa: E501
 
     @overload
-    def write_json(
-        self,
-        file: None = None,
-        *,
-        to_string: bool | None = ...,
-    ) -> str:
+    def write_json(self, file: None = ...) -> str:
         ...
 
     @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path,
-        *,
-        to_string: bool | None = ...,
-    ) -> None:
+    def write_json(self, file: IOBase | str | Path) -> None:
         ...
 
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = None,
-        *,
-        to_string: bool | None = None,
-    ) -> str | None:
+    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
         """
         Write the logical plan of this LazyFrame to a file or string in JSON format.
 
@@ -543,8 +524,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         file
             File path to which the result should be written. If set to ``None``
             (default), the output is returned as a string instead.
-        to_string
-            Deprecated argument. Ignore file argument and return a string.
 
         See Also
         --------
@@ -562,20 +541,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         '{"DataFrameScan":{"df":{"columns":[{"name":"foo","datatype":"Int64","values":[1,2,3]},{"name":"bar","datatype":"Int64","values":[6,7,8]}]},"schema":{"inner":{"foo":"Int64","bar":"Int64"}},"output_schema":null,"projection":null,"selection":null}}'
 
         """
-        if to_string is not None:
-            warn(
-                "`to_string` argument for `LazyFrame.write_json` will be removed in a"
-                " future version. Remove the argument and set `file=None` (default).",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        else:
-            to_string = False
-
         if isinstance(file, (str, Path)):
             file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
-        if to_string or file is None or to_string_io:
+        if file is None or to_string_io:
             with BytesIO() as buf:
                 self._ldf.write_json(buf)
                 json_bytes = buf.getvalue()

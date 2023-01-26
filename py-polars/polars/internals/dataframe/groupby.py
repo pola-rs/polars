@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from datetime import timedelta
 from typing import TYPE_CHECKING, Callable, Generic, Iterator, Sequence, TypeVar
 
@@ -107,7 +106,7 @@ class GroupBy(Generic[DF]):
         if isinstance(self.by, (str, pli.Expr)):
             self._group_names = iter(group_names.to_series())
         else:
-            self._group_names = group_names.iterrows()
+            self._group_names = group_names.iter_rows()
 
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0

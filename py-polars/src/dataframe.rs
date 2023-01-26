@@ -374,26 +374,16 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(
-        &mut self,
-        py_f: PyObject,
-        pretty: bool,
-        row_oriented: bool,
-        json_lines: bool,
-    ) -> PyResult<()> {
+    pub fn write_json(&mut self, py_f: PyObject, pretty: bool, row_oriented: bool) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
-        let r = match (pretty, row_oriented, json_lines) {
-            (_, true, true) => panic!("{}", "only one of {row_oriented, json_lines} should be set"),
-            (_, _, true) => JsonWriter::new(file)
-                .with_json_format(JsonFormat::JsonLines)
-                .finish(&mut self.df),
-            (_, true, false) => JsonWriter::new(file)
+        let r = match (pretty, row_oriented) {
+            (_, true) => JsonWriter::new(file)
                 .with_json_format(JsonFormat::Json)
                 .finish(&mut self.df),
-            (true, _, _) => serde_json::to_writer_pretty(file, &self.df)
+            (true, _) => serde_json::to_writer_pretty(file, &self.df)
                 .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
-            (false, _, _) => serde_json::to_writer(file, &self.df)
+            (false, _) => serde_json::to_writer(file, &self.df)
                 .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
         };
         r.map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
