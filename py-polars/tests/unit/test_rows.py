@@ -12,21 +12,17 @@ def test_row_tuple() -> None:
     assert df.row(1) == ("bar", 2, 2.0)
     assert df.row(-1) == ("2", 3, 3.0)
 
-    # return row by index as namedtuple
+    # return named row by index
     row = df.row(0, named=True)
-    assert row.a == "foo"
-    assert row.b == 1
-    assert row.c == 1.0
+    assert row == {"a": "foo", "b": 1, "c": 1.0}
 
     # return row by predicate
     assert df.row(by_predicate=pl.col("a") == "bar") == ("bar", 2, 2.0)
     assert df.row(by_predicate=pl.col("b").is_in([2, 4, 6])) == ("bar", 2, 2.0)
 
-    # return row by predicate as namedtuple
+    # return named row by predicate
     row = df.row(by_predicate=pl.col("a") == "bar", named=True)
-    assert row.a == "bar"
-    assert row.b == 2
-    assert row.c == 2.0
+    assert row == {"a": "bar", "b": 2, "c": 2.0}
 
     # expected error conditions
     with pytest.raises(TooManyRowsReturned):
@@ -61,8 +57,7 @@ def test_rows() -> None:
 
     # Named rows
     rows = df.rows(named=True)
-    assert [row.a for row in rows] == [1, 2]
-    assert [row.b for row in rows] == [1, 2]
+    assert rows == [{"a": 1, "b": 1}, {"a": 2, "b": 2}]
 
 
 def test_iterrows() -> None:
@@ -87,18 +82,15 @@ def test_iterrows() -> None:
         with pytest.raises(StopIteration):
             next(it)
 
-        # Return rows as namedtuples
+        # Return named rows
         it_named = df.iter_rows(named=True, buffer_size=sz)
 
         row = next(it_named)
-        assert row.a == 1
-        assert row.b is None
+        assert row == {"a": 1, "b": None}
         row = next(it_named)
-        assert row.a == 2
-        assert row.b is False
+        assert row == {"a": 2, "b": False}
         row = next(it_named)
-        assert row.a == 3
-        assert row.b is None
+        assert row == {"a": 3, "b": None}
 
         with pytest.raises(StopIteration):
             next(it_named)

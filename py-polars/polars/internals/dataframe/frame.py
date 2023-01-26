@@ -7,7 +7,6 @@ import random
 import sys
 import typing
 import warnings
-from collections import namedtuple
 from collections.abc import Sized
 from datetime import timedelta
 from io import BytesIO, IOBase, StringIO
@@ -6553,8 +6552,8 @@ class DataFrame:
         index: int | None = ...,
         *,
         by_predicate: pli.Expr | None = ...,
-        named: Literal[True] = ...,
-    ) -> Any:
+        named: Literal[True],
+    ) -> dict[str, Any]:
         ...
 
     def row(
@@ -6563,9 +6562,9 @@ class DataFrame:
         *,
         by_predicate: pli.Expr | None = None,
         named: bool = False,
-    ) -> tuple[Any, ...] | Any:
+    ) -> tuple[Any, ...] | dict[str, Any]:
         """
-        Get a single row as a tuple, either by index or by predicate.
+        Get the values of a single row, either by index or by predicate.
 
         Parameters
         ----------
@@ -6574,8 +6573,13 @@ class DataFrame:
         by_predicate
             Select the row according to a given expression/predicate.
         named
-            Return a named tuple instead of a regular tuple. This is more expensive than
-            returning a regular tuple, but allows for accessing values by column name.
+            Return a dictionary instead of a tuple. The dictionary is a mapping of
+            column name to row value. This is more expensive than returning a regular
+            tuple, but allows for accessing values by column name.
+
+        Returns
+        -------
+        Tuple (default) or dictionary of row values.
 
         Notes
         -----
@@ -6605,10 +6609,11 @@ class DataFrame:
         >>> df.row(2)
         (3, 8, 'c')
 
-        Specify ``named=True`` to get a named tuple.
+        Specify ``named=True`` to get a dictionary instead with a mapping of column
+        names to row values.
 
         >>> df.row(2, named=True)
-        Row(foo=3, bar=8, ham='c')
+        {'foo': 3, 'bar': 8, 'ham': 'c'}
 
         Use ``by_predicate`` to return the row that matches the given predicate.
 
@@ -6628,19 +6633,10 @@ class DataFrame:
         elif isinstance(index, pli.Expr):
             raise TypeError("Expressions should be passed to the 'by_predicate' param")
 
-        if named:
-            warnings.warn(
-                "Named rows will be changed from a namedtuple to a dictionary in the"
-                " next breaking release.",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
-
         if index is not None:
             row = self._df.row_tuple(index)
             if named:
-                return Row(*row)
+                return dict(zip(self.columns, row))
             else:
                 return row
 
@@ -6661,7 +6657,7 @@ class DataFrame:
 
             row = rows[0]
             if named:
-                return Row(*row)
+                return dict(zip(self.columns, row))
             else:
                 return row
         else:
@@ -6672,18 +6668,23 @@ class DataFrame:
         ...
 
     @overload
-    def rows(self, named: Literal[True] = ...) -> list[Any]:
+    def rows(self, named: Literal[True]) -> list[dict[str, Any]]:
         ...
 
-    def rows(self, named: bool = False) -> list[tuple[Any, ...]] | list[Any]:
+    def rows(self, named: bool = False) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
         """
-        Returns the rows of this DataFrame as a list of Python tuples.
+        Returns all data in the DataFrame as a list of rows.
 
         Parameters
         ----------
         named
-            Return named tuples instead of regular tuples. This is more expensive than
-            returning regular tuples, but allows for accessing values by column name.
+            Return dictionaries instead of tuples. The dictionaries are a mapping of
+            column name to row value. This is more expensive than returning a regular
+            tuple, but allows for accessing values by column name.
+
+        Returns
+        -------
+        A list of tuples (default) or dictionaries of row values.
 
         Warnings
         --------
@@ -6701,7 +6702,7 @@ class DataFrame:
         >>> df.rows()
         [(1, 2), (3, 4), (5, 6)]
         >>> df.rows(named=True)
-        [Row(a=1, b=2), Row(a=3, b=4), Row(a=5, b=6)]
+        [{'a': 1, 'b': 2}, {'a': 3, 'b': 4}, {'a': 5, 'b': 6}]
 
         See Also
         --------
@@ -6709,14 +6710,9 @@ class DataFrame:
 
         """
         if named:
-            warnings.warn(
-                "Named rows will be changed from a namedtuple to a dictionary in the"
-                " next breaking release.",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
-            return [Row(*row) for row in self._df.row_tuples()]
+            # Load these into the local namespace for a minor performance boost
+            dict_, zip_, columns = dict, zip, self.columns
+            return [dict_(zip_(columns, row)) for row in self._df.row_tuples()]
         else:
             return self._df.row_tuples()
 
@@ -6728,22 +6724,22 @@ class DataFrame:
 
     @overload
     def iter_rows(
-        self, named: Literal[True] = ..., buffer_size: int = ...
-    ) -> Iterator[Any]:
+        self, named: Literal[True], buffer_size: int = ...
+    ) -> Iterator[dict[str, Any]]:
         ...
 
     def iter_rows(
         self, named: bool = False, buffer_size: int = 500
-    ) -> Iterator[tuple[Any, ...]] | Iterator[Any]:
+    ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]]:
         """
-        Returns an iterator over the rows in the DataFrame.
+        Returns an iterator over the rows of the DataFrame.
 
         Parameters
         ----------
         named
-            Return named tuples instead of regular tuples. This is more expensive than
-            returning regular tuples, but allows for accessing values by column name.
-
+            Return dictionaries instead of tuples. The dictionaries are a mapping of
+            column name to row value. This is more expensive than returning a regular
+            tuple, but allows for accessing values by column name.
         buffer_size
             Determines the number of rows that are buffered internally while iterating
             over the data; you should only modify this in very specific cases where the
@@ -6751,9 +6747,13 @@ class DataFrame:
             the speedup from using the buffer is significant (~2-4x). Setting this
             value to zero disables row buffering.
 
+        Returns
+        -------
+        An iterator of tuples (default) or dictionaries of row values.
+
         Warnings
         --------
-        Row-iteration is not optimal as the underlying data is stored in columnar form;
+        Row iteration is not optimal as the underlying data is stored in columnar form;
         where possible, prefer export via one of the dedicated export/output methods.
 
         Notes
@@ -6771,7 +6771,7 @@ class DataFrame:
         ... )
         >>> [row[0] for row in df.iter_rows()]
         [1, 3, 5]
-        >>> [row.b for row in df.iter_rows(named=True)]
+        >>> [row["b"] for row in df.iter_rows(named=True)]
         [2, 4, 6]
 
         See Also
@@ -6781,26 +6781,22 @@ class DataFrame:
         """
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
-        if named:
-            warnings.warn(
-                "Named rows will be changed from a namedtuple to a dictionary in the"
-                " next breaking release.",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
         if buffer_size:
             for offset in range(0, self.height, buffer_size):
                 rows_chunk = self.slice(offset, buffer_size).rows(named=False)
                 if named:
+                    # Load these into the local namespace for a minor performance boost
+                    dict_, zip_, columns = dict, zip, self.columns
                     for row in rows_chunk:
-                        yield Row(*row)
+                        yield dict_(zip_(columns, row))
                 else:
                     yield from rows_chunk
 
         elif named:
+            # Load these into the local namespace for a minor performance boost
+            dict_, zip_, columns = dict, zip, self.columns
             for i in range(self.height):
-                yield Row(*self.row(i))
+                yield dict_(zip_(columns, self.row(i)))
         else:
             for i in range(self.height):
                 yield self.row(i)
