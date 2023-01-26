@@ -2051,6 +2051,19 @@ def test_with_time_zone_none() -> None:
     assert result.item() == datetime(2001, 1, 1, 0, 0)
 
 
+def test_with_time_zone_invalid() -> None:
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):
+        ts.dt.with_time_zone("foo")
+
+
+def test_with_time_zone_fixed_offset() -> None:
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    result = ts.dt.with_time_zone("+00:00")
+    assert result.dtype == pl.Datetime("us", "+00:00")
+    assert result.item() == datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+
 def test_tz_aware_get_idx_5010() -> None:
     when = int(
         datetime(2022, 1, 1, 12, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai")).timestamp()

@@ -508,8 +508,8 @@ fn py_date_range(
     name: &str,
     tu: Wrap<TimeUnit>,
     tz: Option<TimeZone>,
-) -> PySeries {
-    polars::time::date_range_impl(
+) -> PyResult<PySeries> {
+    let date_range = polars::time::date_range_impl(
         name,
         start,
         stop,
@@ -518,8 +518,8 @@ fn py_date_range(
         tu.0,
         tz.as_ref(),
     )
-    .into_series()
-    .into()
+    .map_err(PyPolarsErr::from)?;
+    Ok(date_range.into_series().into())
 }
 
 #[pyfunction]
