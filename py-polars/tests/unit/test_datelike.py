@@ -2053,7 +2053,7 @@ def test_with_time_zone_none() -> None:
 
 def test_with_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(PanicException, match="time zone foo not supported"):
+    with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):
         ts.dt.with_time_zone("foo")
 
 
