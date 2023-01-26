@@ -300,7 +300,7 @@ class GroupBy(Generic[DF]):
         df = (
             pli.wrap_df(self._df)
             .lazy()
-            .groupby(self.by, self.maintain_order)
+            .groupby(self.by, maintain_order=self.maintain_order)
             .head(n)
             .collect(no_optimization=True)
         )
@@ -355,7 +355,7 @@ class GroupBy(Generic[DF]):
         df = (
             pli.wrap_df(self._df)
             .lazy()
-            .groupby(self.by, self.maintain_order)
+            .groupby(self.by, maintain_order=self.maintain_order)
             .tail(n)
             .collect(no_optimization=True)
         )

@@ -3437,6 +3437,7 @@ class DataFrame:
     def groupby(
         self: DF,
         by: str | pli.Expr | Sequence[str | pli.Expr],
+        *,
         maintain_order: bool = False,
     ) -> GroupBy[DF]:
         """

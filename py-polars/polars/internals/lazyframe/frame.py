@@ -1684,6 +1684,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def groupby(
         self: LDF,
         by: str | pli.Expr | Sequence[str | pli.Expr],
+        *,
         maintain_order: bool = False,
     ) -> LazyGroupBy[LDF]:
         """
