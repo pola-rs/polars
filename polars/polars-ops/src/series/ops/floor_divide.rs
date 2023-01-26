@@ -5,6 +5,7 @@ use polars_arrow::utils::combine_validities;
 use polars_core::datatypes::PolarsNumericType;
 use polars_core::export::num;
 use polars_core::prelude::*;
+#[cfg(feature = "dtype-struct")]
 use polars_core::series::arithmetic::_struct_arithmetic;
 use polars_core::utils::align_chunks_binary;
 use polars_core::with_match_physical_numeric_polars_type;
