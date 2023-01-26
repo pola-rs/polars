@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -144,7 +145,9 @@ def test_row_count_schema(parquet_file_path: Path) -> None:
 def test_parquet_statistics(
     capfd: CaptureFixture[str], monkeypatch: MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    # not sure if monkeypatch will be visible in rust
+    env = "POLARS_FORCE_OOC_SORT"
+    os.environ[env] = "1"
 
     df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_columns(
         (pl.col("idx") // 25).alias("part")
@@ -175,6 +178,7 @@ def test_parquet_statistics(
         "parquet file can be skipped, the statistics were sufficient"
         " to apply the predicate." in captured
     )
+    os.unsetenv(env)
 
 
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
