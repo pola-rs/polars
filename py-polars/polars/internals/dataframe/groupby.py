@@ -795,7 +795,7 @@ class RollingGroupBy(Generic[DF]):
         if self.by is None:
             self._group_names = iter(group_names.to_series())
         else:
-            self._group_names = group_names.iterrows()
+            self._group_names = group_names.iter_rows()
 
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
@@ -891,7 +891,7 @@ class DynamicGroupBy(Generic[DF]):
         if self.by is None:
             self._group_names = iter(group_names.to_series())
         else:
-            self._group_names = group_names.iterrows()
+            self._group_names = group_names.iter_rows()
 
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
