@@ -2946,6 +2946,7 @@ class DataFrame:
     def sort(
         self: DF,
         by: str | pli.Expr | Sequence[str] | Sequence[pli.Expr],
+        *,
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
     ) -> DF | DataFrame:
@@ -3002,7 +3003,11 @@ class DataFrame:
 
         """
         if not isinstance(by, str) and isinstance(by, (Sequence, pli.Expr)):
-            df = self.lazy().sort(by, reverse, nulls_last).collect(no_optimization=True)
+            df = (
+                self.lazy()
+                .sort(by, reverse=reverse, nulls_last=nulls_last)
+                .collect(no_optimization=True)
+            )
             return df
         return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 

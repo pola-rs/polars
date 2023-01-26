@@ -293,7 +293,7 @@ def test_invalid_sort_by() -> None:
         pl.ComputeError,
         match="The sortby operation produced a different length than the Series that has to be sorted.",  # noqa: E501
     ):
-        df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", True))
+        df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", reverse=True))
 
 
 def test_epoch_time_type() -> None:
