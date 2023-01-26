@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import os
+import tempfile
 import typing
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -70,29 +72,32 @@ def test_to_from_buffer(
         assert_frame_equal_local_categoricals(df, read_df)
 
 
-def test_to_from_file(
-    io_test_dir: str, df: pl.DataFrame, compressions: list[ParquetCompression]
-) -> None:
-    f = os.path.join(io_test_dir, "small.parquet")
-    for compression in compressions:
-        if compression == "lzo":
-            # Writing lzo compressed parquet files is not supported for now.
-            with pytest.raises(pl.ArrowError):
-                df.write_parquet(f, compression=compression, use_pyarrow=False)
-            # Invalid parquet file as writing failed.
-            with pytest.raises(pl.ArrowError):
-                _ = pl.read_parquet(f)
+@pytest.mark.parametrize("compression", [c for c in COMPRESSIONS if c != "lzo"])
+def test_to_from_file(df: pl.DataFrame, compression: ParquetCompression) -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "small.avro"
+        df.write_parquet(file_path, compression=compression)
+        read_df = pl.read_parquet(file_path)
+        assert_frame_equal_local_categoricals(df, read_df)
 
-            # Writing lzo compressed parquet files is not supported for now.
-            with pytest.raises(OSError):
-                df.write_parquet(f, compression=compression, use_pyarrow=True)
-            # Invalid parquet file as writing failed.
-            with pytest.raises(FileNotFoundError):
-                _ = pl.read_parquet(f)
-        else:
-            df.write_parquet(f, compression=compression)
-            read_df = pl.read_parquet(f)
-            assert_frame_equal_local_categoricals(df, read_df)
+
+def test_to_from_file_lzo(df: pl.DataFrame) -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "small.avro"
+
+        # Writing lzo compressed parquet files is not supported for now.
+        with pytest.raises(pl.ArrowError):
+            df.write_parquet(file_path, compression="lzo", use_pyarrow=False)
+        # Invalid parquet file as writing failed.
+        with pytest.raises(pl.ArrowError):
+            _ = pl.read_parquet(file_path)
+
+        # Writing lzo compressed parquet files is not supported for now.
+        with pytest.raises(OSError):
+            df.write_parquet(file_path, compression="lzo", use_pyarrow=True)
+        # Invalid parquet file as writing failed.
+        with pytest.raises(FileNotFoundError):
+            _ = pl.read_parquet(file_path)
 
 
 def test_select_columns() -> None:
@@ -350,9 +355,7 @@ def test_parquet_nesting_structs_list() -> None:
 def test_parquet_nested_dictionaries_6217() -> None:
     _type = pa.dictionary(pa.int64(), pa.string())
 
-    fields = [
-        ("a_type", _type),
-    ]
+    fields = [("a_type", _type)]
     struct_type = pa.struct(fields)
 
     col1 = pa.StructArray.from_arrays(

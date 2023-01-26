@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
-import os
+import tempfile
 import textwrap
 import zlib
 from datetime import date, datetime, time
@@ -19,6 +19,11 @@ from polars.testing import (
     assert_series_equal,
 )
 from polars.utils import normalise_filepath
+
+
+@pytest.fixture()
+def foods_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "foods1.csv"
 
 
 def test_quoted_date() -> None:
@@ -47,22 +52,27 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
         assert_frame_equal_local_categoricals(df.select(["time", "cat"]), read_df)
 
 
-def test_to_from_file(io_test_dir: str, df_no_lists: pl.DataFrame) -> None:
-    df = df_no_lists
-    df = df.drop("strings_nulls")
+def test_to_from_file(df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists.drop("strings_nulls")
 
-    f = os.path.join(io_test_dir, "small.csv")
-    df.write_csv(f)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "small.csv"
+        df.write_csv(file_path)
+        read_df = pl.read_csv(file_path, parse_dates=True)
 
-    read_df = pl.read_csv(f, parse_dates=True)
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
     assert_frame_equal_local_categoricals(df, read_df)
-    with pytest.raises(IsADirectoryError):
-        normalise_filepath(io_test_dir)
 
-    assert normalise_filepath(io_test_dir, check_not_directory=False) == io_test_dir
+
+def test_normalise_filepath(io_files_path: Path) -> None:
+    with pytest.raises(IsADirectoryError):
+        normalise_filepath(io_files_path)
+
+    assert normalise_filepath(str(io_files_path), check_not_directory=False) == str(
+        io_files_path
+    )
 
 
 def test_read_web_file() -> None:
@@ -353,25 +363,24 @@ def test_read_csv_encoding() -> None:
         b"-20,7.91,3384,4,\xac\xfc\xb0\xea\n"
     )
 
-    file_path = os.path.join(os.path.dirname(__file__), "encoding.csv")
-    file_str = str(file_path)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "encoding.csv"
+        with open(file_path, "wb") as f:
+            f.write(bts)
 
-    with open(file_path, "wb") as f:
-        f.write(bts)
+        file_str = str(file_path)
+        bytesio = io.BytesIO(bts)
 
-    bytesio = io.BytesIO(bts)
-
-    for use_pyarrow in (False, True):
-        for file in (file_path, file_str, bts, bytesio):
-            print(type(file))
-            assert_series_equal(
-                pl.read_csv(
-                    file,  # type: ignore[arg-type]
-                    encoding="big5",
-                    use_pyarrow=use_pyarrow,
-                ).get_column("Region"),
-                pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
-            )
+        for use_pyarrow in (False, True):
+            for file in [file_path, file_str, bts, bytesio]:
+                assert_series_equal(
+                    pl.read_csv(
+                        file,  # type: ignore[arg-type]
+                        encoding="big5",
+                        use_pyarrow=use_pyarrow,
+                    ).get_column("Region"),
+                    pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
+                )
 
 
 def test_column_rename_and_dtype_overwrite() -> None:
@@ -461,9 +470,9 @@ def test_compressed_csv(io_files_path: Path) -> None:
     assert out2.frame_equal(expected)
 
 
-def test_partial_decompression(foods_csv: str) -> None:
+def test_partial_decompression(foods_file_path: Path) -> None:
     fout = io.BytesIO()
-    with open(foods_csv, "rb") as fread:
+    with open(foods_file_path, "rb") as fread:
         with gzip.GzipFile(fileobj=fout, mode="w") as f:
             f.write(fread.read())
 
@@ -592,13 +601,8 @@ def test_csv_date_handling() -> None:
     assert out.frame_equal(expected, null_equal=True)
 
 
-def test_csv_globbing(examples_dir: str) -> None:
-    path = os.path.abspath(
-        os.path.join(
-            examples_dir,
-            "*.csv",
-        )
-    )
+def test_csv_globbing(io_files_path: Path) -> None:
+    path = io_files_path / "foods*.csv"
     df = pl.read_csv(path)
     assert df.shape == (135, 4)
 
@@ -624,7 +628,7 @@ def test_csv_globbing(examples_dir: str) -> None:
     assert df.dtypes == list(dtypes.values())
 
 
-def test_csv_schema_offset(foods_csv: str) -> None:
+def test_csv_schema_offset(foods_file_path: Path) -> None:
     csv = textwrap.dedent(
         """\
         metadata
@@ -647,12 +651,12 @@ def test_csv_schema_offset(foods_csv: str) -> None:
     assert df.shape == (3, 3)
     assert df.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
 
-    df = pl.scan_csv(foods_csv, skip_rows=4).collect()
+    df = pl.scan_csv(foods_file_path, skip_rows=4).collect()
     assert df.columns == ["fruit", "60", "0", "11"]
     assert df.shape == (23, 4)
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float64, pl.Int64]
 
-    df = pl.scan_csv(foods_csv, skip_rows_after_header=24).collect()
+    df = pl.scan_csv(foods_file_path, skip_rows_after_header=24).collect()
     assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
     assert df.shape == (3, 4)
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64, pl.Int64]
@@ -735,10 +739,15 @@ def test_csv_string_escaping() -> None:
     assert df_read.frame_equal(df)
 
 
-def test_glob_csv(io_test_dir: str) -> None:
-    path = os.path.join(io_test_dir, "small*.csv")
-    assert pl.scan_csv(path).collect().shape == (3, 11)
-    assert pl.read_csv(path).shape == (3, 11)
+def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists.drop("strings_nulls")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "small.csv"
+        df.write_csv(file_path)
+
+        path_glob = Path(temp_dir) / "small*.csv"
+        assert pl.scan_csv(path_glob).collect().shape == (3, 11)
+        assert pl.read_csv(path_glob).shape == (3, 11)
 
 
 def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
@@ -997,8 +1006,8 @@ def test_csv_categorical_categorical_merge() -> None:
     ].to_list() == ["A", "B"]
 
 
-def test_batched_csv_reader(foods_csv: str) -> None:
-    reader = pl.read_csv_batched(foods_csv, batch_size=4)
+def test_batched_csv_reader(foods_file_path: Path) -> None:
+    reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     batches = reader.next_batches(5)
 
     assert batches is not None
@@ -1017,10 +1026,12 @@ def test_batched_csv_reader(foods_csv: str) -> None:
     }
 
 
-def test_batched_csv_reader_all_batches(foods_csv: str) -> None:
+def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
     for new_columns in [None, ["Category", "Calories", "Fats_g", "Augars_g"]]:
-        out = pl.read_csv(foods_csv, new_columns=new_columns)
-        reader = pl.read_csv_batched(foods_csv, new_columns=new_columns, batch_size=4)
+        out = pl.read_csv(foods_file_path, new_columns=new_columns)
+        reader = pl.read_csv_batched(
+            foods_file_path, new_columns=new_columns, batch_size=4
+        )
         batches = reader.next_batches(5)
         batched_dfs = []
 
@@ -1032,8 +1043,8 @@ def test_batched_csv_reader_all_batches(foods_csv: str) -> None:
         assert_frame_equal(out, batched_concat_df)
 
 
-def test_batched_csv_reader_no_batches(foods_csv: str) -> None:
-    reader = pl.read_csv_batched(foods_csv, batch_size=4)
+def test_batched_csv_reader_no_batches(foods_file_path: Path) -> None:
+    reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     batches = reader.next_batches(0)
 
     assert batches is None
