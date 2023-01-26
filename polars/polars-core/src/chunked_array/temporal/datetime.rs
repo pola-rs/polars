@@ -11,8 +11,6 @@ use super::*;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
 
-
-
 // fn check_already_present(&self, name: &str) -> PolarsResult<()> {
 //     if self.columns.iter().any(|s| s.name() == name) {
 //         Err(PolarsError::Duplicate(
@@ -23,32 +21,33 @@ use crate::prelude::*;
 //     }
 // }
 
-
 #[cfg(feature = "timezones")]
-fn validate_time_zone(tz: TimeZone) -> PolarsResult<()>{
+fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
     use arrow::temporal_conversions::parse_offset;
     use chrono_tz::Tz;
     match parse_offset(&tz) {
         Ok(_) => Ok(()),
         Err(_) => match tz.parse::<Tz>() {
             Ok(_) => Ok(()),
-            Err(_) => Err(PolarsError::ComputeError(format!("Could not parse timezone: '{tz}'").into())),
+            Err(_) => Err(PolarsError::ComputeError(
+                format!("Could not parse timezone: '{tz}'").into(),
+            )),
         },
     }
 }
-    // pub fn frame_equal_schema(&self, other: &DataFrame) -> PolarsResult<()> {
-    //     for (lhs, rhs) in self.iter().zip(other.iter()) {
-    //         if lhs.name() != rhs.name() {
-    //             return Err(PolarsError::SchemaMisMatch(format!("Name of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.name(), rhs.name()).into()));
-    //         }
-    //         if lhs.dtype() != rhs.dtype() {
-    //             return Err(PolarsError::SchemaMisMatch(
-    //                 format!("Dtype of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.dtype(), rhs.dtype()).into())
-    //             );
-    //         }
-    //     }
-    //     Ok(())
-    // }
+// pub fn frame_equal_schema(&self, other: &DataFrame) -> PolarsResult<()> {
+//     for (lhs, rhs) in self.iter().zip(other.iter()) {
+//         if lhs.name() != rhs.name() {
+//             return Err(PolarsError::SchemaMisMatch(format!("Name of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.name(), rhs.name()).into()));
+//         }
+//         if lhs.dtype() != rhs.dtype() {
+//             return Err(PolarsError::SchemaMisMatch(
+//                 format!("Dtype of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.dtype(), rhs.dtype()).into())
+//             );
+//         }
+//     }
+//     Ok(())
+// }
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(
@@ -248,7 +247,7 @@ impl DatetimeChunked {
     }
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
-    pub fn set_time_zone(&mut self, tz: Option<TimeZone>) -> PolarsResult<()>{
+    pub fn set_time_zone(&mut self, tz: Option<TimeZone>) -> PolarsResult<()> {
         #[cfg(feature = "timezones")]
         if tz.is_some() {
             validate_time_zone(tz.as_ref().unwrap().to_string())?;

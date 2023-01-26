@@ -4,7 +4,6 @@
 extern crate core;
 extern crate polars;
 
-
 #[cfg(feature = "build_info")]
 #[macro_use]
 extern crate pyo3_built;
@@ -518,7 +517,8 @@ fn py_date_range(
         closed.0,
         tu.0,
         tz.as_ref(),
-    ).map_err(PyPolarsErr::from)?;
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(date_range.into_series().into())
 }
 

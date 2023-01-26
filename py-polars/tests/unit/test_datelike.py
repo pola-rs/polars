@@ -10,7 +10,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from polars.exceptions import ComputeError, PanicException
+from polars.exceptions import ComputeError
 
 if sys.version_info >= (3, 9):
     import zoneinfo
