@@ -58,6 +58,7 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
 }
 
 pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
+    use DataType::*;
     match op {
         Operator::Gt => ChunkCompare::<&Series>::gt(left, right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::<&Series>::gt_eq(left, right).map(|ca| ca.into_series()),
@@ -72,16 +73,19 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
         Operator::TrueDivide => match left.dtype() {
-            DataType::Date | DataType::Datetime(_, _) | DataType::Float32 | DataType::Float64 => {
-                Ok(left / right)
-            }
-            _ => Ok(&left.cast(&DataType::Float64)? / &right.cast(&DataType::Float64)?),
+            Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
+            _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
         },
-        Operator::FloorDivide => match left.dtype() {
+        Operator::FloorDivide => {
             #[cfg(feature = "round_series")]
-            DataType::Float32 | DataType::Float64 => (left / right).floor(),
-            _ => Ok(left / right),
-        },
+            {
+                floor_div_series(left, right)
+            }
+            #[cfg(not(feature = "round_series"))]
+            {
+                panic!("activate 'round_series' feature")
+            }
+        }
         Operator::And => left.bitand(right),
         Operator::Or => left.bitor(right),
         Operator::Xor => left.bitxor(right),

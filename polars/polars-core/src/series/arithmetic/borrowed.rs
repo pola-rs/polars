@@ -379,7 +379,7 @@ fn coerce_time_units<'a>(
 }
 
 #[cfg(feature = "dtype-struct")]
-fn struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
+pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
     s: &Series,
     rhs: &Series,
     mut func: F,
@@ -416,7 +416,7 @@ impl ops::Sub for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.sub(b))
+                _struct_arithmetic(self, rhs, |a, b| a.sub(b))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
@@ -431,7 +431,7 @@ impl Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                Ok(struct_arithmetic(self, rhs, |a, b| a.add(b)))
+                Ok(_struct_arithmetic(self, rhs, |a, b| a.add(b)))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -460,7 +460,7 @@ impl ops::Mul for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.mul(b))
+                _struct_arithmetic(self, rhs, |a, b| a.mul(b))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
@@ -482,7 +482,7 @@ impl ops::Div for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.div(b))
+                _struct_arithmetic(self, rhs, |a, b| a.div(b))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
@@ -504,7 +504,7 @@ impl ops::Rem for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.rem(b))
+                _struct_arithmetic(self, rhs, |a, b| a.rem(b))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
