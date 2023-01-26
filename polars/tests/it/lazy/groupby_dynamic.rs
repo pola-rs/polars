@@ -29,7 +29,7 @@ fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
         None,
-    )
+    )?
     .into_series();
 
     let a = Int32Chunked::full("a", 1, range.len());
