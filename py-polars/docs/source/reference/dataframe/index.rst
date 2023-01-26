@@ -16,7 +16,6 @@ This page gives an overview of all public DataFrame methods.
    groupby
    modify_select
    miscellaneous
-   pivot
 
 .. currentmodule:: polars
 

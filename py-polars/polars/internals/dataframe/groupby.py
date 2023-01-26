@@ -5,7 +5,6 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Callable, Generic, Iterator, Sequence, TypeVar
 
 import polars.internals as pli
-from polars.internals.dataframe.pivot import PivotOps
 from polars.utils import _timedelta_to_pl_duration, is_str_sequence
 
 if TYPE_CHECKING:
@@ -360,71 +359,6 @@ class GroupBy(Generic[DF]):
             .collect(no_optimization=True)
         )
         return self._dataframe_class._from_pydf(df._df)
-
-    def pivot(
-        self, pivot_column: str | list[str], values_column: str | list[str]
-    ) -> PivotOps[DF]:
-        """
-        Do a pivot operation.
-
-        The pivot operation is based on the group key, a pivot column and an aggregation
-        function on the values column.
-
-        .. deprecated:: 0.13.23
-            `DataFrame.groupby.pivot` will be removed in favour of `DataFrame.pivot`.
-
-        Parameters
-        ----------
-        pivot_column
-            Column to pivot.
-        values_column
-            Column that will be aggregated.
-
-        Notes
-        -----
-        Polars'/arrow memory is not ideal for transposing operations like pivots.
-        If you have a relatively large table, consider using a groupby over a pivot.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": ["one", "one", "one", "two", "two", "two"],
-        ...         "bar": ["A", "B", "C", "A", "B", "C"],
-        ...         "baz": [1, 2, 3, 4, 5, 6],
-        ...     }
-        ... )
-        >>> df.groupby("foo", maintain_order=True).pivot(  # doctest: +SKIP
-        ...     pivot_column="bar", values_column="baz"
-        ... ).first()
-        shape: (2, 4)
-        ┌─────┬─────┬─────┬─────┐
-        │ foo ┆ A   ┆ B   ┆ C   │
-        │ --- ┆ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╡
-        │ one ┆ 1   ┆ 2   ┆ 3   │
-        │ two ┆ 4   ┆ 5   ┆ 6   │
-        └─────┴─────┴─────┴─────┘
-
-        """
-        warnings.warn(
-            "`DataFrame.groupby.pivot` is deprecated and will be removed in a future"
-            " version. Use `DataFrame.pivot` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if isinstance(pivot_column, str):
-            pivot_column = [pivot_column]
-        if isinstance(values_column, str):
-            values_column = [values_column]
-        return PivotOps(
-            self._df,
-            self.by,  # type: ignore[arg-type]
-            pivot_column,
-            values_column,
-            dataframe_class=self._dataframe_class,
-        )
 
     def first(self) -> pli.DataFrame:
         """
