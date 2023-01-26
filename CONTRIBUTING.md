@@ -9,6 +9,7 @@ If you're unclear on how to proceed after reading this guide, please contact us 
 - [Suggesting enhancements](#suggesting-enhancements)
 - [Contributing to the codebase](#contributing-to-the-codebase)
 - [Contributing to documentation](#contributing-to-documentation)
+- [Release flow](#release-flow)
 - [License](#license)
 
 ## Reporting bugs
@@ -101,10 +102,8 @@ Note that we do not actually use the [pre-commit](https://pre-commit.com/) tool.
 We use the Makefile to conveniently run the following formatting and linting tools:
 
 - [black](https://black.readthedocs.io/) and [blackdoc](https://github.com/keewis/blackdoc)
-- [isort](https://pycqa.github.io/isort/)
+- [ruff](https://github.com/charliermarsh/ruff)
 - [mypy](http://mypy-lang.org/)
-- [flake8](https://flake8.pycqa.org/)
-- [pyupgrade](https://github.com/asottile/pyupgrade)
 - [rustfmt](https://github.com/rust-lang/rustfmt)
 - [clippy](https://doc.rust-lang.org/nightly/clippy/index.html)
 - [dprint](https://dprint.dev/)
@@ -197,6 +196,10 @@ There is a separate tag for each language:
 
 Contributions in the form of well-formulated questions or answers are always welcome!
 If you add a new question, please notify us by adding a [matching issue](https://github.com/pola-rs/polars/issues/new?&labels=question&template=question.yml) to our GitHub issue tracker.
+
+## Release flow
+
+...
 
 ## License
 
