@@ -1,4 +1,20 @@
+import os
+from pathlib import Path
+
+import pytest
+
 import polars as pl
+
+
+# TODO: Do not rely on I/O for these tests
+@pytest.fixture()
+def foods_ipc() -> str:
+    return str(
+        Path(os.path.dirname(__file__)).parent.parent.parent
+        / "examples"
+        / "datasets"
+        / "foods1.ipc"
+    )
 
 
 def test_sql_groupby(foods_ipc: str) -> None:

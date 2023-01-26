@@ -1,5 +1,6 @@
 import os
 import typing
+from pathlib import Path
 
 import pyarrow.dataset as ds
 
@@ -28,9 +29,9 @@ def test_struct_pyarrow_dataset_5796() -> None:
         assert pl.from_arrow(tbl).frame_equal(df)
 
 
-def test_sink_parquet_ipc(io_test_dir: str) -> None:
+def test_sink_parquet_ipc(io_files_dir: Path) -> None:
     if os.name != "nt":
-        file = os.path.join(io_test_dir, "..", "files", "small.parquet")
+        file = str(io_files_dir / "small.parquet")
 
         dst = "/tmp/test_sink.parquet"
         pl.scan_parquet(file).sink_parquet(dst)
