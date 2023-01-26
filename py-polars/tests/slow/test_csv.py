@@ -1,5 +1,7 @@
 import io
-import os
+import sys
+
+import pytest
 
 import polars as pl
 
@@ -12,14 +14,14 @@ def test_csv_statistics_offset() -> None:
     assert pl.read_csv(io.StringIO(csv), n_rows=5000).height == 4999
 
 
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_csv_scan_categorical() -> None:
     N = 5_000
-    if os.name != "nt":
-        pl.DataFrame({"x": ["A"] * N}).write_csv("/tmp/test_csv_scan_categorical.csv")
-        df = pl.scan_csv(
-            "/tmp/test_csv_scan_categorical.csv", dtypes={"x": pl.Categorical}
-        ).collect()
-        assert df["x"].dtype == pl.Categorical
+    pl.DataFrame({"x": ["A"] * N}).write_csv("/tmp/test_csv_scan_categorical.csv")
+    df = pl.scan_csv(
+        "/tmp/test_csv_scan_categorical.csv", dtypes={"x": pl.Categorical}
+    ).collect()
+    assert df["x"].dtype == pl.Categorical
 
 
 def test_read_csv_chunked() -> None:

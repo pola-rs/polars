@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -177,32 +177,32 @@ def test_parquet_statistics(
     )
 
 
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_streaming_categorical() -> None:
-    if os.name != "nt":
-        pl.DataFrame(
-            [
-                pl.Series("name", ["Bob", "Alice", "Bob"], pl.Categorical),
-                pl.Series("amount", [100, 200, 300]),
-            ]
-        ).write_parquet("/tmp/tmp.pq")
-        with pl.StringCache():
-            assert pl.scan_parquet("/tmp/tmp.pq").groupby("name").agg(
-                pl.col("amount").sum()
-            ).collect().to_dict(False) == {
-                "name": ["Bob", "Alice"],
-                "amount": [400, 200],
-            }
+    pl.DataFrame(
+        [
+            pl.Series("name", ["Bob", "Alice", "Bob"], pl.Categorical),
+            pl.Series("amount", [100, 200, 300]),
+        ]
+    ).write_parquet("/tmp/tmp.pq")
+    with pl.StringCache():
+        assert pl.scan_parquet("/tmp/tmp.pq").groupby("name").agg(
+            pl.col("amount").sum()
+        ).collect().to_dict(False) == {
+            "name": ["Bob", "Alice"],
+            "amount": [400, 200],
+        }
 
 
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_parquet_struct_categorical() -> None:
-    if os.name != "nt":
-        df = pl.DataFrame(
-            [
-                pl.Series("a", ["bob"], pl.Categorical),
-                pl.Series("b", ["foo"], pl.Categorical),
-            ]
-        )
-        df.write_parquet("/tmp/tmp.pq")
-        with pl.StringCache():
-            out = pl.read_parquet("/tmp/tmp.pq").select(pl.col("b").value_counts())
-        assert out.to_dict(False) == {"b": [{"b": "foo", "counts": 1}]}
+    df = pl.DataFrame(
+        [
+            pl.Series("a", ["bob"], pl.Categorical),
+            pl.Series("b", ["foo"], pl.Categorical),
+        ]
+    )
+    df.write_parquet("/tmp/tmp.pq")
+    with pl.StringCache():
+        out = pl.read_parquet("/tmp/tmp.pq").select(pl.col("b").value_counts())
+    assert out.to_dict(False) == {"b": [{"b": "foo", "counts": 1}]}
