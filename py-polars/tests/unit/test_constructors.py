@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import typing
 from datetime import date, datetime
 from random import shuffle
@@ -414,9 +416,7 @@ def test_init_records_schema_order() -> None:
 
         df = pl.from_dicts(dicts=data, schema=cols)
         for col in df.columns:
-            assert all(  # type: ignore[var-annotated]
-                (value == lookup[col]) for value in filter(None, df[col])
-            )
+            assert all((value in (None, lookup[col]) for value in df[col].to_list()))
 
     # have schema override inferred types, omit some columns, add a new one
     schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
@@ -424,9 +424,7 @@ def test_init_records_schema_order() -> None:
 
     assert df.schema == schema
     for col in df.columns:
-        assert all(  # type: ignore[var-annotated]
-            (value == lookup[col]) for value in filter(None, df[col])
-        )
+        assert all((value in (None, lookup[col]) for value in df[col].to_list()))
 
 
 def test_init_only_columns() -> None:
