@@ -121,7 +121,6 @@ def test_not_found_on_rename() -> None:
 
 
 @typing.no_type_check
-@pytest.mark.filterwarnings("ignore:setting a DataFrame by indexing:DeprecationWarning")
 def test_getitem_errs() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 

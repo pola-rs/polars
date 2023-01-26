@@ -427,13 +427,12 @@ def test_various() -> None:
 
 def test_filter_ops() -> None:
     a = pl.Series("a", range(20))
-    with pytest.deprecated_call(match="passing a boolean mask to Series.__getitem__"):
-        assert a[a > 1].len() == 18
-        assert a[a < 1].len() == 1
-        assert a[a <= 1].len() == 2
-        assert a[a >= 1].len() == 19
-        assert a[a == 1].len() == 1
-        assert a[a != 1].len() == 19
+    assert a.filter(a > 1).len() == 18
+    assert a.filter(a < 1).len() == 1
+    assert a.filter(a <= 1).len() == 2
+    assert a.filter(a >= 1).len() == 19
+    assert a.filter(a == 1).len() == 1
+    assert a.filter(a != 1).len() == 19
 
 
 def test_cast() -> None:

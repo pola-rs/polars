@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 import os
 import typing
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -76,7 +75,6 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _is_generator,
     _time_to_pl_time,
-    is_bool_sequence,
     is_int_sequence,
     range_to_series,
     range_to_slice,
@@ -835,41 +833,6 @@ class Series:
         # Sequence of integers (slow to check if sequence contains all integers).
         elif is_int_sequence(item):
             return wrap_s(self._s.take_with_series(self._pos_idxs(Series("", item))._s))
-
-        # Check for boolean masks last as this is deprecated functionality and
-        # thus can be a slow path.
-
-        elif isinstance(item, Series) and item.dtype == Boolean:
-            warnings.warn(
-                "passing a boolean mask to Series.__getitem__ is being deprecated; "
-                "instead use Series.filter",
-                category=DeprecationWarning,
-            )
-            return wrap_s(self._s.filter(item._s))
-
-        elif (
-            _check_for_numpy(item)
-            and isinstance(item, np.ndarray)
-            and item.dtype.kind == "b"
-        ):
-            if item.ndim != 1:
-                raise ValueError("Only a 1D-Numpy array is supported as index.")
-
-            warnings.warn(
-                "passing a boolean mask to Series.__getitem__ is being deprecated; "
-                "instead use Series.filter",
-                category=DeprecationWarning,
-            )
-            return wrap_s(self._s.filter(Series("", item)._s))
-
-        # Sequence of boolean masks (slow to check if sequence contains all booleans).
-        elif is_bool_sequence(item):
-            warnings.warn(
-                "passing a boolean mask to Series.__getitem__ is being deprecated; "
-                "instead use Series.filter",
-                category=DeprecationWarning,
-            )
-            return wrap_s(self._s.filter(Series("", item)._s))
 
         raise ValueError(
             f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
