@@ -8,6 +8,7 @@ This namespace is available after calling :code:`DataFrame.groupby(...)`.
 .. autosummary::
    :toctree: api/
 
+    GroupBy.__iter__
     GroupBy.agg
     GroupBy.agg_list
     GroupBy.apply

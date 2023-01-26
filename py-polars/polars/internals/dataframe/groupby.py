@@ -21,36 +21,7 @@ DF = TypeVar("DF", bound="pli.DataFrame")
 
 
 class GroupBy(Generic[DF]):
-    """
-    Starts a new GroupBy operation.
-
-    You can also loop over this Object to loop over `DataFrames` with unique groups.
-
-    Examples
-    --------
-    >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
-    >>> for group in df.groupby("foo", maintain_order=True):
-    ...     print(group)
-    ...
-    shape: (2, 2)
-    ┌─────┬─────┐
-    │ foo ┆ bar │
-    │ --- ┆ --- │
-    │ str ┆ i64 │
-    ╞═════╪═════╡
-    │ a   ┆ 1   │
-    │ a   ┆ 2   │
-    └─────┴─────┘
-    shape: (1, 2)
-    ┌─────┬─────┐
-    │ foo ┆ bar │
-    │ --- ┆ --- │
-    │ str ┆ i64 │
-    ╞═════╪═════╡
-    │ b   ┆ 3   │
-    └─────┴─────┘
-
-    """
+    """Starts a new GroupBy operation."""
 
     def __init__(
         self,
@@ -83,44 +54,77 @@ class GroupBy(Generic[DF]):
         self.maintain_order = maintain_order
 
     def __iter__(self) -> GroupBy[DF]:
-        warnings.warn(
-            "Return type of groupby iteration will change in the next breaking release."
-            " Iteration will return tuples of (group_key, data) instead of just data.",
-            category=FutureWarning,
-            stacklevel=2,
+        """
+        Allows iteration over the groups of the groupby operation.
+
+        Returns
+        -------
+        Iterator returning tuples of (name, data) for each group.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
+        >>> for name, data in df.groupby("foo"):  # doctest: +SKIP
+        ...     print(name)
+        ...     print(data)
+        ...
+        a
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        │ a   ┆ 2   │
+        └─────┴─────┘
+        b
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ b   ┆ 3   │
+        └─────┴─────┘
+
+        """
+        temp_col = "__POLARS_GB_GROUP_INDICES"
+        groups_df = (
+            pli.wrap_df(self._df)
+            .lazy()
+            .with_row_count(name=temp_col)
+            .groupby(self.by, maintain_order=self.maintain_order)
+            .agg(pli.col(temp_col).list())
+            .collect(no_optimization=True)
         )
 
-        by = [self.by] if isinstance(self.by, (str, pli.Expr)) else self.by
+        group_names = groups_df.select(pli.all().exclude(temp_col))
 
-        # Find any single column that is not specified as 'by'
-        columns = self._df.columns()
-        by_names = {c if isinstance(c, str) else c.meta.output_name() for c in by}
-        try:
-            non_by_col = next(c for c in columns if c not in by_names)
-        except StopIteration:
-            non_by_col = None
-
-        # Get the group indices using that column
-        if non_by_col is not None:
-            groups_df = self.agg(pli.col(non_by_col).agg_groups())
-            group_indices = groups_df.select(non_by_col).to_series()
+        # When grouping by a single column, group name is a single value
+        # When grouping by multiple columns, group name is a tuple of values
+        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
+        if isinstance(self.by, (str, pli.Expr)):
+            self._group_names = iter(group_names.to_series())
         else:
-            # TODO: Properly handle expression input
-            group_indices = pli.Series([[i] for i in range(self._df.height())])
+            self._group_names = group_names.iterrows()
 
-        self._group_indices = group_indices
+        self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
         return self
 
-    def __next__(self) -> DF:
+    def __next__(self) -> tuple[object, DF] | tuple[tuple[object, ...], DF]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
         df = self._dataframe_class._from_pydf(self._df)
-        group = df[self._group_indices[self._current_index]]
+
+        group_name = next(self._group_names)
+        group_data = df[self._group_indices[self._current_index]]
         self._current_index += 1
-        return group
+
+        return group_name, group_data
 
     def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> DF:
         """
