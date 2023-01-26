@@ -319,3 +319,15 @@ def test_cast_inner_categorical() -> None:
         pl.Series("foo", [["a", "b"], ["a", "b"]]).arr.eval(
             pl.element().cast(pl.Categorical)
         )
+
+
+def test_stringcache() -> None:
+    N = 1_500
+    with pl.StringCache():
+        # create a reasonable sized columns so the categorical map is reallocated
+        df = pl.DataFrame({"cats": pl.arange(0, N, eager=True)}).select(
+            [pl.col("cats").cast(pl.Utf8).cast(pl.Categorical)]
+        )
+        assert df.filter(pl.col("cats").is_in(["1", "2"])).to_dict(False) == {
+            "cats": ["1", "2"]
+        }

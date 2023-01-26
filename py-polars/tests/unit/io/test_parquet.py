@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import io
+import sys
 import tempfile
 import typing
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -115,26 +115,6 @@ def test_select_projection() -> None:
 
     read_df = pl.read_parquet(f, columns=[1, 2], use_pyarrow=False)
     assert expected.frame_equal(read_df)
-
-
-def test_parquet_chunks_545() -> None:
-    cases = [1048576, 1048577]
-
-    for case in cases:
-        f = io.BytesIO()
-        # repeat until it has case instances
-        df = pd.DataFrame(
-            np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),
-            columns=["floats", "dates"],
-        )
-
-        # write as parquet
-        df.to_parquet(f)
-        f.seek(0)
-
-        # read it with polars
-        polars_df = pl.read_parquet(f)
-        assert pl.DataFrame(df).frame_equal(polars_df)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
@@ -367,3 +347,37 @@ def test_parquet_nested_dictionaries_6217() -> None:
         f.seek(0)
         read = pl.read_parquet(f)
         assert read.frame_equal(df)
+
+
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+def test_sink_parquet_ipc(io_files_path: Path) -> None:
+    file = io_files_path / "small.parquet"
+
+    dst = "/tmp/test_sink.parquet"
+    pl.scan_parquet(file).sink_parquet(dst)
+    with pl.StringCache():
+        assert pl.read_parquet(dst).frame_equal(pl.read_parquet(file))
+
+    dst = "/tmp/test_sink.ipc"
+    pl.scan_parquet(file).sink_ipc(dst)
+    with pl.StringCache():
+        assert pl.read_ipc(dst).frame_equal(pl.read_parquet(file))
+
+
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+def test_fetch_union() -> None:
+    pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]}).write_parquet(
+        "/tmp/df_fetch_1.parquet"
+    )
+    pl.DataFrame({"a": [3, 4, 5], "b": [4, 5, 6]}).write_parquet(
+        "/tmp/df_fetch_2.parquet"
+    )
+
+    assert pl.scan_parquet("/tmp/df_fetch_1.parquet").fetch(1).to_dict(False) == {
+        "a": [0],
+        "b": [1],
+    }
+    assert pl.scan_parquet("/tmp/df_fetch_*.parquet").fetch(1).to_dict(False) == {
+        "a": [0, 3],
+        "b": [1, 4],
+    }

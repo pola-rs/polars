@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import sys
 import tempfile
 import textwrap
 import zlib
@@ -73,12 +74,6 @@ def test_normalise_filepath(io_files_path: Path) -> None:
     assert normalise_filepath(str(io_files_path), check_not_directory=False) == str(
         io_files_path
     )
-
-
-def test_read_web_file() -> None:
-    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/datasets/foods1.csv"  # noqa: E501
-    df = pl.read_csv(url)
-    assert df.shape == (27, 4)
 
 
 def test_csv_null_values() -> None:
@@ -1099,3 +1094,34 @@ def test_csv_write_tz_aware() -> None:
         pl.col("times").dt.with_time_zone("Europe/Zurich")
     )
     assert df.write_csv() == "times\n2021-01-01 01:00:00 CET\n"
+
+
+def test_csv_statistics_offset() -> None:
+    # this would fail if the statistics sample did not also sample
+    # from the end of the file
+    # the lines at the end have larger rows as the numbers increase
+    N = 5_000
+    csv = "\n".join(str(x) for x in range(N))
+    assert pl.read_csv(io.StringIO(csv), n_rows=N).height == 4999
+
+
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+def test_csv_scan_categorical() -> None:
+    N = 5_000
+    df = pl.DataFrame({"x": ["A"] * N})
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "test_csv_scan_categorical.csv"
+        df.write_csv(file_path)
+        result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()
+
+    assert result["x"].dtype == pl.Categorical
+
+
+def test_read_csv_chunked() -> None:
+    """Check that row count is properly functioning."""
+    N = 10_000
+    csv = "1\n" * N
+    df = pl.read_csv(io.StringIO(csv), row_count_name="count")
+
+    # The next value should always be higher if monotonically increasing.
+    assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
