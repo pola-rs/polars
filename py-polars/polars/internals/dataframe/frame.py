@@ -2948,6 +2948,7 @@ class DataFrame:
     def sort(
         self: DF,
         by: str | pli.Expr | Sequence[str] | Sequence[pli.Expr],
+        *,
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
     ) -> DF | DataFrame:
@@ -3004,7 +3005,11 @@ class DataFrame:
 
         """
         if not isinstance(by, str) and isinstance(by, (Sequence, pli.Expr)):
-            df = self.lazy().sort(by, reverse, nulls_last).collect(no_optimization=True)
+            df = (
+                self.lazy()
+                .sort(by, reverse=reverse, nulls_last=nulls_last)
+                .collect(no_optimization=True)
+            )
             return df
         return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 
@@ -3439,6 +3444,7 @@ class DataFrame:
     def groupby(
         self: DF,
         by: str | pli.Expr | Sequence[str | pli.Expr],
+        *,
         maintain_order: bool = False,
     ) -> GroupBy[DF]:
         """
@@ -5228,8 +5234,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = False,
         *,
+        maintain_order: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[DF]:
         ...
@@ -5238,8 +5244,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = False,
         *,
+        maintain_order: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, DF]:
         ...
@@ -5248,8 +5254,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool,
         *,
+        maintain_order: bool,
         as_dict: bool,
     ) -> list[DF] | dict[Any, DF]:
         ...
@@ -5257,8 +5263,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = True,
         *,
+        maintain_order: bool = True,
         as_dict: bool = False,
     ) -> list[DF] | dict[Any, DF]:
         """

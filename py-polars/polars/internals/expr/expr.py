@@ -1912,6 +1912,7 @@ class Expr:
     def sort_by(
         self,
         by: Expr | str | list[Expr | str],
+        *,
         reverse: bool | list[bool] = False,
     ) -> Expr:
         """

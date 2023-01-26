@@ -66,7 +66,7 @@ def test_groupby() -> None:
 
     # Invalid input: `by` not specified as a sequence
     with pytest.raises(TypeError):
-        df.groupby("a", "b")  # type: ignore[arg-type]
+        df.groupby("a", "b")  # type: ignore[arg-type, misc]
 
 
 def test_groupby_iteration() -> None:
