@@ -629,9 +629,9 @@ def test_fast_explode_on_list_struct_6208() -> None:
             "label": "l",
             "tag": "t",
             "ref": 1,
-            "parent": [{"ref": 1, "tag": "t", "ratio": 62.3}],
+            "parents": [{"ref": 1, "tag": "t", "ratio": 62.3}],
         },
-        {"label": "l", "tag": "t", "ref": 1, "parent": None},
+        {"label": "l", "tag": "t", "ref": 1, "parents": None},
     ]
 
     df = pl.DataFrame(

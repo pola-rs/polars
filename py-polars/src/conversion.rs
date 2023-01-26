@@ -773,21 +773,27 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
 pub(crate) fn dicts_to_rows(
     records: &PyAny,
     infer_schema_len: usize,
+    schema_columns: PlIndexSet<String>,
 ) -> PyResult<(Vec<Row>, Vec<String>)> {
     let (dicts, len) = get_pyseq(records)?;
 
-    let mut key_names = PlIndexSet::new();
-    for d in dicts.iter()?.take(infer_schema_len) {
-        let d = d?;
-        let d = d.downcast::<PyDict>()?;
-        let keys = d.keys();
-
-        for name in keys {
-            let name = name.extract::<String>()?;
-            key_names.insert(name);
+    let key_names = {
+        if !schema_columns.is_empty() {
+            schema_columns
+        } else {
+            let mut inferred_keys = PlIndexSet::new();
+            for d in dicts.iter()?.take(infer_schema_len) {
+                let d = d?;
+                let d = d.downcast::<PyDict>()?;
+                let keys = d.keys();
+                for name in keys {
+                    let name = name.extract::<String>()?;
+                    inferred_keys.insert(name);
+                }
+            }
+            inferred_keys
         }
-    }
-
+    };
     let mut rows = Vec::with_capacity(len);
 
     for d in dicts.iter()? {
@@ -795,7 +801,6 @@ pub(crate) fn dicts_to_rows(
         let d = d.downcast::<PyDict>()?;
 
         let mut row = Vec::with_capacity(key_names.len());
-
         for k in key_names.iter() {
             let val = match d.get_item(k) {
                 None => AnyValue::Null,

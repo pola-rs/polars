@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import typing
 from datetime import date, datetime
+from random import shuffle
 from typing import Any
 
 import numpy as np
@@ -393,13 +396,35 @@ def test_init_records() -> None:
     expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
     assert df_cd.frame_equal(expected)
 
-    df_xy = pl.DataFrame(dicts, schema=[("x", pl.UInt32), ("y", pl.UInt32)])
-    expected = pl.DataFrame({"x": [1, 2, 1], "y": [2, 1, 2]}).with_columns(
-        [pl.col("x").cast(pl.UInt32), pl.col("y").cast(pl.UInt32)]
-    )
-    assert df_xy.frame_equal(expected)
-    assert df_xy.schema == {"x": pl.UInt32, "y": pl.UInt32}
-    assert df_xy.rows() == [(1, 2), (2, 1), (1, 2)]
+
+def test_init_records_schema_order() -> None:
+    cols: list[str] = ["a", "b", "c", "d"]
+    data: list[dict[str, int]] = [
+        {"c": 3, "b": 2, "a": 1},
+        {"b": 2, "d": 4},
+        {},
+        {"a": 1, "b": 2, "c": 3},
+        {"d": 4, "b": 2, "a": 1},
+        {"c": 3, "b": 2},
+    ]
+    lookup = {"a": 1, "b": 2, "c": 3, "d": 4, "e": None}
+
+    # ensure field values are loaded according to the declared schema order
+    for _ in range(8):
+        shuffle(data)
+        shuffle(cols)
+
+        df = pl.from_dicts(dicts=data, schema=cols)
+        for col in df.columns:
+            assert all((value in (None, lookup[col]) for value in df[col].to_list()))
+
+    # have schema override inferred types, omit some columns, add a new one
+    schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
+    df = pl.from_dicts(dicts=data, schema=schema)
+
+    assert df.schema == schema
+    for col in df.columns:
+        assert all((value in (None, lookup[col]) for value in df[col].to_list()))
 
 
 def test_init_only_columns() -> None:
@@ -560,12 +585,6 @@ def test_from_dicts_schema() -> None:
             "b": [4, 5, 6],
             "c": [None, None, None],
         }
-
-    df = pl.from_dicts(data, schema=["x", "y"])
-    assert df.to_dict(False) == {
-        "x": [1, 2, 3],
-        "y": [4, 5, 6],
-    }
 
 
 def test_nested_read_dict_4143() -> None:
