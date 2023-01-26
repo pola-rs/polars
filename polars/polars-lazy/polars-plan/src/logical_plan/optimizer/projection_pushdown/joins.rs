@@ -55,7 +55,8 @@ pub(super) fn process_join(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<ALogicalPlan> {
     proj_pd.has_joins_or_unions = true;
-    let n = acc_projections.len() + 5;
+    // n = 0 if no projections, so we don't allocate unneeded
+    let n = acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);
     let mut pushdown_right = Vec::with_capacity(n);
     let mut names_left = PlHashSet::with_capacity(n);
@@ -108,19 +109,13 @@ pub(super) fn process_join(
 
         // We need the join columns so we push the projection downwards
         for e in &left_on {
-            let add = match options.how {
-                #[cfg(feature = "semi_anti_join")]
-                JoinType::Semi | JoinType::Anti => false,
-                _ => true,
-            };
-
             add_nodes_to_accumulated_state(
                 *e,
                 &mut pushdown_left,
                 &mut local_projection,
                 &mut names_left,
                 expr_arena,
-                add,
+                true,
             );
         }
         for e in &right_on {
