@@ -321,8 +321,14 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         }
         DataType::Datetime(tu, _) => {
             if options.exact {
-                ca.as_datetime(options.fmt.as_deref(), *tu, options.cache, options.tz_aware)?
-                    .into_series()
+                ca.as_datetime(
+                    options.fmt.as_deref(),
+                    *tu,
+                    options.cache,
+                    options.tz_aware,
+                    options.utc,
+                )?
+                .into_series()
             } else {
                 ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
                     .into_series()
