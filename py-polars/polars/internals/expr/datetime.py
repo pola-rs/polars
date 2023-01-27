@@ -324,7 +324,7 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        df = pl.DataFrame(
+        >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
         ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
