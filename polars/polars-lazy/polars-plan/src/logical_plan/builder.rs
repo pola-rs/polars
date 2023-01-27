@@ -46,17 +46,35 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
     }
 }
 
+fn format_err(msg: &str, input: &LogicalPlan) -> String {
+    format!(
+        "{msg}\n\n> Error originated just after operation: '{input:?}'\n\
+    This operation could not be added to the plan.",
+    )
+}
+
+/// Returns every error or msg: &str as `ComputeError`.
+/// It also shows the logical plan node where the error
+/// originated.
+macro_rules! raise_err {
+    ($err:expr, $input:expr, $convert:ident) => {{
+        let format_err_outer = |msg: &str| format_err(msg, &$input);
+
+        let err = $err.wrap_msg(&format_err_outer);
+
+        LogicalPlan::Error {
+            input: Box::new($input.clone()),
+            err: err.into(),
+        }
+        .$convert()
+    }};
+}
+
 macro_rules! try_delayed {
     ($fallible:expr, $input:expr, $convert:ident) => {
         match $fallible {
             Ok(success) => success,
-            Err(err) => {
-                return LogicalPlan::Error {
-                    input: Box::new($input.clone()),
-                    err: err.into(),
-                }
-                .$convert()
-            }
+            Err(err) => return raise_err!(err, $input, $convert),
         }
     };
 }
@@ -394,7 +412,9 @@ impl LogicalPlanBuilder {
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| match e {
             Expr::Column(name) => name.starts_with('^') && name.ends_with('$'),
-            Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) => true,
+            Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) | Expr::DtypeColumn(_) => {
+                true
+            }
             _ => false,
         }) {
             let schema = try_delayed!(self.0.schema(), &self.0, into);
@@ -403,6 +423,12 @@ impl LogicalPlanBuilder {
                 &self.0,
                 into
             );
+            if rewritten.is_empty() {
+                let msg = "The predicate expanded to zero expressions. \
+                This may for example be caused by a regex not matching column names or \
+                a column dtype match not hitting any dtypes in the DataFrame";
+                return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+            }
             combine_predicates_expr(rewritten.into_iter())
         } else {
             predicate

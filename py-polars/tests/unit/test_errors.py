@@ -371,3 +371,18 @@ def test_sort_by_different_lengths() -> None:
                 pl.col("col1").sort_by(pl.col("col2").arg_unique()),
             ]
         )
+
+
+def test_err_filter_no_expansion() -> None:
+    # df contains floats
+    df = pl.DataFrame(
+        {
+            "a": [0.1, 0.2],
+        }
+    )
+
+    with pytest.raises(
+        pl.ComputeError, match=r"The predicate expanded to zero expressions"
+    ):
+        # we filter by ints
+        df.filter(pl.col(pl.Int16).min() < 0.1)
