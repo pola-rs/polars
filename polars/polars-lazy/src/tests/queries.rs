@@ -539,8 +539,11 @@ fn test_simplify_expr() {
 
     let optimizer = StackOptimizer {};
     let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena).unwrap();
-    lp_top = optimizer.optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top);
+    lp_top = optimizer
+        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
+        .unwrap();
     let plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+    dbg!(&plan);
     assert!(
         matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
     );
@@ -619,7 +622,9 @@ fn test_type_coercion() {
 
     let optimizer = StackOptimizer {};
     let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
-    lp_top = optimizer.optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top);
+    lp_top = optimizer
+        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
+        .unwrap();
     let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
 
     if let LogicalPlan::Projection { expr, .. } = lp {

@@ -386,3 +386,20 @@ def test_err_filter_no_expansion() -> None:
     ):
         # we filter by ints
         df.filter(pl.col(pl.Int16).min() < 0.1)
+
+
+def test_date_string_comparison() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                "2022-11-01",
+                "2022-11-02",
+                "2022-11-05",
+            ],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
+
+    with pytest.raises(
+        pl.ComputeError, match=r"Cannot compare 'date/datetime/time' to a string value"
+    ):
+        df.select(pl.col("date") > "2021-11-10")

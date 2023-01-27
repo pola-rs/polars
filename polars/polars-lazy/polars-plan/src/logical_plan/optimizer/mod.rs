@@ -152,7 +152,7 @@ pub fn optimize(
         // we must clean up the predicates, because the agg_scan_projection
         // uses them in the hashtable to determine duplicates.
         let simplify_bools = &mut [Box::new(SimplifyBooleanRule {}) as Box<dyn OptimizationRule>];
-        lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top);
+        lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top)?;
 
         // scan the LP to aggregate all the column used in scans
         // these columns will be added to the state of the AggScanProjection rule
@@ -176,7 +176,7 @@ pub fn optimize(
 
     rules.push(Box::new(ReplaceDropNulls {}));
 
-    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
+    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
     // during debug we check if the optimizations have not modified the final schema
     #[cfg(debug_assertions)]

@@ -3462,6 +3462,8 @@ class Expr:
         └─────┴────────────┘
 
         """
+        start = expr_to_lit_or_expr(start, str_to_lit=False)
+        end = expr_to_lit_or_expr(end, str_to_lit=False)
         if closed == "none":
             return ((self > start) & (self < end)).alias("is_between")
         elif closed == "both":
