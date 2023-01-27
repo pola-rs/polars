@@ -98,6 +98,7 @@ parquet = ["arrow/io_parquet"]
 
 # scale to terabytes?
 bigidx = ["polars-arrow/bigidx"]
+python = []
 
 serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde"]
 
