@@ -399,7 +399,7 @@ pub trait Utf8Methods: AsUtf8 {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu),
         };
-        if TZ_AWARE_RE.is_match(&fmt) {
+        if TZ_AWARE_RE.is_match(fmt) {
             tz_aware = true;
         }
         let fmt = self::strptime::compile_fmt(fmt);
