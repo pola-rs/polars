@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::ops::Deref;
 
 use anyhow::Error;
 use thiserror::Error as ThisError;
@@ -7,6 +8,17 @@ use thiserror::Error as ThisError;
 pub enum ErrString {
     Owned(String),
     Borrowed(&'static str),
+}
+
+impl Deref for ErrString {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ErrString::Owned(s) => s,
+            ErrString::Borrowed(s) => s,
+        }
+    }
 }
 
 impl From<&'static str> for ErrString {
@@ -88,3 +100,20 @@ impl From<regex::Error> for PolarsError {
 
 pub type PolarsResult<T> = std::result::Result<T, PolarsError>;
 pub use arrow::error::Error as ArrowError;
+
+impl PolarsError {
+    pub fn wrap_msg(&self, func: &dyn Fn(&str) -> String) -> Self {
+        use PolarsError::*;
+        match self {
+            ComputeError(msg) => ComputeError(func(msg).into()),
+            ArrowError(err) => ComputeError(func(&format!("ArrowError: {err}")).into()),
+            InvalidOperation(msg) => InvalidOperation(func(msg).into()),
+            SchemaMisMatch(msg) => SchemaMisMatch(func(msg).into()),
+            NotFound(msg) => NotFound(func(msg).into()),
+            ShapeMisMatch(msg) => ShapeMisMatch(func(msg).into()),
+            NoData(msg) => NoData(func(msg).into()),
+            Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
+            Duplicate(msg) => Duplicate(func(msg).into()),
+        }
+    }
+}
