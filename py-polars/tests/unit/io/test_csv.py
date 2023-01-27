@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import io
-import sys
 import tempfile
 import textwrap
 import zlib
@@ -1106,7 +1105,6 @@ def test_csv_statistics_offset() -> None:
     assert pl.read_csv(io.StringIO(csv), n_rows=N).height == 4999
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_csv_scan_categorical() -> None:
     N = 5_000
     df = pl.DataFrame({"x": ["A"] * N})
