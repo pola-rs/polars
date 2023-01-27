@@ -61,36 +61,45 @@ def test_rows() -> None:
 
 
 def test_iterrows() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [None, False, None]})
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [True, False, None],
+        }
+    ).with_columns(pl.Series(["a:b", "c:d", "e:f"]).str.split_exact(":", 1).alias("c"))
+
+    # expected struct values
+    c1 = {"field_0": "a", "field_1": "b"}
+    c2 = {"field_0": "c", "field_1": "d"}
+    c3 = {"field_0": "e", "field_1": "f"}
 
     # Default iterrows behaviour
     # TODO: remove reference to deprecated "iterrows" once it is retired
     for iter_method in ("iter_rows", "iterrows"):
         it = getattr(df, iter_method)()
-        assert next(it) == (1, None)
-        assert next(it) == (2, False)
-        assert next(it) == (3, None)
+        assert next(it) == (1, True, c1)
+        assert next(it) == (2, False, c2)
+        assert next(it) == (3, None, c3)
         with pytest.raises(StopIteration):
             next(it)
 
     # Apply explicit row-buffer size
     for sz in (0, 1, 2, 3, 4):
         it = df.iter_rows(buffer_size=sz)
-        assert next(it) == (1, None)
-        assert next(it) == (2, False)
-        assert next(it) == (3, None)
+        assert next(it) == (1, True, c1)
+        assert next(it) == (2, False, c2)
+        assert next(it) == (3, None, c3)
         with pytest.raises(StopIteration):
             next(it)
 
         # Return named rows
         it_named = df.iter_rows(named=True, buffer_size=sz)
-
         row = next(it_named)
-        assert row == {"a": 1, "b": None}
+        assert row == {"a": 1, "b": True, "c": c1}
         row = next(it_named)
-        assert row == {"a": 2, "b": False}
+        assert row == {"a": 2, "b": False, "c": c2}
         row = next(it_named)
-        assert row == {"a": 3, "b": None}
+        assert row == {"a": 3, "b": None, "c": c3}
 
         with pytest.raises(StopIteration):
             next(it_named)
