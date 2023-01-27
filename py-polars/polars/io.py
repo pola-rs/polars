@@ -1103,7 +1103,7 @@ def read_sql(
             raise ImportError(
                 "ADBC sqlite driver not detected. Please run `pip install adbc_driver_sqlite`."
             )
-    elif connection_uri.startswith("postgresql"):
+    elif connection_uri.startswith("postgres"):
         if _POSTGRES:
             adbc = adbc_postgres
         else:
