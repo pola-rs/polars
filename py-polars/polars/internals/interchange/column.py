@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import polars as pl
 from polars.internals.interchange.buffer import PolarsBuffer
 from polars.internals.interchange.dataframe_protocol import (
     CategoricalDescription,
@@ -16,7 +17,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from typing import Any
 
-    import polars as pl
     from polars.internals.interchange.dataframe_protocol import Dtype
 
 
@@ -28,15 +28,22 @@ class PolarsColumn(Column):
         self._allow_copy = allow_copy
 
     def size(self) -> int:
-        """Size of the column, in elements."""
+        """Size of the column in elements."""
         return len(self._col)
 
     @property
     def offset(self) -> int:
+        """
+        Offset of first element with respect to the start of the underlying buffer.
+
+        Polars Series do not keep track of the buffer outside the bounds of the column
+        itself. So this method will always return zero.
+        """
         return 0
 
     @property
     def dtype(self) -> Dtype:
+        """Datatype of the column."""
         pl_dtype = self._col.dtype
         return polars_dtype_to_dtype(pl_dtype)
 
@@ -107,9 +114,7 @@ class PolarsColumn(Column):
         return buffers
 
     def _get_data_buffer(self) -> tuple[PolarsBuffer, Dtype]:
-        """
-        Return the buffer containing the data and the buffer's associated dtype.
-        """
+        """Return the buffer containing the data and the buffer's associated dtype."""
         if self.dtype[0] in {
             DtypeKind.INT,
             DtypeKind.UINT,
