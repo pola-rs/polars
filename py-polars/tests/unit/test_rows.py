@@ -60,7 +60,7 @@ def test_rows() -> None:
     assert rows == [{"a": 1, "b": 1}, {"a": 2, "b": 2}]
 
 
-def test_iterrows() -> None:
+def test_iter_rows() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],
@@ -73,10 +73,17 @@ def test_iterrows() -> None:
     c2 = {"field_0": "c", "field_1": "d"}
     c3 = {"field_0": "e", "field_1": "f"}
 
-    # Default iterrows behaviour
-    # TODO: remove reference to deprecated "iterrows" once it is retired
-    for iter_method in ("iter_rows", "iterrows"):
-        it = getattr(df, iter_method)()
+    # Default iter_rows behaviour
+    it = df.iter_rows()
+    assert next(it) == (1, True, c1)
+    assert next(it) == (2, False, c2)
+    assert next(it) == (3, None, c3)
+    with pytest.raises(StopIteration):
+        next(it)
+
+    # TODO: Remove this section once iterrows is removed
+    with pytest.deprecated_call():
+        it = df.iterrows()  # type: ignore[attr-defined]
         assert next(it) == (1, True, c1)
         assert next(it) == (2, False, c2)
         assert next(it) == (3, None, c3)
