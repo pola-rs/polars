@@ -3751,7 +3751,7 @@ class DataFrame:
         ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
         ...         [
         ...             pl.col("time").count().alias("time_count"),
-        ...             pl.col("time").list().alias("time_agg_list"),
+        ...             pl.col("time").alias("time_agg_list"),
         ...         ]
         ...     )
         ... )
@@ -3853,7 +3853,7 @@ class DataFrame:
         ...         period="3i",
         ...         include_boundaries=True,
         ...         closed="right",
-        ...     ).agg(pl.col("A").list().alias("A_agg_list"))
+        ...     ).agg(pl.col("A").alias("A_agg_list"))
         ... )
         shape: (3, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐

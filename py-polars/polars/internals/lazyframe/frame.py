@@ -1981,7 +1981,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     .agg(
         ...         [
         ...             pl.col("time").count().alias("time_count"),
-        ...             pl.col("time").list().alias("time_agg_list"),
+        ...             pl.col("time").alias("time_agg_list"),
         ...         ]
         ...     )
         ... ).collect()
@@ -2087,7 +2087,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...         include_boundaries=True,
         ...         closed="right",
         ...     )
-        ...     .agg(pl.col("A").list().alias("A_agg_list"))
+        ...     .agg(pl.col("A").alias("A_agg_list"))
         ... ).collect()
         shape: (3, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
