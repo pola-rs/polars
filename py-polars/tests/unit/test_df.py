@@ -63,9 +63,10 @@ def test_special_char_colname_init() -> None:
         assert len(df.rows()) == 0
         assert df.is_empty()
 
-        # remove once 'columns' -> 'schema' transition complete
-        df2 = pl.DataFrame(columns=cols)  # type: ignore[call-arg]
-        assert_frame_equal(df, df2)
+        # TODO: remove once 'columns' -> 'schema' transition complete
+        with pytest.deprecated_call():
+            df2 = pl.DataFrame(columns=cols)  # type: ignore[call-arg]
+            assert_frame_equal(df, df2)
 
 
 def test_comparisons() -> None:
@@ -1083,9 +1084,9 @@ def test_string_cache_eager_lazy() -> None:
         # also check row-wise categorical insert.
         # (column-wise is preferred, but this shouldn't fail)
         for params in (
-            {"columns": [("region_ids", pl.Categorical)]},
+            {"schema": [("region_ids", pl.Categorical)]},
             {
-                "columns": ["region_ids"],
+                "schema": ["region_ids"],
                 "schema_overrides": {"region_ids": pl.Categorical},
             },
         ):
@@ -2606,7 +2607,7 @@ def test_init_datetimes_with_timezone() -> None:
     for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
         for type_overrides in (
             {
-                "columns": [
+                "schema": [
                     ("d1", pl.Datetime(tu, tz_us)),
                     ("d2", pl.Datetime(tu, tz_europe)),
                 ]
