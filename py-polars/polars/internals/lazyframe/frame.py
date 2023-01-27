@@ -1148,7 +1148,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def sink_parquet(
         self,
-        path: str,
+        path: str | Path,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -1219,7 +1219,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Examples
         --------
         >>> ldf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
-        >>> ldf.sink_parquet("/tmp/out.parquet")  # doctest: +SKIP
+        >>> ldf.sink_parquet("out.parquet")  # doctest: +SKIP
 
         """
         if no_optimization:
@@ -1248,7 +1248,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def sink_ipc(
         self,
-        path: str,
+        path: str | Path,
         *,
         compression: str | None = "zstd",
         maintain_order: bool = True,
@@ -1294,7 +1294,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Examples
         --------
         >>> ldf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
-        >>> ldf.sink_ipc("/tmp/out.arrow")  # doctest: +SKIP
+        >>> ldf.sink_ipc("out.arrow")  # doctest: +SKIP
 
         """
         if no_optimization:
