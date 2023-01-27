@@ -1845,8 +1845,7 @@ class DataFrame:
         [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
 
         """
-        dict_, zip_, columns = dict, zip, self.columns
-        return [dict_(zip_(columns, row)) for row in self.iter_rows()]
+        return list(self.iter_rows(named=True))
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """
@@ -6779,27 +6778,29 @@ class DataFrame:
         rows : Materialises all frame data as a list of rows.
 
         """
+        # load into the local namespace for a modest performance boost in the hot loops
+        columns, get_row, dict_, zip_ = self.columns, self.row, dict, zip
+
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if buffer_size:
             for offset in range(0, self.height, buffer_size):
-                rows_chunk = self.slice(offset, buffer_size).rows(named=False)
-                if named:
-                    # Load these into the local namespace for a minor performance boost
-                    dict_, zip_, columns = dict, zip, self.columns
-                    for row in rows_chunk:
-                        yield dict_(zip_(columns, row))
+                zerocopy_slice = self.slice(offset, buffer_size)
+                if named and _PYARROW_AVAILABLE:
+                    yield from zerocopy_slice.to_arrow().to_batches()[0].to_pylist()
                 else:
-                    yield from rows_chunk
-
+                    rows_chunk = zerocopy_slice.rows(named=False)
+                    if named:
+                        for row in rows_chunk:
+                            yield dict_(zip_(columns, row))
+                    else:
+                        yield from rows_chunk
         elif named:
-            # Load these into the local namespace for a minor performance boost
-            dict_, zip_, columns = dict, zip, self.columns
             for i in range(self.height):
-                yield dict_(zip_(columns, self.row(i)))
+                yield dict_(zip_(columns, get_row(i)))
         else:
             for i in range(self.height):
-                yield self.row(i)
+                yield get_row(i)
 
     def iter_slices(self, n_rows: int = 10_000) -> Iterator[DataFrame]:
         r"""

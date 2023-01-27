@@ -1009,7 +1009,7 @@ def read_sql(
     """
     Read a SQL query into a DataFrame.
 
-    A range of databases are supported, such as PostgreSQL, Redshift, MySQL, MariaDB,
+    Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
     Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
     please see the connectorx docs:
 
@@ -1018,9 +1018,9 @@ def read_sql(
     Parameters
     ----------
     sql
-        Raw SQL query / queries.
+        Raw SQL query (or queries).
     connection_uri
-        Connectorx connection uri, for example
+        A connectorx compatible connection uri, for example
 
         * "postgresql://username:password@server:port/database"
     partition_on
