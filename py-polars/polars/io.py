@@ -29,20 +29,19 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltal
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
-from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
 try:
     import adbc_driver_sqlite.dbapi as adbc_sqlite
 
     _SQLITE = True
-except:
+except ImportError:
     _SQLITE = False
 
 try:
     import adbc_driver_postgresql.dbapi as adbc_postgres
 
     _POSTGRES = True
-except:
+except ImportError:
     _POSTGRES = False
 from polars.utils import handle_projection_columns, normalise_filepath
 
@@ -1086,14 +1085,16 @@ def read_sql(
             adbc = adbc_sqlite
         else:
             raise ImportError(
-                "ADBC sqlite driver not detected. Please run `pip install adbc_driver_sqlite`."
+                "ADBC sqlite driver not detected. Please run `pip install "
+                "adbc_driver_sqlite`."
             )
     elif connection_uri.startswith("postgres"):
         if _POSTGRES:
             adbc = adbc_postgres
         else:
             raise ImportError(
-                "ADBC postgresql driver not detected. Please run `pip install adbc_driver_postgresql`."
+                "ADBC postgresql driver not detected. Please run `pip install "
+                "adbc_driver_postgresql`."
             )
     else:
         raise ValueError("ADBC does not currently support this database.")
