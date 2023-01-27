@@ -33,11 +33,18 @@ from polars.internals.io import _prepare_file_arg
 from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
 try:
-    import connectorx as cx
+    import adbc_driver_sqlite.dbapi as adbc_sqlite
 
-    _WITH_CX = True
-except ImportError:
-    _WITH_CX = False
+    _SQLITE = True
+except:
+    _SQLITE = False
+
+try:
+    import adbc_driver_postgresql.dbapi as adbc_postgres
+
+    _POSTGRES = True
+except:
+    _POSTGRES = False
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
@@ -1089,21 +1096,28 @@ def read_sql(
     >>> pl.read_sql(queries, uri)  # doctest: +SKIP
 
     """
-    if _WITH_CX:
-        tbl = cx.read_sql(
-            conn=connection_uri,
-            query=sql,
-            return_type="arrow2",
-            partition_on=partition_on,
-            partition_range=partition_range,
-            partition_num=partition_num,
-            protocol=protocol,
-        )
-        return cast(DataFrame, from_arrow(tbl))
+    if connection_uri.startswith("file"):
+        if _SQLITE:
+            adbc = adbc_sqlite
+        else:
+            raise ImportError(
+                "ADBC sqlite driver not detected. Please run `pip install adbc_driver_sqlite`."
+            )
+    elif connection_uri.startswith("postgresql"):
+        if _POSTGRES:
+            adbc = adbc_postgres
+        else:
+            raise ImportError(
+                "ADBC postgresql driver not detected. Please run `pip install adbc_driver_postgresql`."
+            )
     else:
-        raise ImportError(
-            "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
-        )
+        raise ValueError("ADBC does not currently support this database.")
+
+    with adbc.connect(connection_uri) as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        tbl = cursor.fetch_arrow_table()
+    return cast(DataFrame, from_arrow(tbl))
 
 
 @overload
