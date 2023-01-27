@@ -1148,7 +1148,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def sink_parquet(
         self,
-        path: str,
+        path: str | Path,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -1248,7 +1248,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def sink_ipc(
         self,
-        path: str,
+        path: str | Path,
         *,
         compression: str | None = "zstd",
         maintain_order: bool = True,
