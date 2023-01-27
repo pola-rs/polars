@@ -56,7 +56,9 @@ class ExprStringNameSpace:
             Use a cache of unique, converted dates to apply the datetime conversion.
         tz_aware
             Parse timezone aware datetimes. If None, then this may be automatically
-            toggled by the 'fmt' given.
+            toggled by the 'fmt' given. If you have date strings which have different
+            offsets due to crossing DST, pass ``tz_aware=False`` and then set your
+            timezone as appropriate.
 
         Notes
         -----

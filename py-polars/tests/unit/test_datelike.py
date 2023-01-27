@@ -2667,9 +2667,12 @@ def test_crossing_dst(fmt: str) -> None:
     assert result[0] == datetime(2021, 3, 27, 23, 59, 59)
     assert result[1] == datetime(2021, 3, 28, 23, 59, 59)
 
+
 @pytest.mark.parametrize("fmt", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
 @pytest.mark.parametrize("tz_aware", [None, True])
 def test_crossing_dst_tz_aware(fmt: str, tz_aware: bool | None) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
-    with pytest.raises(ComputeError, match=r"^Different timezones found during 'strptime' operation.$"):
+    with pytest.raises(
+        ComputeError, match=r"^Different timezones found during 'strptime' operation.$"
+    ):
         pl.Series(ts).str.strptime(pl.Datetime, fmt, tz_aware=tz_aware)

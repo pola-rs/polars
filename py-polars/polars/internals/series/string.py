@@ -27,7 +27,7 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        tz_aware: bool = False,
+        tz_aware: bool | None = None,
     ) -> pli.Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
@@ -52,8 +52,10 @@ class StringNameSpace:
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         tz_aware
-            Parse timezone aware datetimes. This may be automatically toggled by the
-            'fmt' given.
+            Parse timezone aware datetimes. If None, then this may be automatically
+            toggled by the 'fmt' given. If you have date strings which have different
+            offsets due to crossing DST, pass ``tz_aware=False`` and then set your
+            timezone as appropriate.
 
         Returns
         -------
