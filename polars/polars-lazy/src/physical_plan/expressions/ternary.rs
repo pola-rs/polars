@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 
 use crate::physical_plan::expression_err;
-use crate::physical_plan::state::{ExecutionState, StateFlags};
+use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct TernaryExpr {
@@ -93,7 +93,7 @@ impl PhysicalExpr for TernaryExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
         // don't cache window functions as they run in parallel
-        state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
+        state.remove_cache_window_flag();
         let mask_series = self.predicate.evaluate(df, &state)?;
         let mut mask = mask_series.bool()?.clone();
 

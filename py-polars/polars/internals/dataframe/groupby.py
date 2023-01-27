@@ -94,7 +94,7 @@ class GroupBy(Generic[DF]):
             .lazy()
             .with_row_count(name=temp_col)
             .groupby(self.by, maintain_order=self.maintain_order)
-            .agg(pli.col(temp_col).list())
+            .agg(pli.col(temp_col))
             .collect(no_optimization=True)
         )
 
@@ -663,6 +663,9 @@ class GroupBy(Generic[DF]):
         """
         Aggregate the groups into Series.
 
+        .. deprecated:: 0.16.0
+            Use ```all()``
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
@@ -678,7 +681,28 @@ class GroupBy(Generic[DF]):
         └─────┴───────────┘
 
         """
-        return self.agg(pli.all().list())
+        return self.agg(pli.all())
+
+    def all(self) -> pli.DataFrame:
+        """
+        Aggregate the groups into Series.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+        >>> df.groupby("a", maintain_order=True).all()
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ str ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ one ┆ [1, 3]    │
+        │ two ┆ [2, 4]    │
+        └─────┴───────────┘
+
+        """
+        return self.agg(pli.all())
 
 
 class RollingGroupBy(Generic[DF]):
@@ -720,7 +744,7 @@ class RollingGroupBy(Generic[DF]):
                 closed=self.closed,
                 by=self.by,
             )
-            .agg(pli.col(temp_col).list())
+            .agg(pli.col(temp_col))
             .collect(no_optimization=True)
         )
 
@@ -816,7 +840,7 @@ class DynamicGroupBy(Generic[DF]):
                 by=self.by,
                 start_by=self.start_by,
             )
-            .agg(pli.col(temp_col).list())
+            .agg(pli.col(temp_col))
             .collect(no_optimization=True)
         )
 

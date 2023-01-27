@@ -712,7 +712,7 @@ def test_truncate_negative_offset() -> None:
 
         out = df.groupby_dynamic(
             "idx", every="2i", period="3i", include_boundaries=True
-        ).agg(pl.col("A").list())
+        ).agg(pl.col("A"))
 
         assert out.shape == (3, 4)
         assert out["A"].to_list() == [["A", "A", "B"], ["B", "B", "B"], ["B", "C"]]
@@ -1161,7 +1161,7 @@ def test_rolling_groupby_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
     out = df.groupby_rolling("times", period="5i", by=["groups"]).agg(
-        pl.col("times").list().alias("agg_list")
+        pl.col("times").alias("agg_list")
     )
 
     expected = pl.DataFrame(
@@ -1549,7 +1549,7 @@ def test_duration_aggregations() -> None:
             pl.col("duration").max().alias("max"),
             pl.col("duration").quantile(0.1).alias("quantile"),
             pl.col("duration").median().alias("median"),
-            pl.col("duration").list().alias("list"),
+            pl.col("duration").alias("list"),
         ]
     ).to_dict(False) == {
         "group": ["A", "B"],

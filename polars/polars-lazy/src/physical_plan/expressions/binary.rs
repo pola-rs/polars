@@ -7,7 +7,7 @@ use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::physical_plan::state::{ExecutionState, StateFlags};
+use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct BinaryExpr {
@@ -101,7 +101,7 @@ impl PhysicalExpr for BinaryExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
         // don't cache window functions as they run in parallel
-        state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
+        state.remove_cache_window_flag();
         let (lhs, rhs) = POOL.install(|| {
             rayon::join(
                 || self.left.evaluate(df, &state),
@@ -130,7 +130,7 @@ impl PhysicalExpr for BinaryExpr {
         match (
             ac_l.agg_state(),
             ac_r.agg_state(),
-            state.overlapping_groups(),
+            state.has_overlapping_groups(),
         ) {
             // Some aggregations must return boolean masks that fit the group. That's why not all literals can take this path.
             // only literals that are used in arithmetic

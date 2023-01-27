@@ -52,7 +52,6 @@ pub(super) use self::stack::*;
 pub(super) use self::udf::*;
 pub(super) use self::union::*;
 use super::*;
-use crate::physical_plan::state::StateFlags;
 
 fn execute_projection_cached_window_fns(
     df: &DataFrame,
@@ -117,9 +116,9 @@ fn execute_projection_cached_window_fns(
 
         // don't bother caching if we only have a single window function in this partition
         if partition.1.len() == 1 {
-            state.flags.remove(StateFlags::CACHE_WINDOW_EXPR)
+            state.remove_cache_window_flag();
         } else {
-            state.flags.insert(StateFlags::CACHE_WINDOW_EXPR);
+            state.insert_cache_window_flag();
         }
 
         partition.1.sort_unstable_by_key(|(_idx, explode, _)| {
@@ -136,12 +135,12 @@ fn execute_projection_cached_window_fns(
                 .count()
                 == 1
             {
-                state.flags.insert(StateFlags::CACHE_WINDOW_EXPR)
+                state.insert_cache_window_flag();
             }
             // caching more than one window expression is a complicated topic for another day
             // see issue #2523
             else {
-                state.flags.remove(StateFlags::CACHE_WINDOW_EXPR)
+                state.remove_cache_window_flag();
             }
 
             let s = e.evaluate(df, &state)?;

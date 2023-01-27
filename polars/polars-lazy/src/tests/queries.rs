@@ -253,7 +253,7 @@ fn test_lazy_query_4() {
         .clone()
         .groupby([col("uid")])
         .agg([
-            col("day").list().alias("day"),
+            col("day").alias("day"),
             col("cumcases")
                 .apply(|s: Series| Ok(&s - &(s.shift(1))), GetOutput::same_type())
                 .alias("diff_cases"),
@@ -656,7 +656,7 @@ fn test_lazy_partition_agg() {
 
     let out = scan_foods_csv()
         .groupby([col("category")])
-        .agg([col("calories").list()])
+        .agg([col("calories")])
         .sort("category", Default::default())
         .collect()
         .unwrap();
@@ -1049,10 +1049,7 @@ fn test_multiple_explode() -> PolarsResult<()> {
     let out = df
         .lazy()
         .groupby([col("a")])
-        .agg([
-            col("b").list().alias("b_list"),
-            col("c").list().alias("c_list"),
-        ])
+        .agg([col("b").alias("b_list"), col("c").alias("c_list")])
         .explode([col("c_list"), col("b_list")])
         .collect()?;
     assert_eq!(out.shape(), (5, 3));
@@ -1322,7 +1319,7 @@ fn test_sort_by() -> PolarsResult<()> {
     let out = df
         .lazy()
         .groupby_stable([col("b")])
-        .agg([col("a").sort_by([col("b"), col("c")], [false]).list()])
+        .agg([col("a").sort_by([col("b"), col("c")], [false])])
         .collect()?;
 
     let a = out.column("a")?.explode()?;
@@ -1704,45 +1701,6 @@ fn test_drop_and_select() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_groupby_on_lists() -> PolarsResult<()> {
-    let s0 = Series::new("", [1i32, 2, 3]);
-    let s1 = Series::new("groups", [4i32, 5]);
-
-    let mut builder =
-        ListPrimitiveChunkedBuilder::<Int32Type>::new("arrays", 10, 10, DataType::Int32);
-    builder.append_series(&s0);
-    builder.append_series(&s1);
-    let s2 = builder.finish().into_series();
-
-    let df = DataFrame::new(vec![s1, s2])?;
-    let out = df
-        .clone()
-        .lazy()
-        .groupby([col("groups")])
-        .agg([col("arrays").first()])
-        .collect()?;
-
-    assert_eq!(
-        out.column("arrays")?.dtype(),
-        &DataType::List(Box::new(DataType::Int32))
-    );
-
-    let out = df
-        .clone()
-        .lazy()
-        .groupby([col("groups")])
-        .agg([col("arrays").list()])
-        .collect()?;
-
-    assert_eq!(
-        out.column("arrays")?.dtype(),
-        &DataType::List(Box::new(DataType::List(Box::new(DataType::Int32))))
-    );
-
-    Ok(())
-}
-
-#[test]
 fn test_single_group_result() -> PolarsResult<()> {
     // the argsort should not auto explode
     let df = df![
@@ -2009,28 +1967,5 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
         "sum" => [9],
     ]?));
 
-    Ok(())
-}
-
-#[test]
-fn test_foo() -> PolarsResult<()> {
-    let q1 = df![
-        "x" => [1]
-    ]?
-    .lazy();
-
-    let q2 = df![
-        "x" => [1],
-        "y" => [1]
-    ]?
-    .lazy();
-
-    let out = q1
-        .clone()
-        .join(q2.clone(), [col("x")], [col("y")], JoinType::Semi)
-        .join(q2.clone(), [col("x")], [col("y")], JoinType::Semi)
-        .select([col("x")])
-        .collect()?;
-    dbg!(out);
     Ok(())
 }

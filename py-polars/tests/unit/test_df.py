@@ -1712,7 +1712,7 @@ def test_extension() -> None:
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
     assert sys.getrefcount(foos[0]) == base_count + 1
 
-    out = df.groupby("groups", maintain_order=True).agg(pl.col("a").list().alias("a"))
+    out = df.groupby("groups", maintain_order=True).agg(pl.col("a").alias("a"))
     assert sys.getrefcount(foos[0]) == base_count + 2
     s = out["a"].arr.explode()
     assert sys.getrefcount(foos[0]) == base_count + 3

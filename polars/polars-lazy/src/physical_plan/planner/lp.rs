@@ -37,6 +37,7 @@ fn partitionable_gb(
                 let aexpr = expr_arena.get(*agg);
                 let depth = (expr_arena).iter(*agg).count();
 
+                // These single expressions are partitionable
                 if matches!(aexpr, AExpr::Count) {
                     continue;
                 }

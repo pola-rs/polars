@@ -36,7 +36,7 @@ def test_lazy() -> None:
 
     # test if pl.list is available, this is `to_list` re-exported as list
     eager = df.groupby("a").agg(pl.list("b"))
-    assert sorted(eager.rows()) == [(1, [1.0]), (2, [2.0]), (3, [3.0])]
+    assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
 
     # profile lazyframe operation/plan
     lazy = df.lazy().groupby("a").agg(pl.list("b"))
@@ -455,7 +455,7 @@ def test_head_groupby() -> None:
     out = (
         df.sort(by="price", reverse=True)
         .groupby(keys, maintain_order=True)
-        .agg([col("*").exclude(keys).head(2).list().keep_name()])
+        .agg([col("*").exclude(keys).head(2).keep_name()])
         .explode(col("*").exclude(keys))
     )
 
