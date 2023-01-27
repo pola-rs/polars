@@ -29,7 +29,7 @@ fn test_date_range() {
         NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
     ]
     .iter()
-    .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
 }
@@ -52,11 +52,11 @@ fn test_feb_date_range() {
         TimeUnit::Nanoseconds,
     );
     let expected = [
-        NaiveDate::from_ymd(2022, 2, 1),
-        NaiveDate::from_ymd(2022, 3, 1),
+        NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
     ]
     .iter()
-    .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
 }
@@ -84,7 +84,7 @@ fn test_groups_large_interval() {
     ];
     let ts = dates
         .iter()
-        .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
         .collect::<Vec<_>>();
 
     let dur = Duration::parse("2d");
@@ -141,8 +141,10 @@ fn test_offset() {
     );
 
     let b = w.get_earliest_bounds_ns(t);
-    let start = NaiveDate::from_ymd(2020, 1, 1)
-        .and_hms(23, 58, 0)
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(23, 58, 0)
+        .unwrap()
         .timestamp_nanos();
     assert_eq!(b.start, start);
 }
