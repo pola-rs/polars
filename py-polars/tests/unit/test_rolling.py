@@ -13,8 +13,9 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import ClosedInterval
 
 
-def test_rolling_kernels_and_groupby_rolling() -> None:
-    df = pl.DataFrame(
+@pytest.fixture()
+def example_df() -> pl.DataFrame:
+    return pl.DataFrame(
         {
             "dt": [
                 datetime(2021, 1, 1),
@@ -26,43 +27,34 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
             "values": pl.arange(0, 5, eager=True),
         }
     )
-    period: str | timedelta
-    for period in [  # type: ignore[assignment]
-        "1d",
-        "2d",
-        "3d",
-        timedelta(days=1),
-        timedelta(days=2),
-        timedelta(days=3),
-    ]:
-        closed_windows: list[ClosedInterval] = ["left", "right", "none", "both"]
-        for closed in closed_windows:
-            out1 = df.select(
-                [
-                    pl.col("dt"),
-                    pl.col("values")
-                    .rolling_sum(period, by="dt", closed=closed)
-                    .alias("sum"),
-                    pl.col("values")
-                    .rolling_var(period, by="dt", closed=closed)
-                    .alias("var"),
-                    pl.col("values")
-                    .rolling_mean(period, by="dt", closed=closed)
-                    .alias("mean"),
-                    pl.col("values")
-                    .rolling_std(period, by="dt", closed=closed)
-                    .alias("std"),
-                ]
-            )
-            out2 = df.groupby_rolling("dt", period=period, closed=closed).agg(
-                [
-                    pl.col("values").sum().alias("sum"),
-                    pl.col("values").var().alias("var"),
-                    pl.col("values").mean().alias("mean"),
-                    pl.col("values").std().alias("std"),
-                ]
-            )
-            assert_frame_equal(out1, out2)
+
+
+@pytest.mark.parametrize(
+    "period",
+    ["1d", "2d", "3d", timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+)
+@pytest.mark.parametrize("closed", ["left", "right", "none", "both"])
+def test_rolling_kernels_and_groupby_rolling(
+    example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
+) -> None:
+    out1 = example_df.select(
+        [
+            pl.col("dt"),
+            pl.col("values").rolling_sum(period, by="dt", closed=closed).alias("sum"),
+            pl.col("values").rolling_var(period, by="dt", closed=closed).alias("var"),
+            pl.col("values").rolling_mean(period, by="dt", closed=closed).alias("mean"),
+            pl.col("values").rolling_std(period, by="dt", closed=closed).alias("std"),
+        ]
+    )
+    out2 = example_df.groupby_rolling("dt", period=period, closed=closed).agg(
+        [
+            pl.col("values").sum().alias("sum"),
+            pl.col("values").var().alias("var"),
+            pl.col("values").mean().alias("mean"),
+            pl.col("values").std().alias("std"),
+        ]
+    )
+    assert_frame_equal(out1, out2)
 
 
 def test_rolling_skew() -> None:

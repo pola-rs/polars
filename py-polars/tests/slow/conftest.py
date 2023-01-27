@@ -3,11 +3,12 @@ from pathlib import Path
 
 import pytest
 
-IO_TEST_DIR = os.path.abspath(
+io_test_dir = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "unit", "io")
 )
 
 
 @pytest.fixture()
-def io_files_dir() -> Path:
-    return Path(IO_TEST_DIR) / "files"
+def io_files_path() -> Path:
+    current_dir = os.path.abspath(os.path.dirname(__file__))
+    return Path(current_dir).parent / "unit" / "io" / "files"

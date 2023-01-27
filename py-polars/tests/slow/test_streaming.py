@@ -4,6 +4,7 @@ import time
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_cross_join_stack() -> None:
@@ -30,5 +31,6 @@ def test_ooc_sort() -> None:
             df.lazy().sort("idx", reverse=reverse).collect(streaming=True)
         ).to_series()
 
-        assert out.series_equal(s.sort(reverse=reverse))
+        assert_series_equal(out, s.sort(reverse=reverse))
+
     os.unsetenv(env)

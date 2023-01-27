@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import io
-import os
+import tempfile
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import AvroCompression
+
+COMPRESSIONS = ["uncompressed", "snappy", "deflate"]
 
 
 @pytest.fixture()
@@ -13,29 +20,24 @@ def example_df() -> pl.DataFrame:
     return pl.DataFrame({"i64": [1, 2], "f64": [0.1, 0.2], "utf8": ["a", "b"]})
 
 
-@pytest.fixture()
-def compressions() -> list[str]:
-    return ["uncompressed", "snappy", "deflate"]
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_from_to_buffer(example_df: pl.DataFrame, compression: AvroCompression) -> None:
+    buf = io.BytesIO()
+    example_df.write_avro(buf, compression=compression)
+    buf.seek(0)
+
+    read_df = pl.read_avro(buf)
+    assert example_df.frame_equal(read_df)
 
 
-def test_from_to_buffer(example_df: pl.DataFrame, compressions: list[str]) -> None:
-    for compression in compressions:
-        buf = io.BytesIO()
-        example_df.write_avro(buf, compression=compression)  # type: ignore[arg-type]
-        buf.seek(0)
-        read_df = pl.read_avro(buf)
-        assert example_df.frame_equal(read_df)
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_from_to_file(example_df: pl.DataFrame, compression: AvroCompression) -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "small.avro"
+        example_df.write_avro(file_path, compression=compression)
+        df_read = pl.read_avro(file_path)
 
-
-def test_from_to_file(
-    io_test_dir: str, example_df: pl.DataFrame, compressions: list[str]
-) -> None:
-    f = os.path.join(io_test_dir, "small.avro")
-
-    for compression in compressions:
-        example_df.write_avro(f, compression=compression)  # type: ignore[arg-type]
-        df_read = pl.read_avro(str(f))
-        assert example_df.frame_equal(df_read)
+    assert example_df.frame_equal(df_read)
 
 
 def test_select_columns() -> None:
