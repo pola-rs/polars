@@ -9,8 +9,8 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-#[cfg(feature = "dtype-struct")]
 use polars_core::POOL;
+use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PartitionedAggregation;
@@ -169,7 +169,24 @@ impl PhysicalExpr for AggregationExpr {
                 }
                 GroupByMethod::List => {
                     let agg = ac.aggregated();
-                    rename_series(agg, &keep_name)
+
+                    if state.unset_finalize_window_as_list() {
+                        let ca = agg.list().unwrap();
+                        // todo! simply nest by settings a list array with new indexes
+                        let ca: ListChunked = POOL.install(|| {
+                            ca.par_iter()
+                                .map(|opt_s| {
+                                    opt_s.map(|s| {
+                                        let ca = s.to_list().unwrap();
+                                        ca.into_series()
+                                    })
+                                })
+                                .collect()
+                        });
+                        rename_series(ca.into_series(), &keep_name)
+                    } else {
+                        rename_series(agg, &keep_name)
+                    }
                 }
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();

@@ -28,7 +28,7 @@ impl GroupByDynamicExec {
         // if the periods are larger than the intervals,
         // the groups overlap
         if self.options.every < self.options.period {
-            state.flags |= StateFlags::OVERLAPPING_GROUPS
+            state.set_has_overlapping_groups();
         }
 
         let keys = self

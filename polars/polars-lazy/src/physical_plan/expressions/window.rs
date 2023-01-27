@@ -241,6 +241,7 @@ impl WindowExpr {
                 explicit_list = finishes_list;
             }
         }
+
         explicit_list
     }
 
@@ -423,6 +424,16 @@ impl PhysicalExpr for WindowExpr {
             )
         });
         let explicit_list_agg = self.is_explicit_list_agg();
+
+        // A `sort()` in a window function is one level flatter
+        // Assume we have column a : i32
+        // than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
+        // whereas a window function returns array: i32
+        // So a `sort().list()` in a groupby returns: list[list[i32]]
+        // whereas in a window function would return: list[i32]
+        if explicit_list_agg {
+            state.set_finalize_window_as_list();
+        }
 
         // if we flatten this column we need to make sure the groups are sorted.
         let mut sort_groups = self.options.explode ||
