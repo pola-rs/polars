@@ -433,7 +433,7 @@ pub trait Utf8Methods: AsUtf8 {
                                 Some(tz_found) => {
                                     if tz_found != dt.timezone() {
                                         return Err(PolarsError::ComputeError(
-                                            "Different timezones found during 'strptime' operation.".into(),
+                                            "Different timezones found during 'strptime' operation. You might want to use `utc=True` and then set the time zone after parsing".into()
                                         ));
                                     }
                                 }

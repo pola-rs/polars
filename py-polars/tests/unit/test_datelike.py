@@ -2676,7 +2676,11 @@ def test_crossing_dst(fmt: str) -> None:
 def test_crossing_dst_tz_aware(fmt: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     with pytest.raises(
-        ComputeError, match=r"^Different timezones found during 'strptime' operation.$"
+        ComputeError,
+        match=(
+            r"^Different timezones found during 'strptime' operation. "
+            "You might want to use `utc=True` and then set the time zone after parsing$"
+        ),
     ):
         pl.Series(ts).str.strptime(pl.Datetime, fmt, utc=False)
 
