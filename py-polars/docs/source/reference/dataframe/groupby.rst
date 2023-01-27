@@ -10,7 +10,7 @@ This namespace is available after calling :code:`DataFrame.groupby(...)`.
 
     GroupBy.__iter__
     GroupBy.agg
-    GroupBy.agg_list
+    GroupBy.all
     GroupBy.apply
     GroupBy.count
     GroupBy.first

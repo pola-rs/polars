@@ -247,7 +247,7 @@ def test_opaque_filter_on_lists_3784() -> None:
     ).lazy()
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
 
-    df_groups = df.groupby("group").agg([pl.col("str").list().alias("str_list")])
+    df_groups = df.groupby("group").agg([pl.col("str").alias("str_list")])
 
     pre = "A"
     succ = "B"

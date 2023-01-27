@@ -253,8 +253,10 @@ impl ExecutionState {
     }
 
     pub(super) fn set_finalize_window_as_list(&self) {
-        let mut flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
-        flags |= StateFlags::FINALIZE_WINDOW_AS_LIST;
+        self.set_flags(&|mut flags| {
+            flags |= StateFlags::FINALIZE_WINDOW_AS_LIST;
+            flags
+        })
     }
 
     pub(super) fn unset_finalize_window_as_list(&self) -> bool {

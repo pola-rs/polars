@@ -216,7 +216,7 @@ def test_recursive_logical_type() -> None:
     df = pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
 
-    df_groups = df.groupby("group").agg([pl.col("str").list().alias("cat_list")])
+    df_groups = df.groupby("group").agg([pl.col("str").alias("cat_list")])
     f = io.BytesIO()
     df_groups.write_parquet(f, use_pyarrow=True)
     f.seek(0)
@@ -231,7 +231,7 @@ def test_nested_dictionary() -> None:
             pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
             .with_columns(pl.col("str").cast(pl.Categorical))
             .groupby("group")
-            .agg([pl.col("str").list().alias("cat_list")])
+            .agg([pl.col("str").alias("cat_list")])
         )
         f = io.BytesIO()
         df.write_parquet(f)

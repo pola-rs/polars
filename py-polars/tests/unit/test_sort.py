@@ -296,7 +296,8 @@ def test_explicit_list_agg_sort_in_groupby() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
     assert (
         df.groupby("A")
-        .agg(pl.col("B").list().sort(reverse=True))
+        # this was col().list().sort() before we changed the logic
+        .agg(pl.col("B").sort(reverse=True))
         .sort("A")
         .frame_equal(df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A"))
     )

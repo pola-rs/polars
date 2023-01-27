@@ -171,21 +171,11 @@ impl PhysicalExpr for AggregationExpr {
                     let agg = ac.aggregated();
 
                     if state.unset_finalize_window_as_list() {
-                        let ca = agg.list().unwrap();
-                        // todo! simply nest by settings a list array with new indexes
-                        let ca: ListChunked = POOL.install(|| {
-                            ca.par_iter()
-                                .map(|opt_s| {
-                                    opt_s.map(|s| {
-                                        let ca = s.to_list().unwrap();
-                                        ca.into_series()
-                                    })
-                                })
-                                .collect()
-                        });
-                        rename_series(ca.into_series(), &keep_name)
-                    } else {
                         rename_series(agg, &keep_name)
+                    } else {
+                        let ca = agg.list().unwrap();
+                        let s = run_list_agg(ca);
+                        rename_series(s, &keep_name)
                     }
                 }
                 GroupByMethod::Groups => {
@@ -447,7 +437,7 @@ impl PartitionedAggregation for AggregationExpr {
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
-                Ok(ca.into_series())
+                Ok(run_list_agg(&ca))
             }
             GroupByMethod::First => {
                 let mut agg = unsafe { partitioned.agg_first(groups) };
@@ -547,4 +537,20 @@ impl PhysicalExpr for AggQuantileExpr {
     fn is_valid_aggregation(&self) -> bool {
         true
     }
+}
+
+fn run_list_agg(ca: &ListChunked) -> Series {
+    // todo! simply nest by settings a list array with new indexes
+    let mut out: ListChunked = POOL.install(|| {
+        ca.par_iter()
+            .map(|opt_s| {
+                opt_s.map(|s| {
+                    let ca = s.to_list().unwrap();
+                    ca.into_series()
+                })
+            })
+            .collect()
+    });
+    out.rename(ca.name());
+    out.into_series()
 }

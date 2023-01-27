@@ -12,7 +12,7 @@ def test_projection_on_semi_join_4789() -> None:
 
     ab = lfa.join(lfb, on="p", how="semi").inspect()
 
-    intermediate_agg = (ab.groupby("a").agg([pl.col("a").list().alias("seq")])).select(
+    intermediate_agg = (ab.groupby("a").agg([pl.col("a").alias("seq")])).select(
         ["a", "seq"]
     )
 
