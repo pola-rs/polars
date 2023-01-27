@@ -550,7 +550,7 @@ impl PyExpr {
                 strict,
                 exact,
                 cache,
-                tz_aware: false,
+                tz_aware: None,
             })
             .into()
     }
@@ -561,7 +561,7 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
-        tz_aware: bool,
+        tz_aware: Option<bool>,
         tu: Option<Wrap<TimeUnit>>,
     ) -> PyExpr {
         let result_tu = match (&fmt, tu) {
@@ -611,7 +611,7 @@ impl PyExpr {
                 strict,
                 exact,
                 cache,
-                tz_aware: false,
+                tz_aware: None,
             })
             .into()
     }

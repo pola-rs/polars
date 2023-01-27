@@ -31,7 +31,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        tz_aware: bool = False,
+        tz_aware: bool | None = None,
     ) -> pli.Expr:
         """
         Parse a Utf8 expression to a Date/Datetime/Time type.
@@ -55,8 +55,8 @@ class ExprStringNameSpace:
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         tz_aware
-            Parse timezone aware datetimes. This may be automatically toggled by the
-            'fmt' given.
+            Parse timezone aware datetimes. If None, then this may be automatically
+            toggled by the 'fmt' given.
 
         Notes
         -----

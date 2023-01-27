@@ -20,7 +20,7 @@ pub struct StrpTimeOptions {
     /// use a cache of unique, converted dates to apply the datetime conversion.
     pub cache: bool,
     /// Parse a timezone aware timestamp
-    pub tz_aware: bool,
+    pub tz_aware: Option<bool>,
 }
 
 impl Default for StrpTimeOptions {
@@ -31,7 +31,7 @@ impl Default for StrpTimeOptions {
             strict: false,
             exact: false,
             cache: true,
-            tz_aware: false,
+            tz_aware: None,
         }
     }
 }

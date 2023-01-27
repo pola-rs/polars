@@ -388,17 +388,20 @@ pub trait Utf8Methods: AsUtf8 {
         fmt: Option<&str>,
         tu: TimeUnit,
         cache: bool,
-        mut tz_aware: bool,
+        tz_aware: Option<bool>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu),
         };
-        // todo! use regex?
-        if fmt.contains("%z") || fmt.contains("%:z") || fmt.contains("%#z") || fmt == "%+" {
-            tz_aware = true;
-        }
+        let tz_aware = match tz_aware {
+            None => {
+                // todo! use regex?
+                fmt.contains("%z") || fmt.contains("%:z") || fmt.contains("%#z") || fmt == "%+"
+            }
+            Some(tz_aware) => tz_aware,
+        };
         let fmt = self::strptime::compile_fmt(fmt);
         let cache = cache && utf8_ca.len() > 50;
 
