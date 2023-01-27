@@ -47,7 +47,8 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 }
 
 fn format_err(msg: &str, input: &LogicalPlan) -> String {
-    format!("{msg}\n\n> Error originated just after operation: '{input:?}'",)
+    format!("{msg}\n\n> Error originated just after operation: '{input:?}'\n\
+    This operation could not be added to the plan.",)
 }
 
 /// Returns every error or msg: &str as `ComputeError`.
@@ -422,7 +423,7 @@ impl LogicalPlanBuilder {
             );
             if rewritten.is_empty() {
                 let msg = "The predicate expanded to zero expressions. \
-                This may for example be caused by a regex not matching column names or\
+                This may for example be caused by a regex not matching column names or \
                 a column dtype match not hitting any dtypes in the DataFrame";
                 return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
             }
