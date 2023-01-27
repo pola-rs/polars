@@ -663,7 +663,7 @@ class GroupBy(Generic[DF]):
         """
         Aggregate the groups into Series.
 
-       .. deprecated:: 0.16.0
+        .. deprecated:: 0.16.0
             Use ```all()``
 
         Examples

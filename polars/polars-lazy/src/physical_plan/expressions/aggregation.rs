@@ -9,8 +9,8 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
+#[cfg(feature = "dtype-struct")]
 use polars_core::POOL;
-use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PartitionedAggregation;
@@ -540,17 +540,17 @@ impl PhysicalExpr for AggQuantileExpr {
 }
 
 fn run_list_agg(ca: &ListChunked) -> Series {
-    // todo! simply nest by settings a list array with new indexes
-    let mut out: ListChunked = POOL.install(|| {
-        ca.par_iter()
-            .map(|opt_s| {
-                opt_s.map(|s| {
-                    let ca = s.to_list().unwrap();
-                    ca.into_series()
-                })
-            })
-            .collect()
-    });
-    out.rename(ca.name());
-    out.into_series()
+    assert_eq!(ca.chunks().len(), 1);
+    let arr = ca.chunks()[0].clone();
+
+    let offsets = (0i64..(ca.len() as i64 + 1)).collect::<Vec<_>>();
+    let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+    let new_arr = LargeListArray::new(
+        DataType::List(Box::new(ca.dtype().clone())).to_arrow(),
+        offsets.into(),
+        arr,
+        None,
+    );
+    unsafe { ListChunked::from_chunks(ca.name(), vec![Box::new(new_arr)]).into_series() }
 }
