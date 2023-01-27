@@ -47,8 +47,10 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 }
 
 fn format_err(msg: &str, input: &LogicalPlan) -> String {
-    format!("{msg}\n\n> Error originated just after operation: '{input:?}'\n\
-    This operation could not be added to the plan.",)
+    format!(
+        "{msg}\n\n> Error originated just after operation: '{input:?}'\n\
+    This operation could not be added to the plan.",
+    )
 }
 
 /// Returns every error or msg: &str as `ComputeError`.
