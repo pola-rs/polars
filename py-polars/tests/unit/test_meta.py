@@ -48,3 +48,13 @@ def test_undo_aliases() -> None:
     e.alias("bar").alias("foo")
     assert e.meta.undo_aliases().meta == e
     assert e.suffix("ham").meta.undo_aliases().meta == e
+
+
+def test_meta_has_multiple_outputs() -> None:
+    e = pl.col(["a", "b"]).alias("bar")
+    assert e.meta.has_multiple_outputs()
+
+
+def test_meta_is_regex_projection() -> None:
+    e = pl.col("^.*$").alias("bar")
+    assert e.meta.is_regex_projection()
