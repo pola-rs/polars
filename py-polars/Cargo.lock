@@ -1720,10 +1720,12 @@ dependencies = [
  "chrono-tz 0.8.1",
  "lexical",
  "now",
+ "once_cell",
  "polars-arrow",
  "polars-core",
  "polars-ops",
  "polars-utils",
+ "regex",
  "serde",
 ]
 
