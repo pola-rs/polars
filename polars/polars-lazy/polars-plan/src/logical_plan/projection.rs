@@ -118,6 +118,10 @@ fn expand_regex(
     Ok(())
 }
 
+pub(crate) fn is_regex_projection(name: &str) -> bool {
+    name.starts_with('^') && name.ends_with('$')
+}
+
 #[cfg(feature = "regex")]
 /// This function searches for a regex expression in `col("..")` and expands the columns
 /// that are selected by that regex in `result`. The regex should start with `^` and end with `$`.
@@ -125,7 +129,7 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> Polars
     let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
     for name in &roots {
-        if name.starts_with('^') && name.ends_with('$') {
+        if is_regex_projection(name) {
             match regex {
                 None => {
                     regex = Some(name);

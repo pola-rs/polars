@@ -36,4 +36,11 @@ impl PyExpr {
     fn meta_undo_aliases(&self) -> PyExpr {
         self.inner.clone().meta().undo_aliases().into()
     }
+
+    fn meta_has_multiple_outputs(&self) -> bool {
+        self.inner.clone().meta().has_multiple_outputs()
+    }
+    fn meta_is_regex_projection(&self) -> bool {
+        self.inner.clone().meta().is_regex_projection()
+    }
 }
