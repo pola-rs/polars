@@ -42,7 +42,7 @@ pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest tests/unit/
+	$(VENV_BIN)/pytest tests/unit/ --numprocesses=auto
 
 .PHONY: doctest
 doctest: venv build  ## Run doctests
@@ -50,12 +50,12 @@ doctest: venv build  ## Run doctests
 
 .PHONY: test-all
 test-all: venv build  ## Run all tests
-	$(VENV_BIN)/pytest
+	$(VENV_BIN)/pytest --numprocesses=auto
 	$(VENV_BIN)/python tests/docs/run_doc_examples.py
 
 .PHONY: coverage
 coverage: venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov
+	$(VENV_BIN)/pytest --cov --numprocesses=auto
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
