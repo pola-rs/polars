@@ -508,7 +508,7 @@ mod test {
                     "2020-01-08 23:16:43",
                 ],
             )
-            .as_datetime(None, tu, false, false)?
+            .as_datetime(None, tu, false, false, false)?
             .into_series();
             let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
@@ -546,7 +546,7 @@ mod test {
                 "2020-01-08 23:16:43",
             ],
         )
-        .as_datetime(None, TimeUnit::Milliseconds, false, false)?
+        .as_datetime(None, TimeUnit::Milliseconds, false, false, false)?
         .into_series();
         let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
