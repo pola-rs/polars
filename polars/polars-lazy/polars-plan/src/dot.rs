@@ -1,4 +1,5 @@
-use std::fmt::Write;
+use std::fmt::{Display, Write};
+use std::path::Path;
 
 use polars_core::prelude::*;
 
@@ -7,7 +8,6 @@ use crate::utils::expr_to_leaf_column_names;
 
 impl Expr {
     /// Get a dot language representation of the Expression.
-    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub fn to_dot(&self) -> PolarsResult<String> {
         let mut s = String::with_capacity(512);
         self.dot_viz(&mut s, (0, 0), "").expect("io error");
@@ -34,7 +34,6 @@ impl Expr {
         }
     }
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     fn dot_viz(
         &self,
         acc_str: &mut String,
@@ -48,9 +47,8 @@ impl Expr {
                 let current_node = format!(
                     r#"BINARY
                     left _;
-                    op {:?},
-                    right: _ [{},{}]"#,
-                    op, branch, id
+                    op {op:?},
+                    right: _ [{branch},{id}]"#,
                 );
 
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -60,7 +58,7 @@ impl Expr {
                 }
                 Ok(())
             }
-            _ => self.write_dot(acc_str, prev_node, &format!("{}{}", branch, id), id),
+            _ => self.write_dot(acc_str, prev_node, &format!("{branch}{id}"), id),
         }
     }
 }
@@ -73,6 +71,12 @@ pub struct DotNode<'a> {
 }
 
 impl LogicalPlan {
+    fn write_single_node(&self, acc_str: &mut String, node: DotNode) -> std::fmt::Result {
+        let fmt_node = node.fmt.replace('"', r#"\""#);
+        writeln!(acc_str, "graph  polars_query {{\n\"[{fmt_node}]\"")?;
+        Ok(())
+    }
+
     fn write_dot(
         &self,
         acc_str: &mut String,
@@ -106,13 +110,16 @@ impl LogicalPlan {
         }
     }
 
+    fn is_single(&self, branch: usize, id: usize) -> bool {
+        id == 0 && branch == 0
+    }
+
     ///
     /// # Arguments
     /// `id` - (branch, id)
     ///     Used to make sure that the dot boxes are distinct.
     ///     branch is an id per join/union branch
     ///     id is incremented by the depth traversal of the tree.
-    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub fn dot(
         &self,
         acc_str: &mut String,
@@ -122,18 +129,22 @@ impl LogicalPlan {
     ) -> std::fmt::Result {
         use LogicalPlan::*;
         let (mut branch, id) = id;
-        match self {
-            AnonymousScan { schema, .. } => {
-                let total_columns = schema.len();
 
-                let fmt = format!("ANONYMOUS SCAN;\nπ {}", total_columns);
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
-            }
+        match self {
+            AnonymousScan {
+                file_info, options, ..
+            } => self.write_scan(
+                acc_str,
+                prev_node,
+                "ANONYMOUS SCAN",
+                Path::new(""),
+                options.with_columns.as_deref().map(|cols| cols.as_slice()),
+                file_info.schema.len(),
+                &options.predicate,
+                branch,
+                id,
+                id_map,
+            ),
             Union { inputs, .. } => {
                 let current_node = DotNode {
                     branch,
@@ -168,7 +179,7 @@ impl LogicalPlan {
             }
             Selection { predicate, input } => {
                 let pred = fmt_predicate(Some(predicate));
-                let fmt = format!("FILTER BY {}", pred);
+                let fmt = format!("FILTER BY {pred}");
 
                 let current_node = DotNode {
                     branch,
@@ -180,73 +191,18 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
             #[cfg(feature = "python")]
-            PythonScan { options } => {
-                let schema = &options.schema;
-                let total_columns = schema.len();
-                let n_columns = if let Some(columns) = &options.with_columns {
-                    format!("{}", columns.len())
-                } else {
-                    "*".to_string()
-                };
-
-                let fmt = format!("PYTHON SCAN;\nπ {}/{};", n_columns, total_columns,);
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
-            }
-            #[cfg(feature = "csv-file")]
-            CsvScan {
-                path,
-                options,
-                schema,
-                predicate,
-                ..
-            } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-                let pred = fmt_predicate(predicate.as_ref());
-
-                let fmt = format!(
-                    "CSV SCAN {};\nπ {}/{};\nσ {};",
-                    path.to_string_lossy(),
-                    n_columns,
-                    total_columns,
-                    pred,
-                );
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
-            }
-            DataFrameScan {
-                schema,
-                projection,
-                selection,
-                ..
-            } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = projection {
-                    n_columns = format!("{}", columns.len());
-                }
-
-                let pred = fmt_predicate(selection.as_ref());
-                let fmt = format!("TABLE\nπ {}/{};\nσ {};", n_columns, total_columns, pred,);
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
-            }
+            PythonScan { options } => self.write_scan(
+                acc_str,
+                prev_node,
+                "PYTHON",
+                Path::new(""),
+                options.with_columns.as_ref().map(|s| s.as_slice()),
+                options.schema.len(),
+                &options.predicate,
+                branch,
+                id,
+                id_map,
+            ),
             Projection { expr, input, .. } => {
                 let schema = input.schema().map_err(|_| {
                     eprintln!("could not determine schema");
@@ -266,7 +222,7 @@ impl LogicalPlan {
             Sort {
                 input, by_column, ..
             } => {
-                let fmt = format!("SORT BY {:?}", by_column);
+                let fmt = format!("SORT BY {by_column:?}");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -291,7 +247,7 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
             Explode { input, columns, .. } => {
-                let fmt = format!("EXPLODE {:?}", columns);
+                let fmt = format!("EXPLODE {columns:?}");
 
                 let current_node = DotNode {
                     branch,
@@ -316,7 +272,7 @@ impl LogicalPlan {
                 let mut s_keys = String::with_capacity(128);
                 s_keys.push('[');
                 for key in keys.iter() {
-                    write!(s_keys, "{:?},", key)?
+                    write!(s_keys, "{key:?},")?
                 }
                 s_keys.pop();
                 s_keys.push(']');
@@ -334,10 +290,10 @@ impl LogicalPlan {
                 fmt.push_str("WITH COLUMNS [");
                 for e in exprs {
                     if let Expr::Alias(_, name) = e {
-                        write!(fmt, "\"{}\",", name)?
+                        write!(fmt, "\"{name}\",")?
                     } else {
                         for name in expr_to_leaf_column_names(e).iter().take(1) {
-                            write!(fmt, "\"{}\",", name)?
+                            write!(fmt, "\"{name}\",")?
                         }
                     }
                 }
@@ -352,7 +308,7 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
             Slice { input, offset, len } => {
-                let fmt = format!("SLICE offset: {}; len: {}", offset, len,);
+                let fmt = format!("SLICE offset: {offset}; len: {len}");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -367,7 +323,7 @@ impl LogicalPlan {
                 if let Some(subset) = &options.subset {
                     fmt.push_str(" BY ");
                     for name in subset.iter() {
-                        write!(fmt, "{}", name)?
+                        write!(fmt, "{name}")?
                     }
                 }
                 let current_node = DotNode {
@@ -379,76 +335,101 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
+            DataFrameScan {
+                schema,
+                projection,
+                selection,
+                ..
+            } => {
+                let total_columns = schema.len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = projection {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                let pred = fmt_predicate(selection.as_ref());
+                let fmt = format!("TABLE\nπ {n_columns}/{total_columns};\nσ {pred};");
+                let current_node = DotNode {
+                    branch,
+                    id,
+                    fmt: &fmt,
+                };
+                if self.is_single(branch, id) {
+                    self.write_single_node(acc_str, current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, current_node, id_map)
+                }
+            }
+            #[cfg(feature = "csv-file")]
+            CsvScan {
+                path,
+                options,
+                file_info,
+                predicate,
+                ..
+            } => self.write_scan(
+                acc_str,
+                prev_node,
+                "CSV",
+                path.as_ref(),
+                options.with_columns.as_deref().map(|cols| cols.as_slice()),
+                file_info.schema.len(),
+                predicate,
+                branch,
+                id,
+                id_map,
+            ),
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
-                schema,
+                file_info,
                 predicate,
                 options,
                 ..
-            } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-
-                let pred = fmt_predicate(predicate.as_ref());
-                let fmt = format!(
-                    "PARQUET SCAN {};\nπ {}/{};\nσ {}",
-                    path.to_string_lossy(),
-                    n_columns,
-                    total_columns,
-                    pred,
-                );
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
-            }
+            } => self.write_scan(
+                acc_str,
+                prev_node,
+                "PARQUET",
+                path.as_ref(),
+                options.with_columns.as_deref().map(|cols| cols.as_slice()),
+                file_info.schema.len(),
+                predicate,
+                branch,
+                id,
+                id_map,
+            ),
             #[cfg(feature = "ipc")]
             IpcScan {
                 path,
-                schema,
+                file_info,
                 options,
                 predicate,
                 ..
-            } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-
-                let pred = fmt_predicate(predicate.as_ref());
-                let fmt = format!(
-                    "IPC SCAN {};\nπ {}/{};\nσ {}",
-                    path.to_string_lossy(),
-                    n_columns,
-                    total_columns,
-                    pred,
-                );
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)
-            }
+            } => self.write_scan(
+                acc_str,
+                prev_node,
+                "IPC",
+                path.as_ref(),
+                options.with_columns.as_deref().map(|cols| cols.as_slice()),
+                file_info.schema.len(),
+                predicate,
+                branch,
+                id,
+                id_map,
+            ),
             Join {
                 input_left,
                 input_right,
                 left_on,
                 right_on,
+                options,
                 ..
             } => {
                 let fmt = format!(
-                    r#"JOIN
+                    r#"JOIN {}
                     left {:?};
                     right: {:?}"#,
-                    left_on, right_on
+                    options.how, left_on, right_on
                 );
                 let current_node = DotNode {
                     branch,
@@ -462,7 +443,7 @@ impl LogicalPlan {
             MapFunction {
                 input, function, ..
             } => {
-                let fmt = format!("{}", function);
+                let fmt = format!("{function}");
                 let current_node = DotNode {
                     branch,
                     id,
@@ -480,6 +461,15 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
+            FileSink { input, .. } => {
+                let current_node = DotNode {
+                    branch,
+                    id,
+                    fmt: "FILE_SINK",
+                };
+                self.write_dot(acc_str, prev_node, current_node, id_map)?;
+                input.dot(acc_str, (branch, id + 1), current_node, id_map)
+            }
             Error { err, .. } => {
                 let fmt = format!("{:?}", &**err);
                 let current_node = DotNode {
@@ -491,12 +481,51 @@ impl LogicalPlan {
             }
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write_scan<P: Display>(
+        &self,
+        acc_str: &mut String,
+        prev_node: DotNode,
+        name: &str,
+        path: &Path,
+        with_columns: Option<&[String]>,
+        total_columns: usize,
+        predicate: &Option<P>,
+        branch: usize,
+        id: usize,
+        id_map: &mut PlHashMap<String, String>,
+    ) -> std::fmt::Result {
+        let mut n_columns_fmt = "*".to_string();
+        if let Some(columns) = with_columns {
+            n_columns_fmt = format!("{}", columns.len());
+        }
+
+        let pred = fmt_predicate(predicate.as_ref());
+        let fmt = format!(
+            "{name} SCAN {};\nπ {}/{};\nσ {}",
+            path.to_string_lossy(),
+            n_columns_fmt,
+            total_columns,
+            pred,
+        );
+        let current_node = DotNode {
+            branch,
+            id,
+            fmt: &fmt,
+        };
+        if self.is_single(branch, id) {
+            self.write_single_node(acc_str, current_node)
+        } else {
+            self.write_dot(acc_str, prev_node, current_node, id_map)
+        }
+    }
 }
 
-fn fmt_predicate(predicate: Option<&Expr>) -> String {
+fn fmt_predicate<P: Display>(predicate: Option<&P>) -> String {
     if let Some(predicate) = predicate {
         let n = 25;
-        let mut pred_fmt = format!("{:?}", predicate);
+        let mut pred_fmt = format!("{predicate}");
         pred_fmt = pred_fmt.replace('[', "");
         pred_fmt = pred_fmt.replace(']', "");
         if pred_fmt.len() > n {

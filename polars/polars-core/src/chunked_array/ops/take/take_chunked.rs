@@ -1,3 +1,5 @@
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::*;
 use crate::series::IsSorted;
 
@@ -21,8 +23,8 @@ where
             let ca: NoNull<Self> = by
                 .iter()
                 .map(|[chunk_idx, array_idx]| {
-                    let arr = arrs.get_unchecked(*chunk_idx as usize);
-                    *arr.get_unchecked(*array_idx as usize)
+                    let arr = arrs.get_unchecked_release(*chunk_idx as usize);
+                    *arr.get_unchecked_release(*array_idx as usize)
                 })
                 .collect_trusted();
 
@@ -37,7 +39,7 @@ where
                 .collect_trusted()
         };
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -47,7 +49,7 @@ where
             .iter()
             .map(|opt_idx| {
                 opt_idx.and_then(|[chunk_idx, array_idx]| {
-                    let arr = arrs.get_unchecked(chunk_idx as usize);
+                    let arr = arrs.get_unchecked_release(chunk_idx as usize);
                     arr.get_unchecked(array_idx as usize)
                 })
             })
@@ -69,7 +71,7 @@ impl TakeChunked for Utf8Chunked {
             })
             .collect_trusted();
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -102,7 +104,7 @@ impl TakeChunked for BinaryChunked {
             })
             .collect_trusted();
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -134,7 +136,7 @@ impl TakeChunked for BooleanChunked {
             })
             .collect_trusted();
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -166,7 +168,7 @@ impl TakeChunked for ListChunked {
             })
             .collect();
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 
@@ -200,7 +202,7 @@ impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
             .collect();
 
         ca.rename(self.name());
-        ca.set_sorted2(sorted);
+        ca.set_sorted_flag(sorted);
         ca
     }
 

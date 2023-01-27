@@ -21,6 +21,21 @@ pub enum ClosedWindow {
     None,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum StartBy {
+    WindowBound,
+    DataPoint,
+    /// only useful if periods are weekly
+    Monday,
+}
+
+impl Default for StartBy {
+    fn default() -> Self {
+        Self::WindowBound
+    }
+}
+
 /// Based on the given `Window`, which has an
 /// - every
 /// - period
@@ -38,8 +53,12 @@ pub fn groupby_windows(
     tu: TimeUnit,
     include_lower_bound: bool,
     include_upper_bound: bool,
+    start_by: StartBy,
 ) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
     let start = time[0];
+    // the boundary we define here is not yet correct. It doesn't take 'period' into account
+    // and it doesn't have the proper starting point. This boundary is used as a proxy to find
+    // the proper 'boundary' in  'window.get_overlapping_bounds_iter'.
     let boundary = if time.len() > 1 {
         // +1 because left or closed boundary could match the next window if it is on the boundary
         let stop = time[time.len() - 1] + 1;
@@ -76,7 +95,7 @@ pub fn groupby_windows(
     };
     let mut start_offset = 0;
 
-    for bi in window.get_overlapping_bounds_iter(boundary, tu) {
+    for bi in window.get_overlapping_bounds_iter(boundary, tu, start_by) {
         let mut skip_window = false;
         // find starting point of window
         while start_offset < time.len() {
@@ -151,7 +170,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
     tu: TimeUnit,
     start_offset: usize,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
-    debug_assert!(offset.nanoseconds() >= period.nanoseconds());
+    debug_assert!(offset.duration_ns() >= period.duration_ns());
     debug_assert!(offset.negative);
 
     let add = match tu {
@@ -347,7 +366,7 @@ fn partially_check_sorted(time: &[i64]) {
         assert!(time[..std::cmp::min(time.len(), 10)].windows(2).filter_map(|w| match w[0].cmp(&w[1]) {
             Ordering::Equal => None,
             t => Some(t)
-        }).all_equal(), "subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.");
+        }).all_equal(), "Subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.");
     }
 }
 
@@ -398,12 +417,12 @@ pub fn groupby_values(
 
     // we have a (partial) lookbehind window
     if offset.negative {
-        if offset.nanoseconds() >= period.nanoseconds() {
+        if offset.duration_ns() >= period.duration_ns() {
             // lookbehind
             // window is within 2 periods length of t
             // ------t---
             // [------]
-            if offset.nanoseconds() < period.nanoseconds() * 2 {
+            if offset.duration_ns() < period.duration_ns() * 2 {
                 let vals = thread_offsets
                     .par_iter()
                     .copied()

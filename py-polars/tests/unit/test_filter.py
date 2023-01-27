@@ -69,3 +69,67 @@ def test_filter_aggregation_any() -> None:
         "any": [[False, True, True], [True]],
         "filtered": [[3, 4], [2]],
     }
+
+
+def test_is_in_bool() -> None:
+    bool_value_to_filter_on = [True, None]
+    df = pl.DataFrame({"A": [True, False, None]})
+    assert df.filter(pl.col("A").is_in(bool_value_to_filter_on)).to_dict(False) == {
+        "A": [True, False]
+    }
+
+
+def test_predicate_order_explode_5950() -> None:
+    df = pl.from_dict(
+        {
+            "i": [[0, 1], [1, 2]],
+            "n": [0, None],
+        }
+    )
+
+    assert (
+        df.lazy()
+        .explode("i")
+        .filter(pl.col("n").count().over(["i"]) == 2)
+        .filter(pl.col("n").is_not_null())
+    ).collect().to_dict(False) == {"i": [1], "n": [0]}
+
+
+def test_binary_simplification_5971() -> None:
+    df = pl.DataFrame(pl.Series("a", [1, 2, 3, 4]))
+    assert df.select((pl.col("a") > 2) | pl.lit(False))["a"].to_list() == [
+        False,
+        False,
+        True,
+        True,
+    ]
+
+
+def test_categorical_string_comparison_6283() -> None:
+    scores = pl.DataFrame(
+        {
+            "zone": pl.Series(
+                [
+                    "North",
+                    "North",
+                    "North",
+                    "South",
+                    "South",
+                    "East",
+                    "East",
+                    "East",
+                    "East",
+                ]
+            ).cast(pl.Categorical),
+            "funding": pl.Series(
+                ["yes", "yes", "no", "yes", "no", "no", "no", "yes", "yes"]
+            ).cast(pl.Categorical),
+            "score": [78, 39, 76, 56, 67, 89, 100, 55, 80],
+        }
+    )
+
+    assert scores.filter(scores["zone"] == "North").to_dict(False) == {
+        "zone": ["North", "North", "North"],
+        "funding": ["yes", "yes", "no"],
+        "score": [78, 39, 76],
+    }

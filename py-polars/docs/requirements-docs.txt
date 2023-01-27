@@ -1,16 +1,19 @@
+--prefer-binary
+
 numpy
 pandas
 pyarrow
 
-hypothesis==6.56.4
+hypothesis==6.62.1
 
 autodocsumm==0.2.9
 commonmark==0.9.1
 ghp-import==2.1.0
 numpydoc==1.5.0
-pydata-sphinx-theme==0.11.0
+pydata-sphinx-theme==0.12.0
 sphinx-autosummary-accessors==2022.4.0
-sphinx-copybutton==0.5.0
+sphinx-copybutton==0.5.1
+sphinx-design==0.3.0
 sphinx==5.3.0
 sphinxcontrib-applehelp==1.0.2
 sphinxcontrib-devhelp==1.0.2

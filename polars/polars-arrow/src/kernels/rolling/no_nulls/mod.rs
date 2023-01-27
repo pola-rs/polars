@@ -56,27 +56,22 @@ where
         .collect_trusted::<Vec<_>>();
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),
     ))
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QuantileInterpolOptions {
+    #[default]
     Nearest,
     Lower,
     Higher,
     Midpoint,
     Linear,
-}
-
-impl Default for QuantileInterpolOptions {
-    fn default() -> Self {
-        QuantileInterpolOptions::Nearest
-    }
 }
 
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(
@@ -104,7 +99,7 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         DataType::from(T::PRIMITIVE),
         out.into(),
         validity.map(|b| b.into()),

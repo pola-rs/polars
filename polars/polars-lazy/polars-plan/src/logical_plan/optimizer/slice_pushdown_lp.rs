@@ -3,7 +3,9 @@ use polars_core::prelude::*;
 use crate::prelude::*;
 use crate::utils::aexpr_is_simple_projection;
 
-pub(super) struct SlicePushDown {}
+pub(super) struct SlicePushDown {
+    streaming: bool,
+}
 
 #[derive(Copy, Clone)]
 struct State {
@@ -12,6 +14,10 @@ struct State {
 }
 
 impl SlicePushDown {
+    pub(super) fn new(streaming: bool) -> Self {
+        Self { streaming }
+    }
+
     // slice will be done at this node if we found any
     // we also stop optimization
     fn no_pushdown_finish_opt(
@@ -97,7 +103,7 @@ impl SlicePushDown {
         match (lp, state) {
             (AnonymousScan {
                 function,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
@@ -109,7 +115,7 @@ impl SlicePushDown {
                 options.n_rows = Some(state.len as usize);
                 let lp = AnonymousScan {
                     function,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options,
@@ -121,10 +127,11 @@ impl SlicePushDown {
             #[cfg(feature = "parquet")]
             (ParquetScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 predicate,
                 options,
+                cloud_options,
 
             },
                 // TODO! we currently skip slice pushdown if there is a predicate.
@@ -134,17 +141,18 @@ impl SlicePushDown {
                 options.n_rows = Some(state.len as usize);
                 let lp = ParquetScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
-                    options
+                    options,
+                    cloud_options,
                 };
 
                 Ok(lp)
             },
             #[cfg(feature = "ipc")]
             (IpcScan {path,
-            schema,
+            file_info,
                 output_schema,
                 predicate,
                 options
@@ -153,7 +161,7 @@ impl SlicePushDown {
                 options.n_rows = Some(state.len as usize);
                 let lp = IpcScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     options
@@ -166,7 +174,7 @@ impl SlicePushDown {
             #[cfg(feature = "csv-file")]
             (CsvScan {
                 path,
-                schema,
+                file_info,
                 output_schema,
                 options,
                 predicate,
@@ -177,7 +185,7 @@ impl SlicePushDown {
 
                 let lp = CsvScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     options,
                     predicate,
@@ -198,7 +206,7 @@ impl SlicePushDown {
                 left_on,
                 right_on,
                 mut options
-            }, Some(state)) => {
+            }, Some(state)) if !self.streaming => {
                 // first restart optimization in both inputs and get the updated LP
                 let lp_left = lp_arena.take(input_left);
                 let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;
@@ -298,6 +306,8 @@ impl SlicePushDown {
             | m @ (Distinct {..}, _)
             | m @ (HStack {..},_)
             | m @ (Aggregate{..},_)
+            // blocking in streaming
+            | m @ (Join{..},_)
             => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)

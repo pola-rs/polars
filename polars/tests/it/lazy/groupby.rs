@@ -1,4 +1,6 @@
 use polars_core::series::ops::NullBehavior;
+// used only if feature="dtype-duration", "dtype-struct"
+#[allow(unused_imports)]
 use polars_core::SINGLE_LOCK;
 
 use super::*;
@@ -175,7 +177,7 @@ fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
     let duration = out.column("duration")?;
 
     assert_eq!(
-        duration.get(0),
+        duration.get(0)?,
         AnyValue::Duration(1500, TimeUnit::Microseconds)
     );
 

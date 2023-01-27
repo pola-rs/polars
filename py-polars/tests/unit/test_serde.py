@@ -13,9 +13,9 @@ def test_pickling_simple_expression() -> None:
     assert str(pickle.loads(buf)) == str(e)
 
 
-def serde_lazy_frame_lp() -> None:
+def test_serde_lazy_frame_lp() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
-    json = lf.write_json(to_string=True)
+    json = lf.write_json()
 
     assert (
         pl.LazyFrame.from_json(json)
@@ -56,3 +56,8 @@ def test_serde_duration() -> None:
         serde_df["a_td"],
         pl.Series("a_td", [None, timedelta(days=1)], dtype=pl.Duration("ns")),
     )
+
+
+def test_serde_expression_5461() -> None:
+    e = pl.col("a").sqrt() / pl.col("b").alias("c")
+    assert pickle.loads(pickle.dumps(e)).meta == e.meta

@@ -52,7 +52,7 @@ where
         probe
             .into_par_iter()
             .zip(offsets)
-            .map(|(probe, offset)| {
+            .flat_map(|(probe, offset)| {
                 let probe = probe.as_ref();
                 // local reference
                 let hash_tbls = &hash_tbls;
@@ -82,7 +82,6 @@ where
 
                 results
             })
-            .flatten()
             .unzip()
     })
 }

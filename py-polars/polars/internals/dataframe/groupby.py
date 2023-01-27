@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-import warnings
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterable, Sequence, TypeVar
+from datetime import timedelta
+from typing import TYPE_CHECKING, Callable, Generic, Iterator, Sequence, TypeVar
 
 import polars.internals as pli
-from polars.internals.dataframe.pivot import PivotOps
+from polars.utils import _timedelta_to_pl_duration, is_str_sequence
 
 if TYPE_CHECKING:
-    from polars.datatypes import DataType
-    from polars.internals.type_aliases import ClosedWindow, InterpolationMethod
+    from polars.internals.type_aliases import (
+        ClosedInterval,
+        RollingInterpolationMethod,
+        StartBy,
+    )
     from polars.polars import PyDataFrame
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
@@ -17,50 +20,14 @@ DF = TypeVar("DF", bound="pli.DataFrame")
 
 
 class GroupBy(Generic[DF]):
-    """
-    Starts a new GroupBy operation.
-
-    You can also loop over this Object to loop over `DataFrames` with unique groups.
-
-    Examples
-    --------
-    >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
-    >>> for group in df.groupby("foo"):
-    ...     print(group)
-    ... # doctest: +IGNORE_RESULT
-    ...
-    shape: (2, 2)
-    ┌─────┬─────┐
-    │ foo ┆ bar │
-    │ --- ┆ --- │
-    │ str ┆ i64 │
-    ╞═════╪═════╡
-    │ a   ┆ 1   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ a   ┆ 2   │
-    └─────┴─────┘
-    shape: (1, 2)
-    ┌─────┬─────┐
-    │ foo ┆ bar │
-    │ --- ┆ --- │
-    │ str ┆ i64 │
-    ╞═════╪═════╡
-    │ b   ┆ 3   │
-    └─────┴─────┘
-
-    """
-
-    _df: PyDataFrame
-    _dataframe_class: type[DF]
-    by: str | list[str]
-    maintain_order: bool
+    """Starts a new GroupBy operation."""
 
     def __init__(
         self,
         df: PyDataFrame,
-        by: str | list[str],
+        by: str | pli.Expr | Sequence[str | pli.Expr],
         dataframe_class: type[DF],
-        maintain_order: bool = False,
+        maintain_order: bool,
     ):
         """
         Construct class representing a group by operation over the given dataframe.
@@ -85,92 +52,78 @@ class GroupBy(Generic[DF]):
         self.by = by
         self.maintain_order = maintain_order
 
-    def __iter__(self) -> Iterable[Any]:
-        groups_df = self._groups()
-        groups = groups_df["groups"]
-        df = self._dataframe_class._from_pydf(self._df)
-        for i in range(groups_df.height):
-            yield df[groups[i]]
-
-    def _select(self, columns: str | list[str]) -> GBSelection[DF]:  # pragma: no cover
+    def __iter__(self) -> GroupBy[DF]:
         """
-        Select the columns that will be aggregated.
-
-        Parameters
-        ----------
-        columns
-            One or multiple columns.
-
-        """
-        warnings.warn(
-            "accessing GroupBy by index is deprecated, consider using the `.agg`"
-            " method",
-            DeprecationWarning,
-        )
-        if isinstance(columns, str):
-            columns = [columns]
-        return GBSelection(
-            self._df,
-            self.by,
-            columns,
-            dataframe_class=self._dataframe_class,
-        )
-
-    def _select_all(self) -> GBSelection[DF]:
-        """Select all columns for aggregation."""
-        return GBSelection(
-            self._df,
-            self.by,
-            None,
-            dataframe_class=self._dataframe_class,
-        )
-
-    def _groups(self) -> DF:  # pragma: no cover
-        """
-        Get keys and group indices for each group in the groupby.
+        Allows iteration over the groups of the groupby operation.
 
         Returns
         -------
-        DataFrame
-            A DataFrame with:
-
-            - the groupby keys
-            - the group indexes aggregated as lists
+        Iterator returning tuples of (name, data) for each group.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 1, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, True, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...     }
-        ... )
-
-        >>> df.groupby("d")._groups().sort(by="d")
-        shape: (3, 2)
-        ┌────────┬───────────┐
-        │ d      ┆ groups    │
-        │ ---    ┆ ---       │
-        │ str    ┆ list[u32] │
-        ╞════════╪═══════════╡
-        │ Apple  ┆ [0, 2, 3] │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Banana ┆ [4, 5]    │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Orange ┆ [1]       │
-        └────────┴───────────┘
+        >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
+        >>> for name, data in df.groupby("foo"):  # doctest: +SKIP
+        ...     print(name)
+        ...     print(data)
+        ...
+        a
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        │ a   ┆ 2   │
+        └─────┴─────┘
+        b
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ b   ┆ 3   │
+        └─────┴─────┘
 
         """
-        warnings.warn(
-            "accessing GroupBy by index is deprecated, consider using the `.agg`"
-            " method",
-            DeprecationWarning,
+        temp_col = "__POLARS_GB_GROUP_INDICES"
+        groups_df = (
+            pli.wrap_df(self._df)
+            .lazy()
+            .with_row_count(name=temp_col)
+            .groupby(self.by, maintain_order=self.maintain_order)
+            .agg(pli.col(temp_col).list())
+            .collect(no_optimization=True)
         )
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, None, "groups")
-        )
+
+        group_names = groups_df.select(pli.all().exclude(temp_col))
+
+        # When grouping by a single column, group name is a single value
+        # When grouping by multiple columns, group name is a tuple of values
+        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
+        if isinstance(self.by, (str, pli.Expr)):
+            self._group_names = iter(group_names.to_series())
+        else:
+            self._group_names = group_names.iter_rows()
+
+        self._group_indices = groups_df.select(temp_col).to_series()
+        self._current_index = 0
+
+        return self
+
+    def __next__(self) -> tuple[object, DF] | tuple[tuple[object, ...], DF]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+
+        df = self._dataframe_class._from_pydf(self._df)
+
+        group_name = next(self._group_names)
+        group_data = df[self._group_indices[self._current_index]]
+        self._current_index += 1
+
+        return group_name, group_data
 
     def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> DF:
         """
@@ -214,13 +167,9 @@ class GroupBy(Generic[DF]):
         │ i64 ┆ str   ┆ str      │
         ╞═════╪═══════╪══════════╡
         │ 0   ┆ red   ┆ square   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ green ┆ triangle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ green ┆ square   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ red   ┆ triangle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ red   ┆ square   │
         └─────┴───────┴──────────┘
 
@@ -236,11 +185,8 @@ class GroupBy(Generic[DF]):
         │ i64 ┆ str   ┆ str      │
         ╞═════╪═══════╪══════════╡
         │ 1   ┆ green ┆ triangle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ green ┆ square   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ red   ┆ square   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ red   ┆ triangle │
         └─────┴───────┴──────────┘
 
@@ -251,7 +197,15 @@ class GroupBy(Generic[DF]):
         ... )  # doctest: +IGNORE_RESULT
 
         """
-        return self._dataframe_class._from_pydf(self._df.groupby_apply(self.by, f))
+        by: Sequence[str]
+        if isinstance(self.by, str):
+            by = [self.by]
+        elif is_str_sequence(self.by):
+            by = self.by
+        else:
+            raise TypeError("Cannot call `apply` when grouping by an expression.")
+
+        return self._dataframe_class._from_pydf(self._df.groupby_apply(by, f))
 
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         """
@@ -286,7 +240,6 @@ class GroupBy(Generic[DF]):
         │ str ┆ i64     ┆ i64          │
         ╞═════╪═════════╪══════════════╡
         │ one ┆ 9       ┆ 9            │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ two ┆ 6       ┆ 5            │
         └─────┴─────────┴──────────────┘
 
@@ -296,7 +249,7 @@ class GroupBy(Generic[DF]):
             .lazy()
             .groupby(self.by, maintain_order=self.maintain_order)
             .agg(aggs)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
         return self._dataframe_class._from_pydf(df._df)
 
@@ -325,15 +278,10 @@ class GroupBy(Generic[DF]):
         │ str     ┆ i64 │
         ╞═════════╪═════╡
         │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 4   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ b       ┆ 6   │
         └─────────┴─────┘
         >>> df.groupby("letters").head(2).sort("letters")
@@ -344,13 +292,9 @@ class GroupBy(Generic[DF]):
         │ str     ┆ i64 │
         ╞═════════╪═════╡
         │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ b       ┆ 6   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 2   │
         └─────────┴─────┘
 
@@ -358,9 +302,9 @@ class GroupBy(Generic[DF]):
         df = (
             pli.wrap_df(self._df)
             .lazy()
-            .groupby(self.by, self.maintain_order)
+            .groupby(self.by, maintain_order=self.maintain_order)
             .head(n)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
         return self._dataframe_class._from_pydf(df._df)
 
@@ -389,15 +333,10 @@ class GroupBy(Generic[DF]):
         │ str     ┆ i64 │
         ╞═════════╪═════╡
         │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 4   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ b       ┆ 6   │
         └─────────┴─────┘
         >>> (df.groupby("letters").tail(2).sort("letters"))
@@ -408,13 +347,9 @@ class GroupBy(Generic[DF]):
         │ str     ┆ i64 │
         ╞═════════╪═════╡
         │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ b       ┆ 6   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 4   │
         └─────────┴─────┘
 
@@ -422,68 +357,11 @@ class GroupBy(Generic[DF]):
         df = (
             pli.wrap_df(self._df)
             .lazy()
-            .groupby(self.by, self.maintain_order)
+            .groupby(self.by, maintain_order=self.maintain_order)
             .tail(n)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
         return self._dataframe_class._from_pydf(df._df)
-
-    def pivot(
-        self, pivot_column: str | list[str], values_column: str | list[str]
-    ) -> PivotOps[DF]:
-        """
-        Do a pivot operation.
-
-        The pivot operation is based on the group key, a pivot column and an aggregation
-        function on the values column.
-
-        Parameters
-        ----------
-        pivot_column
-            Column to pivot.
-        values_column
-            Column that will be aggregated.
-
-        Notes
-        -----
-        Polars'/arrow memory is not ideal for transposing operations like pivots.
-        If you have a relatively large table, consider using a groupby over a pivot.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": ["one", "one", "one", "two", "two", "two"],
-        ...         "bar": ["A", "B", "C", "A", "B", "C"],
-        ...         "baz": [1, 2, 3, 4, 5, 6],
-        ...     }
-        ... )
-        >>> df.groupby("foo", maintain_order=True).pivot(  # doctest: +SKIP
-        ...     pivot_column="bar", values_column="baz"
-        ... ).first()
-        shape: (2, 4)
-        ┌─────┬─────┬─────┬─────┐
-        │ foo ┆ A   ┆ B   ┆ C   │
-        │ --- ┆ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╡
-        │ one ┆ 1   ┆ 2   ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ two ┆ 4   ┆ 5   ┆ 6   │
-        └─────┴─────┴─────┴─────┘
-
-        """
-        if isinstance(pivot_column, str):
-            pivot_column = [pivot_column]
-        if isinstance(values_column, str):
-            values_column = [values_column]
-        return PivotOps(
-            self._df,
-            self.by,
-            pivot_column,
-            values_column,
-            dataframe_class=self._dataframe_class,
-        )
 
     def first(self) -> pli.DataFrame:
         """
@@ -507,9 +385,7 @@ class GroupBy(Generic[DF]):
         │ str    ┆ i64 ┆ f64  ┆ bool  │
         ╞════════╪═════╪══════╪═══════╡
         │ Apple  ┆ 1   ┆ 0.5  ┆ true  │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Banana ┆ 4   ┆ 13.0 ┆ false │
         └────────┴─────┴──────┴───────┘
 
@@ -538,9 +414,7 @@ class GroupBy(Generic[DF]):
         │ str    ┆ i64 ┆ f64  ┆ bool  │
         ╞════════╪═════╪══════╪═══════╡
         │ Apple  ┆ 3   ┆ 10.0 ┆ false │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Banana ┆ 5   ┆ 14.0 ┆ true  │
         └────────┴─────┴──────┴───────┘
 
@@ -569,9 +443,7 @@ class GroupBy(Generic[DF]):
         │ str    ┆ i64 ┆ f64  ┆ u32 │
         ╞════════╪═════╪══════╪═════╡
         │ Apple  ┆ 6   ┆ 14.5 ┆ 2   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ Banana ┆ 9   ┆ 27.0 ┆ 1   │
         └────────┴─────┴──────┴─────┘
 
@@ -594,17 +466,15 @@ class GroupBy(Generic[DF]):
         ... )
         >>> df.groupby("d", maintain_order=True).min()
         shape: (3, 4)
-        ┌────────┬─────┬──────┬─────┐
-        │ d      ┆ a   ┆ b    ┆ c   │
-        │ ---    ┆ --- ┆ ---  ┆ --- │
-        │ str    ┆ i64 ┆ f64  ┆ u32 │
-        ╞════════╪═════╪══════╪═════╡
-        │ Apple  ┆ 1   ┆ 0.5  ┆ 0   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ Banana ┆ 4   ┆ 13.0 ┆ 0   │
-        └────────┴─────┴──────┴─────┘
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ false │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
 
         """
         return self.agg(pli.all().min())
@@ -625,17 +495,15 @@ class GroupBy(Generic[DF]):
         ... )
         >>> df.groupby("d", maintain_order=True).max()
         shape: (3, 4)
-        ┌────────┬─────┬──────┬─────┐
-        │ d      ┆ a   ┆ b    ┆ c   │
-        │ ---    ┆ --- ┆ ---  ┆ --- │
-        │ str    ┆ i64 ┆ f64  ┆ u32 │
-        ╞════════╪═════╪══════╪═════╡
-        │ Apple  ┆ 3   ┆ 10.0 ┆ 1   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ Banana ┆ 5   ┆ 14.0 ┆ 1   │
-        └────────┴─────┴──────┴─────┘
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ true │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ 14.0 ┆ true │
+        └────────┴─────┴──────┴──────┘
 
         """
         return self.agg(pli.all().max())
@@ -662,9 +530,7 @@ class GroupBy(Generic[DF]):
         │ str    ┆ u32   │
         ╞════════╪═══════╡
         │ Apple  ┆ 3     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Orange ┆ 1     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Banana ┆ 2     │
         └────────┴───────┘
 
@@ -688,17 +554,15 @@ class GroupBy(Generic[DF]):
 
         >>> df.groupby("d", maintain_order=True).mean()
         shape: (3, 4)
-        ┌────────┬─────┬──────────┬──────┐
-        │ d      ┆ a   ┆ b        ┆ c    │
-        │ ---    ┆ --- ┆ ---      ┆ ---  │
-        │ str    ┆ f64 ┆ f64      ┆ bool │
-        ╞════════╪═════╪══════════╪══════╡
-        │ Apple  ┆ 2.0 ┆ 4.833333 ┆ null │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ Orange ┆ 2.0 ┆ 0.5      ┆ null │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ Banana ┆ 4.5 ┆ 13.5     ┆ null │
-        └────────┴─────┴──────────┴──────┘
+        ┌────────┬─────┬──────────┬──────────┐
+        │ d      ┆ a   ┆ b        ┆ c        │
+        │ ---    ┆ --- ┆ ---      ┆ ---      │
+        │ str    ┆ f64 ┆ f64      ┆ f64      │
+        ╞════════╪═════╪══════════╪══════════╡
+        │ Apple  ┆ 2.0 ┆ 4.833333 ┆ 0.666667 │
+        │ Orange ┆ 2.0 ┆ 0.5      ┆ 1.0      │
+        │ Banana ┆ 4.5 ┆ 13.5     ┆ 0.5      │
+        └────────┴─────┴──────────┴──────────┘
 
         """
         return self.agg(pli.all().mean())
@@ -725,7 +589,6 @@ class GroupBy(Generic[DF]):
         │ str    ┆ u32 ┆ u32 │
         ╞════════╪═════╪═════╡
         │ Apple  ┆ 2   ┆ 2   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
         │ Banana ┆ 3   ┆ 3   │
         └────────┴─────┴─────┘
 
@@ -733,7 +596,7 @@ class GroupBy(Generic[DF]):
         return self.agg(pli.all().n_unique())
 
     def quantile(
-        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
     ) -> pli.DataFrame:
         """
         Compute the quantile per group.
@@ -762,9 +625,7 @@ class GroupBy(Generic[DF]):
         │ str    ┆ f64 ┆ f64  │
         ╞════════╪═════╪══════╡
         │ Apple  ┆ 3.0 ┆ 10.0 │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ Orange ┆ 2.0 ┆ 0.5  │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ Banana ┆ 5.0 ┆ 14.0 │
         └────────┴─────┴──────┘
 
@@ -792,7 +653,6 @@ class GroupBy(Generic[DF]):
         │ str    ┆ f64 ┆ f64  │
         ╞════════╪═════╪══════╡
         │ Apple  ┆ 2.0 ┆ 4.0  │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ Banana ┆ 4.0 ┆ 13.0 │
         └────────┴─────┴──────┘
 
@@ -814,7 +674,6 @@ class GroupBy(Generic[DF]):
         │ str ┆ list[i64] │
         ╞═════╪═══════════╡
         │ one ┆ [1, 3]    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ two ┆ [2, 4]    │
         └─────┴───────────┘
 
@@ -834,11 +693,14 @@ class RollingGroupBy(Generic[DF]):
         self,
         df: DF,
         index_column: str,
-        period: str,
-        offset: str | None,
-        closed: ClosedWindow = "none",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        period: str | timedelta,
+        offset: str | timedelta | None,
+        closed: ClosedInterval,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None,
     ):
+        period = _timedelta_to_pl_duration(period)
+        offset = _timedelta_to_pl_duration(offset)
+
         self.df = df
         self.time_column = index_column
         self.period = period
@@ -846,14 +708,59 @@ class RollingGroupBy(Generic[DF]):
         self.closed = closed
         self.by = by
 
+    def __iter__(self) -> RollingGroupBy[DF]:
+        temp_col = "__POLARS_GB_GROUP_INDICES"
+        groups_df = (
+            self.df.lazy()
+            .with_row_count(name=temp_col)
+            .groupby_rolling(
+                index_column=self.time_column,
+                period=self.period,
+                offset=self.offset,
+                closed=self.closed,
+                by=self.by,
+            )
+            .agg(pli.col(temp_col).list())
+            .collect(no_optimization=True)
+        )
+
+        group_names = groups_df.select(pli.all().exclude(temp_col))
+
+        # When grouping by a single column, group name is a single value
+        # When grouping by multiple columns, group name is a tuple of values
+        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
+        if self.by is None:
+            self._group_names = iter(group_names.to_series())
+        else:
+            self._group_names = group_names.iter_rows()
+
+        self._group_indices = groups_df.select(temp_col).to_series()
+        self._current_index = 0
+
+        return self
+
+    def __next__(self) -> tuple[object, DF] | tuple[tuple[object, ...], DF]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+
+        group_name = next(self._group_names)
+        group_data = self.df[self._group_indices[self._current_index]]
+        self._current_index += 1
+
+        return group_name, group_data
+
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         return (
             self.df.lazy()
             .groupby_rolling(
-                self.time_column, self.period, self.offset, self.closed, self.by
+                index_column=self.time_column,
+                period=self.period,
+                offset=self.offset,
+                closed=self.closed,
+                by=self.by,
             )
             .agg(aggs)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
 
 
@@ -861,7 +768,7 @@ class DynamicGroupBy(Generic[DF]):
     """
     A dynamic grouper.
 
-    This has an `.agg` method which will allow you to run all polars expressions in a
+    This has an `.agg` method which allows you to run all polars expressions in a
     groupby context.
     """
 
@@ -869,14 +776,19 @@ class DynamicGroupBy(Generic[DF]):
         self,
         df: DF,
         index_column: str,
-        every: str,
-        period: str | None,
-        offset: str | None,
-        truncate: bool = True,
-        include_boundaries: bool = True,
-        closed: ClosedWindow = "none",
-        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
+        every: str | timedelta,
+        period: str | timedelta | None,
+        offset: str | timedelta | None,
+        truncate: bool,
+        include_boundaries: bool,
+        closed: ClosedInterval,
+        by: str | pli.Expr | Sequence[str | pli.Expr] | None,
+        start_by: StartBy,
     ):
+        period = _timedelta_to_pl_duration(period)
+        offset = _timedelta_to_pl_duration(offset)
+        every = _timedelta_to_pl_duration(every)
+
         self.df = df
         self.time_column = index_column
         self.every = every
@@ -886,157 +798,67 @@ class DynamicGroupBy(Generic[DF]):
         self.include_boundaries = include_boundaries
         self.closed = closed
         self.by = by
+        self.start_by = start_by
+
+    def __iter__(self) -> DynamicGroupBy[DF]:
+        temp_col = "__POLARS_GB_GROUP_INDICES"
+        groups_df = (
+            self.df.lazy()
+            .with_row_count(name=temp_col)
+            .groupby_dynamic(
+                index_column=self.time_column,
+                every=self.every,
+                period=self.period,
+                offset=self.offset,
+                truncate=self.truncate,
+                include_boundaries=self.include_boundaries,
+                closed=self.closed,
+                by=self.by,
+                start_by=self.start_by,
+            )
+            .agg(pli.col(temp_col).list())
+            .collect(no_optimization=True)
+        )
+
+        group_names = groups_df.select(pli.all().exclude(temp_col))
+
+        # When grouping by a single column, group name is a single value
+        # When grouping by multiple columns, group name is a tuple of values
+        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
+        if self.by is None:
+            self._group_names = iter(group_names.to_series())
+        else:
+            self._group_names = group_names.iter_rows()
+
+        self._group_indices = groups_df.select(temp_col).to_series()
+        self._current_index = 0
+
+        return self
+
+    def __next__(self) -> tuple[object, DF] | tuple[tuple[object, ...], DF]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+
+        group_name = next(self._group_names)
+        group_data = self.df[self._group_indices[self._current_index]]
+        self._current_index += 1
+
+        return group_name, group_data
 
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         return (
             self.df.lazy()
             .groupby_dynamic(
-                self.time_column,
-                self.every,
-                self.period,
-                self.offset,
-                self.truncate,
-                self.include_boundaries,
-                self.closed,
-                self.by,
+                index_column=self.time_column,
+                every=self.every,
+                period=self.period,
+                offset=self.offset,
+                truncate=self.truncate,
+                include_boundaries=self.include_boundaries,
+                closed=self.closed,
+                by=self.by,
+                start_by=self.start_by,
             )
             .agg(aggs)
-            .collect(no_optimization=True, string_cache=False)
+            .collect(no_optimization=True)
         )
-
-
-class GBSelection(Generic[DF]):
-    """Utility class returned in a groupby operation."""
-
-    def __init__(
-        self,
-        df: PyDataFrame,
-        by: str | Sequence[str],
-        selection: Sequence[str] | None,
-        dataframe_class: type[DF],
-    ):
-        self._df = df
-        self.by = by
-        self.selection = selection
-        self._dataframe_class = dataframe_class
-
-    def first(self) -> DF:
-        """Aggregate the first values in the group."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "first")
-        )
-
-    def last(self) -> DF:
-        """Aggregate the last values in the group."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "last")
-        )
-
-    def sum(self) -> DF:
-        """Reduce the groups to the sum."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "sum")
-        )
-
-    def min(self) -> DF:
-        """Reduce the groups to the minimal value."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "min")
-        )
-
-    def max(self) -> DF:
-        """Reduce the groups to the maximal value."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "max")
-        )
-
-    def count(self) -> DF:
-        """
-        Count the number of values in each group.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, None, 3, 4],
-        ...         "bar": ["a", "b", "c", "a"],
-        ...     }
-        ... )
-        >>> df.groupby("bar", maintain_order=True).count()  # counts nulls
-        shape: (3, 2)
-        ┌─────┬───────┐
-        │ bar ┆ count │
-        │ --- ┆ ---   │
-        │ str ┆ u32   │
-        ╞═════╪═══════╡
-        │ a   ┆ 2     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ b   ┆ 1     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ c   ┆ 1     │
-        └─────┴───────┘
-
-        """
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "count")
-        )
-
-    def mean(self) -> DF:
-        """Reduce the groups to the mean values."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "mean")
-        )
-
-    def n_unique(self) -> DF:
-        """Count the unique values per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "n_unique")
-        )
-
-    def quantile(
-        self, quantile: float, interpolation: InterpolationMethod = "nearest"
-    ) -> DF:
-        """
-        Compute the quantile per group.
-
-        Parameters
-        ----------
-        quantile
-            Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
-            Interpolation method.
-
-        """
-        return self._dataframe_class._from_pydf(
-            self._df.groupby_quantile(self.by, self.selection, quantile, interpolation)
-        )
-
-    def median(self) -> DF:
-        """Return the median per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "median")
-        )
-
-    def agg_list(self) -> DF:
-        """Aggregate the groups into Series."""
-        return self._dataframe_class._from_pydf(
-            self._df.groupby(self.by, self.selection, "agg_list")
-        )
-
-    def apply(
-        self,
-        func: Callable[[Any], Any],
-        return_dtype: type[DataType] | None = None,
-    ) -> DF:
-        """Apply a function over the groups."""
-        df = self.agg_list()
-        if self.selection is None:
-            raise TypeError(
-                "apply not available for Groupby.select_all(). Use select() instead."
-            )
-        for name in self.selection:
-            s = df.drop_in_place(name + "_agg_list").apply(func, return_dtype)
-            s.rename(name, in_place=True)
-            df.with_column(s)
-
-        return df

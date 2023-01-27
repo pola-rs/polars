@@ -24,7 +24,6 @@ impl GroupByDynamicExec {
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();
-        state.set_schema(self.input_schema.clone());
 
         // if the periods are larger than the intervals,
         // the groups overlap
@@ -75,7 +74,6 @@ impl GroupByDynamicExec {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        state.clear_schema_cache();
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
         columns.push(time_key);

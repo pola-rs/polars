@@ -1,14 +1,21 @@
+#[cfg(feature = "merge_sorted")]
+mod merge_sorted;
+
 use std::borrow::Cow;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 use polars_core::prelude::*;
+#[cfg(feature = "dtype-categorical")]
+use polars_core::IUseStringCache;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "merge_sorted")]
+use crate::logical_plan::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FunctionNode {
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -27,6 +34,7 @@ pub enum FunctionNode {
     Pipeline {
         function: Arc<dyn DataFrameUdfMut>,
         schema: SchemaRef,
+        original: Option<Arc<LogicalPlan>>,
     },
     Unnest {
         columns: Arc<Vec<Arc<str>>>,
@@ -38,6 +46,15 @@ pub enum FunctionNode {
         subset: Arc<Vec<String>>,
     },
     Rechunk,
+    // The two DataFrames are temporary concatenated
+    // this indicates until which chunk the data is from the left df
+    // this trick allows us to reuse the `Union` architecture to get map over
+    // two DataFrames
+    #[cfg(feature = "merge_sorted")]
+    MergeSorted {
+        // sorted column that serves as the key
+        column: Arc<str>,
+    },
 }
 
 impl PartialEq for FunctionNode {
@@ -90,15 +107,15 @@ impl FunctionNode {
                             if let DataType::Struct(flds) = dtype {
                                 for fld in flds {
                                     new_schema
-                                        .with_column(fld.name().clone(), fld.data_type().clone())
+                                        .with_column(fld.name().clone(), fld.data_type().clone());
                                 }
                             } else {
                                 return Err(PolarsError::ComputeError(
-                                    format!("expected struct dtype, got: '{:?}'", dtype).into(),
+                                    format!("expected struct dtype, got: '{dtype:?}'").into(),
                                 ));
                             }
                         } else {
-                            new_schema.with_column(name.clone(), dtype.clone())
+                            new_schema.with_column(name.clone(), dtype.clone());
                         }
                     }
 
@@ -109,6 +126,8 @@ impl FunctionNode {
                     panic!("activate feature 'dtype-struct'")
                 }
             }
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
         }
     }
 
@@ -117,6 +136,8 @@ impl FunctionNode {
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
             FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } => true,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -126,6 +147,8 @@ impl FunctionNode {
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
             FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } => true,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -148,6 +171,8 @@ impl FunctionNode {
                 df.as_single_chunk_par();
                 Ok(df)
             }
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { column } => merge_sorted(&df, column.as_ref()),
             Unnest { columns: _columns } => {
                 #[cfg(feature = "dtype-struct")]
                 {
@@ -158,8 +183,26 @@ impl FunctionNode {
                     panic!("activate feature 'dtype-struct'")
                 }
             }
-            Pipeline { function, .. } => Arc::get_mut(function).unwrap().call_udf(df),
+            Pipeline { function, .. } => {
+                // we use a global string cache here as streaming chunks all have different rev maps
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    let _hold = IUseStringCache::new();
+                    Arc::get_mut(function).unwrap().call_udf(df)
+                }
+
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    Arc::get_mut(function).unwrap().call_udf(df)
+                }
+            }
         }
+    }
+}
+
+impl Debug for FunctionNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
     }
 }
 
@@ -167,7 +210,7 @@ impl Display for FunctionNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionNode::*;
         match self {
-            Opaque { fmt_str, .. } => write!(f, "{}", fmt_str),
+            Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             FastProjection { columns } => {
                 write!(f, "FAST_PROJECT: ")?;
                 let columns = columns.as_slice();
@@ -184,7 +227,18 @@ impl Display for FunctionNode {
                 let columns = columns.as_slice();
                 fmt_column_delimited(f, columns, "[", "]")
             }
-            Pipeline { .. } => write!(f, "PIPELINE"),
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => write!(f, "MERGE SORTED"),
+            Pipeline { original, .. } => {
+                if let Some(original) = original {
+                    writeln!(f, "--- PIPELINE")?;
+                    write!(f, "{:?}", original.as_ref())?;
+                    let indent = 2;
+                    writeln!(f, "{:indent$}--- END PIPELINE", "")
+                } else {
+                    writeln!(f, "PIPELINE")
+                }
+            }
         }
     }
 }

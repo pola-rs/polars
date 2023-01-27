@@ -66,11 +66,6 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.apply_fields(|s| s.interpolate()).into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name)
     }
@@ -245,8 +240,12 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.cast(dtype)
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         self.0.get_any_value(index)
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+        self.0.get_any_value_unchecked(index)
     }
 
     /// Count the null values.

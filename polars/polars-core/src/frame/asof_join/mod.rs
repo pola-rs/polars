@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::*;
 use crate::utils::slice_slice;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
@@ -29,23 +29,28 @@ pub struct AsOfOptions {
 
 fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
     if a.dtype() != b.dtype() {
-        return Err(PolarsError::ComputeError(
+        Err(PolarsError::ComputeError(
             format!(
                 "keys used in asof-join must have equal dtypes. We got: left: {:?}\tright: {:?}",
                 a.dtype(),
                 b.dtype()
             )
             .into(),
-        ));
+        ))
+    } else if a.null_count() > 0 || b.null_count() > 0 {
+        Err(PolarsError::ComputeError(
+            "asof join must not have null values in 'on' arguments".into(),
+        ))
+    } else {
+        Ok(())
     }
-
-    Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AsofStrategy {
     /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key
+    #[default]
     Backward,
     /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
     Forward,
@@ -64,11 +69,6 @@ where
     ) -> PolarsResult<Vec<Option<IdxSize>>> {
         let other = self.unpack_series_matching_type(other)?;
 
-        if self.null_count() > 0 || other.null_count() > 0 {
-            return Err(PolarsError::ComputeError(
-                "asof join must not have null values in 'on' arguments".into(),
-            ));
-        }
         // cont_slice requires a single chunk
         let ca = self.rechunk();
         let other = other.rechunk();
@@ -191,7 +191,6 @@ impl DataFrame {
 
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
     /// The keys must be sorted to perform an asof join
-    #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
     pub fn join_asof(
         &self,
         other: &DataFrame,

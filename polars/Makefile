@@ -1,10 +1,12 @@
+.DEFAULT_GOAL := help
+
 BASE ?= master
 
 .PHONY: fmt check check-features clippy clippy-default test test-doc integration-tests
 
 fmt:
 	cargo fmt --all
-	$(MAKE) -C .. fmt_toml
+	dprint fmt
 
 check:
 	cargo check --all-features \
@@ -28,7 +30,7 @@ clippy:
 clippy-default:
 	cargo clippy
 
-test:
+test:  ## Run tests
 	POLARS_MAX_THREADS=4 cargo t -p polars-core test_4_threads
 	cargo test --all-features \
 	    -p polars-lazy \
@@ -63,7 +65,7 @@ test-doc:
 	    -p polars-core \
 	    -p polars-arrow
 
-pre-commit: fmt clippy clippy-default
+pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 
 check-features:
@@ -92,8 +94,9 @@ publish:
 	sleep 20
 	cargo publish --allow-dirty -p polars-core
 	sleep 20
-	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-ops
+	sleep 20
+	cargo publish --allow-dirty -p polars-time
 	sleep 20
 	cargo publish --allow-dirty -p polars-io
 	sleep 20
@@ -108,3 +111,8 @@ publish:
 	cargo publish --allow-dirty -p polars-sql
 	sleep 20
 	cargo publish --allow-dirty -p polars
+
+.PHONY: help
+help:  ## Display this help screen
+	@echo -e "\033[1mAvailable commands:\033[0m\n"
+	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort

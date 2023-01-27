@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
@@ -64,11 +64,11 @@ impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
 }
 
 pub trait RenameAliasFn: Send + Sync {
-    fn call(&self, name: &str) -> String;
+    fn call(&self, name: &str) -> PolarsResult<String>;
 }
 
-impl<F: Fn(&str) -> String + Send + Sync> RenameAliasFn for F {
-    fn call(&self, name: &str) -> String {
+impl<F: Fn(&str) -> PolarsResult<String> + Send + Sync> RenameAliasFn for F {
+    fn call(&self, name: &str) -> PolarsResult<String> {
         self(name)
     }
 }
@@ -240,7 +240,7 @@ pub enum AggExpr {
     Count(Box<Expr>),
     Quantile {
         expr: Box<Expr>,
-        quantile: f64,
+        quantile: Box<Expr>,
         interpol: QuantileInterpolOptions,
     },
     Sum(Box<Expr>),
@@ -369,10 +369,10 @@ pub enum Expr {
 // Because PartialEq will have a lot of `false`, e.g. on Function
 // Types, this may lead to many file reads, as we use predicate comparison
 // to check if we can cache a file
-#[allow(clippy::derive_hash_xor_eq)]
+#[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Expr {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let s = format!("{:?}", self);
+        let s = format!("{self:?}");
         s.hash(state)
     }
 }
@@ -430,6 +430,31 @@ pub enum Operator {
     And,
     Or,
     Xor,
+}
+
+impl Display for Operator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use Operator::*;
+        let tkn = match self {
+            Eq => "==",
+            NotEq => "!=",
+            Lt => "<",
+            LtEq => "<=",
+            Gt => ">",
+            GtEq => ">=",
+            Plus => "+",
+            Minus => "-",
+            Multiply => "*",
+            Divide => "//",
+            TrueDivide => "/",
+            FloorDivide => "floor_div",
+            Modulus => "%",
+            And => "&",
+            Or => "|",
+            Xor => "^",
+        };
+        write!(f, "{tkn}")
+    }
 }
 
 impl Operator {

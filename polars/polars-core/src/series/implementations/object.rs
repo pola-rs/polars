@@ -63,16 +63,10 @@ where
             .map(|ca| ca.into_series())
     }
 }
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
 {
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.clone().into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         ObjectChunked::rename(&mut self.0, name)
     }
@@ -91,10 +85,6 @@ where
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         ObjectChunked::chunks(&self.0)
-    }
-
-    fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
-        ObjectChunked::append_array(&mut self.0, other)
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
@@ -183,7 +173,7 @@ where
         ))
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         ObjectChunked::get_any_value(&self.0, index)
     }
     fn null_count(&self) -> usize {

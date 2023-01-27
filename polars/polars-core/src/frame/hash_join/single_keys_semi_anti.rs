@@ -56,7 +56,7 @@ where
             .zip(offsets)
             // probes_hashes: Vec<u64> processed by this thread
             // offset: offset index
-            .map(move |(probe, offset)| {
+            .flat_map(move |(probe, offset)| {
                 // local reference
                 let hash_sets = &hash_sets;
                 let probe = probe.as_ref();
@@ -83,7 +83,6 @@ where
                 });
                 results
             })
-            .flatten()
     })
 }
 

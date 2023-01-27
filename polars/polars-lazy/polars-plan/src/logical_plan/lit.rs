@@ -169,12 +169,16 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Float64(f) => Ok(Self::Float64(f)),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Date(d) => Ok(Self::DateTime(
-                NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 0) + ChronoDuration::days(d as i64),
+                NaiveDate::from_ymd_opt(1970, 1, 1)
+                    .unwrap()
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap()
+                    + ChronoDuration::days(d as i64),
                 TimeUnit::Milliseconds,
             )),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Datetime(epoch, _time_unit, _time_zone) => Ok(Self::DateTime(
-                NaiveDateTime::from_timestamp(epoch, 0),
+                NaiveDateTime::from_timestamp_opt(epoch, 0).unwrap(),
                 TimeUnit::Nanoseconds,
             )),
             #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
@@ -197,7 +201,17 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
             AnyValue::Utf8Owned(o) => Ok(Self::Utf8(o.into())),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(c, rev_mapping) => Ok(Self::Utf8(rev_mapping.get(c).to_string())),
+            AnyValue::Categorical(c, rev_mapping, arr) => {
+                if arr.is_null() {
+                    Ok(Self::Utf8(rev_mapping.get(c).to_string()))
+                } else {
+                    unsafe {
+                        Ok(Self::Utf8(
+                            arr.deref_unchecked().value(c as usize).to_string(),
+                        ))
+                    }
+                }
+            }
             _ => Err(PolarsError::ComputeError(
                 "Unsupported AnyValue type variant, cannot convert to Literal".into(),
             )),
@@ -263,7 +277,7 @@ impl Literal for ChronoDuration {
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::DateTime(
-            self.and_hms(0, 0, 0),
+            self.and_hms_opt(0, 0, 0).unwrap(),
             TimeUnit::Milliseconds,
         ))
     }

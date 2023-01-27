@@ -6,7 +6,7 @@ use super::*;
 use crate::prelude::*;
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
-    let nt = NaiveTime::from_hms(0, 0, 0);
+    let nt = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
     let ndt = NaiveDateTime::new(nd, nt);
     naive_datetime_to_date(ndt)
 }
@@ -32,7 +32,7 @@ impl DateChunked {
 
     /// Format Date with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
-        let date = NaiveDate::from_ymd(2001, 1, 1);
+        let date = NaiveDate::from_ymd_opt(2001, 1, 1).unwrap();
         let fmted = format!("{}", date.format(fmt));
 
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
@@ -46,7 +46,7 @@ impl DateChunked {
                     Some(v) => {
                         buf.clear();
                         let datefmt = date32_to_date(*v).format(fmt);
-                        write!(buf, "{}", datefmt).unwrap();
+                        write!(buf, "{datefmt}").unwrap();
                         mutarr.push(Some(&buf))
                     }
                 }

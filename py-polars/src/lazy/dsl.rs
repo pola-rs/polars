@@ -3,6 +3,7 @@ use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -79,11 +80,20 @@ impl PyExpr {
 
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        Ok(PyBytes::new(py, &bincode::serialize(&self.inner).unwrap()).to_object(py))
+        #[cfg(feature = "json")]
+        {
+            let s = serde_json::to_string(&self.inner).unwrap();
+            Ok(PyBytes::new(py, s.as_bytes()).to_object(py))
+        }
+        #[cfg(not(feature = "json"))]
+        {
+            panic!("activate 'json' feature")
+        }
     }
 
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
+        #[cfg(feature = "json")]
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 // Safety
@@ -93,11 +103,16 @@ impl PyExpr {
                 // PyBytes still has a lifetime. Bit its ok, because we drop it immediately
                 // in this scope
                 let s = unsafe { std::mem::transmute::<&'_ PyBytes, &'static PyBytes>(s) };
+                self.inner = serde_json::from_slice(s.as_bytes()).unwrap();
 
-                self.inner = bincode::deserialize(s.as_bytes()).unwrap();
                 Ok(())
             }
             Err(e) => Err(e),
+        }
+
+        #[cfg(not(feature = "json"))]
+        {
+            panic!("activate 'json' feature")
         }
     }
 
@@ -174,10 +189,14 @@ impl PyExpr {
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    pub fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> PyExpr {
+    pub fn quantile(
+        &self,
+        quantile: PyExpr,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> PyExpr {
         self.clone()
             .inner
-            .quantile(quantile, interpolation.0)
+            .quantile(quantile.inner, interpolation.0)
             .into()
     }
     pub fn agg_groups(&self) -> PyExpr {
@@ -213,6 +232,7 @@ impl PyExpr {
             .sort_with(SortOptions {
                 descending,
                 nulls_last,
+                multithreaded: true,
             })
             .into()
     }
@@ -223,6 +243,7 @@ impl PyExpr {
             .arg_sort(SortOptions {
                 descending: reverse,
                 nulls_last,
+                multithreaded: true,
             })
             .into()
     }
@@ -240,8 +261,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "search_sorted")]
-    pub fn search_sorted(&self, element: PyExpr) -> PyExpr {
-        self.inner.clone().search_sorted(element.inner).into()
+    pub fn search_sorted(&self, element: PyExpr, side: Wrap<SearchSortedSide>) -> PyExpr {
+        self.inner
+            .clone()
+            .search_sorted(element.inner, side.0)
+            .into()
     }
     pub fn take(&self, idx: PyExpr) -> PyExpr {
         self.clone().inner.take(idx.inner).into()
@@ -331,12 +355,12 @@ impl PyExpr {
             .with_fmt("take_every")
             .into()
     }
-    pub fn tail(&self, n: Option<usize>) -> PyExpr {
-        self.clone().inner.tail(n).into()
+    pub fn tail(&self, n: usize) -> PyExpr {
+        self.clone().inner.tail(Some(n)).into()
     }
 
-    pub fn head(&self, n: Option<usize>) -> PyExpr {
-        self.clone().inner.head(n).into()
+    pub fn head(&self, n: usize) -> PyExpr {
+        self.clone().inner.head(Some(n)).into()
     }
 
     pub fn slice(&self, offset: PyExpr, length: PyExpr) -> PyExpr {
@@ -510,7 +534,13 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    pub fn str_parse_date(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
+    pub fn str_parse_date(
+        &self,
+        fmt: Option<String>,
+        strict: bool,
+        exact: bool,
+        cache: bool,
+    ) -> PyExpr {
         self.inner
             .clone()
             .str()
@@ -519,13 +549,24 @@ impl PyExpr {
                 fmt,
                 strict,
                 exact,
+                cache,
+                tz_aware: false,
             })
             .into()
     }
 
-    pub fn str_parse_datetime(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
-        let tu = match fmt {
-            Some(ref fmt) => {
+    pub fn str_parse_datetime(
+        &self,
+        fmt: Option<String>,
+        strict: bool,
+        exact: bool,
+        cache: bool,
+        tz_aware: bool,
+        tu: Option<Wrap<TimeUnit>>,
+    ) -> PyExpr {
+        let result_tu = match (&fmt, tu) {
+            (_, Some(tu)) => tu.0,
+            (Some(fmt), None) => {
                 if fmt.contains("%.9f")
                     || fmt.contains("%9f")
                     || fmt.contains("%f")
@@ -538,21 +579,29 @@ impl PyExpr {
                     TimeUnit::Microseconds
                 }
             }
-            None => TimeUnit::Microseconds,
+            (None, None) => TimeUnit::Microseconds,
         };
         self.inner
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(tu, None),
+                date_dtype: DataType::Datetime(result_tu, None),
                 fmt,
                 strict,
                 exact,
+                cache,
+                tz_aware,
             })
             .into()
     }
 
-    pub fn str_parse_time(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
+    pub fn str_parse_time(
+        &self,
+        fmt: Option<String>,
+        strict: bool,
+        exact: bool,
+        cache: bool,
+    ) -> PyExpr {
         self.inner
             .clone()
             .str()
@@ -561,19 +610,21 @@ impl PyExpr {
                 fmt,
                 strict,
                 exact,
+                cache,
+                tz_aware: false,
             })
             .into()
     }
 
-    pub fn str_strip(&self, matches: Option<char>) -> PyExpr {
+    pub fn str_strip(&self, matches: Option<String>) -> PyExpr {
         self.inner.clone().str().strip(matches).into()
     }
 
-    pub fn str_rstrip(&self, matches: Option<char>) -> PyExpr {
+    pub fn str_rstrip(&self, matches: Option<String>) -> PyExpr {
         self.inner.clone().str().rstrip(matches).into()
     }
 
-    pub fn str_lstrip(&self, matches: Option<char>) -> PyExpr {
+    pub fn str_lstrip(&self, matches: Option<String>) -> PyExpr {
         self.inner.clone().str().lstrip(matches).into()
     }
 
@@ -621,6 +672,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "lazy_regex")]
     pub fn str_replace(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
         self.inner
             .clone()
@@ -629,6 +681,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "lazy_regex")]
     pub fn str_replace_all(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
         self.inner
             .clone()
@@ -649,19 +702,31 @@ impl PyExpr {
         self.clone().inner.str().rjust(width, fillchar).into()
     }
 
-    pub fn str_contains(&self, pat: String, literal: Option<bool>) -> PyExpr {
+    pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
         match literal {
-            Some(true) => self.inner.clone().str().contains_literal(pat).into(),
-            _ => self.inner.clone().str().contains(pat).into(),
+            Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
+            _ => self.inner.clone().str().contains(pat.inner, strict).into(),
         }
     }
 
-    pub fn str_ends_with(&self, sub: String) -> PyExpr {
-        self.inner.clone().str().ends_with(sub).into()
+    pub fn str_ends_with(&self, sub: PyExpr) -> PyExpr {
+        self.inner.clone().str().ends_with(sub.inner).into()
     }
 
-    pub fn str_starts_with(&self, sub: String) -> PyExpr {
-        self.inner.clone().str().starts_with(sub).into()
+    pub fn str_starts_with(&self, sub: PyExpr) -> PyExpr {
+        self.inner.clone().str().starts_with(sub.inner).into()
+    }
+
+    pub fn binary_contains(&self, lit: Vec<u8>) -> PyExpr {
+        self.inner.clone().binary().contains_literal(lit).into()
+    }
+
+    pub fn binary_ends_with(&self, sub: Vec<u8>) -> PyExpr {
+        self.inner.clone().binary().ends_with(sub).into()
+    }
+
+    pub fn binary_starts_with(&self, sub: Vec<u8>) -> PyExpr {
+        self.inner.clone().binary().starts_with(sub).into()
     }
 
     pub fn str_hex_encode(&self) -> PyExpr {
@@ -674,7 +739,8 @@ impl PyExpr {
             .with_fmt("str.hex_encode")
             .into()
     }
-    pub fn str_hex_decode(&self, strict: Option<bool>) -> PyExpr {
+    #[cfg(feature = "binary_encoding")]
+    pub fn str_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
@@ -695,7 +761,8 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_base64_decode(&self, strict: Option<bool>) -> PyExpr {
+    #[cfg(feature = "binary_encoding")]
+    pub fn str_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
             .map(
@@ -705,13 +772,61 @@ impl PyExpr {
             .with_fmt("str.base64_decode")
             .into()
     }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn binary_hex_encode(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.binary().map(|s| s.hex_encode().into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("binary.hex_encode")
+            .into()
+    }
+    #[cfg(feature = "binary_encoding")]
+    pub fn binary_hex_decode(&self, strict: bool) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.binary()?.hex_decode(strict).map(|s| s.into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("binary.hex_decode")
+            .into()
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn binary_base64_encode(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.binary().map(|s| s.base64_encode().into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("binary.base64_encode")
+            .into()
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn binary_base64_decode(&self, strict: bool) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.binary()?.base64_decode(strict).map(|s| s.into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("binary.base64_decode")
+            .into()
+    }
+
     #[cfg(feature = "extract_jsonpath")]
     pub fn str_json_path_match(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
             match ca.json_path_match(&pat) {
                 Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
+                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
             }
         };
         self.clone()
@@ -725,8 +840,8 @@ impl PyExpr {
         self.inner.clone().str().extract(pat, group_index).into()
     }
 
-    pub fn str_extract_all(&self, pat: &str) -> PyExpr {
-        self.inner.clone().str().extract_all(pat).into()
+    pub fn str_extract_all(&self, pat: PyExpr) -> PyExpr {
+        self.inner.clone().str().extract_all(pat.inner).into()
     }
 
     pub fn count_match(&self, pat: &str) -> PyExpr {
@@ -894,6 +1009,7 @@ impl PyExpr {
         self.inner.clone().dt().with_time_unit(tu.0).into()
     }
 
+    #[cfg(feature = "timezones")]
     pub fn dt_with_time_zone(&self, tz: Option<TimeZone>) -> PyExpr {
         self.inner.clone().dt().with_time_zone(tz).into()
     }
@@ -902,10 +1018,12 @@ impl PyExpr {
         self.inner.clone().dt().cast_time_unit(tu.0).into()
     }
 
+    #[cfg(feature = "timezones")]
     pub fn dt_cast_time_zone(&self, tz: String) -> PyExpr {
         self.inner.clone().dt().cast_time_zone(tz).into()
     }
 
+    #[cfg(feature = "timezones")]
     pub fn dt_tz_localize(&self, tz: String) -> PyExpr {
         self.inner.clone().dt().tz_localize(tz).into()
     }
@@ -916,6 +1034,10 @@ impl PyExpr {
 
     pub fn dt_round(&self, every: &str, offset: &str) -> PyExpr {
         self.inner.clone().dt().round(every, offset).into()
+    }
+
+    pub fn dt_combine(&self, time: PyExpr, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().combine(time.inner, tu.0).into()
     }
 
     pub fn rolling_apply(
@@ -1032,13 +1154,13 @@ impl PyExpr {
                             Float64 => obj
                                 .extract::<f64>(py)
                                 .map(|v| Float64Chunked::from_slice("", &[v]).into_series()),
-                            dt => panic!("{:?} not implemented", dt),
+                            dt => panic!("{dt:?} not implemented"),
                         };
 
                         match result {
                             Ok(s) => s,
                             Err(e) => {
-                                panic!("{:?}", e)
+                                panic!("{e:?}")
                             }
                         }
                     }
@@ -1093,8 +1215,13 @@ impl PyExpr {
         self.inner
             .clone()
             .map_alias(move |name| {
-                let out = Python::with_gil(|py| lambda.call1(py, (name,)).unwrap());
-                out.to_string()
+                let out = Python::with_gil(|py| lambda.call1(py, (name,)));
+                match out {
+                    Ok(out) => Ok(out.to_string()),
+                    Err(e) => Err(PolarsError::ComputeError(
+                        format!("Python function in 'map_alias' produced an error: {e}.").into(),
+                    )),
+                }
             })
             .into()
     }
@@ -1107,8 +1234,8 @@ impl PyExpr {
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()
     }
-    pub fn interpolate(&self) -> PyExpr {
-        self.inner.clone().interpolate().into()
+    pub fn interpolate(&self, method: Wrap<InterpolationMethod>) -> PyExpr {
+        self.inner.clone().interpolate(method.0).into()
     }
 
     pub fn rolling_sum(
@@ -1345,6 +1472,15 @@ impl PyExpr {
         self.inner.clone().arr().get(index.inner).into()
     }
 
+    #[cfg(feature = "list_take")]
+    fn lst_take(&self, index: PyExpr, null_on_oob: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .take(index.inner, null_on_oob)
+            .into()
+    }
+
     fn lst_join(&self, separator: &str) -> Self {
         self.inner.clone().arr().join(separator).into()
     }
@@ -1388,6 +1524,7 @@ impl PyExpr {
         &self,
         width_strat: Wrap<ListToStructWidthStrategy>,
         name_gen: Option<PyObject>,
+        upper_bound: usize,
     ) -> PyResult<Self> {
         let name_gen = name_gen.map(|lambda| {
             Arc::new(move |idx: usize| {
@@ -1402,7 +1539,7 @@ impl PyExpr {
             .inner
             .clone()
             .arr()
-            .to_struct(width_strat.0, name_gen)
+            .to_struct(width_strat.0, name_gen, upper_bound)
             .into())
     }
 
@@ -1563,6 +1700,14 @@ impl PyExpr {
     pub fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
     }
+    pub fn set_sorted_flag(&self, reverse: bool) -> Self {
+        let is_sorted = if reverse {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        self.inner.clone().set_sorted_flag(is_sorted).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
@@ -1706,14 +1851,14 @@ pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: 
     let exprs = py_exprs_to_exprs(exprs);
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    polars::lazy::dsl::cumfold_exprs(acc.inner, func, exprs, include_init).into()
+    cumfold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
 pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = py_exprs_to_exprs(exprs);
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    polars::lazy::dsl::cumreduce_exprs(func, exprs).into()
+    cumreduce_exprs(func, exprs).into()
 }
 
 pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
@@ -1723,7 +1868,7 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
     } else if let Ok(int) = value.downcast::<PyInt>() {
         match int.extract::<i64>() {
             Ok(val) => {
-                if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
+                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
                     Ok(dsl::lit(val as i32).into())
                 } else {
                     Ok(dsl::lit(val).into())

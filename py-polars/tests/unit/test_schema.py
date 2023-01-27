@@ -31,8 +31,8 @@ def test_schema_on_agg() -> None:
 def test_fill_null_minimal_upcast_4056() -> None:
     df = pl.DataFrame({"a": [-1, 2, None]})
     df = df.with_columns(pl.col("a").cast(pl.Int8))
-    assert df.with_column(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
-    assert df.with_column(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
 
 
 def test_with_column_duplicates() -> None:
@@ -69,7 +69,8 @@ def test_bool_numeric_supertype() -> None:
         pl.Int64,
     ]:
         assert (
-            df.select([(pl.col("v") < 3).sum().cast(dt) / pl.count()])[0, 0] - 0.3333333
+            df.select([(pl.col("v") < 3).sum().cast(dt) / pl.count()]).item()
+            - 0.3333333
             <= 0.00001
         )
 
@@ -249,3 +250,60 @@ def test_diff_duration_dtype() -> None:
         False,
         True,
     ]
+
+
+def test_boolean_agg_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 1, 1],
+            "y": [False, True, False],
+        }
+    ).lazy()
+
+    agg_df = df.groupby("x").agg(pl.col("y").max().alias("max_y"))
+
+    for streaming in [True, False]:
+        assert (
+            agg_df.collect(streaming=streaming).schema
+            == agg_df.schema
+            == {"x": pl.Int64, "max_y": pl.Boolean}
+        )
+
+
+def test_schema_owned_arithmetic_5669() -> None:
+    df = (
+        pl.DataFrame({"A": [1, 2, 3]})
+        .lazy()
+        .filter(pl.col("A") >= 3)
+        .with_columns(-pl.col("A").alias("B"))
+        .collect()
+    )
+    assert df.columns == ["A", "literal"], df.columns
+
+
+def test_fill_null_f32_with_lit() -> None:
+    # ensure the literal integer does not upcast the f32 to an f64
+    df = pl.DataFrame({"a": [1.1, 1.2]}, schema=[("a", pl.Float32)])
+    assert df.fill_null(value=0).dtypes == [pl.Float32]
+
+
+def test_lazy_rename() -> None:
+    df = pl.DataFrame({"x": [1], "y": [2]})
+
+    assert (
+        df.lazy().rename({"y": "x", "x": "y"}).select(["x", "y"]).collect()
+    ).to_dict(False) == {"x": [2], "y": [1]}
+
+
+def test_all_null_cast_5826() -> None:
+    df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.Utf8)])
+    out = df.with_columns(pl.col("a").cast(pl.Boolean))
+    assert out.dtypes == [pl.Boolean]
+    assert out.item() is None
+
+
+def test_emtpy_list_eval_schema_5734() -> None:
+    df = pl.DataFrame({"a": [[{"b": 1, "c": 2}]]})
+    assert df.filter(False).select(
+        pl.col("a").arr.eval(pl.element().struct.field("b"))
+    ).schema == {"a": pl.List(pl.Int64)}

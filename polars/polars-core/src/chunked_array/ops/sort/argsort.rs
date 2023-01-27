@@ -56,7 +56,13 @@ where
         vals.extend(iter);
     }
 
-    argsort_branch(vals.as_mut_slice(), reverse, default_order, reverse_order);
+    argsort_branch(
+        vals.as_mut_slice(),
+        reverse,
+        default_order,
+        reverse_order,
+        options.multithreaded,
+    );
 
     let iter = vals.into_iter().map(|(idx, _v)| idx);
     let idx = if reverse || nulls_last {
@@ -73,5 +79,5 @@ where
     };
 
     let arr = IdxArr::from_data_default(Buffer::from(idx), None);
-    IdxCa::from_chunks(name, vec![Box::new(arr)])
+    unsafe { IdxCa::from_chunks(name, vec![Box::new(arr)]) }
 }

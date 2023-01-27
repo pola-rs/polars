@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
@@ -74,7 +75,7 @@ def test_dtype() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     assert a.dtype == pl.List
     assert a.inner_dtype == pl.Int64
-    assert a.dtype.inner == pl.Int64  # type: ignore[attr-defined]
+    assert a.dtype.inner == pl.Int64  # type: ignore[union-attr]
 
     # explicit
     df = pl.DataFrame(
@@ -84,7 +85,7 @@ def test_dtype() -> None:
             "dt": [[date(2022, 12, 31)]],
             "dtm": [[datetime(2022, 12, 31, 1, 2, 3)]],
         },
-        columns=[
+        schema=[
             ("i", pl.List(pl.Int8)),
             ("tm", pl.List(pl.Time)),
             ("dt", pl.List(pl.Date)),
@@ -164,7 +165,7 @@ def test_list_concat_rolling_window() -> None:
 
     # this test proper null behavior of concat list
     out = (
-        df.with_column(pl.col("A").reshape((-1, 1)))  # first turn into a list
+        df.with_columns(pl.col("A").reshape((-1, 1)))  # first turn into a list
         .with_columns(
             [
                 pl.col("A").shift(i).alias(f"A_lag_{i}")
@@ -265,8 +266,7 @@ def test_cast_inner() -> None:
     # this creates an inner null type
     df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
     assert (
-        df["A"].cast(pl.List(int)).dtype.inner  # type: ignore[arg-type, attr-defined]
-        == pl.Int64
+        df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[union-attr]
     )
 
 
@@ -283,7 +283,7 @@ def test_list_eval_dtype_inference() -> None:
     rank_pct = pl.col("").rank(reverse=True) / pl.col("").count().cast(pl.UInt16)
 
     # the .arr.first() would fail if .arr.eval did not correctly infer the output type
-    assert grades.with_column(
+    assert grades.with_columns(
         pl.concat_list(pl.all().exclude("student")).alias("all_grades")
     ).select(
         [
@@ -355,7 +355,7 @@ def test_empty_list_construction() -> None:
         False
     ) == {"array": [[]], "not_array": [1234]}
 
-    df = pl.DataFrame(columns=[("col", pl.List)])
+    df = pl.DataFrame(schema=[("col", pl.List)])
     assert df.schema == {"col": pl.List}
     assert df.rows() == []
 
@@ -368,7 +368,7 @@ def test_list_ternary_concat() -> None:
         }
     )
 
-    assert df.with_column(
+    assert df.with_columns(
         pl.when(pl.col("list1").is_null())
         .then(pl.col("list1").arr.concat(pl.col("list2")))
         .otherwise(pl.col("list2"))
@@ -379,7 +379,7 @@ def test_list_ternary_concat() -> None:
         "result": [["789"], None],
     }
 
-    assert df.with_column(
+    assert df.with_columns(
         pl.when(pl.col("list1").is_null())
         .then(pl.col("list2"))
         .otherwise(pl.col("list1").arr.concat(pl.col("list2")))
@@ -397,7 +397,7 @@ def test_list_concat_nulls() -> None:
             "a": [["a", "b"], None, ["c", "d", "e"], None],
             "t": [["x"], ["y"], None, None],
         }
-    ).with_column(pl.concat_list(["a", "t"]).alias("concat"))["concat"].to_list() == [
+    ).with_columns(pl.concat_list(["a", "t"]).alias("concat"))["concat"].to_list() == [
         ["a", "b", "x"],
         None,
         None,
@@ -409,13 +409,13 @@ def test_list_concat_supertype() -> None:
     df = pl.DataFrame(
         [pl.Series("a", [1, 2], pl.UInt8), pl.Series("b", [10000, 20000], pl.UInt16)]
     )
-    assert df.with_column(pl.concat_list(pl.col(["a", "b"])).alias("concat_list"))[
+    assert df.with_columns(pl.concat_list(pl.col(["a", "b"])).alias("concat_list"))[
         "concat_list"
     ].to_list() == [[1, 10000], [2, 20000]]
 
 
 def test_list_hash() -> None:
-    out = pl.DataFrame({"a": [[1, 2, 3], [3, 4], [1, 2, 3]]}).with_column(
+    out = pl.DataFrame({"a": [[1, 2, 3], [3, 4], [1, 2, 3]]}).with_columns(
         pl.col("a").hash().alias("b")
     )
     assert out.dtypes == [pl.List(pl.Int64), pl.UInt64]
@@ -426,7 +426,7 @@ def test_arr_contains_categorical() -> None:
     df = pl.DataFrame(
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
-    df = df.with_column(pl.col("str").cast(pl.Categorical))
+    df = df.with_columns(pl.col("str").cast(pl.Categorical))
     df_groups = df.groupby("group").agg([pl.col("str").list().alias("str_list")])
     assert df_groups.filter(pl.col("str_list").arr.contains("C")).collect().to_dict(
         False
@@ -486,17 +486,17 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
-def groupby_list_column() -> None:
+def test_groupby_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
-        .with_column(pl.col("a").cast(pl.Categorical))
-        .groupby("a")
+        .with_columns(pl.col("a").cast(pl.Categorical))
+        .groupby("a", maintain_order=True)
         .agg(pl.col("a").list().alias("a_list"))
     )
 
     assert df.groupby("a_list", maintain_order=True).first().to_dict(False) == {
-        "a_list": [["b"], ["a", "a"]],
-        "a": ["b", "a"],
+        "a_list": [["a", "a"], ["b"]],
+        "a": ["a", "b"],
     }
 
 
@@ -545,3 +545,114 @@ def test_list_sliced_get_5186() -> None:
             ]
         )
     )
+
+
+def test_empty_eval_dtype_5546() -> None:
+    df = pl.DataFrame([{"a": [{"name": 1}, {"name": 2}]}])
+
+    dtype = df.dtypes[0]
+
+    assert (
+        df.limit(0).with_columns(
+            pl.col("a")
+            .arr.eval(pl.element().filter(pl.first().struct.field("name") == 1))
+            .alias("a_filtered")
+        )
+    ).dtypes == [dtype, dtype]
+
+
+def test_fast_explode_flag() -> None:
+    df1 = pl.DataFrame({"values": [[[1, 2]]]})
+    assert df1.clone().vstack(df1)["values"].flags["FAST_EXPLODE"]
+
+
+def test_list_amortized_apply_explode_5812() -> None:
+    s = pl.Series([None, [1, 3], [0, -3], [1, 2, 2]])
+    assert s.arr.sum().to_list() == [None, 4, -3, 5]
+    assert s.arr.min().to_list() == [None, 1, -3, 1]
+    assert s.arr.max().to_list() == [None, 3, 0, 2]
+    assert s.arr.arg_min().to_list() == [None, 0, 1, 0]
+    assert s.arr.arg_max().to_list() == [None, 1, 0, 1]
+
+
+def test_list_slice_5866() -> None:
+    vals = [[1, 2, 3, 4], [10, 2, 1]]
+    s = pl.Series("a", vals)
+    assert s.arr.slice(1).to_list() == [[2, 3, 4], [2, 1]]
+
+
+def test_list_take() -> None:
+    s = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8]])
+    # mypy: we make it work, but idomatic is `arr.get`.
+    assert s.arr.take(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
+    assert s.arr.take([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
+
+    assert s.arr.take([-1, 1]).to_list() == [[3, 2], [5, 5], [8, 7]]
+
+    # use another list to make sure negative indices are respected
+    taker = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
+    assert s.arr.take(taker).to_list() == [[3, 2], [5, 5], [8, 7]]
+    with pytest.raises(pl.ComputeError, match=r"Take indices are out of bounds"):
+        s.arr.take([1, 2])
+    s = pl.Series(
+        [["A", "B", "C"], ["A"], ["B"], ["1", "2"], ["e"]],
+    )
+
+    assert s.arr.take([0, 2], null_on_oob=True).to_list() == [
+        ["A", "C"],
+        ["A", None],
+        ["B", None],
+        ["1", None],
+        ["e", None],
+    ]
+    assert s.arr.take([0, 1, 2], null_on_oob=True).to_list() == [
+        ["A", "B", "C"],
+        ["A", None, None],
+        ["B", None, None],
+        ["1", "2", None],
+        ["e", None, None],
+    ]
+    s = pl.Series([[42, 1, 2], [5, 6, 7]])
+
+    with pytest.raises(pl.ComputeError, match=r"Take indices are out of bounds"):
+        s.arr.take([[0, 1, 2, 3], [0, 1, 2, 3]])
+
+    assert s.arr.take([0, 1, 2, 3], null_on_oob=True).to_list() == [
+        [42, 1, 2, None],
+        [5, 6, 7, None],
+    ]
+
+
+def test_fast_explode_on_list_struct_6208() -> None:
+    data = [
+        {
+            "label": "l",
+            "tag": "t",
+            "ref": 1,
+            "parents": [{"ref": 1, "tag": "t", "ratio": 62.3}],
+        },
+        {"label": "l", "tag": "t", "ref": 1, "parents": None},
+    ]
+
+    df = pl.DataFrame(
+        data,
+        schema={
+            "label": pl.Utf8,
+            "tag": pl.Utf8,
+            "ref": pl.Int64,
+            "parents": pl.List(
+                pl.Struct({"ref": pl.Int64, "tag": pl.Utf8, "ratio": pl.Float64})
+            ),
+        },
+    )
+
+    assert not df["parents"].flags["FAST_EXPLODE"]
+    assert df.explode("parents").to_dict(False) == {
+        "label": ["l", "l"],
+        "tag": ["t", "t"],
+        "ref": [1, 1],
+        "parents": [
+            {"ref": 1, "tag": "t", "ratio": 62.3},
+            {"ref": None, "tag": None, "ratio": None},
+        ],
+    }

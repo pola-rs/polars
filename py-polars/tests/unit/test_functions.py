@@ -31,17 +31,20 @@ def test_diag_concat() -> None:
     b = pl.DataFrame({"b": ["a", "b"], "c": [1, 2]})
     c = pl.DataFrame({"a": [5, 7], "c": [1, 2], "d": [1, 2]})
 
-    out = pl.concat([a, b, c], how="diagonal")
-    expected = pl.DataFrame(
-        {
-            "a": [1, 2, None, None, 5, 7],
-            "b": [None, None, "a", "b", None, None],
-            "c": [None, None, 1, 2, 1, 2],
-            "d": [None, None, None, None, 1, 2],
-        }
-    )
+    for out in [
+        pl.concat([a, b, c], how="diagonal"),
+        pl.concat([a.lazy(), b.lazy(), c.lazy()], how="diagonal").collect(),
+    ]:
+        expected = pl.DataFrame(
+            {
+                "a": [1, 2, None, None, 5, 7],
+                "b": [None, None, "a", "b", None, None],
+                "c": [None, None, 1, 2, 1, 2],
+                "d": [None, None, None, None, 1, 2],
+            }
+        )
 
-    assert out.frame_equal(expected, null_equal=True)
+        assert out.frame_equal(expected, null_equal=True)
 
 
 def test_concat_horizontal() -> None:
@@ -70,7 +73,7 @@ def test_all_any_horizontally() -> None:
             [False, None, True],
             [None, None, False],
         ],
-        columns=["var1", "var2", "var3"],
+        schema=["var1", "var2", "var3"],
     )
     expected = pl.DataFrame(
         {
@@ -136,9 +139,9 @@ def test_null_handling_correlation() -> None:
     df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
     df2 = pl.DataFrame({"a": [np.nan, 1, 2], "b": [np.nan, 2, 1]})
 
-    assert np.isclose(df1.select(pl.spearman_rank_corr("a", "b"))[0, 0], -1.0)
+    assert np.isclose(df1.select(pl.spearman_rank_corr("a", "b")).item(), -1.0)
     assert (
-        str(df2.select(pl.spearman_rank_corr("a", "b", propagate_nans=True))[0, 0])
+        str(df2.select(pl.spearman_rank_corr("a", "b", propagate_nans=True)).item())
         == "nan"
     )
 
@@ -248,6 +251,9 @@ def test_coalesce() -> None:
     assert df.select(pl.coalesce(["a", "b", "c", 10])).to_dict(False) == {
         "a": [1.0, 2.0, 3.0, 10.0]
     }
+    assert df.select(pl.coalesce(pl.col(["a", "b", "c"]))).to_dict(False) == {
+        "a": [1.0, 2.0, 3.0, None]
+    }
 
 
 def test_ones_zeros() -> None:
@@ -266,3 +272,14 @@ def test_ones_zeros() -> None:
     zeros = pl.zeros(3, dtype=pl.UInt8)
     assert zeros.dtype == pl.UInt8
     assert zeros.to_list() == [0, 0, 0]
+
+
+def test_overflow_diff() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [20, 10, 30],
+        }
+    )
+    assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(False) == {
+        "a": [None, -10, 20]
+    }

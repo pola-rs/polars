@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use polars_core::datatypes::Field;
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{DataType, Series, IDX_DTYPE};
+use polars_core::prelude::{DataType, SchemaRef, Series, IDX_DTYPE};
 use polars_core::schema::Schema;
-use polars_plan::logical_plan::ArenaExprIter;
+use polars_plan::dsl::Expr;
+use polars_plan::logical_plan::{ArenaExprIter, Context};
 use polars_plan::prelude::{AAggExpr, AExpr};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::IdxSize;
@@ -14,6 +15,8 @@ use crate::executors::sinks::groupby::aggregates::count::CountAgg;
 use crate::executors::sinks::groupby::aggregates::first::FirstAgg;
 use crate::executors::sinks::groupby::aggregates::last::LastAgg;
 use crate::executors::sinks::groupby::aggregates::mean::MeanAgg;
+use crate::executors::sinks::groupby::aggregates::min_max::{new_max, new_min};
+use crate::executors::sinks::groupby::aggregates::null::NullAgg;
 use crate::executors::sinks::groupby::aggregates::{AggregateFunction, SumAgg};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::DataChunk;
@@ -28,9 +31,17 @@ impl PhysicalPipedExpr for Count {
     fn field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         todo!()
     }
+
+    fn expression(&self) -> Expr {
+        Expr::Count
+    }
 }
 
-pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> bool {
+pub fn can_convert_to_hash_agg(
+    mut node: Node,
+    expr_arena: &Arena<AExpr>,
+    input_schema: &Schema,
+) -> bool {
     let mut can_run_partitioned = true;
     if expr_arena
         .iter(node)
@@ -61,7 +72,7 @@ pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> boo
         }
         match expr_arena.get(node) {
             AExpr::Count => true,
-            AExpr::Agg(agg_fn) => {
+            ae @ AExpr::Agg(agg_fn) => {
                 matches!(
                     agg_fn,
                     AAggExpr::Sum(_)
@@ -69,7 +80,22 @@ pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> boo
                         | AAggExpr::Last(_)
                         | AAggExpr::Mean(_)
                         | AAggExpr::Count(_)
-                )
+                ) || (matches!(
+                    agg_fn,
+                    AAggExpr::Max {
+                        propagate_nans: false,
+                        ..
+                    } | AAggExpr::Min {
+                        propagate_nans: false,
+                        ..
+                    }
+                ) && {
+                    if let Ok(field) = ae.to_field(input_schema, Context::Default, expr_arena) {
+                        field.dtype.to_physical().is_numeric()
+                    } else {
+                        false
+                    }
+                })
             }
             _ => false,
         }
@@ -78,14 +104,14 @@ pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> boo
     }
 }
 
-pub fn convert_to_hash_agg<F>(
+pub(crate) fn convert_to_hash_agg<F>(
     node: Node,
     expr_arena: &Arena<AExpr>,
-    schema: &Schema,
+    schema: &SchemaRef,
     to_physical: &F,
 ) -> (Arc<dyn PhysicalPipedExpr>, AggregateFunction)
 where
-    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     match expr_arena.get(node) {
         AExpr::Alias(input, _) => convert_to_hash_agg(*input, expr_arena, schema, to_physical),
@@ -94,9 +120,57 @@ where
             AggregateFunction::Count(CountAgg::new()),
         ),
         AExpr::Agg(agg) => match agg {
+            AAggExpr::Min { input, .. } => {
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
+
+                let agg_fn = match logical_dtype.to_physical() {
+                    DataType::Int8 => AggregateFunction::MinMaxI8(new_min()),
+                    DataType::Int16 => AggregateFunction::MinMaxI16(new_min()),
+                    DataType::Int32 => AggregateFunction::MinMaxI32(new_min()),
+                    DataType::Int64 => AggregateFunction::MinMaxI64(new_min()),
+                    DataType::UInt8 => AggregateFunction::MinMaxU8(new_min()),
+                    DataType::UInt16 => AggregateFunction::MinMaxU16(new_min()),
+                    DataType::UInt32 => AggregateFunction::MinMaxU32(new_min()),
+                    DataType::UInt64 => AggregateFunction::MinMaxU64(new_min()),
+                    DataType::Float32 => AggregateFunction::MinMaxF32(new_min()),
+                    DataType::Float64 => AggregateFunction::MinMaxF64(new_min()),
+                    dt => panic!("{dt} unexpected"),
+                };
+                (phys_expr, agg_fn)
+            }
+            AAggExpr::Max { input, .. } => {
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
+
+                let agg_fn = match logical_dtype.to_physical() {
+                    DataType::Int8 => AggregateFunction::MinMaxI8(new_max()),
+                    DataType::Int16 => AggregateFunction::MinMaxI16(new_max()),
+                    DataType::Int32 => AggregateFunction::MinMaxI32(new_max()),
+                    DataType::Int64 => AggregateFunction::MinMaxI64(new_max()),
+                    DataType::UInt8 => AggregateFunction::MinMaxU8(new_max()),
+                    DataType::UInt16 => AggregateFunction::MinMaxU16(new_max()),
+                    DataType::UInt32 => AggregateFunction::MinMaxU32(new_max()),
+                    DataType::UInt64 => AggregateFunction::MinMaxU64(new_max()),
+                    DataType::Float32 => AggregateFunction::MinMaxF32(new_max()),
+                    DataType::Float64 => AggregateFunction::MinMaxF64(new_max()),
+                    dt => panic!("{dt} unexpected"),
+                };
+                (phys_expr, agg_fn)
+            }
             AAggExpr::Sum(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
-                let agg_fn = match phys_expr.field(schema).unwrap().dtype.to_physical() {
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
+
+                #[cfg(feature = "dtype-categorical")]
+                if matches!(logical_dtype, DataType::Categorical(_)) {
+                    return (
+                        phys_expr,
+                        AggregateFunction::Null(NullAgg::new(logical_dtype)),
+                    );
+                }
+
+                let agg_fn = match logical_dtype.to_physical() {
                     // Boolean is aggregated as the IDX type.
                     DataType::Boolean => {
                         if std::mem::size_of::<IdxSize>() == 4 {
@@ -117,33 +191,50 @@ where
                     DataType::Int64 => AggregateFunction::SumI64(SumAgg::<i64>::new()),
                     DataType::Float32 => AggregateFunction::SumF32(SumAgg::<f32>::new()),
                     DataType::Float64 => AggregateFunction::SumF64(SumAgg::<f64>::new()),
-                    _ => unreachable!(),
+                    dt => AggregateFunction::Null(NullAgg::new(dt)),
                 };
                 (phys_expr, agg_fn)
             }
             AAggExpr::Mean(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
-                let agg_fn = match phys_expr.field(schema).unwrap().dtype.to_physical() {
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
+
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
+                #[cfg(feature = "dtype-categorical")]
+                if matches!(logical_dtype, DataType::Categorical(_)) {
+                    return (
+                        phys_expr,
+                        AggregateFunction::Null(NullAgg::new(logical_dtype)),
+                    );
+                }
+                let agg_fn = match logical_dtype.to_physical() {
                     dt if dt.is_integer() => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
-                    // Boolean is aggregated as the IDX type.
-                    DataType::Boolean => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
                     DataType::Float32 => AggregateFunction::MeanF32(MeanAgg::<f32>::new()),
                     DataType::Float64 => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
-                    _ => unreachable!(),
+                    dt => AggregateFunction::Null(NullAgg::new(dt)),
                 };
                 (phys_expr, agg_fn)
             }
             AAggExpr::First(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let dtype = phys_expr.field(schema).unwrap().dtype;
-                (phys_expr, AggregateFunction::First(FirstAgg::new(dtype)))
+                (
+                    phys_expr,
+                    AggregateFunction::First(FirstAgg::new(dtype.to_physical())),
+                )
             }
             AAggExpr::Last(input) => {
-                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let dtype = phys_expr.field(schema).unwrap().dtype;
-                (phys_expr, AggregateFunction::Last(LastAgg::new(dtype)))
+                (
+                    phys_expr,
+                    AggregateFunction::Last(LastAgg::new(dtype.to_physical())),
+                )
             }
-            _ => todo!(),
+            AAggExpr::Count(input) => {
+                let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
+                (phys_expr, AggregateFunction::Count(CountAgg::new()))
+            }
+            agg => panic!("{agg:?} not yet implemented."),
         },
         _ => todo!(),
     }

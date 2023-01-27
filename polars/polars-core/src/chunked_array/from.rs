@@ -31,14 +31,12 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             // we nest only the physical representation
             // the mapping is still in our rev-map
             let arrow_dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt32);
-            let new_array = unsafe {
-                ListArray::new_unchecked(
-                    arrow_dtype,
-                    list_arr.offsets().clone(),
-                    cat.array_ref(0).clone(),
-                    list_arr.validity().cloned(),
-                )
-            };
+            let new_array = ListArray::new(
+                arrow_dtype,
+                list_arr.offsets().clone(),
+                cat.array_ref(0).clone(),
+                list_arr.validity().cloned(),
+            );
             chunks.clear();
             chunks.push(Box::new(new_array));
             DataType::List(Box::new(cat.dtype().clone()))
@@ -52,7 +50,10 @@ where
     T: PolarsDataType,
 {
     /// Create a new ChunkedArray from existing chunks.
-    pub fn from_chunks(name: &str, mut chunks: Vec<ArrayRef>) -> Self {
+    ///
+    /// # Safety
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
+    pub unsafe fn from_chunks(name: &str, mut chunks: Vec<ArrayRef>) -> Self {
         let dtype = match T::get_dtype() {
             dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
             dt => dt,
@@ -62,7 +63,6 @@ where
             field,
             chunks,
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length: 0,
         };
@@ -81,7 +81,6 @@ impl Int32Chunked {
             field,
             chunks,
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length: 0,
         };
@@ -97,7 +96,7 @@ where
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
     pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
         let arr = to_array::<T>(v, None);
-        Self::from_chunks(name, vec![arr])
+        unsafe { Self::from_chunks(name, vec![arr]) }
     }
 
     /// Nullify values in slice with an existing null bitmap
@@ -111,7 +110,23 @@ where
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
+            ..Default::default()
+        };
+        out.compute_len();
+        out
+    }
+
+    /// Create a temporary [`ChunkedArray`] from a slice.
+    ///
+    /// # Safety
+    /// The lifetime will be bound to the lifetime of the slice.
+    /// This will not be checked by the borrowchecker.
+    pub unsafe fn borrowed_from_slice(name: &str, values: &[T::Native]) -> Self {
+        let arr = Box::new(PrimitiveArray::borrowed_from_slice(values));
+        let mut out = ChunkedArray {
+            field: Arc::new(Field::new(name, T::get_dtype())),
+            chunks: vec![arr],
+            phantom: PhantomData,
             ..Default::default()
         };
         out.compute_len();

@@ -5,7 +5,6 @@ use polars_io::csv::utils::{get_reader_bytes, infer_file_schema};
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::RowCount;
 
-use crate::dsl::functions::concat;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -25,6 +24,7 @@ pub struct LazyCsvReader<'a> {
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValues>,
+    missing_is_null: bool,
     infer_schema_length: Option<usize>,
     rechunk: bool,
     skip_rows_after_header: usize,
@@ -51,6 +51,7 @@ impl<'a> LazyCsvReader<'a> {
             quote_char: Some(b'"'),
             eol_char: b'\n',
             null_values: None,
+            missing_is_null: true,
             infer_schema_length: Some(100),
             rechunk: true,
             skip_rows_after_header: 0,
@@ -93,7 +94,7 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Continue with next batch when a ParserError is encountered.
     #[must_use]
-    pub fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
+    pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
         self.ignore_errors = ignore;
         self
     }
@@ -162,6 +163,12 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Treat missing fields as null.
+    pub fn with_missing_is_null(mut self, missing_is_null: bool) -> Self {
+        self.missing_is_null = missing_is_null;
+        self
+    }
+
     /// Cache the DataFrame after reading.
     #[must_use]
     pub fn with_cache(mut self, cache: bool) -> Self {
@@ -204,11 +211,31 @@ impl<'a> LazyCsvReader<'a> {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut file = std::fs::File::open(&self.path)?;
+        let path;
+        let path_str = self.path.to_string_lossy();
+
+        let mut file = if path_str.contains('*') {
+            let glob_err = || PolarsError::ComputeError("invalid glob pattern given".into());
+            let mut paths = glob::glob(&path_str).map_err(|_| glob_err())?;
+
+            match paths.next() {
+                Some(globresult) => {
+                    path = globresult.map_err(|_| glob_err())?;
+                }
+                None => {
+                    return Err(PolarsError::ComputeError(
+                        "globbing pattern did not match any files".into(),
+                    ));
+                }
+            }
+            std::fs::File::open(&path)
+        } else {
+            std::fs::File::open(&self.path)
+        }?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;
 
-        let (schema, _) = infer_file_schema(
+        let (schema, _, _) = infer_file_schema(
             &reader_bytes,
             self.delimiter,
             self.infer_schema_length,
@@ -228,7 +255,7 @@ impl<'a> LazyCsvReader<'a> {
         // the dtypes set may be for the new names, so update again
         if let Some(overwrite_schema) = self.schema_overwrite {
             for (name, dtype) in overwrite_schema.iter() {
-                schema.with_column(name.clone(), dtype.clone())
+                schema.with_column(name.clone(), dtype.clone());
             }
         }
 
@@ -272,7 +299,7 @@ impl<'a> LazyCsvReader<'a> {
 
             let lfs = paths
                 .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     let mut builder = self.clone();
                     builder.path = path;
                     if builder.skip_rows > 0 {
@@ -285,7 +312,7 @@ impl<'a> LazyCsvReader<'a> {
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
             // set to false, as the csv parser has full thread utilization
-            concat(&lfs, self.rechunk, false)
+            concat_impl(&lfs, self.rechunk, false, true)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|lf| {
                     if self.skip_rows != 0 || self.n_rows.is_some() {

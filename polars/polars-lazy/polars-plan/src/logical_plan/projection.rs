@@ -24,7 +24,7 @@ pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>
     expr
 }
 
-fn rewrite_special_aliases(expr: Expr) -> Expr {
+fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
     // the blocks are added by cargo fmt
     #[allow(clippy::blocks_in_if_conditions)]
     if has_expr(&expr, |e| {
@@ -36,31 +36,37 @@ fn rewrite_special_aliases(expr: Expr) -> Expr {
                 let name = roots
                     .get(0)
                     .expect("expected root column to keep expression name");
-                Expr::Alias(expr, name.clone())
+                Ok(Expr::Alias(expr, name.clone()))
             }
             Expr::RenameAlias { expr, function } => {
                 let name = get_single_leaf(&expr).unwrap();
-                let name = function.call(&name);
-                Expr::Alias(expr, Arc::from(name))
+                let name = function.call(&name)?;
+                Ok(Expr::Alias(expr, Arc::from(name)))
             }
             _ => panic!("`keep_name`, `suffix`, `prefix` should be last expression"),
         }
     } else {
-        expr
+        Ok(expr)
     }
 }
 
 /// Take an expression with a root: col("*") and copies that expression for all columns in the schema,
 /// with the exclusion of the `names` in the exclude expression.
 /// The resulting expressions are written to result.
-fn replace_wildcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<str>], schema: &Schema) {
+fn replace_wildcard(
+    expr: &Expr,
+    result: &mut Vec<Expr>,
+    exclude: &[Arc<str>],
+    schema: &Schema,
+) -> PolarsResult<()> {
     for name in schema.iter_names() {
         if !exclude.iter().any(|excluded| &**excluded == name) {
             let new_expr = replace_wildcard_with_column(expr.clone(), Arc::from(name.as_str()));
-            let new_expr = rewrite_special_aliases(new_expr);
+            let new_expr = rewrite_special_aliases(new_expr)?;
             result.push(new_expr)
         }
     }
+    Ok(())
 }
 
 fn replace_nth(expr: &mut Expr, schema: &Schema) {
@@ -85,9 +91,14 @@ fn replace_nth(expr: &mut Expr, schema: &Schema) {
 #[cfg(feature = "regex")]
 /// This function takes an expression containing a regex in `col("..")` and expands the columns
 /// that are selected by that regex in `result`.
-fn expand_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &str) {
+fn expand_regex(
+    expr: &Expr,
+    result: &mut Vec<Expr>,
+    schema: &Schema,
+    pattern: &str,
+) -> PolarsResult<()> {
     let re = regex::Regex::new(pattern)
-        .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
+        .unwrap_or_else(|_| panic!("invalid regular expression in column: {pattern}"));
     for name in schema.iter_names() {
         if re.is_match(name) {
             let mut new_expr = expr.clone();
@@ -100,16 +111,17 @@ fn expand_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &
                 _ => true,
             });
 
-            let new_expr = rewrite_special_aliases(new_expr);
+            let new_expr = rewrite_special_aliases(new_expr)?;
             result.push(new_expr)
         }
     }
+    Ok(())
 }
 
 #[cfg(feature = "regex")]
 /// This function searches for a regex expression in `col("..")` and expands the columns
 /// that are selected by that regex in `result`. The regex should start with `^` and end with `$`.
-fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) {
+fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> PolarsResult<()> {
     let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
     for name in &roots {
@@ -117,7 +129,7 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) {
             match regex {
                 None => {
                     regex = Some(name);
-                    expand_regex(expr, result, schema, name)
+                    expand_regex(expr, result, schema, name)?
                 }
                 Some(r) => {
                     assert_eq!(
@@ -129,13 +141,14 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) {
         }
     }
     if regex.is_none() {
-        let expr = rewrite_special_aliases(expr.clone());
+        let expr = rewrite_special_aliases(expr.clone())?;
         result.push(expr)
     }
+    Ok(())
 }
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
-fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
+fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> PolarsResult<()> {
     for name in names {
         let mut new_expr = expr.clone();
         new_expr.mutate().apply(|e| {
@@ -146,9 +159,10 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
             true
         });
 
-        let new_expr = rewrite_special_aliases(new_expr);
+        let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
     }
+    Ok(())
 }
 
 /// This replaces the dtypes Expr with a Column Expr. It also removes the Exclude Expr from the
@@ -177,7 +191,7 @@ fn expand_dtypes(
     schema: &Schema,
     dtypes: &[DataType],
     exclude: &[Arc<str>],
-) {
+) -> PolarsResult<()> {
     for dtype in dtypes {
         for field in schema.iter_fields().filter(|f| f.data_type() == dtype) {
             let name = field.name();
@@ -189,17 +203,18 @@ fn expand_dtypes(
 
             let new_expr = expr.clone();
             let new_expr = replace_dtype_with_column(new_expr, Arc::from(name.as_str()));
-            let new_expr = rewrite_special_aliases(new_expr);
+            let new_expr = rewrite_special_aliases(new_expr)?;
             result.push(new_expr)
         }
     }
+    Ok(())
 }
 
 // schema is not used if regex not activated
 #[allow(unused_variables)]
-fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>> {
+fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<Vec<Arc<str>>> {
     let mut exclude = vec![];
-    expr.into_iter().for_each(|e| {
+    for e in expr {
         if let Expr::Exclude(_, to_exclude) = e {
             #[cfg(feature = "regex")]
             {
@@ -212,7 +227,7 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
                     match to_exclude_single {
                         Excluded::Name(name) => {
                             let e = Expr::Column(name.clone());
-                            replace_regex(&e, &mut buf, schema);
+                            replace_regex(&e, &mut buf, schema)?;
                             // we cannot loop because of bchck
                             while let Some(col) = buf.pop() {
                                 if let Expr::Column(name) = col {
@@ -247,7 +262,7 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
                 }
             }
         }
-    });
+    }
     for mut expr in keys.iter() {
         // Allow a number of aliases of a column expression, still exclude column from aggregation
         loop {
@@ -265,7 +280,7 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
             }
         }
     }
-    exclude
+    Ok(exclude)
 }
 
 // functions can have col(["a", "b"]) or col(Utf8) as inputs
@@ -274,8 +289,9 @@ fn expand_function_inputs(mut expr: Expr, schema: &Schema) -> Expr {
         Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
             if options.input_wildcard_expansion =>
         {
-            *input = rewrite_projections(input.clone(), schema, &[]);
-            false
+            *input = rewrite_projections(input.clone(), schema, &[]).unwrap();
+            // continue iteration, there might be more functions.
+            true
         }
         _ => true,
     });
@@ -306,7 +322,11 @@ fn early_supertype(inputs: &[Expr], schema: &Schema) -> Option<DataType> {
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Expr]) -> Vec<Expr> {
+pub(crate) fn rewrite_projections(
+    exprs: Vec<Expr>,
+    schema: &Schema,
+    keys: &[Expr],
+) -> PolarsResult<Vec<Expr>> {
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
 
     for mut expr in exprs {
@@ -347,11 +367,11 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
                 .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
             {
                 match &e {
-                    Expr::Columns(names) => expand_columns(&expr, &mut result, names),
+                    Expr::Columns(names) => expand_columns(&expr, &mut result, names)?,
                     Expr::DtypeColumn(dtypes) => {
                         // keep track of column excluded from the dtypes
-                        let exclude = prepare_excluded(&expr, schema, keys);
-                        expand_dtypes(&expr, &mut result, schema, dtypes, &exclude)
+                        let exclude = prepare_excluded(&expr, schema, keys)?;
+                        expand_dtypes(&expr, &mut result, schema, dtypes, &exclude)?
                     }
                     _ => {}
                 }
@@ -360,20 +380,20 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
         // has multiple column names due to wildcards
         else if has_wildcard {
             // keep track of column excluded from the wildcard
-            let exclude = prepare_excluded(&expr, schema, keys);
+            let exclude = prepare_excluded(&expr, schema, keys)?;
             // this path prepares the wildcard as input for the Function Expr
-            replace_wildcard(&expr, &mut result, &exclude, schema);
+            replace_wildcard(&expr, &mut result, &exclude, schema)?;
         }
         // can have multiple column names due to a regex
         else {
             #[allow(clippy::collapsible_else_if)]
             #[cfg(feature = "regex")]
             {
-                replace_regex(&expr, &mut result, schema)
+                replace_regex(&expr, &mut result, schema)?
             }
             #[cfg(not(feature = "regex"))]
             {
-                let expr = rewrite_special_aliases(expr);
+                let expr = rewrite_special_aliases(expr)?;
                 result.push(expr)
             }
         }
@@ -404,5 +424,5 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
             }
         }
     }
-    result
+    Ok(result)
 }

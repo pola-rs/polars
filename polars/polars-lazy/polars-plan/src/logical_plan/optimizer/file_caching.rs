@@ -132,7 +132,7 @@ pub fn find_column_union_and_fingerprints(
             path,
             options,
             predicate,
-            schema,
+            file_info,
             ..
         } => {
             let slice = (options.skip_rows, options.n_rows);
@@ -143,14 +143,14 @@ pub fn find_column_union_and_fingerprints(
                 predicate,
                 slice,
                 columns,
-                schema,
+                &file_info.schema,
             );
         }
         #[cfg(feature = "parquet")]
         ParquetScan {
             path,
             options,
-            schema,
+            file_info,
             predicate,
             ..
         } => {
@@ -162,14 +162,14 @@ pub fn find_column_union_and_fingerprints(
                 predicate,
                 slice,
                 columns,
-                schema,
+                &file_info.schema,
             );
         }
         #[cfg(feature = "ipc")]
         IpcScan {
             path,
             options,
-            schema,
+            file_info,
             predicate,
             ..
         } => {
@@ -181,7 +181,7 @@ pub fn find_column_union_and_fingerprints(
                 predicate,
                 slice,
                 columns,
-                schema,
+                &file_info.schema,
             );
         }
         lp => {
@@ -276,10 +276,11 @@ impl FileCacher {
                 #[cfg(feature = "parquet")]
                 ALogicalPlan::ParquetScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     mut options,
+                    cloud_options,
                 } => {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
                     let finger_print = FileFingerPrint {
@@ -291,7 +292,7 @@ impl FileCacher {
                     let with_columns = self.extract_columns_and_count(&finger_print);
                     options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
                     let with_columns = with_columns.and_then(|t| {
-                        if t.1.len() != schema.len() {
+                        if t.1.len() != file_info.schema.len() {
                             Some(t.1)
                         } else {
                             None
@@ -301,10 +302,11 @@ impl FileCacher {
                     options.with_columns = with_columns;
                     let lp = ALogicalPlan::ParquetScan {
                         path: finger_print.path.clone(),
-                        schema,
+                        file_info,
                         output_schema,
                         predicate,
                         options: options.clone(),
+                        cloud_options,
                     };
                     let lp = self.finish_rewrite(
                         lp,
@@ -319,7 +321,7 @@ impl FileCacher {
                 #[cfg(feature = "csv-file")]
                 ALogicalPlan::CsvScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     mut options,
@@ -334,7 +336,7 @@ impl FileCacher {
                     let with_columns = self.extract_columns_and_count(&finger_print);
                     options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
                     let with_columns = with_columns.and_then(|t| {
-                        if t.1.len() != schema.len() {
+                        if t.1.len() != file_info.schema.len() {
                             Some(t.1)
                         } else {
                             None
@@ -344,7 +346,7 @@ impl FileCacher {
                     options.with_columns = with_columns;
                     let lp = ALogicalPlan::CsvScan {
                         path: finger_print.path.clone(),
-                        schema,
+                        file_info,
                         output_schema,
                         predicate,
                         options: options.clone(),
@@ -362,7 +364,7 @@ impl FileCacher {
                 #[cfg(feature = "ipc")]
                 ALogicalPlan::IpcScan {
                     path,
-                    schema,
+                    file_info,
                     output_schema,
                     predicate,
                     mut options,
@@ -377,7 +379,7 @@ impl FileCacher {
                     let with_columns = self.extract_columns_and_count(&finger_print);
                     options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
                     let with_columns = with_columns.and_then(|t| {
-                        if t.1.len() != schema.len() {
+                        if t.1.len() != file_info.schema.len() {
                             Some(t.1)
                         } else {
                             None
@@ -387,7 +389,7 @@ impl FileCacher {
                     options.with_columns = with_columns;
                     let lp = ALogicalPlan::IpcScan {
                         path: finger_print.path.clone(),
-                        schema,
+                        file_info,
                         output_schema,
                         predicate,
                         options: options.clone(),

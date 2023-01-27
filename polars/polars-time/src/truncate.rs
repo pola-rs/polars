@@ -20,8 +20,12 @@ impl PolarsTruncate for DatetimeChunked {
             TimeUnit::Milliseconds => Window::truncate_ms,
         };
 
-        self.apply(|t| func(&w, t))
-            .into_datetime(self.time_unit(), self.time_zone().clone())
+        self.apply_on_tz_corrected(|ca| {
+            Ok(ca
+                .apply(|t| func(&w, t))
+                .into_datetime(self.time_unit(), self.time_zone().clone()))
+        })
+        .unwrap()
     }
 }
 

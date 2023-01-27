@@ -22,7 +22,6 @@ impl GroupByRollingExec {
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();
-        state.set_schema(self.input_schema.clone());
 
         let keys = self
             .keys
@@ -47,8 +46,23 @@ impl GroupByRollingExec {
         // the ordering has changed due to the groupby
         if !keys.is_empty() {
             unsafe {
-                for key in keys.iter_mut() {
-                    *key = key.agg_first(groups);
+                match groups {
+                    GroupsProxy::Idx(groups) => {
+                        let first = groups.first();
+                        // we don't use agg_first here, because the group
+                        // can be empty, but we still want to know the first value
+                        // of that group
+                        for key in keys.iter_mut() {
+                            *key = key.take_unchecked_from_slice(first).unwrap();
+                        }
+                    }
+                    GroupsProxy::Slice { groups, .. } => {
+                        for key in keys.iter_mut() {
+                            let iter = &mut groups.iter().map(|[first, _len]| *first as usize)
+                                as &mut dyn TakeIterator<Item = usize>;
+                            *key = key.take_iter_unchecked(iter);
+                        }
+                    }
                 }
             }
         };
@@ -73,7 +87,6 @@ impl GroupByRollingExec {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        state.clear_schema_cache();
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
         columns.push(time_key);

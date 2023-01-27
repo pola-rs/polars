@@ -25,8 +25,8 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn _set_sorted(&mut self, is_sorted: IsSorted) {
-        self.0.set_sorted2(is_sorted)
+    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
+        self.0.set_sorted_flag(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -48,11 +48,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<ListChunked> {
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.clone().into_series()
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }
@@ -69,10 +64,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
-    }
-
-    fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
-        self.0.append_array(other)
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
@@ -167,7 +158,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.cast(data_type)
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         self.0.get_any_value(index)
     }
 

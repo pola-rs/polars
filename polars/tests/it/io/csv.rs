@@ -39,7 +39,7 @@ fn test_read_csv_file() {
 }
 
 #[test]
-fn test_parser() {
+fn test_parser() -> PolarsResult<()> {
     let s = r#"
  "sepal.length","sepal.width","petal.length","petal.width","variety"
  5.1,3.5,1.4,.2,"Setosa"
@@ -55,7 +55,7 @@ fn test_parser() {
     CsvReader::new(file)
         .infer_schema(Some(100))
         .has_header(true)
-        .with_ignore_parser_errors(true)
+        .with_ignore_errors(true)
         .finish()
         .unwrap();
 
@@ -72,7 +72,7 @@ fn test_parser() {
         // we also check if infer schema ignores errors
         .infer_schema(Some(10))
         .has_header(true)
-        .with_ignore_parser_errors(true)
+        .with_ignore_errors(true)
         .finish()
         .unwrap();
 
@@ -94,8 +94,8 @@ fn test_parser() {
         .unwrap();
 
     let col = df.column("variety").unwrap();
-    assert_eq!(col.get(0), AnyValue::Utf8("Setosa"));
-    assert_eq!(col.get(2), AnyValue::Utf8("Setosa"));
+    assert_eq!(col.get(0)?, AnyValue::Utf8("Setosa"));
+    assert_eq!(col.get(2)?, AnyValue::Utf8("Setosa"));
 
     assert_eq!("sepal.length", df.get_columns()[0].name());
     assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
@@ -126,6 +126,7 @@ fn test_parser() {
 
     assert_eq!("head_1", df.get_columns()[0].name());
     assert_eq!(df.shape(), (3, 1));
+    Ok(())
 }
 
 #[test]
@@ -145,28 +146,29 @@ fn test_tab_sep() {
         .infer_schema(Some(100))
         .with_delimiter(b'\t')
         .has_header(false)
-        .with_ignore_parser_errors(true)
+        .with_ignore_errors(true)
         .finish()
         .unwrap();
     assert_eq!(df.shape(), (8, 26))
 }
 
 #[test]
-fn test_projection() {
+fn test_projection() -> PolarsResult<()> {
     let df = CsvReader::from_path(FOODS_CSV)
         .unwrap()
         .with_projection(Some(vec![0, 2]))
         .finish()
         .unwrap();
     let col_1 = df.select_at_idx(0).unwrap();
-    assert_eq!(col_1.get(0), AnyValue::Utf8("vegetables"));
-    assert_eq!(col_1.get(1), AnyValue::Utf8("seafood"));
-    assert_eq!(col_1.get(2), AnyValue::Utf8("meat"));
+    assert_eq!(col_1.get(0)?, AnyValue::Utf8("vegetables"));
+    assert_eq!(col_1.get(1)?, AnyValue::Utf8("seafood"));
+    assert_eq!(col_1.get(2)?, AnyValue::Utf8("meat"));
 
     let col_2 = df.select_at_idx(1).unwrap();
-    assert_eq!(col_2.get(0), AnyValue::Float64(0.5));
-    assert_eq!(col_2.get(1), AnyValue::Float64(5.0));
-    assert_eq!(col_2.get(2), AnyValue::Float64(5.0));
+    assert_eq!(col_2.get(0)?, AnyValue::Float64(0.5));
+    assert_eq!(col_2.get(1)?, AnyValue::Float64(5.0));
+    assert_eq!(col_2.get(2)?, AnyValue::Float64(5.0));
+    Ok(())
 }
 
 #[test]
@@ -216,8 +218,6 @@ fn test_escape_double_quotes() {
 "#;
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish().unwrap();
-    println!("GET: {}", df.column("column_2").unwrap().get(1));
-    println!("EXPECTEd: {}", r#"with "double quotes followed", by comma"#);
     assert_eq!(df.shape(), (2, 3));
     assert!(df.column("column_2").unwrap().series_equal(&Series::new(
         "column_2",

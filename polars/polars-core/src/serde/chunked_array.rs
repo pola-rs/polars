@@ -139,3 +139,23 @@ impl Serialize for CategoricalChunked {
         }
     }
 }
+
+#[cfg(feature = "dtype-categorical")]
+impl Serialize for StructChunked {
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        {
+            let mut state = serializer.serialize_map(Some(3))?;
+            state.serialize_entry("name", self.name())?;
+            let dtype: DeDataType = self.dtype().into();
+            state.serialize_entry("datatype", &dtype)?;
+            state.serialize_entry("values", self.fields())?;
+            state.end()
+        }
+    }
+}

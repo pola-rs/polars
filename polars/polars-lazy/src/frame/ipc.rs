@@ -3,7 +3,6 @@ use std::path::Path;
 use polars_core::prelude::*;
 use polars_io::RowCount;
 
-use crate::dsl::functions::concat;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -52,23 +51,24 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a ipc scan.
-    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
         let path = path.as_ref();
         let path_str = path.to_string_lossy();
         if path_str.contains('*') {
             let paths = glob::glob(&path_str)
                 .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
+
             let lfs = paths
                 .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     let mut args = args.clone();
+                    args.rechunk = false;
                     args.row_count = None;
                     Self::scan_ipc_impl(path, args)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
-            concat(&lfs, args.rechunk, true)
+            concat_impl(&lfs, args.rechunk, true, true)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|mut lf| {
                     if let Some(n_rows) = args.n_rows {

@@ -36,48 +36,6 @@ fn any_values_to_bool(avs: &[AnyValue]) -> BooleanChunked {
         .collect_trusted()
 }
 
-fn coerce_recursively(a: &Series, dtype: &DataType) -> Series {
-    match (a.dtype(), dtype) {
-        (lhs, rhs) if lhs == rhs => a.clone(),
-        #[cfg(feature = "dtype-struct")]
-        (DataType::Struct(_), DataType::Struct(dtype_fields)) => {
-            let a = a.struct_().unwrap();
-            let mut new_fields = Vec::with_capacity(a.fields().len());
-            for (s_field, fld) in a.fields().iter().zip(dtype_fields) {
-                let mut new_s = coerce_recursively(s_field, fld.data_type());
-                if new_s.name() != fld.name {
-                    new_s.rename(&fld.name);
-                }
-                new_fields.push(new_s);
-            }
-            StructChunked::new(a.name(), &new_fields)
-                .unwrap()
-                .into_series()
-        }
-        (DataType::List(_), DataType::List(inner_type)) => {
-            let a = a.list().unwrap();
-            let a = a.rechunk();
-            let arr = a.downcast_iter().next().unwrap();
-            let s = Series::try_from(("", arr.values().clone())).unwrap();
-            let new_inner = coerce_recursively(&s, inner_type);
-            let new_values = new_inner.array_ref(0).clone();
-
-            let data_type = ListArray::<i64>::default_datatype(new_values.data_type().clone());
-            let new_arr = ListArray::<i64>::new(
-                data_type,
-                arr.offsets().clone(),
-                new_values,
-                arr.validity().cloned(),
-            );
-            Series::try_from((s.name(), Box::new(new_arr) as ArrayRef)).unwrap()
-        }
-        _ => match a.cast(dtype) {
-            Ok(s) => s,
-            _ => Series::full_null("", a.len(), dtype),
-        },
-    }
-}
-
 fn any_values_to_list(avs: &[AnyValue], inner_type: &DataType) -> ListChunked {
     // this is handled downstream. The builder will choose the first non null type
     if inner_type == &DataType::Null {
@@ -96,7 +54,10 @@ fn any_values_to_list(avs: &[AnyValue], inner_type: &DataType) -> ListChunked {
                     if b.dtype() == inner_type {
                         Some(b.clone())
                     } else {
-                        Some(coerce_recursively(b, inner_type))
+                        match b.cast(inner_type) {
+                            Ok(out) => Some(out),
+                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
+                        }
                     }
                 }
                 _ => None,
@@ -113,9 +74,9 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
 }
 
 impl Series {
-    pub fn from_any_values_and_dtype<'a>(
+    pub fn from_any_values_and_dtype(
         name: &str,
-        av: &[AnyValue<'a>],
+        av: &[AnyValue],
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         let mut s = match dtype {
@@ -155,25 +116,60 @@ impl Series {
                 .into_series(),
             DataType::List(inner) => any_values_to_list(av, inner).into_series(),
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => {
-                // the fields of the struct
-                let mut series_fields = Vec::with_capacity(fields.len());
-                for (i, field) in fields.iter().enumerate() {
+            DataType::Struct(dtype_fields) => {
+                // fast path for empty structs
+                if dtype_fields.is_empty() {
+                    return Ok(StructChunked::full_null(name, av.len()).into_series());
+                }
+                // the physical series fields of the struct
+                let mut series_fields = Vec::with_capacity(dtype_fields.len());
+                for (i, field) in dtype_fields.iter().enumerate() {
                     let mut field_avs = Vec::with_capacity(av.len());
 
                     for av in av.iter() {
                         match av {
                             AnyValue::StructOwned(payload) => {
-                                for (l, r) in fields.iter().zip(payload.1.iter()) {
-                                    if l.name() != r.name() {
-                                        return Err(PolarsError::ComputeError(
-                                            "struct orders must remain the same".into(),
-                                        ));
+                                // TODO: optimize
+                                let av_fields = &payload.1;
+                                let av_values = &payload.0;
+
+                                let mut append_by_search = || {
+                                    // search for the name
+                                    let mut pushed = false;
+                                    for (av_fld, av_val) in av_fields.iter().zip(av_values) {
+                                        if av_fld.name == field.name {
+                                            field_avs.push(av_val.clone());
+                                            pushed = true;
+                                            break;
+                                        }
+                                    }
+                                    if !pushed {
+                                        field_avs.push(AnyValue::Null)
+                                    }
+                                };
+
+                                // all fields are available in this single value
+                                // we can use the index to get value
+                                if dtype_fields.len() == av_fields.len() {
+                                    let mut search = false;
+                                    for (l, r) in dtype_fields.iter().zip(av_fields.iter()) {
+                                        if l.name() != r.name() {
+                                            search = true;
+                                        }
+                                    }
+                                    if search {
+                                        append_by_search()
+                                    } else {
+                                        let av_val =
+                                            av_values.get(i).cloned().unwrap_or(AnyValue::Null);
+                                        field_avs.push(av_val)
                                     }
                                 }
-
-                                let av_val = payload.0[i].clone();
-                                field_avs.push(av_val)
+                                // not all fields are available, we search the proper field
+                                else {
+                                    // search for the name
+                                    append_by_search()
+                                }
                             }
                             _ => field_avs.push(AnyValue::Null),
                         }
@@ -199,13 +195,18 @@ impl Series {
                 }
                 return Ok(builder.to_series());
             }
-            dt => panic!("{:?} not supported", dt),
+            DataType::Null => {
+                // TODO!
+                // use null dtype here and fix tests
+                Series::full_null(name, av.len(), &DataType::Int32)
+            }
+            dt => panic!("{dt:?} not supported"),
         };
         s.rename(name);
         Ok(s)
     }
 
-    pub fn from_any_values<'a>(name: &str, av: &[AnyValue<'a>]) -> PolarsResult<Series> {
+    pub fn from_any_values(name: &str, av: &[AnyValue]) -> PolarsResult<Series> {
         match av.iter().find(|av| !matches!(av, AnyValue::Null)) {
             None => Ok(Series::full_null(name, av.len(), &DataType::Int32)),
             Some(av_) => {
@@ -241,7 +242,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.to_vec()),
             #[cfg(feature = "dtype-struct")]
-            Struct(_, fields) => DataType::Struct(fields.to_vec()),
+            Struct(_, _, flds) => DataType::Struct(flds.to_vec()),
             #[cfg(feature = "dtype-duration")]
             Duration(_, tu) => DataType::Duration(*tu),
             UInt8(_) => DataType::UInt8,
@@ -249,9 +250,19 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             Int8(_) => DataType::Int8,
             Int16(_) => DataType::Int16,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, rev_map) => DataType::Categorical(Some(Arc::new((*rev_map).clone()))),
+            Categorical(_, rev_map, arr) => {
+                if arr.is_null() {
+                    DataType::Categorical(Some(Arc::new((*rev_map).clone())))
+                } else {
+                    let array = unsafe { arr.deref_unchecked().clone() };
+                    let rev_map = RevMapping::Local(array);
+                    DataType::Categorical(Some(Arc::new(rev_map)))
+                }
+            }
             #[cfg(feature = "object")]
             Object(o) => DataType::Object(o.type_name()),
+            #[cfg(feature = "object")]
+            ObjectOwned(o) => DataType::Object(o.0.type_name()),
         }
     }
 }

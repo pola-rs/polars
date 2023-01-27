@@ -15,4 +15,6 @@ pub trait Operator: Send + Sync {
     ) -> PolarsResult<OperatorResult>;
 
     fn split(&self, thread_no: usize) -> Box<dyn Operator>;
+
+    fn fmt(&self) -> &str;
 }

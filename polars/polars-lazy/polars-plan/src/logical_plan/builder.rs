@@ -1,27 +1,30 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek};
+use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
+#[cfg(feature = "parquet")]
+use polars_core::cloud::CloudOptions;
+use polars_core::frame::_duplicate_err;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
-#[cfg(feature = "csv-file")]
-use polars_io::csv::utils::infer_file_schema;
-use polars_io::csv::CsvEncoding;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
+#[cfg(all(feature = "parquet", feature = "async"))]
+use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
-    csv::utils::{get_reader_bytes, is_compressed},
+    csv::utils::{get_reader_bytes, infer_file_schema, is_compressed},
+    csv::CsvEncoding,
     csv::NullValues,
 };
 
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::rewrite_projections;
-use crate::logical_plan::schema::det_join_schema;
+use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
@@ -30,7 +33,7 @@ pub(crate) fn prepare_projection(
     exprs: Vec<Expr>,
     schema: &Schema,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
-    let exprs = rewrite_projections(exprs, schema, &[]);
+    let exprs = rewrite_projections(exprs, schema, &[])?;
     let schema = utils::expressions_to_schema(&exprs, schema, Context::Default)?;
     Ok((exprs, schema))
 }
@@ -43,17 +46,35 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
     }
 }
 
+fn format_err(msg: &str, input: &LogicalPlan) -> String {
+    format!(
+        "{msg}\n\n> Error originated just after operation: '{input:?}'\n\
+    This operation could not be added to the plan.",
+    )
+}
+
+/// Returns every error or msg: &str as `ComputeError`.
+/// It also shows the logical plan node where the error
+/// originated.
+macro_rules! raise_err {
+    ($err:expr, $input:expr, $convert:ident) => {{
+        let format_err_outer = |msg: &str| format_err(msg, &$input);
+
+        let err = $err.wrap_msg(&format_err_outer);
+
+        LogicalPlan::Error {
+            input: Box::new($input.clone()),
+            err: err.into(),
+        }
+        .$convert()
+    }};
+}
+
 macro_rules! try_delayed {
     ($fallible:expr, $input:expr, $convert:ident) => {
         match $fallible {
             Ok(success) => success,
-            Err(err) => {
-                return LogicalPlan::Error {
-                    input: Box::new($input.clone()),
-                    err: Arc::new(Mutex::new(Some(err))),
-                }
-                .$convert()
-            }
+            Err(err) => return raise_err!(err, $input, $convert),
         }
     };
 }
@@ -72,9 +93,13 @@ impl LogicalPlanBuilder {
             None => function.schema(infer_schema_length)?,
         });
 
+        let file_info = FileInfo {
+            schema: schema.clone(),
+            row_estimation: (n_rows, n_rows.unwrap_or(usize::MAX)),
+        };
         Ok(LogicalPlan::AnonymousScan {
             function,
-            schema: schema.clone(),
+            file_info,
             predicate: None,
             options: AnonymousScanOptions {
                 fmt_str: name,
@@ -83,13 +108,14 @@ impl LogicalPlanBuilder {
                 n_rows,
                 output_schema: None,
                 with_columns: None,
+                predicate: None,
             },
         }
         .into())
     }
 
-    #[cfg(feature = "parquet")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
+    #[cfg(any(feature = "parquet", feature = "parquet_async"))]
+    #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet<P: Into<PathBuf>>(
         path: P,
         n_rows: Option<usize>,
@@ -98,16 +124,42 @@ impl LogicalPlanBuilder {
         row_count: Option<RowCount>,
         rechunk: bool,
         low_memory: bool,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
-        use polars_io::SerReader as _;
+        use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
-        let file = std::fs::File::open(&path)?;
-        let schema = Arc::new(ParquetReader::new(file).schema()?);
+        let file_info: PolarsResult<FileInfo> = if is_cloud_url(&path) {
+            #[cfg(not(feature = "async"))]
+            panic!(
+                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
+            );
+
+            #[cfg(feature = "async")]
+            {
+                let uri = path.to_string_lossy();
+                let (schema, num_rows) =
+                    ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?;
+                Ok(FileInfo {
+                    schema: Arc::new(schema),
+                    row_estimation: (Some(num_rows), num_rows),
+                })
+            }
+        } else {
+            let file = std::fs::File::open(&path)?;
+            let mut reader = ParquetReader::new(file);
+            let schema = Arc::new(reader.schema()?);
+            let num_rows = reader.num_rows()?;
+            Ok(FileInfo {
+                schema,
+                row_estimation: (Some(num_rows), num_rows),
+            })
+        };
+        let file_info = file_info?;
 
         Ok(LogicalPlan::ParquetScan {
             path,
-            schema,
+            file_info,
             predicate: None,
             options: ParquetOptions {
                 n_rows,
@@ -119,22 +171,28 @@ impl LogicalPlanBuilder {
                 file_counter: Default::default(),
                 low_memory,
             },
+            cloud_options,
         }
         .into())
     }
 
     #[cfg(feature = "ipc")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
         let file = std::fs::File::open(&path)?;
-        let schema = Arc::new(IpcReader::new(file).schema()?);
+        let mut reader = IpcReader::new(file);
+        let schema = Arc::new(reader.schema()?);
 
+        let num_rows = reader._num_rows()?;
+        let file_info = FileInfo {
+            schema,
+            row_estimation: (None, num_rows),
+        };
         Ok(LogicalPlan::IpcScan {
             path,
-            schema,
+            file_info,
             predicate: None,
             options: options.into(),
         }
@@ -176,31 +234,38 @@ impl LogicalPlanBuilder {
                 "cannot scan compressed csv; use read_csv for compressed data".into(),
             ));
         }
-        file.seek(SeekFrom::Start(0))?;
+        file.rewind()?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
-        let schema = schema.unwrap_or_else(|| {
-            let (schema, _) = infer_file_schema(
-                &reader_bytes,
-                delimiter,
-                infer_schema_length,
-                has_header,
-                schema_overwrite,
-                &mut skip_rows,
-                skip_rows_after_header,
-                comment_char,
-                quote_char,
-                eol_char,
-                null_values.as_ref(),
-                parse_dates,
-            )
-            .expect("could not read schema");
-            Arc::new(schema)
-        });
+        // TODO! delay inferring schema until absolutely necessary
+        // this needs a way to estimated bytes/rows.
+        let (inferred_schema, rows_read, bytes_read) = infer_file_schema(
+            &reader_bytes,
+            delimiter,
+            infer_schema_length,
+            has_header,
+            schema_overwrite,
+            &mut skip_rows,
+            skip_rows_after_header,
+            comment_char,
+            quote_char,
+            eol_char,
+            null_values.as_ref(),
+            parse_dates,
+        )?;
+
+        let schema = schema.unwrap_or_else(|| Arc::new(inferred_schema));
+        let n_bytes = reader_bytes.deref().len();
+        let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
+
         skip_rows += skip_rows_after_header;
+        let file_info = FileInfo {
+            schema,
+            row_estimation: (None, estimated_n_rows),
+        };
         Ok(LogicalPlan::CsvScan {
             path,
-            schema,
+            file_info,
             options: CsvParserOptions {
                 has_header,
                 delimiter,
@@ -331,7 +396,7 @@ impl LogicalPlanBuilder {
 
             for fld in other_schema.iter_fields() {
                 if schema.get(fld.name()).is_none() {
-                    schema.with_column(fld.name, fld.dtype)
+                    schema.with_column(fld.name, fld.dtype);
                 }
             }
         }
@@ -347,11 +412,23 @@ impl LogicalPlanBuilder {
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| match e {
             Expr::Column(name) => name.starts_with('^') && name.ends_with('$'),
-            Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) => true,
+            Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) | Expr::DtypeColumn(_) => {
+                true
+            }
             _ => false,
         }) {
             let schema = try_delayed!(self.0.schema(), &self.0, into);
-            let rewritten = rewrite_projections(vec![predicate], &schema, &[]);
+            let rewritten = try_delayed!(
+                rewrite_projections(vec![predicate], &schema, &[]),
+                &self.0,
+                into
+            );
+            if rewritten.is_empty() {
+                let msg = "The predicate expanded to zero expressions. \
+                This may for example be caused by a regex not matching column names or \
+                a column dtype match not hitting any dtypes in the DataFrame";
+                return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+            }
             combine_predicates_expr(rewritten.into_iter())
         } else {
             predicate
@@ -374,8 +451,16 @@ impl LogicalPlanBuilder {
     ) -> Self {
         let current_schema = try_delayed!(self.0.schema(), &self.0, into);
         let current_schema = current_schema.as_ref();
-        let keys = rewrite_projections(keys, current_schema, &[]);
-        let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
+        let keys = try_delayed!(
+            rewrite_projections(keys, current_schema, &[]),
+            &self.0,
+            into
+        );
+        let aggs = try_delayed!(
+            rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref()),
+            &self.0,
+            into
+        );
 
         let mut schema = try_delayed!(
             utils::expressions_to_schema(&keys, current_schema, Context::Default),
@@ -388,6 +473,20 @@ impl LogicalPlanBuilder {
             into
         );
         schema.merge(other);
+
+        if schema.len() < keys.len() + aggs.len() {
+            let check_names = || {
+                let mut names = PlHashSet::with_capacity(schema.len());
+                for expr in aggs.iter().chain(keys.iter()) {
+                    let name = expr_output_name(expr)?;
+                    if !names.insert(name.clone()) {
+                        return _duplicate_err(name.as_ref());
+                    }
+                }
+                Ok(())
+            };
+            try_delayed!(check_names(), &self.0, into)
+        }
 
         #[cfg(feature = "dynamic_groupby")]
         {
@@ -451,7 +550,7 @@ impl LogicalPlanBuilder {
 
     pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>, null_last: bool) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let by_column = rewrite_projections(by_column, &schema, &[]);
+        let by_column = try_delayed!(rewrite_projections(by_column, &schema, &[]), &self.0, into);
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,
@@ -466,7 +565,7 @@ impl LogicalPlanBuilder {
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let columns = rewrite_projections(columns, &schema, &[]);
+        let columns = try_delayed!(rewrite_projections(columns, &schema, &[]), &self.0, into);
 
         let mut schema = (**schema).clone();
 
@@ -477,7 +576,7 @@ impl LogicalPlanBuilder {
                 if let Expr::Column(name) = e {
                     if let Some(DataType::List(inner)) = schema.get(name) {
                         let inner = *inner.clone();
-                        schema.with_column(name.to_string(), inner)
+                        schema.with_column(name.to_string(), inner);
                     }
 
                     (**name).to_owned()
@@ -529,6 +628,19 @@ impl LogicalPlanBuilder {
         right_on: Vec<Expr>,
         options: JoinOptions,
     ) -> Self {
+        for e in left_on.iter().chain(right_on.iter()) {
+            if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
+                return LogicalPlan::Error {
+                    input: Box::new(self.0),
+                    err: PolarsError::ComputeError(
+                        "'alias' is not allowed in a join key. Use 'with_columns' first.".into(),
+                    )
+                    .into(),
+                }
+                .into();
+            }
+        }
+
         let schema_left = try_delayed!(self.0.schema(), &self.0, into);
         let schema_right = try_delayed!(other.schema(), &self.0, into);
 

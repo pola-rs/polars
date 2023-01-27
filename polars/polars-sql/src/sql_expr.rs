@@ -181,25 +181,19 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
                 Some((TrimWhereField::Both, sql_expr)) => {
                     let lit = parse_sql_expr(sql_expr)?;
                     if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
-                        if val.len() == 1 {
-                            return Ok(expr.str().strip(Some(val.chars().next().unwrap())));
-                        }
+                        return Ok(expr.str().strip(Some(val)));
                     }
                 }
                 Some((TrimWhereField::Leading, sql_expr)) => {
                     let lit = parse_sql_expr(sql_expr)?;
                     if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
-                        if val.len() == 1 {
-                            return Ok(expr.str().lstrip(Some(val.chars().next().unwrap())));
-                        }
+                        return Ok(expr.str().lstrip(Some(val)));
                     }
                 }
                 Some((TrimWhereField::Trailing, sql_expr)) => {
                     let lit = parse_sql_expr(sql_expr)?;
                     if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
-                        if val.len() == 1 {
-                            return Ok(expr.str().rstrip(Some(val.chars().next().unwrap())));
-                        }
+                        return Ok(expr.str().rstrip(Some(val)));
                     }
                 }
             }

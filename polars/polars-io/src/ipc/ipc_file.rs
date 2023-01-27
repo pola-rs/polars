@@ -39,6 +39,8 @@ use std::sync::Arc;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
@@ -72,12 +74,30 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(crate) columns: Option<Vec<String>>,
     pub(super) row_count: Option<RowCount>,
     memmap: bool,
+    metadata: Option<read::FileMetadata>,
 }
 
 impl<R: MmapBytesReader> IpcReader<R> {
+    #[doc(hidden)]
+    /// A very bad estimated of the number of rows
+    /// This estimation will be entirely off if the file is compressed.
+    /// And will be varying off depending on the data types.
+    pub fn _num_rows(&mut self) -> PolarsResult<usize> {
+        let metadata = self.get_metadata()?;
+        let n_cols = metadata.schema.fields.len();
+        // this magic number 10 is computed from the yellow trip dataset
+        Ok((metadata.size as usize) / n_cols / 10)
+    }
+    fn get_metadata(&mut self) -> PolarsResult<&read::FileMetadata> {
+        if self.metadata.is_none() {
+            self.metadata = Some(read::read_file_metadata(&mut self.reader)?);
+        }
+        Ok(self.metadata.as_ref().unwrap())
+    }
+
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
-        let metadata = read::read_file_metadata(&mut self.reader)?;
+        let metadata = self.get_metadata()?;
         Ok(metadata.schema.fields.iter().into())
     }
 
@@ -131,17 +151,21 @@ impl<R: MmapBytesReader> IpcReader<R> {
             }
             match self.finish_memmapped(predicate.clone()) {
                 Ok(df) => return Ok(df),
-                Err(err) => match err {
-                    PolarsError::ArrowError(e) => match e.as_ref() {
-                        arrow::error::Error::NotYetImplemented(s)
-                            if s == "mmap can only be done on uncompressed IPC files" =>
-                        {
-                            eprint!("could not mmap compressed IPC file, defaulting to normal read")
-                        }
-                        _ => return Err(PolarsError::ArrowError(e)),
-                    },
-                    err => return Err(err),
-                },
+                Err(err) => {
+                    match err {
+                        PolarsError::ArrowError(e) => match e.as_ref() {
+                            arrow::error::Error::NotYetImplemented(s)
+                                if s == "mmap can only be done on uncompressed IPC files" =>
+                            {
+                                if verbose {
+                                    eprint!("could not mmap compressed IPC file, defaulting to normal read")
+                                }
+                            }
+                            _ => return Err(PolarsError::ArrowError(e)),
+                        },
+                        err => return Err(err),
+                    }
+                }
             }
         }
         let rechunk = self.rechunk;
@@ -178,6 +202,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             projection: None,
             row_count: None,
             memmap: true,
+            metadata: None,
         }
     }
 
@@ -245,20 +270,33 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 #[must_use]
 pub struct IpcWriter<W> {
     writer: W,
-    compression: Option<write::Compression>,
+    compression: Option<IpcCompression>,
 }
 
 use polars_core::frame::ArrowChunk;
-pub use write::Compression as IpcCompression;
 
 use crate::mmap::MmapBytesReader;
 use crate::RowCount;
 
-impl<W> IpcWriter<W> {
+impl<W: Write> IpcWriter<W> {
     /// Set the compression used. Defaults to None.
-    pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
+    pub fn with_compression(mut self, compression: Option<IpcCompression>) -> Self {
         self.compression = compression;
         self
+    }
+
+    pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+        let mut writer = write::FileWriter::new(
+            self.writer,
+            schema.to_arrow(),
+            None,
+            WriteOptions {
+                compression: self.compression.map(|c| c.into()),
+            },
+        );
+        writer.start()?;
+
+        Ok(BatchedWriter { writer })
     }
 }
 
@@ -276,10 +314,10 @@ where
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
-            &df.schema().to_arrow(),
+            df.schema().to_arrow(),
             None,
             WriteOptions {
-                compression: self.compression,
+                compression: self.compression.map(|c| c.into()),
             },
         )?;
         df.rechunk();
@@ -293,8 +331,52 @@ where
     }
 }
 
+pub struct BatchedWriter<W: Write> {
+    writer: write::FileWriter<W>,
+}
+
+impl<W: Write> BatchedWriter<W> {
+    /// Write a batch to the parquet writer.
+    ///
+    /// # Panics
+    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
+    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        let iter = df.iter_chunks();
+        for batch in iter {
+            self.writer.write(&batch, None)?
+        }
+        Ok(())
+    }
+
+    /// Writes the footer of the IPC file.
+    pub fn finish(&mut self) -> PolarsResult<()> {
+        self.writer.finish()?;
+        Ok(())
+    }
+}
+
+/// Compression codec
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum IpcCompression {
+    /// LZ4 (framed)
+    LZ4,
+    /// ZSTD
+    #[default]
+    ZSTD,
+}
+
+impl From<IpcCompression> for write::Compression {
+    fn from(value: IpcCompression) -> Self {
+        match value {
+            IpcCompression::LZ4 => write::Compression::LZ4,
+            IpcCompression::ZSTD => write::Compression::ZSTD,
+        }
+    }
+}
+
 pub struct IpcWriterOption {
-    compression: Option<write::Compression>,
+    compression: Option<IpcCompression>,
     extension: PathBuf,
 }
 
@@ -307,7 +389,7 @@ impl IpcWriterOption {
     }
 
     /// Set the compression used. Defaults to None.
-    pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
+    pub fn with_compression(mut self, compression: Option<IpcCompression>) -> Self {
         self.compression = compression;
         self
     }
@@ -339,7 +421,6 @@ impl WriterFactory for IpcWriterOption {
 mod test {
     use std::io::Cursor;
 
-    use arrow::io::ipc::write;
     use polars_core::df;
     use polars_core::prelude::*;
 
@@ -433,11 +514,7 @@ mod test {
     fn test_write_with_compression() {
         let mut df = create_df();
 
-        let compressions = vec![
-            None,
-            Some(write::Compression::LZ4),
-            Some(write::Compression::ZSTD),
-        ];
+        let compressions = vec![None, Some(IpcCompression::LZ4), Some(IpcCompression::ZSTD)];
 
         for compression in compressions.into_iter() {
             let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());

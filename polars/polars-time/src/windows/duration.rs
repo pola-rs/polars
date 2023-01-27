@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
@@ -23,6 +23,8 @@ use super::calendar::{
 pub struct Duration {
     // the number of months for the duration
     months: i64,
+    // the number of weeks for the duration
+    weeks: i64,
     // the number of nanoseconds for the duration
     nsecs: i64,
     // indicates if the duration is negative
@@ -48,6 +50,7 @@ impl Duration {
     pub fn new(fixed_slots: i64) -> Self {
         Duration {
             months: 0,
+            weeks: 0,
             nsecs: fixed_slots.abs(),
             negative: fixed_slots < 0,
             parsed_int: true,
@@ -79,6 +82,7 @@ impl Duration {
         }
 
         let mut nsecs = 0;
+        let mut weeks = 0;
         let mut months = 0;
         let mut iter = duration.char_indices();
         let negative = duration.starts_with('-');
@@ -125,7 +129,7 @@ impl Duration {
                     "m" => nsecs += n * NS_MINUTE,
                     "h" => nsecs += n * NS_HOUR,
                     "d" => nsecs += n * NS_DAY,
-                    "w" => nsecs += n * NS_WEEK,
+                    "w" => weeks += n,
                     "mo" => months += n,
                     "y" => months += n * 12,
                     // we will read indexes as nanoseconds
@@ -133,13 +137,14 @@ impl Duration {
                         nsecs += n;
                         parsed_int = true;
                     }
-                    unit => panic!("unit: '{}' not supported", unit),
+                    unit => panic!("unit: '{unit}' not supported"),
                 }
                 unit.clear();
             }
         }
         Duration {
             nsecs: nsecs.abs(),
+            weeks: weeks.abs(),
             months: months.abs(),
             negative,
             parsed_int,
@@ -167,6 +172,14 @@ impl Duration {
                 _ => {}
             }
             Duration::from_months(months)
+        } else if self.weeks_only() && interval.weeks_only() {
+            let mut weeks = self.weeks() % interval.weeks();
+
+            match (self.negative, interval.negative) {
+                (true, true) | (true, false) => weeks = -weeks + interval.weeks(),
+                _ => {}
+            }
+            Duration::from_weeks(weeks)
         } else {
             let mut offset = self.duration_ns();
             if offset == 0 {
@@ -188,6 +201,7 @@ impl Duration {
         let (negative, nsecs) = Self::to_positive(v);
         Self {
             months: 0,
+            weeks: 0,
             nsecs,
             negative,
             parsed_int: false,
@@ -199,6 +213,19 @@ impl Duration {
         let (negative, months) = Self::to_positive(v);
         Self {
             months,
+            weeks: 0,
+            nsecs: 0,
+            negative,
+            parsed_int: false,
+        }
+    }
+
+    /// Creates a [`Duration`] that represents a fixed number of weeks.
+    pub(crate) fn from_weeks(v: i64) -> Self {
+        let (negative, weeks) = Self::to_positive(v);
+        Self {
+            months: 0,
+            weeks,
             nsecs: 0,
             negative,
             parsed_int: false,
@@ -207,17 +234,26 @@ impl Duration {
 
     /// `true` if zero duration.
     pub fn is_zero(&self) -> bool {
-        self.months == 0 && self.nsecs == 0
+        self.months == 0 && self.weeks == 0 && self.nsecs == 0
     }
 
     pub fn months_only(&self) -> bool {
-        self.months != 0 && self.nsecs == 0
+        self.months != 0 && self.weeks == 0 && self.nsecs == 0
     }
 
     pub fn months(&self) -> i64 {
         self.months
     }
 
+    pub fn weeks_only(&self) -> bool {
+        self.months == 0 && self.weeks != 0 && self.nsecs == 0
+    }
+
+    pub fn weeks(&self) -> i64 {
+        self.weeks
+    }
+
+    /// Returns the nanoseconds from the `Duration` without the weeks or months part.
     pub fn nanoseconds(&self) -> i64 {
         self.nsecs
     }
@@ -226,19 +262,20 @@ impl Duration {
     #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * NANOSECONDS + self.nsecs
+        self.months * 28 * 24 * 3600 * NANOSECONDS + self.weeks * NS_WEEK + self.nsecs
     }
 
     #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * MICROSECONDS + self.nsecs / 1000
+        self.months * 28 * 24 * 3600 * MICROSECONDS + (self.weeks * NS_WEEK + self.nsecs) / 1000
     }
 
     #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * MILLISECONDS + self.nsecs / 1_000_000
+        self.months * 28 * 24 * 3600 * MILLISECONDS
+            + (self.weeks * NS_WEEK + self.nsecs) / 1_000_000
     }
 
     #[inline]
@@ -254,10 +291,10 @@ impl Duration {
         G: Fn(i64) -> NaiveDateTime,
         J: Fn(NaiveDateTime) -> i64,
     {
-        match (self.months, self.nsecs) {
-            (0, 0) => panic!("duration may not be zero"),
+        match (self.months, self.weeks, self.nsecs) {
+            (0, 0, 0) => panic!("duration may not be zero"),
             // truncate by ns/us/ms
-            (0, _) => {
+            (0, 0, _) => {
                 let duration = nsecs_to_unit(self.nsecs);
                 let mut remainder = t % duration;
                 if remainder < 0 {
@@ -265,8 +302,17 @@ impl Duration {
                 }
                 t - remainder
             }
+            // truncate by weeks
+            (0, _, 0) => {
+                let dt = timestamp_to_datetime(t).date();
+                let week_timestamp = dt.week(Weekday::Mon);
+                let first_day_of_week =
+                    week_timestamp.first_day() - chrono::Duration::weeks(self.weeks - 1);
+
+                datetime_to_timestamp(first_day_of_week.and_time(NaiveTime::default()))
+            }
             // truncate by months
-            (_, 0) => {
+            (_, 0, 0) => {
                 let ts = timestamp_to_datetime(t);
                 let (year, month) = (ts.year(), ts.month());
 
@@ -278,10 +324,11 @@ impl Duration {
 
                 // recreate a new time from the year and month combination
                 let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
+
                 let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
                 datetime_to_timestamp(dt)
             }
-            _ => panic!("duration may not mix month and nanosecond units"),
+            _ => panic!("duration may not mix month, weeks and nanosecond units"),
         }
     }
 
@@ -318,15 +365,17 @@ impl Duration {
         )
     }
 
-    fn add_impl_month<F, G>(
+    fn add_impl_month_or_week<F, G, J>(
         &self,
         t: i64,
-        timestamp_to_datetime: F,
-        datetime_to_timestamp: G,
+        nsecs_to_unit: F,
+        timestamp_to_datetime: G,
+        datetime_to_timestamp: J,
     ) -> i64
     where
-        F: Fn(i64) -> NaiveDateTime,
-        G: Fn(NaiveDateTime) -> i64,
+        F: Fn(i64) -> i64,
+        G: Fn(i64) -> NaiveDateTime,
+        J: Fn(NaiveDateTime) -> i64,
     {
         let d = self;
         let mut new_t = t;
@@ -376,26 +425,47 @@ impl Duration {
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
             new_t = datetime_to_timestamp(dt);
         }
+
+        if d.weeks > 0 {
+            let t_weeks = nsecs_to_unit(self.weeks * NS_WEEK);
+            new_t += if d.negative { -t_weeks } else { t_weeks };
+        }
+
         new_t
     }
 
     pub fn add_ns(&self, t: i64) -> i64 {
         let d = self;
-        let new_t = self.add_impl_month(t, timestamp_ns_to_datetime, datetime_to_timestamp_ns);
+        let new_t = self.add_impl_month_or_week(
+            t,
+            |nsecs| nsecs,
+            timestamp_ns_to_datetime,
+            datetime_to_timestamp_ns,
+        );
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
         new_t + nsecs
     }
 
     pub fn add_us(&self, t: i64) -> i64 {
         let d = self;
-        let new_t = self.add_impl_month(t, timestamp_us_to_datetime, datetime_to_timestamp_us);
+        let new_t = self.add_impl_month_or_week(
+            t,
+            |nsecs| nsecs / 1000,
+            timestamp_us_to_datetime,
+            datetime_to_timestamp_us,
+        );
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
         new_t + nsecs / 1_000
     }
 
     pub fn add_ms(&self, t: i64) -> i64 {
         let d = self;
-        let new_t = self.add_impl_month(t, timestamp_ms_to_datetime, datetime_to_timestamp_ms);
+        let new_t = self.add_impl_month_or_week(
+            t,
+            |nsecs| nsecs / 1_000_000,
+            timestamp_ms_to_datetime,
+            datetime_to_timestamp_ms,
+        );
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
         new_t + nsecs / 1_000_000
     }
@@ -410,6 +480,7 @@ impl Mul<i64> for Duration {
             self.negative = !self.negative
         }
         self.months *= rhs;
+        self.weeks *= rhs;
         self.nsecs *= rhs;
         self
     }
@@ -424,8 +495,8 @@ fn new_datetime(
     sec: u32,
     nano: u32,
 ) -> NaiveDateTime {
-    let date = NaiveDate::from_ymd(year, month, days);
-    let time = NaiveTime::from_hms_nano(hour, min, sec, nano);
+    let date = NaiveDate::from_ymd_opt(year, month, days).unwrap();
+    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano).unwrap();
 
     NaiveDateTime::new(date, time)
 }
@@ -443,8 +514,25 @@ mod test {
         let out = Duration::parse("123ns40ms");
         assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123);
         let out = Duration::parse("123ns40ms1w");
-        assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123 + NS_WEEK);
+        assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123);
+        assert_eq!(out.duration_ns(), 40 * NS_MILLISECOND + 123 + NS_WEEK);
         let out = Duration::parse("-123ns40ms1w");
         assert!(out.negative);
+        let out = Duration::parse("5w");
+        assert_eq!(out.weeks(), 5);
+    }
+
+    #[test]
+    fn test_add_ns() {
+        let t = 1;
+        let seven_days = Duration::parse("7d");
+        let one_week = Duration::parse("1w");
+
+        assert_eq!(seven_days.add_ns(t), one_week.add_ns(t));
+
+        let seven_days_negative = Duration::parse("-7d");
+        let one_week_negative = Duration::parse("-1w");
+
+        assert_eq!(seven_days_negative.add_ns(t), one_week_negative.add_ns(t));
     }
 }

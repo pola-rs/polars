@@ -26,7 +26,7 @@ class Tag:
             s = f"<{self.tag} "
             for k, v in self.attributes.items():
                 s += f'{k}="{v}" '
-            s += ">"
+            s = f"{s.rstrip()}>"
             self.elements.append(s)
         else:
             self.elements.append(f"<{self.tag}>")
@@ -46,13 +46,16 @@ class HTMLFormatter:
         df: DataFrame,  # type: ignore[name-defined] # noqa: F821
         max_cols: int = 75,
         max_rows: int = 40,
+        from_series: bool = False,
     ):
         self.df = df
         self.elements: list[str] = []
         self.max_cols = max_cols
         self.max_rows = max_rows
+        self.series = from_series
         self.row_idx: Iterable[int]
         self.col_idx: Iterable[int]
+
         if max_rows < df.height:
             self.row_idx = (
                 list(range(0, max_rows // 2))
@@ -72,7 +75,11 @@ class HTMLFormatter:
 
     def write_header(self) -> None:
         """Write the header of an HTML table."""
-        self.elements.append(f"<small>shape: {self.df.shape}</small>")
+        shape = self.df.shape
+        if self.series:
+            shape = shape[:1]
+
+        self.elements.append(f"<small>shape: {shape}</small>")
         with Tag(self.elements, "thead"):
             with Tag(self.elements, "tr"):
                 columns = self.df.columns
@@ -122,8 +129,7 @@ class NotebookFormatter(HTMLFormatter):
     """
     Class for formatting output data in HTML for display in Jupyter Notebooks.
 
-    This class is intended for functionality specific to DataFrame._repr_html_()
-    and DataFrame.to_html(notebook=True).
+    This class is intended for functionality specific to DataFrame._repr_html_().
 
     """
 

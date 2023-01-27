@@ -11,6 +11,7 @@ The following methods are available under the `expr.dt` attribute.
 
     Expr.dt.cast_time_unit
     Expr.dt.cast_time_zone
+    Expr.dt.combine
     Expr.dt.day
     Expr.dt.days
     Expr.dt.epoch

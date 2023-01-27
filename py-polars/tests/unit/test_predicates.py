@@ -1,3 +1,4 @@
+import typing
 from datetime import date, datetime, timedelta
 
 import polars as pl
@@ -79,3 +80,23 @@ def test_predicate_null_block_asof_join() -> None:
         ],
         "value": ["a", "b", "c"],
     }
+
+
+@typing.no_type_check
+def test_streaming_empty_df() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", ["a", "b", "c", "b", "a", "a"], dtype=pl.Categorical()),
+            pl.Series("b", ["b", "c", "c", "b", "a", "c"], dtype=pl.Categorical()),
+        ]
+    )
+
+    assert df.lazy().join(df.lazy(), on="a", how="inner").filter(
+        2 == 1  # noqa: SIM300
+    ).collect(streaming=True).to_dict(False) == {"a": [], "b": [], "b_right": []}
+
+
+def test_when_then_empty_list_5547() -> None:
+    out = pl.DataFrame({"a": []}).select([pl.when(pl.col("a") > 1).then([1])])
+    assert out.shape == (0, 1)
+    assert out.dtypes == [pl.List(pl.Int64)]

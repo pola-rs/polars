@@ -27,6 +27,22 @@ pub struct DynamicGroupOptions {
     // add the boundaries to the dataframe
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
+    pub start_by: StartBy,
+}
+
+impl Default for DynamicGroupOptions {
+    fn default() -> Self {
+        Self {
+            index_column: "".to_string(),
+            every: Duration::new(1),
+            period: Duration::new(1),
+            offset: Duration::new(1),
+            truncate: true,
+            include_boundaries: false,
+            closed_window: ClosedWindow::Left,
+            start_by: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,8 +130,7 @@ impl Wrap<&DataFrame> {
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
-                    dt
+                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
                 )
                     .into(),
                 ))
@@ -182,8 +197,7 @@ impl Wrap<&DataFrame> {
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
-                    dt
+                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
                 )
                     .into(),
                 ))
@@ -200,6 +214,10 @@ impl Wrap<&DataFrame> {
         tu: TimeUnit,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+        if dt.is_empty() {
+            return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
+        }
+
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
         let tz = dt.time_zone();
@@ -241,6 +259,7 @@ impl Wrap<&DataFrame> {
                 tu,
                 include_lower_bound,
                 include_upper_bound,
+                options.start_by,
             );
             update_bounds(lower, upper);
             GroupsProxy::Slice {
@@ -271,6 +290,7 @@ impl Wrap<&DataFrame> {
                                 tu,
                                 include_lower_bound,
                                 include_upper_bound,
+                                options.start_by,
                             );
 
                             (lower, upper, update_subgroups_idx(&sub_groups, base_g))
@@ -300,6 +320,7 @@ impl Wrap<&DataFrame> {
                                 tu,
                                 include_lower_bound,
                                 include_upper_bound,
+                                options.start_by,
                             );
                             update_subgroups_idx(&sub_groups, base_g)
                         })
@@ -487,7 +508,7 @@ mod test {
                     "2020-01-08 23:16:43",
                 ],
             )
-            .as_datetime(None, tu)?
+            .as_datetime(None, tu, false, false)?
             .into_series();
             let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
@@ -525,7 +546,7 @@ mod test {
                 "2020-01-08 23:16:43",
             ],
         )
-        .as_datetime(None, TimeUnit::Milliseconds)?
+        .as_datetime(None, TimeUnit::Milliseconds, false, false)?
         .into_series();
         let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
@@ -582,12 +603,16 @@ mod test {
     }
 
     #[test]
-    fn test_dynamic_groupby_window() {
-        let start = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(0, 0, 0)
+    fn test_dynamic_groupby_window() -> PolarsResult<()> {
+        let start = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             .timestamp_millis();
-        let stop = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(3, 0, 0)
+        let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(3, 0, 0)
+            .unwrap()
             .timestamp_millis();
         let range = date_range_impl(
             "date",
@@ -597,7 +622,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
 
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
@@ -614,6 +639,7 @@ mod test {
                     truncate: true,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
+                    start_by: Default::default(),
                 },
             )
             .unwrap();
@@ -630,11 +656,15 @@ mod test {
         assert_eq!(g, &["a", "a", "a", "a", "b", "b"]);
 
         let upper = out.column("_upper_boundary").unwrap().slice(0, 3);
-        let start = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(1, 0, 0)
+        let start = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(1, 0, 0)
+            .unwrap()
             .timestamp_millis();
-        let stop = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(3, 0, 0)
+        let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(3, 0, 0)
+            .unwrap()
             .timestamp_millis();
         let range = date_range_impl(
             "_upper_boundary",
@@ -644,16 +674,20 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
         let upper = out.column("_lower_boundary").unwrap().slice(0, 3);
-        let start = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(0, 0, 0)
+        let start = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             .timestamp_millis();
-        let stop = NaiveDate::from_ymd(2021, 12, 16)
-            .and_hms(2, 0, 0)
+        let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap()
             .timestamp_millis();
         let range = date_range_impl(
             "_lower_boundary",
@@ -663,7 +697,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
@@ -679,6 +713,7 @@ mod test {
             .into(),
         );
         assert_eq!(expected, groups);
+        Ok(())
     }
 
     #[test]
@@ -695,17 +730,22 @@ mod test {
                 truncate: true,
                 include_boundaries: true,
                 closed_window: ClosedWindow::Both,
+                start_by: Default::default(),
             },
         );
     }
 
     #[test]
-    fn test_truncate_offset() {
-        let start = NaiveDate::from_ymd(2021, 3, 1)
-            .and_hms(12, 0, 0)
+    fn test_truncate_offset() -> PolarsResult<()> {
+        let start = NaiveDate::from_ymd_opt(2021, 3, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
             .timestamp_millis();
-        let stop = NaiveDate::from_ymd(2021, 3, 7)
-            .and_hms(12, 0, 0)
+        let stop = NaiveDate::from_ymd_opt(2021, 3, 7)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
             .timestamp_millis();
         let range = date_range_impl(
             "date",
@@ -715,13 +755,13 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
 
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
         let df = DataFrame::new(vec![range, groups.clone()]).unwrap();
 
-        let (mut time_key, mut keys, groups) = df
+        let (mut time_key, keys, _groups) = df
             .groupby_dynamic(
                 vec![groups],
                 &DynamicGroupOptions {
@@ -732,6 +772,7 @@ mod test {
                     truncate: true,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
+                    start_by: Default::default(),
                 },
             )
             .unwrap();
@@ -739,5 +780,6 @@ mod test {
         time_key.rename("");
         lower_bound.rename("");
         assert!(time_key.series_equal(&lower_bound));
+        Ok(())
     }
 }

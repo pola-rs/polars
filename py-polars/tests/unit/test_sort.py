@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import polars as pl
 
 
@@ -27,7 +29,7 @@ def test_sort_dates_multiples() -> None:
     assert out["values"].to_list() == expected
 
     # Date
-    out = df.with_column(pl.col("date").cast(pl.Date)).sort(["date", "values"])
+    out = df.with_columns(pl.col("date").cast(pl.Date)).sort(["date", "values"])
     assert out["values"].to_list() == expected
 
 
@@ -174,10 +176,10 @@ def test_sorted_join_and_dtypes() -> None:
         df_a = (
             pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
             .with_row_count()
-            .with_column(pl.col("a").cast(dt).set_sorted())
+            .with_columns(pl.col("a").cast(dt).set_sorted())
         )
 
-    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_column(
+    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_columns(
         pl.col("a").cast(dt).set_sorted()
     )
 
@@ -234,6 +236,10 @@ def test_top_k() -> None:
     assert s.top_k(3).to_list() == [8, 5, 3]
     assert s.top_k(4, reverse=True).to_list() == [1, 2, 3, 5]
 
+    # 5886
+    df = pl.DataFrame({"test": [4, 3, 2, 1]})
+    assert df.select(pl.col("test").top_k(10)).frame_equal(df)
+
 
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:
     df = pl.DataFrame(
@@ -265,6 +271,12 @@ def test_unset_sorted_flag_after_extend() -> None:
     df = df1.groupby("Add").agg([pl.col("Batch").min()]).sort("Add")
     assert df["Add"].flags["SORTED_ASC"]
     assert df.to_dict(False) == {"Add": [37, 41], "Batch": [48, 49]}
+
+
+def test_set_sorted_schema() -> None:
+    assert (
+        pl.DataFrame({"A": [0, 1]}).lazy().with_columns(pl.col("A").set_sorted()).schema
+    ) == {"A": pl.Int64}
 
 
 def test_sort_slice_fast_path_5245() -> None:
@@ -306,7 +318,7 @@ def test_sorted_join_query_5406() -> None:
                 "Value": [1, 2, 1, 1, 2, 1],
             }
         )
-        .with_column(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
+        .with_columns(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
         .with_row_count("RowId")
     )
 
@@ -322,3 +334,63 @@ def test_sorted_join_query_5406() -> None:
         pl.exclude(["Datetime_right", "Group_right"])
     )
     assert out["Value_right"].to_list() == [1, None, 2, 1, 2, None]
+
+
+def test_sort_by_in_over_5499() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 2, 2, 2],
+            "idx": pl.arange(0, 6, eager=True),
+            "a": [1, 3, 2, 3, 1, 2],
+        }
+    )
+    assert df.select(
+        [
+            pl.col("idx").sort_by("a").over("group").alias("sorted_1"),
+            pl.col("idx").shift(1).sort_by("a").over("group").alias("sorted_2"),
+        ]
+    ).to_dict(False) == {
+        "sorted_1": [0, 2, 1, 4, 5, 3],
+        "sorted_2": [None, 1, 0, 3, 4, None],
+    }
+
+
+def test_merge_sorted() -> None:
+
+    df_a = (
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo")
+        .to_frame("range")
+        .with_row_count()
+    )
+
+    df_b = (
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo")
+        .to_frame("range")
+        .with_row_count()
+        .with_columns(pl.col("row_nr") * 10)
+    )
+    out = df_a.merge_sorted(df_b, key="range")
+    assert out["range"].is_sorted()
+    assert out.to_dict(False) == {
+        "row_nr": [0, 0, 1, 2, 10, 3, 4, 20, 5, 6, 30, 7, 8, 40, 9, 10, 50, 11],
+        "range": [
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 2, 1, 0, 0),
+            datetime(2022, 3, 1, 0, 0),
+            datetime(2022, 3, 1, 0, 0),
+            datetime(2022, 4, 1, 0, 0),
+            datetime(2022, 5, 1, 0, 0),
+            datetime(2022, 5, 1, 0, 0),
+            datetime(2022, 6, 1, 0, 0),
+            datetime(2022, 7, 1, 0, 0),
+            datetime(2022, 7, 1, 0, 0),
+            datetime(2022, 8, 1, 0, 0),
+            datetime(2022, 9, 1, 0, 0),
+            datetime(2022, 9, 1, 0, 0),
+            datetime(2022, 10, 1, 0, 0),
+            datetime(2022, 11, 1, 0, 0),
+            datetime(2022, 11, 1, 0, 0),
+            datetime(2022, 12, 1, 0, 0),
+        ],
+    }

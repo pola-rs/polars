@@ -239,8 +239,14 @@ fn test_null_commutativity() {
         .collect()
         .unwrap();
 
-    assert_eq!(out.column("a").unwrap().get(0), AnyValue::Boolean(true));
-    assert_eq!(out.column("b").unwrap().get(0), AnyValue::Boolean(true));
+    assert_eq!(
+        out.column("a").unwrap().get(0).unwrap(),
+        AnyValue::Boolean(true)
+    );
+    assert_eq!(
+        out.column("b").unwrap().get(0).unwrap(),
+        AnyValue::Boolean(true)
+    );
 }
 
 #[test]
@@ -291,11 +297,11 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     assert_eq!(
-        out.get(0),
+        out.get(0)?,
         AnyValue::List(Series::new("", &[1 as IdxSize, 2 as IdxSize]))
     );
     assert_eq!(
-        out.get(1),
+        out.get(1)?,
         AnyValue::List(Series::new("", &[10 as IdxSize]))
     );
 
@@ -311,11 +317,11 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     assert_eq!(
-        out.get(1),
+        out.get(1)?,
         AnyValue::List(Series::new("", &[1 as IdxSize, 2]))
     );
     assert_eq!(
-        out.get(0),
+        out.get(0)?,
         AnyValue::List(Series::new("", &[10 as IdxSize]))
     );
 
@@ -330,8 +336,8 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("value")?;
-    assert!(matches!(out.get(0), AnyValue::List(_)));
-    assert_eq!(out.get(1), AnyValue::Null);
+    assert!(matches!(out.get(0)?, AnyValue::List(_)));
+    assert_eq!(out.get(1)?, AnyValue::Null);
 
     // swapped branch
     let out = df
@@ -344,8 +350,61 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("value")?;
-    assert!(matches!(out.get(1), AnyValue::List(_)));
-    assert_eq!(out.get(0), AnyValue::Null);
+    assert!(matches!(out.get(1)?, AnyValue::List(_)));
+    assert_eq!(out.get(0)?, AnyValue::Null);
+
+    Ok(())
+}
+
+#[test]
+fn test_binary_group_consistency() -> PolarsResult<()> {
+    let lf = df![
+        "name" => ["a", "b", "c", "d"],
+        "category" => [1, 2, 3, 4],
+        "score" => [3, 5, 1, 2],
+    ]?
+    .lazy();
+
+    let out = lf
+        .groupby([col("category")])
+        .agg([col("name").filter(col("score").eq(col("score").max()))])
+        .sort("category", Default::default())
+        .collect()?;
+    let out = out.column("name")?;
+
+    assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::Utf8)));
+    assert_eq!(
+        out.explode()?
+            .utf8()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &["a", "b", "c", "d"]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_binary_null_prop() -> PolarsResult<()> {
+    let df = df![
+        "a" => [0, 0],
+        "b" => [1, 2]
+    ]?
+    .lazy();
+
+    let expr = col("a").filter(col("a").gt(lit(0)));
+
+    let out = df
+        .groupby([col("b")])
+        .agg([(expr.clone() - expr.mean()).alias("a_mean")])
+        .sort("b", Default::default())
+        .collect()?;
+
+    let a_mean: [Option<f64>; 2] = [None, None];
+    assert!(out.frame_equal_missing(&df![
+        "b" => [1, 2],
+        "a_mean" => a_mean,
+    ]?));
 
     Ok(())
 }

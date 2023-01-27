@@ -84,6 +84,27 @@ class ListNameSpace:
 
         """
 
+    def take(
+        self, index: pli.Series | list[int] | list[list[int]], null_on_oob: bool = False
+    ) -> pli.Series:
+        """
+        Take sublists by multiple indices.
+
+        The indices may be defined in a single column, or by sublists in another
+        column of dtype ``List``.
+
+        Parameters
+        ----------
+        index
+            Indices to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
+
+        """
+
     def __getitem__(self, item: int) -> pli.Series:
         return self.get(item)
 
@@ -172,7 +193,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.diff()
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [null, 1, ... 1]
             [null, -8, -1]
@@ -194,7 +215,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.shift()
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [null, 1, ... 3]
             [null, 10, 2]
@@ -219,7 +240,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.slice(1, 2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [2, 3]
             [2, 1]
@@ -241,7 +262,7 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.head(2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [1, 2]
             [10, 2]
@@ -263,10 +284,35 @@ class ListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.tail(2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [3, 4]
             [2, 1]
+        ]
+
+        """
+
+    def explode(self) -> pli.Series:
+        """
+        Returns a column with a separate row for every list element.
+
+        Returns
+        -------
+        Exploded column with the datatype of the list elements.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
+        >>> s.arr.explode()
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+            6
         ]
 
         """
@@ -283,6 +329,9 @@ class ListNameSpace:
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
             Strategy to determine the number of fields of the struct.
+            'first_non_null': set number of fields to the length of the first
+            non-zero-length sublist.
+            'max_width': set number of fields as max length of all sublists.
         name_generator
             A custom function that can be used to generate the field names.
             Default field names are `field_0, field_1 .. field_n`
@@ -298,7 +347,6 @@ class ListNameSpace:
         │ struct[3]  │
         ╞════════════╡
         │ {1,2,3}    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {1,2,null} │
         └────────────┘
         >>> df.select(
@@ -312,6 +360,18 @@ class ListNameSpace:
         {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
 
         """
+        # We set the upper bound to 0.
+        # No need to create the proper schema in eager mode.
+        s = pli.wrap_s(self)
+        return (
+            s.to_frame()
+            .select(
+                pli.col(s.name).arr.to_struct(
+                    n_field_strategy, name_generator, upper_bound=0
+                )
+            )
+            .to_series()
+        )
 
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Series:
         """
@@ -332,7 +392,7 @@ class ListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)
@@ -342,9 +402,7 @@ class ListNameSpace:
         │ i64 ┆ i64 ┆ list[f32]  │
         ╞═════╪═════╪════════════╡
         │ 1   ┆ 4   ┆ [1.0, 2.0] │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 8   ┆ 5   ┆ [2.0, 1.0] │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ 2   ┆ [2.0, 1.0] │
         └─────┴─────┴────────────┘
 

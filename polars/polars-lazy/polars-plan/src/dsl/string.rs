@@ -9,34 +9,47 @@ pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
     /// Check if a string value contains a literal substring.
-    pub fn contains_literal<S: AsRef<str>>(self, pat: S) -> Expr {
-        let pat = pat.as_ref().into();
-        self.0
-            .map_private(StringFunction::Contains { pat, literal: true }.into())
+    #[cfg(feature = "regex")]
+    pub fn contains_literal(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Contains {
+                literal: true,
+                strict: false,
+            }),
+            &[pat],
+            true,
+        )
     }
 
     /// Check if a string value contains a Regex substring.
-    pub fn contains<S: AsRef<str>>(self, pat: S) -> Expr {
-        let pat = pat.as_ref().into();
-        self.0.map_private(
-            StringFunction::Contains {
-                pat,
+    #[cfg(feature = "regex")]
+    pub fn contains(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Contains {
                 literal: false,
-            }
-            .into(),
+                strict,
+            }),
+            &[pat],
+            true,
         )
     }
 
     /// Check if a string value ends with the `sub` string.
-    pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
-        let sub = sub.as_ref().into();
-        self.0.map_private(StringFunction::EndsWith(sub).into())
+    pub fn ends_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::EndsWith),
+            &[sub],
+            true,
+        )
     }
 
     /// Check if a string value starts with the `sub` string.
-    pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
-        let sub = sub.as_ref().into();
-        self.0.map_private(StringFunction::StartsWith(sub).into())
+    pub fn starts_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StartsWith),
+            &[sub],
+            true,
+        )
     }
 
     /// Extract a regex pattern from the a string value.
@@ -51,7 +64,6 @@ impl StringNameSpace {
     /// rather than before.
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn zfill(self, alignment: usize) -> Expr {
         self.0.map_private(StringFunction::Zfill(alignment).into())
     }
@@ -60,7 +72,6 @@ impl StringNameSpace {
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn ljust(self, width: usize, fillchar: char) -> Expr {
         self.0
             .map_private(StringFunction::LJust { width, fillchar }.into())
@@ -70,16 +81,15 @@ impl StringNameSpace {
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn rjust(self, width: usize, fillchar: char) -> Expr {
         self.0
             .map_private(StringFunction::RJust { width, fillchar }.into())
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
-    pub fn extract_all(self, pat: &str) -> Expr {
-        let pat = pat.to_string();
-        self.0.map_private(StringFunction::ExtractAll(pat).into())
+    pub fn extract_all(self, pat: Expr) -> Expr {
+        self.0
+            .map_many_private(StringFunction::ExtractAll.into(), &[pat], false)
     }
 
     /// Count all successive non-overlapping regex matches.
@@ -341,20 +351,20 @@ impl StringNameSpace {
         )
     }
 
-    /// Remove whitespace on both sides.
-    pub fn strip(self, matches: Option<char>) -> Expr {
+    /// Remove leading and trailing characters, or whitespace if matches is None.
+    pub fn strip(self, matches: Option<String>) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::Strip(matches)))
     }
 
-    /// Remove leading whitespace.
-    pub fn lstrip(self, matches: Option<char>) -> Expr {
+    /// Remove leading characters, or whitespace if matches is None.
+    pub fn lstrip(self, matches: Option<String>) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::LStrip(matches)))
     }
 
-    /// Remove trailing whitespace.
-    pub fn rstrip(self, matches: Option<char>) -> Expr {
+    /// Remove trailing characters, or whitespace if matches is None..
+    pub fn rstrip(self, matches: Option<String>) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::RStrip(matches)))
     }

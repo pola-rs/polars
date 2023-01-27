@@ -47,7 +47,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
                 .as_utf8()
                 .apply_on_opt(|opt_s| opt_s.and_then(|s| extract_json(&pat, s)))),
             Err(e) => Err(PolarsError::ComputeError(
-                format!("error compiling JSONpath expression {:?}", e).into(),
+                format!("error compiling JSONpath expression {e:?}").into(),
             )),
         }
     }
@@ -64,7 +64,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
 
         ndjson::read::infer_iter(values_iter)
             .map(|d| DataType::from(&d))
-            .map_err(|e| PolarsError::ComputeError(format!("error infering JSON {:?}", e).into()))
+            .map_err(|e| PolarsError::ComputeError(format!("error infering JSON {e:?}").into()))
     }
 
     /// Extracts a typed-JSON value for each row in the Utf8Chunked
@@ -78,7 +78,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
         let iter = ca.into_iter().map(|x| x.unwrap_or("null"));
 
         let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow()).map_err(|e| {
-            PolarsError::ComputeError(format!("error deserializing JSON {:?}", e).into())
+            PolarsError::ComputeError(format!("error deserializing JSON {e:?}").into())
         })?;
 
         Series::try_from(("", array))
@@ -90,7 +90,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
                 .as_utf8()
                 .apply_on_opt(|opt_s| opt_s.and_then(|s| select_json(&pat, s)))),
             Err(e) => Err(PolarsError::ComputeError(
-                format!("error compiling JSONpath expression {:?}", e).into(),
+                format!("error compiling JSONpath expression {e:?}").into(),
             )),
         }
     }

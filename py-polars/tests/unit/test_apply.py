@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta
 from functools import reduce
 from typing import Sequence, no_type_check
@@ -101,7 +102,7 @@ def test_apply_struct() -> None:
     df = pl.DataFrame(
         {"A": ["a", "a"], "B": [2, 3], "C": [True, False], "D": [12.0, None]}
     )
-    out = df.with_column(pl.struct(df.columns).alias("struct")).select(
+    out = df.with_columns(pl.struct(df.columns).alias("struct")).select(
         [
             pl.col("struct").apply(lambda x: x["A"]).alias("A_field"),
             pl.col("struct").apply(lambda x: x["B"]).alias("B_field"),
@@ -143,7 +144,7 @@ def test_apply_numpy_out_3057() -> None:
 
 def test_apply_numpy_int_out() -> None:
     df = pl.DataFrame({"col1": [2, 4, 8, 16]})
-    assert df.with_column(
+    assert df.with_columns(
         pl.col("col1").apply(lambda x: np.left_shift(x, 8)).alias("result")
     ).frame_equal(
         pl.DataFrame({"col1": [2, 4, 8, 16], "result": [512, 1024, 2048, 4096]})
@@ -274,3 +275,35 @@ def test_apply_explicit_list_output_type() -> None:
 
     assert out.dtypes == [pl.List(pl.Int64)]
     assert out.to_dict(False) == {"str": [[1, 2, 3], [1, 2, 3]]}
+
+
+def test_apply_dict() -> None:
+    df = pl.DataFrame({"Col": ['{"A":"Value1"}', '{"B":"Value2"}']})
+    assert df.select(pl.col("Col").apply(json.loads)).to_dict(False) == {
+        "Col": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
+    }
+    assert pl.DataFrame(
+        {"Col": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
+    ).select(pl.col("Col").apply(json.loads)).to_dict(False) == {
+        "Col": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
+    }
+
+
+def test_apply_pass_name() -> None:
+    df = pl.DataFrame(
+        {
+            "bar": [1, 1, 2],
+            "foo": [1, 2, 3],
+        }
+    )
+
+    mapper = {"foo": "foo1"}
+
+    def applyer(s: pl.Series) -> pl.Series:
+        return pl.Series([mapper[s.name]])
+
+    assert df.groupby("bar", maintain_order=True).agg(
+        [
+            pl.col("foo").apply(applyer, pass_name=True),
+        ]
+    ).to_dict(False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}

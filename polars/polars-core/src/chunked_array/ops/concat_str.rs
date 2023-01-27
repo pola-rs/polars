@@ -9,7 +9,7 @@ fn fmt_and_write<T: Display>(value: Option<T>, buf: &mut String) {
     match value {
         None => buf.push_str("null"),
         Some(v) => {
-            write!(buf, "{}", v).unwrap();
+            write!(buf, "{v}").unwrap();
         }
     }
 }
@@ -33,7 +33,7 @@ where
     let buf = buf.into_bytes();
     let offsets = vec![0, buf.len() as i64];
     let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
-    Utf8Chunked::from_chunks(name, vec![Box::new(arr)])
+    unsafe { Utf8Chunked::from_chunks(name, vec![Box::new(arr)]) }
 }
 
 impl<T> StrConcat for ChunkedArray<T>

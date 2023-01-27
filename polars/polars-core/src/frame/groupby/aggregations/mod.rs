@@ -1,4 +1,5 @@
 mod agg_list;
+mod dispatch;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -57,11 +58,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::from_data(
-            T::PRIMITIVE.into(),
-            out.into(),
-            None,
-        ));
+        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
     }
 
     // This iterators length can be trusted
@@ -100,7 +97,7 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
@@ -117,11 +114,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::from_data(
-            T::PRIMITIVE.into(),
-            out.into(),
-            None,
-        ));
+        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
     }
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0);
@@ -161,6 +154,22 @@ where
     ca.into_series()
 }
 
+pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
+where
+    F: Fn((IdxSize, &Vec<IdxSize>)) -> Option<bool> + Send + Sync,
+{
+    let ca: BooleanChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    ca.into_series()
+}
+
+pub fn _agg_helper_idx_utf8<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
+where
+    F: Fn((IdxSize, &'a Vec<IdxSize>)) -> Option<&'a str> + Send + Sync,
+{
+    let ca: Utf8Chunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    ca.into_series()
+}
+
 // helper that iterates on the `all: Vec<Vec<u32>` collection
 // this doesn't have traverse the `first: Vec<u32>` memory and is therefore faster
 fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
@@ -183,225 +192,232 @@ where
     ca.into_series()
 }
 
+pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
+{
+    let ca: BooleanChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    ca.into_series()
+}
+
+pub fn _agg_helper_slice_utf8<'a, F>(groups: &'a [[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn([IdxSize; 2]) -> Option<&'a str> + Send + Sync,
+{
+    let ca: Utf8Chunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    ca.into_series()
+}
+
 impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
-        self.cast(&IDX_DTYPE).unwrap().agg_min(groups)
+        // faster paths
+        match (self.is_sorted_flag2(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_first(groups);
+            }
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_last(groups);
+            }
+            _ => {}
+        }
+        match groups {
+            GroupsProxy::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
+                debug_assert!(idx.len() <= self.len());
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    self.get(first as usize)
+                } else {
+                    // TODO! optimize this
+                    // can just check if any is false and early stop
+                    let take = { self.take_unchecked(idx.into()) };
+                    take.min().map(|v| v == 1)
+                }
+            }),
+            GroupsProxy::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice_bool(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => self.get(first as usize),
+                    _ => {
+                        let arr_group = _slice_from_offsets(self, first, len);
+                        arr_group.min().map(|v| v == 1)
+                    }
+                }
+            }),
+        }
     }
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
-        self.cast(&IDX_DTYPE).unwrap().agg_max(groups)
+        // faster paths
+        match (self.is_sorted_flag2(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_last(groups);
+            }
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_first(groups);
+            }
+            _ => {}
+        }
+
+        match groups {
+            GroupsProxy::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
+                debug_assert!(idx.len() <= self.len());
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    self.get(first as usize)
+                } else {
+                    // TODO! optimize this
+                    // can just check if any is true and early stop
+                    let take = { self.take_unchecked(idx.into()) };
+                    take.max().map(|v| v == 1)
+                }
+            }),
+            GroupsProxy::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice_bool(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => self.get(first as usize),
+                    _ => {
+                        let arr_group = _slice_from_offsets(self, first, len);
+                        arr_group.max().map(|v| v == 1)
+                    }
+                }
+            }),
+        }
     }
     pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.cast(&IDX_DTYPE).unwrap().agg_sum(groups)
     }
 }
 
-// implemented on the series because we don't need types
-impl Series {
-    fn slice_from_offsets(&self, first: IdxSize, len: IdxSize) -> Self {
-        self.slice(first as i64, len as usize)
-    }
-
-    fn restore_logical(&self, out: Series) -> Series {
-        if self.dtype().is_logical() {
-            out.cast(self.dtype()).unwrap()
-        } else {
-            out
+impl Utf8Chunked {
+    #[allow(clippy::needless_lifetimes)]
+    pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsProxy) -> Series {
+        // faster paths
+        match (&self.is_sorted_flag2(), &self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_first(groups);
+            }
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_last(groups);
+            }
+            _ => {}
         }
-    }
 
-    #[doc(hidden)]
-    pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    None
-                } else if !self.has_validity() {
-                    Some(idx.len() as IdxSize)
-                } else {
-                    let take =
-                        unsafe { self.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
-                    Some((take.len() - take.null_count()) as IdxSize)
-                }
-            }),
-            GroupsProxy::Slice { groups, .. } => {
-                _agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
-                    debug_assert!(len <= self.len() as IdxSize);
-                    if len == 0 {
+            GroupsProxy::Idx(groups) => {
+                let ca_self = self.rechunk();
+                let arr = ca_self.downcast_iter().next().unwrap();
+                _agg_helper_idx_utf8(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= ca_self.len());
+                    if idx.is_empty() {
                         None
-                    } else if !self.has_validity() {
-                        Some(len)
+                    } else if idx.len() == 1 {
+                        ca_self.get(first as usize)
+                    } else if self.null_count() == 0 {
+                        take_agg_utf8_iter_unchecked_no_null(
+                            arr,
+                            indexes_to_usizes(idx),
+                            |acc, v| if acc < v { acc } else { v },
+                        )
                     } else {
-                        let take = self.slice_from_offsets(first, len);
-                        Some((take.len() - take.null_count()) as IdxSize)
+                        take_agg_utf8_iter_unchecked(
+                            arr,
+                            indexes_to_usizes(idx),
+                            |acc, v| if acc < v { acc } else { v },
+                            idx.len() as IdxSize,
+                        )
                     }
                 })
             }
+            GroupsProxy::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice_utf8(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => self.get(first as usize),
+                    _ => {
+                        let arr_group = _slice_from_offsets(self, first, len);
+                        let borrowed = arr_group.min_str();
+
+                        // Safety:
+                        // The borrowed has `arr_group`s lifetime, but it actually points to data
+                        // hold by self. Here we tell the compiler that.
+                        unsafe { std::mem::transmute::<Option<&str>, Option<&'a str>>(borrowed) }
+                    }
+                }
+            }),
         }
     }
 
-    #[doc(hidden)]
-    pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Series {
-        let out = match groups {
+    #[allow(clippy::needless_lifetimes)]
+    pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsProxy) -> Series {
+        // faster paths
+        match (self.is_sorted_flag2(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_last(groups);
+            }
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_first(groups);
+            }
+            _ => {}
+        }
+
+        match groups {
             GroupsProxy::Idx(groups) => {
-                let mut iter = groups.iter().map(|(first, idx)| {
+                let ca_self = self.rechunk();
+                let arr = ca_self.downcast_iter().next().unwrap();
+                _agg_helper_idx_utf8(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= self.len());
                     if idx.is_empty() {
                         None
+                    } else if idx.len() == 1 {
+                        ca_self.get(first as usize)
+                    } else if ca_self.null_count() == 0 {
+                        take_agg_utf8_iter_unchecked_no_null(
+                            arr,
+                            indexes_to_usizes(idx),
+                            |acc, v| if acc > v { acc } else { v },
+                        )
                     } else {
-                        Some(first as usize)
-                    }
-                });
-                // Safety:
-                // groups are always in bounds
-                self.take_opt_iter_unchecked(&mut iter)
-            }
-            GroupsProxy::Slice { groups, .. } => {
-                let mut iter =
-                    groups.iter().map(
-                        |&[first, len]| {
-                            if len == 0 {
-                                None
-                            } else {
-                                Some(first as usize)
-                            }
-                        },
-                    );
-                // Safety:
-                // groups are always in bounds
-                self.take_opt_iter_unchecked(&mut iter)
-            }
-        };
-        self.restore_logical(out)
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn agg_n_unique(&self, groups: &GroupsProxy) -> Series {
-        match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    None
-                } else {
-                    let take = self.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize));
-                    take.n_unique().ok().map(|v| v as IdxSize)
-                }
-            }),
-            GroupsProxy::Slice { groups, .. } => {
-                _agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
-                    debug_assert!(len <= self.len() as IdxSize);
-                    if len == 0 {
-                        None
-                    } else {
-                        let take = self.slice_from_offsets(first, len);
-                        take.n_unique().ok().map(|v| v as IdxSize)
+                        take_agg_utf8_iter_unchecked(
+                            arr,
+                            indexes_to_usizes(idx),
+                            |acc, v| if acc > v { acc } else { v },
+                            idx.len() as IdxSize,
+                        )
                     }
                 })
             }
-        }
-    }
+            GroupsProxy::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice_utf8(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => self.get(first as usize),
+                    _ => {
+                        let arr_group = _slice_from_offsets(self, first, len);
+                        let borrowed = arr_group.max_str();
 
-    #[doc(hidden)]
-    pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-        use DataType::*;
-
-        match self.dtype() {
-            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_median(groups),
-            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_median(groups),
-            dt if dt.is_numeric() || dt.is_temporal() => {
-                let ca = self.to_physical_repr();
-                let physical_type = ca.dtype();
-                let s = apply_method_physical_integer!(ca, agg_median, groups);
-                if dt.is_logical() {
-                    // back to physical and then
-                    // back to logical type
-                    s.cast(physical_type).unwrap().cast(dt).unwrap()
-                } else {
-                    s
-                }
-            }
-            _ => Series::full_null("", groups.len(), self.dtype()),
-        }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn agg_quantile(
-        &self,
-        groups: &GroupsProxy,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> Series {
-        use DataType::*;
-
-        match self.dtype() {
-            Float32 => {
-                SeriesWrap(self.f32().unwrap().clone()).agg_quantile(groups, quantile, interpol)
-            }
-            Float64 => {
-                SeriesWrap(self.f64().unwrap().clone()).agg_quantile(groups, quantile, interpol)
-            }
-            dt if dt.is_numeric() || dt.is_temporal() => {
-                let ca = self.to_physical_repr();
-                let physical_type = ca.dtype();
-                let s =
-                    apply_method_physical_integer!(ca, agg_quantile, groups, quantile, interpol);
-                if dt.is_logical() {
-                    // back to physical and then
-                    // back to logical type
-                    s.cast(physical_type).unwrap().cast(dt).unwrap()
-                } else {
-                    s
-                }
-            }
-            _ => Series::full_null("", groups.len(), self.dtype()),
-        }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
-        use DataType::*;
-
-        match self.dtype() {
-            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
-            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
-            dt if dt.is_numeric() => {
-                apply_method_physical_integer!(self, agg_mean, groups)
-            }
-            dt @ Duration(_) => {
-                let s = self.to_physical_repr();
-                // agg_mean returns Float64
-                let out = s.agg_mean(groups);
-                // cast back to Int64 and then to logical duration type
-                out.cast(&Int64).unwrap().cast(dt).unwrap()
-            }
-            _ => Series::full_null("", groups.len(), self.dtype()),
-        }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Series {
-        let out = match groups {
-            GroupsProxy::Idx(groups) => {
-                let mut iter = groups.all().iter().map(|idx| {
-                    if idx.is_empty() {
-                        None
-                    } else {
-                        Some(idx[idx.len() - 1] as usize)
+                        // Safety:
+                        // The borrowed has `arr_group`s lifetime, but it actually points to data
+                        // hold by self. Here we tell the compiler that.
+                        unsafe { std::mem::transmute::<Option<&str>, Option<&'a str>>(borrowed) }
                     }
-                });
-                self.take_opt_iter_unchecked(&mut iter)
-            }
-            GroupsProxy::Slice { groups, .. } => {
-                let mut iter = groups.iter().map(|&[first, len]| {
-                    if len == 0 {
-                        None
-                    } else {
-                        Some((first + len - 1) as usize)
-                    }
-                });
-                self.take_opt_iter_unchecked(&mut iter)
-            }
-        };
-        self.restore_logical(out)
+                }
+            }),
+        }
     }
 }
 
@@ -435,7 +451,7 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted2(), self.null_count()) {
+        match (self.is_sorted_flag2(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_first(groups);
             }
@@ -512,7 +528,7 @@ where
 
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         // faster paths
-        match (self.is_sorted2(), self.null_count()) {
+        match (self.is_sorted_flag2(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 return self.clone().into_series().agg_last(groups);
             }
@@ -886,7 +902,7 @@ where
                     ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
-                        debug_assert!(len <= self.len() as IdxSize);
+                        debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
                             1 => self.get(first as usize),
@@ -993,7 +1009,7 @@ where
                     ca.agg_mean(groups)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
-                        debug_assert!(len < self.len() as IdxSize);
+                        debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
                             1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
@@ -1030,7 +1046,7 @@ where
                     ca.agg_var(groups, ddof)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
-                        debug_assert!(len <= self.len() as IdxSize);
+                        debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
                             1 => NumCast::from(0),
@@ -1066,7 +1082,7 @@ where
                     ca.agg_std(groups, ddof)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
-                        debug_assert!(len <= self.len() as IdxSize);
+                        debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
                             1 => NumCast::from(0),

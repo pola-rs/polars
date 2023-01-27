@@ -28,18 +28,14 @@ mod from;
 pub(crate) mod list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 pub mod object;
 #[cfg(feature = "random")]
-#[cfg_attr(docsrs, doc(cfg(feature = "random")))]
 mod random;
-pub mod strings;
 #[cfg(any(
     feature = "temporal",
     feature = "dtype-datetime",
     feature = "dtype-date"
 ))]
-#[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
@@ -50,8 +46,6 @@ use std::slice::Iter;
 use bitflags::bitflags;
 use polars_arrow::prelude::*;
 
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null, CustomIterTools};
 
@@ -151,9 +145,6 @@ pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
     phantom: PhantomData<T>,
-    /// TODO! remove this. Should be in the DataType
-    /// maps categorical u32 indexes to String values
-    pub(crate) categorical_map: Option<Arc<RevMapping>>,
     pub(crate) bit_settings: Settings,
     length: IdxSize,
 }
@@ -163,51 +154,47 @@ bitflags! {
     pub(crate) struct Settings: u8 {
     const SORTED_ASC = 0x01;
     const SORTED_DSC = 0x02;
-    const FAST_EXPLODE_LIST = 0x03;
+    const FAST_EXPLODE_LIST = 0x04;
 }}
 
 impl<T: PolarsDataType> ChunkedArray<T> {
-    pub(crate) fn is_sorted(&self) -> bool {
+    pub(crate) fn is_sorted_flag(&self) -> bool {
         self.bit_settings.contains(Settings::SORTED_ASC)
     }
 
-    pub(crate) fn is_sorted_reverse(&self) -> bool {
+    pub(crate) fn is_sorted_reverse_flag(&self) -> bool {
         self.bit_settings.contains(Settings::SORTED_DSC)
     }
 
-    /// Set the 'sorted' bit meta info.
-    pub fn set_sorted(&mut self, reverse: bool) {
-        if reverse {
-            // unset sorted
-            self.bit_settings.remove(Settings::SORTED_ASC);
-            // set reverse sorted
-            self.bit_settings.insert(Settings::SORTED_DSC)
-        } else {
-            // // unset reverse sorted
-            self.bit_settings.remove(Settings::SORTED_DSC);
-            // set sorted
-            self.bit_settings.insert(Settings::SORTED_ASC)
-        }
-    }
-
-    pub fn is_sorted2(&self) -> IsSorted {
-        if self.is_sorted() {
+    pub fn is_sorted_flag2(&self) -> IsSorted {
+        if self.is_sorted_flag() {
             IsSorted::Ascending
-        } else if self.is_sorted_reverse() {
+        } else if self.is_sorted_reverse_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
         }
     }
 
-    pub fn set_sorted2(&mut self, sorted: IsSorted) {
+    /// Set the 'sorted' bit meta info.
+    pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
         match sorted {
             IsSorted::Not => {
                 self.bit_settings
                     .remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
             }
-            IsSorted::Ascending => self.set_sorted(false),
-            IsSorted::Descending => self.set_sorted(true),
+            IsSorted::Ascending => {
+                // // unset reverse sorted
+                self.bit_settings.remove(Settings::SORTED_DSC);
+                // set sorted
+                self.bit_settings.insert(Settings::SORTED_ASC)
+            }
+            IsSorted::Descending => {
+                // unset sorted
+                self.bit_settings.remove(Settings::SORTED_ASC);
+                // set reverse sorted
+                self.bit_settings.insert(Settings::SORTED_DSC)
+            }
         }
     }
 
@@ -322,7 +309,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Returns true if contains a single chunk and has no null values
     pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && !self.has_validity()
+        self.chunks.len() == 1 && self.null_count() == 0
     }
 
     /// Count the null values.
@@ -331,47 +318,18 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.iter().map(|arr| arr.null_count()).sum()
     }
 
-    /// Append arrow array in place.
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let mut array = Int32Chunked::new("array", &[1, 2]);
-    /// let array_2 = Int32Chunked::new("2nd", &[3]);
-    ///
-    /// array.append(&array_2);
-    /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
-    /// ```
-    pub fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
-        if self.field.data_type() == other.data_type() {
-            let length = other.len() as IdxSize;
-            self.chunks.push(other);
-            self.length += length;
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot append array of type {:?} in array of type {:?}",
-                    other.data_type(),
-                    self.dtype()
-                )
-                .into(),
-            ))
-        }
-    }
-
     /// Create a new ChunkedArray from self, where the chunks are replaced.
     fn copy_with_chunks(&self, chunks: Vec<ArrayRef>, keep_sorted: bool) -> Self {
         let mut out = ChunkedArray {
             field: self.field.clone(),
             chunks,
             phantom: PhantomData,
-            categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
             length: 0,
         };
         out.compute_len();
         if !keep_sorted {
-            out.set_sorted2(IsSorted::Not);
+            out.set_sorted_flag(IsSorted::Not);
         }
         out
     }
@@ -379,7 +337,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
         if !self.has_validity() {
-            return BooleanChunked::full("is_null", false, self.len());
+            return BooleanChunked::full(self.name(), false, self.len());
         }
         let chunks = self
             .chunks
@@ -392,13 +350,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
-        BooleanChunked::from_chunks(self.name(), chunks)
+        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 
     /// Get a mask of the valid values.
     pub fn is_not_null(&self) -> BooleanChunked {
         if !self.has_validity() {
-            return BooleanChunked::full("is_not_null", true, self.len());
+            return BooleanChunked::full(self.name(), true, self.len());
         }
         let chunks = self
             .chunks
@@ -411,7 +369,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
-        BooleanChunked::from_chunks(self.name(), chunks)
+        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 
     pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
@@ -484,7 +442,7 @@ where
                 })
                 .collect();
 
-            Self::from_chunks(self.name(), chunks)
+            unsafe { Self::from_chunks(self.name(), chunks) }
         };
 
         if self.chunks.len() != 1 {
@@ -574,7 +532,6 @@ impl<T: PolarsDataType> Clone for ChunkedArray<T> {
             field: self.field.clone(),
             chunks: self.chunks.clone(),
             phantom: PhantomData,
-            categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
             length: self.length,
         }
@@ -632,7 +589,7 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
-    PrimitiveArray::from_data(T::get_dtype().to_arrow(), values.into(), validity)
+    PrimitiveArray::new(T::get_dtype().to_arrow(), values.into(), validity)
 }
 
 pub(crate) fn to_array<T: PolarsNumericType>(
@@ -644,7 +601,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
     fn from(a: PrimitiveArray<T::Native>) -> Self {
-        ChunkedArray::from_chunks("", vec![Box::new(a)])
+        unsafe { ChunkedArray::from_chunks("", vec![Box::new(a)]) }
     }
 }
 
@@ -669,7 +626,7 @@ pub(crate) mod test {
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
-        assert_eq!(a.is_sorted(), true);
+        assert_eq!(a.is_sorted_flag(), true);
     }
 
     #[test]
@@ -723,15 +680,6 @@ pub(crate) mod test {
         let a = get_chunked_array();
         let new = a.take([0usize, 1].iter().copied().into()).unwrap();
         assert_eq!(new.len(), 2)
-    }
-
-    #[test]
-    fn get() {
-        let mut a = get_chunked_array();
-        assert_eq!(AnyValue::Int32(2), a.get_any_value(1));
-        // check if chunks indexes are properly determined
-        a.append_array(a.chunks[0].clone()).unwrap();
-        assert_eq!(AnyValue::Int32(1), a.get_any_value(3));
     }
 
     #[test]

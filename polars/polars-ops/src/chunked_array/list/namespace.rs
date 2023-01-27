@@ -4,6 +4,10 @@ use std::fmt::Write;
 use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
+#[cfg(feature = "list_take")]
+use polars_core::export::num::ToPrimitive;
+#[cfg(feature = "list_take")]
+use polars_core::export::num::{NumCast, Signed, Zero};
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
@@ -93,9 +97,8 @@ pub trait ListNameSpaceImpl: AsList {
             }
             dt => Err(PolarsError::SchemaMisMatch(
                 format!(
-                    "cannot call lst.join on Series with dtype {:?}.\
+                    "cannot call lst.join on Series with dtype {dt:?}.\
                 Inner type must be Utf8",
-                    dt
                 )
                 .into(),
             )),
@@ -171,7 +174,6 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     #[cfg(feature = "diff")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
     fn lst_diff(&self, n: usize, null_behavior: NullBehavior) -> ListChunked {
         let ca = self.as_list();
         ca.apply_amortized(|s| s.as_ref().diff(n, null_behavior))
@@ -212,6 +214,78 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
         Series::try_from((ca.name(), chunks))
+    }
+
+    #[cfg(feature = "list_take")]
+    fn lst_take(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
+        let list_ca = self.as_list();
+
+        let index_typed_index = |idx: &Series| {
+            let idx = idx.cast(&IDX_DTYPE).unwrap();
+            list_ca
+                .amortized_iter()
+                .map(|s| {
+                    s.map(|s| {
+                        let s = s.as_ref();
+                        take_series(s, idx.clone(), null_on_oob)
+                    })
+                    .transpose()
+                })
+                .collect::<PolarsResult<ListChunked>>()
+                .map(|mut ca| {
+                    ca.rename(list_ca.name());
+                    ca.into_series()
+                })
+        };
+
+        use DataType::*;
+        match idx.dtype() {
+            List(_) => {
+                let idx_ca = idx.list().unwrap();
+                let mut out = list_ca
+                    .amortized_iter()
+                    .zip(idx_ca.into_iter())
+                    .map(|(opt_s, opt_idx)| {
+                        {
+                            match (opt_s, opt_idx) {
+                                (Some(s), Some(idx)) => {
+                                    Some(take_series(s.as_ref(), idx, null_on_oob))
+                                }
+                                _ => None,
+                            }
+                        }
+                        .transpose()
+                    })
+                    .collect::<PolarsResult<ListChunked>>()?;
+                out.rename(list_ca.name());
+
+                Ok(out.into_series())
+            }
+            UInt32 | UInt64 => index_typed_index(idx),
+            dt if dt.is_signed() => {
+                if let Some(min) = idx.min::<i64>() {
+                    if min >= 0 {
+                        index_typed_index(idx)
+                    } else {
+                        let mut out = list_ca
+                            .amortized_iter()
+                            .map(|opt_s| {
+                                opt_s
+                                    .map(|s| take_series(s.as_ref(), idx.clone(), null_on_oob))
+                                    .transpose()
+                            })
+                            .collect::<PolarsResult<ListChunked>>()?;
+                        out.rename(list_ca.name());
+                        Ok(out.into_series())
+                    }
+                } else {
+                    Err(PolarsError::ComputeError("All indices are null".into()))
+                }
+            }
+            dt => Err(PolarsError::ComputeError(
+                format!("Cannot use dtype: '{dt}' as index.").into(),
+            )),
+        }
     }
 
     fn lst_concat(&self, other: &[Series]) -> PolarsResult<ListChunked> {
@@ -361,3 +435,113 @@ pub trait ListNameSpaceImpl: AsList {
 }
 
 impl ListNameSpaceImpl for ListChunked {}
+
+#[cfg(feature = "list_take")]
+fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Series> {
+    let len = s.len();
+    let idx = cast_index(idx, len, null_on_oob)?;
+    let idx = idx.idx().unwrap();
+    s.take(idx)
+}
+
+#[cfg(feature = "list_take")]
+fn cast_signed_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
+where
+    T::Native: Copy + PartialOrd + PartialEq + NumCast + Signed + Zero,
+{
+    idx.into_iter()
+        .map(|opt_idx| opt_idx.and_then(|idx| idx.negative_to_usize(len).map(|idx| idx as IdxSize)))
+        .collect::<IdxCa>()
+        .into_series()
+}
+
+#[cfg(feature = "list_take")]
+fn cast_unsigned_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
+where
+    T::Native: Copy + PartialOrd + ToPrimitive,
+{
+    idx.into_iter()
+        .map(|opt_idx| {
+            opt_idx.and_then(|idx| {
+                let idx = idx.to_usize().unwrap();
+                if idx >= len {
+                    None
+                } else {
+                    Some(idx as IdxSize)
+                }
+            })
+        })
+        .collect::<IdxCa>()
+        .into_series()
+}
+
+#[cfg(feature = "list_take")]
+fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series> {
+    let idx_null_count = idx.null_count();
+    use DataType::*;
+    let out = match idx.dtype() {
+        #[cfg(feature = "big_idx")]
+        UInt32 => {
+            if null_on_oob {
+                let a = idx.u32().unwrap();
+                cast_unsigned_index_ca(a, len)
+            } else {
+                idx.cast(&IDX_DTYPE).unwrap()
+            }
+        }
+        #[cfg(feature = "big_idx")]
+        UInt64 => {
+            if null_on_oob {
+                let a = idx.u64().unwrap();
+                cast_unsigned_index_ca(a, len)
+            } else {
+                idx
+            }
+        }
+        #[cfg(not(feature = "big_idx"))]
+        UInt64 => {
+            if null_on_oob {
+                let a = idx.u64().unwrap();
+                cast_unsigned_index_ca(a, len)
+            } else {
+                idx.cast(&IDX_DTYPE).unwrap()
+            }
+        }
+        #[cfg(not(feature = "big_idx"))]
+        UInt32 => {
+            if null_on_oob {
+                let a = idx.u32().unwrap();
+                cast_unsigned_index_ca(a, len)
+            } else {
+                idx
+            }
+        }
+        dt if dt.is_unsigned() => idx.cast(&IDX_DTYPE).unwrap(),
+        Int8 => {
+            let a = idx.i8().unwrap();
+            cast_signed_index_ca(a, len)
+        }
+        Int16 => {
+            let a = idx.i16().unwrap();
+            cast_signed_index_ca(a, len)
+        }
+        Int32 => {
+            let a = idx.i32().unwrap();
+            cast_signed_index_ca(a, len)
+        }
+        Int64 => {
+            let a = idx.i64().unwrap();
+            cast_signed_index_ca(a, len)
+        }
+        _ => {
+            unreachable!()
+        }
+    };
+    if !null_on_oob && out.null_count() != idx_null_count {
+        Err(PolarsError::ComputeError(
+            "Take indices are out of bounds.".into(),
+        ))
+    } else {
+        Ok(out)
+    }
+}

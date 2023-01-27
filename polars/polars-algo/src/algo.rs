@@ -1,6 +1,7 @@
 use polars_core::error::PolarsResult as Result;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
+use polars_ops::prelude::*;
 
 pub fn hist(
     s: &Series,

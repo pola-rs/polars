@@ -17,6 +17,10 @@ pub struct StrpTimeOptions {
     /// If polars may parse matches that not contain the whole string
     /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
     pub exact: bool,
+    /// use a cache of unique, converted dates to apply the datetime conversion.
+    pub cache: bool,
+    /// Parse a timezone aware timestamp
+    pub tz_aware: bool,
 }
 
 impl Default for StrpTimeOptions {
@@ -26,6 +30,8 @@ impl Default for StrpTimeOptions {
             fmt: None,
             strict: false,
             exact: false,
+            cache: true,
+            tz_aware: false,
         }
     }
 }
@@ -38,6 +44,10 @@ pub struct JoinOptions {
     pub how: JoinType,
     pub suffix: Cow<'static, str>,
     pub slice: Option<(i64, usize)>,
+    /// Proxy of the number of rows in both sides of the joins
+    /// Holds `(Option<known_size>, estimated_size)`
+    pub rows_left: (Option<usize>, usize),
+    pub rows_right: (Option<usize>, usize),
 }
 
 impl Default for JoinOptions {
@@ -48,6 +58,8 @@ impl Default for JoinOptions {
             how: JoinType::Left,
             suffix: "_right".into(),
             slice: None,
+            rows_left: (None, usize::MAX),
+            rows_right: (None, usize::MAX),
         }
     }
 }

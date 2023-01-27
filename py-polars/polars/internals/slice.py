@@ -32,7 +32,7 @@ class PolarsSlice:
     @staticmethod
     def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":
         """Make lazy to ensure efficient/consistent handling."""
-        return obj.lazy() if isinstance(obj, pli.DataFrame) else obj.to_frame().lazy()
+        return obj.to_frame().lazy() if isinstance(obj, pli.Series) else obj.lazy()
 
     def _slice_positive(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
         """Logic for slices with positive stride."""

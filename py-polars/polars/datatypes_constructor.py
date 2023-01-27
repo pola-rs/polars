@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable, Sequence
 
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Boolean,
     Categorical,
     Date,
@@ -90,6 +91,22 @@ def _set_numpy_to_constructor() -> None:
         np.bool_: PySeries.new_bool,
         np.datetime64: PySeries.new_i64,
     }
+
+
+def numpy_values_and_dtype(
+    values: np.ndarray[Any, Any]
+) -> tuple[np.ndarray[Any, Any], type]:
+    """Return numpy values and their associated dtype, adjusting if required."""
+    dtype = values.dtype.type
+    if dtype == np.float16:
+        values = values.astype(np.float32)
+        dtype = values.dtype.type
+    elif dtype == np.datetime64:
+        if np.datetime_data(values.dtype)[0] in DTYPE_TEMPORAL_UNITS:
+            values = values.astype(np.int64)
+        else:
+            dtype = object
+    return values, dtype
 
 
 def numpy_type_to_constructor(dtype: type[np.dtype[Any]]) -> Callable[..., PySeries]:

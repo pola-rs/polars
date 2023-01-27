@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
-#[cfg(feature = "meta")]
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
@@ -30,14 +29,14 @@ pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
     container_start: &str,
     container_end: &str,
 ) -> std::fmt::Result {
-    write!(f, "{}", container_start)?;
+    write!(f, "{container_start}")?;
     for (i, c) in items.iter().enumerate() {
         write!(f, "{}", c.as_ref())?;
         if i != (items.len() - 1) {
             write!(f, ", ")?;
         }
     }
-    write!(f, "{}", container_end)
+    write!(f, "{container_end}")
 }
 
 pub trait PushNode {
@@ -136,7 +135,6 @@ pub fn has_null(current_expr: &Expr) -> bool {
 }
 
 /// output name of expr
-#[cfg(feature = "meta")]
 pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
@@ -161,8 +159,7 @@ pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     }
     Err(PolarsError::ComputeError(
         format!(
-            "No root column name could be found for expr '{:?}' when calling 'output_name'",
-            expr
+            "No root column name could be found for expr '{expr:?}' when calling 'output_name'",
         )
         .into(),
     ))
@@ -182,7 +179,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
         }
     }
     Err(PolarsError::ComputeError(
-        format!("no single leaf column found in {:?}", expr).into(),
+        format!("no single leaf column found in {expr:?}").into(),
     ))
 }
 
@@ -315,7 +312,7 @@ pub fn aexpr_to_leaf_names_iter(
         // expecting only columns here, wildcards and dtypes should already be replaced
         AExpr::Column(name) => name.clone(),
         e => {
-            panic!("{:?} not expected", e)
+            panic!("{e:?} not expected")
         }
     })
 }
@@ -330,9 +327,8 @@ pub(crate) fn check_input_node(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    aexpr_to_leaf_names(node, expr_arena)
-        .iter()
-        .all(|name| input_schema.index_of(name).is_some())
+    aexpr_to_leaf_names_iter(node, expr_arena)
+        .all(|name| input_schema.index_of(name.as_ref()).is_some())
 }
 
 pub(crate) fn aexprs_to_schema(
@@ -359,4 +355,21 @@ where
         };
     }
     single_pred.expect("an empty iterator was passed")
+}
+
+pub fn expr_is_projected_upstream(
+    e: &Node,
+    input: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    expr_arena: &Arena<AExpr>,
+    projected_names: &PlHashSet<Arc<str>>,
+) -> bool {
+    let input_schema = lp_arena.get(input).schema(lp_arena);
+    // don't do projection that is not used in upstream selection
+    let output_field = expr_arena
+        .get(*e)
+        .to_field(input_schema.as_ref(), Context::Default, expr_arena)
+        .unwrap();
+    let output_name = output_field.name();
+    projected_names.contains(output_name.as_str())
 }

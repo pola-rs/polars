@@ -13,30 +13,33 @@ members = [
   "polars/polars-sql",
   "examples/read_csv",
   "examples/read_parquet",
+  "examples/read_parquet_cloud",
   "examples/python_rust_compiled_function",
 ]
 
 [workspace.package]
-version = "0.25.1"
+version = "0.26.1"
 
 [workspace.dependencies]
 rayon = "1.5"
 thiserror = "^1"
 num = "0.4"
 ahash = "0.8"
+xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 # todo! remove
 anyhow = "1"
-hashbrown = { version = "0.12", features = ["rayon", "ahash"] }
+hashbrown = { version = "0.13.1", features = ["rayon", "ahash"] }
 bitflags = "1.3"
+once_cell = "1"
 
 [workspace.dependencies.arrow]
 package = "arrow2"
 # git = "https://github.com/jorgecarleitao/arrow2"
 git = "https://github.com/ritchie46/arrow2"
-# rev = "e106cff24dc0c8942603712d7332a97871dce44e"
-# path = "../../../arrow2"
-branch = "2022_11_06"
-version = "0.14.1"
+# rev = "218b7cf93a1fe713bd4fd4641cfc53a3c10977aa"
+# path = "../arrow2"
+branch = "mmap_slice2"
+version = "0.15"
 default-features = false
 features = [
   "compute_aggregate",
@@ -49,6 +52,5 @@ features = [
   "compute_filter",
   "compute_if_then_else",
 ]
-
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }

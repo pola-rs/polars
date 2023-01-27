@@ -107,7 +107,7 @@ fn filter_blocked_by_map() -> PolarsResult<()> {
     };
     let q = df
         .lazy()
-        .map(|df| Ok(df), Some(allowed), None, None)
+        .map(|df| Ok(df), allowed, None, None)
         .filter(col("A").gt(lit(2i32)));
 
     assert!(!predicate_at_scan(q.clone()));
@@ -130,10 +130,15 @@ fn test_strptime_block_predicate() -> PolarsResult<()> {
             date_dtype: DataType::Date,
             ..Default::default()
         }))
-        .filter(col("date").gt(Expr::Literal(LiteralValue::DateTime(
-            NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0),
-            TimeUnit::Milliseconds,
-        ))));
+        .filter(
+            col("date").gt(Expr::Literal(LiteralValue::DateTime(
+                NaiveDate::from_ymd_opt(2021, 1, 1)
+                    .unwrap()
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap(),
+                TimeUnit::Milliseconds,
+            ))),
+        );
 
     assert!(!predicate_at_scan(q.clone()));
     let df = q.collect()?;

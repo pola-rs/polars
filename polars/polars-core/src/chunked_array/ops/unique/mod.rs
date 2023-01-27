@@ -23,7 +23,6 @@ fn finish_is_unique_helper(
     let mut unique_idx_iter = unique_idx.into_iter();
     let mut next_unique_idx = unique_idx_iter.next();
     (0..len)
-        .into_iter()
         .map(|idx| match next_unique_idx {
             Some(unique_idx) => {
                 if idx == unique_idx {
@@ -183,7 +182,7 @@ where
         if self.is_empty() {
             return Ok(self.clone());
         }
-        match self.is_sorted2() {
+        match self.is_sorted_flag2() {
             IsSorted::Ascending | IsSorted::Descending => {
                 // TODO! optimize this branch
                 if self.null_count() > 0 {
@@ -209,10 +208,12 @@ where
                     arr.extend(to_extend);
                     let arr: PrimitiveArray<T::Native> = arr.into();
 
-                    Ok(ChunkedArray::from_chunks(
-                        self.name(),
-                        vec![Box::new(arr) as ArrayRef],
-                    ))
+                    unsafe {
+                        Ok(ChunkedArray::from_chunks(
+                            self.name(),
+                            vec![Box::new(arr) as ArrayRef],
+                        ))
+                    }
                 } else {
                     let mask = self.not_equal(&self.shift(1));
                     self.filter(&mask)
@@ -389,7 +390,7 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
     fn unique(&self) -> PolarsResult<ChunkedArray<Float32Type>> {
         let ca = self.bit_repr_small();
         let ca = ca.unique()?;
-        Ok(ca.reinterpret_float())
+        Ok(ca._reinterpret_float())
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
@@ -408,7 +409,7 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
     fn unique(&self) -> PolarsResult<ChunkedArray<Float64Type>> {
         let ca = self.bit_repr_large();
         let ca = ca.unique()?;
-        Ok(ca.reinterpret_float())
+        Ok(ca._reinterpret_float())
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
@@ -447,7 +448,7 @@ mod is_first {
             })
             .collect();
 
-        BooleanChunked::from_chunks(ca.name(), chunks)
+        unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
     }
 
     impl<T> IsFirst<T> for ChunkedArray<T>
@@ -489,7 +490,7 @@ mod is_first {
                 })
                 .collect();
 
-            Ok(BooleanChunked::from_chunks(self.name(), chunks))
+            unsafe { Ok(BooleanChunked::from_chunks(self.name(), chunks)) }
         }
     }
 
@@ -508,7 +509,7 @@ mod is_first {
                 })
                 .collect();
 
-            Ok(BooleanChunked::from_chunks(self.name(), chunks))
+            unsafe { Ok(BooleanChunked::from_chunks(self.name(), chunks)) }
         }
     }
 }

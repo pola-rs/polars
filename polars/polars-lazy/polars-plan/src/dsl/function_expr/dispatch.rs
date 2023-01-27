@@ -34,3 +34,8 @@ pub(super) fn is_duplicated(s: &Series) -> PolarsResult<Series> {
 pub(super) fn diff(s: &Series, n: usize, null_behavior: NullBehavior) -> PolarsResult<Series> {
     Ok(s.diff(n, null_behavior))
 }
+
+#[cfg(feature = "interpolate")]
+pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResult<Series> {
+    Ok(polars_ops::prelude::interpolate(s, method))
+}

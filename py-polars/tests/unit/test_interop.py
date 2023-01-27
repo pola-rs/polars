@@ -119,6 +119,12 @@ def test_from_pandas() -> None:
         (False, False, 3, 3.0, 3.0, 3.0, "ham", "ham", "ham"),
     ]
 
+    # partial dtype overrides from pandas
+    overrides = {"int": pl.Int8, "int_nulls": pl.Int32, "floats": pl.Float32}
+    out = pl.from_pandas(df, schema_overrides=overrides)
+    for col, dtype in overrides.items():
+        assert out.schema[col] == dtype
+
 
 def test_from_pandas_nan_to_none() -> None:
     df = pd.DataFrame(
@@ -250,6 +256,7 @@ def test_from_dict_struct() -> None:
     assert df.shape == (2, 2)
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
+    assert df.schema == {"a": pl.Struct, "d": pl.Int64}
 
 
 def test_from_dicts() -> None:
@@ -260,6 +267,53 @@ def test_from_dicts() -> None:
     assert df.schema == {"a": pl.Int64, "b": pl.Int64}
 
 
+def test_from_dict_no_inference() -> None:
+    schema = {"a": pl.Utf8}
+    data = [{"a": "aa"}]
+    pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
+
+
+def test_from_dicts_schema_override() -> None:
+    schema = {
+        "a": pl.Utf8,
+        "b": pl.Int64,
+        "c": pl.List(pl.Struct({"x": pl.Int64, "y": pl.Utf8, "z": pl.Float64})),
+    }
+
+    # initial data matches the expected schema
+    data1 = [
+        {
+            "a": "l",
+            "b": i,
+            "c": [{"x": (j + 2), "y": "?", "z": (j % 2)} for j in range(2)],
+        }
+        for i in range(5)
+    ]
+
+    # extend with a mix of fields that are/not in the schema
+    data2 = [{"b": i + 5, "d": "ABC", "e": "DEF"} for i in range(5)]
+
+    for n_infer in (0, 3, 5, 8, 10, 100):
+        df = pl.DataFrame(
+            data=(data1 + data2),
+            schema=schema,  # type: ignore[arg-type]
+            infer_schema_length=n_infer,
+        )
+        assert df.schema == schema
+        assert df.rows() == [
+            ("l", 0, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            ("l", 1, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            ("l", 2, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            ("l", 3, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            ("l", 4, [{"x": 2, "y": "?", "z": 0.0}, {"x": 3, "y": "?", "z": 1.0}]),
+            (None, 5, None),
+            (None, 6, None),
+            (None, 7, None),
+            (None, 8, None),
+            (None, 9, None),
+        ]
+
+
 def test_from_dicts_struct() -> None:
     data = [{"a": {"b": 1, "c": 2}, "d": 5}, {"a": {"b": 3, "c": 4}, "d": 6}]
     df = pl.from_dicts(data)
@@ -267,19 +321,33 @@ def test_from_dicts_struct() -> None:
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
 
+    # 5649
+    assert pl.from_dicts([{"a": [{"x": 1}]}, {"a": [{"y": 1}]}]).to_dict(False) == {
+        "a": [[{"y": None, "x": 1}], [{"y": 1, "x": None}]]
+    }
+    assert pl.from_dicts([{"a": [{"x": 1}, {"y": 2}]}, {"a": [{"y": 1}]}]).to_dict(
+        False
+    ) == {"a": [[{"y": None, "x": 1}, {"y": 2, "x": None}], [{"y": 1, "x": None}]]}
+
 
 def test_from_records() -> None:
     data = [[1, 2, 3], [4, 5, 6]]
-    df = pl.from_records(data, columns=["a", "b"])
+    df = pl.from_records(data, schema=["a", "b"])
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
 
 
 def test_from_numpy() -> None:
     data = np.array([[1, 2, 3], [4, 5, 6]])
-    df = pl.from_numpy(data, columns=["a", "b"], orient="col")
+    df = pl.from_numpy(
+        data,
+        schema=["a", "b"],
+        orient="col",
+        schema_overrides={"a": pl.UInt32, "b": pl.UInt32},
+    )
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
+    assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
 
 
 def test_from_arrow() -> None:
@@ -291,6 +359,12 @@ def test_from_arrow() -> None:
     # if not a PyArrow type, raise a ValueError
     with pytest.raises(ValueError):
         _ = pl.from_arrow([1, 2])
+
+    df = pl.from_arrow(
+        data, schema=["a", "b"], schema_overrides={"a": pl.UInt32, "b": pl.UInt64}
+    )
+    assert df.rows() == [(1, 4), (2, 5), (3, 6)]  # type: ignore[union-attr]
+    assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
 
 
 def test_from_pandas_dataframe() -> None:
@@ -312,20 +386,20 @@ def test_from_pandas_series() -> None:
 
 
 def test_from_optional_not_available() -> None:
-    from polars.dependencies import _proxy_module
+    from polars.dependencies import _LazyModule
 
     # proxy module is created dynamically if the required module is not available
     # (see the polars.dependencies source code for additional detail/comments)
 
-    np = _proxy_module("numpy")
+    np = _LazyModule("numpy", module_available=False)
     with pytest.raises(ImportError, match=r"np\.array requires 'numpy'"):
-        pl.from_numpy(np.array([[1, 2], [3, 4]]), columns=["a", "b"])
+        pl.from_numpy(np.array([[1, 2], [3, 4]]), schema=["a", "b"])
 
-    pa = _proxy_module("pyarrow")
+    pa = _LazyModule("pyarrow", module_available=False)
     with pytest.raises(ImportError, match=r"pa\.table requires 'pyarrow'"):
         pl.from_arrow(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}))
 
-    pd = _proxy_module("pandas")
+    pd = _LazyModule("pandas", module_available=False)
     with pytest.raises(ImportError, match=r"pd\.Series requires 'pandas'"):
         pl.from_pandas(pd.Series([1, 2, 3]))
 
@@ -385,12 +459,29 @@ def test_from_empty_pandas() -> None:
     assert polars_df.dtypes == [pl.Float64, pl.Float64]
 
 
-def test_from_empty_pandas_strings() -> None:
+def test_from_empty_pandas_with_dtypes() -> None:
     df = pd.DataFrame(columns=["a", "b"])
     df["a"] = df["a"].astype(str)
     df["b"] = df["b"].astype(float)
-    df_pl = pl.from_pandas(df)
-    assert df_pl.dtypes == [pl.Utf8, pl.Float64]
+    assert pl.from_pandas(df).dtypes == [pl.Utf8, pl.Float64]
+
+    df = pl.DataFrame(
+        data=[],
+        schema={
+            "a": pl.Int32,
+            "b": pl.Datetime,
+            "c": pl.Float32,
+            "d": pl.Duration,
+            "e": pl.Utf8,
+        },
+    ).to_pandas()
+    assert pl.from_pandas(df).dtypes == [
+        pl.Int32,
+        pl.Datetime,
+        pl.Float32,
+        pl.Duration,
+        pl.Utf8,
+    ]
 
 
 def test_from_empty_arrow() -> None:
@@ -474,7 +565,7 @@ def test_from_pyarrow_chunked_array() -> None:
 
 
 def test_numpy_preserve_uint64_4112() -> None:
-    assert pl.DataFrame({"a": [1, 2, 3]}).with_column(
+    assert pl.DataFrame({"a": [1, 2, 3]}).with_columns(
         pl.col("a").hash()
     ).to_numpy().dtype == np.dtype("uint64")
 
@@ -482,3 +573,27 @@ def test_numpy_preserve_uint64_4112() -> None:
 def test_view_ub() -> None:
     # this would be UB if the series was dropped and not passed to the view
     assert np.sum(pl.Series([3, 1, 5]).sort().view()) == 9
+
+
+def test_arrow_list_null_5697() -> None:
+    # Create a pyarrow table with a list[null] column.
+    pa_table = pa.table([[[None]]], names=["mycol"])
+    df = pl.from_arrow(pa_table)
+    pa_table = df.to_arrow()
+    # again to polars to test the schema
+    assert pl.from_arrow(pa_table,).schema == {  # type: ignore[union-attr]
+        "mycol": pl.List(pl.Null)
+    }
+
+
+def test_from_pandas_null_struct_6412() -> None:
+    data = [
+        {
+            "a": {
+                "b": None,
+            },
+        },
+        {"a": None},
+    ]
+    df_pandas = pd.DataFrame(data)
+    assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}

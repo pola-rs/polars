@@ -118,7 +118,7 @@ where
                     .zip(rhs.downcast_iter_mut())
                     .for_each(|(lhs, rhs)| kernel(lhs, rhs));
             }
-            lhs.set_sorted2(IsSorted::Not);
+            lhs.set_sorted_flag(IsSorted::Not);
             lhs
         }
         // broadcast right path
@@ -136,8 +136,9 @@ where
             let opt_lhs = lhs.get(0);
             match opt_lhs {
                 None => ChunkedArray::full_null(lhs.name(), rhs.len()),
-                Some(lhs) => {
-                    rhs.apply_mut(|rhs| operation(lhs, rhs));
+                Some(lhs_val) => {
+                    rhs.apply_mut(|rhs| operation(lhs_val, rhs));
+                    rhs.rename(lhs.name());
                     rhs
                 }
             }

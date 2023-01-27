@@ -20,7 +20,7 @@ use crate::prelude::NullValues;
 
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
-    n_threads: usize,
+    n_chunks: usize,
     expected_fields: usize,
     delimiter: u8,
     quote_char: Option<u8>,
@@ -28,9 +28,9 @@ pub(crate) fn get_file_chunks(
 ) -> Vec<(usize, usize)> {
     let mut last_pos = 0;
     let total_len = bytes.len();
-    let chunk_size = total_len / n_threads;
-    let mut offsets = Vec::with_capacity(n_threads);
-    for _ in 0..n_threads {
+    let chunk_size = total_len / n_chunks;
+    let mut offsets = Vec::with_capacity(n_chunks);
+    for _ in 0..n_chunks {
         let search_pos = last_pos + chunk_size;
 
         if search_pos >= bytes.len() {
@@ -83,7 +83,7 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
 }
 
 static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|[-+]?inf|[-+]?NaN|\d+[eE][-+]\d+)$").unwrap()
+    Regex::new(r"^\s*[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
 });
 
 static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
@@ -165,7 +165,10 @@ pub(crate) fn parse_bytes_with_encoding(
 ///
 /// If `max_read_records` is not set, the whole file is read to infer its schema.
 ///
-/// Return inferred schema and number of records used for inference.
+/// Returns
+///     - inferred schema
+///     - number of rows used for inference.
+///     - bytes read
 #[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
@@ -182,7 +185,10 @@ pub fn infer_file_schema(
     eol_char: u8,
     null_values: Option<&NullValues>,
     parse_dates: bool,
-) -> PolarsResult<(Schema, usize)> {
+) -> PolarsResult<(Schema, usize, usize)> {
+    // keep track so that we can determine the amount of bytes read
+    let start_ptr = reader_bytes.as_ptr() as usize;
+
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
@@ -311,11 +317,14 @@ pub fn infer_file_schema(
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
 
+    let mut end_ptr = start_ptr;
     for mut line in records_ref
         .take(max_read_lines.unwrap_or(usize::MAX))
         .skip(skip_rows_after_header)
     {
         rows_count += 1;
+        // keep track so that we can determine the amount of bytes read
+        end_ptr = line.as_ptr() as usize + line.len();
 
         if let Some(c) = comment_char {
             // line is a comment -> skip
@@ -450,7 +459,11 @@ pub fn infer_file_schema(
         );
     }
 
-    Ok((Schema::from(fields.into_iter()), rows_count))
+    Ok((
+        Schema::from(fields.into_iter()),
+        rows_count,
+        end_ptr - start_ptr,
+    ))
 }
 
 // magic numbers
@@ -502,9 +515,8 @@ fn decompress_impl<R: Read>(
                         break;
                     }
                     // now that we have enough, we compute the number of fields (also takes embedding into account)
-                    expected_fields = SplitFields::new(&out, delimiter, quote_char, eol_char)
-                        .into_iter()
-                        .count();
+                    expected_fields =
+                        SplitFields::new(&out, delimiter, quote_char, eol_char).count();
                     break;
                 }
             }
@@ -611,6 +623,9 @@ mod test {
         assert!(FLOAT_RE.is_match("-NaN"));
         assert!(FLOAT_RE.is_match("-inf"));
         assert!(FLOAT_RE.is_match("inf"));
+        assert!(FLOAT_RE.is_match("-7e-05"));
+        assert!(FLOAT_RE.is_match("7e-05"));
+        assert!(FLOAT_RE.is_match("+7e+05"));
     }
 
     #[test]

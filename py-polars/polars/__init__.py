@@ -11,6 +11,7 @@ except ImportError:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
+from polars import api
 from polars.build_info import build_info
 from polars.cfg import Config
 from polars.convert import (
@@ -64,8 +65,10 @@ from polars.exceptions import (
 from polars.internals import BatchedCsvReader
 
 # TODO remove need for wrap_df
-from polars.internals.dataframe import wrap_df  # noqa: F401
-from polars.internals.dataframe import DataFrame
+from polars.internals.dataframe import (
+    DataFrame,
+    wrap_df,  # noqa: F401
+)
 from polars.internals.expr.expr import Expr
 from polars.internals.functions import (
     align_frames,
@@ -124,9 +127,9 @@ from polars.internals.lazy_functions import (
     struct,
     sum,
     tail,
+    var,
 )
 from polars.internals.lazy_functions import to_list as list
-from polars.internals.lazy_functions import var
 from polars.internals.lazyframe import LazyFrame
 
 # TODO: remove need for wrap_s
@@ -138,6 +141,7 @@ from polars.io import (
     read_avro,
     read_csv,
     read_csv_batched,
+    read_delta,
     read_excel,
     read_ipc,
     read_json,
@@ -145,6 +149,7 @@ from polars.io import (
     read_parquet,
     read_sql,
     scan_csv,
+    scan_delta,
     scan_ds,
     scan_ipc,
     scan_ndjson,
@@ -155,6 +160,7 @@ from polars.string_cache import StringCache, toggle_string_cache, using_string_c
 from polars.utils import threadpool_size
 
 __all__ = [
+    "api",
     "exceptions",
     "NotFoundError",
     "ShapeError",
@@ -207,6 +213,7 @@ __all__ = [
     "read_sql",
     "read_ipc",
     "scan_csv",
+    "scan_delta",
     "scan_ipc",
     "scan_ds",
     "scan_parquet",
@@ -214,6 +221,7 @@ __all__ = [
     "read_ipc_schema",
     "read_parquet_schema",
     "read_avro",
+    "read_delta",
     # polars.stringcache
     "StringCache",
     "toggle_string_cache",

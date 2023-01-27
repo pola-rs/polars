@@ -1,4 +1,5 @@
 use polars_core::utils::concat_df;
+use polars_plan::global::_is_fetch_query;
 
 use super::*;
 
@@ -15,13 +16,17 @@ impl Executor for UnionExec {
                 println!("run UnionExec")
             }
         }
+        // keep scans thread local if 'fetch' is used.
+        if _is_fetch_query() {
+            self.options.parallel = false;
+        }
         let mut inputs = std::mem::take(&mut self.inputs);
 
         let sliced_path = self.options.slice && self.options.slice_offset >= 0;
 
-        if self.options.parallel || sliced_path {
+        if !self.options.parallel || sliced_path {
             if state.verbose() {
-                if self.options.parallel {
+                if !self.options.parallel {
                     println!("UNION: `parallel=false` union is run sequentially")
                 } else {
                     println!("UNION: `slice is set` union is run sequentially")

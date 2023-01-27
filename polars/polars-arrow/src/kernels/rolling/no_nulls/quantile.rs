@@ -27,11 +27,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::from_data(
-            T::PRIMITIVE.into(),
-            out.into(),
-            None,
-        ));
+        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
     }
 
     let mut sorted_window = SortedBuf::new(values, 0, 1);
@@ -245,7 +241,7 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),
@@ -285,7 +281,7 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),

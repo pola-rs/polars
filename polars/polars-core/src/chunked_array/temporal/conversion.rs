@@ -10,7 +10,9 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
     fn from(v: &AnyValue) -> Self {
         match v {
             #[cfg(feature = "dtype-date")]
-            AnyValue::Date(v) => NaiveDateTime::from_timestamp(*v as i64 * SECONDS_IN_DAY, 0),
+            AnyValue::Date(v) => {
+                NaiveDateTime::from_timestamp_opt(*v as i64 * SECONDS_IN_DAY, 0).unwrap()
+            }
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, _) => match tu {
                 TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),

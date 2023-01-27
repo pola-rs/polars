@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import inspect
 import re
 import sys
-from importlib.machinery import ModuleSpec
-from importlib.util import LazyLoader, find_spec, module_from_spec
+from functools import lru_cache
+from importlib import import_module
+from importlib.util import find_spec
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
-
-_mod_pfx = {
-    "numpy": "np.",
-    "pandas": "pd.",
-    "pyarrow": "pa.",
-}
+from typing import TYPE_CHECKING, Any, Hashable, cast
 
 _FSSPEC_AVAILABLE = True
 _NUMPY_AVAILABLE = True
@@ -20,47 +14,87 @@ _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
+_DELTALAKE_AVAILABLE = True
 
 
-def _proxy_module(module_name: str) -> ModuleType:
+class _LazyModule(ModuleType):
     """
-    Create a module that raises a helpful/explanatory exception on attribute access.
+    Module that can act both as a lazy-loader and as a proxy.
 
     Notes
     -----
-    We do NOT register this module with `sys.modules` so as not to cause confusion
-    in the global environment. This way we have a valid lazy/proxy module for our
-    own use, but it is scoped _exclusively_ for use within polars.
-
-    Parameters
-    ----------
-    module_name : str
-        the name of the new/proxy module.
+    We do NOT register this module with `sys.modules` so as not to cause
+    confusion in the global environment. This way we have a valid proxy
+    module for our own use, but it lives _exclusively_ within polars.
 
     """
-    # module-level getattr for the proxy
-    def __getattr__(*args: Any, **kwargs: Any) -> None:
-        attr = args[0]
-        # allow some very minimal introspection on private module
-        # attrs to avoid unnecessary error-handling elsewhere
-        if re.match(r"^__\w+__$", attr):
-            return None
 
-        # all other attribute access raises an exception
-        pfx = _mod_pfx.get(module_name, "")
-        raise ModuleNotFoundError(
-            f"{pfx}{attr} requires '{module_name}' module to be installed"
-        ) from None
+    __lazy__ = True
 
-    # create the module (do NOT register with sys.globals)
-    proxy_module = module_from_spec(ModuleSpec(module_name, None))
-    for name, obj in (("__getattr__", __getattr__),):
-        setattr(proxy_module, name, obj)
+    _mod_pfx: dict[str, str] = {
+        "numpy": "np.",
+        "pandas": "pd.",
+        "pyarrow": "pa.",
+    }
 
-    return proxy_module
+    def __init__(
+        self,
+        module_name: str,
+        module_available: bool,
+    ) -> None:
+        """
+        Initialise lazy-loading proxy module.
+
+        Parameters
+        ----------
+        module_name : str
+            the name of the module to lazy-load (if available).
+
+        module_available : bool
+            indicate if the referenced module is actually available (we will proxy it
+            in both cases, but raise a helpful error when invoked if it doesn't exist).
+
+        """
+        self._module_available = module_available
+        self._module_name = module_name
+        self._globals = globals()
+        super().__init__(module_name)
+
+    def _import(self) -> ModuleType:
+        # import the referenced module, replacing the proxy in this module's globals
+        module = import_module(self.__name__)
+        self._globals[self._module_name] = module
+        self.__dict__.update(module.__dict__)
+        return module
+
+    def __getattr__(self, attr: Any) -> Any:
+        # have "hasattr('__wrapped__')" return False without triggering import
+        # (it's for decorators, not modules, but keeps "make doctest" happy)
+        if attr == "__wrapped__":
+            raise AttributeError(
+                f"{self._module_name!r} object has no attribute {attr!r}"
+            )
+
+        # accessing the proxy module's attributes triggers import of the real thing
+        if self._module_available:
+            # import the module and return the requested attribute
+            module = self._import()
+            return getattr(module, attr)
+        else:
+            # user has not installed the proxied module
+            if re.match(r"^__\w+__$", attr):
+                # allow some minimal introspection on private module
+                # attrs to avoid unnecessary error-handling elsewhere
+                return None
+
+            # all other attribute access raises a helpful exception
+            pfx = self._mod_pfx.get(self._module_name, "")
+            raise ModuleNotFoundError(
+                f"{pfx}{attr} requires '{self._module_name}' module to be installed"
+            ) from None
 
 
-def lazy_import(module_name: str) -> tuple[ModuleType, bool]:
+def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
     """
     Lazy import the given module; avoids up-front import costs.
 
@@ -89,40 +123,24 @@ def lazy_import(module_name: str) -> tuple[ModuleType, bool]:
 
     # check if module is AVAILABLE
     try:
-        spec = find_spec(module_name)
-        if spec is None or spec.loader is None:
-            spec = None
+        module_spec = find_spec(module_name)
+        module_available = not (module_spec is None or module_spec.loader is None)
     except ModuleNotFoundError:
-        spec = None
+        module_available = False
 
-    # if NOT available, return proxy module that raises on attribute access
-    if spec is None:
-        return _proxy_module(module_name), False
-    else:
-        # handle modules that have old-style loaders (ref: #5326)
-        if not hasattr(spec.loader, "exec_module"):
-            if hasattr(spec.loader, "load_module"):
-                spec.loader.exec_module = (  # type: ignore[assignment, union-attr]
-                    # wrap deprecated 'load_module' for use with 'exec_module'
-                    lambda module: spec.loader.load_module(module.__name__)  # type: ignore[union-attr] # noqa: E501
-                )
-            if not hasattr(spec.loader, "create_module"):
-                spec.loader.create_module = (  # type: ignore[assignment, union-attr]
-                    # note: returning 'None' implies use of the standard machinery
-                    lambda spec: None
-                )
-
-        # module IS available, but not yet imported into the environment; create
-        # a lazy loader that proxies (then replaces) the module in sys.modules
-        loader = LazyLoader(spec.loader)  # type: ignore[arg-type]
-        spec.loader = loader
-        module = module_from_spec(spec)
-        sys.modules[module_name] = module
-        loader.exec_module(module)
-        return module, True
+    # create lazy/proxy module that imports the real one on first use
+    # (or raises an explanatory ModuleNotFoundError if not available)
+    return (
+        _LazyModule(
+            module_name=module_name,
+            module_available=module_available,
+        ),
+        module_available,
+    )
 
 
 if TYPE_CHECKING:
+    import deltalake
     import fsspec
     import hypothesis
     import numpy
@@ -134,37 +152,39 @@ if TYPE_CHECKING:
     else:
         from backports import zoneinfo
 else:
-    fsspec, _FSSPEC_AVAILABLE = lazy_import("fsspec")
-    numpy, _NUMPY_AVAILABLE = lazy_import("numpy")
-    pandas, _PANDAS_AVAILABLE = lazy_import("pandas")
-    pyarrow, _PYARROW_AVAILABLE = lazy_import("pyarrow")
-    hypothesis, _HYPOTHESIS_AVAILABLE = lazy_import("hypothesis")
+    fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
+    pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
+    pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
+    hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
+    deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     zoneinfo, _ZONEINFO_AVAILABLE = (
-        lazy_import("zoneinfo")
+        _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
-        else lazy_import("backports.zoneinfo")
+        else _lazy_import("backports.zoneinfo")
     )
 
 
-def _NUMPY_TYPE(obj: Any) -> bool:
-    return _NUMPY_AVAILABLE and any(
-        "numpy." in str(o)
-        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
-    )
+@lru_cache(maxsize=None)
+def _might_be(cls: type, type_: str) -> bool:
+    # infer whether the given class "might" be associated with the given
+    # module (in which case it's reasonable to do a real isinstance check)
+    try:
+        return any(f"{type_}." in str(o) for o in cls.mro())
+    except TypeError:
+        return False
 
 
-def _PANDAS_TYPE(obj: Any) -> bool:
-    return _PANDAS_AVAILABLE and any(
-        "pandas." in str(o)
-        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
-    )
+def _check_for_numpy(obj: Any) -> bool:
+    return _NUMPY_AVAILABLE and _might_be(cast(Hashable, type(obj)), "numpy")
 
 
-def _PYARROW_TYPE(obj: Any) -> bool:
-    return _PYARROW_AVAILABLE and any(
-        "pyarrow." in str(o)
-        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
-    )
+def _check_for_pandas(obj: Any) -> bool:
+    return _PANDAS_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pandas")
+
+
+def _check_for_pyarrow(obj: Any) -> bool:
+    return _PYARROW_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pyarrow")
 
 
 __all__ = [
@@ -172,15 +192,17 @@ __all__ = [
     "numpy",
     "pandas",
     "pyarrow",
+    "deltalake",
     "zoneinfo",
-    "_proxy_module",
+    "_LazyModule",
     "_FSSPEC_AVAILABLE",
     "_NUMPY_AVAILABLE",
-    "_NUMPY_TYPE",
+    "_check_for_numpy",
     "_PANDAS_AVAILABLE",
-    "_PANDAS_TYPE",
+    "_check_for_pandas",
     "_PYARROW_AVAILABLE",
-    "_PYARROW_TYPE",
+    "_check_for_pyarrow",
     "_ZONEINFO_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
+    "_DELTALAKE_AVAILABLE",
 ]

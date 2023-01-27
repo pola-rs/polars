@@ -39,4 +39,7 @@ impl Source for DataFrameSource {
             Ok(SourceResult::GotMoreData(chunks))
         }
     }
+    fn fmt(&self) -> &str {
+        "df"
+    }
 }

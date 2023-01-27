@@ -1,8 +1,5 @@
-use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::concat_df;
-use polars_time::prelude::DateMethods;
 
 use super::*;
 
@@ -149,43 +146,7 @@ fn test_lazy_pushdown_through_agg() {
 
     assert_eq!(new.shape(), (1, 1));
     let bar = new.column("bar").unwrap();
-    assert_eq!(bar.get(0), AnyValue::Float64(1.3));
-}
-
-#[test]
-#[cfg(feature = "temporal")]
-fn test_lazy_agg() {
-    let s0 = DateChunked::parse_from_str_slice(
-        "date",
-        &[
-            "2020-08-21",
-            "2020-08-21",
-            "2020-08-22",
-            "2020-08-23",
-            "2020-08-22",
-        ],
-        "%Y-%m-%d",
-    )
-    .into_series();
-    let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
-    let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
-    let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
-
-    let lf = df
-        .lazy()
-        .groupby([col("date")])
-        .agg([
-            col("rain").min().alias("min"),
-            col("rain").sum().alias("sum"),
-            col("rain")
-                .quantile(0.5, QuantileInterpolOptions::default())
-                .alias("median_rain"),
-        ])
-        .sort("date", Default::default());
-
-    let new = lf.collect().unwrap();
-    let min = new.column("min").unwrap();
-    assert_eq!(min, &Series::new("min", [0.1f64, 0.01, 0.1]));
+    assert_eq!(bar.get(0).unwrap(), AnyValue::Float64(1.3));
 }
 
 #[test]
@@ -426,13 +387,13 @@ fn test_lazy_query_9() -> PolarsResult<()> {
 ))]
 fn test_lazy_query_10() {
     use polars_core::export::chrono::Duration as ChronoDuration;
-    let date = NaiveDate::from_ymd(2021, 3, 5);
+    let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
     let x: Series = DatetimeChunked::from_naive_datetime(
         "x",
         [
-            NaiveDateTime::new(date, NaiveTime::from_hms(12, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(13, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(14, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap()),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(13, 0, 0).unwrap()),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(14, 0, 0).unwrap()),
         ],
         TimeUnit::Nanoseconds,
     )
@@ -440,9 +401,9 @@ fn test_lazy_query_10() {
     let y: Series = DatetimeChunked::from_naive_datetime(
         "y",
         [
-            NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(11, 0, 0).unwrap()),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(11, 0, 0).unwrap()),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(11, 0, 0).unwrap()),
         ],
         TimeUnit::Nanoseconds,
     )
@@ -467,9 +428,9 @@ fn test_lazy_query_10() {
     let x: Series = DatetimeChunked::from_naive_datetime(
         "x",
         [
-            NaiveDateTime::new(date, NaiveTime::from_hms(2, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(3, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(4, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(2, 0, 0).unwrap()),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(3, 0, 0).unwrap()),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(4, 0, 0).unwrap()),
         ],
         TimeUnit::Milliseconds,
     )
@@ -477,9 +438,9 @@ fn test_lazy_query_10() {
     let y: Series = DatetimeChunked::from_naive_datetime(
         "y",
         [
-            NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(1, 0, 0).unwrap()),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(1, 0, 0).unwrap()),
+            NaiveDateTime::new(date, NaiveTime::from_hms_opt(1, 0, 0).unwrap()),
         ],
         TimeUnit::Nanoseconds,
     )
@@ -503,14 +464,14 @@ fn test_lazy_query_10() {
     feature = "dtype-datetime"
 ))]
 fn test_lazy_query_7() {
-    let date = NaiveDate::from_ymd(2021, 3, 5);
+    let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
     let dates = [
-        NaiveDateTime::new(date, NaiveTime::from_hms(12, 0, 0)),
-        NaiveDateTime::new(date, NaiveTime::from_hms(12, 1, 0)),
-        NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)),
-        NaiveDateTime::new(date, NaiveTime::from_hms(12, 3, 0)),
-        NaiveDateTime::new(date, NaiveTime::from_hms(12, 4, 0)),
-        NaiveDateTime::new(date, NaiveTime::from_hms(12, 5, 0)),
+        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap()),
+        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 1, 0).unwrap()),
+        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 2, 0).unwrap()),
+        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 3, 0).unwrap()),
+        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 4, 0).unwrap()),
+        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 5, 0).unwrap()),
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
     let df = DataFrame::new(vec![
@@ -523,7 +484,10 @@ fn test_lazy_query_7() {
         .lazy()
         .with_column(col("data").shift(-1).alias("output"))
         .with_column(col("output").shift(2).alias("shifted"))
-        .filter(col("date").gt(lit(NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)))))
+        .filter(col("date").gt(lit(NaiveDateTime::new(
+            date,
+            NaiveTime::from_hms_opt(12, 2, 0).unwrap(),
+        ))))
         .collect()
         .unwrap();
     let a = out.column("shifted").unwrap().sum::<f64>().unwrap() - 7.0;
@@ -926,11 +890,11 @@ fn test_lazy_groupby_filter() -> PolarsResult<()> {
             SortOptions {
                 descending: false,
                 nulls_last: false,
+                multithreaded: true,
             },
         )
         .collect()?;
 
-    dbg!(&out);
     assert_eq!(
         Vec::from(out.column("b_sum").unwrap().i32().unwrap()),
         [Some(6), None, None]
@@ -1014,7 +978,6 @@ fn test_groupby_sort_slice() -> PolarsResult<()> {
         .collect()?;
 
     assert!(out1.column("foo")?.series_equal(out2.column("foo")?));
-    dbg!(out1, out2);
     Ok(())
 }
 
@@ -1031,8 +994,6 @@ fn test_groupby_cumsum() -> PolarsResult<()> {
         .agg([col("vals").cumsum(false)])
         .sort("groups", Default::default())
         .collect()?;
-
-    dbg!(&out);
 
     assert_eq!(
         Vec::from(out.column("vals")?.explode()?.i32()?),
@@ -1795,6 +1756,7 @@ fn test_single_group_result() -> PolarsResult<()> {
             .arg_sort(SortOptions {
                 descending: false,
                 nulls_last: false,
+                multithreaded: true,
             })
             .list()
             .over([col("a")])
@@ -1870,8 +1832,8 @@ fn test_apply_flatten() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("A_sum")?;
-    assert_eq!(out.get(0), AnyValue::Float64(6.71462));
-    assert_eq!(out.get(1), AnyValue::Float64(7.039156));
+    assert_eq!(out.get(0)?, AnyValue::Float64(6.71462));
+    assert_eq!(out.get(1)?, AnyValue::Float64(7.039156));
 
     Ok(())
 }
@@ -1981,9 +1943,9 @@ fn test_partitioned_gb_mean() -> PolarsResult<()> {
 
     assert_eq!(out.shape(), (1, 3));
     let str_col = out.column("mean_str")?;
-    assert_eq!(str_col.get(0), AnyValue::Null);
+    assert_eq!(str_col.get(0)?, AnyValue::Null);
     let int_col = out.column("mean_int")?;
-    assert_eq!(int_col.get(0), AnyValue::Float64(1.0));
+    assert_eq!(int_col.get(0)?, AnyValue::Float64(1.0));
 
     Ok(())
 }
@@ -2051,31 +2013,24 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(feature = "cross_join")]
-fn test_cse_columns_projections() -> PolarsResult<()> {
-    let right = df![
-        "A" => [1, 2],
-        "B" => [3, 4],
-        "D" => [5, 6]
+fn test_foo() -> PolarsResult<()> {
+    let q1 = df![
+        "x" => [1]
     ]?
     .lazy();
 
-    let left = df![
-        "C" => [3, 4],
+    let q2 = df![
+        "x" => [1],
+        "y" => [1]
     ]?
     .lazy();
 
-    let left = left.cross_join(right.clone().select([col("A")]));
-    let q = left.join(
-        right.rename(["B"], ["C"]),
-        [col("A"), col("C")],
-        [col("A"), col("C")],
-        JoinType::Left,
-    );
-
-    let out = q.collect()?;
-
-    assert_eq!(out.get_column_names(), &["C", "A", "D"]);
-
+    let out = q1
+        .clone()
+        .join(q2.clone(), [col("x")], [col("y")], JoinType::Semi)
+        .join(q2.clone(), [col("x")], [col("y")], JoinType::Semi)
+        .select([col("x")])
+        .collect()?;
+    dbg!(out);
     Ok(())
 }

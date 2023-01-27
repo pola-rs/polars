@@ -13,7 +13,6 @@ impl StackExec {
         state: &mut ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        state.set_schema(self.input_schema.clone());
         let res = if self.has_windows {
             // we have a different run here
             // to ensure the window functions run sequential and share caches
@@ -26,19 +25,10 @@ impl StackExec {
                     .collect::<PolarsResult<Vec<_>>>()
             })?
         };
-        state.clear_schema_cache();
         state.clear_expr_cache();
 
         let schema = &*self.input_schema;
-        for (i, s) in res.into_iter().enumerate() {
-            // we need to branch here
-            // because users can add multiple columns with the same name
-            if i == 0 || schema.get(s.name()).is_some() {
-                df.with_column_and_schema(s, schema)?;
-            } else {
-                df.with_column(s.clone())?;
-            }
-        }
+        df._add_columns(res, schema)?;
 
         Ok(df)
     }

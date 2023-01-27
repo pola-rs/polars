@@ -86,7 +86,7 @@ where
             }
         })
         .collect();
-    ChunkedArray::<S>::from_chunks(name, chunks)
+    unsafe { ChunkedArray::<S>::from_chunks(name, chunks) }
 }
 
 impl<T: PolarsNumericType> ChunkedArray<T> {
@@ -120,7 +120,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
                 .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
         };
         // can be in any order now
-        self.set_sorted2(IsSorted::Not);
+        self.set_sorted_flag(IsSorted::Not);
     }
 }
 
@@ -141,7 +141,7 @@ where
                 to_array::<S>(values, validity.cloned())
             })
             .collect();
-        ChunkedArray::<S>::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::<S>::from_chunks(self.name(), chunks) }
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
@@ -162,7 +162,7 @@ where
                 to_array::<S>(values, None)
             })
             .collect();
-        ChunkedArray::<S>::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::<S>::from_chunks(self.name(), chunks) }
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -171,7 +171,6 @@ where
     {
         let chunks = self
             .data_views()
-            .into_iter()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
                 let values = slice.iter().copied().map(f);
@@ -179,7 +178,7 @@ where
                 to_array::<T>(values, validity.cloned())
             })
             .collect();
-        ChunkedArray::<T>::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::<T>::from_chunks(self.name(), chunks) }
     }
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
@@ -188,7 +187,6 @@ where
     {
         let mut ca: ChunkedArray<T> = self
             .data_views()
-            .into_iter()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
                 let vec: PolarsResult<Vec<_>> = slice.iter().copied().map(f).collect();
@@ -212,7 +210,7 @@ where
                 Box::new(arr) as ArrayRef
             })
             .collect();
-        Self::from_chunks(self.name(), chunks)
+        unsafe { Self::from_chunks(self.name(), chunks) }
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
@@ -361,14 +359,13 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.values_iter().map(f);
                 let values = Vec::<_>::from_trusted_len_iter(values);
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
@@ -378,14 +375,13 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.into_iter().map(f);
                 let values = Vec::<_>::from_trusted_len_iter(values);
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -455,14 +451,13 @@ impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.values_iter().map(f);
                 let values = Vec::<_>::from_trusted_len_iter(values);
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
@@ -472,14 +467,13 @@ impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.into_iter().map(f);
                 let values = Vec::<_>::from_trusted_len_iter(values);
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -542,16 +536,16 @@ impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
 
 impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
     fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
-        Self::from_chunks(self.name(), chunks)
+        let chunks = self.downcast_iter().map(f).collect();
+        unsafe { Self::from_chunks(self.name(), chunks) }
     }
 
     fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType,
     {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
-        ChunkedArray::<S>::from_chunks(self.name(), chunks)
+        let chunks = self.downcast_iter().map(f).collect();
+        unsafe { ChunkedArray::<S>::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -569,8 +563,8 @@ where
     where
         S: PolarsDataType,
     {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        let chunks = self.downcast_iter().map(f).collect();
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -583,8 +577,8 @@ impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
     where
         S: PolarsDataType,
     {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        let chunks = self.downcast_iter().map(f).collect();
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -598,8 +592,8 @@ impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
     where
         S: PolarsDataType,
     {
-        let chunks = self.downcast_iter().into_iter().map(f).collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        let chunks = self.downcast_iter().map(f).collect();
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -612,7 +606,6 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         let dtype = self.inner_dtype();
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 unsafe {
                     let values = array
@@ -631,7 +624,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                 }
             })
             .collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
@@ -642,7 +635,6 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         let dtype = self.inner_dtype();
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let values = array.iter().map(|x| {
                     let x = x.map(|x| {
@@ -661,7 +653,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                 }
             })
             .collect();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 
     /// Apply a closure `F` elementwise.

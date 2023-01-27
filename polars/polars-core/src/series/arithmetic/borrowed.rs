@@ -3,47 +3,27 @@ use super::*;
 pub trait NumOpsDispatch: Debug {
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "subtraction operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("subtraction operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "addition operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("addition operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
     fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "multiplication operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("multiplication operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "division operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("division operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
-            format!(
-                "remainder operation not supported for {:?} and {:?}",
-                self, rhs
-            )
-            .into(),
+            format!("remainder operation not supported for {self:?} and {rhs:?}",).into(),
         ))
     }
 }
@@ -121,20 +101,13 @@ pub mod checked {
         /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.
         fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             Err(PolarsError::InvalidOperation(
-                format!(
-                    "checked division operation not supported for {:?} and {:?}",
-                    self, rhs
-                )
-                .into(),
+                format!("checked division operation not supported for {self:?} and {rhs:?}",)
+                    .into(),
             ))
         }
         fn checked_div_num<T: ToPrimitive>(&self, _rhs: T) -> PolarsResult<Series> {
             Err(PolarsError::InvalidOperation(
-                format!(
-                    "checked division by number operation not supported for {:?}",
-                    self
-                )
-                .into(),
+                format!("checked division by number operation not supported for {self:?}",).into(),
             ))
         }
     }
@@ -406,7 +379,7 @@ fn coerce_time_units<'a>(
 }
 
 #[cfg(feature = "dtype-struct")]
-fn struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
+pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
     s: &Series,
     rhs: &Series,
     mut func: F,
@@ -443,7 +416,7 @@ impl ops::Sub for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.sub(b))
+                _struct_arithmetic(self, rhs, |a, b| a.sub(b))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
@@ -453,20 +426,25 @@ impl ops::Sub for &Series {
     }
 }
 
+impl Series {
+    pub fn try_add(&self, rhs: &Series) -> PolarsResult<Series> {
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                Ok(_struct_arithmetic(self, rhs, |a, b| a.add(b)))
+            }
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                lhs.add_to(rhs.as_ref())
+            }
+        }
+    }
+}
 impl ops::Add for &Series {
     type Output = Series;
 
     fn add(self, rhs: Self) -> Self::Output {
-        match (self.dtype(), rhs.dtype()) {
-            #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.add(b))
-            }
-            _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-                lhs.add_to(rhs.as_ref()).expect("data types don't match")
-            }
-        }
+        self.try_add(rhs).unwrap()
     }
 }
 
@@ -482,7 +460,7 @@ impl ops::Mul for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.mul(b))
+                _struct_arithmetic(self, rhs, |a, b| a.mul(b))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
@@ -504,7 +482,7 @@ impl ops::Div for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.div(b))
+                _struct_arithmetic(self, rhs, |a, b| a.div(b))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
@@ -526,7 +504,7 @@ impl ops::Rem for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                struct_arithmetic(self, rhs, |a, b| a.rem(b))
+                _struct_arithmetic(self, rhs, |a, b| a.rem(b))
             }
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");

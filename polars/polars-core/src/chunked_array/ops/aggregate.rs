@@ -4,6 +4,7 @@ use std::ops::Add;
 
 use arrow::compute;
 use arrow::types::simd::Simd;
+use arrow::types::NativeType;
 use num::{Float, ToPrimitive};
 use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -52,6 +53,53 @@ pub trait QuantileAggSeries {
     ) -> PolarsResult<Series>;
 }
 
+fn sum_float_unaligned_slice<T: NumericNative>(values: &[T]) -> Option<T> {
+    Some(values.iter().copied().sum())
+}
+
+fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> Option<T> {
+    if array.len() == 0 {
+        return Some(T::zero());
+    }
+    if array.null_count() == array.len() {
+        return None;
+    }
+    Some(array.into_iter().flatten().copied().sum())
+}
+
+/// Floating point arithmetic is non-associative.
+/// The simd chunks are determined by memory location
+/// e.g.
+///
+/// |HEAD|  - | SIMD | - |TAIL|
+///
+/// The SIMD chunks have a certain alignment and depending of the start of the buffer
+/// head and tail may have different sizes, making a sum non-deterministic for the same
+/// values but different memory locations
+fn stable_sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> Option<T>
+where
+    T: NumericNative + NativeType,
+    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd>
+        + compute::aggregate::Sum<T>
+        + compute::aggregate::SimdOrd<T>,
+{
+    if T::is_float() {
+        use arrow::types::simd::NativeSimd;
+        let values = array.values().as_slice();
+        let (a, _, _) = <T as Simd>::Simd::align(values);
+        // we only choose SIMD path if buffer is aligned to SIMD
+        if a.is_empty() {
+            compute::aggregate::sum_primitive(array)
+        } else if array.null_count() == 0 {
+            sum_float_unaligned_slice(values)
+        } else {
+            sum_float_unaligned(array)
+        }
+    } else {
+        compute::aggregate::sum_primitive(array)
+    }
+}
+
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -61,7 +109,7 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_iter()
-            .map(compute::aggregate::sum_primitive)
+            .map(stable_sum)
             .fold(None, |acc, v| match v {
                 Some(v) => match acc {
                     None => Some(v),
@@ -72,7 +120,7 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
-        match self.is_sorted2() {
+        match self.is_sorted_flag2() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
                     // Safety:
@@ -101,7 +149,7 @@ where
     }
 
     fn max(&self) -> Option<T::Native> {
-        match self.is_sorted2() {
+        match self.is_sorted_flag2() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
                     // Safety:
@@ -573,6 +621,10 @@ impl ChunkAgg<IdxSize> for BooleanChunked {
             Some(0)
         }
     }
+    fn mean(&self) -> Option<f64> {
+        self.sum()
+            .map(|sum| sum as f64 / (self.len() - self.null_count()) as f64)
+    }
 }
 
 // Needs the same trait bounds as the implementation of ChunkedArray<T> of dyn Series
@@ -746,35 +798,38 @@ impl ChunkAggSeries for BooleanChunked {
     }
 }
 
+impl Utf8Chunked {
+    pub(crate) fn max_str(&self) -> Option<&str> {
+        match self.is_sorted_flag2() {
+            IsSorted::Ascending => self.get(self.len() - 1),
+            IsSorted::Descending => self.get(0),
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(compute::aggregate::max_string)
+                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+        }
+    }
+    pub(crate) fn min_str(&self) -> Option<&str> {
+        match self.is_sorted_flag2() {
+            IsSorted::Ascending => self.get(0),
+            IsSorted::Descending => self.get(self.len() - 1),
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(compute::aggregate::min_string)
+                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+        }
+    }
+}
+
 impl ChunkAggSeries for Utf8Chunked {
     fn sum_as_series(&self) -> Series {
         Utf8Chunked::full_null(self.name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {
-        match self.is_sorted2() {
-            IsSorted::Ascending => Series::new(self.name(), &[self.get(self.len() - 1)]),
-            IsSorted::Descending => Series::new(self.name(), &[self.get(0)]),
-            IsSorted::Not => Series::new(
-                self.name(),
-                &[self
-                    .downcast_iter()
-                    .filter_map(compute::aggregate::max_string)
-                    .fold_first_(|acc, v| if acc > v { acc } else { v })],
-            ),
-        }
+        Series::new(self.name(), &[self.max_str()])
     }
     fn min_as_series(&self) -> Series {
-        match self.is_sorted2() {
-            IsSorted::Ascending => Series::new(self.name(), &[self.get(0)]),
-            IsSorted::Descending => Series::new(self.name(), &[self.get(self.len() - 1)]),
-            IsSorted::Not => Series::new(
-                self.name(),
-                &[self
-                    .downcast_iter()
-                    .filter_map(compute::aggregate::min_string)
-                    .fold_first_(|acc, v| if acc < v { acc } else { v })],
-            ),
-        }
+        Series::new(self.name(), &[self.min_str()])
     }
 }
 
@@ -823,7 +878,7 @@ where
     T: PolarsNumericType,
 {
     fn arg_min(&self) -> Option<usize> {
-        match self.is_sorted2() {
+        match self.is_sorted_flag2() {
             IsSorted::Ascending => Some(0),
             IsSorted::Descending => Some(self.len()),
             IsSorted::Not => self
@@ -834,7 +889,7 @@ where
         }
     }
     fn arg_max(&self) -> Option<usize> {
-        match self.is_sorted2() {
+        match self.is_sorted_flag2() {
             IsSorted::Ascending => Some(self.len()),
             IsSorted::Descending => Some(0),
             IsSorted::Not => self
@@ -846,7 +901,28 @@ where
     }
 }
 
-impl ArgAgg for BooleanChunked {}
+impl ArgAgg for BooleanChunked {
+    fn arg_min(&self) -> Option<usize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            None
+        } else if self.all() {
+            Some(0)
+        } else {
+            self.into_iter()
+                .position(|opt_val| matches!(opt_val, Some(false)))
+        }
+    }
+    fn arg_max(&self) -> Option<usize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            None
+        } else if self.any() {
+            self.into_iter()
+                .position(|opt_val| matches!(opt_val, Some(true)))
+        } else {
+            Some(0)
+        }
+    }
+}
 impl ArgAgg for Utf8Chunked {}
 #[cfg(feature = "dtype-binary")]
 impl ArgAgg for BinaryChunked {}

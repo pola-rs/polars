@@ -26,6 +26,7 @@ pub mod file;
 pub mod lazy;
 mod list_construction;
 pub mod npy;
+#[cfg(feature = "object")]
 mod object;
 pub mod prelude;
 pub(crate) mod py_modules;
@@ -189,7 +190,14 @@ fn spearman_rank_corr(
     ddof: u8,
     propagate_nans: bool,
 ) -> dsl::PyExpr {
-    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+    #[cfg(feature = "propagate_nans")]
+    {
+        polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+    }
+    #[cfg(not(feature = "propagate_nans"))]
+    {
+        panic!("activate 'popagate_nans'")
+    }
 }
 
 #[pyfunction]
@@ -367,6 +375,23 @@ fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
+fn py_diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+    let (seq, _len) = get_pyseq(lfs)?;
+    let iter = seq.iter()?;
+
+    let lfs = iter
+        .map(|item| {
+            let item = item?;
+            get_lf(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let lf = polars::lazy::dsl::functions::diag_concat_lf(lfs, rechunk, parallel)
+        .map_err(PyPolarsErr::from)?;
+    Ok(lf.into())
+}
+
+#[pyfunction]
 fn py_hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let (seq, _len) = get_pyseq(dfs)?;
     let iter = seq.iter()?;
@@ -483,18 +508,18 @@ fn py_date_range(
     name: &str,
     tu: Wrap<TimeUnit>,
     tz: Option<TimeZone>,
-) -> PySeries {
-    polars::time::date_range_impl(
+) -> PyResult<PySeries> {
+    let date_range = polars::time::date_range_impl(
         name,
         start,
         stop,
         Duration::parse(every),
         closed.0,
         tu.0,
-        tz,
+        tz.as_ref(),
     )
-    .into_series()
-    .into()
+    .map_err(PyPolarsErr::from)?;
+    Ok(date_range.into_series().into())
 }
 
 #[pyfunction]
@@ -555,6 +580,22 @@ fn arg_where(condition: PyExpr) -> PyExpr {
 #[pyfunction]
 fn get_idx_type(py: Python) -> PyObject {
     Wrap(IDX_DTYPE).to_object(py)
+}
+
+#[pyfunction]
+fn set_float_fmt(fmt: &str) -> PyResult<()> {
+    use polars_core::fmt::{set_float_fmt, FloatFmt};
+    let fmt = match fmt {
+        "full" => FloatFmt::Full,
+        "mixed" => FloatFmt::Mixed,
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "fmt must be one of {{'full', 'mixed'}}, got {e}",
+            )))
+        }
+    };
+    set_float_fmt(fmt);
+    Ok(())
 }
 
 #[pymodule]
@@ -629,6 +670,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_diag_concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_duration)).unwrap();
@@ -643,5 +685,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(arg_where)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_idx_type)).unwrap();
     m.add_wrapped(wrap_pyfunction!(coalesce_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
     Ok(())
 }

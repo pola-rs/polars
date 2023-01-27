@@ -23,6 +23,7 @@ pub struct ApplyExpr {
     pub collect_groups: ApplyOptions,
     pub auto_explode: bool,
     pub allow_rename: bool,
+    pub pass_name_to_apply: bool,
 }
 
 impl ApplyExpr {
@@ -39,6 +40,7 @@ impl ApplyExpr {
             collect_groups,
             auto_explode: false,
             allow_rename: false,
+            pass_name_to_apply: false,
         }
     }
 
@@ -140,31 +142,32 @@ impl PhysicalExpr for ApplyExpr {
                         return Err(expression_err!(msg, self.expr, ComputeError));
                     }
 
+                    let name = s.name().to_string();
+                    let agg = ac.aggregated();
                     // collection of empty list leads to a null dtype
                     // see: #3687
-                    if s.len() == 0 {
+                    if agg.len() == 0 {
                         // create input for the function to determine the output dtype
                         // see #3946
-                        let agg = ac.aggregated();
                         let agg = agg.list().unwrap();
                         let input_dtype = agg.inner_dtype();
 
                         let input = Series::full_null("", 0, &input_dtype);
 
                         let output = self.function.call_udf(&mut [input])?;
-                        let ca = ListChunked::full(ac.series().name(), &output, 0);
+                        let ca = ListChunked::full(&name, &output, 0);
                         return Ok(self.finish_apply_groups(ac, ca));
                     }
 
-                    let name = s.name().to_string();
-
-                    let mut ca: ListChunked = ac
-                        .aggregated()
+                    let mut ca: ListChunked = agg
                         .list()
                         .unwrap()
                         .par_iter()
                         .map(|opt_s| {
-                            opt_s.and_then(|s| {
+                            opt_s.and_then(|mut s| {
+                                if self.pass_name_to_apply {
+                                    s.rename(&name);
+                                }
                                 let mut container = [s];
                                 self.function.call_udf(&mut container).ok()
                             })

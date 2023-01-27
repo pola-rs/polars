@@ -31,7 +31,7 @@ fn cast_and_apply<
         })
         .collect();
 
-    ChunkedArray::from_chunks(ca.name(), chunks)
+    unsafe { ChunkedArray::from_chunks(ca.name(), chunks) }
 }
 
 pub trait DatetimeMethods: AsDatetime {
@@ -66,16 +66,10 @@ pub trait DatetimeMethods: AsDatetime {
         cast_and_apply(self.as_datetime(), temporal::month)
     }
 
-    /// Extract weekday from underlying NaiveDateTime representation.
-    /// Returns the weekday number where monday = 0 and sunday = 6
+    /// Extract ISO weekday from underlying NaiveDateTime representation.
+    /// Returns the weekday number where monday = 1 and sunday = 7
     fn weekday(&self) -> UInt32Chunked {
-        let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_weekday_ns,
-            TimeUnit::Microseconds => datetime_to_weekday_us,
-            TimeUnit::Milliseconds => datetime_to_weekday_ms,
-        };
-        ca.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::weekday)
     }
 
     /// Returns the ISO week number starting from 1.
@@ -143,27 +137,6 @@ pub trait DatetimeMethods: AsDatetime {
                 .map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func)),
         )
         .into_datetime(tu, None)
-    }
-
-    #[cfg(feature = "timezones")]
-    fn cast_time_zone(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
-        use chrono_tz::Tz;
-        let ca = self.as_datetime();
-
-        if let Some(from) = ca.time_zone() {
-            let from: Tz = from.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
-            })?;
-            let to: Tz = tz.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{}'", tz).into())
-            })?;
-            let out = ca.apply_kernel(&|arr| kernels::cast_timezone(arr, ca.time_unit(), from, to));
-            Ok(out.into_datetime(ca.time_unit(), Some(tz.to_string())))
-        } else {
-            Err(PolarsError::ComputeError(
-                "Cannot cast Naive Datetime. First set a timezone".into(),
-            ))
-        }
     }
 }
 

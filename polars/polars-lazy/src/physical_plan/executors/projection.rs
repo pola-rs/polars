@@ -17,8 +17,7 @@ impl ProjectionExec {
         state: &mut ExecutionState,
         df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        state.set_schema(self.input_schema.clone());
-
+        #[allow(clippy::let_and_return)]
         let df = evaluate_physical_expressions(&df, &self.expr, state, self.has_windows);
 
         // this only runs during testing and check if the runtime type matches the predicted schema
@@ -33,7 +32,6 @@ impl ProjectionExec {
             });
         }
 
-        state.clear_expr_cache();
         df
     }
 }

@@ -25,17 +25,15 @@ where
     let validity = BooleanArray::from_data_default(validity.clone(), None);
 
     let mut av = Vec::with_capacity(array.len());
-    BinaryMaskedSliceIterator::new(&validity)
-        .into_iter()
-        .for_each(|(lower, upper, truthy)| {
-            if truthy {
-                av.extend_from_slice(&values[lower..upper])
-            } else {
-                av.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
-            }
-        });
+    BinaryMaskedSliceIterator::new(&validity).for_each(|(lower, upper, truthy)| {
+        if truthy {
+            av.extend_from_slice(&values[lower..upper])
+        } else {
+            av.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
+        }
+    });
 
-    PrimitiveArray::from_data(array.data_type().clone(), av.into(), None)
+    PrimitiveArray::new(array.data_type().clone(), av.into(), None)
 }
 
 /// Set values in a primitive array based on a mask array. This is fast when large chunks of bits are set or unset.
@@ -48,15 +46,13 @@ pub fn set_with_mask<T: NativeType>(
     let values = array.values();
 
     let mut buf = Vec::with_capacity(array.len());
-    BinaryMaskedSliceIterator::new(mask)
-        .into_iter()
-        .for_each(|(lower, upper, truthy)| {
-            if truthy {
-                buf.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
-            } else {
-                buf.extend_from_slice(&values[lower..upper])
-            }
-        });
+    BinaryMaskedSliceIterator::new(mask).for_each(|(lower, upper, truthy)| {
+        if truthy {
+            buf.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
+        } else {
+            buf.extend_from_slice(&values[lower..upper])
+        }
+    });
     // make sure that where the mask is set to true, the validity buffer is also set to valid
     // after we have applied the or operation we have new buffer with no offsets
     let validity = array.validity().as_ref().map(|valid| {
@@ -64,7 +60,7 @@ pub fn set_with_mask<T: NativeType>(
         valid.bitor(mask_bitmap)
     });
 
-    PrimitiveArray::from_data(data_type, buf.into(), validity)
+    PrimitiveArray::new(data_type, buf.into(), validity)
 }
 
 /// Efficiently sets value at the indices from the iterator to `set_value`.
@@ -91,7 +87,7 @@ where
         Ok(())
     })?;
 
-    Ok(PrimitiveArray::from_data(
+    Ok(PrimitiveArray::new(
         data_type,
         buf.into(),
         array.validity().cloned(),

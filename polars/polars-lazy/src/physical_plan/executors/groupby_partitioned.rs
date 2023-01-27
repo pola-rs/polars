@@ -12,9 +12,12 @@ pub struct PartitionGroupByExec {
     maintain_order: bool,
     slice: Option<(i64, usize)>,
     input_schema: SchemaRef,
+    output_schema: SchemaRef,
+    from_partitioned_ds: bool,
 }
 
 impl PartitionGroupByExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
@@ -22,6 +25,8 @@ impl PartitionGroupByExec {
         maintain_order: bool,
         slice: Option<(i64, usize)>,
         input_schema: SchemaRef,
+        output_schema: SchemaRef,
+        from_partitioned_ds: bool,
     ) -> Self {
         Self {
             input,
@@ -30,6 +35,8 @@ impl PartitionGroupByExec {
             maintain_order,
             slice,
             input_schema,
+            output_schema,
+            from_partitioned_ds,
         }
     }
 
@@ -111,7 +118,6 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
     // u: total unique groups counted in sample
     // ui: groups with single unique value counted in sample
     let set_size = keys[0].len();
-    let offset = (keys[0].len() / 2) as i64;
     if set_size < sample_size {
         sample_size = set_size;
     }
@@ -135,6 +141,7 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
         let groups = s.group_tuples(true, false)?;
         Ok(finish(&groups))
     } else {
+        let offset = (keys[0].len() / 2) as i64;
         let keys = keys
             .iter()
             .map(|s| s.slice(offset, sample_size))
@@ -152,6 +159,7 @@ fn can_run_partitioned(
     keys: &[Series],
     original_df: &DataFrame,
     state: &ExecutionState,
+    from_partitioned_ds: bool,
 ) -> PolarsResult<bool> {
     if std::env::var("POLARS_NO_PARTITION").is_ok() {
         if state.verbose() {
@@ -191,12 +199,21 @@ fn can_run_partitioned(
             }
         };
         if state.verbose() {
-            eprintln!("{} unique values: {}", sampled_method, unique_estimate);
+            eprintln!("{sampled_method} unique values: {unique_estimate}");
         }
 
-        if unique_estimate > unique_count_boundary {
+        if from_partitioned_ds {
+            let estimated_cardinality = unique_estimate as f32 / original_df.height() as f32;
+            if estimated_cardinality < 0.4 {
+                eprintln!("PARTITIONED DS");
+                Ok(true)
+            } else {
+                eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                Ok(false)
+            }
+        } else if unique_estimate > unique_count_boundary {
             if state.verbose() {
-                eprintln!("estimated unique count: {} exceeded the boundary: {}, running default HASH AGGREGATION",unique_estimate, unique_count_boundary)
+                eprintln!("estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION")
             }
             Ok(false)
         } else {
@@ -218,7 +235,7 @@ impl PartitionGroupByExec {
             // of groups.
             let keys = self.keys(&original_df, state)?;
 
-            if !can_run_partitioned(&keys, &original_df, state)? {
+            if !can_run_partitioned(&keys, &original_df, state, self.from_partitioned_ds)? {
                 return groupby_helper(
                     original_df,
                     keys,
@@ -236,8 +253,6 @@ impl PartitionGroupByExec {
             // Run the partitioned aggregations
             let n_threads = POOL.current_num_threads();
 
-            // set it here, because `self.input.execute` will clear the schema cache.
-            state.set_schema(self.input_schema.clone());
             run_partitions(
                 &mut original_df,
                 self,
@@ -246,8 +261,8 @@ impl PartitionGroupByExec {
                 self.maintain_order,
             )?
         };
-        state.clear_schema_cache();
 
+        state.set_schema(self.output_schema.clone());
         // MERGE phase
         // merge and hash aggregate again
         let df = accumulate_dataframes_vertical(dfs)?;

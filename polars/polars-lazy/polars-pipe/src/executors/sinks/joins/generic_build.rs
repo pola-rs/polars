@@ -13,7 +13,7 @@ use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
-use crate::executors::sinks::joins::inner::InnerJoinProbe;
+use crate::executors::sinks::joins::inner_left::GenericJoinProbe;
 use crate::executors::sinks::utils::{hash_series, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -25,7 +25,7 @@ pub(super) type DfIdx = IdxSize;
 // This is the hash and the Index offset in the chunks and the index offset in the dataframe
 #[derive(Copy, Clone, Debug)]
 pub(super) struct Key {
-    hash: u64,
+    pub(super) hash: u64,
     chunk_idx: ChunkIdx,
     df_idx: DfIdx,
 }
@@ -112,17 +112,18 @@ pub(super) fn compare_fn(
 ) -> bool {
     let key_hash = key.hash;
 
-    let chunk_idx = key.chunk_idx as usize * n_join_cols;
-    let df_idx = key.df_idx as usize;
-
-    // get the right columns from the linearly packed buffer
-    let join_cols = unsafe {
-        join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
-    };
-
-    // we check the hash and
-    // we get the appropriate values from the join columns and compare it with the current row
+    // we check the hash first
+    // as that has no indirection
     key_hash == h && {
+        // we get the appropriate values from the join columns and compare it with the current row
+        let chunk_idx = key.chunk_idx as usize * n_join_cols;
+        let df_idx = key.df_idx as usize;
+
+        // get the right columns from the linearly packed buffer
+        let join_cols = unsafe {
+            join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
+        };
+
         join_cols
             .iter()
             .zip(current_row)
@@ -131,6 +132,14 @@ pub(super) fn compare_fn(
 }
 
 impl GenericBuild {
+    fn is_empty(&self) -> bool {
+        match self.chunks.len() {
+            0 => true,
+            1 => self.chunks[0].is_empty(),
+            _ => false,
+        }
+    }
+
     #[inline]
     fn number_of_keys(&self) -> usize {
         self.join_columns_left.len()
@@ -142,8 +151,9 @@ impl GenericBuild {
         chunk: &DataChunk,
     ) -> PolarsResult<&[Series]> {
         self.join_series.clear();
+
         for phys_e in self.join_columns_left.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_ref())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             let s = s.rechunk();
             self.materialized_join_cols.push(s.array_ref(0).clone());
@@ -159,9 +169,12 @@ impl GenericBuild {
     ) {
         buf.clear();
         // get the right columns from the linearly packed buffer
+        let n_keys = self.number_of_keys();
+        let chunk_offset = chunk_idx as usize * n_keys;
+        let chunk_end = chunk_offset + n_keys;
         let join_cols = self
             .materialized_join_cols
-            .get_unchecked_release(chunk_idx as usize..chunk_idx as usize + self.number_of_keys());
+            .get_unchecked_release(chunk_offset..chunk_end);
         buf.extend(
             join_cols
                 .iter()
@@ -172,6 +185,19 @@ impl GenericBuild {
 
 impl Sink for GenericBuild {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        // we do some juggling here so that we don't
+        // end up with empty chunks
+        // But we always want one empty chunk if all is empty as we need
+        // to finish the join
+        if self.chunks.len() == 1 && self.chunks[0].is_empty() {
+            self.chunks.pop().unwrap();
+        }
+        if chunk.is_empty() {
+            if self.chunks.is_empty() {
+                self.chunks.push(chunk)
+            }
+            return Ok(SinkResult::CanHaveMoreInput);
+        }
         let mut hashes = std::mem::take(&mut self.hashes);
         self.set_join_series(context, &chunk)?;
         hash_series(&self.join_series, &mut hashes, &self.hb);
@@ -219,7 +245,17 @@ impl Sink for GenericBuild {
     }
 
     fn combine(&mut self, mut other: Box<dyn Sink>) {
+        if self.is_empty() {
+            let other = other.as_any().downcast_mut::<Self>().unwrap();
+            if !other.is_empty() {
+                std::mem::swap(self, other);
+            }
+            return;
+        }
         let other = other.as_any().downcast_ref::<Self>().unwrap();
+        if other.is_empty() {
+            return;
+        }
         let mut tuple_buf = Vec::with_capacity(self.number_of_keys());
 
         let chunks_offset = self.chunks.len() as IdxSize;
@@ -229,47 +265,50 @@ impl Sink for GenericBuild {
 
         // we combine the other hashtable with ours, but we must offset the chunk_idx
         // values by the number of chunks we already got.
-        for (ht, other_ht) in self.hash_tables.iter_mut().zip(&other.hash_tables) {
-            for (k, val) in other_ht.iter() {
-                // use the indexes to materialize the row
-                for [chunk_idx, df_idx] in val {
-                    unsafe { other.get_tuple(*chunk_idx, *df_idx, &mut tuple_buf) };
-                }
+        self.hash_tables
+            .iter_mut()
+            .zip(&other.hash_tables)
+            .for_each(|(ht, other_ht)| {
+                for (k, val) in other_ht.iter() {
+                    // use the indexes to materialize the row
+                    for [chunk_idx, df_idx] in val {
+                        unsafe { other.get_tuple(*chunk_idx, *df_idx, &mut tuple_buf) };
+                    }
 
-                let h = k.hash;
-                let entry = ht.raw_entry_mut().from_hash(h, |key| {
-                    compare_fn(
-                        key,
-                        h,
-                        &self.materialized_join_cols,
-                        &tuple_buf,
-                        tuple_buf.len(),
-                    )
-                });
+                    let h = k.hash;
+                    let entry = ht.raw_entry_mut().from_hash(h, |key| {
+                        compare_fn(
+                            key,
+                            h,
+                            &self.materialized_join_cols,
+                            &tuple_buf,
+                            tuple_buf.len(),
+                        )
+                    });
 
-                match entry {
-                    RawEntryMut::Vacant(entry) => {
-                        let [chunk_idx, df_idx] = unsafe { val.get_unchecked_release(0) };
-                        let new_chunk_idx = chunk_idx + chunks_offset;
-                        let key = Key::new(h, new_chunk_idx, *df_idx);
-                        let mut payload = vec![[new_chunk_idx, *df_idx]];
-                        if val.len() > 1 {
-                            let iter = val[1..]
+                    match entry {
+                        RawEntryMut::Vacant(entry) => {
+                            let [chunk_idx, df_idx] = unsafe { val.get_unchecked_release(0) };
+                            let new_chunk_idx = chunk_idx + chunks_offset;
+                            let key = Key::new(h, new_chunk_idx, *df_idx);
+                            let mut payload = vec![[new_chunk_idx, *df_idx]];
+                            if val.len() > 1 {
+                                let iter = val[1..].iter().map(|[chunk_idx, val_idx]| {
+                                    [*chunk_idx + chunks_offset, *val_idx]
+                                });
+                                payload.extend(iter);
+                            }
+                            entry.insert(key, payload);
+                        }
+                        RawEntryMut::Occupied(mut entry) => {
+                            let iter = val
                                 .iter()
                                 .map(|[chunk_idx, val_idx]| [*chunk_idx + chunks_offset, *val_idx]);
-                            payload.extend(iter);
+                            entry.get_mut().extend(iter);
                         }
-                        entry.insert(key, payload);
-                    }
-                    RawEntryMut::Occupied(mut entry) => {
-                        let iter = val
-                            .iter()
-                            .map(|[chunk_idx, val_idx]| [*chunk_idx + chunks_offset, *val_idx]);
-                        entry.get_mut().extend(iter);
                     }
                 }
-            }
-        }
+            })
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
@@ -284,19 +323,24 @@ impl Sink for GenericBuild {
         Box::new(new)
     }
 
-    fn finalize(&mut self) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         match self.join_type {
-            JoinType::Inner => {
-                let left_df = Arc::new(accumulate_dataframes_vertical_unchecked(
+            JoinType::Inner | JoinType::Left => {
+                let chunks_len = self.chunks.len();
+                let left_df = accumulate_dataframes_vertical_unchecked(
                     std::mem::take(&mut self.chunks)
                         .into_iter()
                         .map(|chunk| chunk.data),
-                ));
+                );
+                if left_df.height() > 0 {
+                    assert_eq!(left_df.n_chunks(), chunks_len);
+                }
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));
                 let suffix = self.suffix.clone();
                 let hb = self.hb.clone();
                 let hash_tables = Arc::new(std::mem::take(&mut self.hash_tables));
+                let join_columns_left = self.join_columns_left.clone();
                 let join_columns_right = self.join_columns_right.clone();
 
                 // take the buffers, this saves one allocation
@@ -305,20 +349,20 @@ impl Sink for GenericBuild {
                 let mut hashes = std::mem::take(&mut self.hashes);
                 hashes.clear();
 
-                let probe_operator = InnerJoinProbe {
+                let probe_operator = GenericJoinProbe::new(
                     left_df,
                     materialized_join_cols,
                     suffix,
                     hb,
                     hash_tables,
+                    join_columns_left,
                     join_columns_right,
+                    self.swapped,
                     join_series,
-                    join_tuples_left: vec![],
-                    join_tuples_right: vec![],
                     hashes,
-                    swapped: self.swapped,
-                    join_column_idx: None,
-                };
+                    context,
+                    self.join_type.clone(),
+                );
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
             }
             _ => unimplemented!(),
@@ -327,6 +371,9 @@ impl Sink for GenericBuild {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+    fn fmt(&self) -> &str {
+        "generic_join_build"
     }
 }
 

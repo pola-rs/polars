@@ -1,13 +1,23 @@
+use std::path::PathBuf;
+
 use polars_core::prelude::*;
+#[cfg(feature = "csv-file")]
 use polars_io::csv::{CsvEncoding, NullValues};
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcCompression;
+#[cfg(feature = "parquet")]
+use polars_io::parquet::ParquetCompression;
 use polars_io::RowCount;
 #[cfg(feature = "dynamic_groupby")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::prelude::Expr;
+
 pub type FileCount = u32;
 
+#[cfg(feature = "csv-file")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
@@ -29,6 +39,7 @@ pub struct CsvParserOptions {
     pub parse_dates: bool,
     pub file_counter: FileCount,
 }
+
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -41,6 +52,32 @@ pub struct ParquetOptions {
     pub row_count: Option<RowCount>,
     pub file_counter: FileCount,
     pub low_memory: bool,
+}
+
+#[cfg(feature = "parquet")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ParquetWriteOptions {
+    /// Data page compression
+    pub compression: ParquetCompression,
+    /// Compute and write column statistics.
+    pub statistics: bool,
+    /// If `None` will be all written to a single row group.
+    pub row_group_size: Option<usize>,
+    /// if `None` will be 1024^2 bytes
+    pub data_pagesize_limit: Option<usize>,
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
+}
+
+#[cfg(feature = "ipc")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcWriterOptions {
+    /// Data page compression
+    pub compression: Option<IpcCompression>,
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -87,6 +124,9 @@ pub struct UnionOptions {
     pub slice_offset: i64,
     pub slice_len: IdxSize,
     pub parallel: bool,
+    // known row_output, estimated row output
+    pub rows: (Option<usize>, usize),
+    pub from_partitioned_ds: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,6 +211,16 @@ pub struct FunctionOptions {
     pub cast_to_supertypes: bool,
     // apply physical expression may rename the output of this function
     pub allow_rename: bool,
+    // if set, then the `Series` passed to the function in the groupby operation
+    // will ensure the name is set. This is an extra heap allocation per group.
+    pub pass_name_to_apply: bool,
+}
+
+impl FunctionOptions {
+    /// Whether this can simply applied elementwise
+    pub fn is_mappable(&self) -> bool {
+        !matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+    }
 }
 
 impl Default for FunctionOptions {
@@ -182,6 +232,7 @@ impl Default for FunctionOptions {
             fmt_str: "",
             cast_to_supertypes: false,
             allow_rename: false,
+            pass_name_to_apply: false,
         }
     }
 }
@@ -214,6 +265,10 @@ pub struct PythonOptions {
     pub schema: SchemaRef,
     pub output_schema: Option<SchemaRef>,
     pub with_columns: Option<Arc<Vec<String>>>,
+    pub pyarrow: bool,
+    // a pyarrow predicate python expression
+    // can be evaluated with python.eval
+    pub predicate: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -224,5 +279,26 @@ pub struct AnonymousScanOptions {
     pub skip_rows: Option<usize>,
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
+    pub predicate: Option<Expr>,
     pub fmt_str: &'static str,
 }
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
+pub struct FileSinkOptions {
+    pub path: Arc<PathBuf>,
+    pub file_type: FileType,
+}
+
+#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
+pub enum FileType {
+    #[cfg(feature = "parquet")]
+    Parquet(ParquetWriteOptions),
+    #[cfg(feature = "ipc")]
+    Ipc(IpcWriterOptions),
+}
+
+#[cfg(not(any(feature = "parquet", feature = "ipc")))]
+pub type FileType = ();

@@ -18,5 +18,5 @@ use chrono::NaiveTime;
 pub use self::conversion::*;
 
 pub fn unix_time() -> NaiveDateTime {
-    NaiveDateTime::from_timestamp(0, 0)
+    NaiveDateTime::from_timestamp_opt(0, 0).unwrap()
 }

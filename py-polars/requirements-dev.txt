@@ -2,6 +2,8 @@
 # We're not pinning package dependencies, because our tests need to pass with the
 # latest version of the packages.
 
+--prefer-binary
+
 # Dependencies
 numpy
 pandas
@@ -9,11 +11,12 @@ pyarrow
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
 xlsx2csv
+deltalake
 
 # Tooling
-hypothesis==6.56.4
-maturin==0.13.6
-mypy==0.982
+hypothesis==6.62.1
+maturin==0.14.10
+mypy==0.991
 pytest==7.2.0
 pytest-cov==4.0.0
 

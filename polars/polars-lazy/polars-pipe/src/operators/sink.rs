@@ -11,6 +11,7 @@ pub enum SinkResult {
 pub enum FinalizedSink {
     Finished(DataFrame),
     Operator(Box<dyn Operator>),
+    Source(Box<dyn Source>),
 }
 
 pub trait Sink: Send + Sync {
@@ -20,7 +21,9 @@ pub trait Sink: Send + Sync {
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink>;
 
-    fn finalize(&mut self) -> PolarsResult<FinalizedSink>;
+    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink>;
 
     fn as_any(&mut self) -> &mut dyn Any;
+
+    fn fmt(&self) -> &str;
 }

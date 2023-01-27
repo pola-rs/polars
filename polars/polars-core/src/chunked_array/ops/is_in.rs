@@ -329,6 +329,12 @@ impl IsIn for BooleanChunked {
                 ca.rename(self.name());
                 Ok(ca)
             }
+            DataType::Boolean => {
+                let other = other.bool().unwrap();
+                let has_true = other.any();
+                let has_false = !other.all();
+                Ok(self.apply(|v| if v { has_true } else { has_false }))
+            }
             _ => Err(PolarsError::SchemaMisMatch(
                 format!(
                     "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
@@ -353,8 +359,9 @@ impl IsIn for StructChunked {
                 let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
                     let mut value = vec![];
                     let left = self.clone().into_series();
-                    if let AnyValue::Struct(val, _) = left.get(0) {
-                        value = val
+                    let av = left.get(0).unwrap();
+                    if let AnyValue::Struct(_, _, _) = av {
+                        av._materialize_struct_av(&mut value);
                     }
                     other
                         .list()?

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Callable, Generic, Sequence, TypeVar
 
 import polars.internals as pli
-from polars.datatypes import Schema
+from polars.datatypes import SchemaDict
 from polars.internals import selection_to_pyexpr_list
 from polars.utils import is_expr_sequence
 
@@ -82,15 +82,10 @@ class LazyGroupBy(Generic[LDF]):
         │ str     ┆ i64 │
         ╞═════════╪═════╡
         │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 4   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ b       ┆ 6   │
         └─────────┴─────┘
         >>> df.groupby("letters").head(2).sort("letters")
@@ -101,13 +96,9 @@ class LazyGroupBy(Generic[LDF]):
         │ str     ┆ i64 │
         ╞═════════╪═════╡
         │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ b       ┆ 6   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 2   │
         └─────────┴─────┘
 
@@ -139,15 +130,10 @@ class LazyGroupBy(Generic[LDF]):
         │ str     ┆ i64 │
         ╞═════════╪═════╡
         │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 4   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ b       ┆ 6   │
         └─────────┴─────┘
         >>> df.groupby("letters").tail(2).sort("letters")
@@ -158,13 +144,9 @@ class LazyGroupBy(Generic[LDF]):
         │ str     ┆ i64 │
         ╞═════════╪═════╡
         │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ b       ┆ 6   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ c       ┆ 4   │
         └─────────┴─────┘
 
@@ -172,7 +154,7 @@ class LazyGroupBy(Generic[LDF]):
         return self._lazyframe_class._from_pyldf(self.lgb.tail(n))
 
     def apply(
-        self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: Schema | None
+        self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: SchemaDict | None
     ) -> LDF:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
@@ -194,10 +176,9 @@ class LazyGroupBy(Generic[LDF]):
         f
             Function to apply over each group of the `LazyFrame`.
         schema
-            Schema of the output function. This has to be known statically.
-            If the schema provided is incorrect, this is a bug in the callers
-            query and may lead to errors.
-            If set to None, polars assumes the schema is unchanged.
+            Schema of the output function. This has to be known statically. If the
+            given schema is incorrect, this is a bug in the caller's query and may
+            lead to errors. If set to None, polars assumes the schema is unchanged.
 
 
         Examples
@@ -217,13 +198,9 @@ class LazyGroupBy(Generic[LDF]):
         │ i64 ┆ str   ┆ str      │
         ╞═════╪═══════╪══════════╡
         │ 0   ┆ red   ┆ square   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ green ┆ triangle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ green ┆ square   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ red   ┆ triangle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ red   ┆ square   │
         └─────┴───────┴──────────┘
 
@@ -242,11 +219,8 @@ class LazyGroupBy(Generic[LDF]):
         │ i64 ┆ str   ┆ str      │
         ╞═════╪═══════╪══════════╡
         │ 1   ┆ green ┆ triangle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ green ┆ square   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ red   ┆ square   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ red   ┆ triangle │
         └─────┴───────┴──────────┘
 

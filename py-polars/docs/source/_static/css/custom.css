@@ -51,6 +51,8 @@ footer.bd-footer{
  ToC, so hide until there's actually something to put there...
  */
 div.bd-sidebar-secondary {
-    position: absolute;
     display: none;
+}
+label.sidebar-toggle.secondary-toggle {
+    display: none !important;
 }

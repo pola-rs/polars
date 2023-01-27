@@ -77,7 +77,10 @@ fn read_json_with_escapes() {
         .finish()
         .unwrap();
     assert_eq!("id", df.get_columns()[0].name());
-    assert_eq!(AnyValue::Utf8("\""), df.column("text").unwrap().get(0));
+    assert_eq!(
+        AnyValue::Utf8("\""),
+        df.column("text").unwrap().get(0).unwrap()
+    );
     assert_eq!("text", df.get_columns()[1].name());
     assert_eq!((10, 3), df.shape());
 }
@@ -107,4 +110,106 @@ fn read_unordered_json() {
     assert_eq!("a", df.get_columns()[0].name());
     assert_eq!("d", df.get_columns()[3].name());
     assert_eq!((12, 4), df.shape());
+}
+
+#[test]
+fn read_ndjson_with_trailing_newline() {
+    let data = r#"{"Column1":"Value1"}\n"#;
+
+    let file = Cursor::new(data);
+    let df = JsonReader::new(file)
+        .with_json_format(JsonFormat::JsonLines)
+        .finish()
+        .unwrap();
+
+    let expected = df! {
+        "Column1" => ["Value1"]
+    }
+    .unwrap();
+    assert!(expected.frame_equal(&df));
+}
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_read_ndjson_iss_5875() {
+    let jsonlines = r#"
+    {"struct": {"int_inner": [1, 2, 3], "float_inner": 5.0, "str_inner": ["a", "b", "c"]}}
+    {"struct": {"int_inner": [4, 5, 6]}, "float": 4.0}
+    "#;
+    let cursor = Cursor::new(jsonlines);
+
+    let df = JsonLineReader::new(cursor).finish();
+    assert!(df.is_ok());
+
+    let field_int_inner = Field::new("int_inner", DataType::List(Box::new(DataType::Int64)));
+    let field_float_inner = Field::new("float_inner", DataType::Float64);
+    let field_str_inner = Field::new("str_inner", DataType::List(Box::new(DataType::Utf8)));
+
+    let mut schema = Schema::new();
+    schema.with_column(
+        "struct".to_owned(),
+        DataType::Struct(vec![
+            field_int_inner.clone(),
+            field_float_inner.clone(),
+            field_str_inner.clone(),
+        ]),
+    );
+    schema.with_column("float".to_owned(), DataType::Float64);
+
+    assert_eq!(schema, df.unwrap().schema());
+}
+
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_read_ndjson_iss_5875_part2() {
+    let jsonlines = r#"
+    {"struct": {"int_list_inner": [4, 5, 6]}}
+    {"struct": {"int_list_inner": [1, 2, 3], "float_inner": 5.0, "str_list_inner": ["a", "b", "c"]}, "int_opt": null, "float_list_outer": [1.1, 2.2]}
+    "#;
+    let cursor = Cursor::new(jsonlines);
+
+    let df = JsonLineReader::new(cursor).finish();
+    assert!(df.is_ok());
+    let field_int_list_inner =
+        Field::new("int_list_inner", DataType::List(Box::new(DataType::Int64)));
+    let field_float = Field::new("float_inner", DataType::Float64);
+    let field_str_list = Field::new("str_list_inner", DataType::List(Box::new(DataType::Utf8)));
+    let field_float_list = Field::new(
+        "float_list_outer",
+        DataType::List(Box::new(DataType::Float64)),
+    );
+    let mut schema = Schema::new();
+    schema.with_column(
+        "struct".to_owned(),
+        DataType::Struct(vec![field_int_list_inner, field_float, field_str_list]),
+    );
+    schema.with_column(
+        "float_list_outer".to_owned(),
+        field_float_list.data_type().clone(),
+    );
+
+    assert_eq!(schema, df.unwrap().schema());
+}
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_read_ndjson_iss_5875_part3() {
+    let jsonlines = r#"
+    {"key1":"value1", "key2": "value2", "key3": {"k1": 2, "k3": "value5", "k10": 5}}
+    {"key1":"value5", "key2": "value4", "key3": {"k1": 2, "k5": "value5", "k10": 4}}
+    {"key1":"value6", "key3": {"k1": 5, "k3": "value5"}}"#;
+
+    let cursor = Cursor::new(jsonlines);
+
+    let df = JsonLineReader::new(cursor).finish();
+    assert!(df.is_ok());
+}
+
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_read_ndjson_iss_6148() {
+    let json = b"{\"a\":1,\"b\":{}}\n{\"a\":2,\"b\":{}}\n";
+
+    let cursor = Cursor::new(json);
+
+    let df = JsonLineReader::new(cursor).finish();
+    assert!(df.is_ok());
 }

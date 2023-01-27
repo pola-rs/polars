@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_core::schema::SchemaRef;
 
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
@@ -23,6 +24,9 @@ impl Operator for FastProjectionOperator {
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
     }
+    fn fmt(&self) -> &str {
+        "fast_join_projection"
+    }
 }
 
 #[derive(Clone)]
@@ -39,7 +43,7 @@ impl Operator for ProjectionOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
+            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let chunk = chunk.with_data(DataFrame::new_no_checks(projected));
@@ -48,11 +52,15 @@ impl Operator for ProjectionOperator {
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
     }
+    fn fmt(&self) -> &str {
+        "projection"
+    }
 }
 
 #[derive(Clone)]
 pub(crate) struct HstackOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
+    pub(crate) input_schema: SchemaRef,
 }
 
 impl Operator for HstackOperator {
@@ -64,15 +72,20 @@ impl Operator for HstackOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
+            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let df = chunk.data.hstack(&projected)?;
+        let mut df = chunk.data.clone();
+        let schema = &*self.input_schema;
+        df._add_columns(projected, schema)?;
 
         let chunk = chunk.with_data(df);
         Ok(OperatorResult::Finished(chunk))
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
+    }
+    fn fmt(&self) -> &str {
+        "hstack"
     }
 }

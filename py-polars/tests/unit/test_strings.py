@@ -27,7 +27,7 @@ def test_auto_explode() -> None:
 def test_contains() -> None:
     df = pl.DataFrame(
         data=[(1, "some * * text"), (2, "(with) special\n * chars"), (3, "**etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
     )
     for pattern, as_literal, expected in (
         (r"\* \*", False, [True, False, False]),
@@ -58,6 +58,41 @@ def test_contains() -> None:
         )
 
 
+def test_contains_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "text": [
+                "some text",
+                "(with) special\n .* chars",
+                "**etc...?$",
+                None,
+                "b",
+                "invalid_regex",
+            ],
+            "pattern": [r"[me]", r".*", r"^\(", "a", None, "*"],
+        }
+    )
+
+    assert df.select(
+        [
+            pl.col("text")
+            .str.contains(pl.col("pattern"), literal=False, strict=False)
+            .alias("contains"),
+            pl.col("text")
+            .str.contains(pl.col("pattern"), literal=True)
+            .alias("contains_lit"),
+        ]
+    ).to_dict(False) == {
+        "contains": [True, True, False, False, False, None],
+        "contains_lit": [False, True, False, False, False, False],
+    }
+
+    with pytest.raises(pl.ComputeError):
+        df.select(
+            pl.col("text").str.contains(pl.col("pattern"), literal=False, strict=True)
+        )
+
+
 def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])
     assert (s.shift() == s).null_count() == 0
@@ -67,7 +102,7 @@ def test_null_comparisons() -> None:
 def test_replace() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
         orient="row",
     )
     for pattern, replacement, as_literal, expected in (
@@ -97,7 +132,7 @@ def test_replace() -> None:
 def test_replace_all() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special * chars **etc...?$")],
-        columns=["idx", "text"],
+        schema=["idx", "text"],
         orient="row",
     )
     for pattern, replacement, as_literal, expected in (
@@ -160,6 +195,11 @@ def test_extract_all_count() -> None:
     assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
 
 
+def test_extract_all_many() -> None:
+    df = pl.DataFrame({"foo": ["ab", "abc", "abcd"], "re": ["a", "bc", "a.c"]})
+    assert df["foo"].str.extract_all(df["re"]).to_list() == [["a"], ["bc"], ["abc"]]
+
+
 def test_zfill() -> None:
     df = pl.DataFrame(
         {
@@ -180,7 +220,7 @@ def test_zfill() -> None:
         None,
     ]
     assert (
-        df.with_column(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
+        df.with_columns(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
         == out
     )
     assert df["num"].cast(str).str.zfill(5).to_list() == out
@@ -221,9 +261,24 @@ def test_format_empty_df() -> None:
 
 
 def test_starts_ends_with() -> None:
-    assert pl.DataFrame({"a": ["hamburger", "nuts", "lollypop"]}).select(
+    df = pl.DataFrame(
+        {"a": ["hamburger", "nuts", "lollypop"], "sub": ["ham", "ts", None]}
+    )
+
+    assert df.select(
         [
-            pl.col("a").str.ends_with("pop").alias("pop"),
-            pl.col("a").str.starts_with("ham").alias("ham"),
+            pl.col("a").str.ends_with("pop").alias("ends_pop"),
+            pl.col("a").str.ends_with(pl.lit(None)).alias("ends_None"),
+            pl.col("a").str.ends_with(pl.col("sub")).alias("ends_sub"),
+            pl.col("a").str.starts_with("ham").alias("starts_ham"),
+            pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
+            pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
         ]
-    ).to_dict(False) == {"pop": [False, False, True], "ham": [True, False, False]}
+    ).to_dict(False) == {
+        "ends_pop": [False, False, True],
+        "ends_None": [False, False, False],
+        "ends_sub": [False, True, False],
+        "starts_ham": [True, False, False],
+        "starts_None": [False, False, False],
+        "starts_sub": [True, False, False],
+    }

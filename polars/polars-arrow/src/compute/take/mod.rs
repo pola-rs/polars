@@ -4,6 +4,7 @@ use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::{DataType, PhysicalType};
+use arrow::offset::Offsets;
 use arrow::types::NativeType;
 
 use crate::bit_util::unset_bit_raw;
@@ -90,7 +91,7 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
             }
         });
     };
-    let arr = PrimitiveArray::from_data(T::PRIMITIVE.into(), values.into(), Some(validity.into()));
+    let arr = PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), Some(validity.into()));
 
     Box::new(arr)
 }
@@ -113,11 +114,7 @@ pub unsafe fn take_no_null_primitive_unchecked<T: NativeType>(
 
     let values: Buffer<_> = Vec::from_trusted_len_iter(iter).into();
     let validity = indices.validity().cloned();
-    Box::new(PrimitiveArray::from_data(
-        T::PRIMITIVE.into(),
-        values,
-        validity,
-    ))
+    Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), values, validity))
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index.
@@ -139,7 +136,7 @@ pub unsafe fn take_no_null_primitive_iter_unchecked<T: NativeType, I: TrustedLen
     });
 
     let values: Buffer<_> = Vec::from_trusted_len_iter(iter).into();
-    Box::new(PrimitiveArray::from_data(T::PRIMITIVE.into(), values, None))
+    Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), values, None))
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index.
@@ -244,11 +241,7 @@ pub unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
         values.get_bit_unchecked(idx)
     });
     let mutable = MutableBitmap::from_trusted_len_iter_unchecked(iter);
-    Box::new(BooleanArray::from_data(
-        DataType::Boolean,
-        mutable.into(),
-        None,
-    ))
+    Box::new(BooleanArray::new(DataType::Boolean, mutable.into(), None))
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -696,7 +689,7 @@ pub unsafe fn take_binary_unchecked(
 pub unsafe fn take_value_indices_from_list(
     list: &ListArray<i64>,
     indices: &IdxArr,
-) -> (IdxArr, Vec<i64>) {
+) -> (IdxArr, Offsets<i64>) {
     let offsets = list.offsets().as_slice();
 
     let mut new_offsets = Vec::with_capacity(indices.len());
@@ -749,7 +742,14 @@ pub unsafe fn take_value_indices_from_list(
         }
     }
 
-    (IdxArr::from_data_default(values.into(), None), new_offsets)
+    // Safety:
+    // offsets are monotonically increasing.
+    unsafe {
+        (
+            IdxArr::from_data_default(values.into(), None),
+            Offsets::new_unchecked(new_offsets),
+        )
+    }
 }
 
 #[cfg(test)]

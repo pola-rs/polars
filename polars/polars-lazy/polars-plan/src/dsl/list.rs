@@ -1,3 +1,6 @@
+#[cfg(feature = "list_to_struct")]
+use std::sync::RwLock;
+
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -119,6 +122,20 @@ impl ListNameSpace {
             .map_many_private(FunctionExpr::ListExpr(ListFunction::Get), &[index], false)
     }
 
+    /// Get items in every sublist by multiple indexes.
+    ///
+    /// # Arguments
+    /// - `null_on_oob`: Return a null when an index is out of bounds.
+    /// This behavior is more expensive than defaulting to returing an `Error`.
+    #[cfg(feature = "list_take")]
+    pub fn take(self, index: Expr, null_on_oob: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Take(null_on_oob)),
+            &[index],
+            false,
+        )
+    }
+
     /// Get first item of every sublist.
     pub fn first(self) -> Expr {
         self.get(lit(0i64))
@@ -164,7 +181,6 @@ impl ListNameSpace {
 
     /// Diff every sublist.
     #[cfg(feature = "diff")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
     pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
         self.0
             .map(
@@ -204,15 +220,25 @@ impl ListNameSpace {
     }
 
     #[cfg(feature = "list_to_struct")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "list_to_struct")))]
     #[allow(clippy::wrong_self_convention)]
     /// Convert this `List` to a `Series` of type `Struct`. The width will be determined according to
     /// `ListToStructWidthStrategy` and the names of the fields determined by the given `name_generator`.
+    ///
+    /// # Schema
+    ///
+    /// A polars [`LazyFrame`] needs to know the schema at all time. The caller therefore must provide
+    /// an `upper_bound` of struct fields that will be set.
+    /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
+    /// will look in the current schema to determine which columns to select.
     pub fn to_struct(
         self,
         n_fields: ListToStructWidthStrategy,
         name_generator: Option<NameGenerator>,
+        upper_bound: usize,
     ) -> Expr {
+        // heap allocate the output type and fill it later
+        let out_dtype = Arc::new(RwLock::new(None::<DataType>));
+
         self.0
             .map(
                 move |s| {
@@ -221,13 +247,35 @@ impl ListNameSpace {
                         .map(|s| s.into_series())
                 },
                 // we don't yet know the fields
-                GetOutput::from_type(DataType::Struct(vec![])),
+                GetOutput::map_dtype(move |dt: &DataType| {
+                    let out = out_dtype.read().unwrap();
+                    match out.as_ref() {
+                        // dtype already set
+                        Some(dt) => dt.clone(),
+                        // dtype still unknown, set it
+                        None => {
+                            drop(out);
+                            let mut lock = out_dtype.write().unwrap();
+
+                            let inner = dt.inner_dtype().unwrap();
+                            let fields = (0..upper_bound)
+                                .map(|i| {
+                                    let name = _default_struct_name_gen(i);
+                                    Field::from_owned(name, inner.clone())
+                                })
+                                .collect();
+                            let dt = DataType::Struct(fields);
+
+                            *lock = Some(dt.clone());
+                            dt
+                        }
+                    }
+                }),
             )
             .with_fmt("arr.to_struct")
     }
 
     #[cfg(feature = "is_in")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
     /// Check if the list array contain an element
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();

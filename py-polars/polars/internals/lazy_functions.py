@@ -2,24 +2,26 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Sequence, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     DataType,
+    DataTypeClass,
     Date,
     Datetime,
     Duration,
     Int64,
     PolarsDataType,
+    SchemaDict,
+    Struct,
     Time,
     UInt32,
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import _NUMPY_TYPE
+from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.internals.type_aliases import EpochTimeUnit
 from polars.utils import (
@@ -68,11 +70,21 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import InterpolationMethod, IntoExpr, TimeUnit
+    from polars.internals.type_aliases import (
+        IntoExpr,
+        RollingInterpolationMethod,
+        TimeUnit,
+    )
 
 
 def col(
-    name: str | Sequence[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType,
+    name: str
+    | Sequence[str]
+    | Sequence[PolarsDataType]
+    | set[PolarsDataType]
+    | frozenset[PolarsDataType]
+    | pli.Series
+    | PolarsDataType,
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
@@ -82,6 +94,7 @@ def col(
     - a single column by name
     - all columns by using a wildcard `"*"`
     - column by regular expression if the regex starts with `^` and ends with `$`
+    - all columns with the same dtype by using a Polars type
 
     Parameters
     ----------
@@ -95,6 +108,7 @@ def col(
     ...         "ham": [1, 2, 3],
     ...         "hamburger": [11, 22, 33],
     ...         "foo": [3, 2, 1],
+    ...         "bar": ["a", "b", "c"],
     ...     }
     ... )
     >>> df.select(pl.col("foo"))
@@ -105,24 +119,20 @@ def col(
     │ i64 │
     ╞═════╡
     │ 3   │
-    ├╌╌╌╌╌┤
     │ 2   │
-    ├╌╌╌╌╌┤
     │ 1   │
     └─────┘
     >>> df.select(pl.col("*"))
-    shape: (3, 3)
-    ┌─────┬───────────┬─────┐
-    │ ham ┆ hamburger ┆ foo │
-    │ --- ┆ ---       ┆ --- │
-    │ i64 ┆ i64       ┆ i64 │
-    ╞═════╪═══════════╪═════╡
-    │ 1   ┆ 11        ┆ 3   │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 2   ┆ 22        ┆ 2   │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 3   ┆ 33        ┆ 1   │
-    └─────┴───────────┴─────┘
+    shape: (3, 4)
+    ┌─────┬───────────┬─────┬─────┐
+    │ ham ┆ hamburger ┆ foo ┆ bar │
+    │ --- ┆ ---       ┆ --- ┆ --- │
+    │ i64 ┆ i64       ┆ i64 ┆ str │
+    ╞═════╪═══════════╪═════╪═════╡
+    │ 1   ┆ 11        ┆ 3   ┆ a   │
+    │ 2   ┆ 22        ┆ 2   ┆ b   │
+    │ 3   ┆ 33        ┆ 1   ┆ c   │
+    └─────┴───────────┴─────┴─────┘
     >>> df.select(pl.col("^ham.*$"))
     shape: (3, 2)
     ┌─────┬───────────┐
@@ -131,24 +141,20 @@ def col(
     │ i64 ┆ i64       │
     ╞═════╪═══════════╡
     │ 1   ┆ 11        │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
     │ 2   ┆ 22        │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 33        │
     └─────┴───────────┘
     >>> df.select(pl.col("*").exclude("ham"))
-    shape: (3, 2)
-    ┌───────────┬─────┐
-    │ hamburger ┆ foo │
-    │ ---       ┆ --- │
-    │ i64       ┆ i64 │
-    ╞═══════════╪═════╡
-    │ 11        ┆ 3   │
-    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 22        ┆ 2   │
-    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 33        ┆ 1   │
-    └───────────┴─────┘
+    shape: (3, 3)
+    ┌───────────┬─────┬─────┐
+    │ hamburger ┆ foo ┆ bar │
+    │ ---       ┆ --- ┆ --- │
+    │ i64       ┆ i64 ┆ str │
+    ╞═══════════╪═════╪═════╡
+    │ 11        ┆ 3   ┆ a   │
+    │ 22        ┆ 2   ┆ b   │
+    │ 33        ┆ 1   ┆ c   │
+    └───────────┴─────┴─────┘
     >>> df.select(pl.col(["hamburger", "foo"]))
     shape: (3, 2)
     ┌───────────┬─────┐
@@ -157,45 +163,74 @@ def col(
     │ i64       ┆ i64 │
     ╞═══════════╪═════╡
     │ 11        ┆ 3   │
-    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 22        ┆ 2   │
-    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 33        ┆ 1   │
     └───────────┴─────┘
+    >>> # Select columns with a dtype
+    >>> df.select(pl.col(pl.Utf8))
+    shape: (3, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ a   │
+    │ b   │
+    │ c   │
+    └─────┘
+    >>> # Select columns from a list of dtypes
+    >>> df.select(pl.col([pl.Int64, pl.Float64]))
+    shape: (3, 3)
+    ┌─────┬───────────┬─────┐
+    │ ham ┆ hamburger ┆ foo │
+    │ --- ┆ ---       ┆ --- │
+    │ i64 ┆ i64       ┆ i64 │
+    ╞═════╪═══════════╪═════╡
+    │ 1   ┆ 11        ┆ 3   │
+    │ 2   ┆ 22        ┆ 2   │
+    │ 3   ┆ 33        ┆ 1   │
+    └─────┴───────────┴─────┘
 
     """
     if isinstance(name, pli.Series):
-        name = name.to_list()  # type: ignore[assignment]
+        name = name.to_list()
 
-    # note: we need the typing.cast call here twice to make mypy happy under Python 3.7
-    # On Python 3.10, it is not needed. We use cast as it works across versions,
-    # ignoring the typing error would lead to unneeded ignores under Python 3.10.
-    if isclass(name) and issubclass(cast(type, name), DataType):
-        name = [cast(type, name)]
+    if isinstance(name, DataTypeClass):
+        name = [name]
 
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))
 
-    elif not isinstance(name, str) and isinstance(name, Sequence):
-        if len(name) == 0 or isinstance(name[0], str):
+    elif not isinstance(name, str) and isinstance(
+        name, (list, tuple, set, frozenset, Sequence)
+    ):
+        if len(name) == 0:
             return pli.wrap_expr(pycols(name))
-        elif is_polars_dtype(name[0]):
-            return pli.wrap_expr(_dtype_cols(name))
         else:
-            raise ValueError("Expected list values to be all `str` or all `DataType`")
+            names = list(name)
+            item = names[0]
+            if isinstance(item, str):
+                return pli.wrap_expr(pycols(names))
+            elif is_polars_dtype(item):
+                return pli.wrap_expr(_dtype_cols(names))
+            else:
+                raise ValueError(
+                    "Expected list values to be all `str` or all `DataType`"
+                )
+
     return pli.wrap_expr(pycol(name))
 
 
 def element() -> pli.Expr:
     """
-    Alias for an element in evaluated in an `eval` expression.
+    Alias for an element being evaluated in an `eval` expression.
 
     Examples
     --------
     A horizontal rank computation by taking the elements of a list
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-    >>> df.with_column(
+    >>> df.with_columns(
     ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
     ... )
     shape: (3, 3)
@@ -205,16 +240,14 @@ def element() -> pli.Expr:
     │ i64 ┆ i64 ┆ list[f32]  │
     ╞═════╪═════╪════════════╡
     │ 1   ┆ 4   ┆ [1.0, 2.0] │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 8   ┆ 5   ┆ [2.0, 1.0] │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 2   ┆ [2.0, 1.0] │
     └─────┴─────┴────────────┘
 
     A mathematical operation on array elements
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-    >>> df.with_column(
+    >>> df.with_columns(
     ...     pl.concat_list(["a", "b"]).arr.eval(pl.element() * 2).alias("a_b_doubled")
     ... )
     shape: (3, 3)
@@ -224,9 +257,7 @@ def element() -> pli.Expr:
     │ i64 ┆ i64 ┆ list[i64]   │
     ╞═════╪═════╪═════════════╡
     │ 1   ┆ 4   ┆ [2, 8]      │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 8   ┆ 5   ┆ [16, 10]    │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 2   ┆ [6, 4]      │
     └─────┴─────┴─────────────┘
 
@@ -262,6 +293,29 @@ def count(column: str | pli.Series | None = None) -> pli.Expr | int:
         * ``str`` : count the values in this column.
         * ``None`` : count the number of values in this context.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.count())
+    shape: (1, 1)
+    ┌───────┐
+    │ count │
+    │ ---   │
+    │ u32   │
+    ╞═══════╡
+    │ 3     │
+    └───────┘
+    >>> df.groupby("c", maintain_order=True).agg(pl.count())
+    shape: (2, 2)
+    ┌─────┬───────┐
+    │ c   ┆ count │
+    │ --- ┆ ---   │
+    │ str ┆ u32   │
+    ╞═════╪═══════╡
+    │ foo ┆ 2     │
+    │ bar ┆ 1     │
+    └─────┴───────┘
+
     """
     if column is None:
         return pli.wrap_expr(_count())
@@ -292,7 +346,25 @@ def std(column: pli.Series, ddof: int = 1) -> float | None:
 
 
 def std(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
-    """Get the standard deviation."""
+    """
+    Get the standard deviation.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.std("a"))
+    shape: (1, 1)
+    ┌──────────┐
+    │ a        │
+    │ ---      │
+    │ f64      │
+    ╞══════════╡
+    │ 3.605551 │
+    └──────────┘
+    >>> df["a"].std()
+    3.605551275463989
+
+    """
     if isinstance(column, pli.Series):
         return column.std(ddof)
     return col(column).std(ddof)
@@ -309,7 +381,25 @@ def var(column: pli.Series, ddof: int = 1) -> float | None:
 
 
 def var(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
-    """Get the variance."""
+    """
+    Get the variance.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.var("a"))
+    shape: (1, 1)
+    ┌──────┐
+    │ a    │
+    │ ---  │
+    │ f64  │
+    ╞══════╡
+    │ 13.0 │
+    └──────┘
+    >>> df["a"].var()
+    13.0
+
+    """
     if isinstance(column, pli.Series):
         return column.var(ddof)
     return col(column).var(ddof)
@@ -336,6 +426,59 @@ def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
         the input:
         - Union[str, Series] -> aggregate the maximum value of that column.
         - List[Expr] -> aggregate the maximum value horizontally.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+
+    Get the maximum value by columns with a string column name
+
+    >>> df.select(pl.max("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 8   │
+    └─────┘
+
+    Get the maximum value by row with a list of columns/expressions
+
+    >>> df.select(pl.max(["a", "b"]))
+    shape: (3, 1)
+    ┌─────┐
+    │ max │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 4   │
+    │ 8   │
+    │ 3   │
+    └─────┘
+
+    To aggregate maximums for more than one column/expression use ``pl.col(list).max()``
+    or a regular expression selector like ``pl.sum(regex)``:
+
+    >>> df.select(pl.col(["a", "b"]).max())
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 8   ┆ 5   │
+    └─────┴─────┘
+
+    >>> df.select(pl.max("^.*[ab]$"))
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 8   ┆ 5   │
+    └─────┴─────┘
 
     """
     if isinstance(column, pli.Series):
@@ -370,6 +513,59 @@ def min(
         the input:
         - Union[str, Series] -> aggregate the sum value of that column.
         - List[Expr] -> aggregate the min value horizontally.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+
+    Get the minimum value by columns with a string column name
+
+    >>> df.select(pl.min("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    └─────┘
+
+    Get the minimum value by row with a list of columns/expressions
+
+    >>> df.select(pl.min(["a", "b"]))
+    shape: (3, 1)
+    ┌─────┐
+    │ min │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 5   │
+    │ 2   │
+    └─────┘
+
+    To aggregate minimums for more than one column/expression use ``pl.col(list).min()``
+    or a regular expression selector like ``pl.sum(regex)``:
+
+    >>> df.select(pl.col(["a", "b"]).min())
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 2   │
+    └─────┴─────┘
+
+    >>> df.select(pl.min("^.*[ab]$"))
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 2   │
+    └─────┴─────┘
 
     """
     if isinstance(column, pli.Series):
@@ -431,7 +627,6 @@ def sum(
     │ i64 ┆ i64 ┆ i64 │
     ╞═════╪═════╪═════╡
     │ 1   ┆ 3   ┆ 5   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   ┆ 6   │
     └─────┴─────┴─────┘
 
@@ -449,7 +644,7 @@ def sum(
 
     Sum a list of columns/expressions horizontally:
 
-    >>> df.with_column(pl.sum(["a", "c"]))
+    >>> df.with_columns(pl.sum(["a", "c"]))
     shape: (2, 4)
     ┌─────┬─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   ┆ sum │
@@ -457,7 +652,6 @@ def sum(
     │ i64 ┆ i64 ┆ i64 ┆ i64 │
     ╞═════╪═════╪═════╪═════╡
     │ 1   ┆ 3   ┆ 5   ┆ 6   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   ┆ 6   ┆ 8   │
     └─────┴─────┴─────┴─────┘
 
@@ -467,7 +661,7 @@ def sum(
     3
 
     To aggregate the sums for more than one column/expression use ``pl.col(list).sum()``
-    instead:
+    or a regular expression selector like ``pl.sum(regex)``:
 
     >>> df.select(pl.col(["a", "c"]).sum())
     shape: (1, 2)
@@ -477,6 +671,16 @@ def sum(
     │ i64 ┆ i64 │
     ╞═════╪═════╡
     │ 3   ┆ 11  │
+    └─────┴─────┘
+
+    >>> df.select(pl.sum("^.*[bc]$"))
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ b   ┆ c   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 7   ┆ 11  │
     └─────┴─────┘
 
     """
@@ -503,7 +707,25 @@ def mean(column: pli.Series) -> float:
 
 
 def mean(column: str | pli.Series) -> pli.Expr | float:
-    """Get the mean value."""
+    """
+    Get the mean value.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.mean("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 4.0 │
+    └─────┘
+    >>> pl.mean(df["a"])
+    4.0
+
+    """
     if isinstance(column, pli.Series):
         return column.mean()
     return col(column).mean()
@@ -520,7 +742,25 @@ def avg(column: pli.Series) -> float:
 
 
 def avg(column: str | pli.Series) -> pli.Expr | float:
-    """Alias for mean."""
+    """
+    Alias for mean.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.avg("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 4.0 │
+    └─────┘
+    >>> pl.avg(df["a"])
+    4.0
+
+    """
     return mean(column)
 
 
@@ -535,7 +775,25 @@ def median(column: pli.Series) -> float | int:
 
 
 def median(column: str | pli.Series) -> pli.Expr | float | int:
-    """Get the median value."""
+    """
+    Get the median value.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.median("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 3.0 │
+    └─────┘
+    >>> pl.median(df["a"])
+    3.0
+
+    """
     if isinstance(column, pli.Series):
         return column.median()
     return col(column).median()
@@ -552,7 +810,25 @@ def n_unique(column: pli.Series) -> int:
 
 
 def n_unique(column: str | pli.Series) -> pli.Expr | int:
-    """Count unique values."""
+    """
+    Count unique values.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 1], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.n_unique("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 2   │
+    └─────┘
+    >>> pl.n_unique(df["a"])
+    2
+
+    """
     if isinstance(column, pli.Series):
         return column.n_unique()
     return col(column).n_unique()
@@ -584,6 +860,32 @@ def first(column: str | pli.Series | None = None) -> pli.Expr | Any:
     - None -> expression to take first column of a context.
     - str -> syntactic sugar for `pl.col(..).first()`
     - Series -> Take first value in `Series`
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.first())
+    shape: (3, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 8   │
+    │ 3   │
+    └─────┘
+    >>> df.select(pl.first("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    └─────┘
+    >>> pl.first(df["a"])
+    1
 
     """
     if column is None:
@@ -622,6 +924,32 @@ def last(column: str | pli.Series | None = None) -> pli.Expr:
     - str -> syntactic sugar for `pl.col(..).last()`
     - Series -> Take last value in `Series`
 
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.last())
+    shape: (3, 1)
+    ┌─────┐
+    │ c   │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ foo │
+    │ bar │
+    │ foo │
+    └─────┘
+    >>> df.select(pl.last("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 3   │
+    └─────┘
+    >>> pl.last(df["a"])
+    3
+
     """
     if column is None:
         return pli.wrap_expr(_last())
@@ -635,12 +963,12 @@ def last(column: str | pli.Series | None = None) -> pli.Expr:
 
 
 @overload
-def head(column: str, n: int = 10) -> pli.Expr:
+def head(column: str, n: int = ...) -> pli.Expr:
     ...
 
 
 @overload
-def head(column: pli.Series, n: int = 10) -> pli.Series:
+def head(column: pli.Series, n: int = ...) -> pli.Series:
     ...
 
 
@@ -655,6 +983,38 @@ def head(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
     n
         Number of rows to return.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.head("a"))
+    shape: (3, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 8   │
+    │ 3   │
+    └─────┘
+    >>> df.select(pl.head("a", 2))
+    shape: (2, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 8   │
+    └─────┘
+    >>> pl.head(df["a"], 2)
+    shape: (2,)
+    Series: 'a' [i64]
+    [
+        1
+        8
+    ]
+
     """
     if isinstance(column, pli.Series):
         return column.head(n)
@@ -662,12 +1022,12 @@ def head(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
 
 
 @overload
-def tail(column: str, n: int = 10) -> pli.Expr:
+def tail(column: str, n: int = ...) -> pli.Expr:
     ...
 
 
 @overload
-def tail(column: pli.Series, n: int = 10) -> pli.Series:
+def tail(column: pli.Series, n: int = ...) -> pli.Series:
     ...
 
 
@@ -682,6 +1042,38 @@ def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
     n
         Number of rows to return.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.tail("a"))
+    shape: (3, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 8   │
+    │ 3   │
+    └─────┘
+    >>> df.select(pl.tail("a", 2))
+    shape: (2, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 8   │
+    │ 3   │
+    └─────┘
+    >>> pl.tail(df["a"], 2)
+    shape: (2,)
+    Series: 'a' [i64]
+    [
+        8
+        3
+    ]
+
     """
     if isinstance(column, pli.Series):
         return column.tail(n)
@@ -689,7 +1081,7 @@ def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
 
 
 def lit(
-    value: Any, dtype: type[DataType] | None = None, allow_object: bool = False
+    value: Any, dtype: PolarsDataType | None = None, allow_object: bool = False
 ) -> pli.Expr:
     """
     Return an expression representing a literal value.
@@ -732,7 +1124,11 @@ def lit(
     tu: TimeUnit
     if isinstance(value, datetime):
         tu = "us"
-        return lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
+        e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
+        if value.tzinfo is not None:
+            return e.dt.tz_localize(str(value.tzinfo))
+        else:
+            return e
 
     elif isinstance(value, timedelta):
         tu = "us"
@@ -752,7 +1148,7 @@ def lit(
             return e
         return e.alias(name)
 
-    if _NUMPY_TYPE(value) and isinstance(value, np.ndarray):
+    if _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
 
     if dtype:
@@ -777,7 +1173,6 @@ def lit(
 
     except AttributeError:
         item = value
-
     return pli.wrap_expr(pylit(item, allow_object))
 
 
@@ -833,7 +1228,6 @@ def cumsum(
     │ i64 ┆ i64 ┆ i64 │
     ╞═════╪═════╪═════╡
     │ 1   ┆ 3   ┆ 5   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   ┆ 6   │
     └─────┴─────┴─────┘
 
@@ -847,13 +1241,12 @@ def cumsum(
     │ i64 │
     ╞═════╡
     │ 1   │
-    ├╌╌╌╌╌┤
     │ 3   │
     └─────┘
 
     Cumulatively sum a list of columns/expressions horizontally:
 
-    >>> df.with_column(pl.cumsum(["a", "c"]))
+    >>> df.with_columns(pl.cumsum(["a", "c"]))
     shape: (2, 4)
     ┌─────┬─────┬─────┬───────────┐
     │ a   ┆ b   ┆ c   ┆ cumsum    │
@@ -861,7 +1254,6 @@ def cumsum(
     │ i64 ┆ i64 ┆ i64 ┆ struct[2] │
     ╞═════╪═════╪═════╪═══════════╡
     │ 1   ┆ 3   ┆ 5   ┆ {1,6}     │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
     │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
     └─────┴─────┴─────┴───────────┘
 
@@ -895,6 +1287,19 @@ def spearman_rank_corr(
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.spearman_rank_corr("a", "b"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 0.5 │
+    └─────┘
+
     """
     if isinstance(a, str):
         a = col(a)
@@ -918,6 +1323,19 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     ddof
         Delta degrees of freedom
 
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.pearson_corr("a", "b"))
+    shape: (1, 1)
+    ┌──────────┐
+    │ a        │
+    │ ---      │
+    │ f64      │
+    ╞══════════╡
+    │ 0.544705 │
+    └──────────┘
+
     """
     if isinstance(a, str):
         a = col(a)
@@ -940,6 +1358,19 @@ def cov(
     b
         Column name or Expression.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.cov("a", "b"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 3.0 │
+    └─────┘
+
     """
     if isinstance(a, str):
         a = col(a)
@@ -951,7 +1382,7 @@ def cov(
 def map(
     exprs: Sequence[str] | Sequence[pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series],
-    return_dtype: type[DataType] | None = None,
+    return_dtype: PolarsDataType | None = None,
 ) -> pli.Expr:
     """
     Map a custom function over multiple columns/expressions.
@@ -981,7 +1412,7 @@ def map(
 def apply(
     exprs: Sequence[str | pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series | Any],
-    return_dtype: type[DataType] | None = None,
+    return_dtype: PolarsDataType | None = None,
     returns_scalar: bool = True,
 ) -> pli.Expr:
     """
@@ -1159,11 +1590,11 @@ def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
 def exclude(
     columns: (
         str
+        | PolarsDataType
         | Sequence[str]
-        | DataType
-        | type[DataType]
-        | DataType
-        | Sequence[DataType | type[DataType]]
+        | Sequence[PolarsDataType]
+        | set[PolarsDataType]
+        | frozenset[PolarsDataType]
     ),
 ) -> pli.Expr:
     """
@@ -1200,9 +1631,7 @@ def exclude(
     │ i64 ┆ str  ┆ f64  │
     ╞═════╪══════╪══════╡
     │ 1   ┆ a    ┆ null │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ 2   ┆ b    ┆ 2.5  │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ 3   ┆ null ┆ 1.5  │
     └─────┴──────┴──────┘
 
@@ -1216,9 +1645,7 @@ def exclude(
     │ i64 ┆ f64  │
     ╞═════╪══════╡
     │ 1   ┆ null │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ 2   ┆ 2.5  │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ 3   ┆ 1.5  │
     └─────┴──────┘
 
@@ -1232,9 +1659,7 @@ def exclude(
     │ f64  │
     ╞══════╡
     │ null │
-    ├╌╌╌╌╌╌┤
     │ 2.5  │
-    ├╌╌╌╌╌╌┤
     │ 1.5  │
     └──────┘
 
@@ -1248,9 +1673,7 @@ def exclude(
     │ str  │
     ╞══════╡
     │ a    │
-    ├╌╌╌╌╌╌┤
     │ b    │
-    ├╌╌╌╌╌╌┤
     │ null │
     └──────┘
 
@@ -1304,7 +1727,9 @@ def groups(column: str) -> pli.Expr:
 
 
 def quantile(
-    column: str, quantile: float, interpolation: InterpolationMethod = "nearest"
+    column: str,
+    quantile: float | pli.Expr,
+    interpolation: RollingInterpolationMethod = "nearest",
 ) -> pli.Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
@@ -1480,7 +1905,6 @@ def duration(
     ╞════════════╪════════════╪═════════════════════╪══════════════╪═════════════════════╡
     │ 2022-01-08 ┆ 2022-01-02 ┆ 2022-01-01 00:00:01 ┆ 2022-01-01   ┆ 2022-01-01 01:00:00 │
     │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.001 ┆                     │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 2022-01-16 ┆ 2022-01-04 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02   ┆ 2022-01-02 02:00:00 │
     │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.002 ┆                     │
     └────────────┴────────────┴─────────────────────┴──────────────┴─────────────────────┘
@@ -1641,9 +2065,7 @@ def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli
     │ i64 ┆ str  ┆ str  ┆ str           │
     ╞═════╪══════╪══════╪═══════════════╡
     │ 1   ┆ dogs ┆ play ┆ 2 dogs play   │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 2   ┆ cats ┆ swim ┆ 4 cats swim   │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ null ┆ walk ┆ null          │
     └─────┴──────┴──────┴───────────────┘
 
@@ -1684,9 +2106,7 @@ def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
     │ str         │
     ╞═════════════╡
     │ foo_a_bar_1 │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ foo_b_bar_2 │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ foo_c_bar_3 │
     └─────────────┘
 
@@ -1744,13 +2164,9 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
     │ list[f64]         │
     ╞═══════════════════╡
     │ [null, null, 1.0] │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ [null, 1.0, 2.0]  │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ [1.0, 2.0, 9.0]   │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ [2.0, 9.0, 2.0]   │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ [9.0, 2.0, 13.0]  │
     └───────────────────┘
 
@@ -1765,11 +2181,10 @@ def collect_all(
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
-    string_cache: bool = False,
     no_optimization: bool = False,
     slice_pushdown: bool = True,
     common_subplan_elimination: bool = True,
-    allow_streaming: bool = False,
+    streaming: bool = False,
 ) -> list[pli.DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
@@ -1788,15 +2203,13 @@ def collect_all(
         Do projection pushdown optimization.
     simplify_expression
         Run simplify expressions optimization.
-    string_cache
-        This argument is deprecated and will be ignored
     no_optimization
         Turn off optimizations.
     slice_pushdown
         Slice pushdown optimization.
     common_subplan_elimination
         Will try to cache branching subplans that occur on self-joins or unions.
-    allow_streaming
+    streaming
         Run parts of the query in a streaming fashion (this is in an alpha state)
 
     Returns
@@ -1820,7 +2233,7 @@ def collect_all(
             simplify_expression,
             slice_pushdown,
             common_subplan_elimination,
-            allow_streaming,
+            streaming,
         )
         prepared.append(ldf)
 
@@ -1865,9 +2278,7 @@ def select(
     │ i64 │
     ╞═════╡
     │ 1   │
-    ├╌╌╌╌╌┤
     │ 2   │
-    ├╌╌╌╌╌┤
     │ 1   │
     └─────┘
 
@@ -1879,6 +2290,7 @@ def select(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[True],
+    schema: SchemaDict | None = None,
 ) -> pli.Series:
     ...
 
@@ -1887,6 +2299,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[False],
+    schema: SchemaDict | None = None,
 ) -> pli.Expr:
     ...
 
@@ -1895,6 +2308,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
+    schema: SchemaDict | None = None,
 ) -> pli.Expr | pli.Series:
     ...
 
@@ -1902,6 +2316,7 @@ def struct(
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
+    schema: SchemaDict | None = None,
 ) -> pli.Expr | pli.Series:
     """
     Collect several columns into a Series of dtype Struct.
@@ -1909,9 +2324,11 @@ def struct(
     Parameters
     ----------
     exprs
-        Columns/Expressions to collect into a Struct
+        Columns/Expressions to collect into a Struct.
     eager
-        Evaluate immediately
+        Evaluate immediately.
+    schema
+        Optional schema dict that explicitly defines the struct field dtypes.
 
     Examples
     --------
@@ -1930,7 +2347,6 @@ def struct(
     │ struct[4]           │
     ╞═════════════════════╡
     │ {1,"a",true,[1, 2]} │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ {2,"b",null,[3]}    │
     └─────────────────────┘
 
@@ -1939,7 +2355,7 @@ def struct(
     >>> df = pl.DataFrame(
     ...     {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     ... )
-    >>> df.with_column(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
+    >>> df.with_columns(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
     shape: (4, 4)
     ┌─────┬───────┬─────┬─────────────┐
     │ a   ┆ b     ┆ c   ┆ a_and_b     │
@@ -1947,19 +2363,18 @@ def struct(
     │ i64 ┆ str   ┆ i64 ┆ struct[2]   │
     ╞═════╪═══════╪═════╪═════════════╡
     │ 1   ┆ one   ┆ 9   ┆ {1,"one"}   │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 2   ┆ two   ┆ 8   ┆ {2,"two"}   │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ three ┆ 7   ┆ {3,"three"} │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 4   ┆ four  ┆ 6   ┆ {4,"four"}  │
     └─────┴───────┴─────┴─────────────┘
 
     """
     if eager:
-        return pli.select(struct(exprs, eager=False)).to_series()
-    exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_as_struct(exprs))
+        s = pli.select(struct(exprs, eager=False)).to_series()
+        return s.cast(Struct(schema)) if schema else s
+    else:
+        e = pli.wrap_expr(_as_struct(pli.selection_to_pyexpr_list(exprs)))
+        return e.cast(Struct(schema)) if schema else e
 
 
 @overload
@@ -2091,9 +2506,20 @@ def arg_where(
 
 
 def coalesce(
-    exprs: Sequence[
-        pli.Expr | str | date | datetime | timedelta | int | float | bool | pli.Series
-    ],
+    exprs: (
+        Sequence[
+            pli.Expr
+            | str
+            | date
+            | datetime
+            | timedelta
+            | int
+            | float
+            | bool
+            | pli.Series
+        ]
+        | pli.Expr
+    ),
 ) -> pli.Expr:
     """
     Folds the expressions from left to right, keeping the first non-null value.
@@ -2112,9 +2538,9 @@ def coalesce(
     ...         (None, None, 3.0),
     ...         (None, None, None),
     ...     ],
-    ...     columns=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
+    ...     schema=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
     ... )
-    >>> df.with_column(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
+    >>> df.with_columns(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
     │ a    ┆ b    ┆ c    ┆ d    │
@@ -2122,11 +2548,8 @@ def coalesce(
     │ f64  ┆ f64  ┆ f64  ┆ f64  │
     ╞══════╪══════╪══════╪══════╡
     │ null ┆ 1.0  ┆ 1.0  ┆ 1.0  │
-    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ null ┆ 2.0  ┆ 2.0  ┆ 2.0  │
-    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ null ┆ null ┆ 3.0  ┆ 3.0  │
-    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ null ┆ null ┆ null ┆ 99.9 │
     └──────┴──────┴──────┴──────┘
 
@@ -2136,60 +2559,19 @@ def coalesce(
 
 
 @overload
-def from_epoch(
-    column: str | pli.Expr | pli.Series,
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: Literal[False],
-) -> pli.Expr:
+def from_epoch(column: str | pli.Expr, unit: EpochTimeUnit = ...) -> pli.Expr:
     ...
 
 
 @overload
 def from_epoch(
-    column: str | pli.Expr | pli.Series | Sequence[int],
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: Literal[True],
+    column: pli.Series | Sequence[int], unit: EpochTimeUnit = ...
 ) -> pli.Series:
     ...
 
 
-@overload
 def from_epoch(
-    column: pli.Series | Sequence[int],
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: Literal[True] = ...,
-) -> pli.Series:
-    ...
-
-
-@overload
-def from_epoch(
-    column: str | pli.Expr,
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: Literal[False] = ...,
-) -> pli.Expr:
-    ...
-
-
-@overload
-def from_epoch(
-    column: str | pli.Expr | pli.Series | Sequence[int],
-    unit: EpochTimeUnit = ...,
-    *,
-    eager: bool = ...,
-) -> pli.Expr | pli.Series:
-    ...
-
-
-def from_epoch(
-    column: str | pli.Expr | pli.Series | Sequence[int],
-    unit: EpochTimeUnit = "s",
-    *,
-    eager: bool = False,
+    column: str | pli.Expr | pli.Series | Sequence[int], unit: EpochTimeUnit = "s"
 ) -> pli.Expr | pli.Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
@@ -2207,8 +2589,6 @@ def from_epoch(
         Series or expression to parse integers to pl.Datetime.
     unit
         The unit of the timesteps since epoch time.
-    eager
-        If eager evaluation is `True`, a Series is returned instead of an Expr.
 
     Examples
     --------
@@ -2221,9 +2601,19 @@ def from_epoch(
     │ datetime[μs]        │
     ╞═════════════════════╡
     │ 2022-10-25 07:31:17 │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 2022-10-25 07:31:39 │
     └─────────────────────┘
+
+    The function can also be used in an eager context by passing a Series.
+
+    >>> s = pl.Series([12345, 12346])
+    >>> pl.from_epoch(s, unit="d")
+    shape: (2,)
+    Series: '' [date]
+    [
+            2003-10-20
+            2003-10-21
+    ]
 
     """
     if isinstance(column, str):
@@ -2232,23 +2622,12 @@ def from_epoch(
         column = pli.Series(column)  # Sequence input handled by Series constructor
 
     if unit == "d":
-        expr = column.cast(Date)
+        return column.cast(Date)
     elif unit == "s":
-        expr = (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
+        return (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
     elif unit in DTYPE_TEMPORAL_UNITS:
-        expr = column.cast(Datetime(unit))
+        return column.cast(Datetime(unit))
     else:
         raise ValueError(
             f"'unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got '{unit}'."
         )
-
-    if eager:
-        if not isinstance(column, pli.Series):
-            raise ValueError(
-                "expected 'Series or Sequence' in 'from_epoch' if 'eager=True', got"
-                f" {type(column)}"
-            )
-        else:
-            return column.to_frame().select(expr).to_series()
-    else:
-        return expr

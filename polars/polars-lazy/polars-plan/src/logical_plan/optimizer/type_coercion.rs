@@ -24,10 +24,10 @@ fn modify_supertype(
     if type_left.is_numeric() && type_right.is_numeric() {
         match (left, right) {
             // don't let the literal f64 coerce the f32 column
-            (AExpr::Literal(LiteralValue::Float64(_)), _) if matches!(type_right, DataType::Float32) => {
+            (AExpr::Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)), _) if matches!(type_right, DataType::Float32) => {
                 st = DataType::Float32
             }
-            (_, AExpr::Literal(LiteralValue::Float64(_))) if matches!(type_left, DataType::Float32) => {
+            (_, AExpr::Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_))) if matches!(type_left, DataType::Float32) => {
                 st = DataType::Float32
             }
 
@@ -66,7 +66,7 @@ fn modify_supertype(
             #[cfg(feature = "dtype-categorical")]
             (Categorical(_), Utf8, _, AExpr::Literal(_))
             | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
-                st = DataType::Categorical(None);
+                st = Categorical(None);
             }
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.

@@ -98,13 +98,14 @@ def test_window_function_cache() -> None:
 
 def test_arange_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
-    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore[union-attr]
+    expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
+    out = df.with_columns(expr)
     assert out.frame_equal(
         pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "literal": [0, 1, 0, 1, 0, 1]})
     )
 
     df = pl.DataFrame({"x": []})
-    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore[union-attr]
+    out = df.with_columns(expr)
     assert out.frame_equal(pl.DataFrame({"x": [], "literal": []}))
 
 
@@ -146,7 +147,7 @@ def test_cumulative_eval_window_functions() -> None:
     )
 
     assert (
-        df.with_column(
+        df.with_columns(
             pl.col("val")
             .cumulative_eval(pl.element().max())
             .over("group")
@@ -158,6 +159,12 @@ def test_cumulative_eval_window_functions() -> None:
         "cumulative_eval_max": [20, 40, 40, 2, 4, 4],
     }
 
+    # 6394
+    df = pl.DataFrame({"group": [1, 1, 2, 3], "value": [1, None, 3, None]})
+    assert df.select(
+        pl.col("value").cumulative_eval(pl.element().mean()).over("group")
+    ).to_dict(False) == {"value": [1.0, 1.0, 3.0, None]}
+
 
 def test_count_window() -> None:
     assert (
@@ -166,7 +173,7 @@ def test_count_window() -> None:
                 "a": [1, 1, 2],
             }
         )
-        .with_column(pl.count().over("a"))["count"]
+        .with_columns(pl.count().over("a"))["count"]
         .to_list()
     ) == [2, 2, 1]
 
@@ -227,10 +234,71 @@ def test_sorted_window_expression() -> None:
     )
     expr = (pl.col("a") + pl.col("b")).over("b").alias("computed")
 
-    out1 = df.with_column(expr).sort("b")
+    out1 = df.with_columns(expr).sort("b")
 
     # explicit sort
     df = df.sort("b")
-    out2 = df.with_column(expr)
+    out2 = df.with_columns(expr)
 
     assert out1.frame_equal(out2)
+
+
+def test_nested_aggregation_window_expression() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
+            "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        }
+    )
+
+    assert df.with_columns(
+        [
+            pl.when(pl.col("x") >= pl.col("x").quantile(0.1))
+            .then(1)
+            .otherwise(None)
+            .over("y")
+            .alias("foo")
+        ]
+    ).to_dict(False) == {
+        "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
+        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        "foo": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, None, 1],
+    }
+
+
+def test_window_5868() -> None:
+    df = pl.DataFrame({"value": [None, 2], "id": [None, 1]})
+
+    assert df.with_columns(pl.col("value").max().over("id")).to_dict(False) == {
+        "value": [None, 2],
+        "id": [None, 1],
+    }
+
+    df = pl.DataFrame({"a": [None, 1, 2, 3, 3, 3, 4, 4]})
+
+    assert df.select(pl.col("a").sum().over("a"))["a"].to_list() == [
+        None,
+        1,
+        2,
+        9,
+        9,
+        9,
+        8,
+        8,
+    ]
+    assert df.with_columns(pl.col("a").set_sorted()).select(
+        pl.col("a").sum().over("a")
+    )["a"].to_list() == [None, 1, 2, 9, 9, 9, 8, 8]
+
+    assert df.drop_nulls().select(pl.col("a").sum().over("a"))["a"].to_list() == [
+        1,
+        2,
+        9,
+        9,
+        9,
+        8,
+        8,
+    ]
+    assert df.drop_nulls().with_columns(pl.col("a").set_sorted()).select(
+        pl.col("a").sum().over("a")
+    )["a"].to_list() == [1, 2, 9, 9, 9, 8, 8]

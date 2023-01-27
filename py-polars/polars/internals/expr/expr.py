@@ -1,30 +1,30 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, cast
-from warnings import warn
+from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, cast
 
 from polars import internals as pli
 from polars.datatypes import (
     DataType,
-    Datetime,
     PolarsDataType,
     UInt32,
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import _NUMPY_TYPE
+from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.internals.expr.binary import ExprBinaryNameSpace
 from polars.internals.expr.categorical import ExprCatNameSpace
 from polars.internals.expr.datetime import ExprDateTimeNameSpace
 from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.utils import accessor, deprecated_alias
+from polars.utils import _timedelta_to_pl_duration, sphinx_accessor
 
 try:
     from polars.polars import PyExpr
@@ -35,30 +35,36 @@ except ImportError:
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
-        ClosedWindow,
+        ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
         NullBehavior,
         RankMethod,
+        RollingInterpolationMethod,
+        SearchSortedSide,
     )
+elif os.getenv("BUILDING_SPHINX_DOCS"):
+    property = sphinx_accessor
 
 
 def selection_to_pyexpr_list(
-    exprs: str
-    | Expr
-    | pli.Series
-    | Sequence[
+    exprs: (
         str
         | Expr
         | pli.Series
-        | timedelta
-        | date
-        | datetime
-        | int
-        | float
-        | pli.WhenThen
-        | pli.WhenThenThen
-    ],
+        | Iterable[
+            str
+            | Expr
+            | pli.Series
+            | timedelta
+            | date
+            | datetime
+            | int
+            | float
+            | pli.WhenThen
+            | pli.WhenThenThen
+        ]
+    ),
 ) -> list[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
@@ -81,7 +87,7 @@ def expr_to_lit_or_expr(
         | timedelta
         | pli.WhenThen
         | pli.WhenThenThen
-        | Sequence[(int | float | str | None)]
+        | Sequence[int | float | str | None]
     ),
     str_to_lit: bool = True,
 ) -> Expr:
@@ -130,7 +136,7 @@ class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors = {"arr", "cat", "dt", "meta", "str"}
+    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "bin", "struct"}
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
@@ -155,7 +161,8 @@ class Expr:
     def __bool__(self) -> NoReturn:
         raise ValueError(
             "Since Expr are lazy, the truthiness of an Expr is ambiguous. "
-            "Hint: use '&' or '|' to chain Expr together, not and/or."
+            "Hint: use '&' or '|' to logically combine Expr, not 'and'/'or', and "
+            "use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership."
         )
 
     def __abs__(self) -> Expr:
@@ -242,6 +249,24 @@ class Expr:
     def __gt__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
 
+    def ge(self, other: Any) -> Expr:
+        return self.__ge__(other)
+
+    def le(self, other: Any) -> Expr:
+        return self.__le__(other)
+
+    def eq(self, other: Any) -> Expr:
+        return self.__eq__(other)
+
+    def ne(self, other: Any) -> Expr:
+        return self.__ne__(other)
+
+    def lt(self, other: Any) -> Expr:
+        return self.__lt__(other)
+
+    def gt(self, other: Any) -> Expr:
+        return self.__gt__(other)
+
     def __neg__(self) -> Expr:
         return pli.lit(0) - self
 
@@ -298,11 +323,8 @@ class Expr:
         │ cat  ┆ u32           │
         ╞══════╪═══════════════╡
         │ a    ┆ 0             │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ x    ┆ 1             │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ null          │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ a    ┆ 0             │
         └──────┴───────────────┘
 
@@ -377,9 +399,7 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.414214 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2.0      │
         └──────────┘
 
@@ -401,9 +421,7 @@ class Expr:
         │ f64     │
         ╞═════════╡
         │ 0.0     │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 0.30103 │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 0.60206 │
         └─────────┘
 
@@ -425,9 +443,7 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ 2.718282 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 7.389056 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 54.59815 │
         └──────────┘
 
@@ -459,9 +475,7 @@ class Expr:
         │ i64 ┆ str  │
         ╞═════╪══════╡
         │ 1   ┆ a    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 2   ┆ b    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3   ┆ null │
         └─────┴──────┘
         >>> df.select(
@@ -477,9 +491,7 @@ class Expr:
         │ i64 ┆ str  │
         ╞═════╪══════╡
         │ 1   ┆ a    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 2   ┆ b    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3   ┆ null │
         └─────┴──────┘
 
@@ -490,11 +502,11 @@ class Expr:
         self,
         columns: (
             str
+            | PolarsDataType
             | Sequence[str]
-            | DataType
-            | type[DataType]
-            | DataType
-            | Sequence[DataType | type[DataType]]
+            | Sequence[PolarsDataType]
+            | set[PolarsDataType]
+            | frozenset[PolarsDataType]
         ),
     ) -> Expr:
         """
@@ -530,9 +542,7 @@ class Expr:
         │ i64 ┆ str  ┆ f64  │
         ╞═════╪══════╪══════╡
         │ 1   ┆ a    ┆ null │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 2   ┆ b    ┆ 2.5  │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3   ┆ null ┆ 1.5  │
         └─────┴──────┴──────┘
 
@@ -546,9 +556,7 @@ class Expr:
         │ i64 ┆ f64  │
         ╞═════╪══════╡
         │ 1   ┆ null │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 2   ┆ 2.5  │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3   ┆ 1.5  │
         └─────┴──────┘
 
@@ -562,9 +570,7 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 2.5  │
-        ├╌╌╌╌╌╌┤
         │ 1.5  │
         └──────┘
 
@@ -578,9 +584,7 @@ class Expr:
         │ str  │
         ╞══════╡
         │ a    │
-        ├╌╌╌╌╌╌┤
         │ b    │
-        ├╌╌╌╌╌╌┤
         │ null │
         └──────┘
 
@@ -588,6 +592,8 @@ class Expr:
         if isinstance(columns, str):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude(columns))
+        elif isinstance(columns, (set, frozenset)):
+            return wrap_expr(self._pyexpr.exclude_dtype(list(columns)))
         elif not isinstance(columns, Sequence) or isinstance(columns, DataType):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
@@ -623,7 +629,6 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 9   ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 18  ┆ 4   │
         └─────┴─────┘
 
@@ -639,7 +644,6 @@ class Expr:
         │ f64  ┆ f64      │
         ╞══════╪══════════╡
         │ 10.0 ┆ 3.333333 │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5.0  ┆ 2.5      │
         └──────┴──────────┘
 
@@ -668,13 +672,9 @@ class Expr:
         │ i64 ┆ str    ┆ i64 ┆ str    │
         ╞═════╪════════╪═════╪════════╡
         │ 1   ┆ banana ┆ 5   ┆ beetle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 2   ┆ banana ┆ 4   ┆ audi   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 3   ┆ apple  ┆ 3   ┆ beetle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 4   ┆ apple  ┆ 2   ┆ beetle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 5   ┆ banana ┆ 1   ┆ beetle │
         └─────┴────────┴─────┴────────┘
         >>> df.select(
@@ -690,13 +690,9 @@ class Expr:
         │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
         ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
         │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
@@ -725,13 +721,9 @@ class Expr:
         │ i64 ┆ str    ┆ i64 ┆ str    │
         ╞═════╪════════╪═════╪════════╡
         │ 1   ┆ banana ┆ 5   ┆ beetle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 2   ┆ banana ┆ 4   ┆ audi   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 3   ┆ apple  ┆ 3   ┆ beetle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 4   ┆ apple  ┆ 2   ┆ beetle │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 5   ┆ banana ┆ 1   ┆ beetle │
         └─────┴────────┴─────┴────────┘
         >>> df.select(
@@ -747,13 +739,9 @@ class Expr:
         │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
         ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
         │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
@@ -787,7 +775,6 @@ class Expr:
         │ i64       ┆ i64       │
         ╞═══════════╪═══════════╡
         │ 2         ┆ 4         │
-        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1         ┆ 3         │
         └───────────┴───────────┘
 
@@ -814,9 +801,7 @@ class Expr:
         │ bool  ┆ str  │
         ╞═══════╪══════╡
         │ true  ┆ a    │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ false ┆ b    │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ false ┆ null │
         └───────┴──────┘
         >>> df.select(pl.col("a").is_not())
@@ -827,9 +812,7 @@ class Expr:
         │ bool  │
         ╞═══════╡
         │ false │
-        ├╌╌╌╌╌╌╌┤
         │ true  │
-        ├╌╌╌╌╌╌╌┤
         │ true  │
         └───────┘
 
@@ -848,7 +831,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.all().is_null().suffix("_isnull"))  # nan != null
+        >>> df.with_columns(pl.all().is_null().suffix("_isnull"))  # nan != null
         shape: (5, 4)
         ┌──────┬─────┬──────────┬──────────┐
         │ a    ┆ b   ┆ a_isnull ┆ b_isnull │
@@ -856,13 +839,9 @@ class Expr:
         │ i64  ┆ f64 ┆ bool     ┆ bool     │
         ╞══════╪═════╪══════════╪══════════╡
         │ 1    ┆ 1.0 ┆ false    ┆ false    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2    ┆ 2.0 ┆ false    ┆ false    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ NaN ┆ true     ┆ false    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 1    ┆ 1.0 ┆ false    ┆ false    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5    ┆ 5.0 ┆ false    ┆ false    │
         └──────┴─────┴──────────┴──────────┘
 
@@ -881,7 +860,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.all().is_not_null().suffix("_not_null"))  # nan != null
+        >>> df.with_columns(pl.all().is_not_null().suffix("_not_null"))  # nan != null
         shape: (5, 4)
         ┌──────┬─────┬────────────┬────────────┐
         │ a    ┆ b   ┆ a_not_null ┆ b_not_null │
@@ -889,13 +868,9 @@ class Expr:
         │ i64  ┆ f64 ┆ bool       ┆ bool       │
         ╞══════╪═════╪════════════╪════════════╡
         │ 1    ┆ 1.0 ┆ true       ┆ true       │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2    ┆ 2.0 ┆ true       ┆ true       │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ NaN ┆ false      ┆ true       │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1    ┆ 1.0 ┆ true       ┆ true       │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5    ┆ 5.0 ┆ true       ┆ true       │
         └──────┴─────┴────────────┴────────────┘
 
@@ -927,7 +902,6 @@ class Expr:
         │ bool ┆ bool  │
         ╞══════╪═══════╡
         │ true ┆ true  │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ true ┆ false │
         └──────┴───────┘
 
@@ -959,7 +933,6 @@ class Expr:
         │ bool  ┆ bool  │
         ╞═══════╪═══════╡
         │ false ┆ false │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ false ┆ true  │
         └───────┴───────┘
 
@@ -983,7 +956,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.col(pl.Float64).is_nan().suffix("_isnan"))
+        >>> df.with_columns(pl.col(pl.Float64).is_nan().suffix("_isnan"))
         shape: (5, 3)
         ┌──────┬─────┬─────────┐
         │ a    ┆ b   ┆ b_isnan │
@@ -991,13 +964,9 @@ class Expr:
         │ i64  ┆ f64 ┆ bool    │
         ╞══════╪═════╪═════════╡
         │ 1    ┆ 1.0 ┆ false   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ 2    ┆ 2.0 ┆ false   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ null ┆ NaN ┆ true    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ 1    ┆ 1.0 ┆ false   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ 5    ┆ 5.0 ┆ false   │
         └──────┴─────┴─────────┘
 
@@ -1021,7 +990,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
+        >>> df.with_columns(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
         shape: (5, 3)
         ┌──────┬─────┬──────────────┐
         │ a    ┆ b   ┆ b_is_not_nan │
@@ -1029,13 +998,9 @@ class Expr:
         │ i64  ┆ f64 ┆ bool         │
         ╞══════╪═════╪══════════════╡
         │ 1    ┆ 1.0 ┆ true         │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2    ┆ 2.0 ┆ true         │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ NaN ┆ false        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1    ┆ 1.0 ┆ true         │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5    ┆ 5.0 ┆ true         │
         └──────┴─────┴──────────────┘
 
@@ -1071,7 +1036,6 @@ class Expr:
         │ str   ┆ list[u32] │
         ╞═══════╪═══════════╡
         │ one   ┆ [0, 1, 2] │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ two   ┆ [3, 4, 5] │
         └───────┴───────────┘
 
@@ -1153,7 +1117,6 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 9   ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 10  ┆ 4   │
         └─────┴─────┘
 
@@ -1193,7 +1156,6 @@ class Expr:
         │ i64 ┆ i64  │
         ╞═════╪══════╡
         │ 8   ┆ null │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 10  ┆ 4    │
         └─────┴──────┘
 
@@ -1217,15 +1179,10 @@ class Expr:
         │ i64     │
         ╞═════════╡
         │ null    │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 1       │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 1       │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 2       │
         └─────────┘
 
@@ -1257,9 +1214,7 @@ class Expr:
         │ f64 │
         ╞═════╡
         │ 4.0 │
-        ├╌╌╌╌╌┤
         │ 4.0 │
-        ├╌╌╌╌╌┤
         │ NaN │
         └─────┘
 
@@ -1291,9 +1246,7 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 4.0  │
-        ├╌╌╌╌╌╌┤
         │ 4.0  │
         └──────┘
 
@@ -1330,13 +1283,37 @@ class Expr:
         │ i64 ┆ i64       │
         ╞═════╪═══════════╡
         │ 1   ┆ 10        │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ 9         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 6   ┆ 7         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 10  ┆ 4         │
         └─────┴───────────┘
+
+        Null values are excluded, but can also be filled by calling ``forward_fill``.
+        >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
+        >>> df.with_columns(
+        ...     [
+        ...         pl.col("values").cumsum().alias("value_cumsum"),
+        ...         pl.col("values")
+        ...         .cumsum()
+        ...         .forward_fill()
+        ...         .alias("value_cumsum_all_filled"),
+        ...     ]
+        ... )
+        shape: (8, 3)
+        ┌────────┬──────────────┬─────────────────────────┐
+        │ values ┆ value_cumsum ┆ value_cumsum_all_filled │
+        │ ---    ┆ ---          ┆ ---                     │
+        │ i64    ┆ i64          ┆ i64                     │
+        ╞════════╪══════════════╪═════════════════════════╡
+        │ null   ┆ null         ┆ null                    │
+        │ 10     ┆ 10           ┆ 10                      │
+        │ null   ┆ null         ┆ 10                      │
+        │ 8      ┆ 18           ┆ 18                      │
+        │ 9      ┆ 27           ┆ 27                      │
+        │ null   ┆ null         ┆ 27                      │
+        │ 16     ┆ 43           ┆ 43                      │
+        │ null   ┆ null         ┆ 43                      │
+        └────────┴──────────────┴─────────────────────────┘
 
         """
         return wrap_expr(self._pyexpr.cumsum(reverse))
@@ -1371,11 +1348,8 @@ class Expr:
         │ i64 ┆ i64       │
         ╞═════╪═══════════╡
         │ 1   ┆ 24        │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ 24        │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 6   ┆ 12        │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 24  ┆ 4         │
         └─────┴───────────┘
 
@@ -1407,11 +1381,8 @@ class Expr:
         │ i64 ┆ i64       │
         ╞═════╪═══════════╡
         │ 1   ┆ 1         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ 2         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ 3         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ 4         │
         └─────┴───────────┘
 
@@ -1443,13 +1414,37 @@ class Expr:
         │ i64 ┆ i64       │
         ╞═════╪═══════════╡
         │ 1   ┆ 4         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ 4         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ 4         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ 4         │
         └─────┴───────────┘
+
+        Null values are excluded, but can also be filled by calling ``forward_fill``.
+        >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
+        >>> df.with_columns(
+        ...     [
+        ...         pl.col("values").cummax().alias("value_cummax"),
+        ...         pl.col("values")
+        ...         .cummax()
+        ...         .forward_fill()
+        ...         .alias("value_cummax_all_filled"),
+        ...     ]
+        ... )
+        shape: (8, 3)
+        ┌────────┬──────────────┬─────────────────────────┐
+        │ values ┆ value_cummax ┆ value_cummax_all_filled │
+        │ ---    ┆ ---          ┆ ---                     │
+        │ i64    ┆ i64          ┆ i64                     │
+        ╞════════╪══════════════╪═════════════════════════╡
+        │ null   ┆ null         ┆ null                    │
+        │ 10     ┆ 10           ┆ 10                      │
+        │ null   ┆ null         ┆ 10                      │
+        │ 8      ┆ 10           ┆ 10                      │
+        │ 9      ┆ 10           ┆ 10                      │
+        │ null   ┆ null         ┆ 10                      │
+        │ 16     ┆ 16           ┆ 16                      │
+        │ null   ┆ null         ┆ 16                      │
+        └────────┴──────────────┴─────────────────────────┘
 
         """
         return wrap_expr(self._pyexpr.cummax(reverse))
@@ -1481,11 +1476,8 @@ class Expr:
         │ u32 ┆ u32       │
         ╞═════╪═══════════╡
         │ 0   ┆ 3         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ 2         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ 1         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ 0         │
         └─────┴───────────┘
 
@@ -1509,11 +1501,8 @@ class Expr:
         │ f64 │
         ╞═════╡
         │ 0.0 │
-        ├╌╌╌╌╌┤
         │ 0.0 │
-        ├╌╌╌╌╌┤
         │ 1.0 │
-        ├╌╌╌╌╌┤
         │ 1.0 │
         └─────┘
 
@@ -1537,11 +1526,8 @@ class Expr:
         │ f64 │
         ╞═════╡
         │ 1.0 │
-        ├╌╌╌╌╌┤
         │ 1.0 │
-        ├╌╌╌╌╌┤
         │ 1.0 │
-        ├╌╌╌╌╌┤
         │ 2.0 │
         └─────┘
 
@@ -1568,11 +1554,8 @@ class Expr:
         │ f64 │
         ╞═════╡
         │ 0.3 │
-        ├╌╌╌╌╌┤
         │ 0.5 │
-        ├╌╌╌╌╌┤
         │ 1.0 │
-        ├╌╌╌╌╌┤
         │ 1.2 │
         └─────┘
 
@@ -1632,7 +1615,6 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 1   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 1   ┆ 2   │
         └─────┴─────┘
 
@@ -1672,9 +1654,7 @@ class Expr:
         │ f64 ┆ i32 │
         ╞═════╪═════╡
         │ 1.0 ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2.0 ┆ 5   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 3.0 ┆ 6   │
         └─────┴─────┘
 
@@ -1719,15 +1699,10 @@ class Expr:
         │ i64   │
         ╞═══════╡
         │ 1     │
-        ├╌╌╌╌╌╌╌┤
         │ 2     │
-        ├╌╌╌╌╌╌╌┤
         │ 3     │
-        ├╌╌╌╌╌╌╌┤
         │ 4     │
-        ├╌╌╌╌╌╌╌┤
         │ 98    │
-        ├╌╌╌╌╌╌╌┤
         │ 99    │
         └───────┘
         >>> df.select(pl.col("value").sort())
@@ -1738,15 +1713,10 @@ class Expr:
         │ i64   │
         ╞═══════╡
         │ 1     │
-        ├╌╌╌╌╌╌╌┤
         │ 2     │
-        ├╌╌╌╌╌╌╌┤
         │ 3     │
-        ├╌╌╌╌╌╌╌┤
         │ 4     │
-        ├╌╌╌╌╌╌╌┤
         │ 98    │
-        ├╌╌╌╌╌╌╌┤
         │ 99    │
         └───────┘
         >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
@@ -1757,7 +1727,6 @@ class Expr:
         │ str   ┆ list[i64]  │
         ╞═══════╪════════════╡
         │ two   ┆ [3, 4, 99] │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ one   ┆ [1, 2, 98] │
         └───────┴────────────┘
 
@@ -1801,13 +1770,9 @@ class Expr:
         │ i64   ┆ i64      │
         ╞═══════╪══════════╡
         │ 99    ┆ 1        │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 98    ┆ 2        │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 4     ┆ 3        │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 3     ┆ 4        │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2     ┆ 98       │
         └───────┴──────────┘
 
@@ -1845,9 +1810,7 @@ class Expr:
         │ u32 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 0   │
-        ├╌╌╌╌╌┤
         │ 2   │
         └─────┘
 
@@ -1902,7 +1865,9 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_min())
 
-    def search_sorted(self, element: Expr | int | float) -> Expr:
+    def search_sorted(
+        self, element: Expr | int | float | pli.Series, side: SearchSortedSide = "any"
+    ) -> Expr:
         """
         Find indices where elements should be inserted to maintain order.
 
@@ -1912,6 +1877,10 @@ class Expr:
         ----------
         element
             Expression or scalar value.
+        side : {'any', 'left', 'right'}
+            If 'any', the index of the first suitable location found is given.
+            If 'left', the index of the leftmost suitable location found is given.
+            If 'right', return the rightmost suitable location found is given.
 
         Examples
         --------
@@ -1938,11 +1907,12 @@ class Expr:
 
         """
         element = expr_to_lit_or_expr(element, str_to_lit=False)
-        return wrap_expr(self._pyexpr.search_sorted(element._pyexpr))
+        return wrap_expr(self._pyexpr.search_sorted(element._pyexpr, side))
 
     def sort_by(
         self,
         by: Expr | str | list[Expr | str],
+        *,
         reverse: bool | list[bool] = False,
     ) -> Expr:
         """
@@ -1982,15 +1952,10 @@ class Expr:
         │ str   │
         ╞═══════╡
         │ one   │
-        ├╌╌╌╌╌╌╌┤
         │ one   │
-        ├╌╌╌╌╌╌╌┤
         │ two   │
-        ├╌╌╌╌╌╌╌┤
         │ two   │
-        ├╌╌╌╌╌╌╌┤
         │ one   │
-        ├╌╌╌╌╌╌╌┤
         │ two   │
         └───────┘
 
@@ -2003,7 +1968,6 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    @deprecated_alias(index="indices")
     def take(
         self, indices: int | list[int] | Expr | pli.Series | np.ndarray[Any, Any]
     ) -> Expr:
@@ -2042,13 +2006,12 @@ class Expr:
         │ str   ┆ i64   │
         ╞═══════╪═══════╡
         │ one   ┆ 98    │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ two   ┆ 99    │
         └───────┴───────┘
 
         """
         if isinstance(indices, list) or (
-            _NUMPY_TYPE(indices) and isinstance(indices, np.ndarray)
+            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
@@ -2079,11 +2042,8 @@ class Expr:
         │ i64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 1    │
-        ├╌╌╌╌╌╌┤
         │ 2    │
-        ├╌╌╌╌╌╌┤
         │ 3    │
         └──────┘
 
@@ -2116,11 +2076,8 @@ class Expr:
         │ str │
         ╞═════╡
         │ a   │
-        ├╌╌╌╌╌┤
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 2   │
-        ├╌╌╌╌╌┤
         │ 3   │
         └─────┘
 
@@ -2165,9 +2122,7 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 1   ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2   ┆ 0   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 0   ┆ 6   │
         └─────┴─────┘
         >>> df.fill_null(99)
@@ -2178,9 +2133,7 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 1   ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2   ┆ 99  │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 99  ┆ 6   │
         └─────┴─────┘
         >>> df.fill_null(strategy="forward")
@@ -2191,9 +2144,7 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 1   ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2   ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2   ┆ 6   │
         └─────┴─────┘
 
@@ -2234,9 +2185,7 @@ class Expr:
         │ str  ┆ str  │
         ╞══════╪══════╡
         │ 1.0  ┆ 4.0  │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ null ┆ zero │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ zero ┆ 6.0  │
         └──────┴──────┘
 
@@ -2269,9 +2218,7 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 1   ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2   ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2   ┆ 6   │
         └─────┴─────┘
 
@@ -2303,9 +2250,7 @@ class Expr:
         │ i64  ┆ i64 │
         ╞══════╪═════╡
         │ 1    ┆ 4   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2    ┆ 6   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ null ┆ 6   │
         └──────┴─────┘
 
@@ -2339,13 +2284,9 @@ class Expr:
         │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
         ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
         │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 5         ┆ banana         ┆ 1         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 4         ┆ apple          ┆ 2         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ 3         ┆ apple          ┆ 3         ┆ beetle       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2         ┆ banana         ┆ 4         ┆ audi         │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
@@ -2638,9 +2579,7 @@ class Expr:
         │ u32 │
         ╞═════╡
         │ 0   │
-        ├╌╌╌╌╌┤
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 2   │
         └─────┘
         >>> df.select(pl.col("b").arg_unique())
@@ -2651,7 +2590,6 @@ class Expr:
         │ u32 │
         ╞═════╡
         │ 0   │
-        ├╌╌╌╌╌┤
         │ 1   │
         └─────┘
 
@@ -2678,7 +2616,6 @@ class Expr:
         │ i64 │
         ╞═════╡
         │ 2   │
-        ├╌╌╌╌╌┤
         │ 1   │
         └─────┘
         >>> df.select(pl.col("a").unique(maintain_order=True))
@@ -2689,7 +2626,6 @@ class Expr:
         │ i64 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 2   │
         └─────┘
 
@@ -2760,7 +2696,7 @@ class Expr:
         ...     }
         ... )
         >>> (
-        ...     df.with_column(
+        ...     df.with_columns(
         ...         pl.col("values").max().over("groups").alias("max_by_group")
         ...     )
         ... )
@@ -2771,9 +2707,7 @@ class Expr:
         │ str    ┆ i64    ┆ i64          │
         ╞════════╪════════╪══════════════╡
         │ g1     ┆ 1      ┆ 2            │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ g1     ┆ 2      ┆ 2            │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ g2     ┆ 3      ┆ 3            │
         └────────┴────────┴──────────────┘
         >>> df = pl.DataFrame(
@@ -2798,21 +2732,13 @@ class Expr:
         │ i64    │
         ╞════════╡
         │ 4      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 4      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 6      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 6      │
-        ├╌╌╌╌╌╌╌╌┤
         │ ...    │
-        ├╌╌╌╌╌╌╌╌┤
         │ 6      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 6      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 6      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 4      │
         └────────┘
 
@@ -2836,9 +2762,7 @@ class Expr:
         │ bool  │
         ╞═══════╡
         │ false │
-        ├╌╌╌╌╌╌╌┤
         │ false │
-        ├╌╌╌╌╌╌╌┤
         │ true  │
         └───────┘
 
@@ -2860,7 +2784,7 @@ class Expr:
         ...         "num": [1, 2, 3, 1, 5],
         ...     }
         ... )
-        >>> (df.with_column(pl.col("num").is_first().alias("is_first")))
+        >>> (df.with_columns(pl.col("num").is_first().alias("is_first")))
         shape: (5, 2)
         ┌─────┬──────────┐
         │ num ┆ is_first │
@@ -2868,13 +2792,9 @@ class Expr:
         │ i64 ┆ bool     │
         ╞═════╪══════════╡
         │ 1   ┆ true     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ true     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ true     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ false    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ true     │
         └─────┴──────────┘
 
@@ -2896,9 +2816,7 @@ class Expr:
         │ bool  │
         ╞═══════╡
         │ true  │
-        ├╌╌╌╌╌╌╌┤
         │ true  │
-        ├╌╌╌╌╌╌╌┤
         │ false │
         └───────┘
 
@@ -2907,8 +2825,8 @@ class Expr:
 
     def quantile(
         self,
-        quantile: float,
-        interpolation: InterpolationMethod = "nearest",
+        quantile: float | Expr,
+        interpolation: RollingInterpolationMethod = "nearest",
     ) -> Expr:
         """
         Get quantile value.
@@ -2970,7 +2888,8 @@ class Expr:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.quantile(quantile, interpolation))
+        quantile = expr_to_lit_or_expr(quantile, str_to_lit=False)
+        return wrap_expr(self._pyexpr.quantile(quantile._pyexpr, interpolation))
 
     def filter(self, predicate: Expr) -> Expr:
         """
@@ -3007,7 +2926,6 @@ class Expr:
         │ str       ┆ i64  ┆ i64 │
         ╞═══════════╪══════╪═════╡
         │ g1        ┆ 1    ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ g2        ┆ null ┆ 3   │
         └───────────┴──────┴─────┘
 
@@ -3048,7 +2966,6 @@ class Expr:
         │ str       ┆ i64  ┆ i64 │
         ╞═══════════╪══════╪═════╡
         │ g1        ┆ 1    ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ g2        ┆ null ┆ 3   │
         └───────────┴──────┴─────┘
 
@@ -3108,6 +3025,8 @@ class Expr:
         self,
         f: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
+        skip_nulls: bool = True,
+        pass_name: bool = False,
     ) -> Expr:
         """
         Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
@@ -3141,6 +3060,12 @@ class Expr:
             Dtype of the output Series.
             If not set, polars will assume that
             the dtype remains unchanged.
+        skip_nulls
+            Don't apply the function over values
+            that contain nulls. This is faster.
+        pass_name
+            Pass the Series name to the custom function
+            This is more expensive.
 
         Examples
         --------
@@ -3154,7 +3079,7 @@ class Expr:
         In a selection context, the function is applied by row.
 
         >>> (
-        ...     df.with_column(
+        ...     df.with_columns(
         ...         pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ...     )
         ... )
@@ -3165,18 +3090,15 @@ class Expr:
         │ i64 ┆ str ┆ i64       │
         ╞═════╪═════╪═══════════╡
         │ 1   ┆ a   ┆ 2         │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ b   ┆ 4         │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ c   ┆ 6         │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ c   ┆ 2         │
         └─────┴─────┴───────────┘
 
         It is better to implement this with an expression:
 
         >>> (
-        ...     df.with_column(
+        ...     df.with_columns(
         ...         (pl.col("a") * 2).alias("a_times_2"),
         ...     )
         ... )  # doctest: +IGNORE_RESULT
@@ -3200,9 +3122,7 @@ class Expr:
         │ str ┆ i64 │
         ╞═════╪═════╡
         │ a   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ b   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 4   │
         └─────┴─────┘
 
@@ -3216,67 +3136,48 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
-        def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
-            return x.apply(f, return_dtype=return_dtype)
+        if pass_name:
 
-        return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
+            def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
+                def inner(s: pli.Series) -> pli.Series:  # pragma: no cover
+                    s.rename(x.name, in_place=True)
+                    return f(s)
+
+                return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
+
+            return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
+
+        else:
+
+            def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
+                return x.apply(f, return_dtype=return_dtype, skip_nulls=skip_nulls)
+
+            return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
 
     def flatten(self) -> Expr:
         """
-        Alias for :func:`explode`.
+        Flatten a list or string column.
 
-        Explode a list or utf8 Series. This means that every item is expanded to a new
-        row.
-
-        Returns
-        -------
-        Exploded Series of same dtype
+        Alias for :func:`polars.internals.expr.list.ExprListNameSpace.explode`.
 
         Examples
         --------
-        The following example turns each character into a separate row:
-
-        >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-        >>> (df.select(pl.col("foo").flatten()))
-        shape: (10, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ h   │
-        ├╌╌╌╌╌┤
-        │ e   │
-        ├╌╌╌╌╌┤
-        │ l   │
-        ├╌╌╌╌╌┤
-        │ l   │
-        ├╌╌╌╌╌┤
-        │ ... │
-        ├╌╌╌╌╌┤
-        │ o   │
-        ├╌╌╌╌╌┤
-        │ r   │
-        ├╌╌╌╌╌┤
-        │ l   │
-        ├╌╌╌╌╌┤
-        │ d   │
-        └─────┘
-
-        This example turns each word into a separate row:
-
-        >>> df = pl.DataFrame({"foo": ["hello world"]})
-        >>> (df.select(pl.col("foo").str.split(by=" ").flatten()))
-        shape: (2, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │ hello │
-        ├╌╌╌╌╌╌╌┤
-        │ world │
-        └───────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": ["a", "b", "b"],
+        ...         "values": [[1, 2], [2, 3], [4]],
+        ...     }
+        ... )
+        >>> df.groupby("group").agg(pl.col("values").flatten())  # doctest: +SKIP
+        shape: (2, 2)
+        ┌───────┬───────────┐
+        │ group ┆ values    │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[i64] │
+        ╞═══════╪═══════════╡
+        │ a     ┆ [1, 2]    │
+        │ b     ┆ [2, 3, 4] │
+        └───────┴───────────┘
 
         """
         return wrap_expr(self._pyexpr.explode())
@@ -3287,34 +3188,27 @@ class Expr:
 
         This means that every item is expanded to a new row.
 
+        .. deprecated:: 0.15.16
+            `Expr.explode` will be removed in favour of `Expr.arr.explode` and
+            `Expr.str.explode`.
+
         Returns
         -------
         Exploded Series of same dtype
 
-        Examples
+        See Also
         --------
-        >>> df = pl.DataFrame({"b": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("b").explode())
-        shape: (6, 1)
-        ┌─────┐
-        │ b   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 1   │
-        ├╌╌╌╌╌┤
-        │ 2   │
-        ├╌╌╌╌╌┤
-        │ 3   │
-        ├╌╌╌╌╌┤
-        │ 4   │
-        ├╌╌╌╌╌┤
-        │ 5   │
-        ├╌╌╌╌╌┤
-        │ 6   │
-        └─────┘
+        ExprListNameSpace.explode : Explode a list column
+        ExprStringNameSpace.explode : Explode a string column
 
         """
+        warnings.warn(
+            "`Series/Expr.explode()` is deprecated in favor of the identical method"
+            " under the list and string namespaces. Use `.arr.explode()` or"
+            " `.str.explode()` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return wrap_expr(self._pyexpr.explode())
 
     def take_every(self, n: int) -> Expr:
@@ -3332,9 +3226,7 @@ class Expr:
         │ i64 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 4   │
-        ├╌╌╌╌╌┤
         │ 7   │
         └─────┘
 
@@ -3361,9 +3253,7 @@ class Expr:
         │ i64 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 2   │
-        ├╌╌╌╌╌┤
         │ 3   │
         └─────┘
 
@@ -3390,9 +3280,7 @@ class Expr:
         │ i64 │
         ╞═════╡
         │ 5   │
-        ├╌╌╌╌╌┤
         │ 6   │
-        ├╌╌╌╌╌┤
         │ 7   │
         └─────┘
 
@@ -3428,11 +3316,8 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ 1.0  │
-        ├╌╌╌╌╌╌┤
         │ 8.0  │
-        ├╌╌╌╌╌╌┤
         │ 27.0 │
-        ├╌╌╌╌╌╌┤
         │ 64.0 │
         └──────┘
 
@@ -3466,9 +3351,7 @@ class Expr:
         │ bool     │
         ╞══════════╡
         │ true     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ true     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ false    │
         └──────────┘
 
@@ -3515,9 +3398,7 @@ class Expr:
         │ list[str]       │
         ╞═════════════════╡
         │ ["x"]           │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ ["y", "y"]      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ ["z", "z", "z"] │
         └─────────────────┘
 
@@ -3527,9 +3408,9 @@ class Expr:
 
     def is_between(
         self,
-        start: Expr | datetime | int,
-        end: Expr | datetime | int,
-        include_bounds: bool | tuple[bool, bool] = False,
+        start: Expr | datetime | date | time | int | float,
+        end: Expr | datetime | date | time | int | float,
+        closed: ClosedInterval = "both",
     ) -> Expr:
         """
         Check if this expression is between start and end.
@@ -3540,13 +3421,8 @@ class Expr:
             Lower bound as primitive type or datetime.
         end
             Upper bound as primitive type or datetime.
-        include_bounds
-           False:           Exclude both start and end (default).
-           True:            Include both start and end.
-           (False, False):  Exclude start and exclude end.
-           (True, True):    Include start and include end.
-           (False, True):   Exclude start and include end.
-           (True, False):   Include start and exclude end.
+        closed : {'both', 'left', 'right', 'none'}
+            Define which sides of the interval are closed (inclusive).
 
         Returns
         -------
@@ -3555,7 +3431,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"num": [1, 2, 3, 4, 5]})
-        >>> df.with_column(pl.col("num").is_between(2, 4))
+        >>> df.with_columns(pl.col("num").is_between(2, 4))
         shape: (5, 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
@@ -3563,45 +3439,42 @@ class Expr:
         │ i64 ┆ bool       │
         ╞═════╪════════════╡
         │ 1   ┆ false      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ false      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ true       │
         │ 3   ┆ true       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 4   ┆ true       │
+        │ 5   ┆ false      │
+        └─────┴────────────┘
+
+        Use the ``closed`` argument to include or exclude the values at the bounds.
+
+        >>> df.with_columns(pl.col("num").is_between(2, 4, closed="left"))
+        shape: (5, 2)
+        ┌─────┬────────────┐
+        │ num ┆ is_between │
+        │ --- ┆ ---        │
+        │ i64 ┆ bool       │
+        ╞═════╪════════════╡
+        │ 1   ┆ false      │
+        │ 2   ┆ true       │
+        │ 3   ┆ true       │
         │ 4   ┆ false      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ false      │
         └─────┴────────────┘
 
         """
-        cast_to_datetime = False
-        if isinstance(start, datetime):
-            start = pli.lit(start)
-            cast_to_datetime = True
-        if isinstance(end, datetime):
-            end = pli.lit(end)
-            cast_to_datetime = True
-        if cast_to_datetime:
-            expr = self.cast(Datetime)
+        if closed == "none":
+            return ((self > start) & (self < end)).alias("is_between")
+        elif closed == "both":
+            return ((self >= start) & (self <= end)).alias("is_between")
+        elif closed == "right":
+            return ((self > start) & (self <= end)).alias("is_between")
+        elif closed == "left":
+            return ((self >= start) & (self < end)).alias("is_between")
         else:
-            expr = self
-        if isinstance(include_bounds, list):
-            warnings.warn(
-                "include_bounds: list[bool] will not be supported in a future "
-                "version; pass include_bounds: tuple[bool, bool] instead",
-                category=DeprecationWarning,
+            raise ValueError(
+                "closed must be one of {'left', 'right', 'both', 'none'},"
+                f" got {closed!r}"
             )
-            include_bounds = tuple(include_bounds)
-        if include_bounds is False or include_bounds == (False, False):
-            return ((expr > start) & (expr < end)).alias("is_between")
-        elif include_bounds is True or include_bounds == (True, True):
-            return ((expr >= start) & (expr <= end)).alias("is_between")
-        elif include_bounds == (False, True):
-            return ((expr > start) & (expr <= end)).alias("is_between")
-        elif include_bounds == (True, False):
-            return ((expr >= start) & (expr < end)).alias("is_between")
-        else:
-            raise ValueError("include_bounds should be a bool or tuple[bool, bool].")
 
     def hash(
         self,
@@ -3634,18 +3507,16 @@ class Expr:
         ...         "b": ["x", None, "z"],
         ...     }
         ... )
-        >>> df.with_column(pl.all().hash(10, 20, 30, 40))
+        >>> df.with_columns(pl.all().hash(10, 20, 30, 40))  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌──────────────────────┬──────────────────────┐
         │ a                    ┆ b                    │
         │ ---                  ┆ ---                  │
         │ u64                  ┆ u64                  │
         ╞══════════════════════╪══════════════════════╡
-        │ 4629889412789719550  ┆ 6959506404929392568  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 16386608652769605760 ┆ 11638928888656214026 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 11638928888656214026 ┆ 11040941213715918520 │
+        │ 9774092659964970114  ┆ 13614470193936745724 │
+        │ 1101441246220388612  ┆ 11638928888656214026 │
+        │ 11638928888656214026 ┆ 13382926553367784577 │
         └──────────────────────┴──────────────────────┘
 
         """
@@ -3684,9 +3555,7 @@ class Expr:
         │ i64           ┆ u64      │
         ╞═══════════════╪══════════╡
         │ 1             ┆ 1        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 1             ┆ 1        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
 
@@ -3715,9 +3584,7 @@ class Expr:
         │ i64 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 2   │
-        ├╌╌╌╌╌┤
         │ 4   │
         └─────┘
 
@@ -3729,11 +3596,16 @@ class Expr:
 
         return self.map(inspect, return_dtype=None, agg_list=True)
 
-    def interpolate(self) -> Expr:
+    def interpolate(self, method: InterpolationMethod = "linear") -> Expr:
         """
         Fill nulls with linear interpolation over missing values.
 
         Can also be used to regrid data to a new grid - see examples below.
+
+        Parameters
+        ----------
+        method : {'linear', 'linear'}
+            Interpolation method
 
         Examples
         --------
@@ -3752,9 +3624,7 @@ class Expr:
         │ i64 ┆ f64 │
         ╞═════╪═════╡
         │ 1   ┆ 1.0 │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2   ┆ NaN │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 3   ┆ 3.0 │
         └─────┴─────┘
         >>> df_original_grid = pl.DataFrame(
@@ -3767,7 +3637,7 @@ class Expr:
         >>> (
         ...     df_new_grid.join(
         ...         df_original_grid, on="grid_points", how="left"
-        ...     ).with_column(pl.col("values").interpolate())
+        ...     ).with_columns(pl.col("values").interpolate())
         ... )
         shape: (10, 2)
         ┌─────────────┬────────┐
@@ -3776,35 +3646,27 @@ class Expr:
         │ i64         ┆ f64    │
         ╞═════════════╪════════╡
         │ 1           ┆ 2.0    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 2           ┆ 4.0    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 3           ┆ 6.0    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 4           ┆ 8.0    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ ...         ┆ ...    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 7           ┆ 14.0   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 8           ┆ 16.0   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 9           ┆ 18.0   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 10          ┆ 20.0   │
         └─────────────┴────────┘
 
         """
-        return wrap_expr(self._pyexpr.interpolate())
+        return wrap_expr(self._pyexpr.interpolate(method))
 
     def rolling_min(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -3817,7 +3679,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3831,8 +3693,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -3846,7 +3708,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -3876,15 +3738,10 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 1.0  │
-        ├╌╌╌╌╌╌┤
         │ 2.0  │
-        ├╌╌╌╌╌╌┤
         │ 3.0  │
-        ├╌╌╌╌╌╌┤
         │ 4.0  │
-        ├╌╌╌╌╌╌┤
         │ 5.0  │
         └──────┘
 
@@ -3900,12 +3757,12 @@ class Expr:
 
     def rolling_max(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -3918,7 +3775,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3932,8 +3789,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -3943,11 +3800,11 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal, for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -3977,15 +3834,10 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 2.0  │
-        ├╌╌╌╌╌╌┤
         │ 3.0  │
-        ├╌╌╌╌╌╌┤
         │ 4.0  │
-        ├╌╌╌╌╌╌┤
         │ 5.0  │
-        ├╌╌╌╌╌╌┤
         │ 6.0  │
         └──────┘
 
@@ -4001,12 +3853,12 @@ class Expr:
 
     def rolling_mean(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -4019,7 +3871,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4033,8 +3885,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4048,7 +3900,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4076,15 +3928,10 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 4.5  │
-        ├╌╌╌╌╌╌┤
         │ 7.0  │
-        ├╌╌╌╌╌╌┤
         │ 4.0  │
-        ├╌╌╌╌╌╌┤
         │ 9.0  │
-        ├╌╌╌╌╌╌┤
         │ 13.0 │
         └──────┘
 
@@ -4100,12 +3947,12 @@ class Expr:
 
     def rolling_sum(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -4118,7 +3965,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4132,8 +3979,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
@@ -4147,7 +3994,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4177,15 +4024,10 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 3.0  │
-        ├╌╌╌╌╌╌┤
         │ 5.0  │
-        ├╌╌╌╌╌╌┤
         │ 7.0  │
-        ├╌╌╌╌╌╌┤
         │ 9.0  │
-        ├╌╌╌╌╌╌┤
         │ 11.0 │
         └──────┘
 
@@ -4201,12 +4043,12 @@ class Expr:
 
     def rolling_std(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Compute a rolling standard deviation.
@@ -4219,7 +4061,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4233,8 +4075,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4248,7 +4090,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4278,15 +4120,10 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.527525 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2.0      │
         └──────────┘
 
@@ -4302,12 +4139,12 @@ class Expr:
 
     def rolling_var(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Compute a rolling variance.
@@ -4320,7 +4157,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4334,8 +4171,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4349,7 +4186,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4379,15 +4216,10 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2.333333 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 4.0      │
         └──────────┘
 
@@ -4403,12 +4235,12 @@ class Expr:
 
     def rolling_median(
         self,
-        window_size: int | str,
+        window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Compute a rolling median.
@@ -4417,7 +4249,7 @@ class Expr:
         ----------
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4431,8 +4263,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4446,7 +4278,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4476,15 +4308,10 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 2.0  │
-        ├╌╌╌╌╌╌┤
         │ 3.0  │
-        ├╌╌╌╌╌╌┤
         │ 4.0  │
-        ├╌╌╌╌╌╌┤
         │ 6.0  │
         └──────┘
 
@@ -4501,13 +4328,13 @@ class Expr:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: InterpolationMethod = "nearest",
-        window_size: int | str = 2,
+        interpolation: RollingInterpolationMethod = "nearest",
+        window_size: int | timedelta | str = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedWindow = "left",
+        closed: ClosedInterval = "left",
     ) -> Expr:
         """
         Compute a rolling quantile.
@@ -4520,7 +4347,7 @@ class Expr:
             Interpolation method.
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by the following string language:
+            size indicated by a timedelta or the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -4534,8 +4361,8 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must
-            also be set.
+            If a timedelta or the dynamic string language is used, the `by`
+            and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -4549,7 +4376,7 @@ class Expr:
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
-            Define whether the temporal window interval is closed or not.
+            Define which sides of the temporal interval are closed (inclusive).
 
         Warnings
         --------
@@ -4579,15 +4406,10 @@ class Expr:
         │ f64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 1.0  │
-        ├╌╌╌╌╌╌┤
         │ 2.0  │
-        ├╌╌╌╌╌╌┤
         │ 3.0  │
-        ├╌╌╌╌╌╌┤
         │ 4.0  │
         └──────┘
 
@@ -4662,13 +4484,9 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 4.358899 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 4.041452 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 5.567764 │
         └──────────┘
 
@@ -4688,9 +4506,9 @@ class Expr:
         Parameters
         ----------
         window_size
-            Size of the rolling window
+            Integer size of the rolling window.
         bias
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         """
         return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
@@ -4716,11 +4534,8 @@ class Expr:
         │ f64 │
         ╞═════╡
         │ 1.0 │
-        ├╌╌╌╌╌┤
         │ 0.0 │
-        ├╌╌╌╌╌┤
         │ 1.0 │
-        ├╌╌╌╌╌┤
         │ 2.0 │
         └─────┘
 
@@ -4760,9 +4575,7 @@ class Expr:
         │ u32 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 0   │
-        ├╌╌╌╌╌┤
         │ 2   │
         └─────┘
 
@@ -4809,13 +4622,9 @@ class Expr:
         │ f32 │
         ╞═════╡
         │ 3.0 │
-        ├╌╌╌╌╌┤
         │ 4.5 │
-        ├╌╌╌╌╌┤
         │ 1.5 │
-        ├╌╌╌╌╌┤
         │ 1.5 │
-        ├╌╌╌╌╌┤
         │ 4.5 │
         └─────┘
 
@@ -4830,13 +4639,9 @@ class Expr:
         │ u32 │
         ╞═════╡
         │ 3   │
-        ├╌╌╌╌╌┤
         │ 4   │
-        ├╌╌╌╌╌┤
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 2   │
-        ├╌╌╌╌╌┤
         │ 5   │
         └─────┘
 
@@ -4869,9 +4674,7 @@ class Expr:
         │ i64  │
         ╞══════╡
         │ null │
-        ├╌╌╌╌╌╌┤
         │ -10  │
-        ├╌╌╌╌╌╌┤
         │ 20   │
         └──────┘
 
@@ -4899,7 +4702,7 @@ class Expr:
         ...         "a": [10, 11, 12, None, 12],
         ...     }
         ... )
-        >>> df.with_column(pl.col("a").pct_change().alias("pct_change"))
+        >>> df.with_columns(pl.col("a").pct_change().alias("pct_change"))
         shape: (5, 2)
         ┌──────┬────────────┐
         │ a    ┆ pct_change │
@@ -4907,13 +4710,9 @@ class Expr:
         │ i64  ┆ f64        │
         ╞══════╪════════════╡
         │ 10   ┆ null       │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 11   ┆ 0.1        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 12   ┆ 0.090909   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ 0.0        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 12   ┆ 0.0        │
         └──────┴────────────┘
 
@@ -4936,7 +4735,7 @@ class Expr:
         Parameters
         ----------
         bias : bool, optional
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         Notes
         -----
@@ -4992,7 +4791,7 @@ class Expr:
             If True, Fisher's definition is used (normal ==> 0.0). If False,
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
-            If False, then the calculations are corrected for statistical bias.
+            If False, the calculations are corrected for statistical bias.
 
         Examples
         --------
@@ -5029,7 +4828,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip(1, 10).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip(1, 10).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
@@ -5037,11 +4836,8 @@ class Expr:
         │ i64  ┆ i64         │
         ╞══════╪═════════════╡
         │ -50  ┆ 1           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5    ┆ 5           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ null        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 50   ┆ 10          │
         └──────┴─────────────┘
 
@@ -5065,7 +4861,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip_min(0).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip_min(0).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
@@ -5073,11 +4869,8 @@ class Expr:
         │ i64  ┆ i64         │
         ╞══════╪═════════════╡
         │ -50  ┆ 0           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5    ┆ 5           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ null        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 50   ┆ 50          │
         └──────┴─────────────┘
 
@@ -5101,7 +4894,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip_max(0).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip_max(0).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
@@ -5109,11 +4902,8 @@ class Expr:
         │ i64  ┆ i64         │
         ╞══════╪═════════════╡
         │ -50  ┆ -50         │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5    ┆ 0           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ null        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 50   ┆ 0           │
         └──────┴─────────────┘
 
@@ -5170,6 +4960,14 @@ class Expr:
         """
         Compute the element-wise indication of the sign.
 
+        The returned values can be -1, 0, or 1:
+
+        * -1 if x  < 0.
+        *  0 if x == 0.
+        *  1 if x  > 0.
+
+        (null values are preserved as-is).
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, None]})
@@ -5181,13 +4979,9 @@ class Expr:
         │ i64  │
         ╞══════╡
         │ -1   │
-        ├╌╌╌╌╌╌┤
         │ 0    │
-        ├╌╌╌╌╌╌┤
         │ 0    │
-        ├╌╌╌╌╌╌┤
         │ 1    │
-        ├╌╌╌╌╌╌┤
         │ null │
         └──────┘
 
@@ -5510,9 +5304,7 @@ class Expr:
         │ list[i64] │
         ╞═══════════╡
         │ [1, 2, 3] │
-        ├╌╌╌╌╌╌╌╌╌╌╌┤
         │ [4, 5, 6] │
-        ├╌╌╌╌╌╌╌╌╌╌╌┤
         │ [7, 8, 9] │
         └───────────┘
 
@@ -5521,7 +5313,7 @@ class Expr:
 
     def shuffle(self, seed: int | None = None) -> Expr:
         """
-        Shuffle the contents of this expr.
+        Shuffle the contents of this expression.
 
         Parameters
         ----------
@@ -5540,9 +5332,7 @@ class Expr:
         │ i64 │
         ╞═════╡
         │ 2   │
-        ├╌╌╌╌╌┤
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 3   │
         └─────┘
 
@@ -5551,20 +5341,22 @@ class Expr:
             seed = random.randint(0, 10000)
         return wrap_expr(self._pyexpr.shuffle(seed))
 
-    @deprecated_alias(fraction="frac")
     def sample(
         self,
+        n: int | None = None,
         frac: float | None = None,
-        with_replacement: bool = True,
+        with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
-        n: int | None = None,
     ) -> Expr:
         """
         Sample from this expression.
 
         Parameters
         ----------
+        n
+            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
+            `frac` is None.
         frac
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
@@ -5573,9 +5365,7 @@ class Expr:
             Shuffle the order of sampled data points.
         seed
             Seed for the random number generator. If set to None (default), a random
-            seed is used.
-        n
-            Number of items to return. Cannot be used with `frac`.
+            seed is generated using the ``random`` module.
 
         Examples
         --------
@@ -5588,32 +5378,25 @@ class Expr:
         │ i64 │
         ╞═════╡
         │ 3   │
-        ├╌╌╌╌╌┤
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 1   │
         └─────┘
 
         """
-        warn(
-            "The function signature for Expr.sample will change in a future"
-            " version. Explicitly set `frac` and `with_replacement` using keyword"
-            " arguments to retain the same behaviour.",
-            FutureWarning,
-            stacklevel=2,
-        )
-
         if n is not None and frac is not None:
             raise ValueError("cannot specify both `n` and `frac`")
 
-        if n is not None and frac is None:
-            return wrap_expr(self._pyexpr.sample_n(n, with_replacement, shuffle, seed))
+        if seed is None:
+            seed = random.randint(0, 10000)
 
-        if frac is None:
-            frac = 1.0
-        return wrap_expr(
-            self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
-        )
+        if frac is not None:
+            return wrap_expr(
+                self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
+            )
+
+        if n is None:
+            n = 1
+        return wrap_expr(self._pyexpr.sample_n(n, with_replacement, shuffle, seed))
 
     def ewm_mean(
         self,
@@ -5674,9 +5457,7 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.666667 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2.428571 │
         └──────────┘
 
@@ -5747,9 +5528,7 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ 0.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 0.707107 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 0.963624 │
         └──────────┘
 
@@ -5820,9 +5599,7 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ 0.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 0.5      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 0.928571 │
         └──────────┘
 
@@ -5830,17 +5607,19 @@ class Expr:
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, bias, min_periods))
 
-    def extend_constant(self, value: int | float | str | bool | None, n: int) -> Expr:
+    def extend_constant(
+        self, value: int | float | str | bool | date | None, n: int
+    ) -> Expr:
         """
         Extend the Series with given number of values.
 
         Parameters
         ----------
         value
-            The value to extend the Series with. This value may be None to fill with
-            nulls.
+            A constant literal value (not an expression) with which to extend the
+            Series; can pass None to fill the Series with nulls.
         n
-            The number of values to extend.
+            The number of additional values that will be added into the Series.
 
         Examples
         --------
@@ -5853,17 +5632,15 @@ class Expr:
         │ i64    │
         ╞════════╡
         │ 1      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 2      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 3      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 99     │
-        ├╌╌╌╌╌╌╌╌┤
         │ 99     │
         └────────┘
 
         """
+        if isinstance(value, Expr):
+            raise TypeError(f"'value' must be a supported literal; found {value!r}")
         return wrap_expr(self._pyexpr.extend_constant(value, n))
 
     def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Expr:
@@ -5901,9 +5678,7 @@ class Expr:
         │ struct[2] │
         ╞═══════════╡
         │ {"c",3}   │
-        ├╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"b",2}   │
-        ├╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"a",1}   │
         └───────────┘
 
@@ -5936,9 +5711,7 @@ class Expr:
         │ u32 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 2   │
-        ├╌╌╌╌╌┤
         │ 3   │
         └─────┘
 
@@ -5965,9 +5738,7 @@ class Expr:
         │ f64      │
         ╞══════════╡
         │ 0.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.584963 │
         └──────────┘
 
@@ -6054,13 +5825,9 @@ class Expr:
         │ f64    │
         ╞════════╡
         │ 0.0    │
-        ├╌╌╌╌╌╌╌╌┤
         │ -3.0   │
-        ├╌╌╌╌╌╌╌╌┤
         │ -8.0   │
-        ├╌╌╌╌╌╌╌╌┤
         │ -15.0  │
-        ├╌╌╌╌╌╌╌╌┤
         │ -24.0  │
         └────────┘
 
@@ -6099,7 +5866,7 @@ class Expr:
         └────────┘
 
         """
-        return self.map(lambda s: s.set_sorted(reverse))
+        return wrap_expr(self._pyexpr.set_sorted_flag(reverse))
 
     # Keep the `list` and `str` methods below at the end of the definition of Expr,
     # as to not confuse mypy with the type annotation `str` and `list`
@@ -6157,16 +5924,14 @@ class Expr:
         │ i8  ┆ i64        ┆ i32        ┆ i8   ┆ i16  ┆ str ┆ f32  ┆ bool  │
         ╞═════╪════════════╪════════════╪══════╪══════╪═════╪══════╪═══════╡
         │ 1   ┆ 1          ┆ -1         ┆ -112 ┆ -112 ┆ a   ┆ 0.1  ┆ true  │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 2   ┆ 2          ┆ 2          ┆ 2    ┆ 2    ┆ b   ┆ 1.32 ┆ null  │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 3   ┆ 8589934592 ┆ 1073741824 ┆ 112  ┆ 129  ┆ c   ┆ 0.12 ┆ false │
         └─────┴────────────┴────────────┴──────┴──────┴─────┴──────┴───────┘
 
         """
         return wrap_expr(self._pyexpr.shrink_dtype())
 
-    @accessor
+    @property
     def arr(self) -> ExprListNameSpace:
         """
         Create an object namespace of all list related methods.
@@ -6176,7 +5941,7 @@ class Expr:
         """
         return ExprListNameSpace(self)
 
-    @accessor
+    @property
     def cat(self) -> ExprCatNameSpace:
         """
         Create an object namespace of all categorical related methods.
@@ -6196,19 +5961,18 @@ class Expr:
         │ cat    │
         ╞════════╡
         │ a      │
-        ├╌╌╌╌╌╌╌╌┤
         │ b      │
         └────────┘
 
         """
         return ExprCatNameSpace(self)
 
-    @accessor
+    @property
     def dt(self) -> ExprDateTimeNameSpace:
         """Create an object namespace of all datetime related methods."""
         return ExprDateTimeNameSpace(self)
 
-    @accessor
+    @property
     def meta(self) -> ExprMetaNameSpace:
         """
         Create an object namespace of all meta related expression methods.
@@ -6218,7 +5982,7 @@ class Expr:
         """
         return ExprMetaNameSpace(self)
 
-    @accessor
+    @property
     def str(self) -> ExprStringNameSpace:
         """
         Create an object namespace of all string related methods.
@@ -6236,14 +6000,22 @@ class Expr:
         │ str     │
         ╞═════════╡
         │ A       │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ B       │
         └─────────┘
 
         """
         return ExprStringNameSpace(self)
 
-    @accessor
+    @property
+    def bin(self) -> ExprBinaryNameSpace:
+        """
+        Create an object namespace of all binary related methods.
+
+        See the individual method pages for full details
+        """
+        return ExprBinaryNameSpace(self)
+
+    @property
     def struct(self) -> ExprStructNameSpace:
         """
         Create an object namespace of all struct related methods.
@@ -6272,7 +6044,6 @@ class Expr:
         │ str │
         ╞═════╡
         │ a   │
-        ├╌╌╌╌╌┤
         │ b   │
         └─────┘
 
@@ -6316,13 +6087,15 @@ def _prepare_alpha(
 
 
 def _prepare_rolling_window_args(
-    window_size: int | str,
+    window_size: int | timedelta | str,
     min_periods: int | None = None,
 ) -> tuple[str, int]:
     if isinstance(window_size, int):
         if min_periods is None:
             min_periods = window_size
         window_size = f"{window_size}i"
+    elif isinstance(window_size, timedelta):
+        window_size = _timedelta_to_pl_duration(window_size)
     if min_periods is None:
         min_periods = 1
     return window_size, min_periods
