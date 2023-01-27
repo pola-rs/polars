@@ -2481,9 +2481,52 @@ def test_with_columns() -> None:
     )
     assert_frame_equal(dx, expected)
 
-    # at least one of exprs/**named_exprs required
+    # automatically upconvert multi-output expressions to struct
+    ldf = (
+        pl.DataFrame({"x1": [1, 2, 6], "x2": [1, 2, 3]})
+        .lazy()
+        .with_columns(
+            pct_change=pl.col(["x1", "x2"]).pct_change(),
+            maxes=pl.all().max().suffix("_max"),
+            xcols=pl.col("^x.*$"),
+        )
+    )
+    # ┌─────┬─────┬─────────────┬───────────┬───────────┐
+    # │ x1  ┆ x2  ┆ pct_change  ┆ maxes     ┆ xcols     │
+    # │ --- ┆ --- ┆ ---         ┆ ---       ┆ ---       │
+    # │ i64 ┆ i64 ┆ struct[2]   ┆ struct[2] ┆ struct[2] │
+    # ╞═════╪═════╪═════════════╪═══════════╪═══════════╡
+    # │ 1   ┆ 1   ┆ {null,null} ┆ {6,3}     ┆ {1,1}     │
+    # │ 2   ┆ 2   ┆ {1.0,1.0}   ┆ {6,3}     ┆ {2,2}     │
+    # │ 6   ┆ 3   ┆ {2.0,0.5}   ┆ {6,3}     ┆ {6,3}     │
+    # └─────┴─────┴─────────────┴───────────┴───────────┘
+    assert ldf.collect().to_dicts() == [
+        {
+            "x1": 1,
+            "x2": 1,
+            "pct_change": {"x1": None, "x2": None},
+            "maxes": {"x1_max": 6, "x2_max": 3},
+            "xcols": {"x1": 1, "x2": 1},
+        },
+        {
+            "x1": 2,
+            "x2": 2,
+            "pct_change": {"x1": 1.0, "x2": 1.0},
+            "maxes": {"x1_max": 6, "x2_max": 3},
+            "xcols": {"x1": 2, "x2": 2},
+        },
+        {
+            "x1": 6,
+            "x2": 3,
+            "pct_change": {"x1": 2.0, "x2": 0.5},
+            "maxes": {"x1_max": 6, "x2_max": 3},
+            "xcols": {"x1": 6, "x2": 3},
+        },
+    ]
+
+    # require at least one of exprs / **named_exprs
     with pytest.raises(ValueError):
-        _ = df.with_columns()
+        _ = ldf.with_columns()
 
 
 def test_len_compute(df: pl.DataFrame) -> None:

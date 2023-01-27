@@ -2454,7 +2454,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     }
         ... ).lazy()
 
-        Passing in a single expression, adding the column as we give it a new name:
+        Passing in a single expression, adding (and naming) a new column:
 
         >>> ldf.with_columns((pl.col("a") ** 2).alias("a^2")).collect()
         shape: (4, 4)
@@ -2469,8 +2469,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
         └─────┴──────┴───────┴──────┘
 
-        We can also override a column, by giving the expression a name that already
-        exists:
+        We can also override an existing column by giving the expression
+        a name that already exists:
 
         >>> ldf.with_columns((pl.col("a") ** 2).alias("c")).collect()
         shape: (4, 3)
@@ -2485,7 +2485,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ 16.0 │
         └─────┴──────┴──────┘
 
-        Passing in multiple expressions as a list:
+        Multiple expressions can be passed in as both a list...
 
         >>> ldf.with_columns(
         ...     [
@@ -2506,17 +2506,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        Support for kwarg expressions is considered EXPERIMENTAL. Currently
-        requires opt-in via `pl.Config` boolean flag:
+        ...or via kwarg expressions:
 
-        >>> pl.Config.with_columns_kwargs = True
         >>> ldf.with_columns(
-        ...     d=pl.col("a") * pl.col("b"),
-        ...     e=pl.col("c").is_not(),
+        ...     ab=pl.col("a") * pl.col("b"),
+        ...     not_c=pl.col("c").is_not(),
         ... ).collect()
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ d    ┆ e     │
+        │ a   ┆ b    ┆ c     ┆ ab   ┆ not_c │
         │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
         │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  │
         ╞═════╪══════╪═══════╪══════╪═══════╡
@@ -2525,6 +2523,24 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  │
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
+
+        Note that, when using kwarg syntax, expressions with multiple
+        outputs are automatically instantiated as Struct columns:
+
+        >>> ldf.drop("c").with_columns(
+        ...     diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
+        ... ).collect()
+        shape: (4, 3)
+        ┌─────┬──────┬─────────────┐
+        │ a   ┆ b    ┆ diffs       │
+        │ --- ┆ ---  ┆ ---         │
+        │ i64 ┆ f64  ┆ struct[2]   │
+        ╞═════╪══════╪═════════════╡
+        │ 1   ┆ 0.5  ┆ {null,null} │
+        │ 2   ┆ 4.0  ┆ {1,3.5}     │
+        │ 3   ┆ 10.0 ┆ {1,6.0}     │
+        │ 4   ┆ 13.0 ┆ {1,3.0}     │
+        └─────┴──────┴─────────────┘
 
         """
         if named_exprs and not Config.with_columns_kwargs:
@@ -2545,7 +2561,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             exprs = list(exprs)
 
         exprs.extend(
-            pli.expr_to_lit_or_expr(expr).alias(name)
+            pli.expr_to_lit_or_expr(expr, structify=True).alias(name)
             for name, expr in named_exprs.items()
         )
         pyexprs = []
