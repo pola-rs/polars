@@ -3154,39 +3154,6 @@ class Expr:
         │ b     ┆ [2, 3, 4] │
         └───────┴───────────┘
 
-        >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-        >>> df.select(pl.col("foo").flatten())
-        shape: (10, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ h   │
-        │ e   │
-        │ l   │
-        │ l   │
-        │ ... │
-        │ o   │
-        │ r   │
-        │ l   │
-        │ d   │
-        └─────┘
-
-        This example turns each word into a separate row:
-
-        >>> df = pl.DataFrame({"foo": ["hello world"]})
-        >>> df.select(pl.col("foo").str.split(by=" ").flatten())
-        shape: (2, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │ hello │
-        │ world │
-        └───────┘
-
         """
         return wrap_expr(self._pyexpr.explode())
 
