@@ -206,7 +206,11 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
             #[cfg(all(feature = "dtype-duration", feature = "dtype-datetime"))]
             (Duration(lu), Datetime(ru, Some(tz))) | (Datetime(lu, Some(tz)), Duration(ru)) => {
-                Some(Datetime(get_time_units(lu, ru), Some(tz.clone())))
+                if tz.is_empty() {
+                    Some(Datetime(get_time_units(lu, ru), None))
+                } else {
+                    Some(Datetime(get_time_units(lu, ru), Some(tz.clone())))
+                }
             }
             #[cfg(all(feature = "dtype-duration", feature = "dtype-datetime"))]
             (Duration(lu), Datetime(ru, None)) | (Datetime(lu, None), Duration(ru)) => {
