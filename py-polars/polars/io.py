@@ -29,8 +29,6 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltal
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
-
-
 from polars.utils import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
@@ -1001,9 +999,9 @@ def read_ndjson(file: str | Path | IOBase) -> DataFrame:
 
 
 def read_sql(
-    sql: list[str] | str,
+    sql: str | list[str],
     connection_uri: str,
-    engine: str = "connectorx",
+    engine: Literal["connectorx", "adbc"] = "connectorx",
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
@@ -1012,22 +1010,33 @@ def read_sql(
     """
     Read a SQL query into a DataFrame.
 
+    ConnectorX
     A range of databases are supported, such as PostgreSQL, Redshift, MySQL, MariaDB,
     Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
     please see the connectorx docs:
 
     * https://github.com/sfu-db/connector-x#supported-sources--destinations
 
+    ADBC
+    Currently just PostgreSQL and SQLite are supported and these are both in
+    development. When flight_sql is further in development and widely adopted this
+    will make this significantly better. For an up-to-date list
+    please see the adbc docs:
+
+    * https://arrow.apache.org/adbc/0.1.0/driver/cpp/index.html
+
     Parameters
     ----------
     sql
         Raw SQL query / queries.
     connection_uri
-        Connectorx connection uri, for example
+        Connection uri, for example
 
         * "postgresql://username:password@server:port/database"
     engine
         Select the engine used for reading the data from sql.
+
+        * "connectorx", "adbc"
     partition_on
         The column on which to partition the result.
     partition_range
@@ -1072,29 +1081,31 @@ def read_sql(
 
     """
     if engine == "connectorx":
-        return read_sql_connectorx(
+        return _read_sql_connectorx(
             connection_uri=connection_uri,
             sql=sql,
-            return_type="arrow2",
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,
             protocol=protocol,
         )
     elif engine == "adbc":
-        return read_sql_adbc(sql=sql, connection_uri=connection_uri)
+        if isinstance(sql, str):
+            return _read_sql_adbc(sql=sql, connection_uri=connection_uri)
+        else:
+            raise ValueError("Only a single SQL query string is accepted for adbc.")
     else:
         raise ValueError("Engine is not implemented, try either connectorx or adbc.")
 
 
-def read_sql_connectorx(
-    sql: list[str] | str,
+def _read_sql_connectorx(
+    sql: str | list[str],
     connection_uri: str,
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
-):
+) -> DataFrame:
     try:
         import connectorx as cx
     except ImportError:
@@ -1115,10 +1126,10 @@ def read_sql_connectorx(
     return cast(DataFrame, from_arrow(tbl))
 
 
-def read_sql_adbc(sql: list[str] | str, connection_uri: str):
-    if connection_uri.startswith("file"):
+def _read_sql_adbc(sql: str, connection_uri: str) -> DataFrame:
+    if connection_uri.startswith("sqlite"):
         try:
-            import adbc_driver_sqlite.dbapi as adbc
+            import adbc_driver_sqlite.dbapi as adbc  # type: ignore[import]
         except ImportError:
             raise ImportError(
                 "ADBC sqlite driver not detected. Please run `pip install "
@@ -1126,21 +1137,19 @@ def read_sql_adbc(sql: list[str] | str, connection_uri: str):
             ) from None
     elif connection_uri.startswith("postgres"):
         try:
-            import adbc_driver_postgresql.dbapi as adbc
+            import adbc_driver_postgresql.dbapi as adbc  # type: ignore[import]
         except ImportError:
             raise ImportError(
                 "ADBC postgresql driver not detected. Please run `pip install "
                 "adbc_driver_postgresql`."
-            )
+            ) from None
     else:
         raise ValueError("ADBC does not currently support this database.")
-
-    sql = [sql] if isinstance(str, sql) else sql
-
-    conn = adbc.connect(connection_uri)
-    cursor = conn.cursor()
-
-    tbl = [cursor.execute(sql).fetch_arrow_table() for sql in sql]
+    with adbc.connect(connection_uri) as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        tbl = cursor.fetch_arrow_table()
+        cursor.close()
     return cast(DataFrame, from_arrow(tbl))
 
 
