@@ -17,7 +17,6 @@ from polars.datatypes import (
     TEMPORAL_DTYPES,
 )
 from polars.testing import assert_series_equal
-from polars.testing._private import verify_series_and_expr_api
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
@@ -79,7 +78,7 @@ def test_min_nulls_consistency() -> None:
 def test_list_join_strings() -> None:
     s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
     expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
-    verify_series_and_expr_api(s, expected, "arr.join", "-")
+    assert_series_equal(s.arr.join("-"), expected)
 
 
 def test_count_expr() -> None:
@@ -137,10 +136,9 @@ def test_map_alias() -> None:
 
 
 def test_unique_stable() -> None:
-    a = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
+    s = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
     expected = pl.Series("a", [1, 2, 3])
-
-    verify_series_and_expr_api(a, expected, "unique", True)
+    assert_series_equal(s.unique(maintain_order=True), expected)
 
 
 def test_wildcard_expansion() -> None:
@@ -241,7 +239,7 @@ def test_unique_and_drop_stability() -> None:
 def test_unique_counts() -> None:
     s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
     expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
-    verify_series_and_expr_api(s, expected, "unique_counts")
+    assert_series_equal(s.unique_counts(), expected)
 
 
 def test_entropy() -> None:
