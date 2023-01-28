@@ -58,6 +58,20 @@ def test_list_arr_get() -> None:
     assert df.select([pl.col("cars").arr.get("indexes")]).to_dict(False) == {
         "cars": [2, 3, None, None]
     }
+    # exact on oob boundary
+    df = pl.DataFrame(
+        {
+            "index": [3, 3, 3],
+            "lists": [[3, 4, 5], [4, 5, 6], [7, 8, 9, 4]],
+        }
+    )
+
+    assert df.select(pl.col("lists").arr.get(3)).to_dict(False) == {
+        "lists": [None, None, 4]
+    }
+    assert df.select(pl.col("lists").arr.get(pl.col("index"))).to_dict(False) == {
+        "lists": [None, None, 4]
+    }
 
 
 def test_contains() -> None:
