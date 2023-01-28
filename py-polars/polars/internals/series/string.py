@@ -178,7 +178,7 @@ class StringNameSpace:
         """
 
     def contains(
-        self, pattern: str, literal: bool = False, strict: bool = True
+        self, pattern: str | pli.Expr, literal: bool = False, strict: bool = True
     ) -> pli.Series:
         """
         Check if strings in Series contain a substring that matches a regex.
@@ -221,7 +221,7 @@ class StringNameSpace:
 
         """
 
-    def ends_with(self, sub: str) -> pli.Series:
+    def ends_with(self, sub: str | pli.Expr) -> pli.Series:
         """
         Check if string values end with a substring.
 
@@ -249,7 +249,7 @@ class StringNameSpace:
 
         """
 
-    def starts_with(self, sub: str) -> pli.Series:
+    def starts_with(self, sub: str | pli.Expr) -> pli.Series:
         """
         Check if string values start with a substring.
 
