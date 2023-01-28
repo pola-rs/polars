@@ -670,3 +670,28 @@ def test_fast_explode_on_list_struct_6208() -> None:
             {"ref": None, "tag": None, "ratio": None},
         ],
     }
+
+
+def test_concat_list_in_agg_6397() -> None:
+    df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
+
+    # single list
+    assert df.groupby("group").agg(
+        [
+            # this casts every element to a list
+            pl.concat_list(pl.col("value")),
+        ]
+    ).sort("group").to_dict(False) == {
+        "group": [1, 2, 3],
+        "value": [[["a"]], [["b"], ["c"]], [["d"]]],
+    }
+
+    # nested list
+    assert df.groupby("group").agg(
+        [
+            pl.concat_list(pl.col("value").list()).alias("result"),
+        ]
+    ).sort("group").to_dict(False) == {
+        "group": [1, 2, 3],
+        "result": [[["a"]], [["b", "c"]], [["d"]]],
+    }
