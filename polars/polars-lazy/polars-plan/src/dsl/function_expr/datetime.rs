@@ -146,10 +146,7 @@ pub(super) fn cast_timezone(s: &Series, tz: &str) -> PolarsResult<Series> {
 pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
     let ca = s.datetime()?.clone();
     match ca.time_zone() {
-        Some(tz) if tz == "UTC" => {
-           Ok(ca.with_time_zone(Some("UTC".into()))?.into_series())
-        }
-        Some(tz) if !tz.is_empty() => {
+        Some(old_tz) if !old_tz.is_empty() => {
             Err(PolarsError::ComputeError("Cannot localize a tz-aware datetime. Consider using 'dt.with_time_zone' or 'dt.cast_time_zone'".into()))
         },
         _ => {
