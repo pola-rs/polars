@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import reduce
 from typing import Any
 
 import polars.internals as pli
@@ -378,18 +377,6 @@ def raise_assert_detail(
 [right]: {right}"""
 
     raise AssertionError(msg)
-
-
-def _getattr_multi(obj: object, op: str) -> Any:
-    """
-    Allow `op` to be multiple layers deep.
-
-    For example, op="str.lengths" will mean we first get the attribute "str", and then
-    the attribute "lengths".
-
-    """
-    op_list = op.split(".")
-    return reduce(lambda o, m: getattr(o, m), op_list, obj)
 
 
 def is_categorical_dtype(data_type: Any) -> bool:
