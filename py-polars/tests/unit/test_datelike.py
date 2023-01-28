@@ -2193,6 +2193,13 @@ def test_tz_localize_from_utc(time_zone: str) -> None:
         ts_utc.dt.tz_localize("America/Maceio")
 
 
+def test_unlocalize() -> None:
+    tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
+    tz_aware = tz_naive.dt.with_time_zone("Europe/Brussels")
+    result = tz_aware.dt.cast_time_zone(None).item()
+    assert result == datetime(2020, 1, 1, 4)
+
+
 def test_tz_aware_truncate() -> None:
     test = pl.DataFrame(
         {
