@@ -1015,6 +1015,7 @@ def read_ndjson(file: str | Path | IOBase) -> DataFrame:
 def read_sql(
     sql: list[str] | str,
     connection_uri: str,
+    engine: str = "connectorx",
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
@@ -1037,6 +1038,8 @@ def read_sql(
         Connectorx connection uri, for example
 
         * "postgresql://username:password@server:port/database"
+    engine
+        Select the engine used for reading the data from sql.
     partition_on
         The column on which to partition the result.
     partition_range
@@ -1103,6 +1106,19 @@ def read_sql(
         cursor = conn.cursor()
         cursor.execute(sql)
         tbl = cursor.fetch_arrow_table()
+    return cast(DataFrame, from_arrow(tbl))
+
+
+def read_sql_connectorx(
+    sql: list[str] | str,
+    connection_uri: str,
+    engine: str = "connectorx",
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+):
+    tbl = DataFrame()
     return cast(DataFrame, from_arrow(tbl))
 
 
