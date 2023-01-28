@@ -175,8 +175,8 @@ class GroupBy(Generic[DF]):
 
         For each color group sample two rows:
 
-        >>> (
-        ...     df.groupby("color").apply(lambda group_df: group_df.sample(2))
+        >>> df.groupby("color").apply(
+        ...     lambda group_df: group_df.sample(2)
         ... )  # doctest: +IGNORE_RESULT
         shape: (4, 3)
         ┌─────┬───────┬──────────┐
@@ -192,8 +192,8 @@ class GroupBy(Generic[DF]):
 
         It is better to implement this with an expression:
 
-        >>> (
-        ...     df.filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        >>> df.filter(
+        ...     pl.arange(0, pl.count()).shuffle().over("color") < 2
         ... )  # doctest: +IGNORE_RESULT
 
         """
@@ -339,7 +339,7 @@ class GroupBy(Generic[DF]):
         │ a       ┆ 5   │
         │ b       ┆ 6   │
         └─────────┴─────┘
-        >>> (df.groupby("letters").tail(2).sort("letters"))
+        >>> df.groupby("letters").tail(2).sort("letters")
         shape: (5, 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │

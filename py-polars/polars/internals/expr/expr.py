@@ -1170,8 +1170,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> # Create a Series with 3 nulls, append column a then rechunk
-        >>> (df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()))
+
+        Create a Series with 3 nulls, append column a then rechunk
+
+        >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)
         ┌─────────┐
         │ literal │
@@ -2695,11 +2697,7 @@ class Expr:
         ...         "values": [1, 2, 3],
         ...     }
         ... )
-        >>> (
-        ...     df.with_columns(
-        ...         pl.col("values").max().over("groups").alias("max_by_group")
-        ...     )
-        ... )
+        >>> df.with_columns(pl.col("values").max().over("groups").alias("max_by_group"))
         shape: (3, 3)
         ┌────────┬────────┬──────────────┐
         │ groups ┆ values ┆ max_by_group │
@@ -2716,15 +2714,9 @@ class Expr:
         ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
         ...     }
         ... )
-        >>> (
-        ...     df.lazy()
-        ...     .select(
-        ...         [
-        ...             pl.col("groups").sum().over("groups"),
-        ...         ]
-        ...     )
-        ...     .collect()
-        ... )
+        >>> df.lazy().select(
+        ...     pl.col("groups").sum().over("groups"),
+        ... ).collect()
         shape: (9, 1)
         ┌────────┐
         │ groups │
@@ -2754,7 +2746,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> (df.select(pl.col("a").is_unique()))
+        >>> df.select(pl.col("a").is_unique())
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2784,7 +2776,7 @@ class Expr:
         ...         "num": [1, 2, 3, 1, 5],
         ...     }
         ... )
-        >>> (df.with_columns(pl.col("num").is_first().alias("is_first")))
+        >>> df.with_columns(pl.col("num").is_first().alias("is_first"))
         shape: (5, 2)
         ┌─────┬──────────┐
         │ num ┆ is_first │
@@ -2808,7 +2800,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> (df.select(pl.col("a").is_duplicated()))
+        >>> df.select(pl.col("a").is_duplicated())
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2841,7 +2833,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5]})
-        >>> (df.select(pl.col("a").quantile(0.3)))
+        >>> df.select(pl.col("a").quantile(0.3))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2850,7 +2842,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> (df.select(pl.col("a").quantile(0.3, interpolation="higher")))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2859,7 +2851,7 @@ class Expr:
         ╞═════╡
         │ 2.0 │
         └─────┘
-        >>> (df.select(pl.col("a").quantile(0.3, interpolation="lower")))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="lower"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2868,7 +2860,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> (df.select(pl.col("a").quantile(0.3, interpolation="midpoint")))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="midpoint"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2877,7 +2869,7 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        >>> (df.select(pl.col("a").quantile(0.3, interpolation="linear")))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="linear"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2911,13 +2903,11 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> (
-        ...     df.groupby("group_col").agg(
-        ...         [
-        ...             pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
-        ...             pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
-        ...         ]
-        ...     )
+        >>> df.groupby("group_col").agg(
+        ...     [
+        ...         pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
+        ...         pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
+        ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
         ┌───────────┬──────┬─────┐
@@ -2951,13 +2941,11 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> (
-        ...     df.groupby("group_col").agg(
-        ...         [
-        ...             pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
-        ...             pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
-        ...         ]
-        ...     )
+        >>> df.groupby("group_col").agg(
+        ...     [
+        ...         pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
+        ...         pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
+        ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
         ┌───────────┬──────┬─────┐
@@ -3006,7 +2994,7 @@ class Expr:
         ...         "cosine": [1.0, 0.0, -1.0, 0.0],
         ...     }
         ... )
-        >>> (df.select(pl.all().map(lambda x: x.to_numpy().argmax())))
+        >>> df.select(pl.all().map(lambda x: x.to_numpy().argmax()))
         shape: (1, 2)
         ┌──────┬────────┐
         │ sine ┆ cosine │
@@ -3078,10 +3066,8 @@ class Expr:
 
         In a selection context, the function is applied by row.
 
-        >>> (
-        ...     df.with_columns(
-        ...         pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
-        ...     )
+        >>> df.with_columns(
+        ...     pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ... )
         shape: (4, 3)
         ┌─────┬─────┬───────────┐
@@ -3097,24 +3083,15 @@ class Expr:
 
         It is better to implement this with an expression:
 
-        >>> (
-        ...     df.with_columns(
-        ...         (pl.col("a") * 2).alias("a_times_2"),
-        ...     )
+        >>> df.with_columns(
+        ...     (pl.col("a") * 2).alias("a_times_2"),
         ... )  # doctest: +IGNORE_RESULT
 
         In a GroupBy context the function is applied by group:
 
-        >>> (
-        ...     df.lazy()
-        ...     .groupby("b", maintain_order=True)
-        ...     .agg(
-        ...         [
-        ...             pl.col("a").apply(lambda x: x.sum()),
-        ...         ]
-        ...     )
-        ...     .collect()
-        ... )
+        >>> df.lazy().groupby("b", maintain_order=True).agg(
+        ...     pl.col("a").apply(lambda x: x.sum())
+        ... ).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
@@ -3128,10 +3105,8 @@ class Expr:
 
         It is better to implement this with an expression:
 
-        >>> (
-        ...     df.groupby("b", maintain_order=True).agg(
-        ...         pl.col("a").sum(),
-        ...     )
+        >>> df.groupby("b", maintain_order=True).agg(
+        ...     pl.col("a").sum(),
         ... )  # doctest: +IGNORE_RESULT
 
         """
@@ -3343,7 +3318,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> (df.select([pl.col("optional_members").is_in("sets").alias("contains")]))
+        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
         shape: (3, 1)
         ┌──────────┐
         │ contains │
@@ -3636,11 +3611,9 @@ class Expr:
         ...     }
         ... )  # Interpolate from this to the new grid
         >>> df_new_grid = pl.DataFrame({"grid_points": range(1, 11)})
-        >>> (
-        ...     df_new_grid.join(
-        ...         df_original_grid, on="grid_points", how="left"
-        ...     ).with_columns(pl.col("values").interpolate())
-        ... )
+        >>> df_new_grid.join(
+        ...     df_original_grid, on="grid_points", how="left"
+        ... ).with_columns(pl.col("values").interpolate())
         shape: (10, 2)
         ┌─────────────┬────────┐
         │ grid_points ┆ values │
@@ -3726,12 +3699,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_min(window_size=2),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_min(window_size=2),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -3822,12 +3793,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_max(window_size=2),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_max(window_size=2),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -4012,12 +3981,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_sum(window_size=2),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_sum(window_size=2),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -4108,12 +4075,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_std(window_size=3),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_std(window_size=3),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────────┐
@@ -4204,12 +4169,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_var(window_size=3),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_var(window_size=3),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────────┐
@@ -4296,12 +4259,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_median(window_size=3),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_median(window_size=3),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -4394,12 +4355,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
