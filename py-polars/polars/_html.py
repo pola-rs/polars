@@ -134,21 +134,13 @@ class NotebookFormatter(HTMLFormatter):
     """
 
     def write_style(self) -> None:
-        # SNIPPET Forked from pandas.
-
         style = """\
             <style>
             .pl-dataframe > thead > tr > th {
               text-align: right;
             }
-            .pl-dataframe > tr > td {
-              padding-top: 0;
-              padding-bottom: 0,
-              line-height: 95%;
-            }
             </style>
         """
-
         self.write(dedent(style))
 
     def render(self) -> list[str]:
