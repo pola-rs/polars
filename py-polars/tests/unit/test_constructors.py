@@ -684,3 +684,18 @@ def test_from_records_nullable_structs() -> None:
                 [{"item_id": 100, "description": "hi"}],
             ],
         }
+
+
+def test_from_categorical_in_struct_defined_by_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                {"value": "foo", "counts": 1},
+                {"value": "bar", "counts": 2},
+            ]
+        },
+        schema={"a": pl.Struct({"value": pl.Categorical, "counts": pl.UInt32})},
+    )
+    out = df.unnest("a")
+    assert out.schema == {"value": pl.Categorical, "counts": pl.UInt32}
+    assert out.to_dict(False) == {"value": ["foo", "bar"], "counts": [1, 2]}
