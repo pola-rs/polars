@@ -153,11 +153,17 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> Polars
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
 fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> PolarsResult<()> {
+    let mut is_valid = true;
     for name in names {
         let mut new_expr = expr.clone();
         new_expr.mutate().apply(|e| {
-            if let Expr::Columns(_) = &e {
-                *e = Expr::Column(Arc::from(name.as_str()));
+            if let Expr::Columns(members) = &e {
+                // `col([a, b]) + col([c, d])`
+                if members == names {
+                    *e = Expr::Column(Arc::from(name.as_str()));
+                } else {
+                    is_valid = false;
+                }
             }
             // always keep iterating all inputs
             true
@@ -166,7 +172,13 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> Pola
         let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
     }
-    Ok(())
+    if is_valid {
+        Ok(())
+    } else {
+        Err(PolarsError::ComputeError(
+            "Expanding more than one `col` is not yet allowed.".into(),
+        ))
+    }
 }
 
 /// This replaces the dtypes Expr with a Column Expr. It also removes the Exclude Expr from the
