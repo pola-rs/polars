@@ -27,12 +27,13 @@ def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
     assert_frame_equal_local_categoricals(df, read_df)
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 @pytest.mark.parametrize("path_type", [str, Path])
 def test_from_to_file(
     df: pl.DataFrame, compression: IpcCompression, path_type: type[str] | type[Path]
 ) -> None:
+    if sys.platform == "win32" and compression == "uncompressed":
+        pytest.skip("Writing uncompressed IPC does not work on Windows")
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
         file_path_cast = path_type(file_path)
@@ -42,7 +43,10 @@ def test_from_to_file(
     assert_frame_equal_local_categoricals(df, df_read)
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    reason="Writing uncompressed IPC to disk does not work on Windows",
+)
 def test_select_columns_from_file(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
@@ -100,7 +104,6 @@ def test_ipc_schema(compression: IpcCompression) -> None:
     assert pl.read_ipc_schema(f) == expected
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 @pytest.mark.parametrize("path_type", [str, Path])
 def test_ipc_schema_from_file(
@@ -108,6 +111,8 @@ def test_ipc_schema_from_file(
     compression: IpcCompression,
     path_type: type[str] | type[Path],
 ) -> None:
+    if sys.platform == "win32" and compression == "uncompressed":
+        pytest.skip("Writing uncompressed IPC does not work on Windows")
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
         file_path_cast = path_type(file_path)
@@ -148,7 +153,10 @@ def test_ipc_column_order() -> None:
     assert pl.read_ipc(f, columns=columns).columns == columns
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    reason="Writing uncompressed IPC to disk does not work on Windows",
+)
 def test_glob_ipc(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
