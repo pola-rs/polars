@@ -71,7 +71,7 @@ pub fn rust_series_to_py_series(series: &Series) -> PyResult<PyObject> {
     let array = series.to_arrow(0);
 
     // acquire the gil
-    let gil = Python::acquire_gil();
+    let gil = Python::with_gil();
     let py = gil.python();
     // import pyarrow
     let pyarrow = py.import("pyarrow")?;
