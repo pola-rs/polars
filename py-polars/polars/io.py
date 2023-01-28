@@ -30,19 +30,7 @@ from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 
-try:
-    import adbc_driver_sqlite.dbapi as adbc_sqlite
 
-    _SQLITE = True
-except ImportError:
-    _SQLITE = False
-
-try:
-    import adbc_driver_postgresql.dbapi as adbc_postgres
-
-    _POSTGRES = True
-except ImportError:
-    _POSTGRES = False
 from polars.utils import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
@@ -1083,18 +1071,63 @@ def read_sql(
     >>> pl.read_sql(queries, uri)  # doctest: +SKIP
 
     """
+    if engine == "connectorx":
+        return read_sql_connectorx(
+            connection_uri=connection_uri,
+            sql=sql,
+            return_type="arrow2",
+            partition_on=partition_on,
+            partition_range=partition_range,
+            partition_num=partition_num,
+            protocol=protocol,
+        )
+    elif engine == "adbc":
+        return read_sql_adbc(sql=sql, connection_uri=connection_uri)
+    else:
+        raise ValueError("Engine is not implemented, try either connectorx or adbc.")
+
+
+def read_sql_connectorx(
+    sql: list[str] | str,
+    connection_uri: str,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+):
+    try:
+        import connectorx as cx
+    except ImportError:
+        raise ImportError(
+            "connectorx is not installed. Please run `pip install connectorx>=0.3.1`."
+        ) from None
+
+    tbl = cx.read_sql(
+        conn=connection_uri,
+        query=sql,
+        return_type="arrow2",
+        partition_on=partition_on,
+        partition_range=partition_range,
+        partition_num=partition_num,
+        protocol=protocol,
+    )
+
+    return cast(DataFrame, from_arrow(tbl))
+
+
+def read_sql_adbc(sql: list[str] | str, connection_uri: str):
     if connection_uri.startswith("file"):
-        if _SQLITE:
-            adbc = adbc_sqlite
-        else:
+        try:
+            import adbc_driver_sqlite.dbapi as adbc
+        except ImportError:
             raise ImportError(
                 "ADBC sqlite driver not detected. Please run `pip install "
                 "adbc_driver_sqlite`."
-            )
+            ) from None
     elif connection_uri.startswith("postgres"):
-        if _POSTGRES:
-            adbc = adbc_postgres
-        else:
+        try:
+            import adbc_driver_postgresql.dbapi as adbc
+        except ImportError:
             raise ImportError(
                 "ADBC postgresql driver not detected. Please run `pip install "
                 "adbc_driver_postgresql`."
@@ -1102,23 +1135,12 @@ def read_sql(
     else:
         raise ValueError("ADBC does not currently support this database.")
 
-    with adbc.connect(connection_uri) as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql)
-        tbl = cursor.fetch_arrow_table()
-    return cast(DataFrame, from_arrow(tbl))
+    sql = [sql] if isinstance(str, sql) else sql
 
+    conn = adbc.connect(connection_uri)
+    cursor = conn.cursor()
 
-def read_sql_connectorx(
-    sql: list[str] | str,
-    connection_uri: str,
-    engine: str = "connectorx",
-    partition_on: str | None = None,
-    partition_range: tuple[int, int] | None = None,
-    partition_num: int | None = None,
-    protocol: str | None = None,
-):
-    tbl = DataFrame()
+    tbl = [cursor.execute(sql).fetch_arrow_table() for sql in sql]
     return cast(DataFrame, from_arrow(tbl))
 
 
