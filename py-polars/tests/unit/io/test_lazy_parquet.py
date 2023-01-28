@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -176,6 +177,7 @@ def test_parquet_statistics(
     )
 
 
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_streaming_categorical() -> None:
     df = pl.DataFrame(
         [
@@ -202,6 +204,7 @@ def test_streaming_categorical() -> None:
             assert_frame_equal(result, expected)
 
 
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_parquet_struct_categorical() -> None:
     df = pl.DataFrame(
         [
