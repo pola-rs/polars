@@ -28,6 +28,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         tz_aware: bool = False,
+        utc: bool = False,
     ) -> pli.Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
@@ -54,6 +55,9 @@ class StringNameSpace:
         tz_aware
             Parse timezone aware datetimes. This may be automatically toggled by the
             'fmt' given.
+        utc
+            Parse timezone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
 
         Returns
         -------

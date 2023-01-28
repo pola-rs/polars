@@ -2658,3 +2658,40 @@ def test_infer_iso8601(iso8601_format: str) -> None:
         assert parsed.dt.nanosecond().item() == 123456000
     if "%3f" in iso8601_format:
         assert parsed.dt.nanosecond().item() == 123000000
+
+
+@pytest.mark.parametrize("fmt", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
+def test_crossing_dst(fmt: str) -> None:
+    ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
+    result = pl.Series(ts).str.strptime(pl.Datetime, fmt, utc=True)
+    assert result[0] == datetime(
+        2021, 3, 27, 22, 59, 59, tzinfo=zoneinfo.ZoneInfo(key="UTC")
+    )
+    assert result[1] == datetime(
+        2021, 3, 28, 21, 59, 59, tzinfo=zoneinfo.ZoneInfo(key="UTC")
+    )
+
+
+@pytest.mark.parametrize("fmt", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
+def test_crossing_dst_tz_aware(fmt: str) -> None:
+    ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
+    with pytest.raises(
+        ComputeError,
+        match=(
+            r"^Different timezones found during 'strptime' operation. "
+            "You might want to use `utc=True` and then set the time zone after parsing$"
+        ),
+    ):
+        pl.Series(ts).str.strptime(pl.Datetime, fmt, utc=False)
+
+
+def test_utc_with_tz_naive() -> None:
+    ts = ["2021-03-27T23:59:59", "2021-03-28T23:59:59"]
+    with pytest.raises(
+        ComputeError,
+        match=(
+            r"Cannot use 'utc=True' with tz-naive data. "
+            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\)"
+        ),
+    ):
+        pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%S", utc=True)
