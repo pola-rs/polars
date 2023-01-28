@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use polars_core::prelude::PlIndexSet;
-
 use super::*;
 
 fn get_upper_projections(
@@ -72,14 +70,14 @@ pub(super) fn set_cache_states(
 
             use ALogicalPlan::*;
             match lp {
-                // don't allow parallelism as caches need eachothers work
+                // don't allow parallelism as caches need each others work
                 // also self-referencing plans can deadlock on the files they lock
                 Join { options, .. } if has_caches && options.allow_parallel => {
                     if let Join { options, .. } = lp_arena.get_mut(current_node) {
                         options.allow_parallel = false;
                     }
                 }
-                // don't allow parallelism as caches need eachothers work
+                // don't allow parallelism as caches need each others work
                 // also self-referencing plans can deadlock on the files they lock
                 Union { options, .. } if has_caches && options.parallel => {
                     if let Union { options, .. } = lp_arena.get_mut(current_node) {
@@ -106,13 +104,9 @@ pub(super) fn set_cache_states(
                         // we never want to naively take parents, as a join or aggregate for instance
                         // change the schema
 
-                        let (children, union_names) =
-                            cache_schema_and_children.entry(*id).or_insert_with(|| {
-                                (
-                                    Vec::new(),
-                                    PlIndexSet::with_capacity_and_hasher(0, Default::default()),
-                                )
-                            });
+                        let (children, union_names) = cache_schema_and_children
+                            .entry(*id)
+                            .or_insert_with(|| (Vec::new(), PlHashSet::new()));
                         children.push(*input);
 
                         if let Some(names) =
@@ -149,15 +143,25 @@ pub(super) fn set_cache_states(
             let mut pd = ProjectionPushDown::new();
             for (_cache_id, (children, columns)) in cache_schema_and_children {
                 if !columns.is_empty() {
-                    let projection = columns
-                        .into_iter()
-                        .map(|name| expr_arena.add(AExpr::Column(name)))
-                        .collect::<Vec<_>>();
-
                     for child in children {
+                        let columns = &columns;
                         let child_lp = lp_arena.get(child).clone();
-                        let new_child = lp_arena.add(child_lp);
 
+                        // make sure we project in the order of the schema
+                        // if we don't a union may fail as we would project by the
+                        // order we discovered all values.
+                        let child_schema = child_lp.schema(lp_arena);
+                        let child_schema = child_schema.as_ref();
+                        let projection: Vec<_> = child_schema
+                            .iter_names()
+                            .flat_map(|name| {
+                                columns
+                                    .get(name.as_str())
+                                    .map(|name| expr_arena.add(AExpr::Column(name.clone())))
+                            })
+                            .collect();
+
+                        let new_child = lp_arena.add(child_lp);
                         let lp = ALogicalPlanBuilder::new(new_child, expr_arena, lp_arena)
                             .project(projection.clone())
                             .build();
