@@ -1305,7 +1305,7 @@ impl LazyGroupBy {
             .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
+        self.agg([col("*").exclude(&keys).head(n).keep_name()])
             .explode([col("*").exclude(&keys)])
     }
 

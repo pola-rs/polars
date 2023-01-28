@@ -200,6 +200,27 @@ impl Series {
                 // use null dtype here and fix tests
                 Series::full_null(name, av.len(), &DataType::Int32)
             }
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => {
+                let ca = if let Some(single_av) = av.first() {
+                    match single_av {
+                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) => any_values_to_utf8(av),
+                        _ => {
+                            return Err(PolarsError::ComputeError(
+                                format!(
+                                    "categorical dtype with AnyValues of dtype: {} not supported",
+                                    single_av.dtype()
+                                )
+                                .into(),
+                            ))
+                        }
+                    }
+                } else {
+                    Utf8Chunked::full("", "", 0)
+                };
+
+                ca.cast(&DataType::Categorical(None)).unwrap()
+            }
             dt => panic!("{dt:?} not supported"),
         };
         s.rename(name);

@@ -10,7 +10,7 @@ use crate::prelude::function_expr::FunctionExpr;
 macro_rules! eval_binary_same_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
-        return match (lit_left, lit_right) {
+        match (lit_left, lit_right) {
             (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
                 Some(AExpr::Literal(LiteralValue::Float32(x $operand y)))
             }
@@ -46,9 +46,10 @@ macro_rules! eval_binary_same_type {
                 Some(AExpr::Literal(LiteralValue::UInt64(x $operand y)))
             }
             _ => None,
-        };
+        }
+    } else {
+      None
     }
-    None
 
     }}
 }
@@ -56,7 +57,7 @@ macro_rules! eval_binary_same_type {
 macro_rules! eval_binary_bool_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
-        return match (lit_left, lit_right) {
+        match (lit_left, lit_right) {
             (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
@@ -95,9 +96,10 @@ macro_rules! eval_binary_bool_type {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
             _ => None,
-        };
+        }
+    } else {
+        None
     }
-    None
 
     }}
 }
@@ -111,9 +113,9 @@ impl OptimizationRule for SimplifyBooleanRule {
         expr_node: Node,
         _: &Arena<ALogicalPlan>,
         _: Node,
-    ) -> Option<AExpr> {
+    ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-        match expr {
+        let out = match expr {
             // true AND x => x
             AExpr::BinaryExpr {
                 left,
@@ -273,7 +275,8 @@ impl OptimizationRule for SimplifyBooleanRule {
                 }
             }
             _ => None,
-        }
+        };
+        Ok(out)
     }
 }
 
@@ -436,10 +439,10 @@ impl OptimizationRule for SimplifyExprRule {
         expr_node: Node,
         _lp_arena: &Arena<ALogicalPlan>,
         _lp_node: Node,
-    ) -> Option<AExpr> {
+    ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
 
-        match expr {
+        let out = match expr {
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {
@@ -449,28 +452,30 @@ impl OptimizationRule for SimplifyExprRule {
                 // lit(left) + lit(right) => lit(left + right)
                 #[allow(clippy::manual_map)]
                 let out = match op {
-                    Operator::Plus => match eval_binary_same_type!(left_aexpr, +, right_aexpr) {
-                        Some(new) => Some(new),
-                        None => {
-                            // try to replace addition of string columns with `concat_str`
-                            #[cfg(all(feature = "strings", feature = "concat_str"))]
-                            {
-                                string_addition_to_linear_concat(
-                                    _lp_arena,
-                                    _lp_node,
-                                    expr_arena,
-                                    *left,
-                                    *right,
-                                    left_aexpr,
-                                    right_aexpr,
-                                )
-                            }
-                            #[cfg(not(all(feature = "strings", feature = "concat_str")))]
-                            {
-                                None
+                    Operator::Plus => {
+                        match dbg!(eval_binary_same_type!(left_aexpr, +, right_aexpr)) {
+                            Some(new) => Some(new),
+                            None => {
+                                // try to replace addition of string columns with `concat_str`
+                                #[cfg(all(feature = "strings", feature = "concat_str"))]
+                                {
+                                    string_addition_to_linear_concat(
+                                        _lp_arena,
+                                        _lp_node,
+                                        expr_arena,
+                                        *left,
+                                        *right,
+                                        left_aexpr,
+                                        right_aexpr,
+                                    )
+                                }
+                                #[cfg(not(all(feature = "strings", feature = "concat_str")))]
+                                {
+                                    None
+                                }
                             }
                         }
-                    },
+                    }
                     Operator::Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
                     Operator::Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
                     Operator::Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
@@ -478,7 +483,7 @@ impl OptimizationRule for SimplifyExprRule {
                         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
                             (left_aexpr, right_aexpr)
                         {
-                            return match (lit_left, lit_right) {
+                            match (lit_left, lit_right) {
                                 (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Float32(x / y)))
                                 }
@@ -514,9 +519,10 @@ impl OptimizationRule for SimplifyExprRule {
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
                                 ),
                                 _ => None,
-                            };
+                            }
+                        } else {
+                            None
                         }
-                        None
                     }
                     Operator::FloorDivide => None,
                     Operator::Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
@@ -531,7 +537,7 @@ impl OptimizationRule for SimplifyExprRule {
                     Operator::Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
                 };
                 if out.is_some() {
-                    return out;
+                    return Ok(out);
                 }
 
                 // Null propagation.
@@ -644,7 +650,8 @@ impl OptimizationRule for SimplifyExprRule {
             }
 
             _ => None,
-        }
+        };
+        Ok(out)
     }
 }
 

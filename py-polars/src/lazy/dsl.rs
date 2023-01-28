@@ -551,10 +551,12 @@ impl PyExpr {
                 exact,
                 cache,
                 tz_aware: false,
+                utc: false,
             })
             .into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn str_parse_datetime(
         &self,
         fmt: Option<String>,
@@ -562,6 +564,7 @@ impl PyExpr {
         exact: bool,
         cache: bool,
         tz_aware: bool,
+        utc: bool,
         tu: Option<Wrap<TimeUnit>>,
     ) -> PyExpr {
         let result_tu = match (&fmt, tu) {
@@ -591,6 +594,7 @@ impl PyExpr {
                 exact,
                 cache,
                 tz_aware,
+                utc,
             })
             .into()
     }
@@ -612,6 +616,7 @@ impl PyExpr {
                 exact,
                 cache,
                 tz_aware: false,
+                utc: false,
             })
             .into()
     }

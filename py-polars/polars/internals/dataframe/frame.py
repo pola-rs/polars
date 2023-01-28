@@ -1845,8 +1845,7 @@ class DataFrame:
         [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
 
         """
-        dict_, zip_, columns = dict, zip, self.columns
-        return [dict_(zip_(columns, row)) for row in self.iter_rows()]
+        return list(self.iter_rows(named=True))
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """
@@ -3669,9 +3668,10 @@ class DataFrame:
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday'}
             The strategy to determine the start of the first window by.
-            * 'window': Truncate the start of the window with the 'every' argument.
-            * 'datapoint': Start from the first encountered data point.
-            * 'monday': Start the window on the monday before the first data point.
+
+            - 'window': Truncate the start of the window with the 'every' argument.
+            - 'datapoint': Start from the first encountered data point.
+            - 'monday': Start the window on the monday before the first data point.
 
         Examples
         --------
@@ -3705,13 +3705,11 @@ class DataFrame:
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
-        >>> (
-        ...     df.groupby_dynamic("time", every="1h", closed="right").agg(
-        ...         [
-        ...             pl.col("time").min().alias("time_min"),
-        ...             pl.col("time").max().alias("time_max"),
-        ...         ]
-        ...     )
+        >>> df.groupby_dynamic("time", every="1h", closed="right").agg(
+        ...     [
+        ...         pl.col("time").min().alias("time_min"),
+        ...         pl.col("time").max().alias("time_max"),
+        ...     ]
         ... )
         shape: (4, 3)
         ┌─────────────────────┬─────────────────────┬─────────────────────┐
@@ -3727,11 +3725,9 @@ class DataFrame:
 
         The window boundaries can also be added to the aggregation result
 
-        >>> (
-        ...     df.groupby_dynamic(
-        ...         "time", every="1h", include_boundaries=True, closed="right"
-        ...     ).agg([pl.col("time").count().alias("time_count")])
-        ... )
+        >>> df.groupby_dynamic(
+        ...     "time", every="1h", include_boundaries=True, closed="right"
+        ... ).agg([pl.col("time").count().alias("time_count")])
         shape: (4, 4)
         ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
@@ -3747,13 +3743,11 @@ class DataFrame:
         When closed="left", should not include right end of interval
         [lower_bound, upper_bound)
 
-        >>> (
-        ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
-        ...         [
-        ...             pl.col("time").count().alias("time_count"),
-        ...             pl.col("time").list().alias("time_agg_list"),
-        ...         ]
-        ...     )
+        >>> df.groupby_dynamic("time", every="1h", closed="left").agg(
+        ...     [
+        ...         pl.col("time").count().alias("time_count"),
+        ...         pl.col("time").alias("time_agg_list"),
+        ...     ]
         ... )
         shape: (4, 3)
         ┌─────────────────────┬────────────┬─────────────────────────────────────┐
@@ -3769,10 +3763,8 @@ class DataFrame:
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
-        >>> (
-        ...     df.groupby_dynamic("time", every="1h", closed="both").agg(
-        ...         [pl.col("time").count().alias("time_count")]
-        ...     )
+        >>> df.groupby_dynamic("time", every="1h", closed="both").agg(
+        ...     [pl.col("time").count().alias("time_count")]
         ... )
         shape: (5, 2)
         ┌─────────────────────┬────────────┐
@@ -3814,15 +3806,13 @@ class DataFrame:
         │ 2021-12-16 02:30:00 ┆ a      │
         │ 2021-12-16 03:00:00 ┆ a      │
         └─────────────────────┴────────┘
-        >>> (
-        ...     df.groupby_dynamic(
-        ...         "time",
-        ...         every="1h",
-        ...         closed="both",
-        ...         by="groups",
-        ...         include_boundaries=True,
-        ...     ).agg([pl.col("time").count().alias("time_count")])
-        ... )
+        >>> df.groupby_dynamic(
+        ...     "time",
+        ...     every="1h",
+        ...     closed="both",
+        ...     by="groups",
+        ...     include_boundaries=True,
+        ... ).agg([pl.col("time").count().alias("time_count")])
         shape: (7, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
@@ -3853,7 +3843,7 @@ class DataFrame:
         ...         period="3i",
         ...         include_boundaries=True,
         ...         closed="right",
-        ...     ).agg(pl.col("A").list().alias("A_agg_list"))
+        ...     ).agg(pl.col("A").alias("A_agg_list"))
         ... )
         shape: (3, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
@@ -3941,11 +3931,9 @@ class DataFrame:
         ...         "values": [0, 1, 2, 3],
         ...     }
         ... )
-        >>> (
-        ...     df.upsample(
-        ...         time_column="time", every="1mo", by="groups", maintain_order=True
-        ...     ).select(pl.all().forward_fill())
-        ... )
+        >>> df.upsample(
+        ...     time_column="time", every="1mo", by="groups", maintain_order=True
+        ... ).select(pl.all().forward_fill())
         shape: (7, 3)
         ┌─────────────────────┬────────┬────────┐
         │ time                ┆ groups ┆ values │
@@ -4303,9 +4291,7 @@ class DataFrame:
 
         It is better to implement this with an expression:
 
-        >>> (
-        ...     df.select([pl.col("foo") * 2, pl.col("bar") * 3])
-        ... )  # doctest: +IGNORE_RESULT
+        >>> df.select([pl.col("foo") * 2, pl.col("bar") * 3])  # doctest: +IGNORE_RESULT
 
         Return a Series by mapping each row to a scalar:
 
@@ -6779,27 +6765,29 @@ class DataFrame:
         rows : Materialises all frame data as a list of rows.
 
         """
+        # load into the local namespace for a modest performance boost in the hot loops
+        columns, get_row, dict_, zip_ = self.columns, self.row, dict, zip
+
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if buffer_size:
             for offset in range(0, self.height, buffer_size):
-                rows_chunk = self.slice(offset, buffer_size).rows(named=False)
-                if named:
-                    # Load these into the local namespace for a minor performance boost
-                    dict_, zip_, columns = dict, zip, self.columns
-                    for row in rows_chunk:
-                        yield dict_(zip_(columns, row))
+                zerocopy_slice = self.slice(offset, buffer_size)
+                if named and _PYARROW_AVAILABLE:
+                    yield from zerocopy_slice.to_arrow().to_batches()[0].to_pylist()
                 else:
-                    yield from rows_chunk
-
+                    rows_chunk = zerocopy_slice.rows(named=False)
+                    if named:
+                        for row in rows_chunk:
+                            yield dict_(zip_(columns, row))
+                    else:
+                        yield from rows_chunk
         elif named:
-            # Load these into the local namespace for a minor performance boost
-            dict_, zip_, columns = dict, zip, self.columns
             for i in range(self.height):
-                yield dict_(zip_(columns, self.row(i)))
+                yield dict_(zip_(columns, get_row(i)))
         else:
             for i in range(self.height):
-                yield self.row(i)
+                yield get_row(i)
 
     def iter_slices(self, n_rows: int = 10_000) -> Iterator[DataFrame]:
         r"""

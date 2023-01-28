@@ -509,11 +509,10 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
 
     # test empty
     result_empty = (
-        df.filter(pl.col("date") == "z")
+        df.filter(pl.col("date") == date(1, 1, 1))
         .groupby_dynamic("date", every="1w", offset="1d", by="label", start_by="monday")
         .agg(pl.col("value").sum())
     )
-    print(result_empty, result)
     assert result_empty.schema == result.schema
 
 

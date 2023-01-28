@@ -58,6 +58,20 @@ def test_list_arr_get() -> None:
     assert df.select([pl.col("cars").arr.get("indexes")]).to_dict(False) == {
         "cars": [2, 3, None, None]
     }
+    # exact on oob boundary
+    df = pl.DataFrame(
+        {
+            "index": [3, 3, 3],
+            "lists": [[3, 4, 5], [4, 5, 6], [7, 8, 9, 4]],
+        }
+    )
+
+    assert df.select(pl.col("lists").arr.get(3)).to_dict(False) == {
+        "lists": [None, None, 4]
+    }
+    assert df.select(pl.col("lists").arr.get(pl.col("index"))).to_dict(False) == {
+        "lists": [None, None, 4]
+    }
 
 
 def test_contains() -> None:
@@ -427,7 +441,7 @@ def test_arr_contains_categorical() -> None:
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
-    df_groups = df.groupby("group").agg([pl.col("str").list().alias("str_list")])
+    df_groups = df.groupby("group").agg([pl.col("str").alias("str_list")])
     assert df_groups.filter(pl.col("str_list").arr.contains("C")).collect().to_dict(
         False
     ) == {"group": [2], "str_list": [["A", "C"]]}
@@ -491,7 +505,7 @@ def test_groupby_list_column() -> None:
         pl.DataFrame({"a": ["a", "b", "a"]})
         .with_columns(pl.col("a").cast(pl.Categorical))
         .groupby("a", maintain_order=True)
-        .agg(pl.col("a").list().alias("a_list"))
+        .agg(pl.col("a").alias("a_list"))
     )
 
     assert df.groupby("a_list", maintain_order=True).first().to_dict(False) == {

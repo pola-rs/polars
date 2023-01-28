@@ -133,9 +133,30 @@ impl PySeries {
             let msg = "Only can take pointer, if the 'series' contains a single chunk";
             raise_err!(msg, ComputeError);
         }
-        Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            get_ptr(ca)
-        }))
+        match s.dtype() {
+            DataType::Boolean => {
+                let ca = s.bool().unwrap();
+                let arr = ca.downcast_iter().next().unwrap();
+                // this one is quite useless as you need to know the offset
+                // into the first byte.
+                let (slice, start, _len) = arr.values().as_slice();
+                if start == 0 {
+                    Ok(slice.as_ptr() as usize)
+                } else {
+                    let msg = "Cannot take pointer boolean buffer as it is not perfectly aligned.";
+                    raise_err!(msg, ComputeError);
+                    Ok(0)
+                }
+            }
+            dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                get_ptr(ca)
+            })),
+            _ => {
+                let msg = "Cannot take pointer of nested type";
+                raise_err!(msg, ComputeError);
+                Ok(0)
+            }
+        }
     }
 }

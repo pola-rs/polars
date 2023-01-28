@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
 import tempfile
 import typing
 from pathlib import Path
@@ -13,7 +12,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal_local_categoricals
+from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import ParquetCompression
@@ -216,7 +215,7 @@ def test_recursive_logical_type() -> None:
     df = pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
 
-    df_groups = df.groupby("group").agg([pl.col("str").list().alias("cat_list")])
+    df_groups = df.groupby("group").agg([pl.col("str").alias("cat_list")])
     f = io.BytesIO()
     df_groups.write_parquet(f, use_pyarrow=True)
     f.seek(0)
@@ -231,7 +230,7 @@ def test_nested_dictionary() -> None:
             pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
             .with_columns(pl.col("str").cast(pl.Categorical))
             .groupby("group")
-            .agg([pl.col("str").list().alias("cat_list")])
+            .agg([pl.col("str").alias("cat_list")])
         )
         f = io.BytesIO()
         df.write_parquet(f)
@@ -349,35 +348,53 @@ def test_parquet_nested_dictionaries_6217() -> None:
         assert read.frame_equal(df)
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
-def test_sink_parquet_ipc(io_files_path: Path) -> None:
+def test_sink_parquet(io_files_path: Path) -> None:
     file = io_files_path / "small.parquet"
 
-    dst = "/tmp/test_sink.parquet"
-    pl.scan_parquet(file).sink_parquet(dst)
-    with pl.StringCache():
-        assert pl.read_parquet(dst).frame_equal(pl.read_parquet(file))
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "sink.parquet"
 
-    dst = "/tmp/test_sink.ipc"
-    pl.scan_parquet(file).sink_ipc(dst)
-    with pl.StringCache():
-        assert pl.read_ipc(dst).frame_equal(pl.read_parquet(file))
+        df_scanned = pl.scan_parquet(file)
+        df_scanned.sink_parquet(file_path)
+
+        with pl.StringCache():
+            result = pl.read_parquet(file_path)
+            df_read = pl.read_parquet(file)
+            assert_frame_equal(result, df_read)
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+def test_sink_ipc(io_files_path: Path) -> None:
+    file = io_files_path / "small.parquet"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "sink.ipc"
+
+        df_scanned = pl.scan_parquet(file)
+        df_scanned.sink_ipc(file_path)
+
+        with pl.StringCache():
+            result = pl.read_ipc(file_path)
+            df_read = pl.read_parquet(file)
+            assert_frame_equal(result, df_read)
+
+
 def test_fetch_union() -> None:
-    pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]}).write_parquet(
-        "/tmp/df_fetch_1.parquet"
-    )
-    pl.DataFrame({"a": [3, 4, 5], "b": [4, 5, 6]}).write_parquet(
-        "/tmp/df_fetch_2.parquet"
-    )
+    df1 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
+    df2 = pl.DataFrame({"a": [3, 4, 5], "b": [4, 5, 6]})
 
-    assert pl.scan_parquet("/tmp/df_fetch_1.parquet").fetch(1).to_dict(False) == {
-        "a": [0],
-        "b": [1],
-    }
-    assert pl.scan_parquet("/tmp/df_fetch_*.parquet").fetch(1).to_dict(False) == {
-        "a": [0, 3],
-        "b": [1, 4],
-    }
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path_1 = Path(temp_dir) / "df_fetch_1.parquet"
+        file_path_2 = Path(temp_dir) / "df_fetch_2.parquet"
+        file_path_glob = Path(temp_dir) / "df_fetch_*.parquet"
+
+        df1.write_parquet(file_path_1)
+        df2.write_parquet(file_path_2)
+
+        result_one = pl.scan_parquet(file_path_1).fetch(1)
+        result_glob = pl.scan_parquet(file_path_glob).fetch(1)
+
+    expected = pl.DataFrame({"a": [0], "b": [1]})
+    assert_frame_equal(result_one, expected)
+
+    expected = pl.DataFrame({"a": [0, 3], "b": [1, 4]})
+    assert_frame_equal(result_glob, expected)

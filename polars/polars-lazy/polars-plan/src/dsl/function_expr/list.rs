@@ -173,7 +173,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
                     } else {
                         end + idx
                     };
-                    if offset > end || offset < start || start == end {
+                    if offset >= end || offset < start || start == end {
                         None
                     } else {
                         Some(offset as IdxSize)

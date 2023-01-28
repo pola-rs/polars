@@ -32,6 +32,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         tz_aware: bool = False,
+        utc: bool = False,
     ) -> pli.Expr:
         """
         Parse a Utf8 expression to a Date/Datetime/Time type.
@@ -57,6 +58,9 @@ class ExprStringNameSpace:
         tz_aware
             Parse timezone aware datetimes. This may be automatically toggled by the
             'fmt' given.
+        utc
+            Parse timezone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
 
         Notes
         -----
@@ -77,16 +81,12 @@ class ExprStringNameSpace:
         ...         "Sun Jul  8 00:34:60 2001",
         ...     ],
         ... )
-        >>> (
-        ...     s.to_frame().with_columns(
-        ...         pl.col("date")
-        ...         .str.strptime(pl.Date, "%F", strict=False)
-        ...         .fill_null(
-        ...             pl.col("date").str.strptime(pl.Date, "%F %T", strict=False)
-        ...         )
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
-        ...     )
+        >>> s.to_frame().with_columns(
+        ...     pl.col("date")
+        ...     .str.strptime(pl.Date, "%F", strict=False)
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%F %T", strict=False))
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
         ... )
         shape: (4, 1)
         ┌────────────┐
@@ -109,7 +109,9 @@ class ExprStringNameSpace:
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
             dtcol = pli.wrap_expr(
-                self._pyexpr.str_parse_datetime(fmt, strict, exact, cache, tz_aware, tu)
+                self._pyexpr.str_parse_datetime(
+                    fmt, strict, exact, cache, tz_aware, utc, tu
+                )
             )
             return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
         elif datatype == Time:

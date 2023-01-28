@@ -219,5 +219,5 @@ def test_explode_inner_lists_3985() -> None:
     assert (
         df.groupby("id")
         .agg(pl.col("categories"))
-        .with_column(pl.col("categories").arr.eval(pl.element().arr.explode()))
+        .with_columns(pl.col("categories").arr.eval(pl.element().arr.explode()))
     ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}

@@ -19,6 +19,7 @@ maturin==0.14.10
 mypy==0.991
 pytest==7.2.0
 pytest-cov==4.0.0
+pytest-xdist==3.1.0
 
 # Stub files
 pandas-stubs==1.2.0.62

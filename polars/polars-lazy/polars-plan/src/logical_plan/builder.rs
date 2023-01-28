@@ -23,7 +23,7 @@ use polars_io::{
 };
 
 use crate::logical_plan::functions::FunctionNode;
-use crate::logical_plan::projection::rewrite_projections;
+use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::prelude::*;
 use crate::utils;
@@ -411,7 +411,7 @@ impl LogicalPlanBuilder {
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| match e {
-            Expr::Column(name) => name.starts_with('^') && name.ends_with('$'),
+            Expr::Column(name) => is_regex_projection(name),
             Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) | Expr::DtypeColumn(_) => {
                 true
             }

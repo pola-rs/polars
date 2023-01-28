@@ -169,7 +169,14 @@ impl PhysicalExpr for AggregationExpr {
                 }
                 GroupByMethod::List => {
                     let agg = ac.aggregated();
-                    rename_series(agg, &keep_name)
+
+                    if state.unset_finalize_window_as_list() {
+                        rename_series(agg, &keep_name)
+                    } else {
+                        let ca = agg.list().unwrap();
+                        let s = run_list_agg(ca);
+                        rename_series(s, &keep_name)
+                    }
                 }
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
@@ -430,7 +437,7 @@ impl PartitionedAggregation for AggregationExpr {
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
-                Ok(ca.into_series())
+                Ok(run_list_agg(&ca))
             }
             GroupByMethod::First => {
                 let mut agg = unsafe { partitioned.agg_first(groups) };
@@ -530,4 +537,20 @@ impl PhysicalExpr for AggQuantileExpr {
     fn is_valid_aggregation(&self) -> bool {
         true
     }
+}
+
+fn run_list_agg(ca: &ListChunked) -> Series {
+    assert_eq!(ca.chunks().len(), 1);
+    let arr = ca.chunks()[0].clone();
+
+    let offsets = (0i64..(ca.len() as i64 + 1)).collect::<Vec<_>>();
+    let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+    let new_arr = LargeListArray::new(
+        DataType::List(Box::new(ca.dtype().clone())).to_arrow(),
+        offsets.into(),
+        arr,
+        None,
+    );
+    unsafe { ListChunked::from_chunks(ca.name(), vec![Box::new(new_arr)]).into_series() }
 }

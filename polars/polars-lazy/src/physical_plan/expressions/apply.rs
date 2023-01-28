@@ -124,7 +124,7 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match (state.overlapping_groups(), self.collect_groups) {
+            match (state.has_overlapping_groups(), self.collect_groups) {
                 (_, ApplyOptions::ApplyList) => {
                     let s = self.function.call_udf(&mut [ac.aggregated()])?;
                     ac.with_series(s, true);
@@ -212,7 +212,7 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match (state.overlapping_groups(), self.collect_groups) {
+            match (state.has_overlapping_groups(), self.collect_groups) {
                 (_, ApplyOptions::ApplyList) => {
                     let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let s = self.function.call_udf(&mut s)?;
@@ -235,7 +235,7 @@ impl PhysicalExpr for ApplyExpr {
                         ApplyOptions::ApplyFlat,
                         AggState::AggregatedFlat(_) | AggState::NotAggregated(_),
                     ) = (
-                        state.overlapping_groups(),
+                        state.has_overlapping_groups(),
                         self.collect_groups,
                         acs[0].agg_state(),
                     ) {
