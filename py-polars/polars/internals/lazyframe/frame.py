@@ -1559,7 +1559,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             | pli.Expr
             | pli.Series
             | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
-        ),
+            | None
+        ) = None,
+        **named_exprs: Any,
     ) -> LDF:
         """
         Select columns from this DataFrame.
@@ -1567,7 +1569,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         exprs
-            Column or columns to select.
+            Column expression(s) to select.
+        **named_exprs
+            Named column expressions, provided as kwargs.
 
         Examples
         --------
@@ -1637,8 +1641,33 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 10      │
         └─────────┘
 
+        Note that, when using kwargs syntax, expressions with multiple
+        outputs are automatically instantiated as Struct columns:
+
+        >>> from polars.datatypes import INTEGER_DTYPES
+        >>> df.select(is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd")).collect()
+        shape: (3, 1)
+        ┌───────────┐
+        │ is_odd    │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {1,0}     │
+        │ {0,1}     │
+        │ {1,0}     │
+        └───────────┘
+
         """
+        if exprs is None and not named_exprs:
+            raise ValueError("Expected at least one of 'exprs' or **named_exprs")
+        elif exprs is None:
+            exprs = []
+
         exprs = pli.selection_to_pyexpr_list(exprs)
+        exprs.extend(
+            pli.expr_to_lit_or_expr(expr, structify=True)._pyexpr.alias(name)
+            for name, expr in named_exprs.items()
+        )
         return self._from_pyldf(self._ldf.select(exprs))
 
     def groupby(
@@ -2434,15 +2463,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Notes
         -----
-        Creating a new LazyFrame using this method does not create a new copy of
-        existing data.
+        Creating a new LazyFrame using this method does not create a new copy
+        of existing data.
 
         Parameters
         ----------
         exprs
-            List of Expressions that evaluate to columns.
+            List of expressions that evaluate to columns.
         **named_exprs
-            Named column Expressions, provided as kwargs.
+            Named column expressions, provided as kwargs.
 
         Examples
         --------
@@ -2454,7 +2483,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     }
         ... ).lazy()
 
-        Passing in a single expression, adding the column as we give it a new name:
+        Passing in a single expression, adding (and naming) a new column:
 
         >>> ldf.with_columns((pl.col("a") ** 2).alias("a^2")).collect()
         shape: (4, 4)
@@ -2469,8 +2498,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
         └─────┴──────┴───────┴──────┘
 
-        We can also override a column, by giving the expression a name that already
-        exists:
+        We can also override an existing column by giving the expression
+        a name that already exists:
 
         >>> ldf.with_columns((pl.col("a") ** 2).alias("c")).collect()
         shape: (4, 3)
@@ -2485,7 +2514,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ 16.0 │
         └─────┴──────┴──────┘
 
-        Passing in multiple expressions as a list:
+        Multiple expressions can be passed in as both a list...
 
         >>> ldf.with_columns(
         ...     [
@@ -2506,17 +2535,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        Support for kwarg expressions is considered EXPERIMENTAL. Currently
-        requires opt-in via `pl.Config` boolean flag:
+        ...or via kwarg expressions:
 
-        >>> pl.Config.with_columns_kwargs = True
         >>> ldf.with_columns(
-        ...     d=pl.col("a") * pl.col("b"),
-        ...     e=pl.col("c").is_not(),
+        ...     ab=pl.col("a") * pl.col("b"),
+        ...     not_c=pl.col("c").is_not(),
         ... ).collect()
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ d    ┆ e     │
+        │ a   ┆ b    ┆ c     ┆ ab   ┆ not_c │
         │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
         │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  │
         ╞═════╪══════╪═══════╪══════╪═══════╡
@@ -2526,11 +2553,28 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
 
+        Note that, when using kwargs syntax, expressions with multiple
+        outputs are automatically instantiated as Struct columns:
+
+        >>> ldf.drop("c").with_columns(
+        ...     diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
+        ... ).collect()
+        shape: (4, 3)
+        ┌─────┬──────┬─────────────┐
+        │ a   ┆ b    ┆ diffs       │
+        │ --- ┆ ---  ┆ ---         │
+        │ i64 ┆ f64  ┆ struct[2]   │
+        ╞═════╪══════╪═════════════╡
+        │ 1   ┆ 0.5  ┆ {null,null} │
+        │ 2   ┆ 4.0  ┆ {1,3.5}     │
+        │ 3   ┆ 10.0 ┆ {1,6.0}     │
+        │ 4   ┆ 13.0 ┆ {1,3.0}     │
+        └─────┴──────┴─────────────┘
+
         """
         if named_exprs and not Config.with_columns_kwargs:
             raise RuntimeError(
-                "**kwargs support is experimental; requires opt-in via"
-                " `pl.Config.with_columns_kwargs = True`"
+                "**kwargs support requires `pl.Config.with_columns_kwargs = True`"
             )
         elif exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
@@ -2545,7 +2589,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             exprs = list(exprs)
 
         exprs.extend(
-            pli.expr_to_lit_or_expr(expr).alias(name)
+            pli.expr_to_lit_or_expr(expr, structify=True).alias(name)
             for name, expr in named_exprs.items()
         )
         pyexprs = []
