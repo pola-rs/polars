@@ -2178,6 +2178,21 @@ def test_tz_localize() -> None:
     }
 
 
+@pytest.mark.parametrize("time_zone", ["UTC", "Africa/Abidjan"])
+def test_tz_localize_from_utc(time_zone: str) -> None:
+    ts_utc = (
+        pl.Series(["2018-10-28"]).str.strptime(pl.Datetime).dt.tz_localize(time_zone)
+    )
+    with pytest.raises(
+        ComputeError,
+        match=(
+            "^Cannot localize a tz-aware datetime. Consider using "
+            "'dt.with_time_zone' or 'dt.cast_time_zone'$"
+        ),
+    ):
+        ts_utc.dt.tz_localize("America/Maceio")
+
+
 def test_tz_aware_truncate() -> None:
     test = pl.DataFrame(
         {
