@@ -9,7 +9,6 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
-from polars.testing._private import verify_series_and_expr_api
 
 
 def test_list_arr_get() -> None:
@@ -243,9 +242,9 @@ def test_list_arr_empty() -> None:
 def test_list_argminmax() -> None:
     s = pl.Series("a", [[1, 2], [3, 2, 1]])
     expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
-    verify_series_and_expr_api(s, expected, "arr.arg_min")
+    assert_series_equal(s.arr.arg_min(), expected)
     expected = pl.Series("a", [1, 0], dtype=pl.UInt32)
-    verify_series_and_expr_api(s, expected, "arr.arg_max")
+    assert_series_equal(s.arr.arg_max(), expected)
 
 
 def test_list_shift() -> None:

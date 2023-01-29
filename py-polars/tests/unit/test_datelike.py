@@ -20,7 +20,6 @@ else:
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, PolarsTemporalType
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing._private import verify_series_and_expr_api
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
@@ -727,24 +726,22 @@ def test_to_arrow() -> None:
 
 
 def test_non_exact_strptime() -> None:
-    a = pl.Series("a", ["2022-01-16", "2022-01-17", "foo2022-01-18", "b2022-01-19ar"])
+    s = pl.Series("a", ["2022-01-16", "2022-01-17", "foo2022-01-18", "b2022-01-19ar"])
     fmt = "%Y-%m-%d"
 
+    result = s.str.strptime(pl.Date, fmt, strict=False, exact=True)
     expected = pl.Series("a", [date(2022, 1, 16), date(2022, 1, 17), None, None])
-    verify_series_and_expr_api(
-        a, expected, "str.strptime", pl.Date, fmt, strict=False, exact=True
-    )
+    assert_series_equal(result, expected)
 
+    result = s.str.strptime(pl.Date, fmt, strict=False, exact=False)
     expected = pl.Series(
         "a",
         [date(2022, 1, 16), date(2022, 1, 17), date(2022, 1, 18), date(2022, 1, 19)],
     )
-    verify_series_and_expr_api(
-        a, expected, "str.strptime", pl.Date, fmt, strict=False, exact=False
-    )
+    assert_series_equal(result, expected)
 
     with pytest.raises(Exception):
-        a.str.strptime(pl.Date, fmt, strict=True, exact=True)
+        s.str.strptime(pl.Date, fmt, strict=True, exact=True)
 
 
 def test_explode_date() -> None:
