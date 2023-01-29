@@ -543,7 +543,6 @@ fn test_simplify_expr() {
         .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
         .unwrap();
     let plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
-    dbg!(&plan);
     assert!(
         matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
     );
