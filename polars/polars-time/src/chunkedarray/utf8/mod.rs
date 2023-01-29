@@ -389,7 +389,7 @@ pub trait Utf8Methods: AsUtf8 {
         tu: TimeUnit,
         cache: bool,
         tz_aware: bool,
-        #[cfg(feature = "timezones")] utc: bool,
+        utc: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
