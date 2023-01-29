@@ -382,6 +382,7 @@ pub trait Utf8Methods: AsUtf8 {
     }
 
     #[cfg(feature = "dtype-datetime")]
+    #[allow(unused_variables)] // `utc` is only used with timezones feature
     /// Parsing string values and return a [`DatetimeChunked`]
     fn as_datetime(
         &self,
