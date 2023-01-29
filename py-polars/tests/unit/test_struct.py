@@ -54,7 +54,7 @@ def test_apply_unnest() -> None:
         }
     )
 
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
 
 def test_rename_fields() -> None:
@@ -86,7 +86,7 @@ def test_struct_unnesting() -> None:
         }
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     out = (
         df.lazy()

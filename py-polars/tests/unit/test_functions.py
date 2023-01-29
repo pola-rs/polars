@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_date_datetime() -> None:
@@ -44,7 +45,7 @@ def test_diag_concat() -> None:
             }
         )
 
-        assert out.frame_equal(expected, null_equal=True)
+        assert_frame_equal(out, expected)
 
 
 def test_concat_horizontal() -> None:
@@ -61,7 +62,7 @@ def test_concat_horizontal() -> None:
             "e": [1, 2, 1, 2],
         }
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_all_any_horizontally() -> None:

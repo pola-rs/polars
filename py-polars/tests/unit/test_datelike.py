@@ -852,7 +852,7 @@ def test_upsample() -> None:
         }
     ).with_columns(pl.col("time").dt.with_time_zone("UTC"))
 
-    assert up.frame_equal(expected)
+    assert_frame_equal(up, expected)
 
 
 def test_microseconds_accuracy() -> None:
@@ -937,7 +937,7 @@ def test_default_negative_every_offset_dynamic_groupby() -> None:
             "idx": [[0], [1, 2], [3]],
         }
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_strptime_dates_datetimes() -> None:
@@ -1008,7 +1008,7 @@ def test_asof_join_tolerance_grouper() -> None:
         }
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_datetime_duration_offset() -> None:
@@ -1062,7 +1062,7 @@ def test_datetime_duration_offset() -> None:
             ],
         }
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_date_duration_offset() -> None:
@@ -1180,7 +1180,7 @@ def test_rolling_groupby_by_argument() -> None:
         }
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_groupby_rolling_mean_3020() -> None:

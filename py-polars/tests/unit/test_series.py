@@ -1597,7 +1597,7 @@ def test_to_dummies() -> None:
     s = pl.Series("a", [1, 2, 3])
     result = s.to_dummies()
     expected = pl.DataFrame({"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]})
-    assert result.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
 
 def test_value_counts() -> None:

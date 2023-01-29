@@ -369,7 +369,7 @@ def test_replace() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     s = pl.Series("c", [True, False, True])
     df.replace("a", s)
-    assert df.frame_equal(pl.DataFrame({"a": [True, False, True], "b": [1, 2, 3]}))
+    assert_frame_equal(df, pl.DataFrame({"a": [True, False, True], "b": [1, 2, 3]}))
 
 
 def test_assignment() -> None:
@@ -485,11 +485,11 @@ def test_drop_nulls() -> None:
             "ham": ["a", "c"],
         }
     )
-    assert result.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
     # below we only drop entries if they are null in the column 'foo'
     result = df.drop_nulls("foo")
-    assert result.frame_equal(df)
+    assert_frame_equal(result, df)
 
 
 def test_pipe() -> None:
@@ -500,7 +500,7 @@ def test_pipe() -> None:
 
     result = df.pipe(_multiply, mul=3)
 
-    assert result.frame_equal(df * 3)
+    assert_frame_equal(result, df * 3)
 
 
 def test_explode() -> None:
@@ -548,7 +548,7 @@ def test_hstack_dataframe(in_place: bool) -> None:
     )
     if in_place:
         df.hstack(df2, in_place=True)
-        assert df.frame_equal(expected)
+        assert_frame_equal(df, expected)
     else:
         df_out = df.hstack(df2, in_place=False)
         assert df_out.frame_equal(expected)
@@ -567,7 +567,7 @@ def test_vstack(in_place: bool) -> None:
     if in_place:
         assert df1.frame_equal(expected)
     else:
-        assert out.frame_equal(expected)
+        assert_frame_equal(out, expected)
 
 
 def test_extend() -> None:
@@ -697,7 +697,7 @@ def test_shift() -> None:
     b = pl.DataFrame(
         {"A": [None, "a", "b"], "B": [None, 1, 3]},
     )
-    assert a.frame_equal(b, null_equal=True)
+    assert_frame_equal(a, b)
 
 
 def test_to_dummies() -> None:
@@ -758,7 +758,7 @@ def test_get_dummies() -> None:
     expected = pl.DataFrame(
         {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]}
     ).with_columns(pl.all().cast(pl.UInt8))
-    assert res.frame_equal(expected)
+    assert_frame_equal(res, expected)
 
     df = pl.DataFrame(
         {"i": [1, 2, 3], "category": ["dog", "cat", "cat"]},
@@ -773,7 +773,7 @@ def test_get_dummies() -> None:
         schema={"i": pl.Int32, "category_cat": pl.UInt8, "category_dog": pl.UInt8},
     )
     result = pl.get_dummies(df, columns=["category"])
-    assert result.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
 
 def test_to_pandas(df: pl.DataFrame) -> None:
@@ -1242,10 +1242,11 @@ def test_from_generator_or_iterable() -> None:
 
 def test_from_rows() -> None:
     df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]])
-    assert df.frame_equal(
+    assert_frame_equal(
+        df,
         pl.DataFrame(
             {"column_0": [1, 2], "column_1": [2, 3], "column_2": ["foo", "bar"]}
-        )
+        ),
     )
     df = pl.from_records(
         [[1, datetime.fromtimestamp(100)], [2, datetime.fromtimestamp(2398754908)]],
@@ -1438,7 +1439,7 @@ def test_unique_unit_rows() -> None:
     df = pl.DataFrame({"a": [1], "b": [None]})
 
     # 'unique' one-row frame should be equal to the original frame
-    assert df.frame_equal(df.unique(subset="a"))
+    assert_frame_equal(df, df.unique(subset="a"))
     for col in df.columns:
         assert df.n_unique(subset=[col]) == 1
 
@@ -1503,7 +1504,7 @@ def test_apply_dataframe_return() -> None:
             "column_3": ["c", "d", None],
         }
     )
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
 
 def test_groupby_cat_list() -> None:
@@ -1593,7 +1594,7 @@ def test_transpose() -> None:
         }
     )
     out = df.transpose(include_header=True)
-    assert expected.frame_equal(out)
+    assert_frame_equal(expected, out)
 
     out = df.transpose(include_header=False, column_names=["a", "b", "c"])
     expected = pl.DataFrame(
@@ -1603,7 +1604,7 @@ def test_transpose() -> None:
             "c": [3, 3],
         }
     )
-    assert expected.frame_equal(out)
+    assert_frame_equal(expected, out)
 
     out = df.transpose(
         include_header=True, header_name="foo", column_names=["a", "b", "c"]
@@ -1616,7 +1617,7 @@ def test_transpose() -> None:
             "c": [3, 3],
         }
     )
-    assert expected.frame_equal(out)
+    assert_frame_equal(expected, out)
 
     def name_generator() -> Iterator[str]:
         base_name = "my_column_"
@@ -1633,7 +1634,7 @@ def test_transpose() -> None:
             "my_column_2": [3, 3],
         }
     )
-    assert expected.frame_equal(out)
+    assert_frame_equal(expected, out)
 
 
 def test_extension() -> None:
@@ -1713,7 +1714,7 @@ def test_with_column_renamed() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     result = df.rename({"b": "c"})
     expected = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
-    assert result.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
 
 def test_rename_swap() -> None:
@@ -1731,7 +1732,7 @@ def test_rename_swap() -> None:
             "a": [5, 4, 3, 2, 1],
         }
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # 6195
     ldf = pl.DataFrame(
@@ -1830,7 +1831,7 @@ def test_shift_and_fill() -> None:
             "ham": ["0", "a", "b"],
         }
     )
-    assert result.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
 
 def test_is_duplicated() -> None:
@@ -1910,31 +1911,31 @@ def test_arithmetic() -> None:
     expected = pl.DataFrame({"a": [11.0, None], "b": [None, None]}).with_columns(
         pl.col("b").cast(pl.Float64)
     )
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
     out = df - df2
     expected = pl.DataFrame({"a": [-9.0, None], "b": [None, None]}).with_columns(
         pl.col("b").cast(pl.Float64)
     )
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
     out = df / df2
     expected = pl.DataFrame({"a": [0.1, None], "b": [None, None]}).with_columns(
         pl.col("b").cast(pl.Float64)
     )
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
     out = df * df2
     expected = pl.DataFrame({"a": [10.0, None], "b": [None, None]}).with_columns(
         pl.col("b").cast(pl.Float64)
     )
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
     out = df % df2
     expected = pl.DataFrame({"a": [1.0, None], "b": [None, None]}).with_columns(
         pl.col("b").cast(pl.Float64)
     )
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
     # cannot do arithmetic with a sequence
     with pytest.raises(ValueError, match="Operation not supported"):
@@ -2133,7 +2134,7 @@ def test_groupby_slice_expression_args() -> None:
     expected = pl.DataFrame(
         {"groups": ["a", "a", "b", "b", "b", "b"], "vals": [1, 2, 12, 13, 14, 15]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_join_suffixes() -> None:

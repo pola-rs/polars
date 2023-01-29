@@ -440,17 +440,17 @@ def test_compressed_csv(io_files_path: Path) -> None:
     expected = pl.DataFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # now from disk
     csv_file = io_files_path / "gzipped.csv"
     out = pl.read_csv(str(csv_file))
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # now with column projection
     out = pl.read_csv(csv_bytes, columns=["a", "b"])
     expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # zlib compression
     csv_bytes = zlib.compress(csv.encode())
@@ -458,7 +458,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
     expected = pl.DataFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # no compression
     f2 = io.BytesIO(b"a,b\n1,2\n")
@@ -591,10 +591,10 @@ def test_csv_date_handling() -> None:
         }
     )
     out = pl.read_csv(csv.encode(), parse_dates=True)
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
     dtypes = {"date": pl.Date}
     out = pl.read_csv(csv.encode(), dtypes=dtypes)
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
 
 def test_csv_globbing(io_files_path: Path) -> None:
@@ -665,7 +665,7 @@ def test_empty_string_missing_round_trip() -> None:
         df.write_csv(f, null_value=null)
         f.seek(0)
         df_read = pl.read_csv(f, null_values=null)
-        assert df.frame_equal(df_read)
+        assert_frame_equal(df, df_read)
 
 
 def test_write_csv_delimiter() -> None:
@@ -809,7 +809,7 @@ def test_csv_write_escape_newlines() -> None:
     df.write_csv(f)
     f.seek(0)
     read_df = pl.read_csv(f)
-    assert df.frame_equal(read_df)
+    assert_frame_equal(df, read_df)
 
 
 def test_skip_new_line_embedded_lines() -> None:

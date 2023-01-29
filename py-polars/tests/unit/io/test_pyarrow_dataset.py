@@ -9,6 +9,7 @@ import pyarrow.dataset as ds
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @typing.no_type_check
@@ -17,7 +18,7 @@ def helper_dataset_test(file_path: Path, query) -> None:
 
     expected = query(pl.scan_ipc(file_path))
     out = query(pl.scan_ds(dset))
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")

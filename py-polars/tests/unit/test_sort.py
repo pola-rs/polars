@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_sort_dates_multiples() -> None:
@@ -168,7 +169,7 @@ def test_sort_aggregation_fast_paths() -> None:
                     .suffix("_min"),
                 ]
             )
-            assert out.frame_equal(expected)
+            assert_frame_equal(out, expected)
 
 
 def test_sorted_join_and_dtypes() -> None:

@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_list_arr_get() -> None:
@@ -236,7 +236,7 @@ def test_list_arr_empty() -> None:
     expected = pl.DataFrame(
         {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_list_argminmax() -> None:

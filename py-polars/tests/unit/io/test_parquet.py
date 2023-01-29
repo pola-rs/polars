@@ -103,7 +103,7 @@ def test_select_columns() -> None:
     f.seek(0)
 
     read_df = pl.read_parquet(f, columns=["b", "c"], use_pyarrow=False)
-    assert expected.frame_equal(read_df)
+    assert_frame_equal(expected, read_df)
 
 
 def test_select_projection() -> None:
@@ -114,7 +114,7 @@ def test_select_projection() -> None:
     f.seek(0)
 
     read_df = pl.read_parquet(f, columns=[1, 2], use_pyarrow=False)
-    assert expected.frame_equal(read_df)
+    assert_frame_equal(expected, read_df)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
@@ -139,7 +139,7 @@ def test_parquet_datetime(compression: ParquetCompression, use_pyarrow: bool) ->
     df.write_parquet(f, use_pyarrow=use_pyarrow, compression=compression)
     f.seek(0)
     read = pl.read_parquet(f)
-    assert read.frame_equal(df)
+    assert_frame_equal(read, df)
 
 
 def test_nested_parquet() -> None:
@@ -238,7 +238,7 @@ def test_nested_dictionary() -> None:
         f.seek(0)
 
         read_df = pl.read_parquet(f)
-        assert df.frame_equal(read_df)
+        assert_frame_equal(df, read_df)
 
 
 def test_row_group_size_saturation() -> None:
@@ -346,7 +346,7 @@ def test_parquet_nested_dictionaries_6217() -> None:
         pq.write_table(table, f, compression="snappy")
         f.seek(0)
         read = pl.read_parquet(f)
-        assert read.frame_equal(df)
+        assert_frame_equal(read, df)
 
 
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")

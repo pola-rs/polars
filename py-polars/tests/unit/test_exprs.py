@@ -16,7 +16,7 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
 )
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
@@ -132,7 +132,7 @@ def test_map_alias() -> None:
         (pl.col("foo") * 2).map_alias(lambda name: f"{name}{name}")
     )
     expected = pl.DataFrame({"foofoo": [2, 4, 6]})
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_unique_stable() -> None:
@@ -165,7 +165,7 @@ def test_split() -> None:
         ]
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
     assert df["x"].str.split("_").to_frame().frame_equal(expected)
 
     out = df.select([pl.col("x").str.split("_", inclusive=True)])
@@ -179,7 +179,7 @@ def test_split() -> None:
         ]
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
     assert df["x"].str.split("_", inclusive=True).to_frame().frame_equal(expected)
 
 
@@ -195,7 +195,7 @@ def test_split_exact() -> None:
         }
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
     assert (
         df["x"]
         .str.split_exact("_", 2, inclusive=False)
@@ -209,7 +209,7 @@ def test_split_exact() -> None:
     expected = pl.DataFrame(
         {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
     assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
 
@@ -222,7 +222,7 @@ def test_splitn() -> None:
         {"field_0": ["a", None, "b", "c"], "field_1": ["a", None, None, "c_c"]}
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
     assert df["x"].str.splitn("_", 2).to_frame().unnest("x").frame_equal(expected)
 
 

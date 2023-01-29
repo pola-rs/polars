@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal_local_categoricals
+from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import IpcCompression
@@ -61,7 +61,7 @@ def test_select_columns_from_buffer() -> None:
     f.seek(0)
 
     read_df = pl.read_ipc(f, columns=["b", "c"], use_pyarrow=False)
-    assert expected.frame_equal(read_df)
+    assert_frame_equal(expected, read_df)
 
 
 def test_select_columns_projection() -> None:
@@ -73,7 +73,7 @@ def test_select_columns_projection() -> None:
     f.seek(0)
 
     read_df = pl.read_ipc(f, columns=[1, 2], use_pyarrow=False)
-    assert expected.frame_equal(read_df)
+    assert_frame_equal(expected, read_df)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)

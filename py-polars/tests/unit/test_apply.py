@@ -8,6 +8,7 @@ from typing import Sequence, no_type_check
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_apply_none() -> None:
@@ -119,7 +120,7 @@ def test_apply_struct() -> None:
         }
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_apply_numpy_out_3057() -> None:

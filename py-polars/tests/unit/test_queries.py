@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_sort_by_bools() -> None:
@@ -77,7 +78,7 @@ def test_agg_after_head() -> None:
         if not maintain_order:
             out = out.sort("a")
 
-        assert out.frame_equal(expected)
+        assert_frame_equal(out, expected)
 
 
 def test_overflow_uint16_agg_mean() -> None:

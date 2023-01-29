@@ -4,6 +4,7 @@ import io
 import pickle
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_pickle() -> None:
@@ -14,7 +15,7 @@ def test_pickle() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
     b = pickle.dumps(df)
     out = pickle.loads(b)
-    assert df.frame_equal(out, null_equal=True)
+    assert_frame_equal(df, out)
 
 
 def test_pickle_expr() -> None:

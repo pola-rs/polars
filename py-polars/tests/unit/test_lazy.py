@@ -68,7 +68,7 @@ def test_apply() -> None:
     new = df.lazy().with_columns(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
     expected = df.clone().with_columns((pl.col("a") * 2).alias("foo"))
-    assert new.frame_equal(expected)
+    assert_frame_equal(new, expected)
 
 
 def test_add_eager_column() -> None:
@@ -163,11 +163,11 @@ def test_filter_str() -> None:
     # last row based on a filter
     result = q.filter(pl.col("bools")).select(pl.last("*")).collect()
     expected = pl.DataFrame({"time": ["11:13:00"], "bools": [True]})
-    assert result.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
     # last row based on a filter
     result = q.filter("bools").select(pl.last("*")).collect()
-    assert result.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
 
 def test_apply_custom_function() -> None:
@@ -206,7 +206,7 @@ def test_apply_custom_function() -> None:
         }
     )
     expected = expected.with_columns(pl.col("cars_count").cast(pl.UInt32))
-    assert a.frame_equal(expected)
+    assert_frame_equal(a, expected)
 
 
 def test_groupby() -> None:
@@ -262,7 +262,7 @@ def test_arange() -> None:
     df = pl.DataFrame({"a": [1, 1, 1]}).lazy()
     result = df.filter(pl.col("a") >= pl.arange(0, 3)).collect()
     expected = pl.DataFrame({"a": [1, 1]})
-    assert result.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
 
 def test_arg_unique() -> None:
@@ -353,7 +353,7 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
 
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.lazy().select("*").fetch(2)
-    assert res.frame_equal(res[:2])
+    assert_frame_equal(res, res[:2])
 
 
 def test_window_deadlock() -> None:
@@ -472,12 +472,14 @@ def test_head_groupby() -> None:
         {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
     )
     out = df.groupby("letters").tail(2).sort("letters")
-    assert out.frame_equal(
-        pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]})
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]}),
     )
     out = df.groupby("letters").head(2).sort("letters")
-    assert out.frame_equal(
-        pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]})
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]}),
     )
 
 
@@ -713,7 +715,8 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
         ]
     )
 
-    assert out.frame_equal(
+    assert_frame_equal(
+        out,
         pl.DataFrame(
             {
                 "1": [1, 1, 1, 2, 3],
@@ -727,7 +730,7 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
                 "std": [None, None, 1.0, 1.0, 1.0],
                 "var": [None, None, 1.0, 1.0, 1.0],
             }
-        )
+        ),
     )
 
     out_single_val_variance = df.select(
@@ -863,7 +866,7 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
             ],
         }
     )
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
 
 def test_arithmetic() -> None:
@@ -899,7 +902,7 @@ def test_arithmetic() -> None:
             "11": [-1, -2, -3],
         }
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # floating point floor divide
     x = 10.4
@@ -930,7 +933,7 @@ def test_ufunc() -> None:
             pl.Series("power_uint16", [1, 4, 9, 16], dtype=pl.UInt16),
         ]
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
     assert out.dtypes == expected.dtypes
 
 
@@ -1282,7 +1285,7 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
 
     out = pl.concat([df.lazy(), df.lazy()]).collect()
     assert out.shape == shape
-    assert out.frame_equal(df.vstack(df.clone()), null_equal=True)
+    assert_frame_equal(out, df.vstack(df.clone()))
 
 
 def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:

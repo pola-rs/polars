@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-import polars.testing
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy
@@ -564,7 +564,7 @@ def test_jit_sort_joins() -> None:
         pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"])
 
         a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
-        assert a.frame_equal(pl_result, null_equal=True)
+        assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
 
         # left key sorted right is not
@@ -573,7 +573,7 @@ def test_jit_sort_joins() -> None:
         pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"])
 
         a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
-        assert a.frame_equal(pl_result, null_equal=True)
+        assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
 
 
