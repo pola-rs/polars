@@ -196,13 +196,8 @@ def test_split_exact() -> None:
     )
 
     assert_frame_equal(out, expected)
-    assert (
-        df["x"]
-        .str.split_exact("_", 2, inclusive=False)
-        .to_frame()
-        .unnest("x")
-        .frame_equal(expected)
-    )
+    out2 = df["x"].str.split_exact("_", 2, inclusive=False).to_frame().unnest("x")
+    assert_frame_equal(out2, expected)
 
     out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
 
@@ -249,16 +244,13 @@ def test_entropy() -> None:
             "id": [1, 2, 1, 4, 5, 4, 6],
         }
     )
-
-    assert (
-        df.groupby("group", maintain_order=True).agg(
-            pl.col("id").entropy(normalize=True)
-        )
-    ).frame_equal(
-        pl.DataFrame(
-            {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
-        )
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("id").entropy(normalize=True)
     )
+    expected = pl.DataFrame(
+        {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_dot_in_groupby() -> None:
@@ -270,11 +262,11 @@ def test_dot_in_groupby() -> None:
         }
     )
 
-    assert (
-        df.groupby("group", maintain_order=True)
-        .agg(pl.col("x").dot("y").alias("dot"))
-        .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("x").dot("y").alias("dot")
     )
+    expected = pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]})
+    assert_frame_equal(result, expected)
 
 
 def test_dtype_col_selection() -> None:

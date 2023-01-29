@@ -82,12 +82,13 @@ def test_all_any_horizontally() -> None:
             "all": [False, False, False, None, False],
         }
     )
-    assert df.select(
+    result = df.select(
         [
             pl.any([pl.col("var2"), pl.col("var3")]),
             pl.all([pl.col("var2"), pl.col("var3")]),
         ]
-    ).frame_equal(expected)
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_cut() -> None:

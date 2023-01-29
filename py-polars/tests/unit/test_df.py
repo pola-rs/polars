@@ -793,7 +793,7 @@ def test_from_arrow_table() -> None:
     tbl = pa.table(data)
 
     df = cast(pl.DataFrame, pl.from_arrow(tbl))
-    df.frame_equal(pl.DataFrame(data))
+    assert_frame_equal(df, pl.DataFrame(data))
 
 
 def test_df_stats(df: pl.DataFrame) -> None:
@@ -919,14 +919,15 @@ def test_multiple_column_sort() -> None:
 
     df = pl.DataFrame({"a": np.arange(1, 4), "b": ["a", "a", "b"]})
 
-    df.sort("a", reverse=True).frame_equal(
-        pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]})
+    assert_frame_equal(
+        df.sort("a", reverse=True), pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]})
     )
-    df.sort("b", reverse=True).frame_equal(
-        pl.DataFrame({"a": [3, 1, 2], "b": ["b", "a", "a"]})
+    assert_frame_equal(
+        df.sort("b", reverse=True), pl.DataFrame({"a": [3, 1, 2], "b": ["b", "a", "a"]})
     )
-    df.sort(["b", "a"], reverse=[False, True]).frame_equal(
-        pl.DataFrame({"a": [2, 1, 3], "b": ["a", "a", "b"]})
+    assert_frame_equal(
+        df.sort(["b", "a"], reverse=[False, True]),
+        pl.DataFrame({"a": [2, 1, 3], "b": ["a", "a", "b"]}),
     )
 
 
@@ -1009,9 +1010,8 @@ def test_string_cache_eager_lazy() -> None:
             }
         ).with_columns(pl.col("region_ids").cast(pl.Categorical))
 
-        assert df1.join(
-            df2, left_on="region_ids", right_on="seq_name", how="left"
-        ).frame_equal(expected, null_equal=True)
+        result = df1.join(df2, left_on="region_ids", right_on="seq_name", how="left")
+        assert_frame_equal(result, expected)
 
         # also check row-wise categorical insert.
         # (column-wise is preferred, but this shouldn't fail)
@@ -2228,11 +2228,11 @@ def test_asof_by_multiple_keys() -> None:
         }
     )
 
-    assert (
-        lhs.join_asof(rhs, on="a", by=["by", "by2"], strategy="backward")
-        .select(["a", "by"])
-        .frame_equal(pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]}))
+    result = lhs.join_asof(rhs, on="a", by=["by", "by2"], strategy="backward").select(
+        ["a", "by"]
     )
+    expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
+    assert_frame_equal(result, expected)
 
 
 @typing.no_type_check

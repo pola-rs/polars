@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -137,6 +138,7 @@ def test_maintain_order_after_sampling() -> None:
     ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
 
 
+@pytest.mark.xfail(reason="Currently bugged, see issue #6556")
 def test_sorted_groupby_optimization() -> None:
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
 
@@ -148,9 +150,8 @@ def test_sorted_groupby_optimization() -> None:
             .groupby("a")
             .agg(pl.count())
         )
-
         sorted_explicit = df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
-        sorted_explicit.frame_equal(sorted_implicit)
+        assert_frame_equal(sorted_explicit, sorted_implicit)
 
 
 def test_median_on_shifted_col_3522() -> None:

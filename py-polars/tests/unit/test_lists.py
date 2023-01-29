@@ -544,21 +544,14 @@ def test_list_sliced_get_5186() -> None:
         }
     )
 
-    assert df.select(
-        [
-            "ind",
-            pl.col("inds").arr.first().alias("first_element"),
-            pl.col("inds").arr.last().alias("last_element"),
-        ]
-    )[10:20].frame_equal(
-        df[10:20].select(
-            [
-                "ind",
-                pl.col("inds").arr.first().alias("first_element"),
-                pl.col("inds").arr.last().alias("last_element"),
-            ]
-        )
-    )
+    exprs = [
+        "ind",
+        pl.col("inds").arr.first().alias("first_element"),
+        pl.col("inds").arr.last().alias("last_element"),
+    ]
+    out1 = df.select(exprs)[10:20]
+    out2 = df[10:20].select(exprs)
+    assert_frame_equal(out1, out2)
 
 
 def test_empty_eval_dtype_5546() -> None:

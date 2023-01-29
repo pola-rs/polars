@@ -295,13 +295,11 @@ def test_sort_slice_fast_path_5245() -> None:
 
 def test_explicit_list_agg_sort_in_groupby() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
-    assert (
-        df.groupby("A")
-        # this was col().list().sort() before we changed the logic
-        .agg(pl.col("B").sort(reverse=True))
-        .sort("A")
-        .frame_equal(df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A"))
-    )
+
+    # this was col().list().sort() before we changed the logic
+    result = df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A")
+    expected = df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A")
+    assert_frame_equal(result, expected)
 
 
 def test_sorted_join_query_5406() -> None:

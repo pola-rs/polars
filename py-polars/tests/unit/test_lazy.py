@@ -552,7 +552,8 @@ def test_drop_nulls() -> None:
 
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8], "ham": ["a", "b", "c"]})
     expected = pl.DataFrame({"foo": [1, 3], "bar": [6, 8], "ham": ["a", "c"]})
-    df.lazy().drop_nulls().collect().frame_equal(expected)
+    result = df.lazy().drop_nulls().collect()
+    assert_frame_equal(result, expected)
 
 
 def test_all_expr() -> None:
@@ -709,7 +710,7 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
             pl.col("A").rolling_max(3).alias("3b"),
             pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
             pl.col("A").rolling_sum(3).alias("4b"),
-            # below we use .round purely for the ability to do .frame_equal()
+            # below we use .round purely for the ability to do assert frame equality
             pl.col("A").rolling_std(3).round(1).alias("std"),
             pl.col("A").rolling_var(3).round(1).alias("var"),
         ]
@@ -1031,12 +1032,9 @@ def test_tail(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_last(fruits_cars: pl.DataFrame) -> None:
-    assert (
-        fruits_cars.lazy()
-        .last()
-        .collect()
-        .frame_equal(fruits_cars[(len(fruits_cars) - 1) :, :])
-    )
+    result = fruits_cars.lazy().last().collect()
+    expected = fruits_cars[(len(fruits_cars) - 1) :, :]
+    assert_frame_equal(result, expected)
 
 
 def test_first(fruits_cars: pl.DataFrame) -> None:
@@ -1259,13 +1257,10 @@ def test_unique() -> None:
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
     assert_frame_equal(df.lazy().unique(maintain_order=True).collect(), expected)
 
+    result = df.lazy().unique(subset="b", maintain_order=True).collect()
     expected = pl.DataFrame({"a": [1], "b": [3]})
-    assert (
-        df.lazy()
-        .unique(subset="b", maintain_order=True)
-        .collect()
-        .frame_equal(expected)
-    )
+    assert_frame_equal(result, expected)
+
     s0 = pl.Series("a", [1, 2, None, 2])
     # test if the null is included
     assert s0.unique().to_list() == [None, 1, 2]
@@ -1393,26 +1388,23 @@ def test_group_lengths() -> None:
         }
     )
 
-    assert (
-        df.groupby(["group"], maintain_order=True)
-        .agg(
-            [
-                (pl.col("id").unique_counts() / pl.col("id").len())
-                .sum()
-                .alias("unique_counts_sum"),
-                pl.col("id").unique().len().alias("unique_len"),
-            ]
-        )
-        .frame_equal(
-            pl.DataFrame(
-                {
-                    "group": ["A", "B"],
-                    "unique_counts_sum": [1.0, 1.0],
-                    "unique_len": [2, 3],
-                }
-            )
-        )
+    result = df.groupby(["group"], maintain_order=True).agg(
+        [
+            (pl.col("id").unique_counts() / pl.col("id").len())
+            .sum()
+            .alias("unique_counts_sum"),
+            pl.col("id").unique().len().alias("unique_len"),
+        ]
     )
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "B"],
+            "unique_counts_sum": [1.0, 1.0],
+            "unique_len": [2, 3],
+        },
+        schema_overrides={"unique_len": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_quantile_filtered_agg() -> None:

@@ -1201,26 +1201,24 @@ def test_groupby_rolling_mean_3020() -> None:
 
     period: str | timedelta
     for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
-        assert (
-            df.groupby_rolling(index_column="Date", period=period)
-            .agg(pl.col("val").mean().alias("val_mean"))
-            .frame_equal(
-                pl.DataFrame(
-                    {
-                        "Date": [
-                            date(1998, 4, 12),
-                            date(1998, 4, 19),
-                            date(1998, 4, 26),
-                            date(1998, 5, 3),
-                            date(1998, 5, 10),
-                            date(1998, 5, 17),
-                            date(1998, 5, 24),
-                        ],
-                        "val_mean": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-                    }
-                )
-            )
+        result = df.groupby_rolling(index_column="Date", period=period).agg(
+            pl.col("val").mean().alias("val_mean")
         )
+        expected = pl.DataFrame(
+            {
+                "Date": [
+                    date(1998, 4, 12),
+                    date(1998, 4, 19),
+                    date(1998, 4, 26),
+                    date(1998, 5, 3),
+                    date(1998, 5, 10),
+                    date(1998, 5, 17),
+                    date(1998, 5, 24),
+                ],
+                "val_mean": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            }
+        )
+        assert_frame_equal(result, expected)
 
 
 def test_asof_join() -> None:
