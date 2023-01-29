@@ -3,17 +3,13 @@ mod patterns;
 mod strptime;
 
 use chrono::ParseError;
-use once_cell::sync::Lazy;
 pub use patterns::Pattern;
-use regex::Regex;
 
 use super::*;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
 #[cfg(feature = "dtype-time")]
 use crate::chunkedarray::time::time_to_time64ns;
-
-static TZ_AWARE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%#z)|(^%\+$)").unwrap());
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -392,7 +388,7 @@ pub trait Utf8Methods: AsUtf8 {
         fmt: Option<&str>,
         tu: TimeUnit,
         cache: bool,
-        mut tz_aware: bool,
+        tz_aware: bool,
         utc: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
@@ -400,14 +396,6 @@ pub trait Utf8Methods: AsUtf8 {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu),
         };
-        if TZ_AWARE_RE.is_match(fmt) {
-            tz_aware = true;
-        }
-        if !tz_aware && utc {
-            return Err(PolarsError::ComputeError(
-                "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC')".into(),
-            ));
-        }
         let fmt = self::strptime::compile_fmt(fmt);
         let cache = cache && utf8_ca.len() > 50;
 

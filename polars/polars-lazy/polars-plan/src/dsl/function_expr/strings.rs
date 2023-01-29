@@ -1,10 +1,15 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "regex")]
+use once_cell::sync::Lazy;
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "regex")]
+static TZ_AWARE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%#z)|(^%\+$)").unwrap());
 
 use super::*;
 
@@ -308,6 +313,24 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
+    let utc = options.utc;
+    let tz_aware = match (options.tz_aware, &options.fmt) {
+        (true, Some(_)) => true,
+        (true, None) => {
+            return Err(PolarsError::ComputeError(
+                "Passing 'tz_aware=True' without 'fmt' is not yet supported. Please specify 'fmt'."
+                    .into(),
+            ));
+        }
+        #[cfg(feature = "regex")]
+        (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
+        (false, None) => false,
+    };
+    if !tz_aware && utc {
+        return Err(PolarsError::ComputeError(
+            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC').".into(),
+        ));
+    }
     let ca = s.utf8()?;
 
     let out = match &options.date_dtype {
@@ -321,14 +344,8 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         }
         DataType::Datetime(tu, _) => {
             if options.exact {
-                ca.as_datetime(
-                    options.fmt.as_deref(),
-                    *tu,
-                    options.cache,
-                    options.tz_aware,
-                    options.utc,
-                )?
-                .into_series()
+                ca.as_datetime(options.fmt.as_deref(), *tu, options.cache, tz_aware, utc)?
+                    .into_series()
             } else {
                 ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
                     .into_series()
