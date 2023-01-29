@@ -453,7 +453,7 @@ impl OptimizationRule for SimplifyExprRule {
                 #[allow(clippy::manual_map)]
                 let out = match op {
                     Operator::Plus => {
-                        match dbg!(eval_binary_same_type!(left_aexpr, +, right_aexpr)) {
+                        match eval_binary_same_type!(left_aexpr, +, right_aexpr) {
                             Some(new) => Some(new),
                             None => {
                                 // try to replace addition of string columns with `concat_str`

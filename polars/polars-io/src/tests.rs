@@ -14,7 +14,7 @@ fn test_filter() -> PolarsResult<()> {
     let out = df.filter(&df.column("fats_g")?.gt(4)?)?;
 
     // this fails if all columns are not equal.
-    dbg!(out);
+    println!("{out}");
 
     Ok(())
 }

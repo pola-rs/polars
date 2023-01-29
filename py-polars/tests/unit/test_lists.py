@@ -9,7 +9,6 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
-from polars.testing._private import verify_series_and_expr_api
 
 
 def test_list_arr_get() -> None:
@@ -243,9 +242,9 @@ def test_list_arr_empty() -> None:
 def test_list_argminmax() -> None:
     s = pl.Series("a", [[1, 2], [3, 2, 1]])
     expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
-    verify_series_and_expr_api(s, expected, "arr.arg_min")
+    assert_series_equal(s.arr.arg_min(), expected)
     expected = pl.Series("a", [1, 0], dtype=pl.UInt32)
-    verify_series_and_expr_api(s, expected, "arr.arg_max")
+    assert_series_equal(s.arr.arg_max(), expected)
 
 
 def test_list_shift() -> None:
@@ -669,4 +668,39 @@ def test_fast_explode_on_list_struct_6208() -> None:
             {"ref": 1, "tag": "t", "ratio": 62.3},
             {"ref": None, "tag": None, "ratio": None},
         ],
+    }
+
+
+def test_concat_list_in_agg_6397() -> None:
+    df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
+
+    # single list
+    assert df.groupby("group").agg(
+        [
+            # this casts every element to a list
+            pl.concat_list(pl.col("value")),
+        ]
+    ).sort("group").to_dict(False) == {
+        "group": [1, 2, 3],
+        "value": [[["a"]], [["b"], ["c"]], [["d"]]],
+    }
+
+    # nested list
+    assert df.groupby("group").agg(
+        [
+            pl.concat_list(pl.col("value").list()).alias("result"),
+        ]
+    ).sort("group").to_dict(False) == {
+        "group": [1, 2, 3],
+        "result": [[["a"]], [["b", "c"]], [["d"]]],
+    }
+
+
+def test_list_eval_all_null() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_column(
+        pl.col("bar").cast(pl.List(pl.Utf8))
+    )
+
+    assert df.select(pl.col("bar").arr.eval(pl.element())).to_dict(False) == {
+        "bar": [None, None, None]
     }

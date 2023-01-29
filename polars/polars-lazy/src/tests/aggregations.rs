@@ -181,7 +181,6 @@ fn test_power_in_agg_list1() -> PolarsResult<()> {
             },
         )
         .collect()?;
-    dbg!(&out);
 
     let agg = out.column("foo")?.list()?;
     let first = agg.get(0).unwrap();

@@ -121,7 +121,6 @@ mod test {
         ]);
         let val = UInt32Array::from_slice(&[0; 10]);
         let out = set_with_mask(&val, &mask, 1, DataType::UInt32);
-        dbg!(&out);
         assert_eq!(out.values().as_slice(), &[0, 1, 0, 1, 0, 1, 0, 1, 0, 0]);
 
         let val = UInt32Array::from(&[None, None, None]);
