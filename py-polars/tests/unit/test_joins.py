@@ -105,7 +105,7 @@ def test_sorted_merge_joins() -> None:
                     df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how
                 )
 
-                assert out_hash_join.frame_equal(out_sorted_merge_join)
+                assert_frame_equal(out_hash_join, out_sorted_merge_join)
 
 
 def test_join_negative_integers() -> None:
@@ -373,7 +373,7 @@ def test_join() -> None:
 
     cols = ["a", "b", "bar", "ham"]
     assert lazy_join.shape == eager_join.shape
-    assert lazy_join.sort(by=cols).frame_equal(eager_join.sort(by=cols))
+    assert_frame_equal(lazy_join.sort(by=cols), eager_join.sort(by=cols))
 
 
 def test_joins_dispatch() -> None:
@@ -617,7 +617,7 @@ def test_asof_join_schema_5684() -> None:
     projected_result = q.select(pl.all()).collect()
     result = q.collect()
 
-    assert projected_result.frame_equal(result)
+    assert_frame_equal(projected_result, result)
     assert (
         q.schema
         == projected_result.schema

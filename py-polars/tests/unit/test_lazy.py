@@ -215,11 +215,11 @@ def test_groupby() -> None:
     expected = pl.DataFrame({"groups": ["a", "b"], "a": [1.0, 3.5]})
 
     out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
-    assert out.sort(by="groups").frame_equal(expected)
+    assert_frame_equal(out.sort(by="groups"), expected)
 
     # refer to column via pl.Expr
     out = df.lazy().groupby(pl.col("groups")).agg(pl.mean("a")).collect()
-    assert out.sort(by="groups").frame_equal(expected)
+    assert_frame_equal(out.sort(by="groups"), expected)
 
 
 def test_shift(fruits_cars: pl.DataFrame) -> None:
@@ -237,7 +237,7 @@ def test_shift(fruits_cars: pl.DataFrame) -> None:
             "cars": [None, None, "beetle", "audi", "beetle"],
         }
     )
-    res.frame_equal(expected, null_equal=True)
+    assert_frame_equal(res, expected)
 
     # negative value
     res = fruits_cars.lazy().shift(-2).collect()
@@ -557,7 +557,7 @@ def test_drop_nulls() -> None:
 
 def test_all_expr() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert df.select([pl.all()]).frame_equal(df)
+    assert_frame_equal(df.select([pl.all()]), df)
 
 
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
@@ -1015,19 +1015,19 @@ def test_with_columns_single_series() -> None:
 def test_reverse() -> None:
     out = pl.DataFrame({"a": [1, 2], "b": [3, 4]}).lazy().reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
-    assert out.collect().frame_equal(expected)
+    assert_frame_equal(out.collect(), expected)
 
 
 def test_limit(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().limit(1).collect().frame_equal(fruits_cars[0, :])
+    assert_frame_equal(fruits_cars.lazy().limit(1).collect(), fruits_cars[0, :])
 
 
 def test_head(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().head(2).collect().frame_equal(fruits_cars[:2, :])
+    assert_frame_equal(fruits_cars.lazy().head(2).collect(), fruits_cars[:2, :])
 
 
 def test_tail(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().tail(2).collect().frame_equal(fruits_cars[3:, :])
+    assert_frame_equal(fruits_cars.lazy().tail(2).collect(), fruits_cars[3:, :])
 
 
 def test_last(fruits_cars: pl.DataFrame) -> None:
@@ -1040,7 +1040,7 @@ def test_last(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_first(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().first().collect().frame_equal(fruits_cars[0, :])
+    assert_frame_equal(fruits_cars.lazy().first().collect(), fruits_cars[0, :])
 
 
 def test_join_suffix() -> None:
@@ -1257,7 +1257,7 @@ def test_unique() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert df.lazy().unique(maintain_order=True).collect().frame_equal(expected)
+    assert_frame_equal(df.lazy().unique(maintain_order=True).collect(), expected)
 
     expected = pl.DataFrame({"a": [1], "b": [3]})
     assert (

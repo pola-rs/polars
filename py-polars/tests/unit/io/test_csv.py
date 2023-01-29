@@ -464,7 +464,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
     f2 = io.BytesIO(b"a,b\n1,2\n")
     out2 = pl.read_csv(f2)
     expected = pl.DataFrame({"a": [1], "b": [2]})
-    assert out2.frame_equal(expected)
+    assert_frame_equal(out2, expected)
 
 
 def test_partial_decompression(foods_file_path: Path) -> None:
@@ -540,7 +540,7 @@ def test_csv_quote_char() -> None:
             rolling_stones.encode(), quote_char=None, use_pyarrow=use_pyarrow
         )
         assert out.shape == (9, 3)
-        out.frame_equal(expected)
+        assert_frame_equal(out, expected)
 
 
 def test_csv_empty_quotes_char_1622() -> None:
@@ -710,7 +710,7 @@ def test_quoting_round_trip() -> None:
     f.seek(0)
     read_df = pl.read_csv(f)
 
-    assert read_df.frame_equal(df)
+    assert_frame_equal(read_df, df)
 
 
 def test_fallback_chrono_parser() -> None:
@@ -732,7 +732,7 @@ def test_csv_string_escaping() -> None:
     df.write_csv(f)
     f.seek(0)
     df_read = pl.read_csv(f)
-    assert df_read.frame_equal(df)
+    assert_frame_equal(df_read, df)
 
 
 def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
@@ -790,7 +790,7 @@ def test_csv_multiple_null_values() -> None:
         }
     )
 
-    assert df2.frame_equal(expected)
+    assert_frame_equal(df2, expected)
 
 
 def test_different_eol_char() -> None:
@@ -798,8 +798,8 @@ def test_different_eol_char() -> None:
     expected = pl.DataFrame(
         {"column_1": ["a", "b", "c"], "column_2": [1, 2, 3], "column_3": [10, 20, 30]}
     )
-    assert pl.read_csv(csv.encode(), eol_char=";", has_header=False).frame_equal(
-        expected
+    assert_frame_equal(
+        pl.read_csv(csv.encode(), eol_char=";", has_header=False), expected
     )
 
 

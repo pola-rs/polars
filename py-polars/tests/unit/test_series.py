@@ -1315,7 +1315,7 @@ def test_range() -> None:
     assert s3.dtype == pl.List(pl.List(pl.Int64))
 
     df = pl.DataFrame([s1])
-    assert df[2:5].frame_equal(df[range(2, 5)])
+    assert_frame_equal(df[2:5], df[range(2, 5)])
 
 
 def test_strict_cast() -> None:
@@ -1606,9 +1606,11 @@ def test_to_dummies() -> None:
 def test_value_counts() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     result = s.value_counts()
-    expected = pl.DataFrame({"a": [1, 2, 3], "counts": [1, 2, 1]})
-    result_sorted: pl.DataFrame = result.sort("a")
-    assert result_sorted.frame_equal(expected)
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3], "counts": [1, 2, 1]}, schema_overrides={"counts": pl.UInt32}
+    )
+    result_sorted = result.sort("a")
+    assert_frame_equal(result_sorted, expected)
 
 
 def test_chunk_lengths() -> None:

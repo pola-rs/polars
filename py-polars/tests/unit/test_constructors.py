@@ -466,7 +466,7 @@ def test_init_records() -> None:
 
     df_cd = pl.DataFrame(dicts, schema=["c", "d"])
     expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
-    assert df_cd.frame_equal(expected)
+    assert_frame_equal(df_cd, expected)
 
 
 def test_init_records_schema_order() -> None:

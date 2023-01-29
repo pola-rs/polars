@@ -239,7 +239,7 @@ def test_top_k() -> None:
 
     # 5886
     df = pl.DataFrame({"test": [4, 3, 2, 1]})
-    assert df.select(pl.col("test").top_k(10)).frame_equal(df)
+    assert_frame_equal(df.select(pl.col("test").top_k(10)), df)
 
 
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:

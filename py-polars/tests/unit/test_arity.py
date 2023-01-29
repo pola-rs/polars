@@ -1,4 +1,5 @@
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_nested_when_then_and_wildcard_expansion_6284() -> None:
@@ -25,7 +26,7 @@ def test_nested_when_then_and_wildcard_expansion_6284() -> None:
         .alias("result")
     )
 
-    assert out0.frame_equal(out1)
+    assert_frame_equal(out0, out1)
     assert out0.to_dict(False) == {
         "1": ["a", "b"],
         "2": ["c", "d"],

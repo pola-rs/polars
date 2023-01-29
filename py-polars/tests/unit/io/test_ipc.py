@@ -85,7 +85,7 @@ def test_compressed_simple(compression: IpcCompression) -> None:
     f.seek(0)
 
     df_read = pl.read_ipc(f, use_pyarrow=False)
-    assert df_read.frame_equal(df)
+    assert_frame_equal(df_read, df)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)

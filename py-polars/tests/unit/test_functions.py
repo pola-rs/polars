@@ -186,7 +186,7 @@ def test_align_frames() -> None:
         .insert_at_idx(0, pf1["date"])
     )
     # confirm we match the same operation in pandas
-    assert pl_dot.frame_equal(pl.from_pandas(pd_dot))
+    assert_frame_equal(pl_dot, pl.from_pandas(pd_dot))
     pd.testing.assert_frame_equal(pd_dot, pl_dot.to_pandas())
 
     # (also: confirm alignment function works with lazyframes)
@@ -196,8 +196,8 @@ def test_align_frames() -> None:
         on="date",
     )
     assert isinstance(lf1, pl.LazyFrame)
-    assert lf1.collect().frame_equal(pf1)
-    assert lf2.collect().frame_equal(pf2)
+    assert_frame_equal(lf1.collect(), pf1)
+    assert_frame_equal(lf2.collect(), pf2)
 
     # misc
     assert [] == pl.align_frames(on="date")

@@ -47,4 +47,4 @@ def test_parquet_chunks_545() -> None:
 
         # read it with polars
         polars_df = pl.read_parquet(f)
-        assert pl.DataFrame(df).frame_equal(polars_df)
+        assert_frame_equal(pl.DataFrame(df), polars_df)

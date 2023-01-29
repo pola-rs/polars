@@ -1516,7 +1516,7 @@ def test_timedelta_from() -> None:
             "B": timedelta(seconds=50),
         },
     ]
-    assert pl.DataFrame(as_dict).frame_equal(pl.DataFrame(as_rows))
+    assert_frame_equal(pl.DataFrame(as_dict), pl.DataFrame(as_rows))
 
 
 def test_duration_aggregations() -> None:
@@ -1701,7 +1701,7 @@ def test_groupby_rolling_by_() -> None:
         .groupby_rolling(index_column="datetime", by="group", period="3d")
         .agg([pl.count().alias("count")])
     )
-    assert out.sort(["group", "datetime"]).frame_equal(expected)
+    assert_frame_equal(out.sort(["group", "datetime"]), expected)
     assert out.to_dict(False) == {
         "group": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
         "datetime": [

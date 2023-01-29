@@ -244,7 +244,7 @@ def test_sorted_window_expression() -> None:
     df = df.sort("b")
     out2 = df.with_columns(expr)
 
-    assert out1.frame_equal(out2)
+    assert_frame_equal(out1, out2)
 
 
 def test_nested_aggregation_window_expression() -> None:

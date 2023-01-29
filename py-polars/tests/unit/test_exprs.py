@@ -60,8 +60,8 @@ def test_filter_where() -> None:
         pl.col("b").filter(pl.col("b") > 4).alias("c")
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
-    assert result_where.frame_equal(expected)
-    assert result_filter.frame_equal(expected)
+    assert_frame_equal(result_where, expected)
+    assert_frame_equal(result_filter, expected)
 
 
 def test_min_nulls_consistency() -> None:
@@ -166,7 +166,7 @@ def test_split() -> None:
     )
 
     assert_frame_equal(out, expected)
-    assert df["x"].str.split("_").to_frame().frame_equal(expected)
+    assert_frame_equal(df["x"].str.split("_").to_frame(), expected)
 
     out = df.select([pl.col("x").str.split("_", inclusive=True)])
 
@@ -180,7 +180,7 @@ def test_split() -> None:
     )
 
     assert_frame_equal(out, expected)
-    assert df["x"].str.split("_", inclusive=True).to_frame().frame_equal(expected)
+    assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
 
 
 def test_split_exact() -> None:
@@ -223,7 +223,7 @@ def test_splitn() -> None:
     )
 
     assert_frame_equal(out, expected)
-    assert df["x"].str.splitn("_", 2).to_frame().unnest("x").frame_equal(expected)
+    assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
 
 
 def test_unique_and_drop_stability() -> None:

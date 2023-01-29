@@ -1,4 +1,5 @@
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_empty_str_concat_lit() -> None:
@@ -13,4 +14,4 @@ def test_empty_str_concat_lit() -> None:
 def test_top_k_empty() -> None:
     df = pl.DataFrame({"test": []})
 
-    assert df.select([pl.col("test").top_k(2)]).frame_equal(df)
+    assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
