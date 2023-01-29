@@ -313,7 +313,7 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
-    let utc = options.utc;
+    #[cfg(feature = "regex")]
     let tz_aware = match (options.tz_aware, &options.fmt) {
         (true, Some(_)) => true,
         (true, None) => {
@@ -322,11 +322,10 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                     .into(),
             ));
         }
-        #[cfg(feature = "regex")]
         (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
         (false, None) => false,
     };
-    if !tz_aware && utc {
+    if !tz_aware && options.utc {
         return Err(PolarsError::ComputeError(
             "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC').".into(),
         ));
@@ -344,8 +343,14 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         }
         DataType::Datetime(tu, _) => {
             if options.exact {
-                ca.as_datetime(options.fmt.as_deref(), *tu, options.cache, tz_aware, utc)?
-                    .into_series()
+                ca.as_datetime(
+                    options.fmt.as_deref(),
+                    *tu,
+                    options.cache,
+                    tz_aware,
+                    options.utc,
+                )?
+                .into_series()
             } else {
                 ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
                     .into_series()

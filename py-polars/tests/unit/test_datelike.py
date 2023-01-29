@@ -2705,7 +2705,6 @@ def test_crossing_dst_tz_aware(fmt: str) -> None:
 
 
 def test_tz_aware_without_fmt() -> None:
-    ts = ["2021-03-27T23:59:59", "2021-03-28T23:59:59"]
     with pytest.raises(
         ComputeError,
         match=(
@@ -2713,12 +2712,11 @@ def test_tz_aware_without_fmt() -> None:
             r"Please specify 'fmt'.$"
         ),
     ):
-        pl.Series(ts).str.strptime(pl.Datetime, tz_aware=True)
+        pl.Series(["2020-01-01"]).str.strptime(pl.Datetime, tz_aware=True)
 
 
 @pytest.mark.parametrize("fmt", ["%Y-%m-%dT%H:%M:%S", None])
 def test_utc_with_tz_naive(fmt: str | None) -> None:
-    ts = ["2021-03-27T23:59:59", "2021-03-28T23:59:59"]
     with pytest.raises(
         ComputeError,
         match=(
@@ -2726,4 +2724,4 @@ def test_utc_with_tz_naive(fmt: str | None) -> None:
             r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\).$"
         ),
     ):
-        pl.Series(ts).str.strptime(pl.Datetime, fmt, utc=True)
+        pl.Series(["2020-01-01 00:00:00"]).str.strptime(pl.Datetime, fmt, utc=True)
