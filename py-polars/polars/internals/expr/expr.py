@@ -99,8 +99,8 @@ def expr_to_lit_or_expr(
     expr
         Any argument.
     str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`,
-        If False it will be converted to `col("foo")`
+        If True string argument `"foo"` will be converted to `lit("foo")`.
+        If False it will be converted to `col("foo")`.
 
     Returns
     -------
