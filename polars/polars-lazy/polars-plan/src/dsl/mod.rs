@@ -1055,7 +1055,7 @@ impl Expr {
     ///          sum("values").over([col("groups")]),
     ///      ])
     ///      .collect()?;
-    ///     dbg!(&out);
+    ///     println!("{}", &out);
     ///     Ok(())
     /// }
     ///
