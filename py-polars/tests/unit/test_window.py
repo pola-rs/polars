@@ -101,7 +101,6 @@ def test_arange_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
     expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
     out = df.with_columns(expr)
-    print(out)
     assert_frame_equal(
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
     )

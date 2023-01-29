@@ -1600,7 +1600,6 @@ def test_to_dummies() -> None:
         {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]},
         schema={"a_1": pl.UInt8, "a_2": pl.UInt8, "a_3": pl.UInt8},
     )
-    print(result)
     assert_frame_equal(result, expected)
 
 
