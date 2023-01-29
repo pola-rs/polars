@@ -382,7 +382,6 @@ pub trait Utf8Methods: AsUtf8 {
     }
 
     #[cfg(feature = "dtype-datetime")]
-    #[allow(unused_variables)] // `utc` is only used with timezones feature
     /// Parsing string values and return a [`DatetimeChunked`]
     fn as_datetime(
         &self,
@@ -390,7 +389,7 @@ pub trait Utf8Methods: AsUtf8 {
         tu: TimeUnit,
         cache: bool,
         tz_aware: bool,
-        utc: bool,
+        _utc: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
@@ -416,7 +415,7 @@ pub trait Utf8Methods: AsUtf8 {
 
                 let mut convert = |s: &str| {
                     DateTime::parse_from_str(s, &fmt).ok().map(|dt| {
-                        if !utc {
+                        if !_utc {
                             match tz {
                                 None => tz = Some(dt.timezone()),
                                 Some(tz_found) => {
@@ -457,7 +456,7 @@ pub trait Utf8Methods: AsUtf8 {
                     .collect::<PolarsResult<_>>()?;
 
                 ca.rename(utf8_ca.name());
-                if !utc {
+                if !_utc {
                     let tz = tz.map(|of| format!("{of}"));
                     Ok(ca.into_datetime(tu, tz))
                 } else {
