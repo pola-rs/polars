@@ -2827,3 +2827,49 @@ def test_iter_slices() -> None:
     assert len(batches[0]) == 50
     assert len(batches[1]) == 45
     assert batches[1].rows() == df[50:].rows()
+
+
+def test_frame_equal() -> None:
+    # Values are checked
+    df1 = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "foo": [3, 2, 1],
+            "bar": [8.0, 7.0, 6.0],
+            "ham": ["c", "b", "a"],
+        }
+    )
+
+    assert df1.frame_equal(df1)
+    assert not df1.frame_equal(df2)
+
+    # Column names are checked
+    df3 = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [6.0, 7.0, 8.0],
+            "c": ["a", "b", "c"],
+        }
+    )
+    assert not df1.frame_equal(df3)
+
+    # Datatypes are NOT checked
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, None],
+            "bar": [6.0, 7.0, None],
+            "ham": ["a", "b", None],
+        }
+    )
+    assert df.frame_equal(df.with_columns(pl.col("foo").cast(pl.Int8)))
+    assert df.frame_equal(df.with_columns(pl.col("ham").cast(pl.Categorical)))
+
+    # The null_equal parameter determines if None values are considered equal
+    assert df.frame_equal(df)
+    assert not df.frame_equal(df, null_equal=False)
