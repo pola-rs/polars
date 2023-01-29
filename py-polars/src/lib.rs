@@ -480,6 +480,7 @@ fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> 
 }
 
 #[pyfunction]
+#[pyo3(signature = (pyexpr, lambda, output_type, apply_groups, returns_scalar))]
 pub fn map_mul(
     py: Python,
     pyexpr: Vec<PyExpr>,

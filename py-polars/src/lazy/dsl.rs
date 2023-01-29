@@ -534,6 +534,7 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
+    #[pyo3(signature = (fmt, strict, exact, cache))]
     pub fn str_parse_date(
         &self,
         fmt: Option<String>,
@@ -556,6 +557,7 @@ impl PyExpr {
             .into()
     }
 
+    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, tu))]
     #[allow(clippy::too_many_arguments)]
     pub fn str_parse_datetime(
         &self,
@@ -599,6 +601,7 @@ impl PyExpr {
             .into()
     }
 
+    #[pyo3(signature = (fmt, strict, exact, cache))]
     pub fn str_parse_time(
         &self,
         fmt: Option<String>,
@@ -707,6 +710,7 @@ impl PyExpr {
         self.clone().inner.str().rjust(width, fillchar).into()
     }
 
+    #[pyo3(signature = (pat, literal, strict))]
     pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
         match literal {
             Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
@@ -1045,6 +1049,7 @@ impl PyExpr {
         self.inner.clone().dt().combine(time.inner, tu.0).into()
     }
 
+    #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
     pub fn rolling_apply(
         &self,
         py: Python,
@@ -1179,6 +1184,7 @@ impl PyExpr {
             .into()
     }
 
+    #[pyo3(signature = (lambda, output_type, agg_list))]
     pub fn map(
         &self,
         lambda: PyObject,
@@ -1243,6 +1249,7 @@ impl PyExpr {
         self.inner.clone().interpolate(method.0).into()
     }
 
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_sum(
         &self,
         window_size: &str,
@@ -1262,6 +1269,8 @@ impl PyExpr {
         };
         self.inner.clone().rolling_sum(options).into()
     }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_min(
         &self,
         window_size: &str,
@@ -1281,6 +1290,8 @@ impl PyExpr {
         };
         self.inner.clone().rolling_min(options).into()
     }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_max(
         &self,
         window_size: &str,
@@ -1300,6 +1311,8 @@ impl PyExpr {
         };
         self.inner.clone().rolling_max(options).into()
     }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_mean(
         &self,
         window_size: &str,
@@ -1321,6 +1334,7 @@ impl PyExpr {
         self.inner.clone().rolling_mean(options).into()
     }
 
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_std(
         &self,
         window_size: &str,
@@ -1342,6 +1356,7 @@ impl PyExpr {
         self.inner.clone().rolling_std(options).into()
     }
 
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_var(
         &self,
         window_size: &str,
@@ -1363,6 +1378,7 @@ impl PyExpr {
         self.inner.clone().rolling_var(options).into()
     }
 
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_median(
         &self,
         window_size: &str,
@@ -1383,6 +1399,7 @@ impl PyExpr {
         self.inner.clone().rolling_median(options).into()
     }
 
+    #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
     #[allow(clippy::too_many_arguments)]
     pub fn rolling_quantile(
         &self,
@@ -1525,6 +1542,7 @@ impl PyExpr {
             .into()
     }
 
+    #[pyo3(signature = (width_strat, name_gen, upper_bound))]
     fn lst_to_struct(
         &self,
         width_strat: Wrap<ListToStructWidthStrategy>,

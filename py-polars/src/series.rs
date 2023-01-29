@@ -784,6 +784,7 @@ impl PySeries {
         PySeries::new(self.series.clone())
     }
 
+    #[pyo3(signature = (lambda, output_type, skip_nulls))]
     pub fn apply_lambda(
         &self,
         lambda: &PyAny,
