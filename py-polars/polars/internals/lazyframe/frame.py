@@ -1559,7 +1559,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             | pli.Expr
             | pli.Series
             | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
-        ),
+            | None
+        ) = None,
+        **named_exprs: Any,
     ) -> LDF:
         """
         Select columns from this DataFrame.
@@ -1567,7 +1569,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         exprs
-            Column or columns to select.
+            Column expression(s) to select.
+        **named_exprs
+            Named column expressions, provided as kwargs.
 
         Examples
         --------
@@ -1638,7 +1642,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────────┘
 
         """
+        if exprs is None and not named_exprs:
+            raise ValueError("Expected at least one of 'exprs' or **named_exprs")
+        elif exprs is None:
+            exprs = []
+
         exprs = pli.selection_to_pyexpr_list(exprs)
+        exprs.extend(
+            pli.expr_to_lit_or_expr(expr, structify=True)._pyexpr.alias(name)
+            for name, expr in named_exprs.items()
+        )
         return self._from_pyldf(self._ldf.select(exprs))
 
     def groupby(
@@ -2434,15 +2447,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Notes
         -----
-        Creating a new LazyFrame using this method does not create a new copy of
-        existing data.
+        Creating a new LazyFrame using this method does not create a new copy
+        of existing data.
 
         Parameters
         ----------
         exprs
-            List of Expressions that evaluate to columns.
+            List of expressions that evaluate to columns.
         **named_exprs
-            Named column Expressions, provided as kwargs.
+            Named column expressions, provided as kwargs.
 
         Examples
         --------
@@ -2545,8 +2558,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         if named_exprs and not Config.with_columns_kwargs:
             raise RuntimeError(
-                "**kwargs support is experimental; requires opt-in via"
-                " `pl.Config.with_columns_kwargs = True`"
+                "**kwargs support requires `pl.Config.with_columns_kwargs = True`"
             )
         elif exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")

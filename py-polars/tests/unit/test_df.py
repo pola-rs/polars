@@ -1614,6 +1614,10 @@ def test_select_by_dtype(df: pl.DataFrame) -> None:
     assert out.columns == ["strings", "strings_nulls", "bools", "bools_nulls"]
     out = df.select(pl.col(INTEGER_DTYPES))
     assert out.columns == ["int", "int_nulls"]
+    out = df.select(ints=pl.col(INTEGER_DTYPES))
+    assert out.schema == {
+        "ints": pl.Struct([pl.Field("int", pl.Int64), pl.Field("int_nulls", pl.Int64)])
+    }
 
 
 def test_with_row_count() -> None:
@@ -2403,6 +2407,33 @@ def test_selection_regex_and_multicol() -> None:
         "b": [25, 36, 49, 64],
         "c": [81, 100, 121, 144],
     }
+
+    # kwargs
+    df = test_df.select(
+        re=pl.col("^\\w$"),
+        odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
+        maxes=pl.all().max().suffix("_max"),
+    ).head(2)
+    # ┌───────────┬───────────┬─────────────┐
+    # │ re        ┆ odd       ┆ maxes       │
+    # │ ---       ┆ ---       ┆ ---         │
+    # │ struct[3] ┆ struct[4] ┆ struct[4]   │
+    # ╞═══════════╪═══════════╪═════════════╡
+    # │ {1,5,9}   ┆ {1,1,1,1} ┆ {4,8,12,16} │
+    # │ {2,6,10}  ┆ {0,0,0,0} ┆ {4,8,12,16} │
+    # └───────────┴───────────┴─────────────┘
+    assert df.rows() == [
+        (
+            {"a": 1, "b": 5, "c": 9},
+            {"a_is_odd": 1, "b_is_odd": 1, "c_is_odd": 1, "foo_is_odd": 1},
+            {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
+        ),
+        (
+            {"a": 2, "b": 6, "c": 10},
+            {"a_is_odd": 0, "b_is_odd": 0, "c_is_odd": 0, "foo_is_odd": 0},
+            {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
+        ),
+    ]
 
 
 def test_with_columns() -> None:

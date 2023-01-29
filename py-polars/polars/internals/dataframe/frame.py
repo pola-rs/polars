@@ -5506,7 +5506,9 @@ class DataFrame:
             | pli.Expr
             | pli.Series
             | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
-        ),
+            | None
+        ) = None,
+        **named_exprs: Any,
     ) -> DF:
         """
         Select columns from this DataFrame.
@@ -5515,6 +5517,8 @@ class DataFrame:
         ----------
         exprs
             Column or columns to select.
+        **named_exprs
+            Named column expressions, provided as kwargs.
 
         Examples
         --------
@@ -5587,7 +5591,7 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy().select(exprs).collect(no_optimization=True)._df
+            self.lazy().select(exprs, **named_exprs).collect(no_optimization=True)._df
         )
 
     def with_columns(
@@ -5606,9 +5610,9 @@ class DataFrame:
         Parameters
         ----------
         exprs
-            List of Expressions that evaluate to columns.
+            List of expressions that evaluate to columns.
         **named_exprs
-            Named column Expressions, provided as kwargs.
+            Named column expressions, provided as kwargs.
 
         Examples
         --------

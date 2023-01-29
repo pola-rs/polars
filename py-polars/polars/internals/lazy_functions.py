@@ -2247,6 +2247,7 @@ def collect_all(
 
 def select(
     exprs: str | pli.Expr | Sequence[str | pli.Expr] | pli.Series,
+    **named_exprs: Any,
 ) -> pli.DataFrame:
     """
     Run polars expressions without a context.
@@ -2257,6 +2258,8 @@ def select(
     ----------
     exprs
         Expressions to run
+    **named_exprs
+        Named expressions, provided as kwargs.
 
     Returns
     -------
@@ -2283,7 +2286,7 @@ def select(
     └─────┘
 
     """
-    return pli.DataFrame([]).select(exprs)
+    return pli.DataFrame([]).select(exprs, **named_exprs)
 
 
 @overload
