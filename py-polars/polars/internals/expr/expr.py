@@ -104,7 +104,7 @@ def expr_to_lit_or_expr(
         If False it will be converted to `col("foo")`
     structify
         If the final unaliased expression has multiple output names,
-        automagically convert it to struct.
+        automagically convert it to struct
 
     Returns
     -------

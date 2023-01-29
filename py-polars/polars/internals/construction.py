@@ -1164,8 +1164,12 @@ def iterable_to_pydf(
         adaptive_chunk_size = None
 
     df: pli.DataFrame = None  # type: ignore[assignment]
+    chunk_size = max(
+        (infer_schema_length or 0),
+        (adaptive_chunk_size or 1000),
+    )
     while True:
-        values = list(islice(data, adaptive_chunk_size or 1000))
+        values = list(islice(data, chunk_size))
         if not values:
             break
         frame_chunk = to_frame_chunk(values, original_schema)
@@ -1173,8 +1177,8 @@ def iterable_to_pydf(
             df = frame_chunk
             if not original_schema:
                 original_schema = list(df.schema.items())
-            if not adaptive_chunk_size:
-                adaptive_chunk_size = n_chunk_elems // len(df.columns)
+            if chunk_size != adaptive_chunk_size:
+                chunk_size = adaptive_chunk_size = n_chunk_elems // len(df.columns)
         else:
             df.vstack(frame_chunk, in_place=True)
             n_chunks += 1
