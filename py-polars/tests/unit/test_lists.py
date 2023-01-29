@@ -694,3 +694,13 @@ def test_concat_list_in_agg_6397() -> None:
         "group": [1, 2, 3],
         "result": [[["a"]], [["b", "c"]], [["d"]]],
     }
+
+
+def test_list_eval_all_null() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_column(
+        pl.col("bar").cast(pl.List(pl.Utf8))
+    )
+
+    assert df.select(pl.col("bar").arr.eval(pl.element())).to_dict(False) == {
+        "bar": [None, None, None]
+    }
