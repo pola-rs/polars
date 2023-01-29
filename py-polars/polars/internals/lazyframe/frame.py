@@ -1641,6 +1641,22 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 10      │
         └─────────┘
 
+        Note that, when using kwargs syntax, expressions with multiple
+        outputs are automatically instantiated as Struct columns:
+
+        >>> from polars.datatypes import INTEGER_DTYPES
+        >>> df.select(is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd")).collect()
+        shape: (3, 1)
+        ┌───────────┐
+        │ is_odd    │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {1,0}     │
+        │ {0,1}     │
+        │ {1,0}     │
+        └───────────┘
+
         """
         if exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
@@ -2537,7 +2553,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
 
-        Note that, when using kwarg syntax, expressions with multiple
+        Note that, when using kwargs syntax, expressions with multiple
         outputs are automatically instantiated as Struct columns:
 
         >>> ldf.drop("c").with_columns(

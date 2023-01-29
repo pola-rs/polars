@@ -5589,6 +5589,22 @@ class DataFrame:
         │ 10      │
         └─────────┘
 
+        Note that, when using kwargs syntax, expressions with multiple
+        outputs are automatically instantiated as Struct columns:
+
+        >>> from polars.datatypes import INTEGER_DTYPES
+        >>> df.select(is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"))
+        shape: (3, 1)
+        ┌───────────┐
+        │ is_odd    │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {1,0}     │
+        │ {0,1}     │
+        │ {1,0}     │
+        └───────────┘
+
         """
         return self._from_pydf(
             self.lazy().select(exprs, **named_exprs).collect(no_optimization=True)._df
@@ -5694,7 +5710,7 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
 
-        Note that, when using kwarg syntax, expressions with multiple
+        Note that, when using kwargs syntax, expressions with multiple
         outputs are automatically instantiated as Struct columns:
 
         >>> df.drop("c").with_columns(
