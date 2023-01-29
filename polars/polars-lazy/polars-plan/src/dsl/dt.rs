@@ -216,7 +216,7 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn cast_time_zone(self, tz: TimeZone) -> Expr {
+    pub fn cast_time_zone(self, tz: Option<TimeZone>) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
                 tz,

@@ -965,7 +965,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def cast_time_zone(self, tz: str) -> pli.Series:
+    def cast_time_zone(self, tz: str | None) -> pli.Series:
         """
         Cast time zone for a Series of type Datetime.
 
@@ -975,7 +975,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series.
+            Time zone for the `Datetime` Series. Pass `None` to unset time zone.
 
         Examples
         --------
