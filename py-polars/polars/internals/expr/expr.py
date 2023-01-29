@@ -90,6 +90,7 @@ def expr_to_lit_or_expr(
         | Sequence[int | float | str | None]
     ),
     str_to_lit: bool = True,
+    structify: bool = False,
 ) -> Expr:
     """
     Convert args to expressions.
@@ -99,8 +100,11 @@ def expr_to_lit_or_expr(
     expr
         Any argument.
     str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`.
-        If False it will be converted to `col("foo")`.
+        If True string argument `"foo"` will be converted to `lit("foo")`,
+        If False it will be converted to `col("foo")`
+    structify
+        If the final unaliased expression has multiple output names,
+        automagically convert it to struct
 
     Returns
     -------
@@ -108,24 +112,30 @@ def expr_to_lit_or_expr(
 
     """
     if isinstance(expr, str) and not str_to_lit:
-        return pli.col(expr)
+        expr = pli.col(expr)
     elif (
         isinstance(expr, (int, float, str, pli.Series, datetime, date, time, timedelta))
         or expr is None
     ):
-        return pli.lit(expr)
-    elif isinstance(expr, Expr):
-        return expr
+        expr = pli.lit(expr)
+        structify = False
     elif isinstance(expr, list):
-        return pli.lit(pli.Series("", [expr]))
+        expr = pli.lit(pli.Series("", [expr]))
+        structify = False
     elif isinstance(expr, (pli.WhenThen, pli.WhenThenThen)):
-        # implicitly add the null branch.
-        return expr.otherwise(None)
-    else:
+        expr = expr.otherwise(None)  # implicitly add the null branch.
+    elif not isinstance(expr, Expr):
         raise ValueError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
             " pl.lit or pl.col"
         )
+
+    if structify:
+        unaliased_expr = expr.meta.undo_aliases()
+        if unaliased_expr.meta.has_multiple_outputs():
+            expr = cast(Expr, pli.struct(expr))
+
+    return expr
 
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
