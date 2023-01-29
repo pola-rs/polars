@@ -21,6 +21,7 @@ enum DeDataType<'a> {
     Float32,
     Float64,
     Utf8,
+    Binary,
     Date,
     Datetime(TimeUnit, Option<TimeZone>),
     Duration(TimeUnit),
@@ -49,6 +50,8 @@ impl From<&DataType> for DeDataType<'_> {
             DataType::Boolean => DeDataType::Boolean,
             DataType::Null => DeDataType::Null,
             DataType::List(_) => DeDataType::List,
+            #[cfg(feature = "dtype-binary")]
+            DataType::Binary => DeDataType::Binary,
             #[cfg(feature = "object")]
             DataType::Object(s) => DeDataType::Object(s),
             #[cfg(feature = "dtype-struct")]
@@ -128,6 +131,24 @@ mod test {
         let out = serde_json::from_reader::<_, DataFrame>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
         assert!(df.frame_equal_missing(&out));
     }
+
+    #[test]
+    #[cfg(feature = "dtype-binary")]
+    fn test_serde_binary_series_owned_bincode() {
+        let s1 = Series::new(
+            "foo",
+            &[
+                vec![1u8, 2u8, 3u8],
+                vec![4u8, 5u8, 6u8, 7u8],
+                vec![8u8, 9u8],
+            ],
+        );
+        let df = DataFrame::new(vec![s1]).unwrap();
+        let bytes = bincode::serialize(&df).unwrap();
+        let out = bincode::deserialize_from::<_, DataFrame>(bytes.as_slice()).unwrap();
+        assert!(df.frame_equal_missing(&out));
+    }
+
     #[test]
     #[cfg(feature = "dtype-struct")]
     fn test_serde_struct_series_owned_json() {
