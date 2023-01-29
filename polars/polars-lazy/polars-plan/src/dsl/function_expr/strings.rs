@@ -313,7 +313,6 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
-    #[cfg(feature = "regex")]
     let tz_aware = match (options.tz_aware, &options.fmt) {
         (true, Some(_)) => true,
         (true, None) => {
@@ -322,8 +321,9 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                     .into(),
             ));
         }
+        #[cfg(feature = "regex")]
         (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
-        (false, None) => false,
+        (false, _) => false,
     };
     if !tz_aware && options.utc {
         return Err(PolarsError::ComputeError(
