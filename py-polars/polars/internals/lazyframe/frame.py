@@ -230,6 +230,7 @@ class LazyFrame:
             rechunk,
             _prepare_row_count_args(row_count_name, row_count_offset),
             low_memory,
+            cloud_options=storage_options,
         )
         return self
 
