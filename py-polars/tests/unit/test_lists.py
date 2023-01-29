@@ -234,7 +234,8 @@ def test_list_arr_empty() -> None:
         ]
     )
     expected = pl.DataFrame(
-        {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]}
+        {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]},
+        schema_overrides={"cars_literal": pl.Int32},  # Literals default to Int32
     )
     assert_frame_equal(out, expected)
 

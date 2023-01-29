@@ -26,10 +26,14 @@ def test_categorical_outer_join() -> None:
             ]
         ).lazy()
 
-    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
-    expected = pl.DataFrame({"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]})
+        expected = pl.DataFrame(
+            {"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]},
+            schema_overrides={"key2": pl.Categorical},
+        )
 
+    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
     assert_frame_equal(out, expected)
+
     with pl.StringCache():
         dfa = pl.DataFrame(
             [
