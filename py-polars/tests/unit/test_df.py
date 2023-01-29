@@ -1265,6 +1265,14 @@ def test_from_generator_or_iterable() -> None:
         assert expected_data == d.row_tuples()
         assert expected_schema == list(zip(d.columns(), d.dtypes()))
 
+    # ref: issue #6489 (initial chunk_size cannot be smaller than 'infer_schema_length')
+    df = pl.DataFrame(
+        data=iter(([{"col": None}] * 1000) + [{"col": ["a", "b", "c"]}]),
+        infer_schema_length=1001,
+    )
+    assert df.schema == {"col": pl.List(pl.Utf8)}
+    assert df[-2:]["col"].to_list() == [None, ["a", "b", "c"]]
+
     # empty iterator
     assert_frame_equal(
         pl.DataFrame(data=gen(0), schema=["a", "b", "c", "d"]),
