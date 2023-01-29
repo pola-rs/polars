@@ -698,7 +698,7 @@ def test_concat_list_in_agg_6397() -> None:
 
 
 def test_list_eval_all_null() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_column(
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_columns(
         pl.col("bar").cast(pl.List(pl.Utf8))
     )
 
