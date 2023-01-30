@@ -1698,6 +1698,7 @@ name = "polars-plan"
 version = "0.26.1"
 dependencies = [
  "ahash",
+ "once_cell",
  "polars-arrow",
  "polars-core",
  "polars-io",

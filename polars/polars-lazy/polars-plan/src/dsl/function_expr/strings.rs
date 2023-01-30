@@ -1,10 +1,15 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "timezones")]
+use once_cell::sync::Lazy;
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "timezones")]
+static TZ_AWARE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%#z)|(^%\+$)").unwrap());
 
 use super::*;
 
@@ -308,6 +313,24 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
+    let tz_aware = match (options.tz_aware, &options.fmt) {
+        (true, Some(_)) => true,
+        (true, None) => {
+            return Err(PolarsError::ComputeError(
+                "Passing 'tz_aware=True' without 'fmt' is not yet supported. Please specify 'fmt'."
+                    .into(),
+            ));
+        }
+        #[cfg(feature = "regex")]
+        (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
+        (false, _) => false,
+    };
+    #[cfg(feature = "timezones")]
+    if !tz_aware && options.utc {
+        return Err(PolarsError::ComputeError(
+            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC').".into(),
+        ));
+    }
     let ca = s.utf8()?;
 
     let out = match &options.date_dtype {
@@ -325,7 +348,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                     options.fmt.as_deref(),
                     *tu,
                     options.cache,
-                    options.tz_aware,
+                    tz_aware,
                     options.utc,
                 )?
                 .into_series()
