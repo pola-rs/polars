@@ -19,7 +19,11 @@ else:
 
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, PolarsTemporalType
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import (
+    assert_frame_equal,
+    assert_series_equal,
+    assert_series_not_equal,
+)
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
@@ -152,7 +156,7 @@ def test_series_add_timedelta() -> None:
     out = pl.Series(
         [datetime(2027, 5, 19), datetime(2054, 10, 4), datetime(2082, 2, 19)]
     )
-    assert (dates + timedelta(days=10_000)).series_equal(out)
+    assert_series_equal((dates + timedelta(days=10_000)), out)
 
 
 def test_series_add_datetime() -> None:
@@ -342,10 +346,8 @@ def test_timezone() -> None:
     data = pa.array([1000, 2000], type=ts)
     s = cast(pl.Series, pl.from_arrow(data))
 
-    # with timezone; we do expect a warning here
     tz_ts = pa.timestamp("s", tz="America/New_York")
     tz_data = pa.array([1000, 2000], type=tz_ts)
-    # with pytest.warns(Warning):
     tz_s = cast(pl.Series, pl.from_arrow(tz_data))
 
     # different timezones are not considered equal
@@ -353,7 +355,8 @@ def test_timezone() -> None:
     # https://github.com/pola-rs/polars/issues/5023
     assert not s.series_equal(tz_s, null_equal=False)
     assert not s.series_equal(tz_s, null_equal=True)
-    assert s.cast(int).series_equal(tz_s.cast(int))
+    assert_series_not_equal(tz_s, s)
+    assert_series_equal(s.cast(int), tz_s.cast(int))
 
 
 def test_to_list() -> None:
@@ -906,11 +909,12 @@ def test_epoch() -> None:
     dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 
     for unit in DTYPE_TEMPORAL_UNITS:
-        assert dates.dt.epoch(unit).series_equal(dates.dt.timestamp(unit))
+        assert_series_equal(dates.dt.epoch(unit), dates.dt.timestamp(unit))
 
-    assert dates.dt.epoch("s").series_equal(dates.dt.timestamp("ms") // 1000)
-    assert dates.dt.epoch("d").series_equal(
-        (dates.dt.timestamp("ms") // (1000 * 3600 * 24)).cast(pl.Int32)
+    assert_series_equal(dates.dt.epoch("s"), dates.dt.timestamp("ms") // 1000)
+    assert_series_equal(
+        dates.dt.epoch("d"),
+        (dates.dt.timestamp("ms") // (1000 * 3600 * 24)).cast(pl.Int32),
     )
 
 

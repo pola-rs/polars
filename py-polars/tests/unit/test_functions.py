@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_date_datetime() -> None:
@@ -23,8 +23,8 @@ def test_date_datetime() -> None:
             pl.date("year", "month", "day").dt.day().cast(int).alias("date"),
         ]
     )
-    assert out["date"].series_equal(df["day"].rename("date"))
-    assert out["h2"].series_equal(df["hour"].rename("h2"))
+    assert_series_equal(out["date"], df["day"].rename("date"))
+    assert_series_equal(out["h2"], df["hour"].rename("h2"))
 
 
 def test_diag_concat() -> None:

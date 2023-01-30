@@ -17,12 +17,8 @@ def test_serde_lazy_frame_lp() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
     json = lf.write_json()
 
-    assert (
-        pl.LazyFrame.from_json(json)
-        .collect()
-        .to_series()
-        .series_equal(pl.Series("a", [1, 2, 3]))
-    )
+    result = pl.LazyFrame.from_json(json).collect().to_series()
+    assert_series_equal(result, pl.Series("a", [1, 2, 3]))
 
 
 def test_serde_time_unit() -> None:

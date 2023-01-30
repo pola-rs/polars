@@ -215,22 +215,25 @@ def test_to_frame() -> None:
 def test_bitwise_ops() -> None:
     a = pl.Series([True, False, True])
     b = pl.Series([False, True, True])
-    assert (a & b).series_equal(pl.Series([False, False, True]))
-    assert (a | b).series_equal(pl.Series([True, True, True]))
-    assert (a ^ b).series_equal(pl.Series([True, True, False]))
-    assert (~a).series_equal(pl.Series([False, True, False]))
+    assert_series_equal((a & b), pl.Series([False, False, True]))
+    assert_series_equal((a | b), pl.Series([True, True, True]))
+    assert_series_equal((a ^ b), pl.Series([True, True, False]))
+    assert_series_equal((~a), pl.Series([False, True, False]))
 
     # rand/rxor/ror we trigger by casting the left hand to a list here in the test
     # Note that the type annotations only allow Series to be passed in, but there is
     # specific code to deal with non-Series inputs.
-    assert (True & a).series_equal(  # type: ignore[operator]
-        pl.Series([True, False, True])
+    assert_series_equal(
+        (True & a),  # type: ignore[operator]
+        pl.Series([True, False, True]),
     )
-    assert (True | a).series_equal(  # type: ignore[operator]
-        pl.Series([True, True, True])
+    assert_series_equal(
+        (True | a),  # type: ignore[operator]
+        pl.Series([True, True, True]),
     )
-    assert (True ^ a).series_equal(  # type: ignore[operator]
-        pl.Series([False, True, False])
+    assert_series_equal(
+        (True ^ a),  # type: ignore[operator]
+        pl.Series([False, True, False]),
     )
 
 
@@ -252,7 +255,7 @@ def test_equality() -> None:
     assert (a > b).sum() == 0
     assert (a < b).sum() == 0
     assert a.sum() == 3
-    assert a.series_equal(b)
+    assert_series_equal(a, b)
 
     a = pl.Series("name", ["ham", "foo", "bar"])
     assert_series_equal((a == "ham"), pl.Series("name", [True, False, False]))
@@ -389,7 +392,7 @@ def test_append_extend() -> None:
     b = pl.Series("b", [8, 9, None])
     a.append(b, append_chunks=False)
     expected = pl.Series("a", [1, 2, 8, 9, None])
-    assert a.series_equal(expected, null_equal=True)
+    assert_series_equal(a, expected)
     assert a.n_chunks() == 1
 
 
@@ -404,7 +407,7 @@ def test_various() -> None:
     assert len(a) == 2
 
     a.append(a.clone())
-    assert a.series_equal(pl.Series("b", [1, 2, 1, 2]))
+    assert_series_equal(a, pl.Series("b", [1, 2, 1, 2]))
 
     a = pl.Series("a", range(20))
     assert a.head(5).len() == 5
@@ -413,11 +416,11 @@ def test_various() -> None:
 
     a = pl.Series("a", [2, 1, 4])
     a.sort(in_place=True)
-    assert a.series_equal(pl.Series("a", [1, 2, 4]))
+    assert_series_equal(a, pl.Series("a", [1, 2, 4]))
     a = pl.Series("a", [2, 1, 1, 4, 4, 4])
     assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
 
-    assert a.take([2, 3]).series_equal(pl.Series("a", [1, 4]))
+    assert_series_equal(a.take([2, 3]), pl.Series("a", [1, 4]))
     assert a.is_numeric()
 
     a = pl.Series("bool", [True, False])
@@ -820,12 +823,8 @@ def test_fill_null() -> None:
 def test_fill_nan() -> None:
     nan = float("nan")
     a = pl.Series("a", [1.0, nan, 2.0, nan, 3.0])
-    assert a.fill_nan(None).series_equal(
-        pl.Series("a", [1.0, None, 2.0, None, 3.0]), null_equal=True
-    )
-    assert a.fill_nan(0).series_equal(
-        pl.Series("a", [1.0, 0.0, 2.0, 0.0, 3.0]), null_equal=True
-    )
+    assert_series_equal(a.fill_nan(None), pl.Series("a", [1.0, None, 2.0, None, 3.0]))
+    assert_series_equal(a.fill_nan(0), pl.Series("a", [1.0, 0.0, 2.0, 0.0, 3.0]))
 
 
 def test_apply() -> None:
@@ -887,11 +886,9 @@ def test_rolling() -> None:
     # 3099
     # test if we maintain proper dtype
     for dt in [pl.Float32, pl.Float64]:
-        assert (
-            pl.Series([1, 2, 3], dtype=dt)
-            .rolling_min(2, weights=[0.1, 0.2])
-            .series_equal(pl.Series([None, 0.1, 0.2], dtype=dt), True)
-        )
+        result = pl.Series([1, 2, 3], dtype=dt).rolling_min(2, weights=[0.1, 0.2])
+        expected = pl.Series([None, 0.1, 0.2], dtype=dt)
+        assert_series_equal(result, expected)
 
     df = pl.DataFrame({"val": [1.0, 2.0, 3.0, np.NaN, 5.0, 6.0, 7.0]})
 
@@ -903,18 +900,18 @@ def test_rolling() -> None:
         assert out.null_count() == 2
         assert np.isnan(out.to_numpy()).sum() == 5
 
-    expected = [None, None, 2.0, 3.0, 5.0, 6.0, 6.0]
+    expected_values = [None, None, 2.0, 3.0, 5.0, 6.0, 6.0]
     assert (
         df.with_columns(pl.col("val").rolling_median(window_size=3))
         .to_series()
         .to_list()
-        == expected
+        == expected_values
     )
     assert (
         df.with_columns(pl.col("val").rolling_quantile(0.5, window_size=3))
         .to_series()
         .to_list()
-        == expected
+        == expected_values
     )
 
     nan = float("nan")
@@ -1297,7 +1294,7 @@ def test_sqrt() -> None:
 
 def test_range() -> None:
     s1 = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    assert s1[2:5].series_equal(s1[range(2, 5)])
+    assert_series_equal(s1[2:5], s1[range(2, 5)])
 
     ranges = [range(-2, 1), range(3), range(2, 8, 2)]
 
@@ -1331,16 +1328,18 @@ def test_list_concat() -> None:
     expected = pl.Series("a", [[1, 2, 3, 4, 5]])
 
     out = s0.arr.concat([s1])
-    assert out.series_equal(expected)
+    assert_series_equal(out, expected)
 
     out = s0.arr.concat(s1)
-    assert out.series_equal(expected)
+    assert_series_equal(out, expected)
 
     df = pl.DataFrame([s0, s1])
-    assert df.select(pl.concat_list(["a", "b"]).alias("a"))["a"].series_equal(expected)
-    assert df.select(pl.col("a").arr.concat("b").alias("a"))["a"].series_equal(expected)
-    assert df.select(pl.col("a").arr.concat(["b"]).alias("a"))["a"].series_equal(
-        expected
+    assert_series_equal(df.select(pl.concat_list(["a", "b"]).alias("a"))["a"], expected)
+    assert_series_equal(
+        df.select(pl.col("a").arr.concat("b").alias("a"))["a"], expected
+    )
+    assert_series_equal(
+        df.select(pl.col("a").arr.concat(["b"]).alias("a"))["a"], expected
     )
 
 
@@ -1500,7 +1499,7 @@ def test_from_sequences(monkeypatch: Any) -> None:
         a = pl.Series("a", vals)
         monkeypatch.setattr(pl.internals.series.series, "_PYARROW_AVAILABLE", True)
         b = pl.Series("a", vals)
-        assert a.series_equal(b, null_equal=True)
+        assert_series_equal(a, b)
         assert a.to_list() == vals
 
 
@@ -1622,30 +1621,30 @@ def test_chunk_lengths() -> None:
 
 def test_limit() -> None:
     s = pl.Series("a", [1, 2, 3])
-    assert s.limit(2).series_equal(pl.Series("a", [1, 2]))
+    assert_series_equal(s.limit(2), pl.Series("a", [1, 2]))
 
 
 def test_filter() -> None:
     s = pl.Series("a", [1, 2, 3])
     mask = pl.Series("", [True, False, True])
-    assert s.filter(mask).series_equal(pl.Series("a", [1, 3]))
+    assert_series_equal(s.filter(mask), pl.Series("a", [1, 3]))
 
-    assert s.filter([True, False, True]).series_equal(pl.Series("a", [1, 3]))
+    assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
 
 
 def test_take_every() -> None:
     s = pl.Series("a", [1, 2, 3, 4])
-    assert s.take_every(2).series_equal(pl.Series("a", [1, 3]))
+    assert_series_equal(s.take_every(2), pl.Series("a", [1, 3]))
 
 
 def test_argsort() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
     expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
 
-    assert s.argsort().series_equal(expected)
+    assert_series_equal(s.argsort(), expected)
 
     expected_reverse = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    assert s.argsort(True).series_equal(expected_reverse)
+    assert_series_equal(s.argsort(True), expected_reverse)
 
 
 def test_arg_min_and_arg_max() -> None:
@@ -1669,31 +1668,30 @@ def test_arg_min_and_arg_max() -> None:
 
 def test_is_null_is_not_null() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, None])
-    assert s.is_null().series_equal(pl.Series("a", [False, False, False, True]))
-    assert s.is_not_null().series_equal(pl.Series("a", [True, True, True, False]))
+    assert_series_equal(s.is_null(), pl.Series("a", [False, False, False, True]))
+    assert_series_equal(s.is_not_null(), pl.Series("a", [True, True, True, False]))
 
 
 def test_is_finite_is_infinite() -> None:
     s = pl.Series("a", [1.0, 2.0, np.inf])
-
-    s.is_finite().series_equal(pl.Series("a", [True, True, False]))
-    s.is_infinite().series_equal(pl.Series("a", [False, False, True]))
+    assert_series_equal(s.is_finite(), pl.Series("a", [True, True, False]))
+    assert_series_equal(s.is_infinite(), pl.Series("a", [False, False, True]))
 
 
 def test_is_nan_is_not_nan() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
-    assert s.is_nan().series_equal(pl.Series("a", [False, False, False, True]))
-    assert s.is_not_nan().series_equal(pl.Series("a", [True, True, True, False]))
+    assert_series_equal(s.is_nan(), pl.Series("a", [False, False, False, True]))
+    assert_series_equal(s.is_not_nan(), pl.Series("a", [True, True, True, False]))
 
 
 def test_is_unique() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
-    assert s.is_unique().series_equal(pl.Series("a", [True, False, False, True]))
+    assert_series_equal(s.is_unique(), pl.Series("a", [True, False, False, True]))
 
 
 def test_is_duplicated() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
-    assert s.is_duplicated().series_equal(pl.Series("a", [False, True, True, False]))
+    assert_series_equal(s.is_duplicated(), pl.Series("a", [False, True, True, False]))
 
 
 def test_dot() -> None:
@@ -1973,17 +1971,17 @@ def test_reshape() -> None:
     expected = pl.Series("a", [[1, 2], [3, 4]])
     assert_series_equal(out, expected)
     out = s.reshape((2, 2))
-    assert out.series_equal(expected)
+    assert_series_equal(out, expected)
     out = s.reshape((2, -1))
-    assert out.series_equal(expected)
+    assert_series_equal(out, expected)
 
     out = s.reshape((-1, 1))
     expected = pl.Series("a", [[1], [2], [3], [4]])
-    assert out.series_equal(expected)
+    assert_series_equal(out, expected)
 
     # test lazy_dispatch
     out = pl.select(pl.lit(s).reshape((-1, 1))).to_series()
-    assert out.series_equal(expected)
+    assert_series_equal(out, expected)
 
 
 def test_init_categorical() -> None:
@@ -2260,7 +2258,7 @@ def test_duration_arithmetic() -> None:
         df1 = pl.select((s + d).alias("d_offset"))
         df2 = pl.select((d + s).alias("d_offset"))
         assert df1["d_offset"].to_list() == expected_values
-        assert df1["d_offset"].series_equal(df2["d_offset"])
+        assert_series_equal(df1["d_offset"], df2["d_offset"])
 
 
 def test_duration_extract_times() -> None:
@@ -2490,8 +2488,8 @@ def test_get_chunks() -> None:
     a = pl.Series("a", [1, 2])
     b = pl.Series("a", [3, 4])
     chunks = pl.concat([a, b], rechunk=False).get_chunks()
-    assert chunks[0].series_equal(a)
-    assert chunks[1].series_equal(b)
+    assert_series_equal(chunks[0], a)
+    assert_series_equal(chunks[1], b)
 
 
 def test_item() -> None:

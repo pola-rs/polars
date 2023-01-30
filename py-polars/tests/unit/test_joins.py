@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy
@@ -339,11 +339,11 @@ def test_join() -> None:
     )
 
     joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
-    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2]))
+    assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2]))
 
     joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
     assert joined["c_right"].is_null().sum() == 1
-    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2, 4]))
+    assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2, 4]))
 
     joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
     assert joined["c_right"].null_count() == 1

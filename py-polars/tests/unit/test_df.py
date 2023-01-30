@@ -749,7 +749,7 @@ def test_concat() -> None:
 
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
-    assert pl.arg_where(s, eager=True).cast(int).series_equal(pl.Series([0, 2]))
+    assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
 
 
 def test_get_dummies() -> None:
@@ -810,14 +810,17 @@ def test_df_stats(df: pl.DataFrame) -> None:
 def test_df_fold() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
 
-    assert df.fold(lambda s1, s2: s1 + s2).series_equal(pl.Series("a", [4.0, 5.0, 9.0]))
-    assert df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2)).series_equal(
-        pl.Series("a", [1.0, 1.0, 3.0])
+    assert_series_equal(
+        df.fold(lambda s1, s2: s1 + s2), pl.Series("a", [4.0, 5.0, 9.0])
+    )
+    assert_series_equal(
+        df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2)),
+        pl.Series("a", [1.0, 1.0, 3.0]),
     )
 
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.fold(lambda s1, s2: s1 + s2)
-    out.series_equal(pl.Series("", ["foo11", "bar22", "233"]))
+    assert_series_equal(out, pl.Series("a", ["foo11.0", "bar22.0", "233.0"]))
 
     df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     # just check dispatch. values are tested on rust side.
@@ -827,7 +830,7 @@ def test_df_fold() -> None:
     assert len(df.max(axis=1)) == 3
 
     df_width_one = df[["a"]]
-    assert df_width_one.fold(lambda s1, s2: s1).series_equal(df["a"])
+    assert_series_equal(df_width_one.fold(lambda s1, s2: s1), df["a"])
 
 
 def test_df_apply() -> None:
@@ -1847,13 +1850,13 @@ def test_shift_and_fill() -> None:
 
 def test_is_duplicated() -> None:
     df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
-    assert df.is_duplicated().series_equal(pl.Series("", [False, True, True]))
+    assert_series_equal(df.is_duplicated(), pl.Series("", [False, True, True]))
 
 
 def test_is_unique() -> None:
     df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
 
-    assert df.is_unique().series_equal(pl.Series("", [True, False, False]))
+    assert_series_equal(df.is_unique(), pl.Series("", [True, False, False]))
     assert df.unique(maintain_order=True).rows() == [(1, 6), (2, 7)]
     assert df.n_unique() == 2
 
@@ -1979,7 +1982,7 @@ def test_get_item() -> None:
     assert_frame_equal(df[:, :], df)
 
     # str, always refers to a column name
-    assert df["a"].series_equal(pl.Series("a", [1.0, 2.0, 3.0, 4.0]))
+    assert_series_equal(df["a"], pl.Series("a", [1.0, 2.0, 3.0, 4.0]))
 
     # int, always refers to a row index (zero-based): index=1 => second row
     assert_frame_equal(df[1], pl.DataFrame({"a": [2.0], "b": [4]}))

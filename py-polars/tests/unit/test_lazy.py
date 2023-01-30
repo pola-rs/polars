@@ -225,7 +225,7 @@ def test_groupby() -> None:
 def test_shift(fruits_cars: pl.DataFrame) -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
     out = df.select(col("a").shift(1))
-    assert out["a"].series_equal(pl.Series("a", [None, 1, 2, 3, 4]), null_equal=True)
+    assert_series_equal(out["a"], pl.Series("a", [None, 1, 2, 3, 4]))
 
     res = fruits_cars.lazy().shift(2).collect()
 
@@ -268,28 +268,25 @@ def test_arange() -> None:
 def test_arg_unique() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
     col_a_unique = df.select(col("a").arg_unique())["a"]
-    assert col_a_unique.series_equal(pl.Series("a", [0, 1]).cast(pl.UInt32))
+    assert_series_equal(col_a_unique, pl.Series("a", [0, 1]).cast(pl.UInt32))
 
 
 def test_is_unique() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    assert df.select(col("a").is_unique())["a"].series_equal(
-        pl.Series("a", [False, True, False])
-    )
+    result = df.select(col("a").is_unique())["a"]
+    assert_series_equal(result, pl.Series("a", [False, True, False]))
 
 
 def test_is_first() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    assert df.select(col("a").is_first())["a"].series_equal(
-        pl.Series("a", [True, True, False])
-    )
+    result = df.select(col("a").is_first())["a"]
+    assert_series_equal(result, pl.Series("a", [True, True, False]))
 
 
 def test_is_duplicated() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    assert df.select(col("a").is_duplicated())["a"].series_equal(
-        pl.Series("a", [True, False, True])
-    )
+    result = df.select(col("a").is_duplicated())["a"]
+    assert_series_equal(result, pl.Series("a", [True, False, True]))
 
 
 def test_arg_sort() -> None:
@@ -508,30 +505,30 @@ def test_len() -> None:
 
 def test_cum_agg() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 2]})
-    assert df.select(pl.col("a").cumsum())["a"].series_equal(
-        pl.Series("a", [1, 3, 6, 8])
+    assert_series_equal(
+        df.select(pl.col("a").cumsum())["a"], pl.Series("a", [1, 3, 6, 8])
     )
-    assert df.select(pl.col("a").cummin())["a"].series_equal(
-        pl.Series("a", [1, 1, 1, 1])
+    assert_series_equal(
+        df.select(pl.col("a").cummin())["a"], pl.Series("a", [1, 1, 1, 1])
     )
-    assert df.select(pl.col("a").cummax())["a"].series_equal(
-        pl.Series("a", [1, 2, 3, 3])
+    assert_series_equal(
+        df.select(pl.col("a").cummax())["a"], pl.Series("a", [1, 2, 3, 3])
     )
-    assert df.select(pl.col("a").cumprod())["a"].series_equal(
-        pl.Series("a", [1, 2, 6, 12])
+    assert_series_equal(
+        df.select(pl.col("a").cumprod())["a"], pl.Series("a", [1, 2, 6, 12])
     )
 
 
 def test_floor() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
     col_a_floor = df.select(pl.col("a").floor())["a"]
-    assert col_a_floor.series_equal(pl.Series("a", [1, 1, 3]).cast(pl.Float64))
+    assert_series_equal(col_a_floor, pl.Series("a", [1, 1, 3]).cast(pl.Float64))
 
 
 def test_round() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
     col_a_rounded = df.select(pl.col("a").round(decimals=0))["a"]
-    assert col_a_rounded.series_equal(pl.Series("a", [2, 1, 3]).cast(pl.Float64))
+    assert_series_equal(col_a_rounded, pl.Series("a", [2, 1, 3]).cast(pl.Float64))
 
 
 def test_dot() -> None:
@@ -541,7 +538,9 @@ def test_dot() -> None:
 
 def test_sort() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 2]})
-    assert df.select(pl.col("a").sort())["a"].series_equal(pl.Series("a", [1, 2, 2, 3]))
+    assert_series_equal(
+        df.select(pl.col("a").sort())["a"], pl.Series("a", [1, 2, 2, 3])
+    )
 
 
 def test_drop_nulls() -> None:
@@ -615,21 +614,15 @@ def test_interpolate() -> None:
 
 def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1.0, np.nan, 3.0]})
-    assert df.fill_nan(2.0)["a"].series_equal(pl.Series("a", [1.0, 2.0, 3.0]))
-    assert (
-        df.lazy()
-        .fill_nan(2.0)
-        .collect()["a"]
-        .series_equal(pl.Series("a", [1.0, 2.0, 3.0]))
+    assert_series_equal(df.fill_nan(2.0)["a"], pl.Series("a", [1.0, 2.0, 3.0]))
+    assert_series_equal(
+        df.lazy().fill_nan(2.0).collect()["a"], pl.Series("a", [1.0, 2.0, 3.0])
     )
-    assert (
-        df.lazy()
-        .fill_nan(None)
-        .collect()["a"]
-        .series_equal(pl.Series("a", [1.0, None, 3.0]), null_equal=True)
+    assert_series_equal(
+        df.lazy().fill_nan(None).collect()["a"], pl.Series("a", [1.0, None, 3.0])
     )
-    assert df.select(pl.col("a").fill_nan(2))["a"].series_equal(
-        pl.Series("a", [1.0, 2.0, 3.0])
+    assert_series_equal(
+        df.select(pl.col("a").fill_nan(2))["a"], pl.Series("a", [1.0, 2.0, 3.0])
     )
     # nearest
     assert pl.Series([None, 1, None, None, None, -8, None, None, 10]).interpolate(
@@ -654,7 +647,7 @@ def test_fill_null() -> None:
 def test_backward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
     col_a_backward_fill = df.select([pl.col("a").backward_fill()])["a"]
-    assert col_a_backward_fill.series_equal(pl.Series("a", [1, 3, 3]).cast(pl.Float64))
+    assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
 def test_take(fruits_cars: pl.DataFrame) -> None:
@@ -1180,36 +1173,36 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
 
 def test_is_between(fruits_cars: pl.DataFrame) -> None:
     result = fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"]
-    assert result.series_equal(
-        pl.Series("is_between", [False, True, True, True, False])
+    assert_series_equal(
+        result, pl.Series("is_between", [False, True, True, True, False])
     )
 
     result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="none"))[
         "is_between"
     ]
-    assert result.series_equal(
-        pl.Series("is_between", [False, False, True, False, False])
+    assert_series_equal(
+        result, pl.Series("is_between", [False, False, True, False, False])
     )
 
     result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="both"))[
         "is_between"
     ]
-    assert result.series_equal(
-        pl.Series("is_between", [False, True, True, True, False])
+    assert_series_equal(
+        result, pl.Series("is_between", [False, True, True, True, False])
     )
 
     result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="right"))[
         "is_between"
     ]
-    assert result.series_equal(
-        pl.Series("is_between", [False, False, True, True, False])
+    assert_series_equal(
+        result, pl.Series("is_between", [False, False, True, True, False])
     )
 
     result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="left"))[
         "is_between"
     ]
-    assert result.series_equal(
-        pl.Series("is_between", [False, True, True, False, False])
+    assert_series_equal(
+        result, pl.Series("is_between", [False, True, True, False, False])
     )
 
 
@@ -1285,41 +1278,41 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
 
 def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.select(pl.max(["A", "B"]).alias("max"))
-    assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
+    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
 
     res = fruits_cars.select(pl.min(["A", "B"]).alias("min"))
-    assert res.to_series(0).series_equal(pl.Series("min", [1, 2, 3, 2, 1]))
+    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
 
 
 def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min(["*"]))
-    assert res.to_series(0).series_equal(pl.Series("min", [1, 2, 3, 2, 1]))
+    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
     res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.min([pl.all()]))
-    assert res.to_series(0).series_equal(pl.Series("min", [1, 2, 3, 2, 1]))
+    assert_series_equal(res.to_series(0), pl.Series("min", [1, 2, 3, 2, 1]))
 
     res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max(["*"]))
-    assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
+    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
     res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(pl.max([pl.all()]))
-    assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
+    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
 
     res = fruits_cars.select([pl.col(pl.datatypes.Int64)]).select(
         pl.max([pl.all(), "A", "*"])
     )
-    assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
+    assert_series_equal(res.to_series(0), pl.Series("max", [5, 4, 3, 4, 5]))
 
 
 def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select([pl.head("A", 2)])
     res_series = pl.head(fruits_cars["A"], 2)
     expected = pl.Series("A", [1, 2])
-    assert res_expr.to_series(0).series_equal(expected)
-    assert res_series.series_equal(expected)
+    assert_series_equal(res_expr.to_series(0), expected)
+    assert_series_equal(res_series, expected)
 
     res_expr = fruits_cars.select([pl.tail("A", 2)])
     res_series = pl.tail(fruits_cars["A"], 2)
     expected = pl.Series("A", [4, 5])
-    assert res_expr.to_series(0).series_equal(expected)
-    assert res_series.series_equal(expected)
+    assert_series_equal(res_expr.to_series(0), expected)
+    assert_series_equal(res_series, expected)
 
 
 def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
