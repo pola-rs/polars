@@ -418,3 +418,17 @@ def test_err_on_multiple_column_expansion() -> None:
                 "d": [4],
             }
         ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])])
+
+
+def test_compare_different_len() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": list(range(5)),
+        }
+    )
+
+    s = pl.Series([2, 5, 8])
+    with pytest.raises(
+        pl.ComputeError, match=r"annot evaluate two Series of different length"
+    ):
+        df.filter(pl.col("idx") == s)
