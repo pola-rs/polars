@@ -151,22 +151,26 @@ pub(super) fn projection_is_definite_pushdown_boundary(
 ) -> bool {
     let matches = |e: &AExpr| {
         use AExpr::*;
+        // any result that will change due to rows filtered before the projection
+
+        // explicit match is more readable in this case
+        #[allow(clippy::match_like_matches_macro)]
         match e {
-            Sort { .. } | SortBy { .. }
-            | Agg(_) // an aggregation needs all rows
+             Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
             | AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | BinaryExpr {..}
-            // casts may produce null values, change values etc.
-            // they can fail in myriad ways
-            | Cast {..}
             // still need to investigate this one
             | Explode {..}
+            | Count
+             | Nth(_)
+             | Slice {..}
+             | Take {..}
             // A groupby needs all rows for aggregation
             | Window {..}
             | Literal(LiteralValue::Range {..}) => true,
+            // The series might be used in a comparison with exactly the right length
             Literal(LiteralValue::Series(s)) => s.len() > 1,
             _ => false
         }
@@ -187,24 +191,18 @@ pub(super) fn projection_is_optional_pushdown_boundary(
 ) -> bool {
     let matches = |e: &AExpr| {
         use AExpr::*;
+        // anything that changes output values modifies the predicate result
+        // and is not captured by function above: `projection_is_definite_pushdown_boundary`
+
+        // explicit match is more readable in this case
+        #[allow(clippy::match_like_matches_macro)]
         match e {
-            Sort { .. } | SortBy { .. }
-            | Agg(_) // an aggregation needs all rows
-            // everything that works on groups likely changes to order of elements w/r/t the other columns
-            | AnonymousFunction {..}
-            | Function {..}
-            | BinaryExpr {..}
-            // cast may change precision.
-            | Cast {data_type: DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::Boolean, ..}
-            // cast may create nulls
-            | Cast {strict: false, ..}
-            // still need to investigate this one
-            | Explode {..}
-            // A groupby needs all rows for aggregation
-            | Window {..}
-            | Literal(LiteralValue::Range {..}) => true,
-            Literal(LiteralValue::Series(s)) => s.len() > 1,
-            _ => false
+            AnonymousFunction { .. }
+            | Function { .. }
+            | BinaryExpr { .. }
+            | Ternary { .. }
+            | Cast { .. } => true,
+            _ => false,
         }
     };
     has_aexpr(node, expr_arena, matches)
