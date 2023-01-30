@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-#[cfg(feature = "regex")]
+#[cfg(feature = "timezones")]
 use once_cell::sync::Lazy;
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
@@ -8,7 +8,7 @@ use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "regex")]
+#[cfg(feature = "timezones")]
 static TZ_AWARE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%#z)|(^%\+$)").unwrap());
 
 use super::*;
@@ -325,6 +325,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
         (false, _) => false,
     };
+    #[cfg(feature = "timezones")]
     if !tz_aware && options.utc {
         return Err(PolarsError::ComputeError(
             "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC').".into(),
