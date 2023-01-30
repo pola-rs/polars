@@ -60,7 +60,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         ca.apply(|s| general_purpose::STANDARD.encode(s).into())
     }
 
-    fn from_str_radix(&self, radix: Option<u32>) -> Int32Chunked {
+    fn parse_int(&self, radix: Option<u32>) -> Int32Chunked {
         let ca = self.as_utf8();
 
         let f = |s: &str| <i32 as Num>::from_str_radix(s, radix.unwrap_or(2)).unwrap();

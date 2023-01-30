@@ -534,5 +534,5 @@ pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Se
 
 pub(super) fn from_radix(s: &Series, radix: Option<u32>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    Ok(ca.from_str_radix(radix).into_series())
+    Ok(ca.parse_int(radix).into_series())
 }
