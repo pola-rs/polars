@@ -45,7 +45,7 @@ pub(crate) fn call_lambda_with_series(
     lambda: &PyObject,
     polars_module: &PyObject,
 ) -> PyResult<PyObject> {
-    let pypolars = polars_module.cast_as::<PyModule>(py).unwrap();
+    let pypolars = polars_module.downcast::<PyModule>(py).unwrap();
 
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(s);
@@ -160,7 +160,7 @@ pub(crate) fn call_lambda_with_series_slice(
     lambda: &PyObject,
     polars_module: &PyObject,
 ) -> PyObject {
-    let pypolars = polars_module.cast_as::<PyModule>(py).unwrap();
+    let pypolars = polars_module.downcast::<PyModule>(py).unwrap();
 
     // create a PySeries struct/object for Python
     let iter = s.iter().map(|s| {

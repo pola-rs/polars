@@ -63,15 +63,12 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         // def new_lambda(lambda: Callable):
         //     pl.Series(lambda(value))
         let lambda_owned = lambda.to_object(py);
-        let new_lambda = PyCFunction::new_closure(
-            move |args, _kwargs| {
-                Python::with_gil(|py| {
-                    let out = lambda_owned.call1(py, args)?;
-                    SERIES.call1(py, (out,))
-                })
-            },
-            py,
-        )?
+        let new_lambda = PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
+            Python::with_gil(|py| {
+                let out = lambda_owned.call1(py, args)?;
+                SERIES.call1(py, (out,))
+            })
+        })?
         .to_object(py);
 
         let result = applyer
