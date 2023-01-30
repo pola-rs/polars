@@ -1102,8 +1102,7 @@ class ExprStringNameSpace:
         pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
         value = pli.expr_to_lit_or_expr(value, str_to_lit=True)
         return pli.wrap_expr(
-            self._pyexpr.str_replace_all(
-                pattern._pyexpr, value._pyexpr, literal)
+            self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
         )
 
     def slice(self, offset: int, length: int | None = None) -> pli.Expr:
@@ -1193,6 +1192,7 @@ class ExprStringNameSpace:
     def parse_int(self, radix: int = 2) -> pli.Expr:
         """
         Parse integers with base radix from strings.
+
         By default base 2.
 
         Parameters
@@ -1225,7 +1225,7 @@ class ExprStringNameSpace:
         shape: (3, 1)
         ┌───────┐
         │ hex   │
-        │ ----- │
+        │ ---   │
         │ i32   │
         ╞═══════╡
         │ 64030 │

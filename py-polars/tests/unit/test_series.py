@@ -1825,8 +1825,9 @@ def test_str_parse_int() -> None:
     assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(Int32))
 
     hex = pl.Series(["fa1e", "ff00", "cafe"])
-    assert_series_equal(hex.str.parse_int(16), pl.Series(
-        [64030, 65280, 51966]).cast(Int32))
+    assert_series_equal(
+        hex.str.parse_int(16), pl.Series([64030, 65280, 51966]).cast(Int32)
+    )
 
 
 def test_str_strip() -> None:

@@ -520,17 +520,12 @@ def test_abs_expr() -> None:
 
 
 def test_str_parse_int() -> None:
-    df = pl.DataFrame({"bin": ["110", "101", "010"],
-                       "hex": ["fa1e", "ff00", "cafe"]})
+    df = pl.DataFrame({"bin": ["110", "101", "010"], "hex": ["fa1e", "ff00", "cafe"]})
     out = df.with_columns(
-        [
-            pl.col("bin").str.parse_int(2),
-            pl.col("hex").str.parse_int(16)
-        ]
+        [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
     )
 
-    expected = pl.DataFrame({"bin": [6, 5, 2],
-                             "hex": [64030, 65280, 51966]})
+    expected = pl.DataFrame({"bin": [6, 5, 2], "hex": [64030, 65280, 51966]})
 
     assert out.frame_equal(expected)
 
