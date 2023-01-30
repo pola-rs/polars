@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from types import TracebackType
+from typing import Any
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -37,8 +38,9 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
 }
-# register Config-local attributes (with their defaults) here
-POLARS_CFG_LOCAL_VARS = {"with_columns_kwargs": True}
+# register Config-local attributes (with their defaults) here,
+# eg: => {"misc_config_attr":True, "other_config_attr":False, etc}
+POLARS_CFG_LOCAL_VARS: dict[str, Any] = {}
 
 
 class Config:
@@ -74,7 +76,7 @@ class Config:
 
     # note: class-local attributes can be used for options that don't have
     # a Rust component (so, no need to register environment variables).
-    with_columns_kwargs: bool = True
+    # eg: misc_config_attr:bool = True
 
     @classmethod
     def load(cls, cfg: str) -> type[Config]:

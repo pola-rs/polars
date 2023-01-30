@@ -417,7 +417,7 @@ def test_string_cache() -> None:
 
 def test_config_load_save() -> None:
     # set some config options...
-    pl.Config.with_columns_kwargs = False
+    pl.Config.set_tbl_cols(12)
     pl.Config.set_verbose(True)
     assert os.environ["POLARS_VERBOSE"] == "1"
 
@@ -426,7 +426,7 @@ def test_config_load_save() -> None:
     assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
     # ...modify the same options...
-    pl.Config.with_columns_kwargs = True
+    pl.Config.set_tbl_cols(10)
     pl.Config.set_verbose(False)
     assert os.environ["POLARS_VERBOSE"] == "0"
 
@@ -434,15 +434,17 @@ def test_config_load_save() -> None:
     pl.Config.load(cfg)
 
     # ...and confirm the saved options were set.
+    assert os.environ["POLARS_FMT_MAX_COLS"] == "12"
     assert os.environ["POLARS_VERBOSE"] == "1"
-    assert pl.Config.with_columns_kwargs is False
 
     # restore all default options (unsets from env)
     pl.Config.restore_defaults()
-    assert "POLARS_VERBOSE" not in pl.Config.state(if_set=True)
-    assert "POLARS_VERBOSE" in pl.Config.state()
+    for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
+        assert e not in pl.Config.state(if_set=True)
+        assert e in pl.Config.state()
+
+    assert os.environ.get("POLARS_FMT_MAX_COLS") is None
     assert os.environ.get("POLARS_VERBOSE") is None
-    assert pl.Config.with_columns_kwargs is True
 
 
 def test_config_scope() -> None:

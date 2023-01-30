@@ -959,8 +959,6 @@ def test_describe() -> None:
 
 
 def test_duration_arithmetic() -> None:
-    pl.Config.with_columns_kwargs = True
-
     df = pl.DataFrame(
         {"a": [datetime(2022, 1, 1, 0, 0, 0), datetime(2022, 1, 2, 0, 0, 0)]}
     )
@@ -2452,9 +2450,7 @@ def test_with_columns() -> None:
     )
     assert_frame_equal(dx, expected)
 
-    # as **kwargs (experimental feature: requires opt-in)
-    pl.Config.with_columns_kwargs = True
-
+    # as **kwargs
     dx = df.with_columns(
         d=pl.col("a") * pl.col("b"),
         e=~pl.col("c"),
