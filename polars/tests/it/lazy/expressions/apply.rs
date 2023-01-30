@@ -121,14 +121,11 @@ fn test_format_str() {
         .collect()
         .unwrap();
 
-    println!("{}", out);
-
     let expected = df![
         "bin" => [6, 2, 5],
         "hex" => [6895, 741, 170]
     ]
     .unwrap();
-    println!("{}", expected);
 
     assert!(out.frame_equal(&expected));
 }
