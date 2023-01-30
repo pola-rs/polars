@@ -6,6 +6,7 @@ from typing import Iterator
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture(autouse=True)
@@ -407,7 +408,11 @@ def test_string_cache() -> None:
     df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
     df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
     out = df1b.join(df2b, on="a", how="inner")
-    assert out.frame_equal(pl.DataFrame({"a": ["foo"], "b": [1], "c": [3]}))
+
+    expected = pl.DataFrame(
+        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_config_load_save() -> None:

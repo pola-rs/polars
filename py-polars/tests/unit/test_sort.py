@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_sort_dates_multiples() -> None:
@@ -168,7 +169,7 @@ def test_sort_aggregation_fast_paths() -> None:
                     .suffix("_min"),
                 ]
             )
-            assert out.frame_equal(expected)
+            assert_frame_equal(out, expected)
 
 
 def test_sorted_join_and_dtypes() -> None:
@@ -238,7 +239,7 @@ def test_top_k() -> None:
 
     # 5886
     df = pl.DataFrame({"test": [4, 3, 2, 1]})
-    assert df.select(pl.col("test").top_k(10)).frame_equal(df)
+    assert_frame_equal(df.select(pl.col("test").top_k(10)), df)
 
 
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:
@@ -294,13 +295,11 @@ def test_sort_slice_fast_path_5245() -> None:
 
 def test_explicit_list_agg_sort_in_groupby() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
-    assert (
-        df.groupby("A")
-        # this was col().list().sort() before we changed the logic
-        .agg(pl.col("B").sort(reverse=True))
-        .sort("A")
-        .frame_equal(df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A"))
-    )
+
+    # this was col().list().sort() before we changed the logic
+    result = df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A")
+    expected = df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A")
+    assert_frame_equal(result, expected)
 
 
 def test_sorted_join_query_5406() -> None:

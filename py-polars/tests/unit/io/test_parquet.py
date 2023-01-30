@@ -103,7 +103,7 @@ def test_select_columns() -> None:
     f.seek(0)
 
     read_df = pl.read_parquet(f, columns=["b", "c"], use_pyarrow=False)
-    assert expected.frame_equal(read_df)
+    assert_frame_equal(expected, read_df)
 
 
 def test_select_projection() -> None:
@@ -114,7 +114,7 @@ def test_select_projection() -> None:
     f.seek(0)
 
     read_df = pl.read_parquet(f, columns=[1, 2], use_pyarrow=False)
-    assert expected.frame_equal(read_df)
+    assert_frame_equal(expected, read_df)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
@@ -139,7 +139,7 @@ def test_parquet_datetime(compression: ParquetCompression, use_pyarrow: bool) ->
     df.write_parquet(f, use_pyarrow=use_pyarrow, compression=compression)
     f.seek(0)
     read = pl.read_parquet(f)
-    assert read.frame_equal(df)
+    assert_frame_equal(read, df)
 
 
 def test_nested_parquet() -> None:
@@ -198,7 +198,7 @@ def test_chunked_round_trip() -> None:
     f = io.BytesIO()
     df.write_parquet(f)
     f.seek(0)
-    assert pl.read_parquet(f).frame_equal(df)
+    assert_frame_equal(pl.read_parquet(f), df)
 
 
 def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame) -> None:
@@ -238,7 +238,7 @@ def test_nested_dictionary() -> None:
         f.seek(0)
 
         read_df = pl.read_parquet(f)
-        assert df.frame_equal(read_df)
+        assert_frame_equal(df, read_df)
 
 
 def test_row_group_size_saturation() -> None:
@@ -248,7 +248,7 @@ def test_row_group_size_saturation() -> None:
     # request larger chunk than rows in df
     df.write_parquet(f, row_group_size=1024)
     f.seek(0)
-    assert pl.read_parquet(f).frame_equal(df)
+    assert_frame_equal(pl.read_parquet(f), df)
 
 
 def test_nested_sliced() -> None:
@@ -262,7 +262,7 @@ def test_nested_sliced() -> None:
         f = io.BytesIO()
         df.write_parquet(f)
         f.seek(0)
-        assert pl.read_parquet(f).frame_equal(df)
+        assert_frame_equal(pl.read_parquet(f), df)
 
 
 def test_parquet_5795() -> None:
@@ -295,7 +295,7 @@ def test_parquet_5795() -> None:
     f = io.BytesIO()
     df_pd.to_parquet(f)
     f.seek(0)
-    assert pl.read_parquet(f).frame_equal(pl.from_pandas(df_pd))
+    assert_frame_equal(pl.read_parquet(f), pl.from_pandas(df_pd))
 
 
 @typing.no_type_check
@@ -322,7 +322,7 @@ def test_parquet_nesting_structs_list() -> None:
     df.write_parquet(f)
     f.seek(0)
 
-    assert pl.read_parquet(f).frame_equal(df)
+    assert_frame_equal(pl.read_parquet(f), df)
 
 
 @typing.no_type_check
@@ -346,7 +346,7 @@ def test_parquet_nested_dictionaries_6217() -> None:
         pq.write_table(table, f, compression="snappy")
         f.seek(0)
         read = pl.read_parquet(f)
-        assert read.frame_equal(df)
+        assert_frame_equal(read, df)
 
 
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")

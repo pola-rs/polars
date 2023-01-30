@@ -5,6 +5,7 @@ import io
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_categorical_outer_join() -> None:
@@ -25,10 +26,14 @@ def test_categorical_outer_join() -> None:
             ]
         ).lazy()
 
-    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
-    expected = pl.DataFrame({"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]})
+        expected = pl.DataFrame(
+            {"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]},
+            schema_overrides={"key2": pl.Categorical},
+        )
 
-    assert out.frame_equal(expected)
+    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
+    assert_frame_equal(out, expected)
+
     with pl.StringCache():
         dfa = pl.DataFrame(
             [
@@ -70,18 +75,18 @@ def test_categorical_lexical_sort() -> None:
     expected = pl.DataFrame(
         {"cats": ["a", "b", "k", "z", "z"], "vals": [2, 3, 2, 3, 1]}
     )
-    assert out.with_columns(pl.col("cats").cast(pl.Utf8)).frame_equal(expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
     out = df.sort(["cats", "vals"])
     expected = pl.DataFrame(
         {"cats": ["a", "b", "k", "z", "z"], "vals": [2, 3, 2, 1, 3]}
     )
-    assert out.with_columns(pl.col("cats").cast(pl.Utf8)).frame_equal(expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
     out = df.sort(["vals", "cats"])
 
     expected = pl.DataFrame(
         {"cats": ["z", "a", "k", "b", "z"], "vals": [1, 2, 2, 3, 3]}
     )
-    assert out.with_columns(pl.col("cats").cast(pl.Utf8)).frame_equal(expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
 
 
 def test_categorical_lexical_ordering_after_concat() -> None:

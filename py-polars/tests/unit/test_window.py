@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int32])
@@ -100,14 +101,16 @@ def test_arange_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
     expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
     out = df.with_columns(expr)
-    assert out.frame_equal(
-        pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
+    assert_frame_equal(
+        out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
     )
 
     df = pl.DataFrame({"x": []})
     out = df.with_columns(expr)
-    assert out.frame_equal(pl.DataFrame({"x": [], "arange": []}))
-    assert out.schema == {"x": pl.Float32, "arange": pl.Int64}
+    expected = pl.DataFrame(
+        {"x": [], "arange": []}, schema={"x": pl.Float32, "arange": pl.Int64}
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_no_panic_on_nan_3067() -> None:
@@ -241,7 +244,7 @@ def test_sorted_window_expression() -> None:
     df = df.sort("b")
     out2 = df.with_columns(expr)
 
-    assert out1.frame_equal(out2)
+    assert_frame_equal(out1, out2)
 
 
 def test_nested_aggregation_window_expression() -> None:

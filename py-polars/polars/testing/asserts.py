@@ -403,6 +403,6 @@ def assert_frame_equal_local_categoricals(
             raise AssertionError
 
     cat_to_str = pli.col(Categorical).cast(str)
-    assert df_a.with_columns(cat_to_str).frame_equal(df_b.with_columns(cat_to_str))
+    assert_frame_equal(df_a.with_columns(cat_to_str), df_b.with_columns(cat_to_str))
     cat_to_phys = pli.col(Categorical).to_physical()
-    assert df_a.with_columns(cat_to_phys).frame_equal(df_b.with_columns(cat_to_phys))
+    assert_frame_equal(df_a.with_columns(cat_to_phys), df_b.with_columns(cat_to_phys))

@@ -12,6 +12,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_init_dict() -> None:
@@ -167,28 +168,31 @@ def test_init_dataclasses_and_namedtuple() -> None:
 def test_init_ndarray(monkeypatch: Any) -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
-    assert df.frame_equal(pl.DataFrame())
+    assert_frame_equal(df, pl.DataFrame())
 
     # 1D array
-    df = pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
+    df = pl.DataFrame(np.array([1, 2, 3], dtype=np.int64), schema=["a"])
     expected = pl.DataFrame({"a": [1, 2, 3]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(np.array([1, 2, 3]), schema=[("a", pl.Int32)])
     expected = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").cast(pl.Int32))
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     # 2D array (or 2x 1D array) - should default to column orientation
-    for data in (np.array([[1, 2], [3, 4]]), [np.array([1, 2]), np.array([3, 4])]):
+    for data in (
+        np.array([[1, 2], [3, 4]], dtype=np.int64),
+        [np.array([1, 2], dtype=np.int64), np.array([3, 4], dtype=np.int64)],
+    ):
         df = pl.DataFrame(data, orient="col")
         expected = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
-        assert df.frame_equal(expected)
+        assert_frame_equal(df, expected)
 
     df = pl.DataFrame([[1, 2.0, "a"], [None, None, None]], orient="row")
     expected = pl.DataFrame(
         {"column_0": [1, None], "column_1": [2.0, None], "column_2": ["a", None]}
     )
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         data=[[1, 2.0, "a"], [None, None, None]],
@@ -199,23 +203,27 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert df.schema == {"x": pl.Boolean, "y": pl.Int32, "z": pl.Utf8}
 
     # 2D array - default to column orientation
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]], dtype=np.int64))
     expected = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     # no orientation is numpy convention
-    df = pl.DataFrame(np.ones((3, 1)))
+    df = pl.DataFrame(np.ones((3, 1), dtype=np.int64))
     assert df.shape == (3, 1)
 
     # 2D array - row orientation inferred
-    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), schema=["a", "b", "c"])
+    df = pl.DataFrame(
+        np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64), schema=["a", "b", "c"]
+    )
     expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     # 2D array - column orientation inferred
-    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), schema=["a", "b"])
+    df = pl.DataFrame(
+        np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64), schema=["a", "b"]
+    )
     expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     # 2D array - orientation conflicts with columns
     with pytest.raises(ValueError):
@@ -265,12 +273,12 @@ def test_init_arrow() -> None:
     # Handle unnamed column
     df = pl.DataFrame(pa.table({"a": [1, 2], None: [3, 4]}))
     expected = pl.DataFrame({"a": [1, 2], "None": [3, 4]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     # Rename columns
     df = pl.DataFrame(pa.table({"a": [1, 2], "b": [3, 4]}), schema=["c", "d"])
     expected = pl.DataFrame({"c": [1, 2], "d": [3, 4]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         pa.table({"a": [1, 2], None: [3, 4]}),
@@ -288,11 +296,11 @@ def test_init_series() -> None:
     # List of Series
     df = pl.DataFrame([pl.Series("a", [1, 2, 3]), pl.Series("b", [4, 5, 6])])
     expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     # Tuple of Series
     df = pl.DataFrame((pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))))
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         (pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))),
@@ -306,7 +314,7 @@ def test_init_series() -> None:
     expected = pl.DataFrame(
         [pl.Series("column_0", [1, 2, 3]), pl.Series("column_1", [4, 5, 6])]
     )
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame([pl.Series([0.0]), pl.Series([1.0])])
     assert df.schema == {"column_0": pl.Float64, "column_1": pl.Float64}
@@ -323,7 +331,7 @@ def test_init_series() -> None:
     df = pl.DataFrame(pl.Series("a", [1, 2, 3]))
     expected = pl.DataFrame({"a": [1, 2, 3]})
     assert df.schema == {"a": pl.Int64}
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(pl.Series("a", [1, 2, 3]), schema=[("a", pl.UInt32)])
     assert df.rows() == [(1,), (2,), (3,)]
@@ -337,7 +345,7 @@ def test_init_seq_of_seq() -> None:
     # List of lists
     df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
     expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         [[1, 2, 3], [4, 5, 6]],
@@ -349,12 +357,12 @@ def test_init_seq_of_seq() -> None:
     # Tuple of tuples, default to column orientation
     df = pl.DataFrame(((1, 2, 3), (4, 5, 6)))
     expected = pl.DataFrame({"column_0": [1, 2, 3], "column_1": [4, 5, 6]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     # Row orientation
     df = pl.DataFrame(((1, 2), (3, 4)), schema=("a", "b"), orient="row")
     expected = pl.DataFrame({"a": [1, 3], "b": [2, 4]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         ((1, 2), (3, 4)), schema=(("a", pl.Float32), ("b", pl.Float32)), orient="row"
@@ -370,14 +378,14 @@ def test_init_seq_of_seq() -> None:
 def test_init_1d_sequence() -> None:
     # Empty list
     df = pl.DataFrame([])
-    assert df.frame_equal(pl.DataFrame())
+    assert_frame_equal(df, pl.DataFrame())
 
     # List/array of strings
     data = ["a", "b", "c"]
     for a in (data, np.array(data)):
         df = pl.DataFrame(a, schema=["s"])
         expected = pl.DataFrame({"s": data})
-        assert df.frame_equal(expected)
+        assert_frame_equal(df, expected)
 
     df = pl.DataFrame([None, True, False], schema=[("xx", pl.Int8)])
     assert df.schema == {"xx": pl.Int8}
@@ -393,7 +401,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     # integer column names
     df = pl.DataFrame(pandas_df)
     expected = pl.DataFrame({"1": [1, 3], "2": [2, 4]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
     assert df.schema == {"1": pl.Int64, "2": pl.Int64}
 
     # override column names, types
@@ -460,12 +468,12 @@ def test_init_records() -> None:
     ]
     df = pl.DataFrame(dicts)
     expected = pl.DataFrame({"a": [1, 2, 1], "b": [2, 1, 2]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
     assert df.to_dicts() == dicts
 
     df_cd = pl.DataFrame(dicts, schema=["c", "d"])
     expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
-    assert df_cd.frame_equal(expected)
+    assert_frame_equal(df_cd, expected)
 
 
 def test_init_records_schema_order() -> None:
@@ -501,9 +509,7 @@ def test_init_records_schema_order() -> None:
 def test_init_only_columns() -> None:
     df = pl.DataFrame(schema=["a", "b", "c"])
     expected = pl.DataFrame({"a": [], "b": [], "c": []})
-    assert df.shape == (0, 3)
-    assert df.frame_equal(expected, null_equal=True)
-    assert df.dtypes == [pl.Float32, pl.Float32, pl.Float32]
+    assert_frame_equal(df, expected)
 
     # Validate construction with various flavours of no/empty data
     no_data: Any
@@ -527,7 +533,7 @@ def test_init_only_columns() -> None:
         expected.insert_at_idx(3, pl.Series("d", [], pl.List(pl.UInt8)))
 
         assert df.shape == (0, 4)
-        assert df.frame_equal(expected, null_equal=True)
+        assert_frame_equal(df, expected)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
         assert df.schema["d"].inner == pl.UInt8  # type: ignore[union-attr]
 

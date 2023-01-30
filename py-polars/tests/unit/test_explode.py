@@ -58,7 +58,7 @@ def test_explode_empty_df_3902() -> None:
             "second": ["a", None, "b", "c", None, "d", "f", "g"],
         }
     )
-    assert df.explode("second").frame_equal(expected)
+    assert_frame_equal(df.explode("second"), expected)
 
 
 def test_explode_empty_list_4003() -> None:
@@ -106,9 +106,10 @@ def test_explode_correct_for_slice() -> None:
             "row_nr": [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 8, 8, 8, 9],
             "group": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             "b": [1, 2, 3, 2, 3, 4, 1, 2, 3, 0, 1, 2, 3, 2, 3, 4, 1, 2, 3, 0],
-        }
+        },
+        schema_overrides={"row_nr": pl.UInt32},
     )
-    assert df.slice(0, 10).explode(["b"]).frame_equal(expected)
+    assert_frame_equal(df.slice(0, 10).explode(["b"]), expected)
 
 
 def test_sliced_null_explode() -> None:

@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-import polars.testing
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy
@@ -105,7 +105,7 @@ def test_sorted_merge_joins() -> None:
                     df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how
                 )
 
-                assert out_hash_join.frame_equal(out_sorted_merge_join)
+                assert_frame_equal(out_hash_join, out_sorted_merge_join)
 
 
 def test_join_negative_integers() -> None:
@@ -373,7 +373,7 @@ def test_join() -> None:
 
     cols = ["a", "b", "bar", "ham"]
     assert lazy_join.shape == eager_join.shape
-    assert lazy_join.sort(by=cols).frame_equal(eager_join.sort(by=cols))
+    assert_frame_equal(lazy_join.sort(by=cols), eager_join.sort(by=cols))
 
 
 def test_joins_dispatch() -> None:
@@ -539,18 +539,19 @@ def test_sorted_flag_after_joins() -> None:
 @typing.no_type_check
 def test_jit_sort_joins() -> None:
     n = 200
+    # Explicitly specify numpy dtype because of different defaults on Windows
     dfa = pd.DataFrame(
         {
-            "a": np.random.randint(0, 100, n),
-            "b": np.arange(0, n),
+            "a": np.random.randint(0, 100, n, dtype=np.int64),
+            "b": np.arange(0, n, dtype=np.int64),
         }
     )
 
     n = 40
     dfb = pd.DataFrame(
         {
-            "a": np.random.randint(0, 100, n),
-            "b": np.arange(0, n),
+            "a": np.random.randint(0, 100, n, dtype=np.int64),
+            "b": np.arange(0, n, dtype=np.int64),
         }
     )
     dfa_pl = pl.from_pandas(dfa).sort("a")
@@ -564,7 +565,7 @@ def test_jit_sort_joins() -> None:
         pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"])
 
         a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
-        assert a.frame_equal(pl_result, null_equal=True)
+        assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
 
         # left key sorted right is not
@@ -573,7 +574,7 @@ def test_jit_sort_joins() -> None:
         pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"])
 
         a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
-        assert a.frame_equal(pl_result, null_equal=True)
+        assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
 
 
@@ -617,7 +618,7 @@ def test_asof_join_schema_5684() -> None:
     projected_result = q.select(pl.all()).collect()
     result = q.collect()
 
-    assert projected_result.frame_equal(result)
+    assert_frame_equal(projected_result, result)
     assert (
         q.schema
         == projected_result.schema

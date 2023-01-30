@@ -1,11 +1,13 @@
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_exclude_name_from_dtypes() -> None:
     df = pl.DataFrame({"a": ["a"], "b": ["b"]})
 
-    assert df.with_columns(pl.col(pl.Utf8).exclude("a").suffix("_foo")).frame_equal(
-        pl.DataFrame({"a": ["a"], "b": ["b"], "b_foo": ["b"]})
+    assert_frame_equal(
+        df.with_columns(pl.col(pl.Utf8).exclude("a").suffix("_foo")),
+        pl.DataFrame({"a": ["a"], "b": ["b"], "b_foo": ["b"]}),
     )
 
 

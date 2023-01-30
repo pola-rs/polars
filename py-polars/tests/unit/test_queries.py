@@ -4,8 +4,10 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
+from _pytest.monkeypatch import MonkeyPatch
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_sort_by_bools() -> None:
@@ -77,7 +79,7 @@ def test_agg_after_head() -> None:
         if not maintain_order:
             out = out.sort("a")
 
-        assert out.frame_equal(expected)
+        assert_frame_equal(out, expected)
 
 
 def test_overflow_uint16_agg_mean() -> None:
@@ -136,7 +138,9 @@ def test_maintain_order_after_sampling() -> None:
     ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
 
 
-def test_sorted_groupby_optimization() -> None:
+def test_sorted_groupby_optimization(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_NO_STREAMING_GROUPBY", "1")
+
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
 
     # the sorted optimization should not randomize the
@@ -147,9 +151,8 @@ def test_sorted_groupby_optimization() -> None:
             .groupby("a")
             .agg(pl.count())
         )
-
         sorted_explicit = df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
-        sorted_explicit.frame_equal(sorted_implicit)
+        assert_frame_equal(sorted_explicit, sorted_implicit)
 
 
 def test_median_on_shifted_col_3522() -> None:

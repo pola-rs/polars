@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_list_arr_get() -> None:
@@ -234,9 +234,10 @@ def test_list_arr_empty() -> None:
         ]
     )
     expected = pl.DataFrame(
-        {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]}
+        {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]},
+        schema_overrides={"cars_literal": pl.Int32},  # Literals default to Int32
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_list_argminmax() -> None:
@@ -543,21 +544,14 @@ def test_list_sliced_get_5186() -> None:
         }
     )
 
-    assert df.select(
-        [
-            "ind",
-            pl.col("inds").arr.first().alias("first_element"),
-            pl.col("inds").arr.last().alias("last_element"),
-        ]
-    )[10:20].frame_equal(
-        df[10:20].select(
-            [
-                "ind",
-                pl.col("inds").arr.first().alias("first_element"),
-                pl.col("inds").arr.last().alias("last_element"),
-            ]
-        )
-    )
+    exprs = [
+        "ind",
+        pl.col("inds").arr.first().alias("first_element"),
+        pl.col("inds").arr.last().alias("last_element"),
+    ]
+    out1 = df.select(exprs)[10:20]
+    out2 = df[10:20].select(exprs)
+    assert_frame_equal(out1, out2)
 
 
 def test_empty_eval_dtype_5546() -> None:
@@ -697,7 +691,7 @@ def test_concat_list_in_agg_6397() -> None:
 
 
 def test_list_eval_all_null() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_column(
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, None, None]}).with_columns(
         pl.col("bar").cast(pl.List(pl.Utf8))
     )
 

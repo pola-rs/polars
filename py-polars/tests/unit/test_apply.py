@@ -8,6 +8,7 @@ from typing import Sequence, no_type_check
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_apply_none() -> None:
@@ -119,7 +120,7 @@ def test_apply_struct() -> None:
         }
     )
 
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_apply_numpy_out_3057() -> None:
@@ -130,32 +131,29 @@ def test_apply_numpy_out_3057() -> None:
             "y": [0.0, 1, 1.3, 2, 3, 4],
         }
     )
-
-    assert (
-        df.groupby("id", maintain_order=True)
-        .agg(
-            pl.apply(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias(
-                "result"
-            )
-        )
-        .frame_equal(pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]}))
+    result = df.groupby("id", maintain_order=True).agg(
+        pl.apply(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias("result")
     )
+    expected = pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]})
+    assert_frame_equal(result, expected)
 
 
 def test_apply_numpy_int_out() -> None:
     df = pl.DataFrame({"col1": [2, 4, 8, 16]})
-    assert df.with_columns(
+    result = df.with_columns(
         pl.col("col1").apply(lambda x: np.left_shift(x, 8)).alias("result")
-    ).frame_equal(
-        pl.DataFrame({"col1": [2, 4, 8, 16], "result": [512, 1024, 2048, 4096]})
     )
-    df = pl.DataFrame({"col1": [2, 4, 8, 16], "shift": [1, 1, 2, 2]})
+    expected = pl.DataFrame({"col1": [2, 4, 8, 16], "result": [512, 1024, 2048, 4096]})
+    assert_frame_equal(result, expected)
 
-    assert df.select(
+    df = pl.DataFrame({"col1": [2, 4, 8, 16], "shift": [1, 1, 2, 2]})
+    result = df.select(
         pl.struct(["col1", "shift"])
         .apply(lambda cols: np.left_shift(cols["col1"], cols["shift"]))
         .alias("result")
-    ).frame_equal(pl.DataFrame({"result": [4, 8, 32, 64]}))
+    )
+    expected = pl.DataFrame({"result": [4, 8, 32, 64]})
+    assert_frame_equal(result, expected)
 
 
 def test_datelike_identity() -> None:

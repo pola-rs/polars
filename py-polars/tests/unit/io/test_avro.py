@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import AvroCompression
@@ -27,7 +28,7 @@ def test_from_to_buffer(example_df: pl.DataFrame, compression: AvroCompression) 
     buf.seek(0)
 
     read_df = pl.read_avro(buf)
-    assert example_df.frame_equal(read_df)
+    assert_frame_equal(example_df, read_df)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
@@ -37,7 +38,7 @@ def test_from_to_file(example_df: pl.DataFrame, compression: AvroCompression) ->
         example_df.write_avro(file_path, compression=compression)
         df_read = pl.read_avro(file_path)
 
-    assert example_df.frame_equal(df_read)
+    assert_frame_equal(example_df, df_read)
 
 
 def test_select_columns() -> None:
@@ -49,7 +50,7 @@ def test_select_columns() -> None:
     f.seek(0)
 
     read_df = pl.read_avro(f, columns=["b", "c"])
-    assert expected.frame_equal(read_df)
+    assert_frame_equal(expected, read_df)
 
 
 def test_select_projection() -> None:
@@ -61,4 +62,4 @@ def test_select_projection() -> None:
     f.seek(0)
 
     read_df = pl.read_avro(f, columns=[1, 2])
-    assert expected.frame_equal(read_df)
+    assert_frame_equal(expected, read_df)
