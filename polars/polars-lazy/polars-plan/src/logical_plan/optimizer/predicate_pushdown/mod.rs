@@ -73,7 +73,7 @@ impl PredicatePushDown {
             // we should not pass these projections
             if exprs
                 .iter()
-                .any(|e_n| projection_is_dependent_on_predicate_location(*e_n, expr_arena))
+                .any(|e_n| projection_is_definite_pushdown_boundary(*e_n, expr_arena))
             {
                 return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
             }

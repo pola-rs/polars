@@ -110,3 +110,20 @@ def test_predicate_strptime_6558() -> None:
         .filter((pl.col("date").dt.year() == 2022) & (pl.col("date").dt.month() == 1))
         .collect()
     ).to_dict(False) == {"date": [date(2022, 1, 3)]}
+
+
+def test_predicate_arr_first_6573() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6],
+            "b": [6, 5, 4, 3, 2, 1],
+        }
+    )
+
+    assert (
+        df.lazy()
+        .with_columns(pl.col("a").list())
+        .with_columns(pl.col("a").arr.first())
+        .filter(pl.col("a") == pl.col("b"))
+        .collect()
+    ).to_dict(False) == {"a": [1], "b": [1]}
