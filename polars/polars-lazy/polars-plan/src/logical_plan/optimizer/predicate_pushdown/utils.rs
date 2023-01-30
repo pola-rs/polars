@@ -157,7 +157,7 @@ pub(super) fn projection_is_dependent_on_predicate_location(
             | Window {..}
             | Literal(LiteralValue::Range {..}) => true,
             Literal(LiteralValue::Series(s)) => s.len() > 1,
-            #[cfg(feature = "strings")]
+            #[cfg(all(feature = "strings", feature = "temporal"))]
             // strptime is a cast
             Function {function: FunctionExpr::StringExpr(StringFunction::Strptime(_)), .. } => true,
             _ => false
