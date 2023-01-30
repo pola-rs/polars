@@ -917,7 +917,8 @@ def test_multiple_column_sort() -> None:
     assert list(out["c"]) == [2.0, 1.0, 3.0]
     assert list(out["b"]) == [2, 2, 3]
 
-    df = pl.DataFrame({"a": np.arange(1, 4), "b": ["a", "a", "b"]})
+    # Explicitly specify numpy dtype because of different defaults on Windows
+    df = pl.DataFrame({"a": np.arange(1, 4, dtype=np.int64), "b": ["a", "a", "b"]})
 
     assert_frame_equal(
         df.sort("a", reverse=True), pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]})

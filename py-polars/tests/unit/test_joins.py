@@ -539,18 +539,19 @@ def test_sorted_flag_after_joins() -> None:
 @typing.no_type_check
 def test_jit_sort_joins() -> None:
     n = 200
+    # Explicitly specify numpy dtype because of different defaults on Windows
     dfa = pd.DataFrame(
         {
-            "a": np.random.randint(0, 100, n),
-            "b": np.arange(0, n),
+            "a": np.random.randint(0, 100, n, dtype=np.int64),
+            "b": np.arange(0, n, dtype=np.int64),
         }
     )
 
     n = 40
     dfb = pd.DataFrame(
         {
-            "a": np.random.randint(0, 100, n),
-            "b": np.arange(0, n),
+            "a": np.random.randint(0, 100, n, dtype=np.int64),
+            "b": np.arange(0, n, dtype=np.int64),
         }
     )
     dfa_pl = pl.from_pandas(dfa).sort("a")

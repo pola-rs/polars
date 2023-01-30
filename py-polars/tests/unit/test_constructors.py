@@ -171,7 +171,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert_frame_equal(df, pl.DataFrame())
 
     # 1D array
-    df = pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
+    df = pl.DataFrame(np.array([1, 2, 3], dtype=np.int64), schema=["a"])
     expected = pl.DataFrame({"a": [1, 2, 3]})
     assert_frame_equal(df, expected)
 
@@ -180,7 +180,10 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert_frame_equal(df, expected)
 
     # 2D array (or 2x 1D array) - should default to column orientation
-    for data in (np.array([[1, 2], [3, 4]]), [np.array([1, 2]), np.array([3, 4])]):
+    for data in (
+        np.array([[1, 2], [3, 4]], dtype=np.int64),
+        [np.array([1, 2], dtype=np.int64), np.array([3, 4], dtype=np.int64)],
+    ):
         df = pl.DataFrame(data, orient="col")
         expected = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
         assert_frame_equal(df, expected)
@@ -200,21 +203,25 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert df.schema == {"x": pl.Boolean, "y": pl.Int32, "z": pl.Utf8}
 
     # 2D array - default to column orientation
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]], dtype=np.int64))
     expected = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
     assert_frame_equal(df, expected)
 
     # no orientation is numpy convention
-    df = pl.DataFrame(np.ones((3, 1)))
+    df = pl.DataFrame(np.ones((3, 1), dtype=np.int64))
     assert df.shape == (3, 1)
 
     # 2D array - row orientation inferred
-    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), schema=["a", "b", "c"])
+    df = pl.DataFrame(
+        np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64), schema=["a", "b", "c"]
+    )
     expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
     assert_frame_equal(df, expected)
 
     # 2D array - column orientation inferred
-    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), schema=["a", "b"])
+    df = pl.DataFrame(
+        np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64), schema=["a", "b"]
+    )
     expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     assert_frame_equal(df, expected)
 
