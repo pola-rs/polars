@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from types import TracebackType
+from typing import Any
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -37,9 +38,9 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
 }
-# register Config-local attributes (with their defaults) here, eg:
-# => {"misc_config_attr":True, "other_config_attr":False}
-POLARS_CFG_LOCAL_VARS = {}
+# register Config-local attributes (with their defaults) here,
+# eg: => {"misc_config_attr":True, "other_config_attr":False, etc}
+POLARS_CFG_LOCAL_VARS: dict[str, Any] = {}
 
 
 class Config:

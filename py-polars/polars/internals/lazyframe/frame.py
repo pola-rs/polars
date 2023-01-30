@@ -19,7 +19,6 @@ from typing import (
 )
 
 from polars import internals as pli
-from polars.cfg import Config
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,

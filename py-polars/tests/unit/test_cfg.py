@@ -434,7 +434,7 @@ def test_config_load_save() -> None:
 
     # restore all default options (unsets from env)
     pl.Config.restore_defaults()
-    for e in ("POLARS_FMT_MAX_COLS","POLARS_VERBOSE"):
+    for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
         assert e not in pl.Config.state(if_set=True)
         assert e in pl.Config.state()
 
