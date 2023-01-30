@@ -9,8 +9,8 @@ from polars.testing import assert_frame_equal
 
 def test_copy() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
-    assert_frame_equal(copy.copy(df), df, True)
-    assert_frame_equal(copy.deepcopy(df), df, True)
+    assert_frame_equal(copy.copy(df), df)
+    assert_frame_equal(copy.deepcopy(df), df)
 
     a = pl.Series("a", [1, 2])
     assert copy.copy(a).series_equal(a, True)
