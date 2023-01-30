@@ -60,6 +60,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         ca.apply(|s| general_purpose::STANDARD.encode(s).into())
     }
 
+    // Parse a string number with base _radix_ into a decimal (i32)
     fn parse_int(&self, radix: Option<u32>) -> Int32Chunked {
         let ca = self.as_utf8();
 
