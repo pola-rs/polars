@@ -369,25 +369,18 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 .get(0)
                 .ok_or_else(|| PolarsError::NoData("no data in `high` evaluation".into()))?;
 
-            if step > 1 {
-                let mut ca = Int64Chunked::from_iter_values("arange", (low..high).step_by(step));
-                let s = if high < low {
-                    IsSorted::Descending
-                } else {
-                    IsSorted::Ascending
-                };
-                ca.set_sorted_flag(s);
-                Ok(ca.into_series())
+            let mut ca = if step > 1 {
+                Int64Chunked::from_iter_values("arange", (low..high).step_by(step))
             } else {
-                let mut ca = Int64Chunked::from_iter_values("arange", low..high);
-                let s = if high < low {
-                    IsSorted::Descending
-                } else {
-                    IsSorted::Ascending
-                };
-                ca.set_sorted_flag(s);
-                Ok(ca.into_series())
-            }
+                Int64Chunked::from_iter_values("arange", low..high)
+            };
+            let is_sorted = if high < low {
+                IsSorted::Descending
+            } else {
+                IsSorted::Ascending
+            };
+            ca.set_sorted_flag(is_sorted);
+            Ok(ca.into_series())
         };
         apply_binary(
             low,

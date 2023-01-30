@@ -101,12 +101,13 @@ def test_arange_no_rows() -> None:
     expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
     out = df.with_columns(expr)
     assert out.frame_equal(
-        pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "literal": [0, 1, 0, 1, 0, 1]})
+        pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
     )
 
     df = pl.DataFrame({"x": []})
     out = df.with_columns(expr)
-    assert out.frame_equal(pl.DataFrame({"x": [], "literal": []}))
+    assert out.frame_equal(pl.DataFrame({"x": [], "arange": []}))
+    assert out.schema == {"x": pl.Float32, "arange": pl.Int64}
 
 
 def test_no_panic_on_nan_3067() -> None:
