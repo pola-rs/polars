@@ -381,6 +381,7 @@ impl StringNameSpace {
             .map_private(FunctionExpr::StringExpr(StringFunction::Uppercase))
     }
 
+    #[cfg(feature = "string_from_radix")]
     /// Parse string in base radix into decimal
     pub fn from_radix(self, radix: Option<u32>) -> Expr {
         self.0
