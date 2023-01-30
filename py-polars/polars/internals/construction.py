@@ -777,10 +777,16 @@ def sequence_to_pydf(
             )
         return pydf
 
-    elif isinstance(data[0], (list, tuple, Sequence)) and not isinstance(data[0], str):
+    elif (
+        isinstance(data[0], (list, tuple, Sequence)) and not isinstance(data[0], str)
+    ) or (
+        _check_for_numpy(data[0])
+        and isinstance(data[0], np.ndarray)
+        and data[0].ndim == 1
+    ):
         if is_namedtuple(data[0]):
             if schema is None:
-                schema = data[0]._fields  # type: ignore[attr-defined]
+                schema = data[0]._fields  # type: ignore[union-attr]
                 if len(data[0].__annotations__) == len(schema):
                     schema = [
                         (name, py_type_to_dtype(tp, raise_unmatched=False))
