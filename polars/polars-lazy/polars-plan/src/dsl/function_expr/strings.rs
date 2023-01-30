@@ -53,6 +53,7 @@ pub enum StringFunction {
     Strip(Option<String>),
     RStrip(Option<String>),
     LStrip(Option<String>),
+    FromRadix(Option<u32>),
 }
 
 impl Display for StringFunction {
@@ -85,6 +86,7 @@ impl Display for StringFunction {
             StringFunction::Strip(_) => "strip",
             StringFunction::LStrip(_) => "lstrip",
             StringFunction::RStrip(_) => "rstrip",
+            StringFunction::FromRadix { .. } => "from_radix",
         };
 
         write!(f, "str.{s}")
@@ -505,4 +507,9 @@ pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Se
         replace_single(column, pat, val, literal)
     }
     .map(|ca| ca.into_series())
+}
+
+pub(super) fn from_radix(s: &Series, radix: Option<u32>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.from_str_radix(radix).into_series())
 }

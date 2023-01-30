@@ -25,6 +25,8 @@ default = [
   "temporal",
   "fmt",
   "dtype-slim",
+  "string_encoding",
+  "binary_encoding",
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
@@ -70,6 +72,8 @@ performant = [
   "cse",
   "polars-ops/performant",
   "streaming",
+  "string_encoding",
+  "binary_encoding",
 ]
 
 # Dataframe formatting.

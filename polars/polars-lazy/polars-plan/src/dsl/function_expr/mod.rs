@@ -406,6 +406,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Strip(matches) => map!(strings::strip, matches.as_deref()),
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
+            FromRadix(matches) => map!(strings::from_radix, matches),
         }
     }
 }

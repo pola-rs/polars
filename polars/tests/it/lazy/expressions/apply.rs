@@ -105,3 +105,30 @@ fn test_apply_groups_empty() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_format_str() {
+    let a = df![
+        "bin" => ["110", "010", "101"],
+        "hex" => ["1aef", "02e5", "aa"]
+    ]
+    .unwrap();
+
+    let out = a
+        .lazy()
+        .with_column(col("bin").str().from_radix(Some(2)))
+        .with_column(col("hex").str().from_radix(Some(16)))
+        .collect()
+        .unwrap();
+
+    println!("{}", out);
+
+    let expected = df![
+        "bin" => [6, 2, 5],
+        "hex" => [6895, 741, 170]
+    ]
+    .unwrap();
+    println!("{}", expected);
+
+    assert!(out.frame_equal(&expected));
+}
