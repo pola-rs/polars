@@ -58,7 +58,7 @@ date_offset = ["polars-time"]
 list_take = ["polars-ops/list_take"]
 trigonometry = []
 sign = []
-timezones = ["polars-time/timezones", "polars-core/timezones"]
+timezones = ["polars-time/timezones", "polars-core/timezones", "regex"]
 
 true_div = []
 
