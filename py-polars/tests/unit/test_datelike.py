@@ -2704,13 +2704,24 @@ def test_crossing_dst_tz_aware(fmt: str) -> None:
         pl.Series(ts).str.strptime(pl.Datetime, fmt, utc=False)
 
 
-def test_utc_with_tz_naive() -> None:
-    ts = ["2021-03-27T23:59:59", "2021-03-28T23:59:59"]
+def test_tz_aware_without_fmt() -> None:
     with pytest.raises(
         ComputeError,
         match=(
-            r"Cannot use 'utc=True' with tz-naive data. "
-            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\)"
+            r"^Passing 'tz_aware=True' without 'fmt' is not yet supported. "
+            r"Please specify 'fmt'.$"
         ),
     ):
-        pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%S", utc=True)
+        pl.Series(["2020-01-01"]).str.strptime(pl.Datetime, tz_aware=True)
+
+
+@pytest.mark.parametrize("fmt", ["%Y-%m-%dT%H:%M:%S", None])
+def test_utc_with_tz_naive(fmt: str | None) -> None:
+    with pytest.raises(
+        ComputeError,
+        match=(
+            r"^Cannot use 'utc=True' with tz-naive data. "
+            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\).$"
+        ),
+    ):
+        pl.Series(["2020-01-01 00:00:00"]).str.strptime(pl.Datetime, fmt, utc=True)

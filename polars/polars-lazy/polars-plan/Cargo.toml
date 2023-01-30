@@ -11,6 +11,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 [dependencies]
 ahash.workspace = true
 futures = { version = "0.3.25", optional = true }
+once_cell.workspace = true
 polars-arrow = { version = "0.26.1", path = "../../polars-arrow" }
 polars-core = { version = "0.26.1", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.26.1", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
@@ -57,7 +58,7 @@ date_offset = ["polars-time"]
 list_take = ["polars-ops/list_take"]
 trigonometry = []
 sign = []
-timezones = ["polars-time/timezones", "polars-core/timezones"]
+timezones = ["polars-time/timezones", "polars-core/timezones", "regex"]
 
 true_div = []
 
