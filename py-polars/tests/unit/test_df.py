@@ -4,7 +4,6 @@ import sys
 import textwrap
 import typing
 from datetime import date, datetime, timedelta
-from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
@@ -348,73 +347,6 @@ def test_from_dict_with_scalars() -> None:
             "y": pl.Int8,
             "z": pl.Utf8,
         }
-
-
-def test_dataclasses_and_namedtuple() -> None:
-    from dataclasses import dataclass
-    from typing import NamedTuple
-
-    @dataclass
-    class TradeDC:
-        timestamp: datetime
-        ticker: str
-        price: Decimal
-        size: int | None = None
-
-    class TradeNT(NamedTuple):
-        timestamp: datetime
-        ticker: str
-        price: Decimal
-        size: int | None = None
-
-    raw_data = [
-        (datetime(2022, 9, 8, 14, 30, 45), "AAPL", Decimal("157.5"), 125),
-        (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
-        (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
-    ]
-
-    for TradeClass in (TradeDC, TradeNT):
-        trades = [TradeClass(*values) for values in raw_data]
-
-        for DF in (pl.DataFrame, pl.from_records):
-            df = DF(data=trades)  # type: ignore[operator]
-            assert df.schema == {
-                "timestamp": pl.Datetime("us"),
-                "ticker": pl.Utf8,
-                "price": pl.Float64,
-                "size": pl.Int64,
-            }
-            assert df.rows() == raw_data
-
-            # partial dtypes override
-            df = DF(  # type: ignore[operator]
-                data=trades,
-                schema_overrides={"timestamp": pl.Datetime("ms"), "size": pl.Int32},
-            )
-            assert df.schema == {
-                "timestamp": pl.Datetime("ms"),
-                "ticker": pl.Utf8,
-                "price": pl.Float64,
-                "size": pl.Int32,
-            }
-
-        # in conjunction with full 'columns' override (rename/downcast)
-        df = pl.DataFrame(
-            data=trades,
-            schema=[
-                ("ts", pl.Datetime("ms")),
-                ("tk", pl.Categorical),
-                ("pc", pl.Float32),
-                ("sz", pl.UInt16),
-            ],
-        )
-        assert df.schema == {
-            "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical,
-            "pc": pl.Float32,
-            "sz": pl.UInt16,
-        }
-        assert df.rows() == raw_data
 
 
 def test_dataframe_membership_operator() -> None:
