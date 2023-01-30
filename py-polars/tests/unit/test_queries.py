@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-import pytest
+from _pytest.monkeypatch import MonkeyPatch
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -138,8 +138,9 @@ def test_maintain_order_after_sampling() -> None:
     ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
 
 
-@pytest.mark.xfail(reason="Currently bugged, see issue #6556")
-def test_sorted_groupby_optimization() -> None:
+def test_sorted_groupby_optimization(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_NO_STREAMING_GROUPBY", "1")
+
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
 
     # the sorted optimization should not randomize the
