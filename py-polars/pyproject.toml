@@ -58,8 +58,6 @@ all = [
 
 [tool.mypy]
 files = ["polars", "tests"]
-namespace_packages = true
-show_error_codes = true
 strict = true
 enable_error_code = [
   "redundant-expr",
