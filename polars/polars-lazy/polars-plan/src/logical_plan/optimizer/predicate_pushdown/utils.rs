@@ -134,33 +134,34 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
 /// predicate pushdown blocker.
 ///
 /// This checks the boundary of other columns
-pub(super) fn project_other_column_is_predicate_pushdown_boundary(
+pub(super) fn projection_is_dependent_on_predicate_location(
     node: Node,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
     let matches = |e: &AExpr| {
-        matches!(
-            e,
-            AExpr::Sort { .. } | AExpr::SortBy { .. }
-            | AExpr::Agg(_) // an aggregation needs all rows
+        use AExpr::*;
+        match e {
+            Sort { .. } | SortBy { .. }
+            | Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
-            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | AExpr::BinaryExpr {..}
+            | AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | BinaryExpr {..}
             // casts may produce null values, change values etc.
             // they can fail in myriad ways
-            | AExpr::Cast {..}
+            | Cast {..}
             // still need to investigate this one
-            | AExpr::Explode {..}
+            | Explode {..}
             // A groupby needs all rows for aggregation
-            | AExpr::Window {..}
-            | AExpr::Literal(LiteralValue::Range {..})
-        ) ||
-            // a series that is not a singleton would also have a different result
-            // if filter is applied earlier
-            matches!(e, AExpr::Literal(LiteralValue::Series(s)) if s.len() > 1
-        )
+            | Window {..}
+            | Literal(LiteralValue::Range {..}) => true,
+            Literal(LiteralValue::Series(s)) => s.len() > 1,
+            #[cfg(all(feature = "strings", feature = "temporal"))]
+            // strptime is a cast
+            Function {function: FunctionExpr::StringExpr(StringFunction::Strptime(_)), .. } => true,
+            _ => false
+        }
     };
     has_aexpr(node, expr_arena, matches)
 }
@@ -171,33 +172,28 @@ pub(super) fn project_other_column_is_predicate_pushdown_boundary(
 /// and `col().some_func().alias(B)` is projected.
 /// then the projection can not pass, as column `B` maybe
 /// changed by `some_func`
-pub(super) fn projection_column_is_predicate_pushdown_boundary(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-) -> bool {
+pub(super) fn predicate_is_dependent_on_projection(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let matches = |e: &AExpr| {
-        matches!(
-            e,
-            AExpr::Sort { .. } | AExpr::SortBy { .. }
-            | AExpr::Agg(_) // an aggregation needs all rows
+        use AExpr::*;
+        match e {
+            Sort { .. } | SortBy { .. }
+            | Agg(_) // an aggregation needs all rows
             // everything that works on groups likely changes to order of elements w/r/t the other columns
-            | AExpr::AnonymousFunction {..}
-            | AExpr::Function {..}
-            | AExpr::BinaryExpr {..}
+            | AnonymousFunction {..}
+            | Function {..}
+            | BinaryExpr {..}
             // cast may change precision.
-            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::Boolean, ..}
+            | Cast {data_type: DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::Boolean, ..}
             // cast may create nulls
-            | AExpr::Cast {strict: false, ..}
+            | Cast {strict: false, ..}
             // still need to investigate this one
-            | AExpr::Explode {..}
+            | Explode {..}
             // A groupby needs all rows for aggregation
-            | AExpr::Window {..}
-            | AExpr::Literal(LiteralValue::Range {..})
-        ) ||
-            // a series that is not a singleton would also have a different result
-            // if filter is applied earlier
-            matches!(e, AExpr::Literal(LiteralValue::Series(s)) if s.len() > 1
-        )
+            | Window {..}
+            | Literal(LiteralValue::Range {..}) => true,
+            Literal(LiteralValue::Series(s)) => s.len() > 1,
+            _ => false
+        }
     };
     has_aexpr(node, expr_arena, matches)
 }
@@ -221,7 +217,7 @@ where
     for projection_node in &projections {
         // only if a predicate refers to this projection's output column.
         let projection_maybe_boundary =
-            projection_column_is_predicate_pushdown_boundary(*projection_node, expr_arena);
+            predicate_is_dependent_on_projection(*projection_node, expr_arena);
 
         let projection_expr = expr_arena.get(*projection_node);
         let output_field = projection_expr
@@ -283,7 +279,7 @@ where
         // we check if predicates can be done on the input above
         // this can only be done if the current projection is not a projection boundary
         let is_boundary =
-            project_other_column_is_predicate_pushdown_boundary(*projection_node, expr_arena);
+            projection_is_dependent_on_predicate_location(*projection_node, expr_arena);
 
         // remove predicates that cannot be done on the input above
         let to_local = acc_predicates
