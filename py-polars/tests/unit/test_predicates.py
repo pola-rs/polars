@@ -100,3 +100,13 @@ def test_when_then_empty_list_5547() -> None:
     out = pl.DataFrame({"a": []}).select([pl.when(pl.col("a") > 1).then([1])])
     assert out.shape == (0, 1)
     assert out.dtypes == [pl.List(pl.Int64)]
+
+
+def test_predicate_strptime_6558() -> None:
+    assert (
+        pl.DataFrame({"date": ["2022-01-03", "2020-01-04", "2021-02-03", "2019-01-04"]})
+        .lazy()
+        .select(pl.col("date").str.strptime(pl.Date, fmt="%F"))
+        .filter((pl.col("date").dt.year() == 2022) & (pl.col("date").dt.month() == 1))
+        .collect()
+    ).to_dict(False) == {"date": [date(2022, 1, 3)]}
