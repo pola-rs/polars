@@ -2051,13 +2051,46 @@ def test_cast_timezone() -> None:
     }
 
 
-def test_cast_timezone_from_fixed_offset() -> None:
+def test_cast_timezone_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.strptime(
         pl.Datetime, "%Y-%m-%d %H:%M:%S%z"
     )
-    # TODO: don't raise at all? https://github.com/pola-rs/polars/issues/6410
-    with pytest.raises(ComputeError, match=r"Could not parse timezone: '\+01:00'"):
-        ts.dt.cast_time_zone("Europe/Brussels")
+    with pytest.raises(ComputeError, match=r"Could not parse time zone foo"):
+        ts.dt.cast_time_zone("foo")
+
+
+@pytest.mark.parametrize(
+    ("from_tz", "to_tz", "tzinfo"),
+    [
+        (
+            "America/Barbados",
+            "+01:00",
+            timezone(timedelta(seconds=3600)),
+        ),
+        ("+01:00", "America/Barbados", zoneinfo.ZoneInfo(key="America/Barbados")),
+        (
+            "America/Barbados",
+            "Europe/Helsinki",
+            zoneinfo.ZoneInfo(key="Europe/Helsinki"),
+        ),
+        (
+            "+02:00",
+            "+01:00",
+            timezone(timedelta(seconds=3600)),
+        ),
+    ],
+)
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_cast_timezone_fixed_offsets_and_area_location(
+    from_tz: str,
+    to_tz: str,
+    tzinfo: timezone | zoneinfo.ZoneInfo,
+    tu: TimeUnit,
+) -> None:
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(tu))
+    result = ts.dt.tz_localize(from_tz).dt.cast_time_zone(to_tz).item()
+    expected = datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo)
+    assert result == expected
 
 
 def test_with_time_zone_none() -> None:
