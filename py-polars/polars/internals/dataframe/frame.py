@@ -4108,7 +4108,7 @@ class DataFrame:
 
     def join(
         self,
-        other: DataFrame,
+        other: DataFrame | LazyFrame,
         left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
@@ -4121,7 +4121,7 @@ class DataFrame:
         Parameters
         ----------
         other
-            DataFrame to join with.
+            DataFrame or LazyFrame to join with.
         left_on
             Name(s) of the left join column(s).
         right_on
