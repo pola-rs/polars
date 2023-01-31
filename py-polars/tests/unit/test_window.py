@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int32])
@@ -129,7 +129,7 @@ def test_no_panic_on_nan_3067() -> None:
 
 
 def test_quantile_as_window() -> None:
-    assert (
+    result = (
         pl.DataFrame(
             {
                 "group": [0, 0, 1, 1],
@@ -138,8 +138,9 @@ def test_quantile_as_window() -> None:
         )
         .select(pl.quantile("value", 0.9).over("group"))
         .to_series()
-        .series_equal(pl.Series("value", [1.0, 1.0, 2.0, 2.0]))
     )
+    expected = pl.Series("value", [1.0, 1.0, 2.0, 2.0])
+    assert_series_equal(result, expected)
 
 
 def test_cumulative_eval_window_functions() -> None:

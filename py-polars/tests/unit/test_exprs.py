@@ -100,7 +100,7 @@ def test_shuffle() -> None:
     result1 = pl.select(pl.lit(s).shuffle()).to_series()
     random.seed(1)
     result2 = pl.select(pl.lit(s).shuffle()).to_series()
-    assert result1.series_equal(result2)
+    assert_series_equal(result1, result2)
 
 
 def test_sample() -> None:
@@ -124,7 +124,7 @@ def test_sample() -> None:
     result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
     random.seed(1)
     result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    assert result1.series_equal(result2)
+    assert_series_equal(result1, result2)
 
 
 def test_map_alias() -> None:
@@ -474,7 +474,7 @@ def test_rank_so_4109() -> None:
 def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
-        assert s.unique().series_equal(s)
+        assert_series_equal(s.unique(), s)
 
 
 @typing.no_type_check

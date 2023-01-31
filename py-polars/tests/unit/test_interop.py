@@ -10,6 +10,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import dtype_to_py_type
+from polars.testing import assert_series_equal
 
 
 def test_df_from_numpy() -> None:
@@ -195,7 +196,7 @@ def test_arrow_dict_to_polars() -> None:
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
 
-    assert s.series_equal(pl.Series("pa_dict", pa_dict))
+    assert_series_equal(s, pl.Series("pa_dict", pa_dict))
 
 
 def test_arrow_list_chunked_array() -> None:
@@ -244,7 +245,7 @@ def test_from_dict() -> None:
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
     for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])]):
-        assert s1.series_equal(s2)
+        assert_series_equal(s1, s2)
 
 
 def test_from_dict_struct() -> None:
@@ -555,7 +556,7 @@ def test_cat_int_types_3500() -> None:
 
         for t in [int_dict_type, uint_dict_type]:
             s = cast(pl.Series, pl.from_arrow(pyarrow_array.cast(t)))
-            assert s.series_equal(pl.Series(["a", "a", "b"]).cast(pl.Categorical))
+            assert_series_equal(s, pl.Series(["a", "a", "b"]).cast(pl.Categorical))
 
 
 def test_from_pyarrow_chunked_array() -> None:
