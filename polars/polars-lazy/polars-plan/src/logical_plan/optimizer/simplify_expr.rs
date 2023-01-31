@@ -311,11 +311,18 @@ fn string_addition_to_linear_concat(
         let schema = lp_arena.get(input).schema(lp_arena);
 
         let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();
-        let addition_type = get_type(left_aexpr)
+        let type_a = get_type(left_aexpr)
+            .or_else(|| get_type(right_aexpr))
+            .unwrap();
+        let type_b = get_type(right_aexpr)
             .or_else(|| get_type(right_aexpr))
             .unwrap();
 
-        if addition_type == DataType::Utf8 {
+        if type_a != type_b {
+            return None;
+        }
+
+        if type_a == DataType::Utf8 {
             match (left_aexpr, right_aexpr) {
                 // concat + concat
                 (
