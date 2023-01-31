@@ -82,8 +82,6 @@ impl_polars_datatype!(Int8Type, Int8, i8);
 impl_polars_datatype!(Int16Type, Int16, i16);
 impl_polars_datatype!(Int32Type, Int32, i32);
 impl_polars_datatype!(Int64Type, Int64, i64);
-#[cfg(feature = "dtype-i128")]
-impl_polars_datatype!(Int128Type, Unknown, i128);
 impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
@@ -117,6 +115,17 @@ impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
         // null as we cannot no anything without self.
         DataType::List(Box::new(DataType::Null))
+    }
+}
+
+#[cfg(feature = "dtype-i128")]
+pub struct Int128Type {}
+
+#[cfg(feature = "dtype-i128")]
+impl PolarsDataType for Int128Type {
+    fn get_dtype() -> DataType {
+        // we cannot know precision/scale statically
+        DataType::Decimal128(None)
     }
 }
 
