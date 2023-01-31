@@ -3677,6 +3677,9 @@ class DataFrame:
         - "1i"      # length 1
         - "10i"     # length 10
 
+        .. warning::
+            The index column must be sorted in ascending order.
+
         Parameters
         ----------
         index_column
