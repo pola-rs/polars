@@ -9,28 +9,38 @@ pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
     /// Check if a string value contains a literal substring.
-    pub fn contains_literal<S: AsRef<str>>(self, pat: S) -> Expr {
-        let pat = pat.as_ref().into();
-        self.0
-            .map_private(StringFunction::Contains { pat, literal: true }.into())
+    #[cfg(feature = "regex")]
+    pub fn contains_literal(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Contains {
+                literal: true,
+                strict: false,
+            }),
+            &[pat],
+            true,
+        )
     }
 
     /// Check if a string value contains a Regex substring.
-    pub fn contains<S: AsRef<str>>(self, pat: S) -> Expr {
-        let pat = pat.as_ref().into();
-        self.0.map_private(
-            StringFunction::Contains {
-                pat,
+    #[cfg(feature = "regex")]
+    pub fn contains(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Contains {
                 literal: false,
-            }
-            .into(),
+                strict,
+            }),
+            &[pat],
+            true,
         )
     }
 
     /// Check if a string value ends with the `sub` string.
-    pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
-        let sub = sub.as_ref().into();
-        self.0.map_private(StringFunction::EndsWith(sub).into())
+    pub fn ends_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::EndsWith),
+            &[sub],
+            true,
+        )
     }
 
     /// Check if a string value starts with the `sub` string.
@@ -369,5 +379,12 @@ impl StringNameSpace {
     pub fn to_uppercase(self) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::Uppercase))
+    }
+
+    #[cfg(feature = "string_from_radix")]
+    /// Parse string in base radix into decimal
+    pub fn from_radix(self, radix: Option<u32>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(radix)))
     }
 }

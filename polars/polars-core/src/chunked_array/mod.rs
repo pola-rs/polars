@@ -21,8 +21,6 @@ pub mod kernels;
 #[cfg(feature = "ndarray")]
 mod ndarray;
 
-#[cfg(feature = "dtype-binary")]
-pub mod binary;
 mod bitwise;
 #[cfg(feature = "object")]
 mod drop;
@@ -33,7 +31,6 @@ pub(crate) mod logical;
 pub mod object;
 #[cfg(feature = "random")]
 mod random;
-pub mod strings;
 #[cfg(any(
     feature = "temporal",
     feature = "dtype-datetime",

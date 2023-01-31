@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_sort_dates_multiples() -> None:
@@ -29,7 +30,7 @@ def test_sort_dates_multiples() -> None:
     assert out["values"].to_list() == expected
 
     # Date
-    out = df.with_column(pl.col("date").cast(pl.Date)).sort(["date", "values"])
+    out = df.with_columns(pl.col("date").cast(pl.Date)).sort(["date", "values"])
     assert out["values"].to_list() == expected
 
 
@@ -168,7 +169,7 @@ def test_sort_aggregation_fast_paths() -> None:
                     .suffix("_min"),
                 ]
             )
-            assert out.frame_equal(expected)
+            assert_frame_equal(out, expected)
 
 
 def test_sorted_join_and_dtypes() -> None:
@@ -176,10 +177,10 @@ def test_sorted_join_and_dtypes() -> None:
         df_a = (
             pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
             .with_row_count()
-            .with_column(pl.col("a").cast(dt).set_sorted())
+            .with_columns(pl.col("a").cast(dt).set_sorted())
         )
 
-    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_column(
+    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_columns(
         pl.col("a").cast(dt).set_sorted()
     )
 
@@ -238,7 +239,7 @@ def test_top_k() -> None:
 
     # 5886
     df = pl.DataFrame({"test": [4, 3, 2, 1]})
-    assert df.select(pl.col("test").top_k(10)).frame_equal(df)
+    assert_frame_equal(df.select(pl.col("test").top_k(10)), df)
 
 
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:
@@ -294,12 +295,11 @@ def test_sort_slice_fast_path_5245() -> None:
 
 def test_explicit_list_agg_sort_in_groupby() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
-    assert (
-        df.groupby("A")
-        .agg(pl.col("B").list().sort(reverse=True))
-        .sort("A")
-        .frame_equal(df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A"))
-    )
+
+    # this was col().list().sort() before we changed the logic
+    result = df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A")
+    expected = df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A")
+    assert_frame_equal(result, expected)
 
 
 def test_sorted_join_query_5406() -> None:
@@ -318,7 +318,7 @@ def test_sorted_join_query_5406() -> None:
                 "Value": [1, 2, 1, 1, 2, 1],
             }
         )
-        .with_column(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
+        .with_columns(pl.col("Datetime").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"))
         .with_row_count("RowId")
     )
 
@@ -367,7 +367,7 @@ def test_merge_sorted() -> None:
         pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo")
         .to_frame("range")
         .with_row_count()
-        .with_column(pl.col("row_nr") * 10)
+        .with_columns(pl.col("row_nr") * 10)
     )
     out = df_a.merge_sorted(df_b, key="range")
     assert out["range"].is_sorted()

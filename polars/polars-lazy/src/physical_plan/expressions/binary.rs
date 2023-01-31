@@ -7,7 +7,8 @@ use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::physical_plan::state::{ExecutionState, StateFlags};
+use crate::physical_plan::errors::expression_err;
+use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct BinaryExpr {
@@ -58,6 +59,7 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
 }
 
 pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
+    use DataType::*;
     match op {
         Operator::Gt => ChunkCompare::<&Series>::gt(left, right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::<&Series>::gt_eq(left, right).map(|ca| ca.into_series()),
@@ -72,16 +74,19 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
         Operator::TrueDivide => match left.dtype() {
-            DataType::Date | DataType::Datetime(_, _) | DataType::Float32 | DataType::Float64 => {
-                Ok(left / right)
-            }
-            _ => Ok(&left.cast(&DataType::Float64)? / &right.cast(&DataType::Float64)?),
+            Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
+            _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
         },
-        Operator::FloorDivide => match left.dtype() {
+        Operator::FloorDivide => {
             #[cfg(feature = "round_series")]
-            DataType::Float32 | DataType::Float64 => (left / right).floor(),
-            _ => Ok(left / right),
-        },
+            {
+                floor_div_series(left, right)
+            }
+            #[cfg(not(feature = "round_series"))]
+            {
+                panic!("activate 'round_series' feature")
+            }
+        }
         Operator::And => left.bitand(right),
         Operator::Or => left.bitor(right),
         Operator::Xor => left.bitxor(right),
@@ -97,14 +102,22 @@ impl PhysicalExpr for BinaryExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
         // don't cache window functions as they run in parallel
-        state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
+        state.remove_cache_window_flag();
         let (lhs, rhs) = POOL.install(|| {
             rayon::join(
                 || self.left.evaluate(df, &state),
                 || self.right.evaluate(df, &state),
             )
         });
-        apply_operator_owned(lhs?, rhs?, self.op)
+        let lhs = lhs?;
+        let rhs = rhs?;
+        let lhs_len = lhs.len();
+        let rhs_len = rhs.len();
+        if lhs_len != rhs_len && !(lhs_len == 1 || rhs_len == 1) {
+            let msg = format!("Cannot evaluate two Series of different length. Got lhs of length: {lhs_len} and rhs of length: {rhs_len}.");
+            return Err(expression_err!(msg, self.expr, ComputeError));
+        }
+        apply_operator_owned(lhs, rhs, self.op)
     }
 
     #[allow(clippy::ptr_arg)]
@@ -126,7 +139,7 @@ impl PhysicalExpr for BinaryExpr {
         match (
             ac_l.agg_state(),
             ac_r.agg_state(),
-            state.overlapping_groups(),
+            state.has_overlapping_groups(),
         ) {
             // Some aggregations must return boolean masks that fit the group. That's why not all literals can take this path.
             // only literals that are used in arithmetic

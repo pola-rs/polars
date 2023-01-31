@@ -4,11 +4,19 @@ import json
 import os
 import sys
 from types import TracebackType
+from typing import Any
 
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+try:
+    from polars.polars import set_float_fmt as _set_float_fmt
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 
 # note: register all Config-specific environment variable names here; need to constrain
@@ -30,8 +38,9 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
 }
-# register Config-local attributes (with their defaults) here
-POLARS_CFG_LOCAL_VARS = {"with_columns_kwargs": False}
+# register Config-local attributes (with their defaults) here,
+# eg: => {"misc_config_attr":True, "other_config_attr":False, etc}
+POLARS_CFG_LOCAL_VARS: dict[str, Any] = {}
 
 
 class Config:
@@ -67,7 +76,7 @@ class Config:
 
     # note: class-local attributes can be used for options that don't have
     # a Rust component (so, no need to register environment variables).
-    with_columns_kwargs: bool = False
+    # eg: misc_config_attr:bool = True
 
     @classmethod
     def load(cls, cfg: str) -> type[Config]:
@@ -106,6 +115,7 @@ class Config:
             os.environ.pop(var, None)
         for flag, value in POLARS_CFG_LOCAL_VARS.items():
             setattr(cls, flag, value)
+        cls.set_fmt_float()
         return cls
 
     @classmethod
@@ -547,4 +557,18 @@ class Config:
     def set_verbose(cls, active: bool = True) -> type[Config]:
         """Enable additional verbose/debug logging."""
         os.environ["POLARS_VERBOSE"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_fmt_float(cls, fmt: str = "mixed") -> type[Config]:
+        """
+        Control how floating  point values are displayed.
+
+        Parameters
+        ----------
+        fmt : {"mixed", "full"}
+            How to format floating point numbers
+
+        """
+        _set_float_fmt(fmt)
         return cls

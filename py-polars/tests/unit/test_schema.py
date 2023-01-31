@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_schema_on_agg() -> None:
@@ -31,8 +32,8 @@ def test_schema_on_agg() -> None:
 def test_fill_null_minimal_upcast_4056() -> None:
     df = pl.DataFrame({"a": [-1, 2, None]})
     df = df.with_columns(pl.col("a").cast(pl.Int8))
-    assert df.with_column(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
-    assert df.with_column(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
 
 
 def test_with_column_duplicates() -> None:
@@ -116,7 +117,7 @@ def test_lazy_map_schema() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
 
     # identity
-    assert df.lazy().map(lambda x: x).collect().frame_equal(df)
+    assert_frame_equal(df.lazy().map(lambda x: x).collect(), df)
 
     def custom(df: pl.DataFrame) -> pl.Series:
         return df["a"]
@@ -275,7 +276,7 @@ def test_schema_owned_arithmetic_5669() -> None:
         pl.DataFrame({"A": [1, 2, 3]})
         .lazy()
         .filter(pl.col("A") >= 3)
-        .with_column(-pl.col("A").alias("B"))
+        .with_columns(-pl.col("A").alias("B"))
         .collect()
     )
     assert df.columns == ["A", "literal"], df.columns
@@ -283,7 +284,7 @@ def test_schema_owned_arithmetic_5669() -> None:
 
 def test_fill_null_f32_with_lit() -> None:
     # ensure the literal integer does not upcast the f32 to an f64
-    df = pl.DataFrame({"a": [1.1, 1.2]}, columns=[("a", pl.Float32)])
+    df = pl.DataFrame({"a": [1.1, 1.2]}, schema=[("a", pl.Float32)])
     assert df.fill_null(value=0).dtypes == [pl.Float32]
 
 
@@ -297,7 +298,7 @@ def test_lazy_rename() -> None:
 
 def test_all_null_cast_5826() -> None:
     df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.Utf8)])
-    out = df.with_column(pl.col("a").cast(pl.Boolean))
+    out = df.with_columns(pl.col("a").cast(pl.Boolean))
     assert out.dtypes == [pl.Boolean]
     assert out.item() is None
 

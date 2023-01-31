@@ -421,7 +421,6 @@ impl WriterFactory for IpcWriterOption {
 mod test {
     use std::io::Cursor;
 
-    use arrow::io::ipc::write;
     use polars_core::df;
     use polars_core::prelude::*;
 

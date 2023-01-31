@@ -20,6 +20,13 @@ pub struct PyBatchedCsv {
 impl PyBatchedCsv {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows,
+        projection, sep, rechunk, columns, encoding, n_threads, path, overwrite_dtype,
+        overwrite_dtype_slice, low_memory, comment_char, quote_char, null_values,
+        missing_utf8_is_empty_string, parse_dates, skip_rows_after_header, row_count,
+        sample_size, eol_char)
+    )]
     fn new(
         infer_schema_length: Option<usize>,
         chunk_size: usize,

@@ -534,6 +534,7 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
+    #[pyo3(signature = (fmt, strict, exact, cache))]
     pub fn str_parse_date(
         &self,
         fmt: Option<String>,
@@ -551,10 +552,13 @@ impl PyExpr {
                 exact,
                 cache,
                 tz_aware: false,
+                utc: false,
             })
             .into()
     }
 
+    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, tu))]
+    #[allow(clippy::too_many_arguments)]
     pub fn str_parse_datetime(
         &self,
         fmt: Option<String>,
@@ -562,6 +566,7 @@ impl PyExpr {
         exact: bool,
         cache: bool,
         tz_aware: bool,
+        utc: bool,
         tu: Option<Wrap<TimeUnit>>,
     ) -> PyExpr {
         let result_tu = match (&fmt, tu) {
@@ -591,10 +596,12 @@ impl PyExpr {
                 exact,
                 cache,
                 tz_aware,
+                utc,
             })
             .into()
     }
 
+    #[pyo3(signature = (fmt, strict, exact, cache))]
     pub fn str_parse_time(
         &self,
         fmt: Option<String>,
@@ -612,6 +619,7 @@ impl PyExpr {
                 exact,
                 cache,
                 tz_aware: false,
+                utc: false,
             })
             .into()
     }
@@ -702,15 +710,16 @@ impl PyExpr {
         self.clone().inner.str().rjust(width, fillchar).into()
     }
 
-    pub fn str_contains(&self, pat: String, literal: Option<bool>) -> PyExpr {
+    #[pyo3(signature = (pat, literal, strict))]
+    pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
         match literal {
-            Some(true) => self.inner.clone().str().contains_literal(pat).into(),
-            _ => self.inner.clone().str().contains(pat).into(),
+            Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
+            _ => self.inner.clone().str().contains(pat.inner, strict).into(),
         }
     }
 
-    pub fn str_ends_with(&self, sub: String) -> PyExpr {
-        self.inner.clone().str().ends_with(sub).into()
+    pub fn str_ends_with(&self, sub: PyExpr) -> PyExpr {
+        self.inner.clone().str().ends_with(sub.inner).into()
     }
 
     pub fn str_starts_with(&self, sub: PyExpr) -> PyExpr {
@@ -739,6 +748,7 @@ impl PyExpr {
             .with_fmt("str.hex_encode")
             .into()
     }
+    #[cfg(feature = "binary_encoding")]
     pub fn str_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
@@ -760,6 +770,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "binary_encoding")]
     pub fn str_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
@@ -771,6 +782,16 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_parse_int(&self, radix: Option<u32>) -> PyExpr {
+        self.inner
+            .clone()
+            .str()
+            .from_radix(radix)
+            .with_fmt("str.parse_int")
+            .into()
+    }
+
+    #[cfg(feature = "binary_encoding")]
     pub fn binary_hex_encode(&self) -> PyExpr {
         self.clone()
             .inner
@@ -781,6 +802,7 @@ impl PyExpr {
             .with_fmt("binary.hex_encode")
             .into()
     }
+    #[cfg(feature = "binary_encoding")]
     pub fn binary_hex_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
@@ -791,6 +813,8 @@ impl PyExpr {
             .with_fmt("binary.hex_decode")
             .into()
     }
+
+    #[cfg(feature = "binary_encoding")]
     pub fn binary_base64_encode(&self) -> PyExpr {
         self.clone()
             .inner
@@ -802,6 +826,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "binary_encoding")]
     pub fn binary_base64_decode(&self, strict: bool) -> PyExpr {
         self.clone()
             .inner
@@ -1012,7 +1037,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_cast_time_zone(&self, tz: String) -> PyExpr {
+    pub fn dt_cast_time_zone(&self, tz: Option<String>) -> PyExpr {
         self.inner.clone().dt().cast_time_zone(tz).into()
     }
 
@@ -1033,6 +1058,7 @@ impl PyExpr {
         self.inner.clone().dt().combine(time.inner, tu.0).into()
     }
 
+    #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
     pub fn rolling_apply(
         &self,
         py: Python,
@@ -1167,6 +1193,7 @@ impl PyExpr {
             .into()
     }
 
+    #[pyo3(signature = (lambda, output_type, agg_list))]
     pub fn map(
         &self,
         lambda: PyObject,
@@ -1231,6 +1258,7 @@ impl PyExpr {
         self.inner.clone().interpolate(method.0).into()
     }
 
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_sum(
         &self,
         window_size: &str,
@@ -1250,6 +1278,8 @@ impl PyExpr {
         };
         self.inner.clone().rolling_sum(options).into()
     }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_min(
         &self,
         window_size: &str,
@@ -1269,6 +1299,8 @@ impl PyExpr {
         };
         self.inner.clone().rolling_min(options).into()
     }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_max(
         &self,
         window_size: &str,
@@ -1288,6 +1320,8 @@ impl PyExpr {
         };
         self.inner.clone().rolling_max(options).into()
     }
+
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_mean(
         &self,
         window_size: &str,
@@ -1309,6 +1343,7 @@ impl PyExpr {
         self.inner.clone().rolling_mean(options).into()
     }
 
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_std(
         &self,
         window_size: &str,
@@ -1330,6 +1365,7 @@ impl PyExpr {
         self.inner.clone().rolling_std(options).into()
     }
 
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_var(
         &self,
         window_size: &str,
@@ -1351,6 +1387,7 @@ impl PyExpr {
         self.inner.clone().rolling_var(options).into()
     }
 
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
     pub fn rolling_median(
         &self,
         window_size: &str,
@@ -1371,6 +1408,7 @@ impl PyExpr {
         self.inner.clone().rolling_median(options).into()
     }
 
+    #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
     #[allow(clippy::too_many_arguments)]
     pub fn rolling_quantile(
         &self,
@@ -1513,6 +1551,7 @@ impl PyExpr {
             .into()
     }
 
+    #[pyo3(signature = (width_strat, name_gen, upper_bound))]
     fn lst_to_struct(
         &self,
         width_strat: Wrap<ListToStructWidthStrategy>,

@@ -22,7 +22,6 @@ from typing import (
 
 import polars.internals as pli
 from polars.datatypes import (
-    DataType,
     Date,
     Datetime,
     Int64,
@@ -261,7 +260,7 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 
 def _to_python_datetime(
     value: int | float,
-    dtype: type[DataType],
+    dtype: PolarsDataType,
     tu: TimeUnit | None = "ns",
     tz: str | None = None,
 ) -> date | datetime:
@@ -396,6 +395,34 @@ def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T
         return wrapper
 
     return deco
+
+
+def redirect(from_to: dict[str, str]) -> Callable[[type[T]], type[T]]:
+    """
+    Class decorator allowing deprecation/transition from one method name to another.
+
+    The parameters must be the same (unless they are being renamed, in
+    which case you can use this in conjunction with @deprecated_alias).
+    """
+
+    def _redirecting_getattr_(obj: T, item: Any) -> Any:
+        if isinstance(item, str) and item in from_to:
+            new_item = from_to[item]
+            warnings.warn(
+                f"`{type(obj).__name__}.{item}` has been renamed; this"
+                f" redirect is temporary, please use `.{new_item}` instead",
+                category=DeprecationWarning,
+                stacklevel=2,
+            )
+            item = new_item
+        return obj.__getattribute__(item)
+
+    def _cls_(cls: type[T]) -> type[T]:
+        # note: __getattr__ is only invoked if item isn't found on the class
+        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
+        return cls
+
+    return _cls_
 
 
 def _rename_kwargs(

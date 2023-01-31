@@ -89,7 +89,7 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ...     def nearest(self, p: int) -> pl.Expr:
     ...         return (p ** (self._expr.log(p)).round(0).cast(pl.Int64)).cast(pl.Int64)
     >>>
-    >>> df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], columns=["n"])
+    >>> df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
     >>> df.select(
     ...     [
     ...         pl.col("n"),
@@ -152,7 +152,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     >>>
     >>> df = pl.DataFrame(
     ...     data=[["xx", 2, 3, 4], ["xy", 4, 5, 6], ["yy", 5, 6, 7], ["yz", 6, 7, 8]],
-    ...     columns=["a1", "a2", "b1", "b2"],
+    ...     schema=["a1", "a2", "b1", "b2"],
     ...     orient="row",
     ... )
     >>> df
@@ -248,7 +248,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     >>>
     >>> ldf = pl.DataFrame(
     ...     data={"a": [1, 2], "b": [3, 4], "c": [5.6, 6.7]},
-    ...     columns=[("a", pl.Int16), ("b", pl.Int32), ("c", pl.Float32)],
+    ...     schema=[("a", pl.Int16), ("b", pl.Int32), ("c", pl.Float32)],
     ... ).lazy()
     >>>
     >>> ldf.collect()
@@ -274,7 +274,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     >>>
     >>> ldf = pl.DataFrame(
     ...     data=[["xx", 2, 3, 4], ["xy", 4, 5, 6], ["yy", 5, 6, 7], ["yz", 6, 7, 8]],
-    ...     columns=["a1", "a2", "b1", "b2"],
+    ...     schema=["a1", "a2", "b1", "b2"],
     ...     orient="row",
     ... ).lazy()
     >>>

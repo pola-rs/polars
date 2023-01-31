@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 
 import polars.internals as pli
-from polars.datatypes import DataType
+from polars.datatypes import PolarsDataType
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.utils import normalise_filepath
 
@@ -141,7 +141,7 @@ def _prepare_file_arg(
     return managed_file(file)
 
 
-def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, type[DataType]]:
+def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
     """
     Get a schema of the IPC file without reading data.
 
@@ -163,7 +163,7 @@ def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, type[DataT
 
 def read_parquet_schema(
     file: str | BinaryIO | Path | bytes,
-) -> dict[str, type[DataType]]:
+) -> dict[str, PolarsDataType]:
     """
     Get a schema of the Parquet file without reading data.
 

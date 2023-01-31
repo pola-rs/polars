@@ -3,7 +3,7 @@ pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 
 mod any_value;
-pub(crate) mod arithmetic;
+pub mod arithmetic;
 mod comparison;
 mod from;
 pub mod implementations;

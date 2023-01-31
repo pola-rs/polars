@@ -10,6 +10,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import dtype_to_py_type
+from polars.testing import assert_series_equal
 
 
 def test_df_from_numpy() -> None:
@@ -195,7 +196,7 @@ def test_arrow_dict_to_polars() -> None:
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
 
-    assert s.series_equal(pl.Series("pa_dict", pa_dict))
+    assert_series_equal(s, pl.Series("pa_dict", pa_dict))
 
 
 def test_arrow_list_chunked_array() -> None:
@@ -244,7 +245,7 @@ def test_from_dict() -> None:
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
     for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])]):
-        assert s1.series_equal(s2)
+        assert_series_equal(s1, s2)
 
 
 def test_from_dict_struct() -> None:
@@ -296,7 +297,7 @@ def test_from_dicts_schema_override() -> None:
     for n_infer in (0, 3, 5, 8, 10, 100):
         df = pl.DataFrame(
             data=(data1 + data2),
-            columns=schema,  # type: ignore[arg-type]
+            schema=schema,  # type: ignore[arg-type]
             infer_schema_length=n_infer,
         )
         assert df.schema == schema
@@ -332,7 +333,7 @@ def test_from_dicts_struct() -> None:
 
 def test_from_records() -> None:
     data = [[1, 2, 3], [4, 5, 6]]
-    df = pl.from_records(data, columns=["a", "b"])
+    df = pl.from_records(data, schema=["a", "b"])
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
 
@@ -341,7 +342,7 @@ def test_from_numpy() -> None:
     data = np.array([[1, 2, 3], [4, 5, 6]])
     df = pl.from_numpy(
         data,
-        columns=["a", "b"],
+        schema=["a", "b"],
         orient="col",
         schema_overrides={"a": pl.UInt32, "b": pl.UInt32},
     )
@@ -393,7 +394,7 @@ def test_from_optional_not_available() -> None:
 
     np = _LazyModule("numpy", module_available=False)
     with pytest.raises(ImportError, match=r"np\.array requires 'numpy'"):
-        pl.from_numpy(np.array([[1, 2], [3, 4]]), columns=["a", "b"])
+        pl.from_numpy(np.array([[1, 2], [3, 4]]), schema=["a", "b"])
 
     pa = _LazyModule("pyarrow", module_available=False)
     with pytest.raises(ImportError, match=r"pa\.table requires 'pyarrow'"):
@@ -467,7 +468,7 @@ def test_from_empty_pandas_with_dtypes() -> None:
 
     df = pl.DataFrame(
         data=[],
-        columns={
+        schema={
             "a": pl.Int32,
             "b": pl.Datetime,
             "c": pl.Float32,
@@ -555,7 +556,7 @@ def test_cat_int_types_3500() -> None:
 
         for t in [int_dict_type, uint_dict_type]:
             s = cast(pl.Series, pl.from_arrow(pyarrow_array.cast(t)))
-            assert s.series_equal(pl.Series(["a", "a", "b"]).cast(pl.Categorical))
+            assert_series_equal(s, pl.Series(["a", "a", "b"]).cast(pl.Categorical))
 
 
 def test_from_pyarrow_chunked_array() -> None:
@@ -565,7 +566,7 @@ def test_from_pyarrow_chunked_array() -> None:
 
 
 def test_numpy_preserve_uint64_4112() -> None:
-    assert pl.DataFrame({"a": [1, 2, 3]}).with_column(
+    assert pl.DataFrame({"a": [1, 2, 3]}).with_columns(
         pl.col("a").hash()
     ).to_numpy().dtype == np.dtype("uint64")
 
@@ -584,3 +585,16 @@ def test_arrow_list_null_5697() -> None:
     assert pl.from_arrow(pa_table,).schema == {  # type: ignore[union-attr]
         "mycol": pl.List(pl.Null)
     }
+
+
+def test_from_pandas_null_struct_6412() -> None:
+    data = [
+        {
+            "a": {
+                "b": None,
+            },
+        },
+        {"a": None},
+    ]
+    df_pandas = pd.DataFrame(data)
+    assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}

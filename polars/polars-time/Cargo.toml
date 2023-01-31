@@ -13,10 +13,12 @@ chrono = "0.4"
 chrono-tz = { version = "0.8", optional = true }
 lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 now = "0.1"
+once_cell.workspace = true
 polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["compute", "temporal"] }
 polars-core = { version = "0.26.1", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
 polars-ops = { version = "0.26.1", path = "../polars-ops" }
 polars-utils = { version = "0.26.1", path = "../polars-utils" }
+regex = "1.7.1"
 serde = { version = "1", features = ["derive"], optional = true }
 
 [features]
@@ -29,10 +31,6 @@ private = []
 fmt = ["polars-core/fmt"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones"]
 
-test = [
-  "dtype-date",
-  "dtype-datetime",
-  "polars-core/fmt",
-]
+test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
 
 default = ["private"]

@@ -388,17 +388,14 @@ pub trait Utf8Methods: AsUtf8 {
         fmt: Option<&str>,
         tu: TimeUnit,
         cache: bool,
-        mut tz_aware: bool,
+        tz_aware: bool,
+        _utc: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu),
         };
-        // todo! use regex?
-        if fmt.contains("%z") || fmt.contains("%:z") || fmt.contains("%#z") {
-            tz_aware = true;
-        }
         let fmt = self::strptime::compile_fmt(fmt);
         let cache = cache && utf8_ca.len() > 50;
 
@@ -418,13 +415,15 @@ pub trait Utf8Methods: AsUtf8 {
 
                 let mut convert = |s: &str| {
                     DateTime::parse_from_str(s, &fmt).ok().map(|dt| {
-                        match tz {
-                            None => tz = Some(dt.timezone()),
-                            Some(tz_found) => {
-                                if tz_found != dt.timezone() {
-                                    return Err(PolarsError::ComputeError(
-                                        "Different timezones found during 'strptime' operation.".into(),
-                                    ));
+                        if !_utc {
+                            match tz {
+                                None => tz = Some(dt.timezone()),
+                                Some(tz_found) => {
+                                    if tz_found != dt.timezone() {
+                                        return Err(PolarsError::ComputeError(
+                                            "Different timezones found during 'strptime' operation. You might want to use `utc=True` and then set the time zone after parsing".into()
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -456,9 +455,13 @@ pub trait Utf8Methods: AsUtf8 {
                     })
                     .collect::<PolarsResult<_>>()?;
 
-                let tz = tz.map(|of| format!("{of}"));
                 ca.rename(utf8_ca.name());
-                Ok(ca.into_datetime(tu, tz))
+                if !_utc {
+                    let tz = tz.map(|of| format!("{of}"));
+                    Ok(ca.into_datetime(tu, tz))
+                } else {
+                    Ok(ca.into_datetime(tu, Some("UTC".to_string())))
+                }
             }
             #[cfg(not(feature = "timezones"))]
             {

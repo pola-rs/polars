@@ -116,3 +116,14 @@ def test_duration_smallest_units() -> None:
         str(s)
         == "shape: (6,)\nSeries: '' [duration[ns]]\n[\n\t0ns\n\t1ns\n\t2ns\n\t3ns\n\t4ns\n\t5ns\n]"  # noqa: E501
     )
+
+
+def test_fmt_float_full() -> None:
+    fmt_float_full = "shape: (1,)\nSeries: '' [f64]\n[\n\t1.230498095872587\n]"
+    s = pl.Series([1.2304980958725870923])
+
+    with pl.Config() as cfg:
+        cfg.set_fmt_float("full")
+        assert str(s) == fmt_float_full
+
+    assert str(s) != fmt_float_full

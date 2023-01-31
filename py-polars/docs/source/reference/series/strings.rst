@@ -37,3 +37,4 @@ The following methods are available under the `Series.str` attribute.
     Series.str.to_lowercase
     Series.str.to_uppercase
     Series.str.zfill
+    Series.str.parse_int

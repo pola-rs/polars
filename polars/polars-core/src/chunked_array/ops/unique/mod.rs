@@ -424,96 +424,6 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
     }
 }
 
-#[cfg(feature = "is_first")]
-mod is_first {
-    use arrow::array::BooleanArray;
-
-    use super::*;
-    use crate::utils::CustomIterTools;
-
-    fn is_first<T>(ca: &ChunkedArray<T>) -> BooleanChunked
-    where
-        T: PolarsNumericType,
-        T::Native: Hash + Eq,
-    {
-        let mut unique = PlHashSet::new();
-        let chunks = ca
-            .downcast_iter()
-            .map(|arr| {
-                let mask: BooleanArray = arr
-                    .into_iter()
-                    .map(|opt_v| unique.insert(opt_v))
-                    .collect_trusted();
-                Box::new(mask) as ArrayRef
-            })
-            .collect();
-
-        unsafe { BooleanChunked::from_chunks(ca.name(), chunks) }
-    }
-
-    impl<T> IsFirst<T> for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-    {
-        fn is_first(&self) -> PolarsResult<BooleanChunked> {
-            use DataType::*;
-            match self.dtype() {
-                // cast types to reduce compiler bloat
-                Int8 | Int16 | UInt8 | UInt16 => {
-                    let s = self.cast(&DataType::Int32).unwrap();
-                    s.is_first()
-                }
-                _ => {
-                    if Self::bit_repr_is_large() {
-                        let ca = self.bit_repr_large();
-                        Ok(is_first(&ca))
-                    } else {
-                        let ca = self.bit_repr_small();
-                        Ok(is_first(&ca))
-                    }
-                }
-            }
-        }
-    }
-
-    impl IsFirst<Utf8Type> for Utf8Chunked {
-        fn is_first(&self) -> PolarsResult<BooleanChunked> {
-            let mut unique = PlHashSet::new();
-            let chunks = self
-                .downcast_iter()
-                .map(|arr| {
-                    let mask: BooleanArray = arr
-                        .into_iter()
-                        .map(|opt_v| unique.insert(opt_v))
-                        .collect_trusted();
-                    Box::new(mask) as ArrayRef
-                })
-                .collect();
-
-            unsafe { Ok(BooleanChunked::from_chunks(self.name(), chunks)) }
-        }
-    }
-
-    #[cfg(feature = "dtype-binary")]
-    impl IsFirst<BinaryType> for BinaryChunked {
-        fn is_first(&self) -> PolarsResult<BooleanChunked> {
-            let mut unique = PlHashSet::new();
-            let chunks = self
-                .downcast_iter()
-                .map(|arr| {
-                    let mask: BooleanArray = arr
-                        .into_iter()
-                        .map(|opt_v| unique.insert(opt_v))
-                        .collect_trusted();
-                    Box::new(mask) as ArrayRef
-                })
-                .collect();
-
-            unsafe { Ok(BooleanChunked::from_chunks(self.name(), chunks)) }
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -562,27 +472,6 @@ mod test {
                 Some(false),
                 Some(false),
                 Some(true)
-            ]
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "is_first")]
-    fn is_first() {
-        let ca = UInt32Chunked::new(
-            "a",
-            &[Some(1), Some(2), Some(1), Some(1), None, Some(3), None],
-        );
-        assert_eq!(
-            Vec::from(&ca.is_first().unwrap()),
-            &[
-                Some(true),
-                Some(true),
-                Some(false),
-                Some(false),
-                Some(true),
-                Some(true),
-                Some(false)
             ]
         );
     }

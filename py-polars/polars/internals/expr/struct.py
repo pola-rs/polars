@@ -79,7 +79,7 @@ class ExprStructNameSpace:
         ...     .to_struct("my_struct")
         ...     .to_frame()
         ... )
-        >>> df = df.with_column(
+        >>> df = df.with_columns(
         ...     pl.col("my_struct").struct.rename_fields(["INT", "STR", "BOOL", "LIST"])
         ... )
 

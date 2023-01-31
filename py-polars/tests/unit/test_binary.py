@@ -2,7 +2,7 @@ import polars as pl
 
 
 def test_binary_conversions() -> None:
-    df = pl.DataFrame({"blob": [b"abc", None, b"cde"]}).with_column(
+    df = pl.DataFrame({"blob": [b"abc", None, b"cde"]}).with_columns(
         pl.col("blob").cast(pl.Utf8).alias("decoded_blob")
     )
 
@@ -22,7 +22,7 @@ def test_contains() -> None:
             (2, b"(with) special\n * chars"),
             (3, b"**etc...?$"),
         ],
-        columns=["idx", "bin"],
+        schema=["idx", "bin"],
     )
     for pattern, expected in (
         (b"e * ", [True, False, False]),

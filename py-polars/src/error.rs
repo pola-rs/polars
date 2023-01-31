@@ -68,3 +68,10 @@ create_exception!(exceptions, ShapeError, PyException);
 create_exception!(exceptions, SchemaError, PyException);
 create_exception!(exceptions, DuplicateError, PyException);
 create_exception!(exceptions, InvalidOperationError, PyException);
+
+#[macro_export]
+macro_rules! raise_err(
+    ($msg:expr, $err:ident) => {{
+        Err(PolarsError::$err($msg.into())).map_err(PyPolarsErr::from)?;
+    }}
+);

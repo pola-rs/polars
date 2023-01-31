@@ -7,7 +7,7 @@ def test_object_when_then_4702() -> None:
     # please don't ever do this
     x = pl.DataFrame({"Row": [1, 2], "Type": [pl.Date, pl.UInt8]})
 
-    assert x.with_column(
+    assert x.with_columns(
         pl.when(pl.col("Row") == 1)
         .then(pl.lit(pl.UInt16, allow_object=True))
         .otherwise(pl.lit(pl.UInt8, allow_object=True))
@@ -24,7 +24,7 @@ def test_object_empty_filter_5911() -> None:
         data=[
             (1, "dog", {}),
         ],
-        columns=[
+        schema=[
             ("pet_id", pl.Int64),
             ("pet_type", pl.Categorical),
             ("pet_obj", pl.Object),
@@ -57,7 +57,7 @@ def test_empty_sort() -> None:
             ({"name": "bar", "sort_key": 2},),
             ({"name": "foo", "sort_key": 1},),
         ],
-        columns=[
+        schema=[
             ("blob", pl.Object),
         ],
         orient="row",

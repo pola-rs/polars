@@ -553,6 +553,7 @@ pub(crate) fn create_physical_expr(
                 auto_explode: options.auto_explode,
                 allow_rename: options.allow_rename,
                 pass_name_to_apply: options.pass_name_to_apply,
+                input_schema: schema.cloned(),
             }))
         }
         Function {
@@ -571,6 +572,7 @@ pub(crate) fn create_physical_expr(
                 auto_explode: options.auto_explode,
                 allow_rename: options.allow_rename,
                 pass_name_to_apply: options.pass_name_to_apply,
+                input_schema: schema.cloned(),
             }))
         }
         Slice {
@@ -590,10 +592,9 @@ pub(crate) fn create_physical_expr(
         }
         Explode(expr) => {
             let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
-            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                let s = std::mem::take(&mut s[0]);
-                s.explode()
-            }) as Arc<dyn SeriesUdf>);
+            let function = SpecialEq::new(
+                Arc::new(move |s: &mut [Series]| s[0].explode()) as Arc<dyn SeriesUdf>
+            );
             Ok(Arc::new(ApplyExpr::new_minimal(
                 vec![input],
                 function,

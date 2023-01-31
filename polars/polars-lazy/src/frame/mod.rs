@@ -87,8 +87,7 @@ impl From<LogicalPlan> for LazyFrame {
 impl LazyFrame {
     /// Get a hold on the schema of the current LazyFrame computation.
     pub fn schema(&self) -> PolarsResult<SchemaRef> {
-        let logical_plan = self.clone().get_plan_builder().build();
-        logical_plan.schema().map(|schema| schema.into_owned())
+        self.logical_plan.schema().map(|schema| schema.into_owned())
     }
 
     pub(crate) fn get_plan_builder(self) -> LogicalPlanBuilder {
@@ -1306,7 +1305,7 @@ impl LazyGroupBy {
             .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
+        self.agg([col("*").exclude(&keys).head(n).keep_name()])
             .explode([col("*").exclude(&keys)])
     }
 

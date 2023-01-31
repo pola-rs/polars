@@ -24,7 +24,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.utils import _timedelta_to_pl_duration, deprecated_alias, sphinx_accessor
+from polars.utils import _timedelta_to_pl_duration, sphinx_accessor
 
 try:
     from polars.polars import PyExpr
@@ -90,6 +90,7 @@ def expr_to_lit_or_expr(
         | Sequence[int | float | str | None]
     ),
     str_to_lit: bool = True,
+    structify: bool = False,
 ) -> Expr:
     """
     Convert args to expressions.
@@ -101,6 +102,9 @@ def expr_to_lit_or_expr(
     str_to_lit
         If True string argument `"foo"` will be converted to `lit("foo")`,
         If False it will be converted to `col("foo")`
+    structify
+        If the final unaliased expression has multiple output names,
+        automagically convert it to struct
 
     Returns
     -------
@@ -108,24 +112,30 @@ def expr_to_lit_or_expr(
 
     """
     if isinstance(expr, str) and not str_to_lit:
-        return pli.col(expr)
+        expr = pli.col(expr)
     elif (
         isinstance(expr, (int, float, str, pli.Series, datetime, date, time, timedelta))
         or expr is None
     ):
-        return pli.lit(expr)
-    elif isinstance(expr, Expr):
-        return expr
+        expr = pli.lit(expr)
+        structify = False
     elif isinstance(expr, list):
-        return pli.lit(pli.Series("", [expr]))
+        expr = pli.lit(pli.Series("", [expr]))
+        structify = False
     elif isinstance(expr, (pli.WhenThen, pli.WhenThenThen)):
-        # implicitly add the null branch.
-        return expr.otherwise(None)
-    else:
+        expr = expr.otherwise(None)  # implicitly add the null branch.
+    elif not isinstance(expr, Expr):
         raise ValueError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
             " pl.lit or pl.col"
         )
+
+    if structify:
+        unaliased_expr = expr.meta.undo_aliases()
+        if unaliased_expr.meta.has_multiple_outputs():
+            expr = cast(Expr, pli.struct(expr))
+
+    return expr
 
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
@@ -161,7 +171,8 @@ class Expr:
     def __bool__(self) -> NoReturn:
         raise ValueError(
             "Since Expr are lazy, the truthiness of an Expr is ambiguous. "
-            "Hint: use '&' or '|' to chain Expr together, not and/or."
+            "Hint: use '&' or '|' to logically combine Expr, not 'and'/'or', and "
+            "use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership."
         )
 
     def __abs__(self) -> Expr:
@@ -501,11 +512,11 @@ class Expr:
         self,
         columns: (
             str
+            | PolarsDataType
             | Sequence[str]
-            | DataType
-            | type[DataType]
-            | DataType
-            | Sequence[DataType | type[DataType]]
+            | Sequence[PolarsDataType]
+            | set[PolarsDataType]
+            | frozenset[PolarsDataType]
         ),
     ) -> Expr:
         """
@@ -591,6 +602,8 @@ class Expr:
         if isinstance(columns, str):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude(columns))
+        elif isinstance(columns, (set, frozenset)):
+            return wrap_expr(self._pyexpr.exclude_dtype(list(columns)))
         elif not isinstance(columns, Sequence) or isinstance(columns, DataType):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
@@ -828,7 +841,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.all().is_null().suffix("_isnull"))  # nan != null
+        >>> df.with_columns(pl.all().is_null().suffix("_isnull"))  # nan != null
         shape: (5, 4)
         ┌──────┬─────┬──────────┬──────────┐
         │ a    ┆ b   ┆ a_isnull ┆ b_isnull │
@@ -857,7 +870,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.all().is_not_null().suffix("_not_null"))  # nan != null
+        >>> df.with_columns(pl.all().is_not_null().suffix("_not_null"))  # nan != null
         shape: (5, 4)
         ┌──────┬─────┬────────────┬────────────┐
         │ a    ┆ b   ┆ a_not_null ┆ b_not_null │
@@ -953,7 +966,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.col(pl.Float64).is_nan().suffix("_isnan"))
+        >>> df.with_columns(pl.col(pl.Float64).is_nan().suffix("_isnan"))
         shape: (5, 3)
         ┌──────┬─────┬─────────┐
         │ a    ┆ b   ┆ b_isnan │
@@ -987,7 +1000,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
+        >>> df.with_columns(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
         shape: (5, 3)
         ┌──────┬─────┬──────────────┐
         │ a    ┆ b   ┆ b_is_not_nan │
@@ -1167,8 +1180,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> # Create a Series with 3 nulls, append column a then rechunk
-        >>> (df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()))
+
+        Create a Series with 3 nulls, append column a then rechunk
+
+        >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)
         ┌─────────┐
         │ literal │
@@ -1909,6 +1924,7 @@ class Expr:
     def sort_by(
         self,
         by: Expr | str | list[Expr | str],
+        *,
         reverse: bool | list[bool] = False,
     ) -> Expr:
         """
@@ -1964,7 +1980,6 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    @deprecated_alias(index="indices")
     def take(
         self, indices: int | list[int] | Expr | pli.Series | np.ndarray[Any, Any]
     ) -> Expr:
@@ -2692,11 +2707,7 @@ class Expr:
         ...         "values": [1, 2, 3],
         ...     }
         ... )
-        >>> (
-        ...     df.with_column(
-        ...         pl.col("values").max().over("groups").alias("max_by_group")
-        ...     )
-        ... )
+        >>> df.with_columns(pl.col("values").max().over("groups").alias("max_by_group"))
         shape: (3, 3)
         ┌────────┬────────┬──────────────┐
         │ groups ┆ values ┆ max_by_group │
@@ -2713,15 +2724,9 @@ class Expr:
         ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
         ...     }
         ... )
-        >>> (
-        ...     df.lazy()
-        ...     .select(
-        ...         [
-        ...             pl.col("groups").sum().over("groups"),
-        ...         ]
-        ...     )
-        ...     .collect()
-        ... )
+        >>> df.lazy().select(
+        ...     pl.col("groups").sum().over("groups"),
+        ... ).collect()
         shape: (9, 1)
         ┌────────┐
         │ groups │
@@ -2751,7 +2756,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> (df.select(pl.col("a").is_unique()))
+        >>> df.select(pl.col("a").is_unique())
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2781,7 +2786,7 @@ class Expr:
         ...         "num": [1, 2, 3, 1, 5],
         ...     }
         ... )
-        >>> (df.with_column(pl.col("num").is_first().alias("is_first")))
+        >>> df.with_columns(pl.col("num").is_first().alias("is_first"))
         shape: (5, 2)
         ┌─────┬──────────┐
         │ num ┆ is_first │
@@ -2805,7 +2810,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> (df.select(pl.col("a").is_duplicated()))
+        >>> df.select(pl.col("a").is_duplicated())
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2838,7 +2843,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5]})
-        >>> (df.select(pl.col("a").quantile(0.3)))
+        >>> df.select(pl.col("a").quantile(0.3))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2847,7 +2852,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> (df.select(pl.col("a").quantile(0.3, interpolation="higher")))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2856,7 +2861,7 @@ class Expr:
         ╞═════╡
         │ 2.0 │
         └─────┘
-        >>> (df.select(pl.col("a").quantile(0.3, interpolation="lower")))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="lower"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2865,7 +2870,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> (df.select(pl.col("a").quantile(0.3, interpolation="midpoint")))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="midpoint"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2874,7 +2879,7 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        >>> (df.select(pl.col("a").quantile(0.3, interpolation="linear")))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="linear"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2908,13 +2913,11 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> (
-        ...     df.groupby("group_col").agg(
-        ...         [
-        ...             pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
-        ...             pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
-        ...         ]
-        ...     )
+        >>> df.groupby("group_col").agg(
+        ...     [
+        ...         pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
+        ...         pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
+        ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
         ┌───────────┬──────┬─────┐
@@ -2948,13 +2951,11 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> (
-        ...     df.groupby("group_col").agg(
-        ...         [
-        ...             pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
-        ...             pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
-        ...         ]
-        ...     )
+        >>> df.groupby("group_col").agg(
+        ...     [
+        ...         pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
+        ...         pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
+        ...     ]
         ... ).sort("group_col")
         shape: (2, 3)
         ┌───────────┬──────┬─────┐
@@ -3003,7 +3004,7 @@ class Expr:
         ...         "cosine": [1.0, 0.0, -1.0, 0.0],
         ...     }
         ... )
-        >>> (df.select(pl.all().map(lambda x: x.to_numpy().argmax())))
+        >>> df.select(pl.all().map(lambda x: x.to_numpy().argmax()))
         shape: (1, 2)
         ┌──────┬────────┐
         │ sine ┆ cosine │
@@ -3075,10 +3076,8 @@ class Expr:
 
         In a selection context, the function is applied by row.
 
-        >>> (
-        ...     df.with_column(
-        ...         pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
-        ...     )
+        >>> df.with_columns(
+        ...     pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ... )
         shape: (4, 3)
         ┌─────┬─────┬───────────┐
@@ -3094,24 +3093,15 @@ class Expr:
 
         It is better to implement this with an expression:
 
-        >>> (
-        ...     df.with_column(
-        ...         (pl.col("a") * 2).alias("a_times_2"),
-        ...     )
+        >>> df.with_columns(
+        ...     (pl.col("a") * 2).alias("a_times_2"),
         ... )  # doctest: +IGNORE_RESULT
 
         In a GroupBy context the function is applied by group:
 
-        >>> (
-        ...     df.lazy()
-        ...     .groupby("b", maintain_order=True)
-        ...     .agg(
-        ...         [
-        ...             pl.col("a").apply(lambda x: x.sum()),
-        ...         ]
-        ...     )
-        ...     .collect()
-        ... )
+        >>> df.lazy().groupby("b", maintain_order=True).agg(
+        ...     pl.col("a").apply(lambda x: x.sum())
+        ... ).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
@@ -3125,10 +3115,8 @@ class Expr:
 
         It is better to implement this with an expression:
 
-        >>> (
-        ...     df.groupby("b", maintain_order=True).agg(
-        ...         pl.col("a").sum(),
-        ...     )
+        >>> df.groupby("b", maintain_order=True).agg(
+        ...     pl.col("a").sum(),
         ... )  # doctest: +IGNORE_RESULT
 
         """
@@ -3340,7 +3328,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> (df.select([pl.col("optional_members").is_in("sets").alias("contains")]))
+        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
         shape: (3, 1)
         ┌──────────┐
         │ contains │
@@ -3405,10 +3393,9 @@ class Expr:
 
     def is_between(
         self,
-        start: Expr | datetime | date | int | float,
-        end: Expr | datetime | date | int | float,
-        include_bounds: bool | tuple[bool, bool] | None = None,
-        closed: ClosedInterval | None = None,
+        start: Expr | datetime | date | time | int | float,
+        end: Expr | datetime | date | time | int | float,
+        closed: ClosedInterval = "both",
     ) -> Expr:
         """
         Check if this expression is between start and end.
@@ -3419,16 +3406,7 @@ class Expr:
             Lower bound as primitive type or datetime.
         end
             Upper bound as primitive type or datetime.
-        include_bounds
-            This argument is deprecated. Use ``closed`` instead!
-
-            - False:           Exclude both start and end (default).
-            - True:            Include both start and end.
-            - (False, False):  Exclude start and exclude end.
-            - (True, True):    Include start and include end.
-            - (False, True):   Exclude start and include end.
-            - (True, False):   Include start and exclude end.
-        closed : {'none', 'left', 'right', 'both'}
+        closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 
         Returns
@@ -3438,7 +3416,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"num": [1, 2, 3, 4, 5]})
-        >>> df.with_column(pl.col("num").is_between(2, 4))
+        >>> df.with_columns(pl.col("num").is_between(2, 4))
         shape: (5, 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
@@ -3446,15 +3424,15 @@ class Expr:
         │ i64 ┆ bool       │
         ╞═════╪════════════╡
         │ 1   ┆ false      │
-        │ 2   ┆ false      │
+        │ 2   ┆ true       │
         │ 3   ┆ true       │
-        │ 4   ┆ false      │
+        │ 4   ┆ true       │
         │ 5   ┆ false      │
         └─────┴────────────┘
 
         Use the ``closed`` argument to include or exclude the values at the bounds.
 
-        >>> df.with_column(pl.col("num").is_between(2, 4, closed="left"))
+        >>> df.with_columns(pl.col("num").is_between(2, 4, closed="left"))
         shape: (5, 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
@@ -3469,37 +3447,8 @@ class Expr:
         └─────┴────────────┘
 
         """
-        if include_bounds is not None:
-            warnings.warn(
-                "The `include_bounds` argument will be replaced in a future version."
-                " Use the `closed` argument to silence this warning.",
-                category=DeprecationWarning,
-            )
-            if isinstance(include_bounds, list):
-                include_bounds = tuple(include_bounds)
-
-            if include_bounds is False or include_bounds == (False, False):
-                closed = "none"
-            elif include_bounds is True or include_bounds == (True, True):
-                closed = "both"
-            elif include_bounds == (False, True):
-                closed = "right"
-            elif include_bounds == (True, False):
-                closed = "left"
-            else:
-                raise ValueError(
-                    "include_bounds should be a bool or tuple[bool, bool]."
-                )
-
-        if closed is None:
-            warnings.warn(
-                "Default behaviour will change from excluding both bounds to including"
-                " both bounds. Provide a value for the `closed` argument to silence"
-                " this warning.",
-                category=FutureWarning,
-            )
-            closed = "none"
-
+        start = expr_to_lit_or_expr(start, str_to_lit=False)
+        end = expr_to_lit_or_expr(end, str_to_lit=False)
         if closed == "none":
             return ((self > start) & (self < end)).alias("is_between")
         elif closed == "both":
@@ -3511,7 +3460,7 @@ class Expr:
         else:
             raise ValueError(
                 "closed must be one of {'left', 'right', 'both', 'none'},"
-                f" got {closed}"
+                f" got {closed!r}"
             )
 
     def hash(
@@ -3545,7 +3494,7 @@ class Expr:
         ...         "b": ["x", None, "z"],
         ...     }
         ... )
-        >>> df.with_column(pl.all().hash(10, 20, 30, 40))  # doctest: +IGNORE_RESULT
+        >>> df.with_columns(pl.all().hash(10, 20, 30, 40))  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌──────────────────────┬──────────────────────┐
         │ a                    ┆ b                    │
@@ -3672,11 +3621,9 @@ class Expr:
         ...     }
         ... )  # Interpolate from this to the new grid
         >>> df_new_grid = pl.DataFrame({"grid_points": range(1, 11)})
-        >>> (
-        ...     df_new_grid.join(
-        ...         df_original_grid, on="grid_points", how="left"
-        ...     ).with_column(pl.col("values").interpolate())
-        ... )
+        >>> df_new_grid.join(
+        ...     df_original_grid, on="grid_points", how="left"
+        ... ).with_columns(pl.col("values").interpolate())
         shape: (10, 2)
         ┌─────────────┬────────┐
         │ grid_points ┆ values │
@@ -3762,12 +3709,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_min(window_size=2),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_min(window_size=2),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -3858,12 +3803,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_max(window_size=2),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_max(window_size=2),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -4048,12 +3991,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_sum(window_size=2),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_sum(window_size=2),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -4144,12 +4085,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_std(window_size=3),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_std(window_size=3),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────────┐
@@ -4240,12 +4179,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_var(window_size=3),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_var(window_size=3),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────────┐
@@ -4332,12 +4269,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_median(window_size=3),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_median(window_size=3),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -4430,12 +4365,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
+        ...     ]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -4740,7 +4673,7 @@ class Expr:
         ...         "a": [10, 11, 12, None, 12],
         ...     }
         ... )
-        >>> df.with_column(pl.col("a").pct_change().alias("pct_change"))
+        >>> df.with_columns(pl.col("a").pct_change().alias("pct_change"))
         shape: (5, 2)
         ┌──────┬────────────┐
         │ a    ┆ pct_change │
@@ -4866,7 +4799,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip(1, 10).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip(1, 10).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
@@ -4899,7 +4832,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip_min(0).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip_min(0).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
@@ -4932,7 +4865,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_column(pl.col("foo").clip_max(0).alias("foo_clipped"))
+        >>> df.with_columns(pl.col("foo").clip_max(0).alias("foo_clipped"))
         shape: (4, 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
@@ -5351,7 +5284,7 @@ class Expr:
 
     def shuffle(self, seed: int | None = None) -> Expr:
         """
-        Shuffle the contents of this expr.
+        Shuffle the contents of this expression.
 
         Parameters
         ----------

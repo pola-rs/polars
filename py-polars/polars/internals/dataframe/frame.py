@@ -7,7 +7,6 @@ import random
 import sys
 import typing
 import warnings
-from collections import namedtuple
 from collections.abc import Sized
 from datetime import timedelta
 from io import BytesIO, IOBase, StringIO
@@ -34,6 +33,7 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     Boolean,
+    Categorical,
     DataTypeClass,
     Float64,
     Int8,
@@ -62,6 +62,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
 from polars.internals.construction import (
+    _post_apply_columns,
     arrow_to_pydf,
     dict_to_pydf,
     iterable_to_pydf,
@@ -76,12 +77,14 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
+    deprecated_alias,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
     normalise_filepath,
     range_to_slice,
+    redirect,
     scale_bytes,
 )
 
@@ -98,11 +101,13 @@ else:
     from typing_extensions import Literal
 
 if sys.version_info >= (3, 10):
-    from typing import TypeAlias
+    from typing import Concatenate, ParamSpec, TypeAlias
 else:
-    from typing_extensions import TypeAlias
+    from typing_extensions import Concatenate, ParamSpec, TypeAlias
 
 if TYPE_CHECKING:
+    from pyarrow.interchange.dataframe import _PyArrowDataFrame
+
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -134,6 +139,9 @@ if TYPE_CHECKING:
         "slice | range | list[int] | list[str] | list[bool] | pli.Series"
     )
 
+    T = TypeVar("T")
+    P = ParamSpec("P")
+
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
 DF = TypeVar("DF", bound="DataFrame")
@@ -143,6 +151,7 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
     return DataFrame._from_pydf(df)
 
 
+@redirect({"iterrows": "iter_rows"})
 class DataFrame:
     """
     Two-dimensional data structure representing data as a table with rows and columns.
@@ -152,9 +161,24 @@ class DataFrame:
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
         Two-dimensional data in various forms. dict must contain Sequences.
         Sequence may contain Series or other Sequences.
-    columns : Sequence of str, (str,DataType) pairs, or {str:DataType,} dict
-        Column labels (with optional type) to use for resulting DataFrame. If specified,
-        overrides any labels already present in the data. Must match data dimensions.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the schema param will be overridden.
+        underlying data, the names given here will overwrite them.
+
+        The number of entries in the schema should match the underlying data
+        dimensions, unless a sequence of dictionaries is being passed, in which case
+        a _partial_ schema can be declared to prevent specific fields from being loaded.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -162,9 +186,6 @@ class DataFrame:
     infer_schema_length : int, default None
         Maximum number of rows to read for schema inference; only applies if the input
         data is a sequence or generator of rows; other input is read as-is.
-    schema_overrides : dict, default None
-        Support type specification or override of one or more columns; note that
-        any dtypes inferred from the columns param will be overridden.
 
     Examples
     --------
@@ -188,14 +209,11 @@ class DataFrame:
     >>> df.dtypes
     [Int64, Int64]
 
-    In order to specify dtypes for your columns, initialize the DataFrame with a list
-    of typed Series:
+    To specify the frame schema you supply the `schema` parameter with a dictionary
+    of (name,dtype) pairs...
 
-    >>> data = [
-    ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
-    ...     pl.Series("col2", [3, 4], dtype=pl.Int64),
-    ... ]
-    >>> df2 = pl.DataFrame(data)
+    >>> data = {"col1": [0, 2], "col2": [3, 7]}
+    >>> df2 = pl.DataFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
     >>> df2
     shape: (2, 2)
     ┌──────┬──────┐
@@ -203,15 +221,14 @@ class DataFrame:
     │ ---  ┆ ---  │
     │ f32  ┆ i64  │
     ╞══════╪══════╡
-    │ 1.0  ┆ 3    │
-    │ 2.0  ┆ 4    │
+    │ 0.0  ┆ 3    │
+    │ 2.0  ┆ 7    │
     └──────┴──────┘
 
-    Or set the `columns` parameter with a list of (name,dtype) pairs (compatible with
-    all of the other valid data parameter types):
+    ...a sequence of (name,dtype) pairs...
 
     >>> data = {"col1": [1, 2], "col2": [3, 4]}
-    >>> df3 = pl.DataFrame(data, columns=[("col1", pl.Float32), ("col2", pl.Int64)])
+    >>> df3 = pl.DataFrame(data, schema=[("col1", pl.Float32), ("col2", pl.Int64)])
     >>> df3
     shape: (2, 2)
     ┌──────┬──────┐
@@ -223,11 +240,13 @@ class DataFrame:
     │ 2.0  ┆ 4    │
     └──────┴──────┘
 
-    The `columns` parameter could also be set with a `dict` containing the schema of the
-    expected DataFrame
+    ...or a list of typed Series.
 
-    >>> data = {"col1": [0, 2], "col2": [3, 7]}
-    >>> df4 = pl.DataFrame(data, columns={"col1": pl.Float32, "col2": pl.Int64})
+    >>> data = [
+    ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
+    ...     pl.Series("col2", [3, 4], dtype=pl.Int64),
+    ... ]
+    >>> df4 = pl.DataFrame(data)
     >>> df4
     shape: (2, 2)
     ┌──────┬──────┐
@@ -235,15 +254,15 @@ class DataFrame:
     │ ---  ┆ ---  │
     │ f32  ┆ i64  │
     ╞══════╪══════╡
-    │ 0.0  ┆ 3    │
-    │ 2.0  ┆ 7    │
+    │ 1.0  ┆ 3    │
+    │ 2.0  ┆ 4    │
     └──────┴──────┘
 
     Constructing a DataFrame from a numpy ndarray, specifying column names:
 
     >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
-    >>> df5 = pl.DataFrame(data, columns=["a", "b"], orient="col")
+    >>> df5 = pl.DataFrame(data, schema=["a", "b"], orient="col")
     >>> df5
     shape: (2, 2)
     ┌─────┬─────┐
@@ -258,7 +277,7 @@ class DataFrame:
     Constructing a DataFrame from a list of lists, row orientation inferred:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> df6 = pl.DataFrame(data, columns=["a", "b", "c"])
+    >>> df6 = pl.DataFrame(data, schema=["a", "b", "c"])
     >>> df6
     shape: (2, 3)
     ┌─────┬─────┬─────┐
@@ -286,6 +305,7 @@ class DataFrame:
 
     _accessors: set[str] = set()
 
+    @deprecated_alias(columns="schema")
     def __init__(
         self,
         data: (
@@ -297,54 +317,54 @@ class DataFrame:
             | pli.Series
             | None
         ) = None,
-        columns: SchemaDefinition | None = None,
-        orient: Orientation | None = None,
+        schema: SchemaDefinition | None = None,
         *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema_overrides: SchemaDict | None = None,
+        orient: Orientation | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ):
         if data is None:
             self._df = dict_to_pydf(
-                {}, columns=columns, schema_overrides=schema_overrides
+                {}, schema=schema, schema_overrides=schema_overrides
             )
 
         elif isinstance(data, dict):
             self._df = dict_to_pydf(
-                data, columns=columns, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides
             )
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
                 data,
-                columns=columns,
+                schema=schema,
                 schema_overrides=schema_overrides,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(
-                data, columns=columns, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(
-                data, columns=columns, schema_overrides=schema_overrides, orient=orient
+                data, schema=schema, schema_overrides=schema_overrides, orient=orient
             )
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, columns=columns, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, columns=columns, schema_overrides=schema_overrides
+                data, schema=schema, schema_overrides=schema_overrides
             )
 
         elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
             self._df = iterable_to_pydf(
                 data,
-                columns=columns,
+                schema=schema,
                 schema_overrides=schema_overrides,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
@@ -366,9 +386,14 @@ class DataFrame:
         cls: type[DF],
         data: Sequence[dict[str, Any]],
         infer_schema_length: int | None = N_INFER_DEFAULT,
+        schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDict | None = None,
     ) -> DF:
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema_overrides)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
+        if schema or schema_overrides:
+            pydf = _post_apply_columns(
+                pydf, list(schema or pydf.columns()), schema_overrides=schema_overrides
+            )
         return cls._from_pydf(pydf)
 
     @classmethod
@@ -389,8 +414,15 @@ class DataFrame:
           Two-dimensional data represented as a dictionary. dict must contain
           Sequences.
         schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
-          Column labels to use for resulting DataFrame. If specified, overrides any
-          labels already present in the data. Must match data dimensions.
+            The DataFrame schema may be declared in several ways:
+
+            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a list of column names; in this case types are automatically inferred.
+            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+            If you supply a list of column names that does not match the names in the
+            underlying data, the names given here will overwrite them. The number
+            of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
           Support type specification or override of one or more columns; note that
           any dtypes inferred from the columns param will be overridden.
@@ -401,14 +433,15 @@ class DataFrame:
 
         """
         return cls._from_pydf(
-            dict_to_pydf(data, columns=schema, schema_overrides=schema_overrides)
+            dict_to_pydf(data, schema=schema, schema_overrides=schema_overrides)
         )
 
     @classmethod
+    @deprecated_alias(columns="schema")
     def _from_records(
         cls: type[DF],
         data: Sequence[Sequence[Any]],
-        columns: Sequence[str] | None = None,
+        schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDict | None = None,
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
@@ -420,9 +453,16 @@ class DataFrame:
         ----------
         data : Sequence of sequences
             Two-dimensional data represented as a sequence of sequences.
-        columns : Sequence of str, default None
-            Column labels to use for resulting DataFrame. Must match data dimensions.
-            If not specified, columns will be named `column_0`, `column_1`, etc.
+        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+            The DataFrame schema may be declared in several ways:
+
+            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a list of column names; in this case types are automatically inferred.
+            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+            If you supply a list of column names that does not match the names in the
+            underlying data, the names given here will overwrite them. The number
+            of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
             any dtypes inferred from the columns param will be overridden.
@@ -441,7 +481,7 @@ class DataFrame:
         return cls._from_pydf(
             sequence_to_pydf(
                 data,
-                columns=columns,
+                schema=schema,
                 schema_overrides=schema_overrides,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
@@ -449,10 +489,11 @@ class DataFrame:
         )
 
     @classmethod
+    @deprecated_alias(columns="schema")
     def _from_numpy(
         cls: type[DF],
         data: np.ndarray[Any, Any],
-        columns: Sequence[str] | None = None,
+        schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDict | None = None,
         orient: Orientation | None = None,
     ) -> DF:
@@ -463,9 +504,16 @@ class DataFrame:
         ----------
         data : numpy ndarray
             Two-dimensional data represented as a numpy ndarray.
-        columns : Sequence of str, default None
-            Column labels to use for resulting DataFrame. Must match data dimensions.
-            If not specified, columns will be named `column_0`, `column_1`, etc.
+        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+            The DataFrame schema may be declared in several ways:
+
+            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a list of column names; in this case types are automatically inferred.
+            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+            If you supply a list of column names that does not match the names in the
+            underlying data, the names given here will overwrite them. The number
+            of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
             any dtypes inferred from the columns param will be overridden.
@@ -481,15 +529,16 @@ class DataFrame:
         """
         return cls._from_pydf(
             numpy_to_pydf(
-                data, columns=columns, schema_overrides=schema_overrides, orient=orient
+                data, schema=schema, schema_overrides=schema_overrides, orient=orient
             )
         )
 
     @classmethod
+    @deprecated_alias(columns="schema")
     def _from_arrow(
         cls: type[DF],
         data: pa.Table,
-        columns: Sequence[str] | None = None,
+        schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
     ) -> DF:
@@ -503,10 +552,16 @@ class DataFrame:
         ----------
         data : arrow table, array, or sequence of sequences
             Data representing an Arrow Table or Array.
-        columns : Sequence of str, default None
-            Column labels to use for resulting DataFrame. Must match data dimensions.
-            If not specified, existing Array table columns are used, with missing names
-            named as `column_0`, `column_1`, etc.
+        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+            The DataFrame schema may be declared in several ways:
+
+            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a list of column names; in this case types are automatically inferred.
+            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+            If you supply a list of column names that does not match the names in the
+            underlying data, the names given here will overwrite them. The number
+            of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
             any dtypes inferred from the columns param will be overridden.
@@ -521,17 +576,18 @@ class DataFrame:
         return cls._from_pydf(
             arrow_to_pydf(
                 data,
-                columns=columns,
+                schema=schema,
                 schema_overrides=schema_overrides,
                 rechunk=rechunk,
             )
         )
 
     @classmethod
+    @deprecated_alias(columns="schema")
     def _from_pandas(
         cls: type[DF],
         data: pd.DataFrame,
-        columns: Sequence[str] | None = None,
+        schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
         nan_to_none: bool = True,
@@ -543,9 +599,16 @@ class DataFrame:
         ----------
         data : pandas DataFrame
             Two-dimensional data represented as a pandas DataFrame.
-        columns : Sequence of str, default None
-            Column labels to use for resulting DataFrame. If specified, overrides any
-            labels already present in the data. Must match data dimensions.
+        schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+            The DataFrame schema may be declared in several ways:
+
+            * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+            * As a list of column names; in this case types are automatically inferred.
+            * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+            If you supply a list of column names that does not match the names in the
+            underlying data, the names given here will overwrite them. The number
+            of names given in the schema should match the underlying data dimensions.
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
             any dtypes inferred from the columns param will be overridden.
@@ -562,7 +625,7 @@ class DataFrame:
         return cls._from_pydf(
             pandas_to_pydf(
                 data,
-                columns=columns,
+                schema=schema,
                 schema_overrides=schema_overrides,
                 rechunk=rechunk,
                 nan_to_none=nan_to_none,
@@ -1065,6 +1128,42 @@ class DataFrame:
 
         """
         return dict(zip(self.columns, self.dtypes))
+
+    def __dataframe__(
+        self, nan_as_null: bool = False, allow_copy: bool = True
+    ) -> _PyArrowDataFrame:
+        """
+        Convert to a dataframe object implementing the dataframe interchange protocol.
+
+        Parameters
+        ----------
+        nan_as_null
+            Overwrite null values in the data with ``NaN``.
+        allow_copy
+            Allow memory to be copied to perform the conversion. If set to False, causes
+            conversions that are not zero-copy to fail.
+
+        Notes
+        -----
+        Details on the dataframe interchange protocol:
+        https://data-apis.org/dataframe-protocol/latest/index.html
+
+        `nan_as_null` currently has no effect; once support for nullable extension
+        dtypes is added, this value should be propagated to columns.
+
+        """
+        if not _PYARROW_AVAILABLE or int(pa.__version__.split(".")[0]) < 11:
+            raise ImportError(
+                "pyarrow>=11.0.0 is required for converting a Polars dataframe to a"
+                " dataframe interchange object."
+            )
+        if not allow_copy and Categorical in self.schema.values():
+            raise NotImplementedError(
+                "Polars does not offer zero-copy conversion to Arrow for categorical"
+                " columns. Set `allow_copy=True` or cast categorical columns to"
+                " string first."
+            )
+        return self.to_arrow().__dataframe__(nan_as_null, allow_copy)
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
@@ -1774,9 +1873,13 @@ class DataFrame:
 
     def to_dicts(self) -> list[dict[str, Any]]:
         """
-        Convert every row to a dictionary.
+        Convert every row to a dictionary of python-native values.
 
-        Note that this is slow.
+        Notes
+        -----
+        If you have ``ns``-precision temporal values you should be aware that python
+        natively only supports up to ``us``-precision; if this matters you should export
+        to a different format.
 
         Examples
         --------
@@ -1785,13 +1888,7 @@ class DataFrame:
         [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
 
         """
-        pydf = self._df
-        names = self.columns
-
-        return [
-            {k: v for k, v in zip(names, pydf.row_tuple(i))}
-            for i in range(0, self.height)
-        ]
+        return list(self.iter_rows(named=True))
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """
@@ -1898,12 +1995,9 @@ class DataFrame:
     @overload
     def write_json(
         self,
-        file: None = None,
+        file: None = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        json_lines: bool | None = ...,
-        *,
-        to_string: bool | None = ...,
     ) -> str:
         ...
 
@@ -1913,9 +2007,6 @@ class DataFrame:
         file: IOBase | str | Path,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        json_lines: bool | None = ...,
-        *,
-        to_string: bool | None = ...,
     ) -> None:
         ...
 
@@ -1924,9 +2015,6 @@ class DataFrame:
         file: IOBase | str | Path | None = None,
         pretty: bool = False,
         row_oriented: bool = False,
-        json_lines: bool | None = None,
-        *,
-        to_string: bool | None = None,
     ) -> str | None:
         """
         Serialize to JSON representation.
@@ -1940,10 +2028,6 @@ class DataFrame:
             Pretty serialize json.
         row_oriented
             Write to row oriented json. This is slower, but more common.
-        json_lines
-            Deprecated argument. Toggle between `JSON` and `NDJSON` format.
-        to_string
-            Deprecated argument. Ignore file argument and return a string.
 
         See Also
         --------
@@ -1963,32 +2047,12 @@ class DataFrame:
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
 
         """
-        if json_lines is not None:
-            warnings.warn(
-                "`json_lines` argument for `DataFrame.write_json` will be removed in a"
-                " future version. Remove the argument or use `DataFrame.write_ndjson`.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        else:
-            json_lines = False
-
-        if to_string is not None:
-            warnings.warn(
-                "`to_string` argument for `DataFrame.write_json` will be removed in a"
-                " future version. Remove the argument and set `file=None`.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        else:
-            to_string = False
-
         if isinstance(file, (str, Path)):
             file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
-        if to_string or file is None or to_string_io:
+        if file is None or to_string_io:
             with BytesIO() as buf:
-                self._df.write_json(buf, pretty, row_oriented, json_lines)
+                self._df.write_json(buf, pretty, row_oriented)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -1997,7 +2061,7 @@ class DataFrame:
             else:
                 return json_str
         else:
-            self._df.write_json(file, pretty, row_oriented, json_lines)
+            self._df.write_json(file, pretty, row_oriented)
         return None
 
     @overload
@@ -2385,7 +2449,7 @@ class DataFrame:
         ...         "y": [v / 1000 for v in range(1_000_000)],
         ...         "z": [str(v) for v in range(1_000_000)],
         ...     },
-        ...     columns=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.Utf8)],
+        ...     schema=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.Utf8)],
         ... )
         >>> df.estimated_size()
         25888898
@@ -2894,6 +2958,7 @@ class DataFrame:
     def sort(
         self: DF,
         by: str | pli.Expr | Sequence[str] | Sequence[pli.Expr],
+        *,
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
     ) -> DF | DataFrame:
@@ -2950,7 +3015,11 @@ class DataFrame:
 
         """
         if not isinstance(by, str) and isinstance(by, (Sequence, pli.Expr)):
-            df = self.lazy().sort(by, reverse, nulls_last).collect(no_optimization=True)
+            df = (
+                self.lazy()
+                .sort(by, reverse=reverse, nulls_last=nulls_last)
+                .collect(no_optimization=True)
+            )
             return df
         return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 
@@ -3279,7 +3348,12 @@ class DataFrame:
             subset = [subset]
         return self._from_pydf(self._df.drop_nulls(subset))
 
-    def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    def pipe(
+        self,
+        func: Callable[Concatenate[DataFrame, P], T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
         """
         Offers a structured way to apply a sequence of user-defined functions (UDFs).
 
@@ -3302,7 +3376,7 @@ class DataFrame:
         Examples
         --------
         >>> def cast_str_to_int(data, col_name):
-        ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
+        ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
         ...
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
         >>> df.pipe(cast_str_to_int, col_name="b")
@@ -3380,6 +3454,7 @@ class DataFrame:
     def groupby(
         self: DF,
         by: str | pli.Expr | Sequence[str | pli.Expr],
+        *,
         maintain_order: bool = False,
     ) -> GroupBy[DF]:
         """
@@ -3525,7 +3600,7 @@ class DataFrame:
         ...     "2020-01-03 19:45:32",
         ...     "2020-01-08 23:16:43",
         ... ]
-        >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_column(
+        >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
         ...     pl.col("dt").str.strptime(pl.Datetime)
         ... )
         >>> out = df.groupby_rolling(index_column="dt", period="2d").agg(
@@ -3606,6 +3681,9 @@ class DataFrame:
         - "1i"      # length 1
         - "10i"     # length 10
 
+        .. warning::
+            The index column must be sorted in ascending order.
+
         Parameters
         ----------
         index_column
@@ -3636,9 +3714,10 @@ class DataFrame:
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday'}
             The strategy to determine the start of the first window by.
-            * 'window': Truncate the start of the window with the 'every' argument.
-            * 'datapoint': Start from the first encountered data point.
-            * 'monday': Start the window on the monday before the first data point.
+
+            - 'window': Truncate the start of the window with the 'every' argument.
+            - 'datapoint': Start from the first encountered data point.
+            - 'monday': Start the window on the monday before the first data point.
 
         Examples
         --------
@@ -3672,13 +3751,11 @@ class DataFrame:
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
-        >>> (
-        ...     df.groupby_dynamic("time", every="1h", closed="right").agg(
-        ...         [
-        ...             pl.col("time").min().alias("time_min"),
-        ...             pl.col("time").max().alias("time_max"),
-        ...         ]
-        ...     )
+        >>> df.groupby_dynamic("time", every="1h", closed="right").agg(
+        ...     [
+        ...         pl.col("time").min().alias("time_min"),
+        ...         pl.col("time").max().alias("time_max"),
+        ...     ]
         ... )
         shape: (4, 3)
         ┌─────────────────────┬─────────────────────┬─────────────────────┐
@@ -3694,11 +3771,9 @@ class DataFrame:
 
         The window boundaries can also be added to the aggregation result
 
-        >>> (
-        ...     df.groupby_dynamic(
-        ...         "time", every="1h", include_boundaries=True, closed="right"
-        ...     ).agg([pl.col("time").count().alias("time_count")])
-        ... )
+        >>> df.groupby_dynamic(
+        ...     "time", every="1h", include_boundaries=True, closed="right"
+        ... ).agg([pl.col("time").count().alias("time_count")])
         shape: (4, 4)
         ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
@@ -3714,13 +3789,11 @@ class DataFrame:
         When closed="left", should not include right end of interval
         [lower_bound, upper_bound)
 
-        >>> (
-        ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
-        ...         [
-        ...             pl.col("time").count().alias("time_count"),
-        ...             pl.col("time").list().alias("time_agg_list"),
-        ...         ]
-        ...     )
+        >>> df.groupby_dynamic("time", every="1h", closed="left").agg(
+        ...     [
+        ...         pl.col("time").count().alias("time_count"),
+        ...         pl.col("time").alias("time_agg_list"),
+        ...     ]
         ... )
         shape: (4, 3)
         ┌─────────────────────┬────────────┬─────────────────────────────────────┐
@@ -3736,10 +3809,8 @@ class DataFrame:
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
-        >>> (
-        ...     df.groupby_dynamic("time", every="1h", closed="both").agg(
-        ...         [pl.col("time").count().alias("time_count")]
-        ...     )
+        >>> df.groupby_dynamic("time", every="1h", closed="both").agg(
+        ...     [pl.col("time").count().alias("time_count")]
         ... )
         shape: (5, 2)
         ┌─────────────────────┬────────────┐
@@ -3781,15 +3852,13 @@ class DataFrame:
         │ 2021-12-16 02:30:00 ┆ a      │
         │ 2021-12-16 03:00:00 ┆ a      │
         └─────────────────────┴────────┘
-        >>> (
-        ...     df.groupby_dynamic(
-        ...         "time",
-        ...         every="1h",
-        ...         closed="both",
-        ...         by="groups",
-        ...         include_boundaries=True,
-        ...     ).agg([pl.col("time").count().alias("time_count")])
-        ... )
+        >>> df.groupby_dynamic(
+        ...     "time",
+        ...     every="1h",
+        ...     closed="both",
+        ...     by="groups",
+        ...     include_boundaries=True,
+        ... ).agg([pl.col("time").count().alias("time_count")])
         shape: (7, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
@@ -3820,7 +3889,7 @@ class DataFrame:
         ...         period="3i",
         ...         include_boundaries=True,
         ...         closed="right",
-        ...     ).agg(pl.col("A").list().alias("A_agg_list"))
+        ...     ).agg(pl.col("A").alias("A_agg_list"))
         ... )
         shape: (3, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
@@ -3908,11 +3977,9 @@ class DataFrame:
         ...         "values": [0, 1, 2, 3],
         ...     }
         ... )
-        >>> (
-        ...     df.upsample(
-        ...         time_column="time", every="1mo", by="groups", maintain_order=True
-        ...     ).select(pl.all().forward_fill())
-        ... )
+        >>> df.upsample(
+        ...     time_column="time", every="1mo", by="groups", maintain_order=True
+        ... ).select(pl.all().forward_fill())
         shape: (7, 3)
         ┌─────────────────────┬────────┬────────┐
         │ time                ┆ groups ┆ values │
@@ -4270,9 +4337,7 @@ class DataFrame:
 
         It is better to implement this with an expression:
 
-        >>> (
-        ...     df.select([pl.col("foo") * 2, pl.col("bar") * 3])
-        ... )  # doctest: +IGNORE_RESULT
+        >>> df.select([pl.col("foo") * 2, pl.col("bar") * 3])  # doctest: +IGNORE_RESULT
 
         Return a Series by mapping each row to a scalar:
 
@@ -4308,44 +4373,23 @@ class DataFrame:
         Creating a new DataFrame using this method does not create a new copy of
         existing data.
 
+        .. deprecated:: 0.15.14
+            `with_column` will be removed in favor of the more generic `with_columns`
+            in version 0.17.0.
+
         Parameters
         ----------
         column
             Series, where the name of the Series refers to the column in the DataFrame.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> df.with_column((pl.col("b") ** 2).alias("b_squared"))  # added
-        shape: (3, 3)
-        ┌─────┬─────┬───────────┐
-        │ a   ┆ b   ┆ b_squared │
-        │ --- ┆ --- ┆ ---       │
-        │ i64 ┆ i64 ┆ f64       │
-        ╞═════╪═════╪═══════════╡
-        │ 1   ┆ 2   ┆ 4.0       │
-        │ 3   ┆ 4   ┆ 16.0      │
-        │ 5   ┆ 6   ┆ 36.0      │
-        └─────┴─────┴───────────┘
-        >>> df.with_column(pl.col("a") ** 2)  # replaced
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ a    ┆ b   │
-        │ ---  ┆ --- │
-        │ f64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 1.0  ┆ 2   │
-        │ 9.0  ┆ 4   │
-        │ 25.0 ┆ 6   │
-        └──────┴─────┘
-
         """
-        return self.lazy().with_column(column).collect(no_optimization=True)
+        warnings.warn(
+            "`with_column` has been deprecated in favor of `with_columns`."
+            " This method will be removed in version 0.17.0",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.lazy().with_columns(column).collect(no_optimization=True)
 
     def hstack(
         self: DF,
@@ -5166,7 +5210,7 @@ class DataFrame:
 
         if how == "horizontal":
             df = (
-                df.with_column(  # type: ignore[assignment]
+                df.with_columns(  # type: ignore[assignment]
                     (pli.arange(0, n_cols * n_rows, eager=True) % n_cols).alias(
                         "__sort_order"
                     ),
@@ -5190,8 +5234,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = False,
         *,
+        maintain_order: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[DF]:
         ...
@@ -5200,8 +5244,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = False,
         *,
+        maintain_order: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, DF]:
         ...
@@ -5210,8 +5254,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool,
         *,
+        maintain_order: bool,
         as_dict: bool,
     ) -> list[DF] | dict[Any, DF]:
         ...
@@ -5219,8 +5263,8 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | Sequence[str],
-        maintain_order: bool = True,
         *,
+        maintain_order: bool = True,
         as_dict: bool = False,
     ) -> list[DF] | dict[Any, DF]:
         """
@@ -5508,7 +5552,9 @@ class DataFrame:
             | pli.Expr
             | pli.Series
             | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
-        ),
+            | None
+        ) = None,
+        **named_exprs: Any,
     ) -> DF:
         """
         Select columns from this DataFrame.
@@ -5517,6 +5563,8 @@ class DataFrame:
         ----------
         exprs
             Column or columns to select.
+        **named_exprs
+            Named column expressions, provided as kwargs.
 
         Examples
         --------
@@ -5587,9 +5635,25 @@ class DataFrame:
         │ 10      │
         └─────────┘
 
+        Note that, when using kwargs syntax, expressions with multiple
+        outputs are automatically instantiated as Struct columns:
+
+        >>> from polars.datatypes import INTEGER_DTYPES
+        >>> df.select(is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"))
+        shape: (3, 1)
+        ┌───────────┐
+        │ is_odd    │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {1,0}     │
+        │ {0,1}     │
+        │ {1,0}     │
+        └───────────┘
+
         """
         return self._from_pydf(
-            self.lazy().select(exprs).collect(no_optimization=True)._df
+            self.lazy().select(exprs, **named_exprs).collect(no_optimization=True)._df
         )
 
     def with_columns(
@@ -5598,19 +5662,19 @@ class DataFrame:
         **named_exprs: Any,
     ) -> DataFrame:
         """
-        Return a new DataFrame with the columns added, if new, or replaced.
+        Return a new DataFrame with the columns added (if new), or replaced.
 
         Notes
         -----
-        Creating a new DataFrame using this method does not create a new copy of
-        existing data.
+        Creating a new DataFrame using this method does not create a new copy
+        of existing data.
 
         Parameters
         ----------
         exprs
-            List of Expressions that evaluate to columns.
+            List of expressions that evaluate to columns.
         **named_exprs
-            Named column Expressions, provided as kwargs.
+            Named column expressions, provided as kwargs.
 
         Examples
         --------
@@ -5621,6 +5685,40 @@ class DataFrame:
         ...         "c": [True, True, False, True],
         ...     }
         ... )
+
+        Passing in a single expression, adding (and naming) a new column:
+
+        >>> df.with_columns((pl.col("a") ** 2).alias("a^2"))
+        shape: (4, 4)
+        ┌─────┬──────┬───────┬──────┐
+        │ a   ┆ b    ┆ c     ┆ a^2  │
+        │ --- ┆ ---  ┆ ---   ┆ ---  │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  │
+        ╞═════╪══════╪═══════╪══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  │
+        │ 3   ┆ 10.0 ┆ false ┆ 9.0  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
+        └─────┴──────┴───────┴──────┘
+
+        We can also override an existing column by giving the expression
+        a name that already exists:
+
+        >>> df.with_columns((pl.col("a") ** 2).alias("c"))
+        shape: (4, 3)
+        ┌─────┬──────┬──────┐
+        │ a   ┆ b    ┆ c    │
+        │ --- ┆ ---  ┆ ---  │
+        │ i64 ┆ f64  ┆ f64  │
+        ╞═════╪══════╪══════╡
+        │ 1   ┆ 0.5  ┆ 1.0  │
+        │ 2   ┆ 4.0  ┆ 4.0  │
+        │ 3   ┆ 10.0 ┆ 9.0  │
+        │ 4   ┆ 13.0 ┆ 16.0 │
+        └─────┴──────┴──────┘
+
+        Multiple expressions can be passed in as both a list...
+
         >>> df.with_columns(
         ...     [
         ...         (pl.col("a") ** 2).alias("a^2"),
@@ -5640,17 +5738,15 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        Support for kwarg expressions is considered EXPERIMENTAL. Currently
-        requires opt-in via `pl.Config` boolean flag:
+        ...or via kwarg expressions:
 
-        >>> pl.Config.with_columns_kwargs = True
         >>> df.with_columns(
-        ...     d=pl.col("a") * pl.col("b"),
-        ...     e=pl.col("c").is_not(),
+        ...     ab=pl.col("a") * pl.col("b"),
+        ...     not_c=pl.col("c").is_not(),
         ... )
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ d    ┆ e     │
+        │ a   ┆ b    ┆ c     ┆ ab   ┆ not_c │
         │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
         │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  │
         ╞═════╪══════╪═══════╪══════╪═══════╡
@@ -5660,9 +5756,25 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
 
+        Note that, when using kwargs syntax, expressions with multiple
+        outputs are automatically instantiated as Struct columns:
+
+        >>> df.drop("c").with_columns(
+        ...     diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬──────┬─────────────┐
+        │ a   ┆ b    ┆ diffs       │
+        │ --- ┆ ---  ┆ ---         │
+        │ i64 ┆ f64  ┆ struct[2]   │
+        ╞═════╪══════╪═════════════╡
+        │ 1   ┆ 0.5  ┆ {null,null} │
+        │ 2   ┆ 4.0  ┆ {1,3.5}     │
+        │ 3   ┆ 10.0 ┆ {1,6.0}     │
+        │ 4   ┆ 13.0 ┆ {1,3.0}     │
+        └─────┴──────┴─────────────┘
+
         """
-        if exprs is not None and not isinstance(exprs, Sequence):
-            exprs = [exprs]
         return (
             self.lazy().with_columns(exprs, **named_exprs).collect(no_optimization=True)
         )
@@ -6253,7 +6365,7 @@ class DataFrame:
         If instead you want to count the number of unique values per-column, you can
         also use expression-level syntax to return a new frame containing that result:
 
-        >>> df = pl.DataFrame([[1, 2, 3], [1, 2, 4]], columns=["a", "b", "c"])
+        >>> df = pl.DataFrame([[1, 2, 3], [1, 2, 4]], schema=["a", "b", "c"])
         >>> df_nunique = df.select(pl.all().n_unique())
 
         In aggregate context there is also an equivalent method for returning the
@@ -6508,8 +6620,8 @@ class DataFrame:
         index: int | None = ...,
         *,
         by_predicate: pli.Expr | None = ...,
-        named: Literal[True] = ...,
-    ) -> Any:
+        named: Literal[True],
+    ) -> dict[str, Any]:
         ...
 
     def row(
@@ -6518,9 +6630,9 @@ class DataFrame:
         *,
         by_predicate: pli.Expr | None = None,
         named: bool = False,
-    ) -> tuple[Any, ...] | Any:
+    ) -> tuple[Any, ...] | dict[str, Any]:
         """
-        Get a single row as a tuple, either by index or by predicate.
+        Get the values of a single row, either by index or by predicate.
 
         Parameters
         ----------
@@ -6529,8 +6641,13 @@ class DataFrame:
         by_predicate
             Select the row according to a given expression/predicate.
         named
-            Return a named tuple instead of a regular tuple. This is more expensive than
-            returning a regular tuple, but allows for accessing values by column name.
+            Return a dictionary instead of a tuple. The dictionary is a mapping of
+            column name to row value. This is more expensive than returning a regular
+            tuple, but allows for accessing values by column name.
+
+        Returns
+        -------
+        Tuple (default) or dictionary of row values.
 
         Notes
         -----
@@ -6544,7 +6661,7 @@ class DataFrame:
         Warning
         -------
         You should NEVER use this method to iterate over a DataFrame; if you absolutely
-        require row-iteration you should strongly prefer ``iterrows()`` instead.
+        require row-iteration you should strongly prefer ``iter_rows()`` instead.
 
         Examples
         --------
@@ -6560,10 +6677,11 @@ class DataFrame:
         >>> df.row(2)
         (3, 8, 'c')
 
-        Specify ``named=True`` to get a named tuple.
+        Specify ``named=True`` to get a dictionary instead with a mapping of column
+        names to row values.
 
         >>> df.row(2, named=True)
-        Row(foo=3, bar=8, ham='c')
+        {'foo': 3, 'bar': 8, 'ham': 'c'}
 
         Use ``by_predicate`` to return the row that matches the given predicate.
 
@@ -6572,7 +6690,7 @@ class DataFrame:
 
         See Also
         --------
-        iterrows : Row iterator over frame data (does not materialise all rows).
+        iter_rows : Row iterator over frame data (does not materialise all rows).
         rows : Materialises all frame data as a list of rows.
 
         """
@@ -6583,19 +6701,10 @@ class DataFrame:
         elif isinstance(index, pli.Expr):
             raise TypeError("Expressions should be passed to the 'by_predicate' param")
 
-        if named:
-            warnings.warn(
-                "Named rows will be changed from a namedtuple to a dictionary in the"
-                " next breaking release.",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
-
         if index is not None:
             row = self._df.row_tuple(index)
             if named:
-                return Row(*row)
+                return dict(zip(self.columns, row))
             else:
                 return row
 
@@ -6616,7 +6725,7 @@ class DataFrame:
 
             row = rows[0]
             if named:
-                return Row(*row)
+                return dict(zip(self.columns, row))
             else:
                 return row
         else:
@@ -6627,23 +6736,34 @@ class DataFrame:
         ...
 
     @overload
-    def rows(self, named: Literal[True] = ...) -> list[Any]:
+    def rows(self, named: Literal[True]) -> list[dict[str, Any]]:
         ...
 
-    def rows(self, named: bool = False) -> list[tuple[Any, ...]] | list[Any]:
+    def rows(self, named: bool = False) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
         """
-        Returns the rows of this DataFrame as a list of Python tuples.
+        Returns all data in the DataFrame as a list of rows of python-native values.
 
         Parameters
         ----------
         named
-            Return named tuples instead of regular tuples. This is more expensive than
-            returning regular tuples, but allows for accessing values by column name.
+            Return dictionaries instead of tuples. The dictionaries are a mapping of
+            column name to row value. This is more expensive than returning a regular
+            tuple, but allows for accessing values by column name.
+
+        Notes
+        -----
+        If you have ``ns``-precision temporal values you should be aware that python
+        natively only supports up to ``us``-precision; if this matters you should export
+        to a different format.
 
         Warnings
         --------
         Row-iteration is not optimal as the underlying data is stored in columnar form;
         where possible, prefer export via one of the dedicated export/output methods.
+
+        Returns
+        -------
+        A list of tuples (default) or dictionaries of row values.
 
         Examples
         --------
@@ -6656,49 +6776,44 @@ class DataFrame:
         >>> df.rows()
         [(1, 2), (3, 4), (5, 6)]
         >>> df.rows(named=True)
-        [Row(a=1, b=2), Row(a=3, b=4), Row(a=5, b=6)]
+        [{'a': 1, 'b': 2}, {'a': 3, 'b': 4}, {'a': 5, 'b': 6}]
 
         See Also
         --------
-        iterrows : Row iterator over frame data (does not materialise all rows).
+        iter_rows : Row iterator over frame data (does not materialise all rows).
 
         """
         if named:
-            warnings.warn(
-                "Named rows will be changed from a namedtuple to a dictionary in the"
-                " next breaking release.",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
-            return [Row(*row) for row in self._df.row_tuples()]
+            # Load these into the local namespace for a minor performance boost
+            dict_, zip_, columns = dict, zip, self.columns
+            return [dict_(zip_(columns, row)) for row in self._df.row_tuples()]
         else:
             return self._df.row_tuples()
 
     @overload
-    def iterrows(
+    def iter_rows(
         self, named: Literal[False] = ..., buffer_size: int = ...
     ) -> Iterator[tuple[Any, ...]]:
         ...
 
     @overload
-    def iterrows(
-        self, named: Literal[True] = ..., buffer_size: int = ...
-    ) -> Iterator[Any]:
+    def iter_rows(
+        self, named: Literal[True], buffer_size: int = ...
+    ) -> Iterator[dict[str, Any]]:
         ...
 
-    def iterrows(
+    def iter_rows(
         self, named: bool = False, buffer_size: int = 500
-    ) -> Iterator[tuple[Any, ...]] | Iterator[Any]:
+    ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]]:
         """
-        Returns an iterator over the rows in the DataFrame.
+        Returns an iterator over the DataFrame of rows of python-native values.
 
         Parameters
         ----------
         named
-            Return named tuples instead of regular tuples. This is more expensive than
-            returning regular tuples, but allows for accessing values by column name.
-
+            Return dictionaries instead of tuples. The dictionaries are a mapping of
+            column name to row value. This is more expensive than returning a regular
+            tuple, but allows for accessing values by column name.
         buffer_size
             Determines the number of rows that are buffered internally while iterating
             over the data; you should only modify this in very specific cases where the
@@ -6706,15 +6821,20 @@ class DataFrame:
             the speedup from using the buffer is significant (~2-4x). Setting this
             value to zero disables row buffering.
 
-        Warnings
-        --------
-        Row-iteration is not optimal as the underlying data is stored in columnar form;
-        where possible, prefer export via one of the dedicated export/output methods.
-
         Notes
         -----
-        If you are planning to materialise all frame data at once you should prefer
-        calling ``rows()``, which will be faster.
+        If you have ``ns``-precision temporal values you should be aware that python
+        natively only supports up to ``us``-precision; if this matters you should export
+        to a different format.
+
+        Warnings
+        --------
+        Row iteration is not optimal as the underlying data is stored in columnar form;
+        where possible, prefer export via one of the dedicated export/output methods.
+
+        Returns
+        -------
+        An iterator of tuples (default) or dictionaries of python row values.
 
         Examples
         --------
@@ -6724,9 +6844,9 @@ class DataFrame:
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> [row[0] for row in df.iterrows()]
+        >>> [row[0] for row in df.iter_rows()]
         [1, 3, 5]
-        >>> [row.b for row in df.iterrows(named=True)]
+        >>> [row["b"] for row in df.iter_rows(named=True)]
         [2, 4, 6]
 
         See Also
@@ -6734,31 +6854,88 @@ class DataFrame:
         rows : Materialises all frame data as a list of rows.
 
         """
+        # load into the local namespace for a modest performance boost in the hot loops
+        columns, get_row, dict_, zip_ = self.columns, self.row, dict, zip
+
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
-        if named:
-            warnings.warn(
-                "Named rows will be changed from a namedtuple to a dictionary in the"
-                " next breaking release.",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-            Row = namedtuple("Row", self.columns)  # type: ignore[misc]
         if buffer_size:
+            load_pyarrow_dicts = (
+                named
+                and _PYARROW_AVAILABLE
+                # note: 'ns' precision instantiates values as pandas types - avoid
+                and not any((getattr(tp, "tu", None) == "ns") for tp in self.dtypes)
+            )
             for offset in range(0, self.height, buffer_size):
-                rows_chunk = self.slice(offset, buffer_size).rows(named=False)
-                if named:
-                    for row in rows_chunk:
-                        yield Row(*row)
+                zerocopy_slice = self.slice(offset, buffer_size)
+                if load_pyarrow_dicts:
+                    yield from zerocopy_slice.to_arrow().to_batches()[0].to_pylist()
                 else:
-                    yield from rows_chunk
-
+                    rows_chunk = zerocopy_slice.rows(named=False)
+                    if named:
+                        for row in rows_chunk:
+                            yield dict_(zip_(columns, row))
+                    else:
+                        yield from rows_chunk
         elif named:
             for i in range(self.height):
-                yield Row(*self.row(i))
+                yield dict_(zip_(columns, get_row(i)))
         else:
             for i in range(self.height):
-                yield self.row(i)
+                yield get_row(i)
+
+    def iter_slices(self, n_rows: int = 10_000) -> Iterator[DataFrame]:
+        r"""
+        Returns a non-copying iterator of slices over the underlying DataFrame.
+
+        Parameters
+        ----------
+        n_rows
+            Determines the number of rows contained in each DataFrame slice.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "a": range(17_500),
+        ...         "b": date(2023, 1, 1),
+        ...         "c": "klmnoopqrstuvwxyz",
+        ...     },
+        ...     schema_overrides={"a": pl.Int32},
+        ... )
+        >>> for idx, frame in enumerate(df.iter_slices()):
+        ...     print(f"{type(frame).__name__}:[{idx}]:{len(frame)}")
+        ...
+        DataFrame:[0]:10000
+        DataFrame:[1]:7500
+
+        Using ``iter_slices`` is an efficient way to chunk-iterate over DataFrames and
+        any supported frame export/conversion types; for example, as RecordBatches:
+
+        >>> for frame in df.iter_slices(n_rows=15_000):
+        ...     record_batch = frame.to_arrow().to_batches()[0]
+        ...     print(record_batch, "\n<< ", len(record_batch))
+        ...
+        pyarrow.RecordBatch
+        a: int32
+        b: date32[day]
+        c: large_string
+        << 15000
+        pyarrow.RecordBatch
+        a: int32
+        b: date32[day]
+        c: large_string
+        << 2500
+
+        See Also
+        --------
+        iter_rows : Row iterator over frame data (does not materialise all rows).
+        partition_by : Split into multiple DataFrames, partitioned by groups.
+
+        """
+        for offset in range(0, self.height, n_rows):
+            yield self.slice(offset, n_rows)
 
     def shrink_to_fit(self: DF, in_place: bool = False) -> DF:
         """
@@ -7003,7 +7180,7 @@ class DataFrame:
         """
         return DataFrame(
             np.corrcoef(self, **kwargs),
-            columns=self.columns,
+            schema=self.columns,
         )
 
     def merge_sorted(self: DF, other: DataFrame, key: str) -> DF:

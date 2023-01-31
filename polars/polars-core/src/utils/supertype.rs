@@ -275,7 +275,9 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 #[cfg(feature = "dtype-struct")]
 fn union_struct_fields(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType> {
     let (longest, shortest) = {
-        if fields_a.len() > fields_b.len() {
+        // if equal length we also take the lhs
+        // so that the lhs determines the order of the fields
+        if fields_a.len() >= fields_b.len() {
             (fields_a, fields_b)
         } else {
             (fields_b, fields_a)

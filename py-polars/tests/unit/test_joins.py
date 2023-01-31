@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-import polars.testing
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy
@@ -64,7 +64,7 @@ def test_semi_anti_join() -> None:
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
-        columns=[("column", pl.Categorical), ("more", pl.Int32)],
+        schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
     df_agg = df.groupby("column").agg(pl.col("more").mean())
     assert df.join(df_agg, on="column").to_dict(False) == {
@@ -92,20 +92,20 @@ def test_sorted_merge_joins() -> None:
         join_strategies: list[JoinStrategy] = ["left", "inner"]
         for cast_to in [int, str, float]:
             for how in join_strategies:
-                df_a_ = df_a.with_column(pl.col("a").cast(cast_to))
-                df_b_ = df_b.with_column(pl.col("a").cast(cast_to))
+                df_a_ = df_a.with_columns(pl.col("a").cast(cast_to))
+                df_b_ = df_b.with_columns(pl.col("a").cast(cast_to))
 
                 # hash join
                 out_hash_join = df_a_.join(df_b_, on="a", how=how)
 
                 # sorted merge join
-                out_sorted_merge_join = df_a_.with_column(
+                out_sorted_merge_join = df_a_.with_columns(
                     pl.col("a").set_sorted(reverse)
                 ).join(
-                    df_b_.with_column(pl.col("a").set_sorted(reverse)), on="a", how=how
+                    df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how
                 )
 
-                assert out_hash_join.frame_equal(out_sorted_merge_join)
+                assert_frame_equal(out_hash_join, out_sorted_merge_join)
 
 
 def test_join_negative_integers() -> None:
@@ -126,8 +126,8 @@ def test_join_negative_integers() -> None:
 
     for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
         assert (
-            df1.with_column(pl.all().cast(dt))
-            .join(df2.with_column(pl.all().cast(dt)), on="a", how="inner")
+            df1.with_columns(pl.all().cast(dt))
+            .join(df2.with_columns(pl.all().cast(dt)), on="a", how="inner")
             .to_dict(False)
             == expected
         )
@@ -152,7 +152,7 @@ def test_join_asof_floats() -> None:
             "val": [0, 2.5, 2.6, 2.7, 3.4, 4, 5],
             "c": ["x", "x", "x", "y", "y", "y", "y"],
         }
-    ).with_column(pl.col("val").alias("b"))
+    ).with_columns(pl.col("val").alias("b"))
     assert df1.join_asof(df2, on="b", by="c").to_dict(False) == {
         "b": [
             0.0,
@@ -339,11 +339,11 @@ def test_join() -> None:
     )
 
     joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
-    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2]))
+    assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2]))
 
     joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
     assert joined["c_right"].is_null().sum() == 1
-    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2, 4]))
+    assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2, 4]))
 
     joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
     assert joined["c_right"].null_count() == 1
@@ -373,7 +373,7 @@ def test_join() -> None:
 
     cols = ["a", "b", "bar", "ham"]
     assert lazy_join.shape == eager_join.shape
-    assert lazy_join.sort(by=cols).frame_equal(eager_join.sort(by=cols))
+    assert_frame_equal(lazy_join.sort(by=cols), eager_join.sort(by=cols))
 
 
 def test_joins_dispatch() -> None:
@@ -406,7 +406,7 @@ def test_join_on_cast() -> None:
     df_a = (
         pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
         .with_row_count()
-        .with_column(pl.col("a").cast(pl.Int32))
+        .with_columns(pl.col("a").cast(pl.Int32))
     )
 
     df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
@@ -539,18 +539,19 @@ def test_sorted_flag_after_joins() -> None:
 @typing.no_type_check
 def test_jit_sort_joins() -> None:
     n = 200
+    # Explicitly specify numpy dtype because of different defaults on Windows
     dfa = pd.DataFrame(
         {
-            "a": np.random.randint(0, 100, n),
-            "b": np.arange(0, n),
+            "a": np.random.randint(0, 100, n, dtype=np.int64),
+            "b": np.arange(0, n, dtype=np.int64),
         }
     )
 
     n = 40
     dfb = pd.DataFrame(
         {
-            "a": np.random.randint(0, 100, n),
-            "b": np.arange(0, n),
+            "a": np.random.randint(0, 100, n, dtype=np.int64),
+            "b": np.arange(0, n, dtype=np.int64),
         }
     )
     dfa_pl = pl.from_pandas(dfa).sort("a")
@@ -563,8 +564,8 @@ def test_jit_sort_joins() -> None:
         # left key sorted right is not
         pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"])
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
-        assert a.frame_equal(pl_result, null_equal=True)
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
+        assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
 
         # left key sorted right is not
@@ -572,8 +573,8 @@ def test_jit_sort_joins() -> None:
         pd_result.columns = ["a", "b", "b_right"]
         pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"])
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
-        assert a.frame_equal(pl_result, null_equal=True)
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
+        assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
 
 
@@ -617,7 +618,7 @@ def test_asof_join_schema_5684() -> None:
     projected_result = q.select(pl.all()).collect()
     result = q.collect()
 
-    assert projected_result.frame_equal(result)
+    assert_frame_equal(projected_result, result)
     assert (
         q.schema
         == projected_result.schema
@@ -656,7 +657,7 @@ def test_streaming_joins() -> None:
             .collect(streaming=True)
         )
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
 
         pd_result = dfa.merge(dfb, on=["a", "b"], how=how)
@@ -669,7 +670,7 @@ def test_streaming_joins() -> None:
         )
 
         # we cast to integer because pandas joins creates floats
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
 
 
@@ -738,3 +739,35 @@ def test_join_panic_on_binary_expr_5915() -> None:
 
     z = df_a.join(df_b, left_on=[(pl.col("a") + 1).cast(int)], right_on=[pl.col("b")])
     assert z.collect().to_dict(False) == {"a": [4]}
+
+
+def test_semi_join_projection_pushdown_6423() -> None:
+    df1 = pl.DataFrame({"x": [1]}).lazy()
+    df2 = pl.DataFrame({"y": [1], "x": [1]}).lazy()
+
+    assert (
+        df1.join(df2, left_on="x", right_on="y", how="semi")
+        .join(df2, left_on="x", right_on="y", how="semi")
+        .select(["x"])
+    ).collect().to_dict(False) == {"x": [1]}
+
+
+def test_semi_join_projection_pushdown_6455() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 1, 2],
+            "timestamp": [
+                datetime(2022, 12, 11),
+                datetime(2022, 12, 12),
+                datetime(2022, 1, 1),
+            ],
+            "value": [1, 2, 4],
+        }
+    ).lazy()
+
+    latest = df.groupby("id").agg(pl.col("timestamp").max())
+    df = df.join(latest, on=["id", "timestamp"], how="semi")
+    assert df.select(["id", "value"]).collect().to_dict(False) == {
+        "id": [1, 2],
+        "value": [2, 4],
+    }

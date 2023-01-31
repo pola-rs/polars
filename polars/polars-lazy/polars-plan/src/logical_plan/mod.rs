@@ -19,13 +19,15 @@ pub(crate) mod anonymous_scan;
 mod apply;
 mod builder;
 pub(crate) mod conversion;
+#[cfg(feature = "debugging")]
+pub(crate) mod debug;
 mod format;
 mod functions;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
-mod projection;
+pub(crate) mod projection;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;

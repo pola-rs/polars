@@ -8,6 +8,7 @@ Export DataFrame data to other formats:
 .. autosummary::
    :toctree: api/
 
+    DataFrame.__dataframe__
     DataFrame.to_arrow
     DataFrame.to_dict
     DataFrame.to_dicts

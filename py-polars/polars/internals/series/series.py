@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import os
-import warnings
+import typing
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -13,13 +13,11 @@ from typing import (
     Union,
     overload,
 )
-from warnings import warn
 
 from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
-    DataType,
     Date,
     Datetime,
     Duration,
@@ -77,7 +75,6 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _is_generator,
     _time_to_pl_time,
-    is_bool_sequence,
     is_int_sequence,
     range_to_series,
     range_to_slice,
@@ -294,7 +291,7 @@ class Series:
 
     @classmethod
     def _repeat(
-        cls, name: str, val: int | float | str | bool, n: int, dtype: type[DataType]
+        cls, name: str, val: int | float | str | bool, n: int, dtype: PolarsDataType
     ) -> Series:
         return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
 
@@ -312,8 +309,18 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
         )
 
+    def _get_ptr(self) -> int:
+        """
+        Get a pointer to the start of the values buffer of a numeric Series.
+
+        This will raise an error if the
+        ``Series`` contains multiple chunks
+
+        """
+        return self._s.get_ptr()
+
     @property
-    def dtype(self) -> type[DataType]:
+    def dtype(self) -> PolarsDataType:
         """
         Get the data type of this Series.
 
@@ -345,7 +352,7 @@ class Series:
         return out
 
     @property
-    def inner_dtype(self) -> type[DataType] | None:
+    def inner_dtype(self) -> PolarsDataType | None:
         """
         Get the inner dtype in of a List typed Series.
 
@@ -539,14 +546,14 @@ class Series:
 
         return self.cast(Float64) / other
 
+    # python 3.7 is not happy. Remove this when we finally ditch that
+    @typing.no_type_check
     def __floordiv__(self, other: Any) -> Series:
         if self.is_datelike():
             raise ValueError("first cast to integer before dividing datelike dtypes")
-        result = self._arithmetic(other, "div", "div_<>")
-        # todo! in place, saves allocation
-        if self.is_float() or isinstance(other, float):
-            result = result.floor()
-        return result
+        if not isinstance(other, pli.Expr):
+            other = pli.lit(other)
+        return self.to_frame().select(pli.lit(self) // other).to_series()
 
     def __invert__(self) -> Series:
         if self.dtype == Boolean:
@@ -826,41 +833,6 @@ class Series:
         # Sequence of integers (slow to check if sequence contains all integers).
         elif is_int_sequence(item):
             return wrap_s(self._s.take_with_series(self._pos_idxs(Series("", item))._s))
-
-        # Check for boolean masks last as this is deprecated functionality and
-        # thus can be a slow path.
-
-        elif isinstance(item, Series) and item.dtype == Boolean:
-            warnings.warn(
-                "passing a boolean mask to Series.__getitem__ is being deprecated; "
-                "instead use Series.filter",
-                category=DeprecationWarning,
-            )
-            return wrap_s(self._s.filter(item._s))
-
-        elif (
-            _check_for_numpy(item)
-            and isinstance(item, np.ndarray)
-            and item.dtype.kind == "b"
-        ):
-            if item.ndim != 1:
-                raise ValueError("Only a 1D-Numpy array is supported as index.")
-
-            warnings.warn(
-                "passing a boolean mask to Series.__getitem__ is being deprecated; "
-                "instead use Series.filter",
-                category=DeprecationWarning,
-            )
-            return wrap_s(self._s.filter(Series("", item)._s))
-
-        # Sequence of boolean masks (slow to check if sequence contains all booleans).
-        elif is_bool_sequence(item):
-            warnings.warn(
-                "passing a boolean mask to Series.__getitem__ is being deprecated; "
-                "instead use Series.filter",
-                category=DeprecationWarning,
-            )
-            return wrap_s(self._s.filter(Series("", item)._s))
 
         raise ValueError(
             f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
@@ -2590,7 +2562,7 @@ class Series:
 
         """
 
-    def to_list(self, use_pyarrow: bool = False) -> list[Any | None]:
+    def to_list(self, use_pyarrow: bool = False) -> list[Any]:
         """
         Convert this Series to a Python List. This operation clones data.
 
@@ -4293,7 +4265,7 @@ class Series:
 
         Parameters
         ----------
-        method : {'linear', 'linear'}
+        method : {'linear', 'nearest'}
             Interpolation method
 
         Examples
@@ -4594,7 +4566,8 @@ class Series:
         Parameters
         ----------
         seed
-            Seed for the random number generator.
+            Seed for the random number generator. If set to None (default), a random
+            seed is generated using the ``random`` module.
 
         Examples
         --------
@@ -4609,15 +4582,6 @@ class Series:
         ]
 
         """
-        if seed is None:
-            warn(
-                "Series.shuffle will default to a random seed in a future version."
-                " Provide a value for the seed argument to silence this warning.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            seed = 0
-        return self.to_frame().select(pli.col(self.name).shuffle(seed)).to_series()
 
     def ewm_mean(
         self,

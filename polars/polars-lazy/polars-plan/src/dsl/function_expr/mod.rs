@@ -366,12 +366,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: StringFunction) -> Self {
         use StringFunction::*;
         match func {
-            Contains { pat, literal } => {
-                map!(strings::contains, &pat, literal)
-            }
-            EndsWith(sub) => {
-                map!(strings::ends_with, &sub)
-            }
+            #[cfg(feature = "regex")]
+            Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
+            EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract { pat, group_index } => {
                 map!(strings::extract, &pat, group_index)
@@ -409,6 +406,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Strip(matches) => map!(strings::strip, matches.as_deref()),
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
+            #[cfg(feature = "string_from_radix")]
+            FromRadix(matches) => map!(strings::from_radix, matches),
         }
     }
 }
@@ -454,7 +453,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Truncate(every, offset) => map!(datetime::truncate, &every, &offset),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
-            CastTimezone(tz) => map!(datetime::cast_timezone, &tz),
+            CastTimezone(tz) => map!(datetime::cast_timezone, tz.as_deref()),
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             Combine(tu) => map_as_slice!(temporal::combine, tu),

@@ -66,7 +66,7 @@ def test_groupby() -> None:
 
     # Invalid input: `by` not specified as a sequence
     with pytest.raises(TypeError):
-        df.groupby("a", "b")  # type: ignore[arg-type]
+        df.groupby("a", "b")  # type: ignore[arg-type, misc]
 
 
 def test_groupby_iteration() -> None:
@@ -77,23 +77,30 @@ def test_groupby_iteration() -> None:
             "baz": [6, 5, 4, 3, 2, 1],
         }
     )
-    expected_shapes = [(2, 3), (3, 3), (1, 3)]
+    expected_names = ["a", "b", "c"]
     expected_rows = [
         [("a", 1, 6), ("a", 3, 4)],
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    for i, group in enumerate(df.groupby("foo", maintain_order=True)):
-        assert group.shape == expected_shapes[i]
-        assert group.rows() == expected_rows[i]
+    for i, (group, data) in enumerate(df.groupby("foo", maintain_order=True)):
+        assert group == expected_names[i]
+        assert data.rows() == expected_rows[i]
 
     # Grouped by ALL columns should give groups of a single row
     result = list(df.groupby(["foo", "bar", "baz"]))
     assert len(result) == 6
 
     # Iterating over groups should also work when grouping by expressions
-    result = list(df.groupby(["foo", pl.col("bar") * pl.col("baz")]))
-    assert len(result) == 5
+    result2 = list(df.groupby(["foo", pl.col("bar") * pl.col("baz")]))
+    assert len(result2) == 5
+
+    # Single column, alias in groupby
+    df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6]})
+    gb = df.groupby((pl.col("foo") // 2).alias("bar"), maintain_order=True)
+    result3 = [(group, df.rows()) for group, df in gb]
+    expected3 = [(0, [(1,)]), (1, [(2,), (3,)]), (2, [(4,), (5,)]), (3, [(6,)])]
+    assert result3 == expected3
 
 
 def bad_agg_parameters() -> list[Any]:
@@ -297,7 +304,7 @@ def test_argsort_sort_by_groups_update__4360() -> None:
         }
     )
 
-    out = df.with_column(
+    out = df.with_columns(
         pl.col("col2").arg_sort().over("group").alias("col2_argsort")
     ).with_columns(
         [
@@ -401,7 +408,7 @@ def test_groupby_all_masked_out() -> None:
     )
     parts = df.partition_by("val")
     assert len(parts) == 1
-    assert parts[0].frame_equal(df)
+    assert_frame_equal(parts[0], df)
 
 
 def test_groupby_min_max_string_type() -> None:
@@ -445,3 +452,42 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
         "code": ["a", "b"],
         "literal": [[False, True], [True, True, False]],
     }
+
+
+def test_groupby_dynamic_iter() -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": [
+                datetime(2020, 1, 1, 10, 0),
+                datetime(2020, 1, 1, 10, 50),
+                datetime(2020, 1, 1, 11, 10),
+            ],
+            "a": [1, 2, 2],
+            "b": [4, 5, 6],
+        }
+    )
+
+    # Without 'by' argument
+    result1 = [
+        (name, data.shape)
+        for name, data in df.groupby_dynamic("datetime", every="1h", closed="left")
+    ]
+    expected1 = [
+        (datetime(2020, 1, 1, 10), (2, 3)),
+        (datetime(2020, 1, 1, 11), (1, 3)),
+    ]
+    assert result1 == expected1
+
+    # With 'by' argument
+    result2 = [
+        (name, data.shape)
+        for name, data in df.groupby_dynamic(
+            "datetime", every="1h", closed="left", by="a"
+        )
+    ]
+    expected2 = [
+        ((1, datetime(2020, 1, 1, 10)), (1, 3)),
+        ((2, datetime(2020, 1, 1, 10)), (1, 3)),
+        ((2, datetime(2020, 1, 1, 11)), (1, 3)),
+    ]
+    assert result2 == expected2

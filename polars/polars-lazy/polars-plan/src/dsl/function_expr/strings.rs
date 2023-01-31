@@ -1,22 +1,28 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "timezones")]
+use once_cell::sync::Lazy;
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "timezones")]
+static TZ_AWARE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%#z)|(^%\+$)").unwrap());
+
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
+    #[cfg(feature = "regex")]
     Contains {
-        pat: String,
         literal: bool,
+        strict: bool,
     },
     StartsWith,
-    EndsWith(String),
+    EndsWith,
     Extract {
         pat: String,
         group_index: usize,
@@ -52,15 +58,18 @@ pub enum StringFunction {
     Strip(Option<String>),
     RStrip(Option<String>),
     LStrip(Option<String>),
+    #[cfg(feature = "string_from_radix")]
+    FromRadix(Option<u32>),
 }
 
 impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use self::*;
         let s = match self {
+            #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
             StringFunction::StartsWith { .. } => "starts_with",
-            StringFunction::EndsWith(_) => "ends_with",
+            StringFunction::EndsWith { .. } => "ends_with",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "string_justify")]
             StringFunction::Zfill(_) => "zfill",
@@ -83,6 +92,8 @@ impl Display for StringFunction {
             StringFunction::Strip(_) => "strip",
             StringFunction::LStrip(_) => "lstrip",
             StringFunction::RStrip(_) => "rstrip",
+            #[cfg(feature = "string_from_radix")]
+            StringFunction::FromRadix { .. } => "from_radix",
         };
 
         write!(f, "str.{s}")
@@ -99,19 +110,84 @@ pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
     Ok(ca.to_lowercase().into_series())
 }
 
-pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    if literal {
-        ca.contains_literal(pat).map(|ca| ca.into_series())
-    } else {
-        ca.contains(pat).map(|ca| ca.into_series())
-    }
+#[cfg(feature = "regex")]
+pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
+    let ca = &s[0].utf8()?;
+    let pat = &s[1].utf8()?;
+
+    let mut out: BooleanChunked = match pat.len() {
+        1 => match pat.get(0) {
+            Some(pat) => {
+                if literal {
+                    ca.contains_literal(pat)?
+                } else {
+                    ca.contains(pat)?
+                }
+            }
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => {
+            if literal {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => src.contains(pat),
+                        _ => false,
+                    })
+                    .collect_trusted()
+            } else if strict {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => {
+                            let re = Regex::new(pat)?;
+                            Ok(re.is_match(src))
+                        }
+                        _ => Ok(false),
+                    })
+                    .collect::<PolarsResult<_>>()?
+            } else {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => {
+                            let re = Regex::new(pat).ok()?;
+                            Some(re.is_match(src))
+                        }
+                        _ => Some(false),
+                    })
+                    .collect_trusted()
+            }
+        }
+    };
+
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
 
-pub(super) fn ends_with(s: &Series, sub: &str) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca.ends_with(sub).into_series())
+pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
+    let ca = &s[0].utf8()?;
+    let sub = &s[1].utf8()?;
+
+    let mut out: BooleanChunked = match sub.len() {
+        1 => match sub.get(0) {
+            Some(s) => ca.ends_with(s),
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => ca
+            .into_iter()
+            .zip(sub.into_iter())
+            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                (Some(src), Some(val)) => src.ends_with(val),
+                _ => false,
+            })
+            .collect_trusted(),
+    };
+
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
+
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = &s[0].utf8()?;
     let sub = &s[1].utf8()?;
@@ -241,6 +317,24 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
+    let tz_aware = match (options.tz_aware, &options.fmt) {
+        (true, Some(_)) => true,
+        (true, None) => {
+            return Err(PolarsError::ComputeError(
+                "Passing 'tz_aware=True' without 'fmt' is not yet supported. Please specify 'fmt'."
+                    .into(),
+            ));
+        }
+        #[cfg(feature = "regex")]
+        (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
+        (false, _) => false,
+    };
+    #[cfg(feature = "timezones")]
+    if !tz_aware && options.utc {
+        return Err(PolarsError::ComputeError(
+            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC').".into(),
+        ));
+    }
     let ca = s.utf8()?;
 
     let out = match &options.date_dtype {
@@ -254,8 +348,14 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         }
         DataType::Datetime(tu, _) => {
             if options.exact {
-                ca.as_datetime(options.fmt.as_deref(), *tu, options.cache, options.tz_aware)?
-                    .into_series()
+                ca.as_datetime(
+                    options.fmt.as_deref(),
+                    *tu,
+                    options.cache,
+                    tz_aware,
+                    options.utc,
+                )?
+                .into_series()
             } else {
                 ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
                     .into_series()
@@ -432,4 +532,10 @@ pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Se
         replace_single(column, pat, val, literal)
     }
     .map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "string_from_radix")]
+pub(super) fn from_radix(s: &Series, radix: Option<u32>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.parse_int(radix).into_series())
 }

@@ -4,21 +4,22 @@ import copy
 from typing import cast
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_copy() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
-    assert copy.copy(df).frame_equal(df, True)
-    assert copy.deepcopy(df).frame_equal(df, True)
+    assert_frame_equal(copy.copy(df), df)
+    assert_frame_equal(copy.deepcopy(df), df)
 
     a = pl.Series("a", [1, 2])
-    assert copy.copy(a).series_equal(a, True)
-    assert copy.deepcopy(a).series_equal(a, True)
+    assert_series_equal(copy.copy(a), a)
+    assert_series_equal(copy.deepcopy(a), a)
 
 
 def test_categorical_round_trip() -> None:
     df = pl.DataFrame({"ints": [1, 2, 3], "cat": ["a", "b", "c"]})
-    df = df.with_column(pl.col("cat").cast(pl.Categorical))
+    df = df.with_columns(pl.col("cat").cast(pl.Categorical))
 
     tbl = df.to_arrow()
     assert "dictionary" in str(tbl["cat"].type)
@@ -35,7 +36,7 @@ def test_date_list_fmt() -> None:
         }
     )
 
-    df = df.with_column(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
+    df = df.with_columns(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
     assert (
         str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
         == """shape: (3,)

@@ -5,6 +5,7 @@ import io
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_categorical_outer_join() -> None:
@@ -25,10 +26,14 @@ def test_categorical_outer_join() -> None:
             ]
         ).lazy()
 
-    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
-    expected = pl.DataFrame({"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]})
+        expected = pl.DataFrame(
+            {"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]},
+            schema_overrides={"key2": pl.Categorical},
+        )
 
-    assert out.frame_equal(expected)
+    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
+    assert_frame_equal(out, expected)
+
     with pl.StringCache():
         dfa = pl.DataFrame(
             [
@@ -70,18 +75,18 @@ def test_categorical_lexical_sort() -> None:
     expected = pl.DataFrame(
         {"cats": ["a", "b", "k", "z", "z"], "vals": [2, 3, 2, 3, 1]}
     )
-    assert out.with_column(pl.col("cats").cast(pl.Utf8)).frame_equal(expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
     out = df.sort(["cats", "vals"])
     expected = pl.DataFrame(
         {"cats": ["a", "b", "k", "z", "z"], "vals": [2, 3, 2, 1, 3]}
     )
-    assert out.with_column(pl.col("cats").cast(pl.Utf8)).frame_equal(expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
     out = df.sort(["vals", "cats"])
 
     expected = pl.DataFrame(
         {"cats": ["z", "a", "k", "b", "z"], "vals": [1, 2, 2, 3, 3]}
     )
-    assert out.with_column(pl.col("cats").cast(pl.Utf8)).frame_equal(expected)
+    assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
 
 
 def test_categorical_lexical_ordering_after_concat() -> None:
@@ -89,7 +94,7 @@ def test_categorical_lexical_ordering_after_concat() -> None:
         ldf1 = (
             pl.DataFrame([pl.Series("key1", [8, 5]), pl.Series("key2", ["fox", "baz"])])
             .lazy()
-            .with_column(
+            .with_columns(
                 pl.col("key2").cast(pl.Categorical).cat.set_ordering("lexical")
             )
         )
@@ -98,13 +103,13 @@ def test_categorical_lexical_ordering_after_concat() -> None:
                 [pl.Series("key1", [6, 8, 6]), pl.Series("key2", ["fox", "foo", "bar"])]
             )
             .lazy()
-            .with_column(
+            .with_columns(
                 pl.col("key2").cast(pl.Categorical).cat.set_ordering("lexical")
             )
         )
         df = (
             pl.concat([ldf1, ldf2])
-            .with_column(pl.col("key2").cat.set_ordering("lexical"))
+            .with_columns(pl.col("key2").cat.set_ordering("lexical"))
             .collect()
         )
 
@@ -113,7 +118,7 @@ def test_categorical_lexical_ordering_after_concat() -> None:
 
 def test_cat_to_dummies() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3, 4], "bar": ["a", "b", "a", "c"]})
-    df = df.with_column(pl.col("bar").cast(pl.Categorical))
+    df = df.with_columns(pl.col("bar").cast(pl.Categorical))
     assert pl.get_dummies(df).to_dict(False) == {
         "foo_1": [1, 0, 0, 0],
         "foo_2": [0, 1, 0, 0],
@@ -128,10 +133,10 @@ def test_cat_to_dummies() -> None:
 def test_comp_categorical_lit_dtype() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
-        columns=[("column", pl.Categorical), ("more", pl.Int32)],
+        schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
 
-    assert df.with_column(
+    assert df.with_columns(
         pl.when(pl.col("column") == "e")
         .then("d")
         .otherwise(pl.col("column"))
@@ -142,7 +147,7 @@ def test_comp_categorical_lit_dtype() -> None:
 def test_categorical_describe_3487() -> None:
     # test if we don't err
     df = pl.DataFrame({"cats": ["a", "b"]})
-    df = df.with_column(pl.col("cats").cast(pl.Categorical))
+    df = df.with_columns(pl.col("cats").cast(pl.Categorical))
     df.describe()
 
 
@@ -153,7 +158,7 @@ def test_categorical_is_in_list() -> None:
     with pl.StringCache():
         df = pl.DataFrame(
             {"a": [1, 2, 3, 1, 2], "b": ["a", "b", "c", "d", "e"]}
-        ).with_column(pl.col("b").cast(pl.Categorical))
+        ).with_columns(pl.col("b").cast(pl.Categorical))
 
         cat_list = ("a", "b", "c")
         assert df.filter(pl.col("b").is_in(cat_list)).to_dict(False) == {
@@ -208,7 +213,7 @@ def test_shift_and_fill() -> None:
         [pl.col("a").cast(pl.Categorical)]
     )
 
-    s = df.with_column(pl.col("a").shift_and_fill(1, "c"))["a"]
+    s = df.with_columns(pl.col("a").shift_and_fill(1, "c"))["a"]
     assert s.dtype == pl.Categorical
     assert s.to_list() == ["c", "a"]
 
@@ -221,7 +226,7 @@ def test_merge_lit_under_global_cache_4491() -> None:
                 pl.Series("value", [3, 9]),
             ]
         )
-        assert df.with_column(
+        assert df.with_columns(
             pl.when(pl.col("value") > 5)
             .then(pl.col("label"))
             .otherwise(pl.lit(None, pl.Categorical))
@@ -242,7 +247,7 @@ def test_nested_cache_composition() -> None:
     def create_lazy(data: dict) -> pl.LazyFrame:  # type: ignore[type-arg]
         with pl.StringCache():
             df = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
-            lf = df.with_column(pl.col("a").cast(pl.Categorical)).lazy()
+            lf = df.with_columns(pl.col("a").cast(pl.Categorical)).lazy()
 
         # confirm that scope-exit does NOT invalidate the
         # cache yet, as an outer context is still active
@@ -273,7 +278,7 @@ def test_categorical_list_concat_4762() -> None:
 def test_categorical_max_null_5437() -> None:
     assert (
         pl.DataFrame({"strings": ["c", "b", "a", "c"], "values": [0, 1, 2, 3]})
-        .with_column(pl.col("strings").cast(pl.Categorical).alias("cats"))
+        .with_columns(pl.col("strings").cast(pl.Categorical).alias("cats"))
         .select(pl.all().max())
     ).to_dict(False) == {"strings": ["c"], "values": [3], "cats": [None]}
 
@@ -293,11 +298,11 @@ def test_categorical_in_struct_nulls() -> None:
 def test_sort_categoricals_6014() -> None:
     with pl.StringCache():
         # create basic categorical
-        df1 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_column(
+        df1 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
             pl.col("key").cast(pl.Categorical)
         )
         # create lexically-ordered categorical
-        df2 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_column(
+        df2 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
             pl.col("key").cast(pl.Categorical).cat.set_ordering("lexical")
         )
 
@@ -319,3 +324,15 @@ def test_cast_inner_categorical() -> None:
         pl.Series("foo", [["a", "b"], ["a", "b"]]).arr.eval(
             pl.element().cast(pl.Categorical)
         )
+
+
+def test_stringcache() -> None:
+    N = 1_500
+    with pl.StringCache():
+        # create a reasonable sized columns so the categorical map is reallocated
+        df = pl.DataFrame({"cats": pl.arange(0, N, eager=True)}).select(
+            [pl.col("cats").cast(pl.Utf8).cast(pl.Categorical)]
+        )
+        assert df.filter(pl.col("cats").is_in(["1", "2"])).to_dict(False) == {
+            "cats": ["1", "2"]
+        }

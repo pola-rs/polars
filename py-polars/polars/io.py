@@ -14,7 +14,6 @@ from typing import (
     cast,
     overload,
 )
-from warnings import warn
 
 from polars import BatchedCsvReader
 
@@ -25,12 +24,12 @@ else:
 
 import polars.internals as pli
 from polars.convert import from_arrow
-from polars.datatypes import N_INFER_DEFAULT, DataType, SchemaDict, Utf8
+from polars.datatypes import N_INFER_DEFAULT, PolarsDataType, SchemaDict, Utf8
 from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
-from polars.utils import deprecated_alias, handle_projection_columns, normalise_filepath
+from polars.utils import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
@@ -54,12 +53,6 @@ def _check_arg_is_1byte(
             )
 
 
-@deprecated_alias(
-    has_headers="has_header",
-    dtype="dtypes",
-    stop_after_n_rows="n_rows",
-    projection="columns",
-)
 def read_csv(
     file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
@@ -69,7 +62,7 @@ def read_csv(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
+    dtypes: Mapping[str, PolarsDataType] | list[PolarsDataType] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -295,7 +288,7 @@ def read_csv(
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[type[DataType]] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):
@@ -413,7 +406,6 @@ def read_csv(
     return df
 
 
-@deprecated_alias(has_headers="has_header", dtype="dtypes", stop_after_n_rows="n_rows")
 def scan_csv(
     file: str | Path,
     has_header: bool = True,
@@ -592,7 +584,6 @@ def scan_csv(
     )
 
 
-@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_ipc(
     file: str | Path,
     n_rows: int | None = None,
@@ -646,7 +637,6 @@ def scan_ipc(
     )
 
 
-@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
@@ -728,7 +718,7 @@ def scan_ndjson(
     file
         Path to a file.
     infer_schema_length
-        Infer the schema length from the first ``infer_schema_length`` rows.
+        Infer the schema from the first ``infer_schema_length`` rows.
     batch_size
         Number of rows to read in each batch.
     n_rows
@@ -759,7 +749,6 @@ def scan_ndjson(
     )
 
 
-@deprecated_alias(projection="columns")
 def read_avro(
     file: str | Path | BytesIO | BinaryIO,
     columns: list[int] | list[str] | None = None,
@@ -789,7 +778,6 @@ def read_avro(
     return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
 
-@deprecated_alias(stop_after_n_rows="n_rows", projection="columns")
 def read_ipc(
     file: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
@@ -875,7 +863,6 @@ def read_ipc(
         )
 
 
-@deprecated_alias(stop_after_n_rows="n_rows", projection="columns")
 def read_parquet(
     source: str | Path | BinaryIO | BytesIO | bytes,
     columns: list[int] | list[str] | None = None,
@@ -981,8 +968,7 @@ def read_parquet(
         )
 
 
-@deprecated_alias(source="file")
-def read_json(file: str | Path | IOBase, json_lines: bool | None = None) -> DataFrame:
+def read_json(file: str | Path | IOBase) -> DataFrame:
     """
     Read into a DataFrame from a JSON file.
 
@@ -990,27 +976,12 @@ def read_json(file: str | Path | IOBase, json_lines: bool | None = None) -> Data
     ----------
     file
         Path to a file or a file-like object.
-    json_lines
-        Deprecated argument. Toggle between `JSON` and `NDJSON` format.
 
     See Also
     --------
     read_ndjson
 
     """
-    if json_lines is not None:
-        warn(
-            "`json_lines` argument for `read_json` will be removed in a future version."
-            " Remove the argument or use `pl.read_ndjson`.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    else:
-        json_lines = False
-
-    if json_lines:
-        return read_ndjson(file)
-
     return DataFrame._read_json(file)
 
 
@@ -1038,7 +1009,7 @@ def read_sql(
     """
     Read a SQL query into a DataFrame.
 
-    A range of databases are supported, such as PostgreSQL, Redshift, MySQL, MariaDB,
+    Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
     Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
     please see the connectorx docs:
 
@@ -1047,9 +1018,9 @@ def read_sql(
     Parameters
     ----------
     sql
-        Raw SQL query / queries.
+        Raw SQL query (or queries).
     connection_uri
-        Connectorx connection uri, for example
+        A connectorx compatible connection uri, for example
 
         * "postgresql://username:password@server:port/database"
     partition_on
@@ -1696,7 +1667,7 @@ def read_csv_batched(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
+    dtypes: Mapping[str, PolarsDataType] | list[PolarsDataType] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -1727,7 +1698,31 @@ def read_csv_batched(
     >>> reader = pl.read_csv_batched(
     ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", parse_dates=True
     ... )  # doctest: +SKIP
-    >>> reader.next_batches(5)  # doctest: +SKIP
+    >>> batches = reader.next_batches(5)  # doctest: +SKIP
+    >>> for df in batches:  # doctest: +SKIP
+    ...     print(df)
+    ...
+
+    Read big CSV file in batches and write a CSV file for each "group" of interest.
+
+    >>> seen_groups = set()
+    >>> reader = pl.read_csv_batched("big_file.csv")  # doctest: +SKIP
+    >>> batches = reader.next_batches(100)  # doctest: +SKIP
+
+    >>> while batches:  # doctest: +SKIP
+    ...     df_current_batches = pl.concat(batches)
+    ...     partition_dfs = df_current_batches.partition_by("group", as_dict=True)
+    ...
+    ...     for group, df in partition_dfs.items():
+    ...         if group in seen_groups:
+    ...             with open(f"./data/{group}.csv", "a") as fh:
+    ...                 fh.write(df.write_csv(file=None, has_header=False))
+    ...         else:
+    ...             df.write_csv(file=f"./data/{group}.csv", has_header=True)
+    ...         seen_groups.add(group)
+    ...
+    ...     batches = reader.next_batches(100)
+    ...
 
     Parameters
     ----------
@@ -1847,7 +1842,7 @@ def read_csv_batched(
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[type[DataType]] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):

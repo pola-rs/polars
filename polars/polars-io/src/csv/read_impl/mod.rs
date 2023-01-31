@@ -45,7 +45,7 @@ pub(crate) fn cast_columns(
         (Utf8, Datetime(tu, _)) => s
             .utf8()
             .unwrap()
-            .as_datetime(None, *tu, false, false)
+            .as_datetime(None, *tu, false, false, false)
             .map(|ca| ca.into_series()),
         (_, dt) => s.cast(dt),
     };

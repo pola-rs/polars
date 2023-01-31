@@ -21,6 +21,8 @@ pub struct StrpTimeOptions {
     pub cache: bool,
     /// Parse a timezone aware timestamp
     pub tz_aware: bool,
+    /// Convert timezone aware to UTC
+    pub utc: bool,
 }
 
 impl Default for StrpTimeOptions {
@@ -32,6 +34,7 @@ impl Default for StrpTimeOptions {
             exact: false,
             cache: true,
             tz_aware: false,
+            utc: false,
         }
     }
 }

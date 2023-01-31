@@ -189,7 +189,7 @@ mod inner_mod {
         where
             F: FnMut(&mut ChunkedArray<T>) -> Option<T::Native>,
         {
-            if window_size >= self.len() {
+            if window_size > self.len() {
                 return Ok(Self::full_null(self.name(), self.len()));
             }
             let ca = self.rechunk();

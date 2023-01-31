@@ -252,6 +252,7 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
+            partially_check_sorted(ts);
             let (groups, lower, upper) = groupby_windows(
                 w,
                 ts,
@@ -271,62 +272,120 @@ impl Wrap<&DataFrame> {
                 .0
                 .groupby_with_series(by.clone(), true, true)?
                 .take_groups();
-            let groups = groups.into_idx();
 
             // include boundaries cannot be parallel (easily)
             if include_lower_bound {
-                POOL.install(|| {
-                    let mut ir = groups
-                        .par_iter()
-                        .map(|base_g| {
-                            let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                POOL.install(|| match groups {
+                    GroupsProxy::Idx(groups) => {
+                        let mut ir = groups
+                            .par_iter()
+                            .map(|base_g| {
+                                let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
 
-                            let vals = dt.downcast_iter().next().unwrap();
-                            let ts = vals.values().as_slice();
-                            let (sub_groups, lower, upper) = groupby_windows(
-                                w,
-                                ts,
-                                options.closed_window,
-                                tu,
-                                include_lower_bound,
-                                include_upper_bound,
-                                options.start_by,
-                            );
+                                let vals = dt.downcast_iter().next().unwrap();
+                                let ts = vals.values().as_slice();
+                                let (sub_groups, lower, upper) = groupby_windows(
+                                    w,
+                                    ts,
+                                    options.closed_window,
+                                    tu,
+                                    include_lower_bound,
+                                    include_upper_bound,
+                                    options.start_by,
+                                );
 
-                            (lower, upper, update_subgroups_idx(&sub_groups, base_g))
-                        })
-                        .collect::<Vec<_>>();
+                                (lower, upper, update_subgroups_idx(&sub_groups, base_g))
+                            })
+                            .collect::<Vec<_>>();
 
-                    ir.iter_mut().for_each(|(lower, upper, _)| {
-                        let lower = std::mem::take(lower);
-                        let upper = std::mem::take(upper);
-                        update_bounds(lower, upper)
-                    });
+                        ir.iter_mut().for_each(|(lower, upper, _)| {
+                            let lower = std::mem::take(lower);
+                            let upper = std::mem::take(upper);
+                            update_bounds(lower, upper)
+                        });
 
-                    GroupsProxy::Idx(ir.into_iter().flat_map(|(_, _, groups)| groups).collect())
+                        GroupsProxy::Idx(ir.into_iter().flat_map(|(_, _, groups)| groups).collect())
+                    }
+                    GroupsProxy::Slice { groups, .. } => {
+                        let mut ir = groups
+                            .par_iter()
+                            .map(|base_g| {
+                                let dt = dt.slice(base_g[0] as i64, base_g[1] as usize);
+                                let vals = dt.downcast_iter().next().unwrap();
+                                let ts = vals.values().as_slice();
+                                let (sub_groups, lower, upper) = groupby_windows(
+                                    w,
+                                    ts,
+                                    options.closed_window,
+                                    tu,
+                                    include_lower_bound,
+                                    include_upper_bound,
+                                    options.start_by,
+                                );
+                                (lower, upper, update_subgroups_slice(&sub_groups, *base_g))
+                            })
+                            .collect::<Vec<_>>();
+
+                        ir.iter_mut().for_each(|(lower, upper, _)| {
+                            let lower = std::mem::take(lower);
+                            let upper = std::mem::take(upper);
+                            update_bounds(lower, upper)
+                        });
+
+                        GroupsProxy::Slice {
+                            groups: ir.into_iter().flat_map(|(_, _, groups)| groups).collect(),
+                            rolling: false,
+                        }
+                    }
                 })
             } else {
-                let groupsidx = POOL.install(|| {
-                    groups
-                        .par_iter()
-                        .flat_map(|base_g| {
-                            let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
-                            let vals = dt.downcast_iter().next().unwrap();
-                            let ts = vals.values().as_slice();
-                            let (sub_groups, _, _) = groupby_windows(
-                                w,
-                                ts,
-                                options.closed_window,
-                                tu,
-                                include_lower_bound,
-                                include_upper_bound,
-                                options.start_by,
-                            );
-                            update_subgroups_idx(&sub_groups, base_g)
-                        })
-                        .collect()
-                });
-                GroupsProxy::Idx(groupsidx)
+                POOL.install(|| match groups {
+                    GroupsProxy::Idx(groups) => {
+                        let groupsidx = groups
+                            .par_iter()
+                            .flat_map(|base_g| {
+                                let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                                let vals = dt.downcast_iter().next().unwrap();
+                                let ts = vals.values().as_slice();
+                                let (sub_groups, _, _) = groupby_windows(
+                                    w,
+                                    ts,
+                                    options.closed_window,
+                                    tu,
+                                    include_lower_bound,
+                                    include_upper_bound,
+                                    options.start_by,
+                                );
+                                update_subgroups_idx(&sub_groups, base_g)
+                            })
+                            .collect();
+                        GroupsProxy::Idx(groupsidx)
+                    }
+                    GroupsProxy::Slice { groups, .. } => {
+                        let groups = groups
+                            .par_iter()
+                            .flat_map(|base_g| {
+                                let dt = dt.slice(base_g[0] as i64, base_g[1] as usize);
+                                let vals = dt.downcast_iter().next().unwrap();
+                                let ts = vals.values().as_slice();
+                                let (sub_groups, _, _) = groupby_windows(
+                                    w,
+                                    ts,
+                                    options.closed_window,
+                                    tu,
+                                    include_lower_bound,
+                                    include_upper_bound,
+                                    options.start_by,
+                                );
+                                update_subgroups_slice(&sub_groups, *base_g)
+                            })
+                            .collect();
+                        GroupsProxy::Slice {
+                            groups,
+                            rolling: false,
+                        }
+                    }
+                })
             }
         };
 
@@ -508,7 +567,7 @@ mod test {
                     "2020-01-08 23:16:43",
                 ],
             )
-            .as_datetime(None, tu, false, false)?
+            .as_datetime(None, tu, false, false, false)?
             .into_series();
             let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
@@ -546,7 +605,7 @@ mod test {
                 "2020-01-08 23:16:43",
             ],
         )
-        .as_datetime(None, TimeUnit::Milliseconds, false, false)?
+        .as_datetime(None, TimeUnit::Milliseconds, false, false, false)?
         .into_series();
         let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
@@ -603,7 +662,7 @@ mod test {
     }
 
     #[test]
-    fn test_dynamic_groupby_window() {
+    fn test_dynamic_groupby_window() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -622,7 +681,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
 
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
@@ -674,7 +733,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
@@ -697,7 +756,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
@@ -713,6 +772,7 @@ mod test {
             .into(),
         );
         assert_eq!(expected, groups);
+        Ok(())
     }
 
     #[test]
@@ -735,7 +795,7 @@ mod test {
     }
 
     #[test]
-    fn test_truncate_offset() {
+    fn test_truncate_offset() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 3, 1)
             .unwrap()
             .and_hms_opt(12, 0, 0)
@@ -754,7 +814,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
 
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
@@ -779,5 +839,6 @@ mod test {
         time_key.rename("");
         lower_bound.rename("");
         assert!(time_key.series_equal(&lower_bound));
+        Ok(())
     }
 }

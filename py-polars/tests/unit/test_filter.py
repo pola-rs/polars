@@ -1,4 +1,5 @@
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_simplify_expression_lit_true_4376() -> None:
@@ -33,18 +34,18 @@ def test_filter_is_in_4572() -> None:
     expected = (
         df.groupby("id").agg(pl.col("k").filter(pl.col("k") == "a").list()).sort("id")
     )
-    assert (
+    result = (
         df.groupby("id")
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).list())
         .sort("id")
-        .frame_equal(expected)
     )
-    assert (
+    assert_frame_equal(result, expected)
+    result = (
         df.sort("id")
         .groupby("id")
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).list())
-        .frame_equal(expected)
     )
+    assert_frame_equal(result, expected)
 
 
 def test_filter_aggregation_any() -> None:

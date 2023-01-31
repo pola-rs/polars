@@ -338,9 +338,14 @@ impl Series {
                     let new_values = struct_arr
                         .values()
                         .iter()
-                        .map(|arr| match arr.validity() {
-                            None => arr.with_validity(Some(validity.clone())),
-                            Some(arr_validity) => arr.with_validity(Some(arr_validity & validity)),
+                        .map(|arr| match arr.data_type() {
+                            ArrowDataType::Null => arr.clone(),
+                            _ => match arr.validity() {
+                                None => arr.with_validity(Some(validity.clone())),
+                                Some(arr_validity) => {
+                                    arr.with_validity(Some(arr_validity & validity))
+                                }
+                            },
                         })
                         .collect();
 

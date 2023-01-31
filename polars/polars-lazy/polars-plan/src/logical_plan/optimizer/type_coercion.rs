@@ -10,6 +10,15 @@ use crate::utils::is_scan;
 
 pub struct TypeCoercionRule {}
 
+macro_rules! unpack {
+    ($packed:expr) => {{
+        match $packed {
+            Some(payload) => payload,
+            None => return Ok(None),
+        }
+    }};
+}
+
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
 fn modify_supertype(
@@ -117,9 +126,20 @@ fn get_aexpr_and_type<'a>(
     ))
 }
 
-fn print_date_str_comparison_warning() {
-    eprintln!("Warning: Comparing date/datetime/time column to string value, this will lead to string comparison and is unlikely what you want.\n\
-    If this is intended, consider using an explicit cast to silence this warning.")
+#[cfg(feature = "python")]
+fn err_date_str_compare() -> PolarsResult<()> {
+    Err(PolarsError::ComputeError(
+        "Cannot compare 'date/datetime/time' to a string value.\n\
+        Create native python {{ 'date', 'datetime', 'time' }} or compare to a temporal column."
+            .into(),
+    ))
+}
+
+#[cfg(not(feature = "python"))]
+fn err_date_str_compare() -> PolarsResult<()> {
+    Err(PolarsError::ComputeError(
+        "Cannot compare 'date/datetime/time' to a string value.".into(),
+    ))
 }
 
 impl OptimizationRule for TypeCoercionRule {
@@ -129,9 +149,9 @@ impl OptimizationRule for TypeCoercionRule {
         expr_node: Node,
         lp_arena: &Arena<ALogicalPlan>,
         lp_node: Node,
-    ) -> Option<AExpr> {
+    ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-        match *expr {
+        let out = match *expr {
             AExpr::Ternary {
                 truthy: truthy_node,
                 falsy: falsy_node,
@@ -139,12 +159,12 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (truthy, type_true) =
-                    get_aexpr_and_type(expr_arena, truthy_node, &input_schema)?;
+                    unpack!(get_aexpr_and_type(expr_arena, truthy_node, &input_schema));
                 let (falsy, type_false) =
-                    get_aexpr_and_type(expr_arena, falsy_node, &input_schema)?;
+                    unpack!(get_aexpr_and_type(expr_arena, falsy_node, &input_schema));
 
-                early_escape(&type_true, &type_false)?;
-                let st = get_supertype(&type_true, &type_false)?;
+                unpack!(early_escape(&type_true, &type_false));
+                let st = unpack!(get_supertype(&type_true, &type_false));
                 let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
                 // only cast if the type is not already the super type.
@@ -183,11 +203,12 @@ impl OptimizationRule for TypeCoercionRule {
                 right: node_right,
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
-                let (left, type_left) = get_aexpr_and_type(expr_arena, node_left, &input_schema)?;
+                let (left, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, node_left, &input_schema));
 
                 let (right, type_right) =
-                    get_aexpr_and_type(expr_arena, node_right, &input_schema)?;
-                early_escape(&type_left, &type_right)?;
+                    unpack!(get_aexpr_and_type(expr_arena, node_right, &input_schema));
+                unpack!(early_escape(&type_left, &type_right));
 
                 // don't coerce string with number comparisons. They must error
                 match (&type_left, &type_right, op) {
@@ -195,30 +216,30 @@ impl OptimizationRule for TypeCoercionRule {
                     (DataType::Utf8, dt, op) | (dt, DataType::Utf8, op)
                         if op.is_comparison() && dt.is_numeric() =>
                     {
-                        return None
+                        return Ok(None)
                     }
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::Utf8 | DataType::Categorical(_), dt, op)
                     | (dt, DataType::Utf8 | DataType::Categorical(_), op)
                         if op.is_comparison() && dt.is_numeric() =>
                     {
-                        return None
+                        return Ok(None)
                     }
                     #[cfg(feature = "dtype-date")]
                     (DataType::Date, DataType::Utf8, op) if op.is_comparison() => {
-                        print_date_str_comparison_warning()
+                        err_date_str_compare()?
                     }
                     #[cfg(feature = "dtype-datetime")]
                     (DataType::Datetime(_, _), DataType::Utf8, op) if op.is_comparison() => {
-                        print_date_str_comparison_warning()
+                        err_date_str_compare()?
                     }
                     #[cfg(feature = "dtype-time")]
                     (DataType::Time, DataType::Utf8, op) if op.is_comparison() => {
-                        print_date_str_comparison_warning()
+                        err_date_str_compare()?
                     }
                     // structs can be arbitrarily nested, leave the complexity to the caller for now.
                     #[cfg(feature = "dtype-struct")]
-                    (DataType::Struct(_), DataType::Struct(_), _op) => return None,
+                    (DataType::Struct(_), DataType::Struct(_), _op) => return Ok(None),
                     _ => {}
                 }
 
@@ -266,13 +287,13 @@ impl OptimizationRule for TypeCoercionRule {
                                     strict: false,
                                 });
 
-                                Some(AExpr::BinaryExpr {
+                                Ok(Some(AExpr::BinaryExpr {
                                     left: node_left,
                                     op,
                                     right: new_node_right,
-                                })
+                                }))
                             } else {
-                                None
+                                Ok(None)
                             };
                         }
                         (_, DataType::List(inner)) => {
@@ -283,13 +304,13 @@ impl OptimizationRule for TypeCoercionRule {
                                     strict: false,
                                 });
 
-                                Some(AExpr::BinaryExpr {
+                                Ok(Some(AExpr::BinaryExpr {
                                     left: new_node_left,
                                     op,
                                     right: node_right,
-                                })
+                                }))
                             } else {
-                                None
+                                Ok(None)
                             };
                         }
                         _ => unreachable!(),
@@ -302,7 +323,7 @@ impl OptimizationRule for TypeCoercionRule {
                 {
                     None
                 } else {
-                    let st = get_supertype(&type_left, &type_right)?;
+                    let st = unpack!(get_supertype(&type_left, &type_right));
                     let mut st = modify_supertype(st, left, right, &type_left, &type_right);
 
                     #[allow(unused_mut, unused_assignments)]
@@ -358,10 +379,12 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let other_node = input[1];
-                let (_, type_left) = get_aexpr_and_type(expr_arena, input[0], &input_schema)?;
-                let (_, type_other) = get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0], &input_schema));
+                let (_, type_other) =
+                    unpack!(get_aexpr_and_type(expr_arena, other_node, &input_schema));
 
-                early_escape(&type_left, &type_other)?;
+                unpack!(early_escape(&type_left, &type_other));
 
                 let casted_expr = match (&type_left, &type_other) {
                     // cast both local and global string cache
@@ -375,9 +398,9 @@ impl OptimizationRule for TypeCoercionRule {
                             strict: false,
                         }
                     }
-                    (DataType::List(_), _) | (_, DataType::List(_)) => return None,
+                    (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
                     #[cfg(feature = "dtype-struct")]
-                    (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return None,
+                    (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
                     // if right is another type, we cast it to left
                     // we do not use super-type as an `is_in` operation should not
                     // cast the whole column implicitly.
@@ -390,7 +413,7 @@ impl OptimizationRule for TypeCoercionRule {
                         }
                     }
                     // types are equal, do nothing
-                    _ => return None,
+                    _ => return Ok(None),
                 };
 
                 let mut input = input.clone();
@@ -412,11 +435,12 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let other_node = input[1];
-                let (left, type_left) = get_aexpr_and_type(expr_arena, input[0], &input_schema)?;
+                let (left, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0], &input_schema));
                 let (fill_value, type_fill_value) =
-                    get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
+                    unpack!(get_aexpr_and_type(expr_arena, other_node, &input_schema));
 
-                let new_st = get_supertype(&type_left, &type_fill_value)?;
+                let new_st = unpack!(get_supertype(&type_left, &type_fill_value));
                 let new_st =
                     modify_supertype(new_st, left, fill_value, &type_left, &type_fill_value);
                 if &new_st != super_type {
@@ -443,16 +467,16 @@ impl OptimizationRule for TypeCoercionRule {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let self_node = input[0];
                 let (self_ae, type_self) =
-                    get_aexpr_and_type(expr_arena, self_node, &input_schema)?;
+                    unpack!(get_aexpr_and_type(expr_arena, self_node, &input_schema));
 
                 let mut super_type = type_self.clone();
                 for other in &input[1..] {
                     let (other, type_other) =
-                        get_aexpr_and_type(expr_arena, *other, &input_schema)?;
+                        unpack!(get_aexpr_and_type(expr_arena, *other, &input_schema));
 
                     // early return until Unknown is set
-                    early_escape(&super_type, &type_other)?;
-                    let new_st = get_supertype(&super_type, &type_other)?;
+                    unpack!(early_escape(&super_type, &type_other));
+                    let new_st = unpack!(get_supertype(&super_type, &type_other));
                     super_type = modify_supertype(new_st, self_ae, other, &type_self, &type_other)
                 }
                 // only cast if the type is not already the super type.
@@ -472,8 +496,11 @@ impl OptimizationRule for TypeCoercionRule {
                 new_nodes.push(new_node_self);
 
                 for other_node in &input[1..] {
-                    let (_, type_other) =
-                        get_aexpr_and_type(expr_arena, *other_node, &input_schema)?;
+                    let type_other =
+                        match get_aexpr_and_type(expr_arena, *other_node, &input_schema) {
+                            Some((_, type_other)) => type_other,
+                            None => return Ok(None),
+                        };
                     let new_node_other = if type_other != super_type {
                         expr_arena.add(AExpr::Cast {
                             expr: *other_node,
@@ -495,7 +522,8 @@ impl OptimizationRule for TypeCoercionRule {
                 })
             }
             _ => None,
-        }
+        };
+        Ok(out)
     }
 }
 

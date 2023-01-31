@@ -13,8 +13,9 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import ClosedInterval
 
 
-def test_rolling_kernels_and_groupby_rolling() -> None:
-    df = pl.DataFrame(
+@pytest.fixture()
+def example_df() -> pl.DataFrame:
+    return pl.DataFrame(
         {
             "dt": [
                 datetime(2021, 1, 1),
@@ -26,43 +27,34 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
             "values": pl.arange(0, 5, eager=True),
         }
     )
-    period: str | timedelta
-    for period in [  # type: ignore[assignment]
-        "1d",
-        "2d",
-        "3d",
-        timedelta(days=1),
-        timedelta(days=2),
-        timedelta(days=3),
-    ]:
-        closed_windows: list[ClosedInterval] = ["left", "right", "none", "both"]
-        for closed in closed_windows:
-            out1 = df.select(
-                [
-                    pl.col("dt"),
-                    pl.col("values")
-                    .rolling_sum(period, by="dt", closed=closed)
-                    .alias("sum"),
-                    pl.col("values")
-                    .rolling_var(period, by="dt", closed=closed)
-                    .alias("var"),
-                    pl.col("values")
-                    .rolling_mean(period, by="dt", closed=closed)
-                    .alias("mean"),
-                    pl.col("values")
-                    .rolling_std(period, by="dt", closed=closed)
-                    .alias("std"),
-                ]
-            )
-            out2 = df.groupby_rolling("dt", period=period, closed=closed).agg(
-                [
-                    pl.col("values").sum().alias("sum"),
-                    pl.col("values").var().alias("var"),
-                    pl.col("values").mean().alias("mean"),
-                    pl.col("values").std().alias("std"),
-                ]
-            )
-            assert_frame_equal(out1, out2)
+
+
+@pytest.mark.parametrize(
+    "period",
+    ["1d", "2d", "3d", timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+)
+@pytest.mark.parametrize("closed", ["left", "right", "none", "both"])
+def test_rolling_kernels_and_groupby_rolling(
+    example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
+) -> None:
+    out1 = example_df.select(
+        [
+            pl.col("dt"),
+            pl.col("values").rolling_sum(period, by="dt", closed=closed).alias("sum"),
+            pl.col("values").rolling_var(period, by="dt", closed=closed).alias("var"),
+            pl.col("values").rolling_mean(period, by="dt", closed=closed).alias("mean"),
+            pl.col("values").rolling_std(period, by="dt", closed=closed).alias("std"),
+        ]
+    )
+    out2 = example_df.groupby_rolling("dt", period=period, closed=closed).agg(
+        [
+            pl.col("values").sum().alias("sum"),
+            pl.col("values").var().alias("var"),
+            pl.col("values").mean().alias("mean"),
+            pl.col("values").std().alias("std"),
+        ]
+    )
+    assert_frame_equal(out1, out2)
 
 
 def test_rolling_skew() -> None:
@@ -146,7 +138,7 @@ def test_rolling_groupby_extrema() -> None:
     # two dfs, but ensure that one does not have a sorted flag
 
     # descending order
-    not_sorted_flag = pl.DataFrame({"col1": [6, 5, 4, 3, 2, 1, 0]}).with_column(
+    not_sorted_flag = pl.DataFrame({"col1": [6, 5, 4, 3, 2, 1, 0]}).with_columns(
         pl.col("col1").reverse().alias("row_nr")
     )
     assert not not_sorted_flag["col1"].flags["SORTED_DESC"]
@@ -155,7 +147,7 @@ def test_rolling_groupby_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True).reverse(),
         }
-    ).with_column(pl.col("col1").reverse().alias("row_nr"))
+    ).with_columns(pl.col("col1").reverse().alias("row_nr"))
 
     for df in [sorted_flag, not_sorted_flag]:
         assert (
@@ -195,9 +187,9 @@ def test_rolling_groupby_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True),
         }
-    ).with_column(pl.col("col1").alias("row_nr"))
+    ).with_columns(pl.col("col1").alias("row_nr"))
 
-    not_sorted_df = pl.DataFrame({"col1": [0, 1, 2, 3, 4, 5, 6]}).with_column(
+    not_sorted_df = pl.DataFrame({"col1": [0, 1, 2, 3, 4, 5, 6]}).with_columns(
         pl.col("col1").alias("row_nr")
     )
 
@@ -239,7 +231,7 @@ def test_rolling_groupby_extrema() -> None:
         {
             "col1": pl.arange(0, 7, eager=True).shuffle(1),
         }
-    ).with_column(pl.col("col1").sort().alias("row_nr"))
+    ).with_columns(pl.col("col1").sort().alias("row_nr"))
 
     assert (
         df.groupby_rolling(
@@ -463,7 +455,7 @@ def test_groupby_dynamic_startby_5599() -> None:
     start = datetime(2022, 1, 1)
     stop = datetime(2022, 1, 12, 7)
 
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_column(
+    df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_columns(
         pl.col("date").dt.weekday().alias("day")
     )
 
@@ -498,7 +490,7 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
             "label": ["a", "b", "a", "a", "b", "a", "b"],
             "value": [1, 2, 3, 4, 5, 6, 7],
         }
-    ).with_column(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
+    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
 
     result = df.groupby_dynamic(
         "date", every="1w", offset="1d", by="label", start_by="monday"
@@ -517,9 +509,48 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
 
     # test empty
     result_empty = (
-        df.filter(pl.col("date") == "z")
+        df.filter(pl.col("date") == date(1, 1, 1))
         .groupby_dynamic("date", every="1w", offset="1d", by="label", start_by="monday")
         .agg(pl.col("value").sum())
     )
-    print(result_empty, result)
     assert result_empty.schema == result.schema
+
+
+def test_groupby_rolling_iter() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 5)],
+            "a": [1, 2, 2],
+            "b": [4, 5, 6],
+        }
+    )
+
+    # Without 'by' argument
+    result1 = [
+        (name, data.shape)
+        for name, data in df.groupby_rolling(index_column="date", period="2d")
+    ]
+    expected1 = [
+        (date(2020, 1, 1), (1, 3)),
+        (date(2020, 1, 2), (2, 3)),
+        (date(2020, 1, 5), (1, 3)),
+    ]
+    assert result1 == expected1
+
+    # With 'by' argument
+    result2 = [
+        (name, data.shape)
+        for name, data in df.groupby_rolling(index_column="date", period="2d", by="a")
+    ]
+    expected2 = [
+        ((1, date(2020, 1, 1)), (1, 3)),
+        ((2, date(2020, 1, 2)), (1, 3)),
+        ((2, date(2020, 1, 5)), (1, 3)),
+    ]
+    assert result2 == expected2
+
+
+def test_rolling_skew_window_offset() -> None:
+    assert (pl.arange(0, 20, eager=True) ** 2).rolling_skew(20)[
+        -1
+    ] == 0.6612545648596286

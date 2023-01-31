@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int32])
@@ -98,14 +99,18 @@ def test_window_function_cache() -> None:
 
 def test_arange_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
-    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore[union-attr]
-    assert out.frame_equal(
-        pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "literal": [0, 1, 0, 1, 0, 1]})
+    expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
+    out = df.with_columns(expr)
+    assert_frame_equal(
+        out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
     )
 
     df = pl.DataFrame({"x": []})
-    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore[union-attr]
-    assert out.frame_equal(pl.DataFrame({"x": [], "literal": []}))
+    out = df.with_columns(expr)
+    expected = pl.DataFrame(
+        {"x": [], "arange": []}, schema={"x": pl.Float32, "arange": pl.Int64}
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_no_panic_on_nan_3067() -> None:
@@ -124,7 +129,7 @@ def test_no_panic_on_nan_3067() -> None:
 
 
 def test_quantile_as_window() -> None:
-    assert (
+    result = (
         pl.DataFrame(
             {
                 "group": [0, 0, 1, 1],
@@ -133,8 +138,9 @@ def test_quantile_as_window() -> None:
         )
         .select(pl.quantile("value", 0.9).over("group"))
         .to_series()
-        .series_equal(pl.Series("value", [1.0, 1.0, 2.0, 2.0]))
     )
+    expected = pl.Series("value", [1.0, 1.0, 2.0, 2.0])
+    assert_series_equal(result, expected)
 
 
 def test_cumulative_eval_window_functions() -> None:
@@ -146,7 +152,7 @@ def test_cumulative_eval_window_functions() -> None:
     )
 
     assert (
-        df.with_column(
+        df.with_columns(
             pl.col("val")
             .cumulative_eval(pl.element().max())
             .over("group")
@@ -158,6 +164,12 @@ def test_cumulative_eval_window_functions() -> None:
         "cumulative_eval_max": [20, 40, 40, 2, 4, 4],
     }
 
+    # 6394
+    df = pl.DataFrame({"group": [1, 1, 2, 3], "value": [1, None, 3, None]})
+    assert df.select(
+        pl.col("value").cumulative_eval(pl.element().mean()).over("group")
+    ).to_dict(False) == {"value": [1.0, 1.0, 3.0, None]}
+
 
 def test_count_window() -> None:
     assert (
@@ -166,7 +178,7 @@ def test_count_window() -> None:
                 "a": [1, 1, 2],
             }
         )
-        .with_column(pl.count().over("a"))["count"]
+        .with_columns(pl.count().over("a"))["count"]
         .to_list()
     ) == [2, 2, 1]
 
@@ -227,13 +239,13 @@ def test_sorted_window_expression() -> None:
     )
     expr = (pl.col("a") + pl.col("b")).over("b").alias("computed")
 
-    out1 = df.with_column(expr).sort("b")
+    out1 = df.with_columns(expr).sort("b")
 
     # explicit sort
     df = df.sort("b")
-    out2 = df.with_column(expr)
+    out2 = df.with_columns(expr)
 
-    assert out1.frame_equal(out2)
+    assert_frame_equal(out1, out2)
 
 
 def test_nested_aggregation_window_expression() -> None:
@@ -262,7 +274,7 @@ def test_nested_aggregation_window_expression() -> None:
 def test_window_5868() -> None:
     df = pl.DataFrame({"value": [None, 2], "id": [None, 1]})
 
-    assert df.with_column(pl.col("value").max().over("id")).to_dict(False) == {
+    assert df.with_columns(pl.col("value").max().over("id")).to_dict(False) == {
         "value": [None, 2],
         "id": [None, 1],
     }
@@ -279,9 +291,9 @@ def test_window_5868() -> None:
         8,
         8,
     ]
-    assert df.with_column(pl.col("a").set_sorted()).select(pl.col("a").sum().over("a"))[
-        "a"
-    ].to_list() == [None, 1, 2, 9, 9, 9, 8, 8]
+    assert df.with_columns(pl.col("a").set_sorted()).select(
+        pl.col("a").sum().over("a")
+    )["a"].to_list() == [None, 1, 2, 9, 9, 9, 8, 8]
 
     assert df.drop_nulls().select(pl.col("a").sum().over("a"))["a"].to_list() == [
         1,
@@ -292,6 +304,6 @@ def test_window_5868() -> None:
         8,
         8,
     ]
-    assert df.drop_nulls().with_column(pl.col("a").set_sorted()).select(
+    assert df.drop_nulls().with_columns(pl.col("a").set_sorted()).select(
         pl.col("a").sum().over("a")
     )["a"].to_list() == [1, 2, 9, 9, 9, 8, 8]

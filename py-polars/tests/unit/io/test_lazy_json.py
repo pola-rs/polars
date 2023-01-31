@@ -1,16 +1,25 @@
 from __future__ import annotations
 
-from os import path
+import tempfile
+from pathlib import Path
+
+import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
-def test_scan_ndjson(foods_ndjson: str) -> None:
-    df = pl.scan_ndjson(foods_ndjson, row_count_name="row_count").collect()
+@pytest.fixture()
+def foods_ndjson_path(io_files_path: Path) -> Path:
+    return io_files_path / "foods1.ndjson"
+
+
+def test_scan_ndjson(foods_ndjson_path: Path) -> None:
+    df = pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count").collect()
     assert df["row_count"].to_list() == list(range(27))
 
     df = (
-        pl.scan_ndjson(foods_ndjson, row_count_name="row_count")
+        pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count")
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
     )
@@ -18,7 +27,7 @@ def test_scan_ndjson(foods_ndjson: str) -> None:
     assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
 
     df = (
-        pl.scan_ndjson(foods_ndjson, row_count_name="row_count")
+        pl.scan_ndjson(foods_ndjson_path, row_count_name="row_count")
         .with_row_count("foo", 10)
         .filter(pl.col("category") == pl.lit("vegetables"))
         .collect()
@@ -41,12 +50,12 @@ def test_scan_with_projection() -> None:
 {"id": 7, "text":".\"quoted text\".","date":"2009-05-19 21:07:53"}
 """
     json_bytes = bytes(json, "utf-8")
-    file = path.join(path.dirname(__file__), "escape_chars.json")
-    with open(file, "wb") as f:
-        f.write(
-            json_bytes,
-        )
-    actual = pl.scan_ndjson(file).select(["id", "text"]).collect()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "escape_chars.json"
+        with open(file_path, "wb") as f:
+            f.write(json_bytes)
+        actual = pl.scan_ndjson(file_path).select(["id", "text"]).collect()
     expected = pl.DataFrame(
         {
             "id": [1, 10, 0, 1, 2, 3, 4, 5, 6, 7],
@@ -64,4 +73,4 @@ def test_scan_with_projection() -> None:
             ],
         }
     )
-    assert actual.frame_equal(expected, null_equal=True)
+    assert_frame_equal(actual, expected)

@@ -11,7 +11,6 @@ from polars.datatypes import (
     Time,
     is_polars_dtype,
 )
-from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -33,6 +32,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         tz_aware: bool = False,
+        utc: bool = False,
     ) -> pli.Expr:
         """
         Parse a Utf8 expression to a Date/Datetime/Time type.
@@ -45,6 +45,9 @@ class ExprStringNameSpace:
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
+            Note that the ``Z`` suffix for "Zulu time" in ISO8601 formats is not (yet!)
+            fully supported: you should first try ``"%+"`` and if that fails, insert a
+            ``Z`` in your ``fmt`` string and then use ``dt.with_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -55,6 +58,9 @@ class ExprStringNameSpace:
         tz_aware
             Parse timezone aware datetimes. This may be automatically toggled by the
             'fmt' given.
+        utc
+            Parse timezone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
 
         Notes
         -----
@@ -75,16 +81,12 @@ class ExprStringNameSpace:
         ...         "Sun Jul  8 00:34:60 2001",
         ...     ],
         ... )
-        >>> (
-        ...     s.to_frame().with_column(
-        ...         pl.col("date")
-        ...         .str.strptime(pl.Date, "%F", strict=False)
-        ...         .fill_null(
-        ...             pl.col("date").str.strptime(pl.Date, "%F %T", strict=False)
-        ...         )
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
-        ...     )
+        >>> s.to_frame().with_columns(
+        ...     pl.col("date")
+        ...     .str.strptime(pl.Date, "%F", strict=False)
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%F %T", strict=False))
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
         ... )
         shape: (4, 1)
         ┌────────────┐
@@ -107,7 +109,9 @@ class ExprStringNameSpace:
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
             dtcol = pli.wrap_expr(
-                self._pyexpr.str_parse_datetime(fmt, strict, exact, cache, tz_aware, tu)
+                self._pyexpr.str_parse_datetime(
+                    fmt, strict, exact, cache, tz_aware, utc, tu
+                )
             )
             return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
         elif datatype == Time:
@@ -401,7 +405,7 @@ class ExprStringNameSpace:
         ...         "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
         ...     }
         ... )
-        >>> df.with_column(pl.col("num").cast(str).str.zfill(5))
+        >>> df.with_columns(pl.col("num").cast(str).str.zfill(5))
         shape: (11, 1)
         ┌─────────┐
         │ num     │
@@ -490,7 +494,9 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
-    def contains(self, pattern: str, literal: bool = False) -> pli.Expr:
+    def contains(
+        self, pattern: str | pli.Expr, literal: bool = False, strict: bool = True
+    ) -> pli.Expr:
         """
         Check if string contains a substring that matches a regex.
 
@@ -500,6 +506,9 @@ class ExprStringNameSpace:
             A valid regex pattern.
         literal
             Treat pattern as a literal string.
+        strict
+            Raise an error if the underlying pattern is not a valid regex expression,
+            otherwise mask out with a null value.
 
         Examples
         --------
@@ -529,9 +538,10 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal))
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
+        return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
-    def ends_with(self, sub: str) -> pli.Expr:
+    def ends_with(self, sub: str | pli.Expr) -> pli.Expr:
         """
         Check if string values end with a substring.
 
@@ -543,7 +553,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
         ... )
         shape: (3, 2)
@@ -575,6 +585,7 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
+        sub = pli.expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_ends_with(sub))
 
     def starts_with(self, sub: str | pli.Expr) -> pli.Expr:
@@ -589,7 +600,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
         ... )
         shape: (3, 2)
@@ -1034,7 +1045,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("text").str.replace(r"abc\b", "ABC")
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
@@ -1076,7 +1087,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["abcabc", "123a123"]})
-        >>> df.with_column(pl.col("text").str.replace_all("a", "-"))
+        >>> df.with_columns(pl.col("text").str.replace_all("a", "-"))
         shape: (2, 2)
         ┌─────┬─────────┐
         │ id  ┆ text    │
@@ -1094,7 +1105,6 @@ class ExprStringNameSpace:
             self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
         )
 
-    @deprecated_alias(start="offset")
     def slice(self, offset: int, length: int | None = None) -> pli.Expr:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -1115,7 +1125,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("s").str.slice(-3).alias("s_sliced"),
         ... )
         shape: (4, 2)
@@ -1132,7 +1142,7 @@ class ExprStringNameSpace:
 
         Using the optional `length` parameter
 
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("s").str.slice(4, length=3).alias("s_sliced"),
         ... )
         shape: (4, 2)
@@ -1178,3 +1188,50 @@ class ExprStringNameSpace:
 
         """
         return pli.wrap_expr(self._pyexpr.explode())
+
+    def parse_int(self, radix: int = 2) -> pli.Expr:
+        """
+        Parse integers with base radix from strings.
+
+        By default base 2.
+
+        Parameters
+        ----------
+        radix
+            Positive integer which is the base of the string we are parsing.
+            Default: 2
+
+        Returns
+        -------
+        Column of parsed integers in i32 format
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"bin": ["110", "101", "010"]})
+        >>> df.select(pl.col("bin").str.parse_int(2))
+        shape: (3, 1)
+        ┌─────┐
+        │ bin │
+        │ --- │
+        │ i32 │
+        ╞═════╡
+        │ 6   │
+        │ 5   │
+        │ 2   │
+        └─────┘
+
+        >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe"]})
+        >>> df.select(pl.col("hex").str.parse_int(16))
+        shape: (3, 1)
+        ┌───────┐
+        │ hex   │
+        │ ---   │
+        │ i32   │
+        ╞═══════╡
+        │ 64030 │
+        │ 65280 │
+        │ 51966 │
+        └───────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.str_parse_int(radix))

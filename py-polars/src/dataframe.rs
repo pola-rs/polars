@@ -53,6 +53,7 @@ impl PyDataFrame {
         schema_overwrite: Option<Schema>,
     ) -> PyResult<Self> {
         // object builder must be registered.
+        #[cfg(feature = "object")]
         crate::object::register_object_builder();
 
         let schema =
@@ -131,6 +132,13 @@ impl PyDataFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv-file")]
+    #[pyo3(signature = (
+        py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
+        skip_rows, projection, sep, rechunk, columns, encoding, n_threads, path,
+        overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
+        null_values, missing_utf8_is_empty_string, parse_dates, skip_rows_after_header,
+        row_count, sample_size, eol_char)
+    )]
     pub fn read_csv(
         py_f: &PyAny,
         infer_schema_length: Option<usize>,
@@ -222,6 +230,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory))]
     pub fn read_parquet(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -260,6 +269,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "ipc")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, row_count, memory_map))]
     pub fn read_ipc(
         py_f: &PyAny,
         columns: Option<Vec<String>>,
@@ -283,6 +293,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "avro")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows))]
     pub fn read_avro(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -302,6 +313,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
+    #[pyo3(signature = (py_f, compression))]
     pub fn write_avro(
         &mut self,
         py: Python,
@@ -373,26 +385,16 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(
-        &mut self,
-        py_f: PyObject,
-        pretty: bool,
-        row_oriented: bool,
-        json_lines: bool,
-    ) -> PyResult<()> {
+    pub fn write_json(&mut self, py_f: PyObject, pretty: bool, row_oriented: bool) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
-        let r = match (pretty, row_oriented, json_lines) {
-            (_, true, true) => panic!("{}", "only one of {row_oriented, json_lines} should be set"),
-            (_, _, true) => JsonWriter::new(file)
-                .with_json_format(JsonFormat::JsonLines)
-                .finish(&mut self.df),
-            (_, true, false) => JsonWriter::new(file)
+        let r = match (pretty, row_oriented) {
+            (_, true) => JsonWriter::new(file)
                 .with_json_format(JsonFormat::Json)
                 .finish(&mut self.df),
-            (true, _, _) => serde_json::to_writer_pretty(file, &self.df)
+            (true, _) => serde_json::to_writer_pretty(file, &self.df)
                 .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
-            (false, _, _) => serde_json::to_writer(file, &self.df)
+            (false, _) => serde_json::to_writer(file, &self.df)
                 .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
         };
         r.map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
@@ -440,15 +442,14 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        let infer_schema_length = std::cmp::max(infer_schema_length.unwrap_or(50), 1);
-        let (rows, mut names) = dicts_to_rows(dicts, infer_schema_length)?;
-
-        // ensure the new names are used
+        // if given, read dict fields in schema order
+        let mut schema_columns = PlIndexSet::new();
         if let Some(schema) = &schema_overwrite {
-            for (new_name, name) in schema.0.iter_names().zip(names.iter_mut()) {
-                *name = new_name.clone();
-            }
+            schema_columns.extend(schema.0.iter_names().map(|n| n.to_string()))
         }
+        let infer_schema_length = std::cmp::max(infer_schema_length.unwrap_or(50), 1);
+        let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
+
         let mut pydf = Self::finish_from_rows(
             rows,
             Some(infer_schema_length),
@@ -677,6 +678,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
+    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size))]
     pub fn write_parquet(
         &mut self,
         py: Python,
@@ -1159,6 +1161,7 @@ impl PyDataFrame {
         self.df.shift(periods).into()
     }
 
+    #[pyo3(signature = (maintain_order, subset, keep))]
     pub fn unique(
         &self,
         py: Python,
@@ -1257,6 +1260,7 @@ impl PyDataFrame {
         df.into()
     }
 
+    #[pyo3(signature = (lambda, output_type, inference_size))]
     pub fn apply(
         &self,
         lambda: &PyAny,

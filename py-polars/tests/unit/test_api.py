@@ -26,7 +26,7 @@ def test_custom_df_namespace() -> None:
 
     df = pl.DataFrame(
         data=[["xx", 2, 3, 4], ["xy", 4, 5, 6], ["yy", 5, 6, 7], ["yz", 6, 7, 8]],
-        columns=["a1", "a2", "b1", "b2"],
+        schema=["a1", "a2", "b1", "b2"],
         orient="row",
     )
 
@@ -58,7 +58,7 @@ def test_custom_expr_namespace() -> None:
         def nearest(self, p: int) -> pl.Expr:
             return (p ** (self._expr.log(p)).round(0).cast(pl.Int64)).cast(pl.Int64)
 
-    df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], columns=["n"])
+    df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
     assert df.select(
         [
             pl.col("n"),
@@ -88,18 +88,18 @@ def test_custom_lazy_namespace() -> None:
 
     ldf = pl.DataFrame(
         data=[["xx", 2, 3, 4], ["xy", 4, 5, 6], ["yy", 5, 6, 7], ["yz", 6, 7, 8]],
-        columns=["a1", "a2", "b1", "b2"],
+        schema=["a1", "a2", "b1", "b2"],
         orient="row",
     ).lazy()
 
     df1, df2 = (d.collect() for d in ldf.split.by_column_dtypes())
     assert_frame_equal(
-        df1, pl.DataFrame([("xx",), ("xy",), ("yy",), ("yz",)], columns=["a1"])
+        df1, pl.DataFrame([("xx",), ("xy",), ("yy",), ("yz",)], schema=["a1"])
     )
     assert_frame_equal(
         df2,
         pl.DataFrame(
-            [(2, 3, 4), (4, 5, 6), (5, 6, 7), (6, 7, 8)], columns=["a2", "b1", "b2"]
+            [(2, 3, 4), (4, 5, 6), (5, 6, 7), (6, 7, 8)], schema=["a2", "b1", "b2"]
         ),
     )
 

@@ -1,13 +1,15 @@
 from datetime import datetime, timedelta
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_quantile_expr_input() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [0, 0, 0.3, 0.2, 0]})
 
-    assert df.select([pl.col("a").quantile(pl.col("b").sum() + 0.1)]).frame_equal(
-        df.select(pl.col("a").quantile(0.6))
+    assert_frame_equal(
+        df.select([pl.col("a").quantile(pl.col("b").sum() + 0.1)]),
+        df.select(pl.col("a").quantile(0.6)),
     )
 
 
@@ -45,7 +47,7 @@ def test_duration_aggs() -> None:
         }
     )
 
-    df = df.with_column((pl.col("time2") - pl.col("time1")).alias("time_difference"))
+    df = df.with_columns((pl.col("time2") - pl.col("time1")).alias("time_difference"))
 
     assert df.select("time_difference").mean().to_dict(False) == {
         "time_difference": [timedelta(days=31)]

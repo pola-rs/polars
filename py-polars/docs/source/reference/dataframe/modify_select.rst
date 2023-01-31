@@ -27,7 +27,8 @@ Manipulation/selection
     DataFrame.insert_at_idx
     DataFrame.interpolate
     DataFrame.item
-    DataFrame.iterrows
+    DataFrame.iter_rows
+    DataFrame.iter_slices
     DataFrame.join
     DataFrame.join_asof
     DataFrame.limit
