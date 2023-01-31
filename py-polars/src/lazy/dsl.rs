@@ -782,6 +782,15 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_parse_int(&self, radix: Option<u32>) -> PyExpr {
+        self.inner
+            .clone()
+            .str()
+            .from_radix(radix)
+            .with_fmt("str.parse_int")
+            .into()
+    }
+
     #[cfg(feature = "binary_encoding")]
     pub fn binary_hex_encode(&self) -> PyExpr {
         self.clone()

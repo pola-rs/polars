@@ -176,6 +176,7 @@
 //! * `timezones` - Activate timezone support.
 //! * `strings` - Extra string utilities for `Utf8Chunked`
 //!     - `string_justify` - `zfill`, `ljust`, `rjust`
+//!     - `string_from_radix` - `parse_int`
 //! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:

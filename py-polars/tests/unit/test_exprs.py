@@ -511,6 +511,17 @@ def test_abs_expr() -> None:
     assert out["x"].to_list() == [1, 0, 1]
 
 
+def test_str_parse_int() -> None:
+    df = pl.DataFrame({"bin": ["110", "101", "010"], "hex": ["fa1e", "ff00", "cafe"]})
+    out = df.with_columns(
+        [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
+    )
+
+    expected = pl.DataFrame({"bin": [6, 5, 2], "hex": [64030, 65280, 51966]})
+
+    assert out.frame_equal(expected)
+
+
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)

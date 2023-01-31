@@ -156,6 +156,7 @@ features = [
   "list_to_struct",
   "to_dummies",
   "string_justify",
+  "string_from_radix",
   "arg_where",
   "date_offset",
 ]

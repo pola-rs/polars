@@ -37,3 +37,4 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.to_lowercase
     Expr.str.to_uppercase
     Expr.str.zfill
+    Expr.str.parse_int

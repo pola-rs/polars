@@ -139,6 +139,8 @@ impl FunctionExpr {
                     Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
                         with_dtype(DataType::Utf8)
                     }
+                    #[cfg(feature = "string_from_radix")]
+                    FromRadix { .. } => with_dtype(DataType::Int32),
                 }
             }
             #[cfg(feature = "dtype-binary")]
