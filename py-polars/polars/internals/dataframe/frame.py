@@ -1074,7 +1074,9 @@ class DataFrame:
     @property
     def dtypes(self) -> list[PolarsDataType]:
         """
-        Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
+        Get the datatypes of the columns of this DataFrame.
+
+        The datatypes can also be found in column headers when printing the DataFrame.
 
         Examples
         --------
@@ -1103,7 +1105,7 @@ class DataFrame:
         --------
         schema : Returns a {colname:dtype} mapping.
 
-        """  # noqa: E501
+        """
         return self._df.dtypes()
 
     @property
@@ -3853,7 +3855,7 @@ class DataFrame:
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         return DynamicGroupBy(
             self,
             index_column,

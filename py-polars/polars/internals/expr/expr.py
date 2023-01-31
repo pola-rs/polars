@@ -706,7 +706,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         return wrap_expr(self._pyexpr.prefix(prefix))
 
     def suffix(self, suffix: str) -> Expr:
@@ -755,7 +755,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         return wrap_expr(self._pyexpr.suffix(suffix))
 
     def map_alias(self, f: Callable[[str], str]) -> Expr:
@@ -2302,7 +2302,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         return wrap_expr(self._pyexpr.reverse())
 
     def std(self, ddof: int = 1) -> Expr:

@@ -505,7 +505,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 <i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
     <p></p>
     <div>{insert}</div>\
-"""  # noqa: E501
+"""
 
     @overload
     def write_json(self, file: None = ...) -> str:
@@ -2108,7 +2108,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         if offset is None:
             offset = f"-{every}" if period is None else "0ns"
 

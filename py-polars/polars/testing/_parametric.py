@@ -159,7 +159,7 @@ class column:
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
     column(name='ccy', dtype=Utf8, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
 
-    """  # noqa: E501
+    """  # noqa: W505
 
     name: str
     dtype: PolarsDataType | None = None

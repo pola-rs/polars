@@ -122,13 +122,13 @@ line-length = 88
 fix = true
 
 select = [
-  "E",
+  "E", # pycodestyle
   "W", # pycodestyle
   "F", # Pyflakes
   "B", # flake8-bugbear
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
-  "I001", # isort
+  "I", # isort
   "SIM", # flake8-simplify
   "TID", # flake8-tidy-imports
   "Q", # flake8-quotes
@@ -150,11 +150,11 @@ ignore = [
   "D415",
   "D416",
   # flake8-pytest-style:
-  "PT011",  # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
+  "PT011", # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
   # flake8-simplify
-  "SIM102",  # Use a single `if` statement instead of nested `if` statements
+  "SIM102", # Use a single `if` statement instead of nested `if` statements
   # ruff
-  "RUF005",  # unpack-instead-of-concatenating-to-collection-literal
+  "RUF005", # unpack-instead-of-concatenating-to-collection-literal
   # TODO: Remove errors below to further improve docstring linting
   # Ordered from most common to least common errors.
   "D105",
