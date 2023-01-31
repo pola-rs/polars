@@ -3342,10 +3342,7 @@ class Expr:
 
         """
         if isinstance(other, Sequence) and not isinstance(other, str):
-            if len(other) == 0:
-                other = pli.lit(None)
-            else:
-                other = pli.lit(pli.Series(other))
+            other = pli.lit(None) if len(other) == 0 else pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))

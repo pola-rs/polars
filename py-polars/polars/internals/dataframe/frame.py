@@ -2349,10 +2349,7 @@ class DataFrame:
 
             for i, column in enumerate(tbl):
                 # extract the name before casting
-                if column._name is None:
-                    name = f"column_{i}"
-                else:
-                    name = column._name
+                name = f"column_{i}" if column._name is None else column._name
 
                 data[name] = column
 
@@ -5136,10 +5133,7 @@ class DataFrame:
         └────────┴────────┴────────┴────────┴────────┴────────┘
 
         """
-        if columns is not None:
-            df = self.select(columns)
-        else:
-            df = self
+        df = self.select(columns) if columns is not None else self
 
         height = df.height
         if how == "vertical":

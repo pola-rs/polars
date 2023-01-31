@@ -234,10 +234,7 @@ class ExprListNameSpace:
             return self.concat(pli.Series([other]))
 
         other_list: list[pli.Expr | str | pli.Series]
-        if not isinstance(other, list):
-            other_list = [other]
-        else:
-            other_list = copy.copy(other)  # type: ignore[arg-type]
+        other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
 
         other_list.insert(0, pli.wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)

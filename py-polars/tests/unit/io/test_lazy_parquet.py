@@ -122,11 +122,11 @@ def test_parquet_stats() -> None:
         ).collect()[0, "a"] == 9.0
 
         assert (
-            pl.scan_parquet(file_path).filter(4 > pl.col("a")).select(pl.col("a").sum())
+            pl.scan_parquet(file_path).filter(pl.col("a") < 4).select(pl.col("a").sum())
         ).collect()[0, "a"] == 9.0
 
         assert (
-            pl.scan_parquet(file_path).filter(4 < pl.col("a")).select(pl.col("a").sum())
+            pl.scan_parquet(file_path).filter(pl.col("a") > 4).select(pl.col("a").sum())
         ).collect()[0, "a"] == 10.0
         assert pl.scan_parquet(file_path).filter(
             (pl.col("a") * 10) > 5.0

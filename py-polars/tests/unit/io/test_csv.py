@@ -469,7 +469,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
 
 def test_partial_decompression(foods_file_path: Path) -> None:
     f_out = io.BytesIO()
-    with open(foods_file_path, "rb") as f_read:
+    with open(foods_file_path, "rb") as f_read:  # noqa: SIM117
         with gzip.GzipFile(fileobj=f_out, mode="w") as f:
             f.write(f_read.read())
 

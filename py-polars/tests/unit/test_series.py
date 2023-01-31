@@ -303,10 +303,7 @@ def test_arithmetic(s: pl.Series) -> None:
 
     # integer division
     assert_series_equal(1 / a, pl.Series([1.0, 0.5]))
-    if s.dtype == Int64:
-        expected = pl.Series([1, 0])
-    else:
-        expected = pl.Series([1.0, 0.5])
+    expected = pl.Series([1, 0]) if s.dtype == Int64 else pl.Series([1.0, 0.5])
     assert_series_equal(1 // a, expected)
     # modulo
     assert ((1 % a) == [0, 1]).sum() == 2
