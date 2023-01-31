@@ -22,10 +22,22 @@ impl TakeExpr {
         state: &ExecutionState,
         series: Series,
     ) -> PolarsResult<Series> {
-        let idx = self.idx.evaluate(df, state)?.cast(&IDX_DTYPE)?;
+        let idx = self.idx.evaluate(df, state)?;
+
+        let nulls_before_cast = idx.null_count();
+
+        let idx = idx.cast(&IDX_DTYPE)?;
+        if idx.null_count() != nulls_before_cast {
+            self.oob_err()?;
+        }
         let idx_ca = idx.idx()?;
 
         series.take(idx_ca)
+    }
+
+    fn oob_err(&self) -> PolarsResult<()> {
+        let msg = "Out of bounds.";
+        Err(expression_err!(msg, self.expr, ComputeError))
     }
 }
 
@@ -47,11 +59,6 @@ impl PhysicalExpr for TakeExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
-
-        let oob_err = || {
-            let msg = "Out of bounds.";
-            Err(expression_err!(msg, self.expr, ComputeError))
-        };
 
         let idx =
             match idx.state {
@@ -80,7 +87,7 @@ impl PhysicalExpr for TakeExpr {
                                         Some(idx) => idx >= g.len() as IdxSize,
                                     },
                                 ) {
-                                    return oob_err();
+                                    self.oob_err()?;
                                 }
 
                                 idx.into_iter()
@@ -97,7 +104,7 @@ impl PhysicalExpr for TakeExpr {
                                         Some(idx) => idx >= g[1],
                                     })
                                 {
-                                    return oob_err();
+                                    self.oob_err()?;
                                 }
 
                                 idx.into_iter()
@@ -136,14 +143,14 @@ impl PhysicalExpr for TakeExpr {
                                 let idx: NoNull<IdxCa> = match groups.as_ref() {
                                     GroupsProxy::Idx(groups) => {
                                         if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
-                                            return oob_err();
+                                            self.oob_err()?;
                                         }
 
                                         groups.first().iter().map(|f| *f + idx).collect_trusted()
                                     }
                                     GroupsProxy::Slice { groups, .. } => {
                                         if groups.iter().any(|g| idx >= g[1]) {
-                                            return oob_err();
+                                            self.oob_err()?;
                                         }
 
                                         groups.iter().map(|g| g[0] + idx).collect_trusted()
