@@ -1884,6 +1884,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         - "1i"      # length 1
         - "10i"     # length 10
 
+        .. warning::
+            The index column must be sorted in ascending order.
+
         Parameters
         ----------
         index_column

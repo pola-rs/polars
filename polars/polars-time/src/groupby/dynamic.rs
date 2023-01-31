@@ -252,6 +252,7 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
+            partially_check_sorted(ts);
             let (groups, lower, upper) = groupby_windows(
                 w,
                 ts,
