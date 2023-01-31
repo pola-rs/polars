@@ -359,6 +359,25 @@ def test_timezone() -> None:
     assert_series_equal(s.cast(int), tz_s.cast(int))
 
 
+def test_to_dicts() -> None:
+    now = datetime.now()
+    data = {
+        "a": now,
+        "b": now.date(),
+        "c": now.time(),
+        "d": timedelta(days=1, seconds=43200),
+    }
+    df = pl.DataFrame(
+        data, schema_overrides={"a": pl.Datetime("ns"), "d": pl.Duration("ns")}
+    )
+    assert len(df) == 1
+
+    d = df.to_dicts()[0]
+    for col in data:
+        assert d[col] == data[col]
+        assert isinstance(d[col], type(data[col]))
+
+
 def test_to_list() -> None:
     s = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
 

@@ -1873,9 +1873,13 @@ class DataFrame:
 
     def to_dicts(self) -> list[dict[str, Any]]:
         """
-        Convert every row to a dictionary.
+        Convert every row to a dictionary of python-native values.
 
-        Note that this is slow.
+        Notes
+        -----
+        If you have ``ns``-precision temporal values you should be aware that python
+        natively only supports up to ``us``-precision; if this matters you should export
+        to a different format.
 
         Examples
         --------
@@ -6737,7 +6741,7 @@ class DataFrame:
 
     def rows(self, named: bool = False) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
         """
-        Returns all data in the DataFrame as a list of rows.
+        Returns all data in the DataFrame as a list of rows of python-native values.
 
         Parameters
         ----------
@@ -6746,14 +6750,20 @@ class DataFrame:
             column name to row value. This is more expensive than returning a regular
             tuple, but allows for accessing values by column name.
 
-        Returns
-        -------
-        A list of tuples (default) or dictionaries of row values.
+        Notes
+        -----
+        If you have ``ns``-precision temporal values you should be aware that python
+        natively only supports up to ``us``-precision; if this matters you should export
+        to a different format.
 
         Warnings
         --------
         Row-iteration is not optimal as the underlying data is stored in columnar form;
         where possible, prefer export via one of the dedicated export/output methods.
+
+        Returns
+        -------
+        A list of tuples (default) or dictionaries of row values.
 
         Examples
         --------
@@ -6796,7 +6806,7 @@ class DataFrame:
         self, named: bool = False, buffer_size: int = 500
     ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]]:
         """
-        Returns an iterator over the rows of the DataFrame.
+        Returns an iterator over the DataFrame of rows of python-native values.
 
         Parameters
         ----------
@@ -6811,19 +6821,20 @@ class DataFrame:
             the speedup from using the buffer is significant (~2-4x). Setting this
             value to zero disables row buffering.
 
-        Returns
-        -------
-        An iterator of tuples (default) or dictionaries of row values.
+        Notes
+        -----
+        If you have ``ns``-precision temporal values you should be aware that python
+        natively only supports up to ``us``-precision; if this matters you should export
+        to a different format.
 
         Warnings
         --------
         Row iteration is not optimal as the underlying data is stored in columnar form;
         where possible, prefer export via one of the dedicated export/output methods.
 
-        Notes
-        -----
-        If you are planning to materialise all frame data at once you should prefer
-        calling ``rows()``, which will be faster.
+        Returns
+        -------
+        An iterator of tuples (default) or dictionaries of python row values.
 
         Examples
         --------
@@ -6849,9 +6860,15 @@ class DataFrame:
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if buffer_size:
+            load_pyarrow_dicts = (
+                named
+                and _PYARROW_AVAILABLE
+                # note: 'ns' precision instantiates values as pandas types - avoid
+                and not any((getattr(tp, "tu", None) == "ns") for tp in self.dtypes)
+            )
             for offset in range(0, self.height, buffer_size):
                 zerocopy_slice = self.slice(offset, buffer_size)
-                if named and _PYARROW_AVAILABLE:
+                if load_pyarrow_dicts:
                     yield from zerocopy_slice.to_arrow().to_batches()[0].to_pylist()
                 else:
                     rows_chunk = zerocopy_slice.rows(named=False)
