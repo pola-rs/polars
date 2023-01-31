@@ -426,11 +426,6 @@ macro_rules! impl_dyn_series {
                 self.0.checked_div(rhs)
             }
 
-            #[cfg(feature = "is_first")]
-            fn is_first(&self) -> PolarsResult<BooleanChunked> {
-                self.0.is_first()
-            }
-
             #[cfg(feature = "mode")]
             fn mode(&self) -> PolarsResult<Series> {
                 Ok(self.0.mode()?.into_series())

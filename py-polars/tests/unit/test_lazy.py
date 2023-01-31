@@ -282,6 +282,13 @@ def test_is_first() -> None:
     result = df.select(col("a").is_first())["a"]
     assert_series_equal(result, pl.Series("a", [True, True, False]))
 
+    # struct
+    df = pl.DataFrame({"a": [1, 2, 3, 2, None, 2, 1], "b": [0, 2, 3, 2, None, 2, 0]})
+
+    assert df.select(pl.struct(["a", "b"]).is_first()).to_dict(False) == {
+        "a": [True, True, True, False, True, False, False]
+    }
+
 
 def test_is_duplicated() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})

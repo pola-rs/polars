@@ -641,12 +641,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    #[cfg(feature = "is_first")]
-    /// Get a mask of the first unique values.
-    fn is_first(&self) -> PolarsResult<BooleanChunked> {
-        invalid_operation_panic!(self)
-    }
-
     #[cfg(feature = "mode")]
     /// Compute the most occurring element in the array.
     fn mode(&self) -> PolarsResult<Series> {

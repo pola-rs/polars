@@ -1436,7 +1436,7 @@ impl Expr {
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
         self.apply(
-            |s| s.is_first().map(|ca| ca.into_series()),
+            |s| is_first(&s).map(|s| s.into_series()),
             GetOutput::from_type(DataType::Boolean),
         )
         .with_fmt("is_first")
