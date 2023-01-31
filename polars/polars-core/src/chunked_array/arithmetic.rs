@@ -3,7 +3,9 @@ use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::array::PrimitiveArray;
-use arrow::compute::arithmetics::{basic, decimal};
+use arrow::compute::arithmetics::basic;
+#[cfg(feature = "dtype-i128")]
+use arrow::compute::arithmetics::decimal;
 use arrow::compute::arity_assign;
 use arrow::types::NativeType;
 use num::{Num, NumCast, ToPrimitive};
