@@ -15,7 +15,7 @@ class ExprMetaNameSpace:
         return self._pyexpr.meta_eq(other._pyexpr)
 
     def __ne__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override] # noqa: #501
-        return not self == other  # noqa: SIM201
+        return not self == other
 
     def pop(self) -> list[pli.Expr]:
         """
