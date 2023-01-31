@@ -1535,7 +1535,7 @@ Series: 'cat_column' [list[cat]]
 	["a", "b"]
 	["b", "a"]
 	["b"]
-]"""  # noqa: E101, W191
+]"""
     )
 
 

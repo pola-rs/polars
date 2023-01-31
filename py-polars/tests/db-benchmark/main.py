@@ -310,7 +310,6 @@ print(out)
 assert out["id6"].to_list() == [2137755425]
 assert np.isclose(out["v3"].to_list(), 4.7040828499563754e8).all()
 
-if not ON_STRINGS:
-    if total_time > 12:
-        print("query took longer than 12s, may be noise")
-        exit(1)
+if not ON_STRINGS and total_time > 12:
+    print("query took longer than 12s, may be noise")
+    exit(1)

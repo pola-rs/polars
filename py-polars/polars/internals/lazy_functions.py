@@ -1909,7 +1909,7 @@ def duration(
     │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.002 ┆                     │
     └────────────┴────────────┴─────────────────────┴──────────────┴─────────────────────┘
 
-    """  # noqa: E501
+    """  # noqa: W505
     if hours is not None:
         hours = pli.expr_to_lit_or_expr(hours, str_to_lit=False)._pyexpr
     if minutes is not None:

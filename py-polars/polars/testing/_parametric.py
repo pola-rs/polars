@@ -159,7 +159,7 @@ class column:
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
     column(name='ccy', dtype=Utf8, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
 
-    """  # noqa: E501
+    """  # noqa: W505
 
     name: str
     dtype: PolarsDataType | None = None
@@ -435,10 +435,9 @@ def series(
         )
         if is_categorical_dtype(dtype):
             s = s.cast(Categorical)
-        if series_size:
-            if chunked or (chunked is None and draw(booleans())):
-                split_at = series_size // 2
-                s = s[:split_at].append(s[split_at:], append_chunks=True)
+        if series_size and (chunked or (chunked is None and draw(booleans()))):
+            split_at = series_size // 2
+            s = s[:split_at].append(s[split_at:], append_chunks=True)
         return s
 
     return draw_series()
@@ -556,9 +555,8 @@ def dataframes(
     """  # noqa: 501
     if isinstance(cols, int):
         cols = columns(cols)
-    if isinstance(min_size, int):
-        if min_cols in (0, None):
-            min_cols = 1
+    if isinstance(min_size, int) and min_cols in (0, None):
+        min_cols = 1
 
     selectable_dtypes = [
         dtype

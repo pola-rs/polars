@@ -1077,7 +1077,9 @@ class DataFrame:
     @property
     def dtypes(self) -> list[PolarsDataType]:
         """
-        Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
+        Get the datatypes of the columns of this DataFrame.
+
+        The datatypes can also be found in column headers when printing the DataFrame.
 
         Examples
         --------
@@ -1106,7 +1108,7 @@ class DataFrame:
         --------
         schema : Returns a {colname:dtype} mapping.
 
-        """  # noqa: E501
+        """
         return self._df.dtypes()
 
     @property
@@ -2392,10 +2394,7 @@ class DataFrame:
 
             for i, column in enumerate(tbl):
                 # extract the name before casting
-                if column._name is None:
-                    name = f"column_{i}"
-                else:
-                    name = column._name
+                name = f"column_{i}" if column._name is None else column._name
 
                 data[name] = column
 
@@ -3902,7 +3901,7 @@ class DataFrame:
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         return DynamicGroupBy(
             self,
             index_column,
@@ -5182,10 +5181,7 @@ class DataFrame:
         └────────┴────────┴────────┴────────┴────────┴────────┘
 
         """
-        if columns is not None:
-            df = self.select(columns)
-        else:
-            df = self
+        df = self.select(columns) if columns is not None else self
 
         height = df.height
         if how == "vertical":

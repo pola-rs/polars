@@ -505,7 +505,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 <i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
     <p></p>
     <div>{insert}</div>\
-"""  # noqa: E501
+"""
 
     @overload
     def write_json(self, file: None = ...) -> str:
@@ -2111,12 +2111,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         if offset is None:
-            if period is None:
-                offset = f"-{every}"
-            else:
-                offset = "0ns"
+            offset = f"-{every}" if period is None else "0ns"
 
         if period is None:
             period = every
@@ -2274,16 +2271,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             raise ValueError("You should pass the column to join on as an argument.")
 
         by_left_: Sequence[str] | None
-        if isinstance(by_left, str):
-            by_left_ = [by_left]
-        else:
-            by_left_ = by_left
+        by_left_ = [by_left] if isinstance(by_left, str) else by_left
 
         by_right_: Sequence[str] | None
-        if isinstance(by_right, (str, pli.Expr)):
-            by_right_ = [by_right]
-        else:
-            by_right_ = by_right
+        by_right_ = [by_right] if isinstance(by_right, (str, pli.Expr)) else by_right
 
         if isinstance(by, str):
             by_left_ = [by]

@@ -706,7 +706,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         return wrap_expr(self._pyexpr.prefix(prefix))
 
     def suffix(self, suffix: str) -> Expr:
@@ -755,7 +755,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         return wrap_expr(self._pyexpr.suffix(suffix))
 
     def map_alias(self, f: Callable[[str], str]) -> Expr:
@@ -2302,7 +2302,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """  # noqa: E501
+        """  # noqa: W505
         return wrap_expr(self._pyexpr.reverse())
 
     def std(self, ddof: int = 1) -> Expr:
@@ -3342,10 +3342,7 @@ class Expr:
 
         """
         if isinstance(other, Sequence) and not isinstance(other, str):
-            if len(other) == 0:
-                other = pli.lit(None)
-            else:
-                other = pli.lit(pli.Series(other))
+            other = pli.lit(None) if len(other) == 0 else pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))

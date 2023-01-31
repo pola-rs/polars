@@ -303,10 +303,7 @@ def test_arithmetic(s: pl.Series) -> None:
 
     # integer division
     assert_series_equal(1 / a, pl.Series([1.0, 0.5]))
-    if s.dtype == Int64:
-        expected = pl.Series([1, 0])
-    else:
-        expected = pl.Series([1.0, 0.5])
+    expected = pl.Series([1, 0]) if s.dtype == Int64 else pl.Series([1.0, 0.5])
     assert_series_equal(1 // a, expected)
     # modulo
     assert ((1 % a) == [0, 1]).sum() == 2
@@ -744,7 +741,7 @@ def test_set_np_array(dtype: Any) -> None:
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))
 
 
-@pytest.mark.parametrize("idx", [[0, 2], (0, 2)])  # noqa: PT007
+@pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
 def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
     a = pl.Series("a", [1, 2, 3])
     a[idx] = 4

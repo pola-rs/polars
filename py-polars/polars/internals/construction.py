@@ -1023,10 +1023,7 @@ def arrow_to_pydf(
     names = []
     for i, column in enumerate(data):
         # extract the name before casting
-        if column._name is None:
-            name = f"column_{i}"
-        else:
-            name = column._name
+        name = f"column_{i}" if column._name is None else column._name
         names.append(name)
 
         column = coerce_arrow(column)
