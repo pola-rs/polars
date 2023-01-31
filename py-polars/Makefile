@@ -35,7 +35,7 @@ fmt: venv  ## Run autoformatting and linting
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy -- -D warnings -A clippy::borrow_deref_ref
+	cargo clippy -- -D warnings
 
 .PHONY: pre-commit
 pre-commit: fmt clippy  ## Run all code quality checks
