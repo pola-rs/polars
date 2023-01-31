@@ -503,11 +503,6 @@ macro_rules! impl_dyn_series {
                     _ => unreachable!(),
                 }
             }
-            #[cfg(feature = "is_first")]
-            fn is_first(&self) -> PolarsResult<BooleanChunked> {
-                self.0.is_first()
-            }
-
             #[cfg(feature = "mode")]
             fn mode(&self) -> PolarsResult<Series> {
                 self.0.mode().map(|ca| ca.$into_logical().into_series())

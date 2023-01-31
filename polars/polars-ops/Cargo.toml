@@ -39,6 +39,7 @@ propagate_nans = []
 performant = ["polars-core/performant"]
 big_idx = ["polars-core/bigidx"]
 round_series = []
+is_first = []
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex", "dtype-binary"]

@@ -403,11 +403,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         casted.list().unwrap().clone()
     }
 
-    #[cfg(feature = "is_first")]
-    fn is_first(&self) -> PolarsResult<BooleanChunked> {
-        self.0.logical().is_first()
-    }
-
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Series> {
         Ok(CategoricalChunked::full_null(self.0.logical().name(), 1).into_series())
