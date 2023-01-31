@@ -42,12 +42,16 @@ impl CsvSource {
         let schema_ref =
             unsafe { std::mem::transmute::<&Schema, &'static Schema>(schema.as_ref()) };
 
+        // inversely scale the chunk size by the number of threads so that we reduce memory pressure
+        // in streaming
+        let chunk_size = std::cmp::max(CHUNK_SIZE * 12 / POOL.current_num_threads(), 10_000);
+
         let reader = CsvReader::from_path(&path)
             .unwrap()
             .has_header(options.has_header)
             .with_schema(schema_ref)
             .with_delimiter(options.delimiter)
-            .with_ignore_parser_errors(options.ignore_errors)
+            .with_ignore_errors(options.ignore_errors)
             .with_skip_rows(options.skip_rows)
             .with_n_rows(n_rows)
             .with_columns(with_columns.map(|mut cols| std::mem::take(Arc::make_mut(&mut cols))))
@@ -59,7 +63,7 @@ impl CsvSource {
             .with_end_of_line_char(options.eol_char)
             .with_encoding(options.encoding)
             .with_rechunk(options.rechunk)
-            .with_chunk_size(CHUNK_SIZE)
+            .with_chunk_size(chunk_size)
             .with_row_count(options.row_count)
             .with_parse_dates(options.parse_dates);
 
@@ -105,5 +109,8 @@ impl Source for CsvSource {
                     .collect(),
             ),
         })
+    }
+    fn fmt(&self) -> &str {
+        "csv"
     }
 }

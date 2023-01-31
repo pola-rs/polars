@@ -31,7 +31,7 @@ impl DateLikeNameSpace {
                     Ok(ca.cast_time_unit(tu).into_series())
                 }
                 dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {:?} has got no time unit", dt).into(),
+                    format!("Series of dtype {dt:?} has got no time unit").into(),
                 )),
             },
             GetOutput::map_dtype(move |dtype| match dtype {
@@ -58,7 +58,7 @@ impl DateLikeNameSpace {
                     Ok(ca.into_series())
                 }
                 dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {:?} has got no time unit", dt).into(),
+                    format!("Series of dtype {dt:?} has got no time unit").into(),
                 )),
             },
             GetOutput::same_type(),
@@ -71,11 +71,11 @@ impl DateLikeNameSpace {
             move |s| match s.dtype() {
                 DataType::Datetime(_, _) => {
                     let mut ca = s.datetime().unwrap().clone();
-                    ca.set_time_zone(tz.clone());
+                    ca.set_time_zone(tz.clone())?;
                     Ok(ca.into_series())
                 }
                 dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {:?} has got no time zone", dt).into(),
+                    format!("Series of dtype {dt:?} has got no time zone").into(),
                 )),
             },
             GetOutput::same_type(),
@@ -87,7 +87,6 @@ impl DateLikeNameSpace {
     // This method takes a naive Datetime Series and makes this time zone aware.
     // It does not move the time to another time zone.
     #[cfg(feature = "timezones")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "timezones")))]
     pub fn tz_localize(self, tz: TimeZone) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TzLocalize(tz)))
@@ -212,17 +211,23 @@ impl DateLikeNameSpace {
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
     #[cfg(feature = "date_offset")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "date_offset")))]
     pub fn offset_by(self, by: Duration) -> Expr {
         self.0.map_private(FunctionExpr::DateOffset(by))
     }
 
     #[cfg(feature = "timezones")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "timezones")))]
-    pub fn cast_time_zone(self, tz: TimeZone) -> Expr {
+    pub fn cast_time_zone(self, tz: Option<TimeZone>) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
                 tz,
             )))
+    }
+
+    pub fn combine(self, time: Expr, tu: TimeUnit) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Combine(tu)),
+            &[time],
+            false,
+        )
     }
 }

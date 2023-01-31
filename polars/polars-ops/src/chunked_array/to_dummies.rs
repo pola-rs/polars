@@ -51,8 +51,8 @@ impl ToDummies<Utf8Type> for Wrap<Utf8Chunked> {
             .into_par_iter()
             .map(|(first, groups)| {
                 let name = match unsafe { taker.get_unchecked(first as usize) } {
-                    Some(val) => format!("{}_{}", col_name, val),
-                    None => format!("{}_null", col_name),
+                    Some(val) => format!("{col_name}_{val}"),
+                    None => format!("{col_name}_null"),
                 };
                 let ca = dummies_helper(groups, self.len(), &name);
                 ca.into_series()
@@ -78,9 +78,9 @@ impl ToDummies<Utf8Type> for Wrap<CategoricalChunked> {
                 let name = match unsafe { taker.get_unchecked(first as usize) } {
                     Some(val) => {
                         let name = rev_map.get(val);
-                        format!("{}_{}", col_name, name)
+                        format!("{col_name}_{name}")
                     }
-                    None => format!("{}_null", col_name),
+                    None => format!("{col_name}_null"),
                 };
                 let ca = dummies_helper(groups, self.len(), &name);
                 ca.into_series()
@@ -105,8 +105,8 @@ where
             .into_par_iter()
             .map(|(first, groups)| {
                 let name = match unsafe { taker.get_unchecked(first as usize) } {
-                    Some(val) => format!("{}_{}", col_name, val),
-                    None => format!("{}_null", col_name),
+                    Some(val) => format!("{col_name}_{val}"),
+                    None => format!("{col_name}_null"),
                 };
 
                 let ca = dummies_helper(groups, self.len(), &name);

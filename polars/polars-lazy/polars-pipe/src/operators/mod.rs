@@ -5,7 +5,7 @@ mod sink;
 mod source;
 
 pub(crate) use chunks::*;
-pub(crate) use context::*;
+pub use context::*;
 pub(crate) use operator::*;
 pub(crate) use polars_core::prelude::*;
 pub use sink::*;

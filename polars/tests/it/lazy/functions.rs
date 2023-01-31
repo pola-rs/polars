@@ -1,3 +1,5 @@
+// used only if feature="format_str"
+#[allow(unused_imports)]
 use super::*;
 
 #[test]

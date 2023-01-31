@@ -50,7 +50,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-11-03
+          toolchain: nightly-2023-01-19
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -65,7 +65,7 @@ jobs:
           maturin develop
 
       - name: Run tests and report coverage
-        run: pytest --cov
+        run: pytest --cov --numprocesses=auto
 
       - name: Run doctests
         run: python tests/docs/run_doc_examples.py
@@ -78,6 +78,7 @@ jobs:
           "matplotlib"
           "backports.zoneinfo"
           "connectorx"
+          "deltalake"
           "xlsx2csv"
           )
           for d in "${deps[@]}"
@@ -112,7 +113,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-11-03
+          toolchain: nightly-2023-01-19
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -128,7 +129,7 @@ jobs:
           pip install target/wheels/polars-*.whl
 
       - name: Run tests
-        run: pytest
+        run: pytest --numprocesses=auto
 
       - name: Check import without optional dependencies
         run: |

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -342,7 +342,7 @@ class DateTimeNameSpace:
 
         Applies to Date and Datetime columns.
 
-        Returns the weekday number where monday = 0 and sunday = 6
+        Returns the ISO weekday number where monday = 1 and sunday = 7
 
         Returns
         -------
@@ -370,13 +370,13 @@ class DateTimeNameSpace:
         shape: (7,)
         Series: '' [u32]
         [
-                0
                 1
                 2
                 3
                 4
                 5
                 6
+                7
         ]
 
         """
@@ -939,9 +939,33 @@ class DateTimeNameSpace:
             2020-05-01 01:00:00 BST
         ]
 
+        If starting from a naive Datetime, then conversion will happen
+        as if starting from UTC:
+
+        >>> brussels_ts = date.dt.with_time_zone(tz="Europe/Brussels").alias("Brussels")
+        >>> brussels_ts
+        shape: (3,)
+        Series: 'Brussels' [datetime[μs, Europe/Brussels]]
+        [
+                2020-03-01 01:00:00 CET
+                2020-04-01 02:00:00 CEST
+                2020-05-01 02:00:00 CEST
+        ]
+
+        If starting from a tz-aware Datetime, then passing ``tz=None``
+        will make the result timezone-naive:
+
+        >>> brussels_ts.dt.with_time_zone(tz=None).alias("")
+        shape: (3,)
+        Series: '' [datetime[μs]]
+        [
+                2020-03-01 00:00:00
+                2020-04-01 00:00:00
+                2020-05-01 00:00:00
+        ]
         """
 
-    def cast_time_zone(self, tz: str) -> pli.Series:
+    def cast_time_zone(self, tz: str | None) -> pli.Series:
         """
         Cast time zone for a Series of type Datetime.
 
@@ -951,7 +975,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series.
+            Time zone for the `Datetime` Series. Pass `None` to unset time zone.
 
         Examples
         --------
@@ -998,18 +1022,18 @@ class DateTimeNameSpace:
         shape: (3,)
         Series: 'NYC' [datetime[μs, America/New_York]]
         [
-            2020-02-29 14:00:00 EST
-            2020-03-31 15:00:00 EDT
-            2020-04-30 15:00:00 EDT
+            2020-03-01 00:00:00 EST
+            2020-04-01 01:00:00 EDT
+            2020-05-01 01:00:00 EDT
         ]
         >>> # Timestamps have changed after cast_time_zone
         >>> date.dt.epoch(tu="s")
         shape: (3,)
         Series: 'NYC' [i64]
         [
-            1583002800
-            1585681200
-            1588273200
+            1583038800
+            1585717200
+            1588309200
         ]
 
         """
@@ -1340,28 +1364,32 @@ class DateTimeNameSpace:
 
         Each date/datetime is mapped to the start of its bucket.
 
-        The `every` and `offset` argument are created with the
-        the following string language:
-
-        1ns # 1 nanosecond
-        1us # 1 microsecond
-        1ms # 1 millisecond
-        1s  # 1 second
-        1m  # 1 minute
-        1h  # 1 hour
-        1d  # 1 day
-        1w  # 1 week
-        1mo # 1 calendar month
-        1y  # 1 calendar year
-
-        3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
         Parameters
         ----------
         every
             Every interval start and period length
         offset
             Offset the window
+
+        Notes
+        -----
+        The ``every`` and ``offset`` argument are created with the
+        the following string language:
+
+        - 1ns # 1 nanosecond
+        - 1us # 1 microsecond
+        - 1ms # 1 millisecond
+        - 1s  # 1 second
+        - 1m  # 1 minute
+        - 1h  # 1 hour
+        - 1d  # 1 day
+        - 1w  # 1 calendar week
+        - 1mo # 1 calendar month
+        - 1y  # 1 calendar year
+
+        These strings can be combined:
+
+        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         Returns
         -------
@@ -1444,7 +1472,7 @@ class DateTimeNameSpace:
 
         Each date/datetime in the first half of the interval
         is mapped to the start of its bucket.
-        Each date/datetime in the seconod half of the interval
+        Each date/datetime in the second half of the interval
         is mapped to the end of its bucket.
 
         The `every` and `offset` argument are created with the
@@ -1457,7 +1485,7 @@ class DateTimeNameSpace:
         1m  # 1 minute
         1h  # 1 hour
         1d  # 1 day
-        1w  # 1 week
+        1w  # 1 calendar week
         1mo # 1 calendar month
         1y  # 1 calendar year
 
@@ -1530,6 +1558,37 @@ class DateTimeNameSpace:
                 2001-01-01 00:30:00
                 2001-01-01 01:00:00
                 2001-01-01 01:00:00
+        ]
+
+        """
+
+    def combine(self, tm: time | pli.Series, tu: TimeUnit = "us") -> pli.Expr:
+        """
+        Create a naive Datetime from an existing Date/Datetime expression and a Time.
+
+        If the underlying expression is a Datetime then its time component is replaced,
+        and if it is a Date then a new Datetime is created by combining the two values.
+
+        Parameters
+        ----------
+        tm
+            A python time literal or Series of the same length as this Series.
+        tu : {'ns', 'us', 'ms'}
+            Time unit.
+
+        Examples
+        --------
+        >>> from datetime import datetime, time
+        >>> s = pl.Series(
+        ...     "dtm",
+        ...     [datetime(2022, 12, 31, 10, 30, 45), datetime(2023, 7, 5, 23, 59, 59)],
+        ... )
+        >>> s.dt.combine(time(1, 2, 3, 456000))
+        shape: (2,)
+        Series: 'dtm' [datetime[μs]]
+        [
+            2022-12-31 01:02:03.456
+            2023-07-05 01:02:03.456
         ]
 
         """

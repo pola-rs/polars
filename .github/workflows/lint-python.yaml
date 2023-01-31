@@ -33,13 +33,11 @@ jobs:
         run: |
           black --check .
           blackdoc --check .
-          isort --check .
-          pyupgrade --py37-plus `find . -name "*.py" -type f`
-          flake8
+          ruff .
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-11-03
+          toolchain: nightly-2023-01-19
           components: rustfmt, clippy
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2

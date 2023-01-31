@@ -85,7 +85,7 @@ impl NullValues {
 /// use std::fs::File;
 ///
 /// fn example() -> PolarsResult<DataFrame> {
-///     CsvReader::from_path("iris_csv")?
+///     CsvReader::from_path("iris.csv")?
 ///             .has_header(true)
 ///             .finish()
 /// }
@@ -110,7 +110,7 @@ where
     columns: Option<Vec<String>>,
     delimiter: Option<u8>,
     has_header: bool,
-    ignore_parser_errors: bool,
+    ignore_errors: bool,
     pub(crate) schema: Option<&'a Schema>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
@@ -123,6 +123,7 @@ where
     comment_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValues>,
+    missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
@@ -168,8 +169,8 @@ where
     }
 
     /// Continue with next batch when a ParserError is encountered.
-    pub fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
-        self.ignore_parser_errors = ignore;
+    pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
+        self.ignore_errors = ignore;
         self
     }
 
@@ -221,6 +222,12 @@ where
     /// will not be escaped, so if quotation marks are part of the null value you should include them.
     pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
         self.null_values = null_values;
+        self
+    }
+
+    /// Treat missing fields as null.
+    pub fn with_missing_is_null(mut self, missing_is_null: bool) -> Self {
+        self.missing_is_null = missing_is_null;
         self
     }
 
@@ -339,7 +346,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.max_records,
             self.delimiter,
             self.has_header,
-            self.ignore_parser_errors,
+            self.ignore_errors,
             self.schema,
             std::mem::take(&mut self.columns),
             self.encoding,
@@ -353,6 +360,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.quote_char,
             self.eol_char,
             std::mem::take(&mut self.null_values),
+            self.missing_is_null,
             std::mem::take(&mut self.predicate),
             to_cast,
             self.skip_rows_after_header,
@@ -462,7 +470,7 @@ where
             projection: None,
             delimiter: None,
             has_header: true,
-            ignore_parser_errors: false,
+            ignore_errors: false,
             schema: None,
             columns: None,
             encoding: CsvEncoding::Utf8,
@@ -476,6 +484,7 @@ where
             comment_char: None,
             eol_char: b'\n',
             null_values: None,
+            missing_is_null: true,
             predicate: None,
             quote_char: Some(b'"'),
             skip_rows_after_header: 0,
@@ -527,7 +536,7 @@ where
 
         // Important that this rechunk is never done in parallel.
         // As that leads to great memory overhead.
-        if rechunk && df.n_chunks()? > 1 {
+        if rechunk && df.n_chunks() > 1 {
             if low_memory {
                 df.as_single_chunk();
             } else {
@@ -569,7 +578,7 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                 }
 
                 #[cfg(feature = "dtype-time")]
-                if let Ok(ca) = ca.as_time(None) {
+                if let Ok(ca) = ca.as_time(None, false) {
                     return ca.into_series();
                 }
                 s

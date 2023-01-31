@@ -148,7 +148,10 @@ fn test_pivot_2() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "dtype-datetime")]
 fn test_pivot_datetime() -> PolarsResult<()> {
-    let dt = NaiveDate::from_ymd(2021, 1, 1).and_hms(12, 15, 0);
+    let dt = NaiveDate::from_ymd_opt(2021, 1, 1)
+        .unwrap()
+        .and_hms_opt(12, 15, 0)
+        .unwrap();
     let df = df![
         "dt" => [dt, dt, dt, dt],
         "key" => ["x", "x", "y", "y"],

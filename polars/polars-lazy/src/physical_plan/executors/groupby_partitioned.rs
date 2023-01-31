@@ -12,10 +12,12 @@ pub struct PartitionGroupByExec {
     maintain_order: bool,
     slice: Option<(i64, usize)>,
     input_schema: SchemaRef,
+    output_schema: SchemaRef,
     from_partitioned_ds: bool,
 }
 
 impl PartitionGroupByExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
@@ -23,6 +25,7 @@ impl PartitionGroupByExec {
         maintain_order: bool,
         slice: Option<(i64, usize)>,
         input_schema: SchemaRef,
+        output_schema: SchemaRef,
         from_partitioned_ds: bool,
     ) -> Self {
         Self {
@@ -32,6 +35,7 @@ impl PartitionGroupByExec {
             maintain_order,
             slice,
             input_schema,
+            output_schema,
             from_partitioned_ds,
         }
     }
@@ -195,7 +199,7 @@ fn can_run_partitioned(
             }
         };
         if state.verbose() {
-            eprintln!("{} unique values: {}", sampled_method, unique_estimate);
+            eprintln!("{sampled_method} unique values: {unique_estimate}");
         }
 
         if from_partitioned_ds {
@@ -204,12 +208,12 @@ fn can_run_partitioned(
                 eprintln!("PARTITIONED DS");
                 Ok(true)
             } else {
-                eprintln!("PARTITIONED DS: estimated cardinality: {} exceeded the boundary: 0.4, running default HASH AGGREGATION", estimated_cardinality);
+                eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
                 Ok(false)
             }
         } else if unique_estimate > unique_count_boundary {
             if state.verbose() {
-                eprintln!("estimated unique count: {} exceeded the boundary: {}, running default HASH AGGREGATION",unique_estimate, unique_count_boundary)
+                eprintln!("estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION")
             }
             Ok(false)
         } else {
@@ -249,8 +253,6 @@ impl PartitionGroupByExec {
             // Run the partitioned aggregations
             let n_threads = POOL.current_num_threads();
 
-            // set it here, because `self.input.execute` will clear the schema cache.
-            state.set_schema(self.input_schema.clone());
             run_partitions(
                 &mut original_df,
                 self,
@@ -259,8 +261,8 @@ impl PartitionGroupByExec {
                 self.maintain_order,
             )?
         };
-        state.clear_schema_cache();
 
+        state.set_schema(self.output_schema.clone());
         // MERGE phase
         // merge and hash aggregate again
         let df = accumulate_dataframes_vertical(dfs)?;

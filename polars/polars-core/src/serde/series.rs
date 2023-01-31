@@ -35,6 +35,16 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else {
             match self.dtype() {
+                #[cfg(feature = "dtype-binary")]
+                DataType::Binary => {
+                    let ca = self.binary().unwrap();
+                    ca.serialize(serializer)
+                }
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(_) => {
+                    let ca = self.struct_().unwrap();
+                    ca.serialize(serializer)
+                }
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => {
                     let ca = self.date().unwrap();
@@ -196,6 +206,19 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<Series>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
+                    #[cfg(feature = "dtype-binary")]
+                    DeDataType::Binary => {
+                        let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;
+                        Ok(Series::new(&name, values))
+                    }
+                    #[cfg(feature = "dtype-struct")]
+                    DeDataType::Struct => {
+                        let values: Vec<Series> = map.next_value()?;
+                        let ca = StructChunked::new(&name, &values).unwrap();
+                        let mut s = ca.into_series();
+                        s.rename(&name);
+                        Ok(s)
+                    }
                     #[cfg(feature = "dtype-categorical")]
                     DeDataType::Categorical => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
@@ -204,7 +227,7 @@ impl<'de> Deserialize<'de> for Series {
                             .unwrap())
                     }
                     dt => {
-                        panic!("{:?} dtype deserialization not yet implemented", dt)
+                        panic!("{dt:?} dtype deserialization not yet implemented")
                     }
                 }
             }

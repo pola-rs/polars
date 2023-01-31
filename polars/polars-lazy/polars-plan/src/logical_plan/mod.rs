@@ -4,6 +4,8 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "parquet")]
+use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
@@ -17,13 +19,17 @@ pub(crate) mod anonymous_scan;
 mod apply;
 mod builder;
 pub(crate) mod conversion;
+#[cfg(feature = "debugging")]
+pub(crate) mod debug;
 mod format;
 mod functions;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
-mod projection;
+pub(crate) mod projection;
+#[cfg(feature = "python")]
+mod pyarrow;
 mod schema;
 
 pub use aexpr::*;
@@ -60,6 +66,51 @@ pub enum Context {
     Default,
 }
 
+#[derive(Debug)]
+pub enum ErrorState {
+    NotYetEncountered { err: PolarsError },
+    AlreadyEncountered { prev_err_msg: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct ErrorStateSync(Arc<Mutex<ErrorState>>);
+
+impl std::ops::Deref for ErrorStateSync {
+    type Target = Arc<Mutex<ErrorState>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ErrorStateSync {
+    fn take(&self) -> PolarsError {
+        let mut err = self.0.lock().unwrap();
+        match &*err {
+            ErrorState::NotYetEncountered { err: polars_err } => {
+                let msg = format!("{polars_err:?}");
+                let err = std::mem::replace(
+                    &mut *err,
+                    ErrorState::AlreadyEncountered { prev_err_msg: msg },
+                );
+                let ErrorState::NotYetEncountered { err } = err else {
+                    unreachable!("polars bug in LogicalPlan error handling")
+                };
+                err
+            }
+            ErrorState::AlreadyEncountered { prev_err_msg } => PolarsError::ComputeError(
+                format!("LogicalPlan already failed with error: `{prev_err_msg}`").into(),
+            ),
+        }
+    }
+}
+
+impl From<PolarsError> for ErrorStateSync {
+    fn from(err: PolarsError) -> Self {
+        Self(Arc::new(Mutex::new(ErrorState::NotYetEncountered { err })))
+    }
+}
+
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -94,16 +145,15 @@ pub enum LogicalPlan {
         predicate: Option<Expr>,
     },
     #[cfg(feature = "parquet")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     /// Scan a Parquet file
     ParquetScan {
         path: PathBuf,
         file_info: FileInfo,
         predicate: Option<Expr>,
         options: ParquetOptions,
+        cloud_options: Option<CloudOptions>,
     },
     #[cfg(feature = "ipc")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     IpcScan {
         path: PathBuf,
         file_info: FileInfo,
@@ -201,13 +251,17 @@ pub enum LogicalPlan {
     #[cfg_attr(feature = "serde", serde(skip))]
     Error {
         input: Box<LogicalPlan>,
-        err: Arc<Mutex<Option<PolarsError>>>,
+        err: ErrorStateSync,
     },
     /// This allows expressions to access other tables
     ExtContext {
         input: Box<LogicalPlan>,
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
+    },
+    FileSink {
+        input: Box<LogicalPlan>,
+        payload: FileSinkOptions,
     },
 }
 
@@ -259,7 +313,7 @@ impl LogicalPlan {
             Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
             Join { schema, .. } => Ok(Cow::Borrowed(schema)),
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Distinct { input, .. } => input.schema(),
+            Distinct { input, .. } | FileSink { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
             MapFunction {
@@ -271,21 +325,12 @@ impl LogicalPlan {
                     Cow::Borrowed(schema) => function.schema(schema),
                 }
             }
-            Error { err, .. } => {
-                // We just take the error. The LogicalPlan should not be used anymore once this
-                let mut err = err.lock().unwrap();
-                match err.take() {
-                    Some(err) => Err(err),
-                    None => Err(PolarsError::ComputeError(
-                        "LogicalPlan already failed".into(),
-                    )),
-                }
-            }
+            Error { err, .. } => Err(err.take()),
             ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
         }
     }
     pub fn describe(&self) -> String {
-        format!("{:#?}", self)
+        format!("{self:#?}")
     }
 }
 

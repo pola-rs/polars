@@ -1,10 +1,10 @@
 use numpy::PyArray1;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
-use polars_core::utils::CustomIterTools;
+use polars_core::utils::{flatten_series, CustomIterTools};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyList};
 use pyo3::Python;
 
 use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
@@ -12,10 +12,10 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
-use crate::npy::{aligned_array, get_refcnt};
 use crate::prelude::*;
 use crate::set::set_at_idx;
 use crate::{apply_method_all_arrow_series2, arrow_interop};
+
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
@@ -99,7 +99,7 @@ impl PySeries {
         })
     }
 
-    pub fn struct_to_frame(&self) -> PyResult<PyDataFrame> {
+    pub fn struct_unnest(&self) -> PyResult<PyDataFrame> {
         let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
         let df: DataFrame = ca.clone().into();
         Ok(df.into())
@@ -114,10 +114,16 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     pub fn is_sorted_flag(&self) -> bool {
-        matches!(self.series.is_sorted(), IsSorted::Ascending)
+        matches!(self.series.is_sorted_flag(), IsSorted::Ascending)
     }
     pub fn is_sorted_reverse_flag(&self) -> bool {
-        matches!(self.series.is_sorted(), IsSorted::Descending)
+        matches!(self.series.is_sorted_flag(), IsSorted::Descending)
+    }
+    pub fn can_fast_explode_flag(&self) -> bool {
+        match self.series.list() {
+            Err(_) => false,
+            Ok(list) => list._can_fast_explode(),
+        }
     }
 
     #[staticmethod]
@@ -279,7 +285,7 @@ impl PySeries {
                 ca.into_series().into()
             }
             dt => {
-                panic!("cannot create repeat with dtype: {:?}", dt);
+                panic!("cannot create repeat with dtype: {dt:?}");
             }
         }
     }
@@ -301,7 +307,7 @@ impl PySeries {
                     }
                     previous = o;
                 }
-                let mut out = ListChunked::from_chunks(name, vec![arr]);
+                let mut out = unsafe { ListChunked::from_chunks(name, vec![arr]) };
                 if fast_explode {
                     out.set_fast_explode()
                 }
@@ -366,7 +372,7 @@ impl PySeries {
     }
 
     pub fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
-        let val = format!("{}", self.series.get(index));
+        let val = format!("{}", self.series.get(index).unwrap());
         if let DataType::Utf8 | DataType::Categorical(_) = self.series.dtype() {
             let v_trunc = &val[..val
                 .char_indices()
@@ -377,7 +383,7 @@ impl PySeries {
             if val == v_trunc {
                 val
             } else {
-                format!("{}...", v_trunc)
+                format!("{v_trunc}...")
             }
         } else {
             val
@@ -394,8 +400,8 @@ impl PySeries {
         }
     }
 
-    pub fn get_idx(&self, py: Python, idx: usize) -> PyObject {
-        Wrap(self.series.get(idx)).into_py(py)
+    pub fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
+        Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
     }
 
     pub fn bitand(&self, other: &PySeries) -> PyResult<Self> {
@@ -444,12 +450,12 @@ impl PySeries {
             .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
-    fn set_sorted(&self, reverse: bool) -> Self {
+    fn set_sorted_flag(&self, reverse: bool) -> Self {
         let mut out = self.series.clone();
         if reverse {
-            out.set_sorted(IsSorted::Descending);
+            out.set_sorted_flag(IsSorted::Descending);
         } else {
-            out.set_sorted(IsSorted::Ascending)
+            out.set_sorted_flag(IsSorted::Ascending)
         }
         out.into()
     }
@@ -464,16 +470,34 @@ impl PySeries {
         }
     }
 
-    pub fn max(&self, py: Python) -> PyObject {
-        Wrap(self.series.max_as_series().get(0)).into_py(py)
+    pub fn max(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .max_as_series()
+                .get(0)
+                .map_err(PyPolarsErr::from)?,
+        )
+        .into_py(py))
     }
 
-    pub fn min(&self, py: Python) -> PyObject {
-        Wrap(self.series.min_as_series().get(0)).into_py(py)
+    pub fn min(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .min_as_series()
+                .get(0)
+                .map_err(PyPolarsErr::from)?,
+        )
+        .into_py(py))
     }
 
-    pub fn sum(&self, py: Python) -> PyObject {
-        Wrap(self.series.sum_as_series().get(0)).into_py(py)
+    pub fn sum(&self, py: Python) -> PyResult<PyObject> {
+        Ok(Wrap(
+            self.series
+                .sum_as_series()
+                .get(0)
+                .map_err(PyPolarsErr::from)?,
+        )
+        .into_py(py))
     }
 
     pub fn n_chunks(&self) -> usize {
@@ -512,8 +536,12 @@ impl PySeries {
         }
     }
 
-    pub fn add(&self, other: &PySeries) -> Self {
-        (&self.series + &other.series).into()
+    pub fn add(&self, other: &PySeries) -> PyResult<Self> {
+        let out = self
+            .series
+            .try_add(&other.series)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
     pub fn sub(&self, other: &PySeries) -> Self {
@@ -564,34 +592,6 @@ impl PySeries {
 
     pub fn has_validity(&self) -> bool {
         self.series.has_validity()
-    }
-
-    pub fn sample_n(
-        &self,
-        n: usize,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> PyResult<Self> {
-        let s = self
-            .series
-            .sample_n(n, with_replacement, shuffle, seed)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    pub fn sample_frac(
-        &self,
-        frac: f64,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> PyResult<Self> {
-        let s = self
-            .series
-            .sample_frac(frac, with_replacement, shuffle, seed)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
     }
 
     pub fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
@@ -757,7 +757,8 @@ impl PySeries {
                 self.series
                     .quantile_as_series(quantile, interpolation.0)
                     .expect("invalid quantile")
-                    .get(0),
+                    .get(0)
+                    .unwrap_or(AnyValue::Null),
             )
             .into_py(py)
         })
@@ -783,6 +784,7 @@ impl PySeries {
         PySeries::new(self.series.clone())
     }
 
+    #[pyo3(signature = (lambda, output_type, skip_nulls))]
     pub fn apply_lambda(
         &self,
         lambda: &PyAny,
@@ -796,17 +798,21 @@ impl PySeries {
 
             macro_rules! dispatch_apply {
                 ($self:expr, $method:ident, $($args:expr),*) => {
-                    if matches!($self.dtype(), DataType::Object(_)) {
-                        let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
-                        ca.$method($($args),*)
-                    } else {
-                        apply_method_all_arrow_series2!(
-                            $self,
-                            $method,
-                            $($args),*
-                        )
-                    }
+                    match $self.dtype() {
+                        #[cfg(feature = "object")]
+                        DataType::Object(_) => {
+                            let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
+                            ca.$method($($args),*)
+                        },
+                        _ => {
+                            apply_method_all_arrow_series2!(
+                                $self,
+                                $method,
+                                $($args),*
+                            )
+                        }
 
+                    }
                 }
 
             }
@@ -1121,65 +1127,25 @@ impl PySeries {
             Err(e) => Err(PyErr::from(PyPolarsErr::from(e))),
         }
     }
+    pub fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
+        Python::with_gil(|py| {
+            let wrap_s = py_modules::POLARS.getattr(py, "wrap_s").unwrap();
+            flatten_series(&self.series)
+                .into_iter()
+                .map(|s| wrap_s.call1(py, (Self::new(s),)))
+                .collect()
+        })
+    }
+
+    pub fn is_sorted(&self, reverse: bool) -> bool {
+        let options = SortOptions {
+            descending: reverse,
+            nulls_last: reverse,
+            multithreaded: true,
+        };
+        self.series.is_sorted(options)
+    }
 }
-
-macro_rules! impl_ufuncs {
-    ($name:ident, $type:ident, $unsafe_from_ptr_method:ident) => {
-        #[pymethods]
-        impl PySeries {
-            // applies a ufunc by accepting a lambda out: ufunc(*args, out=out)
-            // the out array is allocated in this method, send to Python and once the ufunc is applied
-            // ownership is taken by Rust again to prevent memory leak.
-            // if the ufunc fails, we first must take ownership back.
-            pub fn $name(&self, lambda: &PyAny) -> PyResult<PySeries> {
-                // numpy array object, and a *mut ptr
-                Python::with_gil(|py| {
-                    let size = self.len();
-                    let (out_array, av) =
-                        unsafe { aligned_array::<<$type as PolarsNumericType>::Native>(py, size) };
-
-                    debug_assert_eq!(get_refcnt(out_array), 1);
-                    // inserting it in a tuple increase the reference count by 1.
-                    let args = PyTuple::new(py, &[out_array]);
-                    debug_assert_eq!(get_refcnt(out_array), 2);
-
-                    // whatever the result, we must take the leaked memory ownership back
-                    let s = match lambda.call1(args) {
-                        Ok(_) => {
-                            // if this assert fails, the lambda has taken a reference to the object, so we must panic
-                            // args and the lambda return have a reference, making a total of 3
-                            assert_eq!(get_refcnt(out_array), 3);
-
-                            let validity = self.series.chunks()[0].validity().cloned();
-                            let ca = ChunkedArray::<$type>::new_from_owned_with_null_bitmap(
-                                self.name(),
-                                av,
-                                validity,
-                            );
-                            PySeries::new(ca.into_series())
-                        }
-                        Err(e) => {
-                            // return error information
-                            return Err(e);
-                        }
-                    };
-
-                    Ok(s)
-                })
-            }
-        }
-    };
-}
-impl_ufuncs!(apply_ufunc_f32, Float32Type, unsafe_from_ptr_f32);
-impl_ufuncs!(apply_ufunc_f64, Float64Type, unsafe_from_ptr_f64);
-impl_ufuncs!(apply_ufunc_u8, UInt8Type, unsafe_from_ptr_u8);
-impl_ufuncs!(apply_ufunc_u16, UInt16Type, unsafe_from_ptr_u16);
-impl_ufuncs!(apply_ufunc_u32, UInt32Type, unsafe_from_ptr_u32);
-impl_ufuncs!(apply_ufunc_u64, UInt64Type, unsafe_from_ptr_u64);
-impl_ufuncs!(apply_ufunc_i8, Int8Type, unsafe_from_ptr_i8);
-impl_ufuncs!(apply_ufunc_i16, Int16Type, unsafe_from_ptr_i16);
-impl_ufuncs!(apply_ufunc_i32, Int32Type, unsafe_from_ptr_i32);
-impl_ufuncs!(apply_ufunc_i64, Int64Type, unsafe_from_ptr_i64);
 
 macro_rules! impl_set_with_mask {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {

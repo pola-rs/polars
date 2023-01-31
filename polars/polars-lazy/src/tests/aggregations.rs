@@ -12,7 +12,6 @@ fn test_agg_exprs() -> PolarsResult<()> {
         .groupby_stable([col("cars")])
         .agg([(lit(1) - col("A"))
             .map(|s| Ok(&s * 2), GetOutput::same_type())
-            .list()
             .alias("foo")])
         .collect()?;
     let ca = out.column("foo")?.list()?;
@@ -62,36 +61,6 @@ fn test_lazy_agg_scan() {
     // mean is not yet aggregated at scan.
     let df = lf().mean().collect().unwrap();
     assert!(df.frame_equal_missing(&lf().collect().unwrap().mean()));
-}
-
-#[test]
-fn test_lazy_df_aggregations() {
-    let df = load_df();
-
-    assert!(df
-        .clone()
-        .lazy()
-        .min()
-        .collect()
-        .unwrap()
-        .frame_equal_missing(&df.min()));
-    assert!(df
-        .clone()
-        .lazy()
-        .median()
-        .collect()
-        .unwrap()
-        .frame_equal_missing(&df.median()));
-    assert!(df
-        .clone()
-        .lazy()
-        .quantile(0.5, QuantileInterpolOptions::default())
-        .collect()
-        .unwrap()
-        .frame_equal_missing(
-            &df.quantile(0.5, QuantileInterpolOptions::default())
-                .unwrap()
-        ));
 }
 
 #[test]
@@ -212,7 +181,6 @@ fn test_power_in_agg_list1() -> PolarsResult<()> {
             },
         )
         .collect()?;
-    dbg!(&out);
 
     let agg = out.column("foo")?.list()?;
     let first = agg.get(0).unwrap();
@@ -361,7 +329,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
         .clone()
         .lazy()
         .groupby_stable([col("groups")])
-        .agg([((col("vals").first() - col("vals")).list()).alias("vals")])
+        .agg([(col("vals").first() - col("vals")).alias("vals")])
         .collect()?;
 
     // 0 - [1, 2] = [0, -1]
@@ -379,7 +347,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     let out = df
         .lazy()
         .groupby_stable([col("groups")])
-        .agg([((col("vals")) - col("vals").first()).list().alias("vals")])
+        .agg([((col("vals")) - col("vals").first()).alias("vals")])
         .collect()?;
 
     // [1, 2] - 1 = [0, 1]
@@ -407,8 +375,8 @@ fn test_binary_agg_context_3() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("last")?;
-    assert_eq!(out.get(0), AnyValue::Int32(4));
-    assert_eq!(out.get(1), AnyValue::Int32(0));
+    assert_eq!(out.get(0)?, AnyValue::Int32(4));
+    assert_eq!(out.get(1)?, AnyValue::Int32(0));
 
     Ok(())
 }
@@ -423,18 +391,18 @@ fn test_shift_elementwise_issue_2509() -> PolarsResult<()> {
         .lazy()
         // Don't use maintain order here! That hides the bug
         .groupby([col("x")])
-        .agg(&[(col("y").shift(-1) + col("x")).list().alias("sum")])
+        .agg(&[(col("y").shift(-1) + col("x")).alias("sum")])
         .sort("x", Default::default())
         .collect()?;
 
     let out = out.explode(["sum"])?;
     let out = out.column("sum")?;
-    assert_eq!(out.get(0), AnyValue::Int32(10));
-    assert_eq!(out.get(1), AnyValue::Int32(20));
-    assert_eq!(out.get(2), AnyValue::Null);
-    assert_eq!(out.get(3), AnyValue::Int32(11));
-    assert_eq!(out.get(4), AnyValue::Int32(21));
-    assert_eq!(out.get(5), AnyValue::Null);
+    assert_eq!(out.get(0)?, AnyValue::Int32(10));
+    assert_eq!(out.get(1)?, AnyValue::Int32(20));
+    assert_eq!(out.get(2)?, AnyValue::Null);
+    assert_eq!(out.get(3)?, AnyValue::Int32(11));
+    assert_eq!(out.get(4)?, AnyValue::Int32(21));
+    assert_eq!(out.get(5)?, AnyValue::Null);
 
     Ok(())
 }
@@ -456,9 +424,9 @@ fn take_aggregations() -> PolarsResult<()> {
         .collect()?;
 
     let s = out.column("fav_book")?;
-    assert_eq!(s.get(0), AnyValue::Utf8("a"));
-    assert_eq!(s.get(1), AnyValue::Utf8("c"));
-    assert_eq!(s.get(2), AnyValue::Utf8("a"));
+    assert_eq!(s.get(0)?, AnyValue::Utf8("a"));
+    assert_eq!(s.get(1)?, AnyValue::Utf8("c"));
+    assert_eq!(s.get(2)?, AnyValue::Utf8("a"));
 
     let out = df
         .clone()
@@ -472,6 +440,7 @@ fn take_aggregations() -> PolarsResult<()> {
                         .arg_sort(SortOptions {
                             descending: true,
                             nulls_last: false,
+                            multithreaded: true,
                         })
                         .head(Some(2)),
                 )
@@ -509,6 +478,7 @@ fn test_take_consistency() -> PolarsResult<()> {
             .arg_sort(SortOptions {
                 descending: true,
                 nulls_last: false,
+                multithreaded: true,
             })
             .take(lit(0))])
         .collect()?;
@@ -525,6 +495,7 @@ fn test_take_consistency() -> PolarsResult<()> {
             .arg_sort(SortOptions {
                 descending: true,
                 nulls_last: false,
+                multithreaded: true,
             })
             .take(lit(0))])
         .collect()?;
@@ -543,6 +514,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 .arg_sort(SortOptions {
                     descending: true,
                     nulls_last: false,
+                    multithreaded: true,
                 })
                 .take(lit(0))
                 .alias("1"),
@@ -552,6 +524,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                         .arg_sort(SortOptions {
                             descending: true,
                             nulls_last: false,
+                            multithreaded: true,
                         })
                         .take(lit(0)),
                 )

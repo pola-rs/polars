@@ -3,32 +3,63 @@ use arrow::io::parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
 };
+#[cfg(feature = "async")]
+use polars_core::datatypes::PlHashMap;
 
 use super::*;
 
-/// memory maps all columns that are part of the parquet field `field_name`
+/// Store colums data in two scenarios:
+/// 1. a local memory mapped file
+/// 2. data fetched from cloud storage on demand, in this case
+///     a. the key in the hashmap is the start in the file
+///     b. the value in the hashmap is the actual data.
+///
+/// For the fetched case we use a two phase approach:
+///    a. identify all the needed columns
+///    b. asynchronously fetch them in parallel, for example using object_store
+///    c. store the data in this data structure
+///    d. when all the data is available deserialize on multiple threads, for example using rayon
+pub enum ColumnStore<'a> {
+    Local(&'a [u8]),
+    #[cfg(feature = "async")]
+    Fetched(PlHashMap<u64, Vec<u8>>),
+}
+
+/// For local files memory maps all columns that are part of the parquet field `field_name`.
+/// For cloud files the relevant memory regions should have been prefetched.
 pub(super) fn mmap_columns<'a>(
-    file: &'a [u8],
+    store: &'a ColumnStore,
     columns: &'a [ColumnChunkMetaData],
     field_name: &str,
 ) -> Vec<(&'a ColumnChunkMetaData, &'a [u8])> {
     get_field_columns(columns, field_name)
         .into_iter()
-        .map(|meta| _mmap_single_column(file, meta))
+        .map(|meta| _mmap_single_column(store, meta))
         .collect()
 }
 
 fn _mmap_single_column<'a>(
-    file: &'a [u8],
+    store: &'a ColumnStore,
     meta: &'a ColumnChunkMetaData,
 ) -> (&'a ColumnChunkMetaData, &'a [u8]) {
     let (start, len) = meta.byte_range();
-    let chunk = &file[start as usize..(start + len) as usize];
+    let chunk = match store {
+        ColumnStore::Local(file) => &file[start as usize..(start + len) as usize],
+        #[cfg(all(feature = "async", feature = "parquet"))]
+        ColumnStore::Fetched(fetched) => {
+            let entry = fetched.get(&start).unwrap_or_else(|| {
+                panic!(
+                    "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
+                )
+            });
+            entry.as_slice()
+        }
+    };
     (meta, chunk)
 }
 
 // similar to arrow2 serializer, except this accepts a slice instead of a vec.
-// this allows use to memory map
+// this allows us to memory map
 pub(super) fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, &'a [u8])>,
     field: Field,

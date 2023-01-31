@@ -18,10 +18,10 @@ impl Operator for FilterOperator {
     ) -> PolarsResult<OperatorResult> {
         let s = self
             .predicate
-            .evaluate(chunk, context.execution_state.as_ref())?;
+            .evaluate(chunk, context.execution_state.as_any())?;
         let mask = s.bool().map_err(|e| {
             PolarsError::ComputeError(
-                format!("Filter predicate must be of type Boolean, got: {:?}", e).into(),
+                format!("Filter predicate must be of type Boolean, got: {e:?}").into(),
             )
         })?;
         // the filter is sequential as they are already executed on different threads
@@ -32,5 +32,8 @@ impl Operator for FilterOperator {
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
+    }
+    fn fmt(&self) -> &str {
+        "filter"
     }
 }

@@ -7,6 +7,7 @@ pub mod stringcache;
 pub use builder::*;
 pub(crate) use merge::*;
 pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
+use polars_utils::sync::SyncPtr;
 
 use super::*;
 use crate::prelude::*;
@@ -54,7 +55,7 @@ impl CategoricalChunked {
         chunks: Vec<ArrayRef>,
         rev_map: RevMapping,
     ) -> Self {
-        let ca = UInt32Chunked::from_chunks(name, chunks);
+        let ca = unsafe { UInt32Chunked::from_chunks(name, chunks) };
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(ca);
         logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map))));
         let bit_settings = 1u8;
@@ -137,9 +138,17 @@ impl LogicalType for CategoricalChunked {
         self.logical.2.as_ref().unwrap()
     }
 
-    fn get_any_value(&self, i: usize) -> AnyValue<'_> {
-        match self.logical.0.get(i) {
-            Some(i) => AnyValue::Categorical(i, self.get_rev_map()),
+    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        if i < self.len() {
+            Ok(unsafe { self.get_any_value_unchecked(i) })
+        } else {
+            Err(PolarsError::ComputeError("Index is out of bounds.".into()))
+        }
+    }
+
+    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        match self.logical.0.get_unchecked(i) {
+            Some(i) => AnyValue::Categorical(i, self.get_rev_map(), SyncPtr::new_null()),
             None => AnyValue::Null,
         }
     }
@@ -168,8 +177,9 @@ impl LogicalType for CategoricalChunked {
                 Ok(ca.into_series())
             }
             DataType::UInt32 => {
-                let ca =
-                    UInt32Chunked::from_chunks(self.logical.name(), self.logical.chunks.clone());
+                let ca = unsafe {
+                    UInt32Chunked::from_chunks(self.logical.name(), self.logical.chunks.clone())
+                };
                 Ok(ca.into_series())
             }
             #[cfg(feature = "dtype-categorical")]
@@ -251,10 +261,10 @@ mod test {
             .cast(&DataType::Categorical(None))
             .unwrap();
         let appended = s1.append(&s2).unwrap();
-        assert_eq!(appended.str_value(0), "a");
-        assert_eq!(appended.str_value(1), "b");
-        assert_eq!(appended.str_value(4), "x");
-        assert_eq!(appended.str_value(5), "y");
+        assert_eq!(appended.str_value(0).unwrap(), "a");
+        assert_eq!(appended.str_value(1).unwrap(), "b");
+        assert_eq!(appended.str_value(4).unwrap(), "x");
+        assert_eq!(appended.str_value(5).unwrap(), "y");
     }
 
     #[test]
@@ -286,17 +296,17 @@ mod test {
             Field::new("a", DataType::Categorical(None))
         );
         assert!(matches!(
-            s.get(0),
-            AnyValue::Categorical(0, RevMapping::Local(_))
+            s.get(0)?,
+            AnyValue::Categorical(0, RevMapping::Local(_), _)
         ));
 
         let groups = s.group_tuples(false, true);
         let aggregated = unsafe { s.agg_list(&groups?) };
-        match aggregated.get(0) {
+        match aggregated.get(0)? {
             AnyValue::List(s) => {
                 assert!(matches!(s.dtype(), DataType::Categorical(_)));
                 let str_s = s.cast(&DataType::Utf8).unwrap();
-                assert_eq!(str_s.get(0), AnyValue::Utf8("a"));
+                assert_eq!(str_s.get(0)?, AnyValue::Utf8("a"));
                 assert_eq!(s.len(), 1);
             }
             _ => panic!(),

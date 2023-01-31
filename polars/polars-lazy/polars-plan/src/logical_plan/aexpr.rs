@@ -28,7 +28,7 @@ pub enum AAggExpr {
     List(Node),
     Quantile {
         expr: Node,
-        quantile: f64,
+        quantile: Node,
         interpol: QuantileInterpolOptions,
     },
     Sum(Node),
@@ -39,7 +39,7 @@ pub enum AAggExpr {
 }
 
 // AExpr representation of Nodes which are allocated in an Arena
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum AExpr {
     Explode(Node),
     Alias(Node, Arc<str>),
@@ -97,6 +97,7 @@ pub enum AExpr {
         order_by: Option<Node>,
         options: WindowOptions,
     },
+    #[default]
     Wildcard,
     Slice {
         input: Node,
@@ -105,12 +106,6 @@ pub enum AExpr {
     },
     Count,
     Nth(i64),
-}
-
-impl Default for AExpr {
-    fn default() -> Self {
-        AExpr::Wildcard
-    }
 }
 
 impl AExpr {
@@ -186,7 +181,7 @@ impl AExpr {
     }
 
     /// Get Field result of the expression. The schema is the input data.
-    pub(crate) fn to_field(
+    pub fn to_field(
         &self,
         schema: &Schema,
         ctxt: Context,
@@ -195,7 +190,7 @@ impl AExpr {
         use AExpr::*;
         use DataType::*;
         match self {
-            Count => Ok(Field::new(COUNT, DataType::UInt32)),
+            Count => Ok(Field::new(COUNT, IDX_DTYPE)),
             Window { function, .. } => {
                 let e = arena.get(*function);
                 e.to_field(schema, ctxt, arena)
@@ -298,14 +293,16 @@ impl AExpr {
                         Ok(field)
                     }
                     Median(expr) => {
-                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         if field.data_type() != &DataType::Utf8 {
                             field.coerce(DataType::Float64);
                         }
                         Ok(field)
                     }
                     Mean(expr) => {
-                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
@@ -317,32 +314,37 @@ impl AExpr {
                         Ok(field)
                     }
                     Std(expr, _) => {
-                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                     Var(expr, _) => {
-                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                     NUnique(expr) => {
-                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         field.coerce(DataType::UInt32);
                         Ok(field)
                     }
                     Count(expr) => {
-                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::UInt32);
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
+                        field.coerce(IDX_DTYPE);
                         Ok(field)
                     }
                     AggGroups(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::List(DataType::UInt32.into()));
+                        field.coerce(DataType::List(IDX_DTYPE.into()));
                         Ok(field)
                     }
                     Quantile { expr, .. } => {
-                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
@@ -394,15 +396,7 @@ impl AExpr {
 }
 
 fn coerce_numeric_aggregation(field: &mut Field) {
-    match field.dtype {
-        DataType::Duration(_) => {
-            // pass
-        }
-        DataType::Float32 => {
-            // pass
-        }
-        _ => {
-            field.coerce(DataType::Float64);
-        }
+    if field.dtype.is_numeric() && !matches!(&field.dtype, DataType::Float32) {
+        field.coerce(DataType::Float64)
     }
 }

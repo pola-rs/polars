@@ -6,7 +6,7 @@ use super::*;
 fn test_sorted_groupby() -> PolarsResult<()> {
     // nulls last
     let mut s = Series::new("a", &[Some(1), Some(1), Some(1), Some(6), Some(6), None]);
-    s.set_sorted(IsSorted::Ascending);
+    s.set_sorted_flag(IsSorted::Ascending);
     for mt in [true, false] {
         let out = s.group_tuples(mt, false)?;
         assert_eq!(out.unwrap_slice(), &[[0, 3], [3, 2], [5, 1]]);
@@ -17,7 +17,7 @@ fn test_sorted_groupby() -> PolarsResult<()> {
         "a",
         &[None, None, Some(1), Some(1), Some(1), Some(6), Some(6)],
     );
-    s.set_sorted(IsSorted::Ascending);
+    s.set_sorted_flag(IsSorted::Ascending);
     for mt in [true, false] {
         let out = s.group_tuples(mt, false)?;
         assert_eq!(out.unwrap_slice(), &[[0, 2], [2, 3], [5, 2]]);
@@ -25,7 +25,7 @@ fn test_sorted_groupby() -> PolarsResult<()> {
 
     // nulls last
     let mut s = Series::new("a", &[Some(1), Some(1), Some(1), Some(6), Some(6), None]);
-    s.set_sorted(IsSorted::Ascending);
+    s.set_sorted_flag(IsSorted::Ascending);
     for mt in [true, false] {
         let out = s.group_tuples(mt, false)?;
         assert_eq!(out.unwrap_slice(), &[[0, 3], [3, 2], [5, 1]]);
@@ -45,7 +45,7 @@ fn test_sorted_groupby() -> PolarsResult<()> {
             Some(-1),
         ],
     );
-    s.set_sorted(IsSorted::Descending);
+    s.set_sorted_flag(IsSorted::Descending);
     for mt in [false, true] {
         let out = s.group_tuples(mt, false)?;
         assert_eq!(out.unwrap_slice(), &[[0, 2], [2, 2], [4, 3], [7, 1]]);
@@ -74,7 +74,7 @@ fn test_sorted_groupby() -> PolarsResult<()> {
             None,
         ],
     );
-    s.set_sorted(IsSorted::Descending);
+    s.set_sorted_flag(IsSorted::Descending);
     for mt in [false, true] {
         let out = s.group_tuples(mt, false)?;
         assert_eq!(

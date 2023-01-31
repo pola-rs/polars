@@ -1,6 +1,7 @@
 use polars::prelude::*;
 use pyo3::{FromPyObject, PyAny, PyResult};
 
+#[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::Wrap;
 

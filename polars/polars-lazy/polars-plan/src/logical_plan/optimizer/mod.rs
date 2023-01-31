@@ -62,6 +62,7 @@ pub fn optimize(
     let type_coercion = opt_state.type_coercion;
     let simplify_expr = opt_state.simplify_expr;
     let slice_pushdown = opt_state.slice_pushdown;
+    let streaming = opt_state.streaming;
     #[cfg(feature = "cse")]
     let cse = opt_state.common_subplan_elimination;
 
@@ -95,11 +96,14 @@ pub fn optimize(
 
     // should be run before predicate pushdown
     if projection_pushdown {
-        let projection_pushdown_opt = ProjectionPushDown {};
+        let mut projection_pushdown_opt = ProjectionPushDown::new();
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
+
+        if projection_pushdown_opt.has_joins_or_unions && projection_pushdown_opt.has_cache {
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
+        }
     }
 
     if predicate_pushdown {
@@ -116,7 +120,7 @@ pub fn optimize(
     rules.push(Box::new(DelayRechunk::new()));
 
     if slice_pushdown {
-        let slice_pushdown_opt = SlicePushDown {};
+        let slice_pushdown_opt = SlicePushDown::new(streaming);
         let alp = lp_arena.take(lp_top);
         let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
 
@@ -148,7 +152,7 @@ pub fn optimize(
         // we must clean up the predicates, because the agg_scan_projection
         // uses them in the hashtable to determine duplicates.
         let simplify_bools = &mut [Box::new(SimplifyBooleanRule {}) as Box<dyn OptimizationRule>];
-        lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top);
+        lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top)?;
 
         // scan the LP to aggregate all the column used in scans
         // these columns will be added to the state of the AggScanProjection rule
@@ -172,7 +176,7 @@ pub fn optimize(
 
     rules.push(Box::new(ReplaceDropNulls {}));
 
-    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
+    lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
     // during debug we check if the optimizations have not modified the final schema
     #[cfg(debug_assertions)]

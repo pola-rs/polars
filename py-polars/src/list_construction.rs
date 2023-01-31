@@ -107,7 +107,7 @@ pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &DataType) -> PyResult<Ser
             builder.finish().into_series()
         }
         dt => {
-            panic!("cannot create list array from {:?}", dt);
+            panic!("cannot create list array from {dt:?}");
         }
     };
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import gzip
 import io
-import os
+import sys
+import tempfile
 import textwrap
 import zlib
 from datetime import date, datetime, time
@@ -18,8 +19,15 @@ from polars.testing import (
     assert_frame_equal_local_categoricals,
     assert_series_equal,
 )
+from polars.utils import normalise_filepath
 
 
+@pytest.fixture()
+def foods_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "foods1.csv"
+
+
+@pytest.mark.skip("Needs fix: https://github.com/pola-rs/polars/issues/6474")
 def test_quoted_date() -> None:
     csv = textwrap.dedent(
         """a,b
@@ -27,10 +35,9 @@ def test_quoted_date() -> None:
     "2022-01-02",2
     """
     )
-
+    result = pl.read_csv(csv.encode(), parse_dates=True)
     expected = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2)], "b": [1, 2]})
-
-    assert pl.read_csv(csv.encode(), parse_dates=True).frame_equal(expected)
+    assert_frame_equal(result, expected)
 
 
 def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
@@ -40,24 +47,21 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
     buf.seek(0)
 
     read_df = pl.read_csv(buf, parse_dates=True)
-
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
     assert_frame_equal_local_categoricals(df, read_df)
-
     with pytest.raises(AssertionError):
         assert_frame_equal_local_categoricals(df.select(["time", "cat"]), read_df)
 
 
-def test_to_from_file(io_test_dir: str, df_no_lists: pl.DataFrame) -> None:
-    df = df_no_lists
-    df = df.drop("strings_nulls")
+def test_to_from_file(df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists.drop("strings_nulls")
 
-    f = os.path.join(io_test_dir, "small.csv")
-    df.write_csv(f)
-
-    read_df = pl.read_csv(f, parse_dates=True)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "small.csv"
+        df.write_csv(file_path)
+        read_df = pl.read_csv(file_path, parse_dates=True)
 
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
@@ -65,10 +69,13 @@ def test_to_from_file(io_test_dir: str, df_no_lists: pl.DataFrame) -> None:
     assert_frame_equal_local_categoricals(df, read_df)
 
 
-def test_read_web_file() -> None:
-    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/datasets/foods1.csv"  # noqa: E501
-    df = pl.read_csv(url)
-    assert df.shape == (27, 4)
+def test_normalise_filepath(io_files_path: Path) -> None:
+    with pytest.raises(IsADirectoryError):
+        normalise_filepath(io_files_path)
+
+    assert normalise_filepath(str(io_files_path), check_not_directory=False) == str(
+        io_files_path
+    )
 
 
 def test_csv_null_values() -> None:
@@ -103,11 +110,121 @@ def test_csv_null_values() -> None:
         a,b,c
         na,b,c
         a,\N,c
+        ,b,
         """
     )
     f = io.StringIO(csv)
     df = pl.read_csv(f, null_values={"a": "na", "b": r"\N"})
-    assert df.rows() == [(None, "b", "c"), ("a", None, "c")]
+    assert df.rows() == [(None, "b", "c"), ("a", None, "c"), (None, "b", None)]
+
+
+def test_csv_missing_utf8_is_empty_string() -> None:
+    # validate 'missing_utf8_is_empty_string' for missing fields that are...
+    # >> ...leading
+    # >> ...trailing (both EOL & EOF)
+    # >> ...in lines that have missing fields
+    # >> ...in cols containing no other strings
+    # >> ...interacting with other user-supplied null values
+
+    csv = textwrap.dedent(
+        r"""
+        a,b,c
+        na,b,c
+        a,\N,c
+        ,b,
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        null_values={"a": "na", "b": r"\N"},
+        missing_utf8_is_empty_string=True,
+    )
+    # ┌──────┬──────┬─────┐
+    # │ a    ┆ b    ┆ c   │
+    # ╞══════╪══════╪═════╡
+    # │ null ┆ b    ┆ c   │
+    # │ a    ┆ null ┆ c   │
+    # │      ┆ b    ┆     │
+    # └──────┴──────┴─────┘
+    assert df.rows() == [(None, "b", "c"), ("a", None, "c"), ("", "b", "")]
+
+    csv = textwrap.dedent(
+        r"""
+        a,b,c,d,e,f,g
+        na,,,,\N,,
+        a,\N,c,,,,g
+        ,,,
+        ,,,na,,,
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, null_values=["na", r"\N"])
+    # ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┐
+    # │ a    ┆ b    ┆ c    ┆ d    ┆ e    ┆ f    ┆ g    │
+    # ╞══════╪══════╪══════╪══════╪══════╪══════╪══════╡
+    # │ null ┆ null ┆ null ┆ null ┆ null ┆ null ┆ null │
+    # │ a    ┆ null ┆ c    ┆ null ┆ null ┆ null ┆ g    │
+    # │ null ┆ null ┆ null ┆ null ┆ null ┆ null ┆ null │
+    # │ null ┆ null ┆ null ┆ null ┆ null ┆ null ┆ null │
+    # └──────┴──────┴──────┴──────┴──────┴──────┴──────┘
+    assert df.rows() == [
+        (None, None, None, None, None, None, None),
+        ("a", None, "c", None, None, None, "g"),
+        (None, None, None, None, None, None, None),
+        (None, None, None, None, None, None, None),
+    ]
+
+    df = pl.read_csv(
+        f,
+        null_values=["na", r"\N"],
+        missing_utf8_is_empty_string=True,
+    )
+    # ┌──────┬──────┬─────┬──────┬──────┬──────┬─────┐
+    # │ a    ┆ b    ┆ c   ┆ d    ┆ e    ┆ f    ┆ g   │
+    # ╞══════╪══════╪═════╪══════╪══════╪══════╪═════╡
+    # │ null ┆      ┆     ┆      ┆ null ┆      ┆     │
+    # │ a    ┆ null ┆ c   ┆      ┆      ┆      ┆ g   │
+    # │      ┆      ┆     ┆      ┆      ┆      ┆     │
+    # │      ┆      ┆     ┆ null ┆      ┆      ┆     │
+    # └──────┴──────┴─────┴──────┴──────┴──────┴─────┘
+    assert df.rows() == [
+        (None, "", "", "", None, "", ""),
+        ("a", None, "c", "", "", "", "g"),
+        ("", "", "", "", "", "", ""),
+        ("", "", "", None, "", "", ""),
+    ]
+
+
+def test_csv_float_parsing() -> None:
+    lines_with_floats = [
+        "123.86,+123.86,-123.86\n",
+        ".987,+.987,-.987\n",
+        "5.,+5.,-5.\n",
+        "inf,+inf,-inf\n",
+        "NaN,+NaN,-NaN\n",
+    ]
+
+    for line_with_floats in lines_with_floats:
+        f = io.StringIO(line_with_floats)
+        df = pl.read_csv(f, has_header=False, new_columns=["a", "b", "c"])
+        assert df.dtypes == [pl.Float64, pl.Float64, pl.Float64]
+
+    lines_with_scientific_numbers = [
+        "1e27,1E65,1e-28,1E-9\n",
+        "+1e27,+1E65,+1e-28,+1E-9\n",
+        "1e+27,1E+65,1e-28,1E-9\n",
+        "+1e+27,+1E+65,+1e-28,+1E-9\n",
+        "-1e+27,-1E+65,-1e-28,-1E-9\n",
+        #        "e27,E65,e-28,E-9\n",
+        #        "+e27,+E65,+e-28,+E-9\n",
+        #        "-e27,-E65,-e-28,-E-9\n",
+    ]
+
+    for line_with_scientific_numbers in lines_with_scientific_numbers:
+        f = io.StringIO(line_with_scientific_numbers)
+        df = pl.read_csv(f, has_header=False, new_columns=["a", "b", "c", "d"])
+        assert df.dtypes == [pl.Float64, pl.Float64, pl.Float64, pl.Float64]
 
 
 def test_datetime_parsing() -> None:
@@ -201,7 +318,8 @@ def test_partial_column_rename() -> None:
 
 
 @pytest.mark.parametrize(
-    "col_input, col_out", [([0, 1], ["a", "b"]), ([0, 2], ["a", "c"]), (["b"], ["b"])]
+    ("col_input", "col_out"),
+    [([0, 1], ["a", "b"]), ([0, 2], ["a", "c"]), (["b"], ["b"])],
 )
 def test_read_csv_columns_argument(
     col_input: list[int] | list[str], col_out: list[str]
@@ -242,25 +360,24 @@ def test_read_csv_encoding() -> None:
         b"-20,7.91,3384,4,\xac\xfc\xb0\xea\n"
     )
 
-    file_path = os.path.join(os.path.dirname(__file__), "encoding.csv")
-    file_str = str(file_path)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "encoding.csv"
+        with open(file_path, "wb") as f:
+            f.write(bts)
 
-    with open(file_path, "wb") as f:
-        f.write(bts)
+        file_str = str(file_path)
+        bytesio = io.BytesIO(bts)
 
-    bytesio = io.BytesIO(bts)
-
-    for use_pyarrow in (False, True):
-        for file in (file_path, file_str, bts, bytesio):
-            print(type(file))
-            assert_series_equal(
-                pl.read_csv(
-                    file,  # type: ignore[arg-type]
-                    encoding="big5",
-                    use_pyarrow=use_pyarrow,
-                ).get_column("Region"),
-                pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
-            )
+        for use_pyarrow in (False, True):
+            for file in [file_path, file_str, bts, bytesio]:
+                assert_series_equal(
+                    pl.read_csv(
+                        file,  # type: ignore[arg-type]
+                        encoding="big5",
+                        use_pyarrow=use_pyarrow,
+                    ).get_column("Region"),
+                    pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
+                )
 
 
 def test_column_rename_and_dtype_overwrite() -> None:
@@ -304,7 +421,7 @@ def test_column_rename_and_dtype_overwrite() -> None:
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
 
 
-def test_compressed_csv() -> None:
+def test_compressed_csv(io_files_path: Path) -> None:
     # gzip compression
     csv = textwrap.dedent(
         """\
@@ -323,17 +440,17 @@ def test_compressed_csv() -> None:
     expected = pl.DataFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # now from disk
-    csv_file = Path(__file__).parent.parent / "files" / "gzipped.csv"
+    csv_file = io_files_path / "gzipped.csv"
     out = pl.read_csv(str(csv_file))
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # now with column projection
     out = pl.read_csv(csv_bytes, columns=["a", "b"])
     expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # zlib compression
     csv_bytes = zlib.compress(csv.encode())
@@ -341,22 +458,22 @@ def test_compressed_csv() -> None:
     expected = pl.DataFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
     # no compression
     f2 = io.BytesIO(b"a,b\n1,2\n")
     out2 = pl.read_csv(f2)
     expected = pl.DataFrame({"a": [1], "b": [2]})
-    assert out2.frame_equal(expected)
+    assert_frame_equal(out2, expected)
 
 
-def test_partial_decompression(foods_csv: str) -> None:
-    fout = io.BytesIO()
-    with open(foods_csv, "rb") as fread:
-        with gzip.GzipFile(fileobj=fout, mode="w") as f:
-            f.write(fread.read())
+def test_partial_decompression(foods_file_path: Path) -> None:
+    f_out = io.BytesIO()
+    with open(foods_file_path, "rb") as f_read:
+        with gzip.GzipFile(fileobj=f_out, mode="w") as f:
+            f.write(f_read.read())
 
-    csv_bytes = fout.getvalue()
+    csv_bytes = f_out.getvalue()
     for n_rows in [1, 5, 26]:
         out = pl.read_csv(csv_bytes, n_rows=n_rows)
         assert out.shape == (n_rows, 4)
@@ -423,11 +540,10 @@ def test_csv_quote_char() -> None:
             rolling_stones.encode(), quote_char=None, use_pyarrow=use_pyarrow
         )
         assert out.shape == (9, 3)
-        out.frame_equal(expected)
+        assert_frame_equal(out, expected)
 
 
-def test_csv_empty_quotes_char() -> None:
-    # panicked in: https://github.com/pola-rs/polars/issues/1622
+def test_csv_empty_quotes_char_1622() -> None:
     pl.read_csv(b"a,b,c,d\nA1,B1,C1,1\nA2,B2,C2,2\n", quote_char="")
 
 
@@ -475,19 +591,14 @@ def test_csv_date_handling() -> None:
         }
     )
     out = pl.read_csv(csv.encode(), parse_dates=True)
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
     dtypes = {"date": pl.Date}
     out = pl.read_csv(csv.encode(), dtypes=dtypes)
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
 
-def test_csv_globbing(examples_dir: str) -> None:
-    path = os.path.abspath(
-        os.path.join(
-            examples_dir,
-            "*.csv",
-        )
-    )
+def test_csv_globbing(io_files_path: Path) -> None:
+    path = io_files_path / "foods*.csv"
     df = pl.read_csv(path)
     assert df.shape == (135, 4)
 
@@ -513,7 +624,7 @@ def test_csv_globbing(examples_dir: str) -> None:
     assert df.dtypes == list(dtypes.values())
 
 
-def test_csv_schema_offset(foods_csv: str) -> None:
+def test_csv_schema_offset(foods_file_path: Path) -> None:
     csv = textwrap.dedent(
         """\
         metadata
@@ -536,12 +647,12 @@ def test_csv_schema_offset(foods_csv: str) -> None:
     assert df.shape == (3, 3)
     assert df.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
 
-    df = pl.scan_csv(foods_csv, skip_rows=4).collect()
+    df = pl.scan_csv(foods_file_path, skip_rows=4).collect()
     assert df.columns == ["fruit", "60", "0", "11"]
     assert df.shape == (23, 4)
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float64, pl.Int64]
 
-    df = pl.scan_csv(foods_csv, skip_rows_after_header=24).collect()
+    df = pl.scan_csv(foods_file_path, skip_rows_after_header=24).collect()
     assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
     assert df.shape == (3, 4)
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64, pl.Int64]
@@ -554,7 +665,7 @@ def test_empty_string_missing_round_trip() -> None:
         df.write_csv(f, null_value=null)
         f.seek(0)
         df_read = pl.read_csv(f, null_values=null)
-        assert df.frame_equal(df_read)
+        assert_frame_equal(df, df_read)
 
 
 def test_write_csv_delimiter() -> None:
@@ -599,7 +710,7 @@ def test_quoting_round_trip() -> None:
     f.seek(0)
     read_df = pl.read_csv(f)
 
-    assert read_df.frame_equal(df)
+    assert_frame_equal(read_df, df)
 
 
 def test_fallback_chrono_parser() -> None:
@@ -621,13 +732,18 @@ def test_csv_string_escaping() -> None:
     df.write_csv(f)
     f.seek(0)
     df_read = pl.read_csv(f)
-    assert df_read.frame_equal(df)
+    assert_frame_equal(df_read, df)
 
 
-def test_glob_csv(io_test_dir: str) -> None:
-    path = os.path.join(io_test_dir, "small*.csv")
-    assert pl.scan_csv(path).collect().shape == (3, 11)
-    assert pl.read_csv(path).shape == (3, 11)
+def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists.drop("strings_nulls")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "small.csv"
+        df.write_csv(file_path)
+
+        path_glob = Path(temp_dir) / "small*.csv"
+        assert pl.scan_csv(path_glob).collect().shape == (3, 11)
+        assert pl.read_csv(path_glob).shape == (3, 11)
 
 
 def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
@@ -674,7 +790,7 @@ def test_csv_multiple_null_values() -> None:
         }
     )
 
-    assert df2.frame_equal(expected)
+    assert_frame_equal(df2, expected)
 
 
 def test_different_eol_char() -> None:
@@ -682,8 +798,8 @@ def test_different_eol_char() -> None:
     expected = pl.DataFrame(
         {"column_1": ["a", "b", "c"], "column_2": [1, 2, 3], "column_3": [10, 20, 30]}
     )
-    assert pl.read_csv(csv.encode(), eol_char=";", has_header=False).frame_equal(
-        expected
+    assert_frame_equal(
+        pl.read_csv(csv.encode(), eol_char=";", has_header=False), expected
     )
 
 
@@ -693,23 +809,29 @@ def test_csv_write_escape_newlines() -> None:
     df.write_csv(f)
     f.seek(0)
     read_df = pl.read_csv(f)
-    assert df.frame_equal(read_df)
+    assert_frame_equal(df, read_df)
 
 
 def test_skip_new_line_embedded_lines() -> None:
     csv = r"""a,b,c,d,e\n
         1,2,3,"\n Test",\n
         4,5,6,"Test A",\n
-        7,8,9,"Test B \n",\n"""
+        7,8,,"Test B \n",\n"""
 
-    df = pl.read_csv(csv.encode(), skip_rows_after_header=1, infer_schema_length=0)
-    assert df.to_dict(False) == {
-        "a": ["4", "7"],
-        "b": ["5", "8"],
-        "c": ["6", "9"],
-        "d": ["Test A", "Test B \\n"],
-        "e\\n": ["\\n", "\\n"],
-    }
+    for empty_string, missing_value in ((True, ""), (False, None)):
+        df = pl.read_csv(
+            csv.encode(),
+            skip_rows_after_header=1,
+            infer_schema_length=0,
+            missing_utf8_is_empty_string=empty_string,
+        )
+        assert df.to_dict(False) == {
+            "a": ["4", "7"],
+            "b": ["5", "8"],
+            "c": ["6", missing_value],
+            "d": ["Test A", "Test B \\n"],
+            "e\\n": ["\\n", "\\n"],
+        }
 
 
 def test_csv_dtype_overwrite_bool() -> None:
@@ -722,7 +844,7 @@ def test_csv_dtype_overwrite_bool() -> None:
 
 
 @pytest.mark.parametrize(
-    "fmt,expected",
+    ("fmt", "expected"),
     [
         (None, "dt\n2022-01-02T00:00:00.000000\n"),
         ("%F %T%.3f", "dt\n2022-01-02 00:00:00.000\n"),
@@ -739,7 +861,7 @@ def test_datetime_format(fmt: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "tu1,tu2,expected",
+    ("tu1", "tu2", "expected"),
     [
         (
             "ns",
@@ -770,7 +892,7 @@ def test_datetime_format_inferred_precision(
             "x": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
             "y": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
         },
-        columns=[
+        schema=[
             ("x", pl.Datetime(tu1)),
             ("y", pl.Datetime(tu2)),
         ],
@@ -779,7 +901,7 @@ def test_datetime_format_inferred_precision(
 
 
 @pytest.mark.parametrize(
-    "fmt,expected",
+    ("fmt", "expected"),
     [
         (None, "dt\n2022-01-02\n"),
         ("%Y", "dt\n2022\n"),
@@ -794,7 +916,7 @@ def test_date_format(fmt: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "fmt,expected",
+    ("fmt", "expected"),
     [
         (None, "dt\n16:15:30.000000000\n"),
         ("%R", "dt\n16:15\n"),
@@ -828,10 +950,13 @@ def test_skip_rows_different_field_len() -> None:
         """
         )
     )
-    assert pl.read_csv(csv, skip_rows_after_header=2).to_dict(False) == {
-        "a": [3, 4],
-        "b": ["B", None],
-    }
+    for empty_string, missing_value in ((True, ""), (False, None)):
+        assert pl.read_csv(
+            csv, skip_rows_after_header=2, missing_utf8_is_empty_string=empty_string
+        ).to_dict(False) == {
+            "a": [3, 4],
+            "b": ["B", missing_value],
+        }
 
 
 def test_duplicated_columns() -> None:
@@ -877,8 +1002,8 @@ def test_csv_categorical_categorical_merge() -> None:
     ].to_list() == ["A", "B"]
 
 
-def test_batched_csv_reader(foods_csv: str) -> None:
-    reader = pl.read_csv_batched(foods_csv, batch_size=4)
+def test_batched_csv_reader(foods_file_path: Path) -> None:
+    reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     batches = reader.next_batches(5)
 
     assert batches is not None
@@ -897,10 +1022,12 @@ def test_batched_csv_reader(foods_csv: str) -> None:
     }
 
 
-def test_batched_csv_reader_all_batches(foods_csv: str) -> None:
+def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
     for new_columns in [None, ["Category", "Calories", "Fats_g", "Augars_g"]]:
-        out = pl.read_csv(foods_csv, new_columns=new_columns)
-        reader = pl.read_csv_batched(foods_csv, new_columns=new_columns, batch_size=4)
+        out = pl.read_csv(foods_file_path, new_columns=new_columns)
+        reader = pl.read_csv_batched(
+            foods_file_path, new_columns=new_columns, batch_size=4
+        )
         batches = reader.next_batches(5)
         batched_dfs = []
 
@@ -910,6 +1037,13 @@ def test_batched_csv_reader_all_batches(foods_csv: str) -> None:
 
         batched_concat_df = pl.concat(batched_dfs, rechunk=True)
         assert_frame_equal(out, batched_concat_df)
+
+
+def test_batched_csv_reader_no_batches(foods_file_path: Path) -> None:
+    reader = pl.read_csv_batched(foods_file_path, batch_size=4)
+    batches = reader.next_batches(0)
+
+    assert batches is None
 
 
 def test_csv_single_categorical_null() -> None:
@@ -930,3 +1064,65 @@ def test_csv_single_categorical_null() -> None:
 
     assert df.dtypes == [pl.Utf8, pl.Categorical, pl.Utf8]
     assert df.to_dict(False) == {"x": ["A"], "y": [None], "z": ["A"]}
+
+
+def test_csv_quoted_missing() -> None:
+    csv = (
+        '"col1"|"col2"|"col3"|"col4"\n'
+        '"0"|"Free text with a line\nbreak"|"123"|"456"\n'
+        '"1"|"Free text without a linebreak"|""|"789"\n'
+        '"0"|"Free text with \ntwo \nlinebreaks"|"101112"|"131415"'
+    )
+    result = pl.read_csv(csv.encode(), sep="|", dtypes={"col3": pl.Int32})
+    expected = pl.DataFrame(
+        {
+            "col1": [0, 1, 0],
+            "col2": [
+                "Free text with a line\nbreak",
+                "Free text without a linebreak",
+                "Free text with \ntwo \nlinebreaks",
+            ],
+            "col3": [123, None, 101112],
+            "col4": [456, 789, 131415],
+        },
+        schema_overrides={"col3": pl.Int32},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_csv_write_tz_aware() -> None:
+    df = pl.DataFrame({"times": datetime(2021, 1, 1)}).with_columns(
+        pl.col("times").dt.with_time_zone("Europe/Zurich")
+    )
+    assert df.write_csv() == "times\n2021-01-01 01:00:00 CET\n"
+
+
+def test_csv_statistics_offset() -> None:
+    # this would fail if the statistics sample did not also sample
+    # from the end of the file
+    # the lines at the end have larger rows as the numbers increase
+    N = 5_000
+    csv = "\n".join(str(x) for x in range(N))
+    assert pl.read_csv(io.StringIO(csv), n_rows=N).height == 4999
+
+
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+def test_csv_scan_categorical() -> None:
+    N = 5_000
+    df = pl.DataFrame({"x": ["A"] * N})
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "test_csv_scan_categorical.csv"
+        df.write_csv(file_path)
+        result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()
+
+    assert result["x"].dtype == pl.Categorical
+
+
+def test_read_csv_chunked() -> None:
+    """Check that row count is properly functioning."""
+    N = 10_000
+    csv = "1\n" * N
+    df = pl.read_csv(io.StringIO(csv), row_count_name="count")
+
+    # The next value should always be higher if monotonically increasing.
+    assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()

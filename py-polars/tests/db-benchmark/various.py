@@ -6,6 +6,7 @@ from typing import cast
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 # https://github.com/pola-rs/polars/issues/1942
 t0 = time.time()
@@ -15,14 +16,16 @@ assert (time.time() - t0) < 1
 # test mean overflow issues
 np.random.seed(1)
 mean = 769.5607652
-df = pl.DataFrame(np.random.randint(500, 1040, 5000000), columns=["value"])
-assert np.isclose(df.with_column(pl.mean("value"))[0, 0], mean)
+df = pl.DataFrame(np.random.randint(500, 1040, 5000000), schema=["value"])
+assert np.isclose(df.with_columns(pl.mean("value"))[0, 0], mean)
 assert np.isclose(
-    df.with_column(pl.col("value").cast(pl.Int32)).with_column(pl.mean("value"))[0, 0],
+    df.with_columns(pl.col("value").cast(pl.Int32)).with_columns(pl.mean("value"))[
+        0, 0
+    ],
     mean,
 )
 assert np.isclose(
-    df.with_column(pl.col("value").cast(pl.Int32)).get_column("value").mean(), mean
+    df.with_columns(pl.col("value").cast(pl.Int32)).get_column("value").mean(), mean
 )
 
 # https://github.com/pola-rs/polars/issues/2850
@@ -82,7 +85,7 @@ def test_cross_join() -> None:
     df2 = pl.DataFrame({"frame2": pl.arange(0, 100, eager=True)})
     out = df2.join(df1, how="cross")
     df2 = pl.DataFrame({"frame2": pl.arange(0, 101, eager=True)})
-    assert df2.join(df1, how="cross").slice(0, 100).frame_equal(out)
+    assert_frame_equal(df2.join(df1, how="cross").slice(0, 100), out)
 
 
 def test_cross_join_slice_pushdown() -> None:

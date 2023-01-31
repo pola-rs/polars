@@ -29,11 +29,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::from_data(
-            T::PRIMITIVE.into(),
-            out.into(),
-            None,
-        ));
+        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
     }
 
     let len = values.len();
@@ -70,7 +66,7 @@ where
         })
         .collect_trusted::<Vec<T>>();
 
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
@@ -133,7 +129,7 @@ where
         })
         .collect_trusted::<Vec<T>>();
 
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
@@ -302,7 +298,7 @@ mod test {
     #[test]
     fn test_rolling_median_nulls() {
         let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
-        let arr = &PrimitiveArray::from_data(
+        let arr = &PrimitiveArray::new(
             DataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
@@ -338,7 +334,7 @@ mod test {
     fn test_rolling_quantile_nulls_limits() {
         // compare quantiles to corresponding min/max/median values
         let buf = Buffer::<f64>::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-        let values = &PrimitiveArray::from_data(
+        let values = &PrimitiveArray::new(
             DataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, false, true, true])),

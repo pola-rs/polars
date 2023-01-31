@@ -14,7 +14,6 @@ from typing import (
     cast,
     overload,
 )
-from warnings import warn
 
 from polars import BatchedCsvReader
 
@@ -25,19 +24,12 @@ else:
 
 import polars.internals as pli
 from polars.convert import from_arrow
-from polars.datatypes import DataType, PolarsDataType, Utf8
-from polars.dependencies import _PYARROW_AVAILABLE
+from polars.datatypes import N_INFER_DEFAULT, PolarsDataType, SchemaDict, Utf8
+from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
-from polars.utils import deprecated_alias, format_path, handle_projection_columns
-
-try:
-    import connectorx as cx
-
-    _WITH_CX = True
-except ImportError:
-    _WITH_CX = False
+from polars.utils import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
@@ -61,12 +53,6 @@ def _check_arg_is_1byte(
             )
 
 
-@deprecated_alias(
-    has_headers="has_header",
-    dtype="dtypes",
-    stop_after_n_rows="n_rows",
-    projection="columns",
-)
 def read_csv(
     file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
@@ -76,19 +62,20 @@ def read_csv(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
+    dtypes: Mapping[str, PolarsDataType] | list[PolarsDataType] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
+    missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     parse_dates: bool = False,
     n_threads: int | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 8192,
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
-    storage_options: dict[str, object] | None = None,
+    storage_options: dict[str, Any] | None = None,
     skip_rows_after_header: int = 0,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
@@ -145,6 +132,9 @@ def read_csv(
         - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
+    missing_utf8_is_empty_string
+        By default a missing value is considered to be null; if you would prefer missing
+        utf8 values to be treated as the empty string you can set this param True.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
@@ -285,7 +275,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = cast(DataFrame, from_arrow(tbl, rechunk))
+        df = cast(DataFrame, from_arrow(tbl, rechunk=rechunk))
         if new_columns:
             return pli._update_columns(df, new_columns)
         return df
@@ -298,7 +288,7 @@ def read_csv(
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[type[DataType]] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):
@@ -394,6 +384,7 @@ def read_csv(
             skip_rows=skip_rows,
             dtypes=dtypes,
             null_values=null_values,
+            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             ignore_errors=ignore_errors,
             parse_dates=parse_dates,
             n_threads=n_threads,
@@ -415,7 +406,6 @@ def read_csv(
     return df
 
 
-@deprecated_alias(has_headers="has_header", dtype="dtypes", stop_after_n_rows="n_rows")
 def scan_csv(
     file: str | Path,
     has_header: bool = True,
@@ -423,12 +413,13 @@ def scan_csv(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: dict[str, PolarsDataType] | None = None,
+    dtypes: SchemaDict | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
+    missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     cache: bool = True,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
@@ -475,6 +466,9 @@ def scan_csv(
         - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
+    missing_utf8_is_empty_string
+        By default a missing value is considered to be null; if you would prefer missing
+        utf8 values to be treated as the empty string you can set this param True.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
@@ -551,11 +545,8 @@ def scan_csv(
     │ i64     ┆ str      │
     ╞═════════╪══════════╡
     │ 1       ┆ is       │
-    ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
     │ 2       ┆ terrible │
-    ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
     │ 3       ┆ to       │
-    ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
     │ 4       ┆ read     │
     └─────────┴──────────┘
 
@@ -565,7 +556,7 @@ def scan_csv(
     _check_arg_is_1byte("quote_char", quote_char, True)
 
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return LazyFrame._scan_csv(
         file=file,
@@ -576,6 +567,7 @@ def scan_csv(
         skip_rows=skip_rows,
         dtypes=dtypes,
         null_values=null_values,
+        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
         cache=cache,
         with_column_names=with_column_names,
@@ -592,7 +584,6 @@ def scan_csv(
     )
 
 
-@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_ipc(
     file: str | Path,
     n_rows: int | None = None,
@@ -600,7 +591,7 @@ def scan_ipc(
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: dict[str, object] | None = None,
+    storage_options: dict[str, Any] | None = None,
     memory_map: bool = True,
 ) -> LazyFrame:
     """
@@ -646,7 +637,6 @@ def scan_ipc(
     )
 
 
-@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
@@ -655,7 +645,7 @@ def scan_parquet(
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: dict[str, object] | None = None,
+    storage_options: dict[str, Any] | None = None,
     low_memory: bool = False,
 ) -> LazyFrame:
     """
@@ -692,7 +682,7 @@ def scan_parquet(
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return LazyFrame._scan_parquet(
         file=file,
@@ -709,7 +699,7 @@ def scan_parquet(
 
 def scan_ndjson(
     file: str | Path,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
@@ -728,7 +718,7 @@ def scan_ndjson(
     file
         Path to a file.
     infer_schema_length
-        Infer the schema length from the first ``infer_schema_length`` rows.
+        Infer the schema from the first ``infer_schema_length`` rows.
     batch_size
         Number of rows to read in each batch.
     n_rows
@@ -745,7 +735,7 @@ def scan_ndjson(
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return LazyFrame._scan_ndjson(
         file=file,
@@ -759,7 +749,6 @@ def scan_ndjson(
     )
 
 
-@deprecated_alias(projection="columns")
 def read_avro(
     file: str | Path | BytesIO | BinaryIO,
     columns: list[int] | list[str] | None = None,
@@ -784,19 +773,18 @@ def read_avro(
 
     """
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
 
-@deprecated_alias(stop_after_n_rows="n_rows", projection="columns")
 def read_ipc(
     file: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: dict[str, object] | None = None,
+    storage_options: dict[str, Any] | None = None,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     rechunk: bool = True,
@@ -875,19 +863,18 @@ def read_ipc(
         )
 
 
-@deprecated_alias(stop_after_n_rows="n_rows", projection="columns")
 def read_parquet(
     source: str | Path | BinaryIO | BytesIO | bytes,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: dict[str, object] | None = None,
+    storage_options: dict[str, Any] | None = None,
     parallel: ParallelStrategy = "auto",
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     low_memory: bool = False,
-    pyarrow_options: dict[str, object] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -981,8 +968,7 @@ def read_parquet(
         )
 
 
-@deprecated_alias(source="file")
-def read_json(file: str | Path | IOBase, json_lines: bool | None = None) -> DataFrame:
+def read_json(file: str | Path | IOBase) -> DataFrame:
     """
     Read into a DataFrame from a JSON file.
 
@@ -990,27 +976,12 @@ def read_json(file: str | Path | IOBase, json_lines: bool | None = None) -> Data
     ----------
     file
         Path to a file or a file-like object.
-    json_lines
-        Deprecated argument. Toggle between `JSON` and `NDJSON` format.
 
     See Also
     --------
     read_ndjson
 
     """
-    if json_lines is not None:
-        warn(
-            "`json_lines` argument for `read_json` will be removed in a future version."
-            " Remove the argument or use `pl.read_ndjson`.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    else:
-        json_lines = False
-
-    if json_lines:
-        return read_ndjson(file)
-
     return DataFrame._read_json(file)
 
 
@@ -1038,26 +1009,18 @@ def read_sql(
     """
     Read a SQL query into a DataFrame.
 
-    Reading a SQL query from the following data sources are supported:
+    Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
+    Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
+    please see the connectorx docs:
 
-        * Postgres
-        * Mysql
-        * Sqlite
-        * Redshift (through postgres protocol)
-        * Clickhouse (through mysql protocol)
-
-    If a database source is not supported, an alternative solution is to first use
-    pandas to load the SQL query, then converting the result into a polars DataFrame:
-
-    >>> import pandas as pd
-    >>> df = pl.from_pandas(pd.read_sql(sql, engine))  # doctest: +SKIP
+    * https://github.com/sfu-db/connector-x#supported-sources--destinations
 
     Parameters
     ----------
     sql
-        Raw SQL query / queries.
+        Raw SQL query (or queries).
     connection_uri
-        Connectorx connection uri, for example
+        A connectorx compatible connection uri, for example
 
         * "postgresql://username:password@server:port/database"
     partition_on
@@ -1072,7 +1035,7 @@ def read_sql(
 
     Notes
     -----
-    Make sure to install connectorx>=0.2.2. Read the documentation
+    Make sure to install connectorx>=0.3.1. Read the documentation
     `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
     Examples
@@ -1103,21 +1066,24 @@ def read_sql(
     >>> pl.read_sql(queries, uri)  # doctest: +SKIP
 
     """
-    if _WITH_CX:
-        tbl = cx.read_sql(
-            conn=connection_uri,
-            query=sql,
-            return_type="arrow2",
-            partition_on=partition_on,
-            partition_range=partition_range,
-            partition_num=partition_num,
-            protocol=protocol,
-        )
-        return cast(DataFrame, from_arrow(tbl))
-    else:
+    try:
+        import connectorx as cx
+    except ImportError:
         raise ImportError(
-            "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
-        )
+            "connectorx is not installed. Please run `pip install connectorx>=0.3.1`."
+        ) from None
+
+    tbl = cx.read_sql(
+        conn=connection_uri,
+        query=sql,
+        return_type="arrow2",
+        partition_on=partition_on,
+        partition_range=partition_range,
+        partition_num=partition_num,
+        protocol=protocol,
+    )
+
+    return cast(DataFrame, from_arrow(tbl))
 
 
 @overload
@@ -1125,8 +1091,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: Literal[None],
     sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, object] | None,
-    read_csv_options: dict[str, object] | None,
+    xlsx2csv_options: dict[str, Any] | None,
+    read_csv_options: dict[str, Any] | None,
 ) -> dict[str, DataFrame]:
     ...
 
@@ -1136,8 +1102,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: Literal[None],
     sheet_name: str,
-    xlsx2csv_options: dict[str, object] | None = None,
-    read_csv_options: dict[str, object] | None = None,
+    xlsx2csv_options: dict[str, Any] | None = None,
+    read_csv_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     ...
 
@@ -1147,8 +1113,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int,
     sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, object] | None = None,
-    read_csv_options: dict[str, object] | None = None,
+    xlsx2csv_options: dict[str, Any] | None = None,
+    read_csv_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     ...
 
@@ -1157,8 +1123,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
-    xlsx2csv_options: dict[str, object] | None = None,
-    read_csv_options: dict[str, object] | None = None,
+    xlsx2csv_options: dict[str, Any] | None = None,
+    read_csv_options: dict[str, Any] | None = None,
 ) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
@@ -1183,7 +1149,7 @@ def read_excel(
         Extra options passed to :func:`read_csv` for parsing the CSV file returned by
         ``xlsx2csv.Xlsx2csv().convert()``
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
-        infer_schema_length=None}``
+        "infer_schema_length": None}``
 
     Returns
     -------
@@ -1241,7 +1207,7 @@ def read_excel(
         ) from None
 
     if isinstance(file, (str, Path)):
-        file = format_path(file)
+        file = normalise_filepath(file)
 
     if not xlsx2csv_options:
         xlsx2csv_options = {}
@@ -1267,7 +1233,7 @@ def _read_excel_sheet(
     parser: Any,
     sheet_id: int | None,
     sheet_name: str | None,
-    read_csv_options: dict[str, object] | None,
+    read_csv_options: dict[str, Any] | None,
 ) -> DataFrame:
     csv_buffer = StringIO()
 
@@ -1281,7 +1247,375 @@ def _read_excel_sheet(
     return read_csv(csv_buffer, **read_csv_options)  # type: ignore[arg-type]
 
 
-def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
+def _get_delta_lake_table(
+    table_path: str,
+    version: int | None = None,
+    storage_options: dict[str, Any] | None = None,
+    delta_table_options: dict[str, Any] | None = None,
+) -> deltalake.DeltaTable:
+    """
+    Initialise a Delta lake table for use in read and scan operations.
+
+    Notes
+    -----
+    Make sure to install deltalake>=0.6.0. Read the documentation
+    `here <https://delta-io.github.io/delta-rs/python/installation.html>`_.
+
+    Returns
+    -------
+    DeltaTable
+
+    """
+    if not _DELTALAKE_AVAILABLE:
+        raise ImportError(
+            "deltalake is not installed. Please run `pip install deltalake>=0.6.0`."
+        )
+
+    if delta_table_options is None:
+        delta_table_options = {}
+
+    dl_tbl = deltalake.DeltaTable(
+        table_uri=table_path,
+        version=version,
+        storage_options=storage_options,
+        **delta_table_options,
+    )
+
+    return dl_tbl
+
+
+def _resolve_delta_lake_uri(table_uri: str) -> tuple[str, str, str]:
+    from urllib.parse import ParseResult, urlparse
+
+    parsed_result = urlparse(table_uri)
+    scheme = parsed_result.scheme
+
+    resolved_uri = str(
+        Path(table_uri).expanduser().resolve(True) if scheme == "" else table_uri
+    )
+
+    normalized_path = str(ParseResult("", *parsed_result[1:]).geturl())
+    return (scheme, resolved_uri, normalized_path)
+
+
+def scan_delta(
+    table_uri: str,
+    version: int | None = None,
+    raw_filesystem: pa.fs.FileSystem | None = None,
+    storage_options: dict[str, Any] | None = None,
+    delta_table_options: dict[str, Any] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
+) -> LazyFrame:
+    """
+    Lazily read from a Delta lake table.
+
+    Parameters
+    ----------
+    table_uri
+        Path or URI to the root of the Delta lake table.
+
+        Note: For Local filesystem, absolute and relative paths are supported. But
+        for the supported object storages - GCS, Azure and S3, there is no relative
+        path support, and thus full URI must be provided.
+    version
+        Version of the Delta lake table.
+
+        Note: If ``version`` is not provided, latest version of delta lake
+        table is read.
+    raw_filesystem
+        A `pyarrow.fs.FileSystem` to read files from.
+
+        Note: The root of the filesystem has to be adjusted to point at the root of
+        the Delta lake table. The provided ``raw_filesystem`` is wrapped into a
+        `pyarrow.fs.SubTreeFileSystem`
+
+        More info is available `here
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#custom-storage-backends>`__.
+    storage_options
+        Extra options for the storage backends supported by `deltalake`.
+        For cloud storages, this may include configurations for authentication etc.
+
+        More info is available `here
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
+    delta_table_options
+        Additional keyword arguments while reading a Delta lake Table.
+    pyarrow_options
+        Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Use this parameter when filtering on partitioned columns.
+
+    Returns
+    -------
+    LazyFrame
+
+    Examples
+    --------
+    Creates a scan for a Delta table from local filesystem.
+    Note: Since version is not provided, latest version of the delta table is read.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> pl.scan_delta(table_path).collect()  # doctest: +SKIP
+
+    Use the `pyarrow_options` parameter to read only certain partitions.
+    Note: This should be preferred over using an equivalent `.filter()` on the resulting
+    dataframe, as this avoids reading the data at all.
+
+    >>> pl.scan_delta(  # doctest: +SKIP
+    ...     table_path,
+    ...     pyarrow_options={"partitions": [("year", "=", "2021")]},
+    ... )
+
+    Creates a scan for a specific version of the Delta table from local filesystem.
+    Note: This will fail if the provided version of the delta table does not exist.
+
+    >>> pl.scan_delta(table_path, version=1).collect()  # doctest: +SKIP
+
+    Creates a scan for a Delta table from AWS S3.
+    See a list of supported storage options for S3 `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L423-L491>`__.
+
+    >>> table_path = "s3://bucket/path/to/delta-table/"
+    >>> storage_options = {
+    ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+    ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+    ... }
+    >>> pl.scan_delta(
+    ...     table_path, storage_options=storage_options
+    ... ).collect()  # doctest: +SKIP
+
+    Creates a scan for a Delta table from Google Cloud storage (GCS).
+
+    Note: This implementation relies on `pyarrow.fs` and thus has to rely on fsspec
+    compatible filesystems as mentioned `here
+    <https://arrow.apache.org/docs/python/filesystems.html#using-fsspec-compatible-filesystems-with-arrow>`__.
+    So please ensure that `pyarrow` ,`fsspec` and `gcsfs` are installed.
+
+    See a list of supported storage options for GCS `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L570-L577>`__.
+
+    >>> import gcsfs  # doctest: +SKIP
+    >>> from pyarrow.fs import PyFileSystem, FSSpecHandler  # doctest: +SKIP
+    >>> storage_options = {"SERVICE_ACCOUNT": "SERVICE_ACCOUNT_JSON_ABSOLUTE_PATH"}
+    >>> fs = gcsfs.GCSFileSystem(
+    ...     project="my-project-id",
+    ...     token=storage_options["SERVICE_ACCOUNT"],
+    ... )  # doctest: +SKIP
+    >>> # this pyarrow fs must be created and passed to scan_delta for GCS
+    >>> pa_fs = PyFileSystem(FSSpecHandler(fs))  # doctest: +SKIP
+    >>> table_path = "gs://bucket/path/to/delta-table/"
+    >>> pl.scan_delta(
+    ...     table_path, storage_options=storage_options, raw_filesystem=pa_fs
+    ... ).collect()  # doctest: +SKIP
+
+    Creates a scan for a Delta table from Azure.
+
+    Note: This implementation relies on `pyarrow.fs` and thus has to rely on fsspec
+    compatible filesystems as mentioned `here
+    <https://arrow.apache.org/docs/python/filesystems.html#using-fsspec-compatible-filesystems-with-arrow>`__.
+    So please ensure that `pyarrow` ,`fsspec` and `adlfs` are installed.
+
+    Following type of table paths are supported,
+
+    * az://<container>/<path>
+    * adl://<container>/<path>
+    * abfs://<container>/<path>
+
+    See a list of supported storage options for Azure `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L524-L539>`__.
+
+    >>> import adlfs  # doctest: +SKIP
+    >>> from pyarrow.fs import PyFileSystem, FSSpecHandler  # doctest: +SKIP
+    >>> storage_options = {
+    ...     "AZURE_STORAGE_ACCOUNT_NAME": "AZURE_STORAGE_ACCOUNT_NAME",
+    ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
+    ... }
+    >>> fs = adlfs.AzureBlobFileSystem(
+    ...     account_name=storage_options["AZURE_STORAGE_ACCOUNT_NAME"],
+    ...     account_key=storage_options["AZURE_STORAGE_ACCOUNT_KEY"],
+    ... )  # doctest: +SKIP
+    >>> # this pyarrow fs must be created and passed to scan_delta for Azure
+    >>> pa_fs = PyFileSystem(FSSpecHandler(fs))  # doctest: +SKIP
+    >>> table_path = "az://container/path/to/delta-table/"
+    >>> pl.scan_delta(
+    ...     table_path, storage_options=storage_options, raw_filesystem=pa_fs
+    ... ).collect()  # doctest: +SKIP
+
+    Creates a scan for a Delta table with additional delta specific options.
+    In the below example, `without_files` option is used which loads the table without
+    file tracking information.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> delta_table_options = {"without_files": True}
+    >>> pl.scan_delta(
+    ...     table_path, delta_table_options=delta_table_options
+    ... ).collect()  # doctest: +SKIP
+
+    """
+    if delta_table_options is None:
+        delta_table_options = {}
+
+    if pyarrow_options is None:
+        pyarrow_options = {}
+
+    import pyarrow.fs as pa_fs
+
+    # Resolve relative paths if not an object storage
+    scheme, resolved_uri, normalized_path = _resolve_delta_lake_uri(table_uri)
+
+    # Storage Backend
+    if raw_filesystem is None:
+        raw_filesystem, normalized_path = pa_fs.FileSystem.from_uri(resolved_uri)
+
+    # SubTreeFileSystem requires normalized path
+    subtree_fs_path = resolved_uri if scheme == "" else normalized_path
+    filesystem = pa_fs.SubTreeFileSystem(subtree_fs_path, raw_filesystem)
+
+    # deltalake can work with resolved paths
+    dl_tbl = _get_delta_lake_table(
+        table_path=resolved_uri,
+        version=version,
+        storage_options=storage_options,
+        delta_table_options=delta_table_options,
+    )
+
+    # Must provide filesystem as DeltaStorageHandler is not serializable.
+    pa_ds = dl_tbl.to_pyarrow_dataset(filesystem=filesystem, **pyarrow_options)
+    return scan_ds(pa_ds)
+
+
+def read_delta(
+    table_uri: str,
+    version: int | None = None,
+    columns: list[str] | None = None,
+    storage_options: dict[str, Any] | None = None,
+    delta_table_options: dict[str, Any] | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
+) -> DataFrame:
+    """
+    Reads into a DataFrame from a Delta lake table.
+
+    Parameters
+    ----------
+    table_uri
+        Path or URI to the root of the Delta lake table.
+
+        Note: For Local filesystem, absolute and relative paths are supported. But
+        for the supported object storages - GCS, Azure and S3, there is no relative
+        path support, and thus full URI must be provided.
+    version
+        Version of the Delta lake table.
+
+        Note: If ``version`` is not provided, latest version of delta lake
+        table is read.
+    columns
+        Columns to select. Accepts a list of column names.
+    storage_options
+        Extra options for the storage backends supported by `deltalake`.
+        For cloud storages, this may include configurations for authentication etc.
+
+        More info is available `here
+        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
+    delta_table_options
+        Additional keyword arguments while reading a Delta lake Table.
+    pyarrow_options
+        Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Use this parameter when filtering on partitioned columns.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+    Reads a Delta table from local filesystem.
+    Note: Since version is not provided, latest version of the delta table is read.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> pl.read_delta(table_path)  # doctest: +SKIP
+
+    Use the `pyarrow_options` parameter to read only certain partitions.
+    Note: This should be preferred over using an equivalent `.filter()` on the resulting
+    dataframe, as this avoids reading the data at all.
+
+    >>> pl.read_delta(  # doctest: +SKIP
+    ...     table_path,
+    ...     pyarrow_options={"partitions": [("year", "=", "2021")]},
+    ... )
+
+    Reads a specific version of the Delta table from local filesystem.
+    Note: This will fail if the provided version of the delta table does not exist.
+
+    >>> pl.read_delta(table_path, version=1)  # doctest: +SKIP
+
+    Reads a Delta table from AWS S3.
+    See a list of supported storage options for S3 `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L423-L491>`__.
+
+    >>> table_path = "s3://bucket/path/to/delta-table/"
+    >>> storage_options = {
+    ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+    ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+    ... }
+    >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
+
+    Reads a Delta table from Google Cloud storage (GCS).
+    See a list of supported storage options for GCS `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L570-L577>`__.
+
+    >>> table_path = "gs://bucket/path/to/delta-table/"
+    >>> storage_options = {"SERVICE_ACCOUNT": "SERVICE_ACCOUNT_JSON_ABSOLUTE_PATH"}
+    >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
+
+    Reads a Delta table from Azure.
+
+    Following type of table paths are supported,
+
+    * az://<container>/<path>
+    * adl://<container>/<path>
+    * abfs://<container>/<path>
+
+    See a list of supported storage options for Azure `here
+    <https://github.com/delta-io/delta-rs/blob/17999d24a58fb4c98c6280b9e57842c346b4603a/rust/src/builder.rs#L524-L539>`__.
+
+    >>> table_path = "az://container/path/to/delta-table/"
+    >>> storage_options = {
+    ...     "AZURE_STORAGE_ACCOUNT_NAME": "AZURE_STORAGE_ACCOUNT_NAME",
+    ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
+    ... }
+    >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
+
+    Reads a Delta table with additional delta specific options. In the below example,
+    `without_files` option is used which loads the table without file tracking
+    information.
+
+    >>> table_path = "/path/to/delta-table/"
+    >>> delta_table_options = {"without_files": True}
+    >>> pl.read_delta(
+    ...     table_path, delta_table_options=delta_table_options
+    ... )  # doctest: +SKIP
+
+    """
+    if delta_table_options is None:
+        delta_table_options = {}
+
+    if pyarrow_options is None:
+        pyarrow_options = {}
+
+    _, resolved_uri, _ = _resolve_delta_lake_uri(table_uri)
+
+    dl_tbl = _get_delta_lake_table(
+        table_path=resolved_uri,
+        version=version,
+        storage_options=storage_options,
+        delta_table_options=delta_table_options,
+    )
+
+    return cast(
+        DataFrame,
+        from_arrow(dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options)),
+    )
+
+
+def scan_ds(ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True) -> LazyFrame:
     """
     Scan a pyarrow dataset.
 
@@ -1291,6 +1625,10 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
     ----------
     ds
         Pyarrow dataset to scan.
+    allow_pyarrow_filter
+        Allow predicates to be pushed down to pyarrow. This can lead to different
+        results if comparisons are done with null values as pyarrow handles this
+        different than polars does.
 
     Warnings
     --------
@@ -1317,7 +1655,7 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
     └───────┴────────┴────────────┘
 
     """
-    return _scan_ds(ds)
+    return _scan_ds(ds, allow_pyarrow_filter)
 
 
 def read_csv_batched(
@@ -1329,12 +1667,13 @@ def read_csv_batched(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
+    dtypes: Mapping[str, PolarsDataType] | list[PolarsDataType] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
+    missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     parse_dates: bool = False,
     n_threads: int | None = None,
-    infer_schema_length: int | None = 100,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 50_000,
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
@@ -1359,7 +1698,31 @@ def read_csv_batched(
     >>> reader = pl.read_csv_batched(
     ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", parse_dates=True
     ... )  # doctest: +SKIP
-    >>> reader.next_batches(5)  # doctest: +SKIP
+    >>> batches = reader.next_batches(5)  # doctest: +SKIP
+    >>> for df in batches:  # doctest: +SKIP
+    ...     print(df)
+    ...
+
+    Read big CSV file in batches and write a CSV file for each "group" of interest.
+
+    >>> seen_groups = set()
+    >>> reader = pl.read_csv_batched("big_file.csv")  # doctest: +SKIP
+    >>> batches = reader.next_batches(100)  # doctest: +SKIP
+
+    >>> while batches:  # doctest: +SKIP
+    ...     df_current_batches = pl.concat(batches)
+    ...     partition_dfs = df_current_batches.partition_by("group", as_dict=True)
+    ...
+    ...     for group, df in partition_dfs.items():
+    ...         if group in seen_groups:
+    ...             with open(f"./data/{group}.csv", "a") as fh:
+    ...                 fh.write(df.write_csv(file=None, has_header=False))
+    ...         else:
+    ...             df.write_csv(file=f"./data/{group}.csv", has_header=True)
+    ...         seen_groups.add(group)
+    ...
+    ...     batches = reader.next_batches(100)
+    ...
 
     Parameters
     ----------
@@ -1401,6 +1764,9 @@ def read_csv_batched(
         - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
+    missing_utf8_is_empty_string
+        By default a missing value is considered to be null; if you would prefer missing
+        utf8 values to be treated as the empty string you can set this param True.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
@@ -1417,6 +1783,7 @@ def read_csv_batched(
         If set to ``None``, a full table scan will be done (slow).
     batch_size
         Number of lines to read into the buffer at once.
+
         Modify this to change performance.
     n_rows
         Stop reading from CSV file after reading ``n_rows``.
@@ -1475,7 +1842,7 @@ def read_csv_batched(
 
         # Fix list of dtypes when used together with projection as polars CSV reader
         # wants a list of dtypes for the x first columns before it does the projection.
-        dtypes_list: list[type[DataType]] = [Utf8] * (max(projection) + 1)
+        dtypes_list: list[PolarsDataType] = [Utf8] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
             if idx < len(dtypes):
@@ -1568,6 +1935,7 @@ def read_csv_batched(
         skip_rows=skip_rows,
         dtypes=dtypes,
         null_values=null_values,
+        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
         parse_dates=parse_dates,
         n_threads=n_threads,

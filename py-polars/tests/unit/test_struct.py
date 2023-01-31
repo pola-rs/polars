@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from dataclasses import dataclass
 from datetime import datetime
 
 import pandas as pd
@@ -8,6 +9,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_struct_various() -> None:
@@ -22,7 +24,7 @@ def test_struct_various() -> None:
     assert s.struct.field("list").to_list() == [[1, 2], [3]]
     assert s.struct.field("int").to_list() == [1, 2]
 
-    assert df.to_struct("my_struct").struct.to_frame().frame_equal(df)
+    assert_frame_equal(df.to_struct("my_struct").struct.unnest(), df)
     assert s.struct._ipython_key_completions_() == s.struct.fields
 
 
@@ -35,11 +37,11 @@ def test_struct_to_list() -> None:
     ]
 
 
-def test_apply_to_struct() -> None:
+def test_apply_unnest() -> None:
     df = (
         pl.Series([None, 2, 3, 4])
         .apply(lambda x: {"a": x, "b": x * 2, "c": True, "d": [1, 2], "e": "foo"})
-        .struct.to_frame()
+        .struct.unnest()
     )
 
     expected = pl.DataFrame(
@@ -52,7 +54,7 @@ def test_apply_to_struct() -> None:
         }
     )
 
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
 
 
 def test_rename_fields() -> None:
@@ -63,13 +65,13 @@ def test_rename_fields() -> None:
     ]
 
 
-def struct_unnesting() -> None:
+def test_struct_unnesting() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     df2 = df.select(
         [
             pl.all().alias("a_original"),
             pl.col("a")
-            .apply(lambda x: (x, x * 2, x % 2 == 0))
+            .apply(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
             .struct.rename_fields(["a", "a_squared", "mod2eq0"])
             .alias("foo"),
         ]
@@ -84,7 +86,8 @@ def struct_unnesting() -> None:
             "mod2eq0": [False, True],
         }
     )
-    assert out.frame_equal(expected)
+
+    assert_frame_equal(out, expected)
 
     out_default = df2.unnest()
     assert out_default.frame_equal(expected)
@@ -95,7 +98,7 @@ def struct_unnesting() -> None:
             [
                 pl.all().alias("a_original"),
                 pl.col("a")
-                .apply(lambda x: (x, x * 2, x % 2 == 0))
+                .apply(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
                 .struct.rename_fields(["a", "a_squared", "mod2eq0"])
                 .alias("foo"),
             ]
@@ -103,17 +106,19 @@ def struct_unnesting() -> None:
         .unnest("foo")
         .collect()
     )
-    out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_struct_function_expansion() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     )
-    assert df.with_column(pl.struct(pl.col(["a", "b"])))["a"].struct.fields == [
-        "a",
-        "b",
-    ]
+    struct_schema = {"a": pl.UInt32, "b": pl.Utf8}
+    s = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
+
+    assert isinstance(s, pl.Series)
+    assert s.struct.fields == ["a", "b"]
+    assert pl.Struct(struct_schema) == s.to_frame().schema["a"]
 
 
 def test_value_counts_expr() -> None:
@@ -122,7 +127,6 @@ def test_value_counts_expr() -> None:
             "id": ["a", "b", "b", "c", "c", "c", "d", "d"],
         }
     )
-
     out = (
         df.select(
             [
@@ -139,10 +143,19 @@ def test_value_counts_expr() -> None:
         {"id": "a", "counts": 1},
     ]
 
+    # nested value counts. Then the series needs the name
+    # 6200
+
+    df = pl.DataFrame({"session": [1, 1, 1], "id": [2, 2, 3]})
+
+    assert df.groupby("session").agg(
+        [pl.col("id").value_counts(sort=True).first()]
+    ).to_dict(False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
+
 
 def test_value_counts_logical_type() -> None:
     # test logical type
-    df = pl.DataFrame({"a": ["b", "c"]}).with_column(
+    df = pl.DataFrame({"a": ["b", "c"]}).with_columns(
         pl.col("a").cast(pl.Categorical).alias("ac")
     )
     out = df.select([pl.all().value_counts()])
@@ -160,7 +173,7 @@ def test_nested_struct() -> None:
     assert nest_l1.frame_equal(nest_default)
 
     # Add another column on the same level
-    nest_l1 = nest_l1.with_column(pl.col("c").is_null().alias("b"))
+    nest_l1 = nest_l1.with_columns(pl.col("c").is_null().alias("b"))
     # Nest the dataframe again
     nest_l2 = nest_l1.to_struct("a").to_frame()
 
@@ -284,6 +297,12 @@ def test_list_to_struct() -> None:
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
     ]
+
+    # set upper bound
+    df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
+    assert df.lazy().select(pl.col("lists").arr.to_struct(upper_bound=3)).unnest(
+        "lists"
+    ).sum().collect().columns == ["field_0", "field_1", "field_2"]
 
 
 def test_sort_df_with_list_struct() -> None:
@@ -448,12 +467,9 @@ def test_struct_comparison() -> None:
 
 
 def test_struct_order() -> None:
-    with pytest.raises(pl.ComputeError, match="struct orders must remain the same"):
-        pl.DataFrame(
-            {
-                "col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],
-            }
-        )
+    assert pl.DataFrame({"col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],}).to_dict(
+        False
+    ) == {"col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]}
 
     # null values should not trigger this
     assert (
@@ -528,7 +544,7 @@ def test_struct_arr_eval() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
-    assert df.with_column(
+    assert df.with_columns(
         pl.col("col_struct").arr.eval(pl.element().first()).alias("first")
     ).to_dict(False) == {
         "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
@@ -542,7 +558,7 @@ def test_arr_unique() -> None:
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
     # the order is unpredictable
-    unique = df.with_column(pl.col("col_struct").arr.unique().alias("unique"))[
+    unique = df.with_columns(pl.col("col_struct").arr.unique().alias("unique"))[
         "unique"
     ].to_list()
     assert len(unique) == 1
@@ -685,3 +701,109 @@ def test_suffix_in_struct_creation() -> None:
             }
         ).select(pl.struct(pl.col(["a", "c"]).suffix("_foo")).alias("bar"))
     ).unnest("bar").to_dict(False) == {"a_foo": [1, 2], "c_foo": [5, 6]}
+
+
+def test_concat_list_reverse_struct_fields() -> None:
+    df = pl.DataFrame({"nums": [1, 2, 3, 4], "letters": ["a", "b", "c", "d"]}).select(
+        [
+            pl.col("nums"),
+            pl.struct(["letters", "nums"]).alias("combo"),
+            pl.struct(["nums", "letters"]).alias("reverse_combo"),
+        ]
+    )
+    result1 = df.select(pl.concat_list(["combo", "reverse_combo"]))
+    result2 = df.select(pl.concat_list(["combo", "combo"]))
+    assert_frame_equal(result1, result2)
+
+
+def test_struct_any_value_get_after_append() -> None:
+    schema = {"a": pl.Int8, "b": pl.Int32}
+    struct_def = pl.Struct(schema)
+
+    a = pl.Series("s", [{"a": 1, "b": 2}], dtype=struct_def)
+    b = pl.Series("s", [{"a": 2, "b": 3}], dtype=struct_def)
+    a = a.append(b)
+
+    assert a[0] == {"a": 1, "b": 2}
+    assert a[1] == {"a": 2, "b": 3}
+    assert schema == a.to_frame().unnest("s").schema
+
+
+def test_struct_categorical_5843() -> None:
+    df = pl.DataFrame({"foo": ["a", "b", "c", "a"]}).with_columns(
+        pl.col("foo").cast(pl.Categorical)
+    )
+    result = df.select(pl.col("foo").value_counts(sort=True))
+    assert result.to_dict(False) == {
+        "foo": [
+            {"foo": "a", "counts": 2},
+            {"foo": "b", "counts": 1},
+            {"foo": "c", "counts": 1},
+        ]
+    }
+
+
+def test_empty_struct() -> None:
+    # List<struct>
+    df = pl.DataFrame({"a": [[{}]]})
+    assert df.to_dict(False) == {"a": [[{"": None}]]}
+
+    # Struct one not empty
+    df = pl.DataFrame({"a": [[{}, {"a": 10}]]})
+    assert df.to_dict(False) == {"a": [[{"a": None}, {"a": 10}]]}
+
+    # Empty struct
+    df = pl.DataFrame({"a": [{}]})
+    assert df.to_dict(False) == {"a": [{"": None}]}
+
+
+def test_empty_with_schema_struct() -> None:
+    # Empty structs, with schema
+    struct_schema = {"a": pl.Date, "b": pl.Boolean, "c": pl.Float64}
+    frame_schema = {"x": pl.Int8, "y": pl.Struct(struct_schema)}
+
+    @dataclass
+    class TestData:
+        x: int
+        y: dict  # type: ignore[type-arg]
+
+    # validate empty struct, null, and a mix of both
+    for empty_structs in (
+        [{}, {}],
+        [{}, None],
+        [None, {}],
+        [None, None],
+    ):
+        # test init from rows, dicts, and dataclasses
+        dict_data = {"x": [10, 20], "y": empty_structs}
+        dataclass_data = [
+            TestData(10, empty_structs[0]),  # type: ignore[index]
+            TestData(20, empty_structs[1]),  # type: ignore[index]
+        ]
+        for frame_data in (dict_data, dataclass_data):
+            df = pl.DataFrame(
+                data=frame_data,
+                schema=frame_schema,  # type: ignore[arg-type]
+            )
+            assert df.schema == frame_schema
+            assert df.unnest("y").columns == ["x", "a", "b", "c"]
+            assert df.rows() == [
+                (10, {"a": None, "b": None, "c": None}),
+                (20, {"a": None, "b": None, "c": None}),
+            ]
+
+
+def test_struct_null_cast() -> None:
+    dtype = pl.Struct(
+        [
+            pl.Field("a", pl.Int64),
+            pl.Field("b", pl.Utf8),
+            pl.Field("c", pl.List(pl.Float64)),
+        ]
+    )
+    assert (
+        pl.DataFrame()
+        .lazy()
+        .select([pl.lit(None, dtype=pl.Null).cast(dtype, strict=True)])
+        .collect()
+    ).to_dict(False) == {"": [{"a": None, "b": None, "c": None}]}

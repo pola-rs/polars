@@ -1,5 +1,5 @@
 use arrow::array::ListArray;
-use arrow::buffer::Buffer;
+use arrow::offset::{Offsets, OffsetsBuffer};
 
 use crate::compute::take::take_unchecked;
 use crate::prelude::*;
@@ -87,27 +87,28 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
         }
     };
 
-    let offsets: Buffer<i64> = offsets.into();
-    let dtype = ListArray::<i64>::default_datatype(array.data_type().clone());
     // Safety:
     // offsets are monotonically increasing
-    unsafe { ListArray::<i64>::new_unchecked(dtype, offsets, array, None) }
+    unsafe {
+        let offsets: OffsetsBuffer<i64> = Offsets::new_unchecked(offsets).into();
+        let dtype = ListArray::<i64>::default_datatype(array.data_type().clone());
+        ListArray::<i64>::new(dtype, offsets, array, None)
+    }
 }
 
 #[cfg(test)]
 mod test {
     use arrow::array::{Array, Int32Array, PrimitiveArray};
-    use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
 
     use super::*;
 
     fn get_array() -> ListArray<i64> {
         let values = Int32Array::from_slice(&[1, 2, 3, 4, 5, 6]);
-        let offsets = Buffer::from(vec![0i64, 3, 5, 6]);
+        let offsets = OffsetsBuffer::try_from(vec![0i64, 3, 5, 6]).unwrap();
 
         let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
-        ListArray::<i64>::from_data(dtype, offsets, Box::new(values), None)
+        ListArray::<i64>::new(dtype, offsets, Box::new(values), None)
     }
 
     #[test]
@@ -133,10 +134,10 @@ mod test {
             None,
             Some(11),
         ]);
-        let offsets = Buffer::from(vec![0i64, 1, 2, 3, 6, 9, 11]);
+        let offsets = OffsetsBuffer::try_from(vec![0i64, 1, 2, 3, 6, 9, 11]).unwrap();
 
         let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
-        let arr = ListArray::<i64>::from_data(dtype, offsets, Box::new(values), None);
+        let arr = ListArray::<i64>::new(dtype, offsets, Box::new(values), None);
 
         let out = sublist_get_indexes(&arr, 1);
         assert_eq!(

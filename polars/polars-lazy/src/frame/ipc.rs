@@ -51,7 +51,6 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a ipc scan.
-    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
         let path = path.as_ref();
         let path_str = path.to_string_lossy();
@@ -61,7 +60,7 @@ impl LazyFrame {
 
             let lfs = paths
                 .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     let mut args = args.clone();
                     args.rechunk = false;
                     args.row_count = None;

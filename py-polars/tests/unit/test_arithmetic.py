@@ -1,4 +1,7 @@
+import typing
 from datetime import date
+
+import numpy as np
 
 import polars as pl
 
@@ -8,7 +11,7 @@ def test_sqrt_neg_inf() -> None:
         {
             "val": [float("-Inf"), -9, 0, 9, float("Inf")],
         }
-    ).with_column(pl.col("val").sqrt().alias("sqrt"))
+    ).with_columns(pl.col("val").sqrt().alias("sqrt"))
     # comparing nans and infinities by string value as they are not cmp
     assert str(out["sqrt"].to_list()) == str(
         [float("NaN"), float("NaN"), 0.0, 3.0, float("Inf")]
@@ -47,3 +50,46 @@ def test_struct_arithmetic() -> None:
     assert pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).select(
         pl.cumsum(["a", "c"]) * 3
     ).to_dict(False) == {"cumsum": [{"a": 3, "c": 18}, {"a": 6, "c": 24}]}
+
+
+def test_simd_float_sum_determinism() -> None:
+    out = []
+    for _ in range(10):
+        a = pl.Series(
+            [
+                0.021415853782953836,
+                0.06234123511682772,
+                0.016962384922753124,
+                0.002595968402539279,
+                0.007632765529696731,
+                0.012105848332077212,
+                0.021439787151032317,
+                0.3223049133700719,
+                0.10526670729539435,
+                0.0859029285522487,
+            ]
+        )
+        out.append(a.sum())
+
+    assert out == [
+        0.6579683924555951,
+        0.6579683924555951,
+        0.6579683924555951,
+        0.6579683924555951,
+        0.6579683924555951,
+        0.6579683924555951,
+        0.6579683924555951,
+        0.6579683924555951,
+        0.6579683924555951,
+        0.6579683924555951,
+    ]
+
+
+@typing.no_type_check
+def test_floor_division_float_int_consistency() -> None:
+    a = np.random.randn(10) * 10
+
+    assert (pl.Series(a) // 5).to_list() == list((a // 5))
+    assert (pl.Series(a, dtype=pl.Int32) // 5).to_list() == list(
+        (a.astype(int) // 5).astype(int)
+    )

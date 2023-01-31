@@ -12,7 +12,7 @@ where
     fn full(name: &str, value: T::Native, length: usize) -> Self {
         let data = vec![value; length];
         let mut out = ChunkedArray::from_vec(name, data);
-        out.set_sorted2(IsSorted::Ascending);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -23,7 +23,7 @@ where
 {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(T::get_dtype().to_arrow(), length);
-        ChunkedArray::from_chunks(name, vec![arr])
+        unsafe { ChunkedArray::from_chunks(name, vec![arr]) }
     }
 }
 impl ChunkFull<bool> for BooleanChunked {
@@ -32,7 +32,7 @@ impl ChunkFull<bool> for BooleanChunked {
         bits.extend_constant(length, value);
         let mut out: BooleanChunked =
             (name, BooleanArray::from_data_default(bits.into(), None)).into();
-        out.set_sorted2(IsSorted::Ascending);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -40,7 +40,7 @@ impl ChunkFull<bool> for BooleanChunked {
 impl ChunkFullNull for BooleanChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Boolean.to_arrow(), length);
-        BooleanChunked::from_chunks(name, vec![arr])
+        unsafe { BooleanChunked::from_chunks(name, vec![arr]) }
     }
 }
 
@@ -52,7 +52,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
             builder.append_value(value);
         }
         let mut out = builder.finish();
-        out.set_sorted2(IsSorted::Ascending);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -60,7 +60,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Utf8.to_arrow(), length);
-        Utf8Chunked::from_chunks(name, vec![arr])
+        unsafe { Utf8Chunked::from_chunks(name, vec![arr]) }
     }
 }
 
@@ -73,7 +73,7 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
             builder.append_value(value);
         }
         let mut out = builder.finish();
-        out.set_sorted2(IsSorted::Ascending);
+        out.set_sorted_flag(IsSorted::Ascending);
         out
     }
 }
@@ -82,7 +82,7 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Binary.to_arrow(), length);
-        BinaryChunked::from_chunks(name, vec![arr])
+        unsafe { BinaryChunked::from_chunks(name, vec![arr]) }
     }
 }
 
@@ -113,7 +113,14 @@ impl ListChunked {
             ))),
             length,
         );
-        ListChunked::from_chunks(name, vec![arr])
+        unsafe { ListChunked::from_chunks(name, vec![arr]) }
+    }
+}
+#[cfg(feature = "dtype-struct")]
+impl ChunkFullNull for StructChunked {
+    fn full_null(name: &str, length: usize) -> StructChunked {
+        let s = vec![Series::full_null("", length, &DataType::Null)];
+        StructChunked::new_unchecked(name, &s)
     }
 }
 

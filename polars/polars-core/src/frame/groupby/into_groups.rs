@@ -30,7 +30,7 @@ where
 {
     // set group size hint
     #[cfg(feature = "dtype-categorical")]
-    let group_size_hint = if let Some(m) = &ca.categorical_map {
+    let group_size_hint = if let DataType::Categorical(Some(m)) = ca.dtype() {
         ca.len() / m.len()
     } else {
         0
@@ -83,6 +83,12 @@ where
         }
         let mut values = arr.values().as_slice();
         let null_count = arr.null_count();
+        let length = values.len();
+
+        // all nulls
+        if null_count == length {
+            return vec![[0, length as IdxSize]];
+        }
 
         let mut nulls_first = false;
         if null_count > 0 {
@@ -92,12 +98,12 @@ where
         if nulls_first {
             values = &values[null_count..];
         } else {
-            values = &values[..values.len() - null_count];
-        }
+            values = &values[..length - null_count];
+        };
 
         let n_threads = POOL.current_num_threads();
         let groups = if multithreaded && n_threads > 1 {
-            let parts = create_clean_partitions(values, n_threads, self.is_sorted_reverse());
+            let parts = create_clean_partitions(values, n_threads, self.is_sorted_reverse_flag());
             let n_parts = parts.len();
 
             let first_ptr = &values[0] as *const T::Native as usize;
@@ -145,7 +151,7 @@ where
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         // sorted path
-        if self.is_sorted() || self.is_sorted_reverse() && self.chunks().len() == 1 {
+        if self.is_sorted_flag() || self.is_sorted_reverse_flag() && self.chunks().len() == 1 {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
             return Ok(GroupsProxy::Slice {
                 groups: self.create_groups_from_sorted(multithreaded),

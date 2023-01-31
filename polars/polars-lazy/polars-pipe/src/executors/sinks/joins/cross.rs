@@ -62,6 +62,10 @@ impl Sink for CrossJoin {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+
+    fn fmt(&self) -> &str {
+        "cross_join_sink"
+    }
 }
 
 #[derive(Clone)]
@@ -151,5 +155,9 @@ impl Operator for CrossJoinProbe {
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
+    }
+
+    fn fmt(&self) -> &str {
+        "cross_join_probe"
     }
 }

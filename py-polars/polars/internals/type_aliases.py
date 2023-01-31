@@ -21,7 +21,7 @@ ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq
 # The following all have an equivalent Rust enum with the same name
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
-ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
+StartBy: TypeAlias = Literal["window", "datapoint", "monday"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
@@ -39,7 +39,7 @@ PivotAgg: TypeAlias = Literal[
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
-UniqueKeepStrategy: TypeAlias = Literal["first", "last"]
+UniqueKeepStrategy: TypeAlias = Literal["first", "last", "none"]
 SizeUnit: TypeAlias = Literal[
     "b",
     "kb",
@@ -55,7 +55,8 @@ SizeUnit: TypeAlias = Literal[
 
 # The following have a Rust enum equivalent with a different name
 AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
-InterpolationMethod: TypeAlias = Literal[
+ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
+RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
 JoinStrategy: TypeAlias = Literal[
@@ -64,9 +65,11 @@ JoinStrategy: TypeAlias = Literal[
 ToStructStrategy: TypeAlias = Literal[
     "first_non_null", "max_width"
 ]  # ListToStructWidthStrategy
+InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 
 # The following have no equivalent on the Rust side
 ConcatMethod = Literal["vertical", "diagonal", "horizontal"]
 EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]
 TransferEncoding: TypeAlias = Literal["hex", "base64"]
+SearchSortedSide: TypeAlias = Literal["any", "left", "right"]

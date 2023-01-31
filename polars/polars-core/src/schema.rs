@@ -6,17 +6,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
-#[derive(PartialEq, Eq, Clone, Default)]
+#[derive(Eq, Clone, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Schema {
     inner: PlIndexMap<String, DataType>,
+}
+
+// IndexMap does not care about order.
+impl PartialEq for Schema {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a == b)
+    }
 }
 
 impl Debug for Schema {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Schema:")?;
         for (name, dtype) in self.inner.iter() {
-            writeln!(f, "name: {}, data type: {:?}", name, dtype)?;
+            writeln!(f, "name: {name}, data type: {dtype:?}")?;
         }
         Ok(())
     }
@@ -118,6 +125,16 @@ impl Schema {
             .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
     }
 
+    pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &String, &DataType)> {
+        self.inner
+            .get_full(name)
+            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+    }
+
+    pub fn remove(&mut self, name: &str) -> Option<DataType> {
+        self.inner.remove(name)
+    }
+
     pub fn get_full(&self, name: &str) -> Option<(usize, &String, &DataType)> {
         self.inner.get_full(name)
     }
@@ -139,6 +156,10 @@ impl Schema {
         self.inner.get_index(index)
     }
 
+    pub fn contains(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
+
     pub fn get_index_mut(&mut self, index: usize) -> Option<(&mut String, &mut DataType)> {
         self.inner.get_index_mut(index)
     }
@@ -153,8 +174,18 @@ impl Schema {
         Some(())
     }
 
-    pub fn with_column(&mut self, name: String, dtype: DataType) {
-        self.inner.insert(name, dtype);
+    /// Insert a new column in the [`Schema`]
+    ///
+    /// If an equivalent name already exists in the schema: the name remains and
+    /// retains in its place in the order, its corresponding value is updated
+    /// with [`DataType`] and the older dtype is returned inside `Some(_)`.
+    ///
+    /// If no equivalent key existed in the map: the new name-dtype pair is
+    /// inserted, last in order, and `None` is returned.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn with_column(&mut self, name: String, dtype: DataType) -> Option<DataType> {
+        self.inner.insert(name, dtype)
     }
 
     pub fn merge(&mut self, other: Self) {
@@ -208,11 +239,7 @@ pub trait IndexOfSchema: Debug {
     fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
             PolarsError::SchemaMisMatch(
-                format!(
-                    "Unable to get field named \"{}\" from schema: {:?}",
-                    name, self
-                )
-                .into(),
+                format!("Unable to get field named \"{name}\" from schema: {self:?}",).into(),
             )
         })
     }

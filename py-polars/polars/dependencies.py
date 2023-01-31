@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import inspect
 import re
 import sys
+from functools import lru_cache
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Hashable, cast
 
 _FSSPEC_AVAILABLE = True
 _NUMPY_AVAILABLE = True
@@ -14,6 +14,7 @@ _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
+_DELTALAKE_AVAILABLE = True
 
 
 class _LazyModule(ModuleType):
@@ -27,6 +28,8 @@ class _LazyModule(ModuleType):
     module for our own use, but it lives _exclusively_ within polars.
 
     """
+
+    __lazy__ = True
 
     _mod_pfx: dict[str, str] = {
         "numpy": "np.",
@@ -137,6 +140,7 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
 
 
 if TYPE_CHECKING:
+    import deltalake
     import fsspec
     import hypothesis
     import numpy
@@ -153,6 +157,7 @@ else:
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
+    deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
@@ -160,25 +165,26 @@ else:
     )
 
 
-def _NUMPY_TYPE(obj: Any) -> bool:
-    return _NUMPY_AVAILABLE and any(
-        "numpy." in str(o)
-        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
-    )
+@lru_cache(maxsize=None)
+def _might_be(cls: type, type_: str) -> bool:
+    # infer whether the given class "might" be associated with the given
+    # module (in which case it's reasonable to do a real isinstance check)
+    try:
+        return any(f"{type_}." in str(o) for o in cls.mro())
+    except TypeError:
+        return False
 
 
-def _PANDAS_TYPE(obj: Any) -> bool:
-    return _PANDAS_AVAILABLE and any(
-        "pandas." in str(o)
-        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
-    )
+def _check_for_numpy(obj: Any) -> bool:
+    return _NUMPY_AVAILABLE and _might_be(cast(Hashable, type(obj)), "numpy")
 
 
-def _PYARROW_TYPE(obj: Any) -> bool:
-    return _PYARROW_AVAILABLE and any(
-        "pyarrow." in str(o)
-        for o in (obj if inspect.isclass(obj) else obj.__class__).mro()
-    )
+def _check_for_pandas(obj: Any) -> bool:
+    return _PANDAS_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pandas")
+
+
+def _check_for_pyarrow(obj: Any) -> bool:
+    return _PYARROW_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pyarrow")
 
 
 __all__ = [
@@ -186,15 +192,17 @@ __all__ = [
     "numpy",
     "pandas",
     "pyarrow",
+    "deltalake",
     "zoneinfo",
     "_LazyModule",
     "_FSSPEC_AVAILABLE",
     "_NUMPY_AVAILABLE",
-    "_NUMPY_TYPE",
+    "_check_for_numpy",
     "_PANDAS_AVAILABLE",
-    "_PANDAS_TYPE",
+    "_check_for_pandas",
     "_PYARROW_AVAILABLE",
-    "_PYARROW_TYPE",
+    "_check_for_pyarrow",
     "_ZONEINFO_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
+    "_DELTALAKE_AVAILABLE",
 ]

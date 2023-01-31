@@ -25,7 +25,7 @@ pub(super) type DfIdx = IdxSize;
 // This is the hash and the Index offset in the chunks and the index offset in the dataframe
 #[derive(Copy, Clone, Debug)]
 pub(super) struct Key {
-    hash: u64,
+    pub(super) hash: u64,
     chunk_idx: ChunkIdx,
     df_idx: DfIdx,
 }
@@ -112,17 +112,18 @@ pub(super) fn compare_fn(
 ) -> bool {
     let key_hash = key.hash;
 
-    let chunk_idx = key.chunk_idx as usize * n_join_cols;
-    let df_idx = key.df_idx as usize;
-
-    // get the right columns from the linearly packed buffer
-    let join_cols = unsafe {
-        join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
-    };
-
-    // we check the hash and
-    // we get the appropriate values from the join columns and compare it with the current row
+    // we check the hash first
+    // as that has no indirection
     key_hash == h && {
+        // we get the appropriate values from the join columns and compare it with the current row
+        let chunk_idx = key.chunk_idx as usize * n_join_cols;
+        let df_idx = key.df_idx as usize;
+
+        // get the right columns from the linearly packed buffer
+        let join_cols = unsafe {
+            join_columns_all_chunks.get_unchecked_release(chunk_idx..chunk_idx + n_join_cols)
+        };
+
         join_cols
             .iter()
             .zip(current_row)
@@ -134,7 +135,7 @@ impl GenericBuild {
     fn is_empty(&self) -> bool {
         match self.chunks.len() {
             0 => true,
-            1 => self.chunks[0].data.height() == 0,
+            1 => self.chunks[0].is_empty(),
             _ => false,
         }
     }
@@ -150,8 +151,9 @@ impl GenericBuild {
         chunk: &DataChunk,
     ) -> PolarsResult<&[Series]> {
         self.join_series.clear();
+
         for phys_e in self.join_columns_left.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_ref())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             let s = s.rechunk();
             self.materialized_join_cols.push(s.array_ref(0).clone());
@@ -187,7 +189,7 @@ impl Sink for GenericBuild {
         // end up with empty chunks
         // But we always want one empty chunk if all is empty as we need
         // to finish the join
-        if self.chunks.len() == 1 && self.chunks[0].data.height() == 0 {
+        if self.chunks.len() == 1 && self.chunks[0].is_empty() {
             self.chunks.pop().unwrap();
         }
         if chunk.is_empty() {
@@ -245,7 +247,9 @@ impl Sink for GenericBuild {
     fn combine(&mut self, mut other: Box<dyn Sink>) {
         if self.is_empty() {
             let other = other.as_any().downcast_mut::<Self>().unwrap();
-            std::mem::swap(self, other);
+            if !other.is_empty() {
+                std::mem::swap(self, other);
+            }
             return;
         }
         let other = other.as_any().downcast_ref::<Self>().unwrap();
@@ -328,17 +332,15 @@ impl Sink for GenericBuild {
                         .into_iter()
                         .map(|chunk| chunk.data),
                 );
-                if let Ok(n_chunks) = left_df.n_chunks() {
-                    if left_df.height() > 0 {
-                        assert_eq!(n_chunks, chunks_len);
-                    }
+                if left_df.height() > 0 {
+                    assert_eq!(left_df.n_chunks(), chunks_len);
                 }
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));
                 let suffix = self.suffix.clone();
                 let hb = self.hb.clone();
                 let hash_tables = Arc::new(std::mem::take(&mut self.hash_tables));
-                let join_columns_left = self.join_columns_right.clone();
+                let join_columns_left = self.join_columns_left.clone();
                 let join_columns_right = self.join_columns_right.clone();
 
                 // take the buffers, this saves one allocation
@@ -369,6 +371,9 @@ impl Sink for GenericBuild {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+    fn fmt(&self) -> &str {
+        "generic_join_build"
     }
 }
 

@@ -203,10 +203,14 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
         // during rehashing/resize (then the keys are already known to be unique).
         // Only during insertion and probing an equality function is needed
         .from_hash(original_h, |idx_hash| {
-            let key_idx = idx_hash.idx;
-            // Safety:
-            // indices in a groupby operation are always in bounds.
-            unsafe { compare_df_rows(keys, key_idx as usize, idx as usize) }
+            // first check the hash values
+            // before we incur a cache miss
+            idx_hash.hash == original_h && {
+                let key_idx = idx_hash.idx;
+                // Safety:
+                // indices in a groupby operation are always in bounds.
+                unsafe { compare_df_rows(keys, key_idx as usize, idx as usize) }
+            }
         });
     match entry {
         RawEntryMut::Vacant(entry) => {
@@ -261,10 +265,14 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
         // during rehashing/resize (then the keys are already known to be unique).
         // Only during insertion and probing an equality function is needed
         .from_hash(original_h, |idx_hash| {
-            let key_idx = idx_hash.idx;
-            // Safety:
-            // indices in a groupby operation are always in bounds.
-            unsafe { compare_keys(keys_cmp, key_idx as usize, idx as usize) }
+            // first check the hash values before we incur
+            // cache misses
+            original_h == idx_hash.hash && {
+                let key_idx = idx_hash.idx;
+                // Safety:
+                // indices in a groupby operation are always in bounds.
+                unsafe { compare_keys(keys_cmp, key_idx as usize, idx as usize) }
+            }
         });
     match entry {
         RawEntryMut::Vacant(entry) => {

@@ -1,3 +1,5 @@
+// used only if feature="is_in", feature="dtype-categorical"
+#[allow(unused_imports)]
 use polars_core::{with_string_cache, SINGLE_LOCK};
 
 use super::*;

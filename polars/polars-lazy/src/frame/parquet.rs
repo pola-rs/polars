@@ -1,8 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
+#[cfg(feature = "async")]
+use polars_io::async_glob;
 use polars_io::parquet::ParallelStrategy;
-use polars_io::RowCount;
+use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
@@ -14,6 +17,7 @@ pub struct ScanArgsParquet {
     pub rechunk: bool,
     pub row_count: Option<RowCount>,
     pub low_memory: bool,
+    pub cloud_options: Option<CloudOptions>,
 }
 
 impl Default for ScanArgsParquet {
@@ -25,11 +29,13 @@ impl Default for ScanArgsParquet {
             rechunk: true,
             row_count: None,
             low_memory: false,
+            cloud_options: None,
         }
     }
 }
 
 impl LazyFrame {
+    #[allow(clippy::too_many_arguments)]
     fn scan_parquet_impl(
         path: impl AsRef<Path>,
         n_rows: Option<usize>,
@@ -38,6 +44,7 @@ impl LazyFrame {
         row_count: Option<RowCount>,
         rechunk: bool,
         low_memory: bool,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
             path.as_ref(),
@@ -47,6 +54,7 @@ impl LazyFrame {
             None,
             rechunk,
             low_memory,
+            cloud_options,
         )?
         .build()
         .into();
@@ -73,7 +81,6 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     #[deprecated(note = "please use `concat_lf` instead")]
     pub fn scan_parquet_files<P: AsRef<Path>>(
         paths: Vec<P>,
@@ -90,6 +97,7 @@ impl LazyFrame {
                     None,
                     args.rechunk,
                     args.low_memory,
+                    args.cloud_options.clone(),
                 )
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -98,28 +106,54 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
         let path = path.as_ref();
         let path_str = path.to_string_lossy();
         if path_str.contains('*') {
-            let paths = glob::glob(&path_str)
-                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
+            let paths = if is_cloud_url(path) {
+                #[cfg(feature = "async")]
+                {
+                    Box::new(
+                        async_glob(&path_str, args.cloud_options.as_ref())?
+                            .into_iter()
+                            .map(|a| Ok(PathBuf::from(&a))),
+                    )
+                }
+                #[cfg(not(feature = "async"))]
+                panic!("Feature `async` must be enabled to use globbing patterns with cloud urls.")
+            } else {
+                Box::new(
+                    glob::glob(&path_str).map_err(|_| {
+                        PolarsError::ComputeError("invalid glob pattern given".into())
+                    })?,
+                ) as Box<dyn Iterator<Item = Result<PathBuf, _>>>
+            };
             let lfs = paths
                 .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     Self::scan_parquet_impl(
-                        path,
+                        path.clone(),
                         args.n_rows,
                         args.cache,
                         ParallelStrategy::None,
                         None,
                         false,
                         args.low_memory,
+                        args.cloud_options.clone(),
                     )
+                    .map_err(|e| {
+                        PolarsError::ComputeError(
+                            format!("While reading {} got {e:?}.", path.display()).into(),
+                        )
+                    })
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
+            if lfs.is_empty() {
+                return PolarsResult::Err(PolarsError::ComputeError(
+                    format!("Could not load any dataframes from {path_str}").into(),
+                ));
+            }
             Self::concat_impl(lfs, args)
         } else {
             Self::scan_parquet_impl(
@@ -130,6 +164,7 @@ impl LazyFrame {
                 args.row_count,
                 args.rechunk,
                 args.low_memory,
+                args.cloud_options,
             )
         }
     }

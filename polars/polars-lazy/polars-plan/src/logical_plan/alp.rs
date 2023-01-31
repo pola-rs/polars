@@ -3,17 +3,21 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "parquet")]
+use polars_core::cloud::CloudOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
+#[cfg(feature = "csv-file")]
+use crate::logical_plan::CsvParserOptions;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
-use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
+use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
@@ -30,6 +34,7 @@ pub enum ALogicalPlan {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
+        predicate: Option<Node>,
     },
     Melt {
         input: Node,
@@ -71,6 +76,7 @@ pub enum ALogicalPlan {
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
         options: ParquetOptions,
+        cloud_options: Option<CloudOptions>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -144,6 +150,10 @@ pub enum ALogicalPlan {
         contexts: Vec<Node>,
         schema: SchemaRef,
     },
+    FileSink {
+        input: Node,
+        payload: FileSinkOptions,
+    },
 }
 
 impl Default for ALogicalPlan {
@@ -164,7 +174,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => &options.schema,
+            PythonScan { options, .. } => &options.schema,
             #[cfg(feature = "csv-file")]
             CsvScan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "parquet")]
@@ -181,7 +191,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => &options.schema,
+            PythonScan { options, .. } => &options.schema,
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
@@ -220,7 +230,9 @@ impl ALogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } => return arena.get(*input).schema(arena),
+            Distinct { input, .. } | FileSink { input, .. } => {
+                return arena.get(*input).schema(arena)
+            }
             Slice { input, .. } => return arena.get(*input).schema(arena),
             Melt { schema, .. } => schema,
             MapFunction { input, function } => {
@@ -249,8 +261,9 @@ impl ALogicalPlan {
 
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => PythonScan {
+            PythonScan { options, predicate } => PythonScan {
                 options: options.clone(),
+                predicate: *predicate,
             },
             Union { options, .. } => Union {
                 inputs,
@@ -367,6 +380,7 @@ impl ALogicalPlan {
                 output_schema,
                 predicate,
                 options,
+                cloud_options,
                 ..
             } => {
                 let mut new_predicate = None;
@@ -380,6 +394,7 @@ impl ALogicalPlan {
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
                     options: options.clone(),
+                    cloud_options: cloud_options.clone(),
                 }
             }
             #[cfg(feature = "csv-file")]
@@ -452,6 +467,10 @@ impl ALogicalPlan {
                 contexts: inputs,
                 schema: schema.clone(),
             },
+            FileSink { payload, .. } => FileSink {
+                input: inputs.pop().unwrap(),
+                payload: payload.clone(),
+            },
         }
     }
 
@@ -511,7 +530,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            ExtContext { .. } => {}
+            ExtContext { .. } | FileSink { .. } => {}
         }
     }
 
@@ -558,6 +577,7 @@ impl ALogicalPlan {
             HStack { input, .. } => *input,
             Distinct { input, .. } => *input,
             MapFunction { input, .. } => *input,
+            FileSink { input, .. } => *input,
             ExtContext {
                 input, contexts, ..
             } => {
@@ -591,7 +611,7 @@ impl ALogicalPlan {
         feature = "streaming"
     ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
-        let mut inputs = [None];
+        let mut inputs = [None, None];
         self.copy_inputs(&mut inputs);
         inputs[0]
     }

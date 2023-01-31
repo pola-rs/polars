@@ -55,6 +55,7 @@ def _get_dependency_info() -> dict[str, str]:
         "fsspec",
         "connectorx",
         "xlsx2csv",
+        "deltalake",
         "matplotlib",
     ]
     return {name: _get_dep_version(name) for name in opt_deps}

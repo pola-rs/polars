@@ -24,6 +24,9 @@ impl Operator for FastProjectionOperator {
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
     }
+    fn fmt(&self) -> &str {
+        "fast_join_projection"
+    }
 }
 
 #[derive(Clone)]
@@ -40,7 +43,7 @@ impl Operator for ProjectionOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
+            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let chunk = chunk.with_data(DataFrame::new_no_checks(projected));
@@ -48,6 +51,9 @@ impl Operator for ProjectionOperator {
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
+    }
+    fn fmt(&self) -> &str {
+        "projection"
     }
 }
 
@@ -66,7 +72,7 @@ impl Operator for HstackOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
+            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = chunk.data.clone();
@@ -78,5 +84,8 @@ impl Operator for HstackOperator {
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
+    }
+    fn fmt(&self) -> &str {
+        "hstack"
     }
 }

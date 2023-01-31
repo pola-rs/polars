@@ -1,11 +1,13 @@
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_exclude_name_from_dtypes() -> None:
     df = pl.DataFrame({"a": ["a"], "b": ["b"]})
 
-    assert df.with_column(pl.col(pl.Utf8).exclude("a").suffix("_foo")).frame_equal(
-        pl.DataFrame({"a": ["a"], "b": ["b"], "b_foo": ["b"]})
+    assert_frame_equal(
+        df.with_columns(pl.col(pl.Utf8).exclude("a").suffix("_foo")),
+        pl.DataFrame({"a": ["a"], "b": ["b"], "b_foo": ["b"]}),
     )
 
 
@@ -17,7 +19,7 @@ def test_fold_regex_expand() -> None:
             "y_2": [1.0, 2.5, 3.5],
         }
     )
-    assert df.with_column(
+    assert df.with_columns(
         pl.fold(acc=pl.lit(0), f=lambda acc, x: acc + x, exprs=pl.col("^y_.*$")).alias(
             "y_sum"
         ),
@@ -37,7 +39,7 @@ def test_expanding_sum() -> None:
             "y_2": [1.0, 2.5, 3.5],
         }
     )
-    assert df.with_column(pl.sum(pl.col(r"^y_.*$")).alias("y_sum"))[
+    assert df.with_columns(pl.sum(pl.col(r"^y_.*$")).alias("y_sum"))[
         "y_sum"
     ].to_list() == [2.1, 4.7, 6.8]
 

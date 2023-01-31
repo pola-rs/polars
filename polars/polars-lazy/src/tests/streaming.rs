@@ -1,5 +1,3 @@
-use polars_core::prelude::JoinType::AsOf;
-
 use super::*;
 
 fn get_csv_file() -> LazyFrame {
@@ -17,6 +15,15 @@ fn get_csv_glob() -> LazyFrame {
     LazyCsvReader::new(file).finish().unwrap()
 }
 
+fn assert_streaming_with_default(q: LazyFrame) {
+    let q_streaming = q.clone().with_streaming(true);
+    let q_expected = q.with_streaming(false);
+
+    let out = q_streaming.collect().unwrap();
+    let expected = q_expected.collect().unwrap();
+    assert_eq!(out, expected);
+}
+
 #[test]
 fn test_streaming_parquet() -> PolarsResult<()> {
     let q = get_parquet_file();
@@ -26,12 +33,7 @@ fn test_streaming_parquet() -> PolarsResult<()> {
         .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
         .sort("sugars_g", Default::default());
 
-    let q1 = q.clone().with_streaming(true);
-    let q2 = q.clone();
-    let out_streaming = q1.collect()?;
-    let out_one_shot = q2.collect()?;
-
-    assert!(out_streaming.frame_equal(&out_one_shot));
+    assert_streaming_with_default(q);
     Ok(())
 }
 
@@ -45,12 +47,7 @@ fn test_streaming_csv() -> PolarsResult<()> {
         .agg([col("calories").sum()])
         .sort("sugars_g", Default::default());
 
-    let q1 = q.clone().with_streaming(true);
-    let q2 = q.clone();
-    let out_streaming = q1.collect()?;
-    let out_one_shot = q2.collect()?;
-
-    assert!(out_streaming.frame_equal(&out_one_shot));
+    assert_streaming_with_default(q);
     Ok(())
 }
 
@@ -65,12 +62,7 @@ fn test_streaming_glob() -> PolarsResult<()> {
         .agg([col("calories").sum() * lit(10)])
         .sort("sugars_g", Default::default());
 
-    let q1 = q.clone().with_streaming(true);
-    let q2 = q.clone();
-    let out_streaming = q1.collect()?;
-    let out_one_shot = q2.collect()?;
-
-    assert!(out_streaming.frame_equal(&out_one_shot));
+    assert_streaming_with_default(q);
     Ok(())
 }
 
@@ -87,12 +79,7 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
         ])
         .sort_by_exprs([col("sugars_g"), col("calories")], [false, false], false);
 
-    let q1 = q.clone().with_streaming(true);
-    let q2 = q.clone();
-    let out_streaming = q1.collect()?;
-    let out_one_shot = q2.collect()?;
-
-    assert!(out_streaming.frame_equal(&out_one_shot));
+    assert_streaming_with_default(q);
     Ok(())
 }
 
@@ -109,12 +96,7 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
         ])
         .sort("sugars_g", Default::default());
 
-    let q1 = q.clone().with_streaming(true);
-    let q2 = q.clone();
-    let out_streaming = q1.collect()?;
-    let out_one_shot = q2.collect()?;
-
-    assert!(out_streaming.frame_equal(&out_one_shot));
+    assert_streaming_with_default(q);
     Ok(())
 }
 
@@ -188,10 +170,7 @@ fn test_streaming_inner_join3() -> PolarsResult<()> {
 
     let q = lf_left.inner_join(lf_right, col("col1"), col("col1"));
 
-    let out1 = q.clone().with_streaming(true).collect()?;
-    let out2 = q.clone().with_streaming(false).collect()?;
-    assert!(out1.frame_equal(&out2));
-
+    assert_streaming_with_default(q);
     Ok(())
 }
 #[test]
@@ -210,10 +189,7 @@ fn test_streaming_inner_join2() -> PolarsResult<()> {
 
     let q = lf_left.inner_join(lf_right, col("a"), col("a"));
 
-    let out1 = q.clone().with_streaming(true).collect()?;
-    let out2 = q.clone().with_streaming(false).collect()?;
-    assert!(out1.frame_equal(&out2));
-
+    assert_streaming_with_default(q);
     Ok(())
 }
 #[test]
@@ -232,10 +208,7 @@ fn test_streaming_left_join() -> PolarsResult<()> {
 
     let q = lf_left.left_join(lf_right, col("a"), col("a"));
 
-    let out1 = q.clone().with_streaming(false).collect()?;
-    let out2 = q.clone().with_streaming(false).collect()?;
-    assert!(out1.frame_equal_missing(&out2));
-
+    assert_streaming_with_default(q);
     Ok(())
 }
 
@@ -288,9 +261,7 @@ fn test_streaming_partial() -> PolarsResult<()> {
         col("a"),
         col("a_foo"),
     );
-    let out = q.with_streaming(true).collect()?;
-    // simply check if it runs panic free
-    assert_eq!(out.shape(), (1, 5));
+    assert_streaming_with_default(q);
 
     Ok(())
 }
@@ -308,5 +279,54 @@ fn test_streaming_aggregate_join() -> PolarsResult<()> {
     let q1 = q.clone().with_streaming(true);
     let out_streaming = q1.collect()?;
     assert_eq!(out_streaming.shape(), (3, 3));
+    Ok(())
+}
+
+#[test]
+fn test_streaming_double_left_join() -> PolarsResult<()> {
+    // A left join swaps the tables, so that checks the swapping of the branches
+    let q1 = df![
+        "id" => ["1a"],
+        "p_id" => ["1b"],
+        "m_id" => ["1c"],
+    ]?
+    .lazy();
+
+    let q2 = df![
+        "p_id2" => ["2a"],
+        "p_code" => ["2b"],
+    ]?
+    .lazy();
+
+    let q3 = df![
+        "m_id3" => ["3a"],
+        "m_code" => ["3b"],
+    ]?
+    .lazy();
+
+    let q = q1
+        .clone()
+        .left_join(q2.clone(), col("p_id"), col("p_id2"))
+        .left_join(q3.clone(), col("m_id"), col("m_id3"));
+
+    assert_streaming_with_default(q.clone());
+
+    // more joins
+    let q = q.left_join(q1.clone(), col("p_id"), col("p_id")).left_join(
+        q3.clone(),
+        col("m_id"),
+        col("m_id3"),
+    );
+
+    assert_streaming_with_default(q);
+
+    // empty tables
+    let q = q1
+        .slice(0, 0)
+        .left_join(q2.slice(0, 0), col("p_id"), col("p_id2"))
+        .left_join(q3.slice(0, 0), col("m_id"), col("m_id3"));
+
+    assert_streaming_with_default(q);
+
     Ok(())
 }

@@ -26,7 +26,7 @@ impl CategoricalChunked {
             self.logical_mut().length += other.len() as IdxSize;
             new_chunks(&mut self.logical.chunks, &other.logical().chunks, len);
         }
-        self.logical.set_sorted2(IsSorted::Not);
+        self.logical.set_sorted_flag(IsSorted::Not);
         Ok(())
     }
 }

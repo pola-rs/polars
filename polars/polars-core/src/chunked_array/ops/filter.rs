@@ -122,10 +122,12 @@ impl ChunkFilter<ListType> for ListChunked {
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ListChunked::from_chunks(
-                    self.name(),
-                    vec![new_empty_array(self.dtype().to_arrow())],
-                )),
+                _ => unsafe {
+                    Ok(ListChunked::from_chunks(
+                        self.name(),
+                        vec![new_empty_array(self.dtype().to_arrow())],
+                    ))
+                },
             };
         }
         let (left, filter) = align_chunks_binary(self, filter);
@@ -157,7 +159,7 @@ where
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ObjectChunked::from_chunks(self.name(), vec![])),
+                _ => Ok(ObjectChunked::new_empty(self.name())),
             };
         }
         if self.is_empty() {

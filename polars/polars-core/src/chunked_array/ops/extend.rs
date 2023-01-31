@@ -78,7 +78,7 @@ where
             }
         }
         self.compute_len();
-        self.set_sorted2(IsSorted::Not);
+        self.set_sorted_flag(IsSorted::Not);
     }
 }
 
@@ -116,7 +116,7 @@ impl Utf8Chunked {
             }
         }
         self.compute_len();
-        self.set_sorted2(IsSorted::Not);
+        self.set_sorted_flag(IsSorted::Not);
     }
 }
 
@@ -193,7 +193,7 @@ impl BooleanChunked {
             }
         }
         self.compute_len();
-        self.set_sorted2(IsSorted::Not);
+        self.set_sorted_flag(IsSorted::Not);
     }
 }
 
@@ -202,7 +202,7 @@ impl ListChunked {
     pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list
-        self.set_sorted2(IsSorted::Not);
+        self.set_sorted_flag(IsSorted::Not);
         self.append(other)
     }
 }

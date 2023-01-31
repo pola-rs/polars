@@ -155,9 +155,9 @@ class column:
     >>> from hypothesis.strategies import sampled_from
     >>> from polars.testing.parametric import column
     >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
-    column(name='unique_small_ints', dtype=<class 'polars.datatypes.UInt8'>, strategy=None, null_probability=None, unique=True)
+    column(name='unique_small_ints', dtype=UInt8, strategy=None, null_probability=None, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
-    column(name='ccy', dtype=<class 'polars.datatypes.Utf8'>, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
+    column(name='ccy', dtype=Utf8, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
 
     """  # noqa: E501
 
@@ -251,8 +251,8 @@ def columns(
     >>> from string import punctuation
     >>>
     >>> def test_special_char_colname_init() -> None:
-    ...     cols = [(c.name, c.dtype) for c in columns(punctuation)]
-    ...     df = pl.DataFrame(columns=cols)
+    ...     schema = [(c.name, c.dtype) for c in columns(punctuation)]
+    ...     df = pl.DataFrame(schema=schema)
     ...     assert len(cols) == len(df.columns)
     ...     assert 0 == len(df.rows())
     ...
@@ -551,7 +551,6 @@ def dataframes(
     │ i32       ┆ f64        │
     ╞═══════════╪════════════╡
     │ -15836    ┆ 1.1755e-38 │
-    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
     """  # noqa: 501
@@ -618,7 +617,7 @@ def dataframes(
                 )
                 for c in coldefs
             },
-            columns=frame_columns,  # type: ignore[arg-type]
+            schema=frame_columns,  # type: ignore[arg-type]
         )
         # optionally generate frames with n_chunks > 1
         if series_size > 1 and chunked is True:

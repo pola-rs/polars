@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use arrow::offset::Offsets;
 use polars_arrow::kernels::list::array_to_unit_list;
 
 use crate::chunked_array::builder::get_list_builder;
@@ -18,7 +19,8 @@ fn reshape_fast_path(name: &str, s: &Series) -> Series {
             .collect::<Vec<_>>(),
     };
 
-    let mut ca = ListChunked::from_chunks(name, chunks);
+    // safety dtype is checked.
+    let mut ca = unsafe { ListChunked::from_chunks(name, chunks) };
     ca.set_inner_dtype(s.dtype().clone());
     ca.set_fast_explode();
     ca.into_series()
@@ -39,11 +41,17 @@ impl Series {
 
         // Safety:
         // offsets are correct;
-        let arr =
-            unsafe { ListArray::new_unchecked(data_type, offsets.into(), values.clone(), None) };
+        let arr = unsafe {
+            ListArray::new(
+                data_type,
+                Offsets::new_unchecked(offsets).into(),
+                values.clone(),
+                None,
+            )
+        };
         let name = self.name();
 
-        let mut ca = ListChunked::from_chunks(name, vec![Box::new(arr)]);
+        let mut ca = unsafe { ListChunked::from_chunks(name, vec![Box::new(arr)]) };
         if self.dtype() != &self.dtype().to_physical() {
             ca.to_logical(inner_type.clone())
         }

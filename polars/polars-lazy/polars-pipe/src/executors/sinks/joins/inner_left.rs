@@ -66,27 +66,26 @@ impl GenericJoinProbe {
         hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-        mut swapped_or_left: bool,
+        swapped_or_left: bool,
         join_series: Vec<Series>,
         hashes: Vec<u64>,
         context: &PExecutionContext,
         how: JoinType,
     ) -> Self {
-        if matches!(how, JoinType::Left) {
-            swapped_or_left = true
-        }
         if swapped_or_left {
             let tmp = DataChunk {
                 data: df_a.slice(0, 1),
                 chunk_index: 0,
             };
+            // remove duplicate_names caused by joining
+            // on the same column
             let names = join_columns_left
                 .iter()
-                .map(|phys_e| {
-                    let s = phys_e
-                        .evaluate(&tmp, context.execution_state.as_ref())
-                        .unwrap();
-                    s.name().to_string()
+                .flat_map(|phys_e| {
+                    phys_e
+                        .evaluate(&tmp, context.execution_state.as_any())
+                        .ok()
+                        .map(|s| s.name().to_string())
                 })
                 .collect::<Vec<_>>();
             df_a = df_a.drop_many(&names)
@@ -117,7 +116,7 @@ impl GenericJoinProbe {
     ) -> PolarsResult<&[Series]> {
         self.join_series.clear();
         for phys_e in self.join_columns_right.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_ref())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             self.join_series.push(s.rechunk());
         }
@@ -326,5 +325,8 @@ impl Operator for GenericJoinProbe {
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         let new = self.clone();
         Box::new(new)
+    }
+    fn fmt(&self) -> &str {
+        "generic_join_probe"
     }
 }

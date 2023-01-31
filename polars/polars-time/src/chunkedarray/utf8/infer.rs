@@ -120,7 +120,6 @@ impl<T: NativeType> DatetimeInfer<T> {
     fn coerce_utf8(&mut self, ca: &Utf8Chunked) -> Series {
         let chunks = ca
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let iter = array
                     .into_iter()
@@ -129,11 +128,11 @@ impl<T: NativeType> DatetimeInfer<T> {
             })
             .collect();
         let mut out = match self.logical_type {
-            DataType::Date => Int32Chunked::from_chunks(ca.name(), chunks)
+            DataType::Date => unsafe { Int32Chunked::from_chunks(ca.name(), chunks) }
                 .into_series()
                 .cast(&self.logical_type)
                 .unwrap(),
-            DataType::Datetime(_, _) => Int64Chunked::from_chunks(ca.name(), chunks)
+            DataType::Datetime(_, _) => unsafe { Int64Chunked::from_chunks(ca.name(), chunks) }
                 .into_series()
                 .cast(&self.logical_type)
                 .unwrap(),
@@ -160,24 +159,22 @@ fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_ns);
-    match out {
-        Some(out) => Some(out),
-        None => NaiveDate::parse_from_str(val, fmt)
+    out.or_else(|| {
+        NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap())),
-    }
+            .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap()))
+    })
 }
 
 fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_us);
-    match out {
-        Some(out) => Some(out),
-        None => NaiveDate::parse_from_str(val, fmt)
+    out.or_else(|| {
+        NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap())),
-    }
+            .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap()))
+    })
 }
 
 fn transform_datetime_us_bytes(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<i64> {
@@ -188,32 +185,28 @@ fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_ms);
-    match out {
-        Some(out) => Some(out),
-        None => NaiveDate::parse_from_str(val, fmt)
+    out.or_else(|| {
+        NaiveDate::parse_from_str(val, fmt)
             .ok()
-            .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap())),
-    }
+            .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap()))
+    })
 }
 
 pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
     // Dates come first, because we see datetimes as superset of dates
-    match infer_pattern_date_single(val) {
-        Some(pat) => Some(pat),
-        None => infer_pattern_datetime_single(val),
-    }
+    infer_pattern_date_single(val).or_else(|| infer_pattern_datetime_single(val))
 }
 
 fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
-    if patterns::DATETIME_D_M_Y
-        .iter()
-        .any(|fmt| NaiveDateTime::parse_from_str(val, fmt).is_ok())
-    {
+    if patterns::DATETIME_D_M_Y.iter().any(|fmt| {
+        NaiveDateTime::parse_from_str(val, fmt).is_ok()
+            || NaiveDate::parse_from_str(val, fmt).is_ok()
+    }) {
         Some(Pattern::DatetimeDMY)
-    } else if patterns::DATETIME_Y_M_D
-        .iter()
-        .any(|fmt| NaiveDateTime::parse_from_str(val, fmt).is_ok())
-    {
+    } else if patterns::DATETIME_Y_M_D.iter().any(|fmt| {
+        NaiveDateTime::parse_from_str(val, fmt).is_ok()
+            || NaiveDate::parse_from_str(val, fmt).is_ok()
+    }) {
         Some(Pattern::DatetimeYMD)
     } else {
         None

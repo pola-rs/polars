@@ -52,7 +52,6 @@ pub(super) use self::stack::*;
 pub(super) use self::udf::*;
 pub(super) use self::union::*;
 use super::*;
-use crate::physical_plan::state::StateFlags;
 
 fn execute_projection_cached_window_fns(
     df: &DataFrame,
@@ -114,13 +113,12 @@ fn execute_projection_cached_window_fns(
     for mut partition in windows {
         // clear the cache for every partitioned group
         let mut state = state.split();
-        state.clear_expr_cache();
 
         // don't bother caching if we only have a single window function in this partition
         if partition.1.len() == 1 {
-            state.flags.remove(StateFlags::CACHE_WINDOW_EXPR)
+            state.remove_cache_window_flag();
         } else {
-            state.flags.insert(StateFlags::CACHE_WINDOW_EXPR);
+            state.insert_cache_window_flag();
         }
 
         partition.1.sort_unstable_by_key(|(_idx, explode, _)| {
@@ -137,12 +135,12 @@ fn execute_projection_cached_window_fns(
                 .count()
                 == 1
             {
-                state.flags.insert(StateFlags::CACHE_WINDOW_EXPR)
+                state.insert_cache_window_flag();
             }
             // caching more than one window expression is a complicated topic for another day
             // see issue #2523
             else {
-                state.flags.remove(StateFlags::CACHE_WINDOW_EXPR)
+                state.remove_cache_window_flag();
             }
 
             let s = e.evaluate(df, &state)?;
@@ -172,7 +170,6 @@ pub(crate) fn evaluate_physical_expressions(
                 .collect::<PolarsResult<_>>()
         })?
     };
-    state.clear_schema_cache();
 
     check_expand_literals(selected_columns, zero_length)
 }
@@ -195,7 +192,7 @@ fn check_expand_literals(
             let name = s.name();
             if !names.insert(name) {
                 return Err(PolarsError::Duplicate(
-                    format!("Column with name: '{}' has more than one occurrences", name).into(),
+                    format!("Column with name: '{name}' has more than one occurrences").into(),
                 ));
             }
         }
@@ -212,8 +209,7 @@ fn check_expand_literals(
                 } else {
                     Err(PolarsError::ComputeError(
                         format!(
-                            "Series {:?} does not match the DataFrame height of {}",
-                            series, df_height
+                            "Series {series:?} does not match the DataFrame height of {df_height}",
                         )
                         .into(),
                     ))

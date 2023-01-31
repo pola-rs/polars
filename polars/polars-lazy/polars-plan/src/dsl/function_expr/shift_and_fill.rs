@@ -49,7 +49,7 @@ pub(super) fn shift_and_fill(args: &mut [Series], periods: i64) -> PolarsResult<
     let logical = s.dtype();
     let physical = s.to_physical_repr();
     let fill_value_s = &args[1];
-    let fill_value = fill_value_s.get(0);
+    let fill_value = fill_value_s.get(0).unwrap();
 
     use DataType::*;
     match logical {

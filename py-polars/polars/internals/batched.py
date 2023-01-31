@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Sequence
 
 import polars.internals as pli
-from polars.datatypes import PolarsDataType, py_type_to_dtype
+from polars.datatypes import (
+    N_INFER_DEFAULT,
+    PolarsDataType,
+    SchemaDict,
+    py_type_to_dtype,
+)
 from polars.internals.type_aliases import CsvEncoding
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
-    format_path,
     handle_projection_columns,
+    normalise_filepath,
 )
 
 try:
@@ -31,12 +36,13 @@ class BatchedCsvReader:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: None | (Mapping[str, PolarsDataType] | Sequence[PolarsDataType]) = None,
+        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         null_values: str | list[str] | dict[str, str] | None = None,
+        missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
         parse_dates: bool = False,
         n_threads: int | None = None,
-        infer_schema_length: int | None = 100,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 50_000,
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",
@@ -52,7 +58,7 @@ class BatchedCsvReader:
 
         path: str | None
         if isinstance(file, (str, Path)):
-            path = format_path(file)
+            path = normalise_filepath(file)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
@@ -89,6 +95,7 @@ class BatchedCsvReader:
             comment_char=comment_char,
             quote_char=quote_char,
             null_values=processed_null_values,
+            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             parse_dates=parse_dates,
             skip_rows_after_header=skip_rows_after_header,
             row_count=_prepare_row_count_args(row_count_name, row_count_offset),

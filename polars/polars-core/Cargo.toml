@@ -25,11 +25,11 @@ performant = ["polars-arrow/performant"]
 
 # extra utilities for Utf8Chunked
 strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
-string_encoding = ["base64", "hex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
-fmt = ["comfy-table"]
+fmt = ["comfy-table/tty"]
+fmt_no_tty = ["comfy-table"]
 
 # opt-in features
 # sort by multiple columns
@@ -62,7 +62,6 @@ groupby_list = []
 cum_agg = []
 # rolling window functions
 rolling_window = []
-interpolate = []
 rank = []
 diff = []
 pct_change = ["diff"]
@@ -99,6 +98,7 @@ parquet = ["arrow/io_parquet"]
 
 # scale to terabytes?
 bigidx = ["polars-arrow/bigidx"]
+python = []
 
 serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde"]
 
@@ -127,7 +127,6 @@ docs-selection = [
   "mode",
   "cum_agg",
   "rolling_window",
-  "interpolate",
   "diff",
   "moment",
   "dtype-categorical",
@@ -136,7 +135,6 @@ docs-selection = [
   "horizontal_concat",
   "abs",
   "dataframe_arithmetic",
-  "string_encoding",
   "product",
   "unique_counts",
   "describe",
@@ -145,23 +143,28 @@ docs-selection = [
   "partition_by",
 ]
 
+# Cloud support.
+"async" = ["url"]
+"aws" = ["async", "object_store/aws"]
+"azure" = ["async", "object_store/azure"]
+"gcp" = ["async", "object_store/gcp"]
+
 [dependencies]
 ahash.workspace = true
 anyhow.workspace = true
 arrow.workspace = true
-base64 = { version = "0.13", optional = true }
 bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
-chrono-tz = { version = "0.6", optional = true }
-comfy-table = { version = "6.1.1", optional = true }
+chrono-tz = { version = "0.8", optional = true }
+comfy-table = { version = "6.1.4", optional = true, default_features = false }
 hashbrown.workspace = true
-hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num.workspace = true
-once_cell = "1"
-polars-arrow = { version = "0.25.1", path = "../polars-arrow", features = ["compute"] }
-polars-utils = { version = "0.25.1", path = "../polars-utils" }
+object_store = { version = "0.5.3", default-features = false, optional = true }
+once_cell.workspace = true
+polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["compute"] }
+polars-utils = { version = "0.26.1", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon.workspace = true
@@ -171,6 +174,11 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = { version = "1" }
 thiserror.workspace = true
+url = { version = "2.3.1", optional = true }
+xxhash-rust.workspace = true
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+wasm-timer = "0.2.5"
 
 [dev-dependencies]
 bincode = "1"

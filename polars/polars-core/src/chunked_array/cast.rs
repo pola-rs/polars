@@ -22,9 +22,10 @@ pub(crate) fn cast_chunks(
         }
     };
 
+    let arrow_dtype = dtype.to_arrow();
     let chunks = chunks
         .iter()
-        .map(|arr| arrow::compute::cast::cast(arr.as_ref(), &dtype.to_arrow(), options))
+        .map(|arr| arrow::compute::cast::cast(arr.as_ref(), &arrow_dtype, options))
         .collect::<arrow::error::Result<Vec<_>>>()?;
     Ok(chunks)
 }
@@ -62,13 +63,24 @@ where
         match data_type {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
-                Ok(CategoricalChunked::full_null(self.name(), self.len()).into_series())
+                if self.dtype() == &DataType::UInt32 {
+                    // safety:
+                    // we are guarded by the type system.
+                    let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
+                    CategoricalChunked::from_global_indices(ca.clone()).map(|ca| ca.into_series())
+                } else {
+                    Err(PolarsError::ComputeError(
+                        "Cannot cast numeric types to 'Categorical'".into(),
+                    ))
+                }
             }
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
                 // cast to first field dtype
-                let dtype = &fields[0].dtype;
-                let s = cast_impl_inner(self.name(), &self.chunks, dtype, true)?;
+                let fld = &fields[0];
+                let dtype = &fld.dtype;
+                let name = &fld.name;
+                let s = cast_impl_inner(name, &self.chunks, dtype, true)?;
                 Ok(StructChunked::new_unchecked(self.name(), &[s]).into_series())
             }
             _ => cast_impl_inner(self.name(), &self.chunks, data_type, checked).map(|mut s| {
@@ -78,8 +90,8 @@ where
                     || (self.dtype().is_unsigned() && data_type.is_unsigned()))
                     && (s.null_count() == self.null_count())
                 {
-                    let is_sorted = self.is_sorted2();
-                    s.set_sorted(is_sorted)
+                    let is_sorted = self.is_sorted_flag2();
+                    s.set_sorted_flag(is_sorted)
                 }
                 s
             }),
@@ -163,11 +175,7 @@ fn cast_inner_list_type(list: &ListArray<i64>, child_type: &DataType) -> PolarsR
     let child = cast::cast(child.as_ref(), &child_type.to_arrow())?;
 
     let data_type = ListArray::<i64>::default_datatype(child_type.to_arrow());
-    // Safety:
-    // offsets are correct as they have not changed
-    let list = unsafe {
-        ListArray::new_unchecked(data_type, offsets.clone(), child, list.validity().cloned())
-    };
+    let list = ListArray::new(data_type, offsets.clone(), child, list.validity().cloned());
     Ok(Box::new(list) as ArrayRef)
 }
 
@@ -175,20 +183,42 @@ fn cast_inner_list_type(list: &ListArray<i64>, child_type: &DataType) -> PolarsR
 /// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        use DataType::*;
         match data_type {
-            DataType::List(child_type) => {
+            List(child_type) => {
                 let phys_child = child_type.to_physical();
-                let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical() {
-                    let chunks = self
-                        .downcast_iter()
-                        .map(|list| cast_inner_list_type(list, &phys_child))
-                        .collect::<PolarsResult<_>>()?;
-                    ListChunked::from_chunks(self.name(), chunks)
-                } else {
-                    self.clone()
-                };
-                ca.set_inner_dtype(*child_type.clone());
-                Ok(ca.into_series())
+
+                match (self.inner_dtype(), &**child_type) {
+                    #[cfg(feature = "dtype-categorical")]
+                    (Utf8, Categorical(_)) => {
+                        let (arr, inner_dtype) = cast_list(self, child_type)?;
+                        Ok(unsafe {
+                            Series::from_chunks_and_dtype_unchecked(
+                                self.name(),
+                                vec![arr],
+                                &List(Box::new(inner_dtype)),
+                            )
+                        })
+                    }
+                    _ if phys_child.is_primitive() => {
+                        let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical()
+                        {
+                            let chunks = self
+                                .downcast_iter()
+                                .map(|list| cast_inner_list_type(list, &phys_child))
+                                .collect::<PolarsResult<_>>()?;
+                            unsafe { ListChunked::from_chunks(self.name(), chunks) }
+                        } else {
+                            self.clone()
+                        };
+                        ca.set_inner_dtype(*child_type.clone());
+                        Ok(ca.into_series())
+                    }
+                    _ => {
+                        let arr = cast_list(self, child_type)?.0;
+                        Series::try_from((self.name(), arr))
+                    }
+                }
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
         }
@@ -199,6 +229,27 @@ impl ChunkCast for ListChunked {
     }
 }
 
+// returns inner data type
+fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef, DataType)> {
+    let ca = ca.rechunk();
+    let arr = ca.downcast_iter().next().unwrap();
+    let s = Series::try_from(("", arr.values().clone())).unwrap();
+    let new_inner = s.cast(child_type)?;
+
+    let inner_dtype = new_inner.dtype().clone();
+
+    let new_values = new_inner.array_ref(0).clone();
+
+    let data_type = ListArray::<i64>::default_datatype(new_values.data_type().clone());
+    let new_arr = ListArray::<i64>::new(
+        data_type,
+        arr.offsets().clone(),
+        new_values,
+        arr.validity().cloned(),
+    );
+    Ok((Box::new(new_arr), inner_dtype))
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -207,8 +258,8 @@ mod test {
     fn test_cast_list() -> PolarsResult<()> {
         let mut builder =
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
-        builder.append_slice(Some(&[1i32, 2, 3]));
-        builder.append_slice(Some(&[1i32, 2, 3]));
+        builder.append_opt_slice(Some(&[1i32, 2, 3]));
+        builder.append_opt_slice(Some(&[1i32, 2, 3]));
         let ca = builder.finish();
 
         let new = ca.cast(&DataType::List(DataType::Float64.into()))?;

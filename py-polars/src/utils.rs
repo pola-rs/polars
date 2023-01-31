@@ -1,6 +1,6 @@
 use polars::prelude::*;
 
-pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::PolarsResult<Series> {
+pub fn reinterpret(s: &Series, signed: bool) -> PolarsResult<Series> {
     match (s.dtype(), signed) {
         (DataType::UInt64, true) => {
             let ca = s.u64().unwrap();
@@ -12,8 +12,18 @@ pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::PolarsResult<Se
             Ok(ca.reinterpret_unsigned().into_series())
         }
         (DataType::Int64, true) => Ok(s.clone()),
+        (DataType::UInt32, true) => {
+            let ca = s.u32().unwrap();
+            Ok(ca.reinterpret_signed().into_series())
+        }
+        (DataType::UInt32, false) => Ok(s.clone()),
+        (DataType::Int32, false) => {
+            let ca = s.i32().unwrap();
+            Ok(ca.reinterpret_unsigned().into_series())
+        }
+        (DataType::Int32, true) => Ok(s.clone()),
         _ => Err(PolarsError::ComputeError(
-            "reinterpret is only allowed for 64bit integers dtype, use cast otherwise".into(),
+            "reinterpret is only allowed for 64/32bit integers dtype, use cast otherwise".into(),
         )),
     }
 }

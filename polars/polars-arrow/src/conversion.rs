@@ -7,7 +7,7 @@ use crate::prelude::*;
 
 pub fn chunk_to_struct(chunk: Chunk<ArrayRef>, fields: Vec<Field>) -> StructArray {
     let dtype = DataType::Struct(fields);
-    StructArray::from_data(dtype, chunk.into_arrays(), None)
+    StructArray::new(dtype, chunk.into_arrays(), None)
 }
 
 /// Returns its underlying [`Vec`], if possible.

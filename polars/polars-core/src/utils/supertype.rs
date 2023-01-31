@@ -3,12 +3,11 @@ use super::*;
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
-    match get_supertype(l, r) {
-        Some(dt) => Ok(dt),
-        None => Err(PolarsError::ComputeError(
-            format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
-        )),
-    }
+    get_supertype(l, r).ok_or_else(|| {
+        PolarsError::ComputeError(
+            format!("Failed to determine supertype of {l:?} and {r:?}").into(),
+        )
+    })
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
@@ -196,15 +195,6 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             #[cfg(feature = "dtype-time")]
             (Time, Float64) => Some(Float64),
 
-            #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
-            (Time, Datetime(_, _)) => Some(Int64),
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype-time"))]
-            (Datetime(_, _), Time) => Some(Int64),
-            #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
-            (Time, Date) => Some(Int64),
-            #[cfg(all(feature = "dtype-date", feature = "dtype-time"))]
-            (Date, Time) => Some(Int64),
-
             // every known type can be casted to a string except binary
             #[cfg(feature = "dtype-binary")]
             (dt, Utf8) if dt != &DataType::Unknown && dt != &DataType::Binary => Some(Utf8),
@@ -264,19 +254,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (_, Unknown) => Some(Unknown),
             #[cfg(feature = "dtype-struct")]
             (Struct(fields_a), Struct(fields_b)) => {
-                if fields_a.len() != fields_b.len() {
-                    None
-                } else {
-                    let mut new_fields = Vec::with_capacity(fields_a.len());
-                    for (a, b) in fields_a.iter().zip(fields_b) {
-                        if a.name != b.name {
-                            return None;
-                        }
-                        let st = get_supertype(&a.dtype, &b.dtype)?;
-                        new_fields.push(Field::new(&a.name, st))
-                    }
-                    Some(Struct(new_fields))
-                }
+                super_type_structs(fields_a, fields_b)
             }
             #[cfg(feature = "dtype-struct")]
             (Struct(fields_a), rhs) if rhs.is_numeric() => {
@@ -291,8 +269,51 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         }
     }
 
-    match inner(l, r) {
-        Some(dt) => Some(dt),
-        None => inner(r, l),
+    inner(l, r).or_else(|| inner(r, l))
+}
+
+#[cfg(feature = "dtype-struct")]
+fn union_struct_fields(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType> {
+    let (longest, shortest) = {
+        // if equal length we also take the lhs
+        // so that the lhs determines the order of the fields
+        if fields_a.len() >= fields_b.len() {
+            (fields_a, fields_b)
+        } else {
+            (fields_b, fields_a)
+        }
+    };
+    let mut longest_map =
+        PlIndexMap::from_iter(longest.iter().map(|fld| (&fld.name, fld.dtype.clone())));
+    for field in shortest {
+        let dtype_longest = longest_map
+            .entry(&field.name)
+            .or_insert_with(|| field.dtype.clone());
+        if &field.dtype != dtype_longest {
+            let st = get_supertype(&field.dtype, dtype_longest)?;
+            *dtype_longest = st
+        }
+    }
+    let new_fields = longest_map
+        .into_iter()
+        .map(|(name, dtype)| Field::new(name, dtype))
+        .collect::<Vec<_>>();
+    Some(DataType::Struct(new_fields))
+}
+
+#[cfg(feature = "dtype-struct")]
+fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType> {
+    if fields_a.len() != fields_b.len() {
+        union_struct_fields(fields_a, fields_b)
+    } else {
+        let mut new_fields = Vec::with_capacity(fields_a.len());
+        for (a, b) in fields_a.iter().zip(fields_b) {
+            if a.name != b.name {
+                return union_struct_fields(fields_a, fields_b);
+            }
+            let st = get_supertype(&a.dtype, &b.dtype)?;
+            new_fields.push(Field::new(&a.name, st))
+        }
+        Some(DataType::Struct(new_fields))
     }
 }

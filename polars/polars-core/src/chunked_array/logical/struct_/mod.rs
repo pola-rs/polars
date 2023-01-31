@@ -1,7 +1,10 @@
 mod from;
 
+use std::collections::BTreeMap;
+
 use super::*;
 use crate::datatypes::*;
+use crate::utils::index_to_chunked_index2;
 
 /// This is logical type [`StructChunked`] that
 /// dispatches most logic to the `fields` implementations
@@ -17,11 +20,24 @@ pub struct StructChunked {
     chunks: Vec<ArrayRef>,
 }
 
+fn arrays_to_fields(field_arrays: &[ArrayRef], fields: &[Series]) -> Vec<ArrowField> {
+    field_arrays
+        .iter()
+        .zip(fields)
+        .map(|(arr, s)| ArrowField::new(s.name(), arr.data_type().clone(), true))
+        .collect()
+}
+
 fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
     let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
 
-    let new_fields = fields.iter().map(|s| s.field().to_arrow()).collect();
-    let field_arrays = fields.iter().map(|s| s.to_arrow(0)).collect::<Vec<_>>();
+    let field_arrays = fields
+        .iter()
+        .map(|s| s.rechunk().to_arrow(0))
+        .collect::<Vec<_>>();
+    // we determine fields from arrays as there might be object arrays
+    // where the dtype is bound to that single array
+    let new_fields = arrays_to_fields(&field_arrays, &fields);
     let arr = StructArray::new(ArrowDataType::Struct(new_fields), field_arrays, None);
     (Box::new(arr), fields)
 }
@@ -63,6 +79,9 @@ impl StructChunked {
                 }
             }
             Ok(Self::new_unchecked(name, &new_fields))
+        } else if fields.is_empty() {
+            let fields = &[Series::full_null("", 1, &DataType::Null)];
+            Ok(Self::new_unchecked(name, fields))
         } else {
             Ok(Self::new_unchecked(name, fields))
         }
@@ -79,11 +98,6 @@ impl StructChunked {
 
     // Should be called after append or extend
     pub(crate) fn update_chunks(&mut self, offset: usize) {
-        let new_fields = self
-            .fields
-            .iter()
-            .map(|s| s.field().to_arrow())
-            .collect::<Vec<_>>();
         let n_chunks = self.fields[0].chunks().len();
         for i in offset..n_chunks {
             let field_arrays = self
@@ -91,8 +105,12 @@ impl StructChunked {
                 .iter()
                 .map(|s| s.to_arrow(i))
                 .collect::<Vec<_>>();
+
+            // we determine fields from arrays as there might be object arrays
+            // where the dtype is bound to that single array
+            let new_fields = arrays_to_fields(&field_arrays, &self.fields);
             let arr = Box::new(StructArray::new(
-                ArrowDataType::Struct(new_fields.clone()),
+                ArrowDataType::Struct(new_fields),
                 field_arrays,
                 None,
             )) as ArrayRef;
@@ -188,9 +206,24 @@ impl LogicalType for StructChunked {
     }
 
     /// Gets AnyValue from LogicalType
-    fn get_any_value(&self, i: usize) -> AnyValue<'_> {
+    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        if i >= self.len() {
+            Err(PolarsError::ComputeError("Index out of bounds.".into()))
+        } else {
+            unsafe { Ok(self.get_any_value_unchecked(i)) }
+        }
+    }
+
+    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        let (chunk_idx, idx) = index_to_chunked_index2(&self.chunks, i);
         if let DataType::Struct(flds) = self.dtype() {
-            AnyValue::Struct(self.fields.iter().map(|s| s.get(i)).collect(), flds)
+            // safety: we already have a single chunk and we are
+            // guarded by the type system.
+            unsafe {
+                let arr = &**self.chunks.get_unchecked(chunk_idx);
+                let arr = &*(arr as *const dyn Array as *const StructArray);
+                AnyValue::Struct(idx, arr, flds)
+            }
         } else {
             unreachable!()
         }
@@ -198,11 +231,56 @@ impl LogicalType for StructChunked {
 
     // in case of a struct, a cast will coerce the inner types
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        let fields = self
+        match dtype {
+            DataType::Struct(dtype_fields) => {
+                let map = BTreeMap::from_iter(self.fields().iter().map(|s| (s.name(), s)));
+                let struct_len = self.len();
+                let new_fields = dtype_fields
+                    .iter()
+                    .map(|new_field| match map.get(new_field.name().as_str()) {
+                        Some(s) => s.cast(&new_field.dtype),
+                        None => Ok(Series::full_null(
+                            new_field.name(),
+                            struct_len,
+                            &new_field.dtype,
+                        )),
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                StructChunked::new(self.name(), &new_fields).map(|ca| ca.into_series())
+            }
+            _ => {
+                let fields = self
+                    .fields
+                    .iter()
+                    .map(|s| s.cast(dtype))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                Ok(Self::new_unchecked(self.field.name(), &fields).into_series())
+            }
+        }
+    }
+}
+
+#[cfg(feature = "object")]
+impl Drop for StructChunked {
+    fn drop(&mut self) {
+        use crate::chunked_array::object::extension::drop::drop_object_array;
+        use crate::chunked_array::object::extension::EXTENSION_NAME;
+        if self
             .fields
             .iter()
-            .map(|s| s.cast(dtype))
-            .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(Self::new_unchecked(self.field.name(), &fields).into_series())
+            .any(|s| matches!(s.dtype(), DataType::Object(_)))
+        {
+            for arr in std::mem::take(&mut self.chunks) {
+                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                for arr in arr.values() {
+                    match arr.data_type() {
+                        ArrowDataType::Extension(name, _, _) if name == EXTENSION_NAME => unsafe {
+                            drop_object_array(arr.as_ref())
+                        },
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 }

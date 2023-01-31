@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::utils::CustomIterTools;
@@ -23,6 +24,8 @@ pub struct ApplyExpr {
     pub collect_groups: ApplyOptions,
     pub auto_explode: bool,
     pub allow_rename: bool,
+    pub pass_name_to_apply: bool,
+    pub input_schema: Option<SchemaRef>,
 }
 
 impl ApplyExpr {
@@ -39,6 +42,8 @@ impl ApplyExpr {
             collect_groups,
             auto_explode: false,
             allow_rename: false,
+            pass_name_to_apply: false,
+            input_schema: None,
         }
     }
 
@@ -71,6 +76,13 @@ impl ApplyExpr {
             ac.with_update_groups(UpdateGroups::WithSeriesLen);
         }
         ac
+    }
+
+    fn get_input_schema(&self, df: &DataFrame) -> Cow<Schema> {
+        match &self.input_schema {
+            Some(schema) => Cow::Borrowed(schema.as_ref()),
+            None => Cow::Owned(df.schema()),
+        }
     }
 }
 
@@ -122,7 +134,7 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match (state.overlapping_groups(), self.collect_groups) {
+            match (state.has_overlapping_groups(), self.collect_groups) {
                 (_, ApplyOptions::ApplyList) => {
                     let s = self.function.call_udf(&mut [ac.aggregated()])?;
                     ac.with_series(s, true);
@@ -140,31 +152,32 @@ impl PhysicalExpr for ApplyExpr {
                         return Err(expression_err!(msg, self.expr, ComputeError));
                     }
 
+                    let name = s.name().to_string();
+                    let agg = ac.aggregated();
                     // collection of empty list leads to a null dtype
                     // see: #3687
-                    if s.len() == 0 {
+                    if agg.len() == 0 {
                         // create input for the function to determine the output dtype
                         // see #3946
-                        let agg = ac.aggregated();
                         let agg = agg.list().unwrap();
                         let input_dtype = agg.inner_dtype();
 
                         let input = Series::full_null("", 0, &input_dtype);
 
                         let output = self.function.call_udf(&mut [input])?;
-                        let ca = ListChunked::full(ac.series().name(), &output, 0);
+                        let ca = ListChunked::full(&name, &output, 0);
                         return Ok(self.finish_apply_groups(ac, ca));
                     }
 
-                    let name = s.name().to_string();
-
-                    let mut ca: ListChunked = ac
-                        .aggregated()
+                    let mut ca: ListChunked = agg
                         .list()
                         .unwrap()
                         .par_iter()
                         .map(|opt_s| {
-                            opt_s.and_then(|s| {
+                            opt_s.and_then(|mut s| {
+                                if self.pass_name_to_apply {
+                                    s.rename(&name);
+                                }
                                 let mut container = [s];
                                 self.function.call_udf(&mut container).ok()
                             })
@@ -209,7 +222,7 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match (state.overlapping_groups(), self.collect_groups) {
+            match (state.has_overlapping_groups(), self.collect_groups) {
                 (_, ApplyOptions::ApplyList) => {
                     let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let s = self.function.call_udf(&mut s)?;
@@ -232,14 +245,15 @@ impl PhysicalExpr for ApplyExpr {
                         ApplyOptions::ApplyFlat,
                         AggState::AggregatedFlat(_) | AggState::NotAggregated(_),
                     ) = (
-                        state.overlapping_groups(),
+                        state.has_overlapping_groups(),
                         self.collect_groups,
                         acs[0].agg_state(),
                     ) {
                         apply_multiple_flat(acs, self.function.as_ref(), &self.expr)
                     } else {
                         let mut container = vec![Default::default(); acs.len()];
-                        let name = acs[0].series().name().to_string();
+                        let schema = self.get_input_schema(df);
+                        let field = self.to_field(&schema)?;
 
                         // aggregate representation of the aggregation contexts
                         // then unpack the lists and finally create iterators from this list chunked arrays.
@@ -250,6 +264,16 @@ impl PhysicalExpr for ApplyExpr {
 
                         // length of the items to iterate over
                         let len = iters[0].size_hint().0;
+
+                        if len == 0 {
+                            let out = Series::full_null(field.name(), 0, &field.dtype);
+
+                            drop(iters);
+                            // take the first aggregation context that as that is the input series
+                            let mut ac = acs.swap_remove(0);
+                            ac.with_series(out, true);
+                            return Ok(ac);
+                        }
 
                         let mut ca: ListChunked = (0..len)
                             .map(|_| {
@@ -263,7 +287,8 @@ impl PhysicalExpr for ApplyExpr {
                                 self.function.call_udf(&mut container).ok()
                             })
                             .collect_trusted();
-                        ca.rename(&name);
+
+                        ca.rename(&field.name);
                         drop(iters);
 
                         // take the first aggregation context that as that is the input series

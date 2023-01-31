@@ -70,9 +70,13 @@ pub trait LogicalType {
     fn dtype(&self) -> &DataType;
 
     /// Gets AnyValue from LogicalType
-    fn get_any_value(&self, _i: usize) -> AnyValue<'_> {
-        // note that unchecked version is not here
-        // because I don't think it should ever be called on logical types
+    fn get_any_value(&self, _i: usize) -> PolarsResult<AnyValue<'_>> {
+        unimplemented!()
+    }
+
+    /// # Safety
+    /// Does not do any bound checks.
+    unsafe fn get_any_value_unchecked(&self, _i: usize) -> AnyValue<'_> {
         unimplemented!()
     }
 

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
 use polars_core::frame::groupby::GroupsProxy;
@@ -16,6 +17,7 @@ pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;
 pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {
+    #[repr(transparent)]
     pub(super) struct StateFlags: u8 {
         /// More verbose logging
         const VERBOSE = 0x01;
@@ -25,6 +27,13 @@ bitflags! {
         /// If this is the case, an `explode` will yield more values than rows in original `df`,
         /// this breaks some assumptions
         const OVERLAPPING_GROUPS = 0x04;
+        /// A `sort()` in a window function is one level flatter
+        /// Assume we have column a : i32
+        /// than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
+        /// whereas a window function returns array: i32
+        /// So a `sort().list()` in a groupby returns: list[list[i32]]
+        /// whereas in a window function would return: list[i32]
+        const FINALIZE_WINDOW_AS_LIST = 0x08;
     }
 }
 
@@ -43,6 +52,15 @@ impl StateFlags {
         }
         flags
     }
+    fn as_u8(self) -> u8 {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl From<u8> for StateFlags {
+    fn from(value: u8) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
 }
 
 /// State/ cache that is maintained during the Execution of the physical plan.
@@ -52,14 +70,14 @@ pub struct ExecutionState {
     // cache file reads until all branches got there file, then we delete it
     #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
     pub(crate) file_cache: FileCache,
-    pub(super) schema_cache: Option<SchemaRef>,
+    pub(super) schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expression to prevent redundant grouping
     pub(super) group_tuples: GroupsProxyCache,
     /// Used by Window Expression to prevent redundant joins
     pub(super) join_tuples: JoinTuplesCache,
     // every join/union split gets an increment to distinguish between schema state
     pub(super) branch_idx: usize,
-    pub(super) flags: StateFlags,
+    pub(super) flags: AtomicU8,
     pub(super) ext_contexts: Arc<Vec<DataFrame>>,
     node_timer: Option<NodeTimer>,
 }
@@ -101,7 +119,7 @@ impl ExecutionState {
             group_tuples: Default::default(),
             join_tuples: Default::default(),
             branch_idx: self.branch_idx,
-            flags: self.flags,
+            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             ext_contexts: self.ext_contexts.clone(),
             node_timer: self.node_timer.clone(),
         }
@@ -113,11 +131,11 @@ impl ExecutionState {
             df_cache: self.df_cache.clone(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             file_cache: self.file_cache.clone(),
-            schema_cache: self.schema_cache.clone(),
+            schema_cache: self.schema_cache.read().unwrap().clone().into(),
             group_tuples: self.group_tuples.clone(),
             join_tuples: self.join_tuples.clone(),
             branch_idx: self.branch_idx,
-            flags: self.flags,
+            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             ext_contexts: self.ext_contexts.clone(),
             node_timer: self.node_timer.clone(),
         }
@@ -137,7 +155,7 @@ impl ExecutionState {
             group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             branch_idx: 0,
-            flags: StateFlags::init(),
+            flags: AtomicU8::new(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
             node_timer: None,
         }
@@ -157,31 +175,26 @@ impl ExecutionState {
             group_tuples: Default::default(),
             join_tuples: Default::default(),
             branch_idx: 0,
-            flags: StateFlags::init(),
+            flags: AtomicU8::new(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
             node_timer: None,
         }
     }
-    pub(crate) fn set_schema(&mut self, schema: SchemaRef) {
-        self.schema_cache = Some(schema);
-    }
-
-    /// Set the schema. Typically at the start of a projection.
-    pub(crate) fn may_set_schema(&mut self, df: &DataFrame, exprs_len: usize) {
-        if exprs_len > 1 && df.get_columns().len() > 10 {
-            let schema = Arc::new(df.schema());
-            self.set_schema(schema);
-        }
+    pub(crate) fn set_schema(&self, schema: SchemaRef) {
+        let mut lock = self.schema_cache.write().unwrap();
+        *lock = Some(schema);
     }
 
     /// Clear the schema. Typically at the end of a projection.
-    pub(crate) fn clear_schema_cache(&mut self) {
-        self.schema_cache = None;
+    pub(crate) fn clear_schema_cache(&self) {
+        let mut lock = self.schema_cache.write().unwrap();
+        *lock = None;
     }
 
     /// Get the schema.
     pub(crate) fn get_schema(&self) -> Option<SchemaRef> {
-        self.schema_cache.clone()
+        let lock = self.schema_cache.read().unwrap();
+        lock.clone()
     }
 
     /// Check if we have DataFrame in cache
@@ -206,21 +219,66 @@ impl ExecutionState {
         lock.clear();
     }
 
+    fn set_flags(&self, f: &dyn Fn(StateFlags) -> StateFlags) {
+        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags = f(flags);
+        self.flags.store(flags.as_u8(), Ordering::Relaxed);
+    }
+
     /// Indicates that window expression's [`GroupTuples`] may be cached.
     pub(super) fn cache_window(&self) -> bool {
-        self.flags.contains(StateFlags::CACHE_WINDOW_EXPR)
+        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        flags.contains(StateFlags::CACHE_WINDOW_EXPR)
     }
 
     /// Indicates that a groupby operations groups may overlap.
     /// If this is the case, an `explode` will yield more values than rows in original `df`,
     /// this breaks some assumptions
-    pub(super) fn overlapping_groups(&self) -> bool {
-        self.flags.contains(StateFlags::OVERLAPPING_GROUPS)
+    pub(super) fn has_overlapping_groups(&self) -> bool {
+        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        flags.contains(StateFlags::OVERLAPPING_GROUPS)
+    }
+    #[cfg(feature = "dynamic_groupby")]
+    pub(super) fn set_has_overlapping_groups(&self) {
+        self.set_flags(&|mut flags| {
+            flags |= StateFlags::OVERLAPPING_GROUPS;
+            flags
+        })
     }
 
     /// More verbose logging
     pub(super) fn verbose(&self) -> bool {
-        self.flags.contains(StateFlags::VERBOSE)
+        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        flags.contains(StateFlags::VERBOSE)
+    }
+
+    pub(super) fn set_finalize_window_as_list(&self) {
+        self.set_flags(&|mut flags| {
+            flags |= StateFlags::FINALIZE_WINDOW_AS_LIST;
+            flags
+        })
+    }
+
+    pub(super) fn unset_finalize_window_as_list(&self) -> bool {
+        let mut flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let is_set = flags.contains(StateFlags::FINALIZE_WINDOW_AS_LIST);
+        flags.remove(StateFlags::FINALIZE_WINDOW_AS_LIST);
+        self.flags.store(flags.as_u8(), Ordering::Relaxed);
+        is_set
+    }
+
+    pub(super) fn remove_cache_window_flag(&mut self) {
+        self.set_flags(&|mut flags| {
+            flags.remove(StateFlags::CACHE_WINDOW_EXPR);
+            flags
+        });
+    }
+
+    pub(super) fn insert_cache_window_flag(&mut self) {
+        self.set_flags(&|mut flags| {
+            flags.insert(StateFlags::CACHE_WINDOW_EXPR);
+            flags
+        });
     }
 }
 

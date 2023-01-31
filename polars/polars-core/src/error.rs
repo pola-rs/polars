@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::ops::Deref;
 
 use anyhow::Error;
 use thiserror::Error as ThisError;
@@ -7,6 +8,17 @@ use thiserror::Error as ThisError;
 pub enum ErrString {
     Owned(String),
     Borrowed(&'static str),
+}
+
+impl Deref for ErrString {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ErrString::Owned(s) => s,
+            ErrString::Borrowed(s) => s,
+        }
+    }
 }
 
 impl From<&'static str> for ErrString {
@@ -35,7 +47,7 @@ impl Display for ErrString {
             ErrString::Owned(msg) => msg.as_str(),
             ErrString::Borrowed(msg) => msg,
         };
-        write!(f, "{}", msg)
+        write!(f, "{msg}")
     }
 }
 
@@ -69,22 +81,39 @@ impl From<ArrowError> for PolarsError {
 
 impl From<anyhow::Error> for PolarsError {
     fn from(err: Error) -> Self {
-        PolarsError::ComputeError(format!("{:?}", err).into())
+        PolarsError::ComputeError(format!("{err:?}").into())
     }
 }
 
 impl From<polars_arrow::error::PolarsError> for PolarsError {
     fn from(err: polars_arrow::error::PolarsError) -> Self {
-        PolarsError::ComputeError(format!("{:?}", err).into())
+        PolarsError::ComputeError(format!("{err:?}").into())
     }
 }
 
 #[cfg(any(feature = "strings", feature = "temporal"))]
 impl From<regex::Error> for PolarsError {
     fn from(err: regex::Error) -> Self {
-        PolarsError::ComputeError(format!("regex error: {:?}", err).into())
+        PolarsError::ComputeError(format!("regex error: {err:?}").into())
     }
 }
 
 pub type PolarsResult<T> = std::result::Result<T, PolarsError>;
 pub use arrow::error::Error as ArrowError;
+
+impl PolarsError {
+    pub fn wrap_msg(&self, func: &dyn Fn(&str) -> String) -> Self {
+        use PolarsError::*;
+        match self {
+            ComputeError(msg) => ComputeError(func(msg).into()),
+            ArrowError(err) => ComputeError(func(&format!("ArrowError: {err}")).into()),
+            InvalidOperation(msg) => InvalidOperation(func(msg).into()),
+            SchemaMisMatch(msg) => SchemaMisMatch(func(msg).into()),
+            NotFound(msg) => NotFound(func(msg).into()),
+            ShapeMisMatch(msg) => ShapeMisMatch(func(msg).into()),
+            NoData(msg) => NoData(func(msg).into()),
+            Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
+            Duplicate(msg) => Duplicate(func(msg).into()),
+        }
+    }
+}

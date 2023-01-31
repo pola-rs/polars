@@ -230,7 +230,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 && expr_nodes_equal(agg_l, agg_r, expr_arena)
         }
         #[cfg(feature = "python")]
-        (PythonScan { options: l }, PythonScan { options: r, .. }) => l == r,
+        (PythonScan { options: l, .. }, PythonScan { options: r, .. }) => l == r,
         _ => {
             // joins and unions are also false
             // they do not originate from a single trail

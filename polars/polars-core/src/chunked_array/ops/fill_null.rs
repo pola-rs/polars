@@ -359,7 +359,7 @@ impl ChunkFillNull for Utf8Chunked {
                 Ok(out)
             }
             strat => Err(PolarsError::InvalidOperation(
-                format!("Strategy {:?} not supported", strat).into(),
+                format!("Strategy {strat:?} not supported").into(),
             )),
         }
     }
@@ -396,7 +396,7 @@ impl ChunkFillNull for BinaryChunked {
                 Ok(out)
             }
             strat => Err(PolarsError::InvalidOperation(
-                format!("Strategy {:?} not supported", strat).into(),
+                format!("Strategy {strat:?} not supported").into(),
             )),
         }
     }

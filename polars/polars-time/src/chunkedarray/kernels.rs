@@ -20,7 +20,7 @@ trait PolarsIso {
 
 impl PolarsIso for NaiveDateTime {
     fn p_weekday(&self) -> u32 {
-        self.weekday() as u32
+        self.weekday() as u32 + 1
     }
     fn week(&self) -> u32 {
         self.iso_week().week()
@@ -32,7 +32,7 @@ impl PolarsIso for NaiveDateTime {
 
 impl PolarsIso for NaiveDate {
     fn p_weekday(&self) -> u32 {
-        self.weekday() as u32
+        self.weekday() as u32 + 1
     }
     fn week(&self) -> u32 {
         self.iso_week().week()
@@ -169,32 +169,6 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_ordinal_us,
     ordinal,
-    timestamp_us_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_weekday_ns,
-    p_weekday,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_weekday_ms,
-    p_weekday,
-    timestamp_ms_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_weekday_us,
-    p_weekday,
     timestamp_us_to_datetime,
     i64,
     ArrowDataType::UInt32

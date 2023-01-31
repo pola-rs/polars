@@ -53,7 +53,6 @@ macro_rules! finish_list_builder {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             ..Default::default()
         };
         ca.compute_len();
@@ -85,17 +84,19 @@ where
         }
     }
 
-    pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
-        match opt_v {
-            Some(items) => {
-                let values = self.builder.mut_values();
-                values.extend_from_slice(items);
-                self.builder.try_push_valid().unwrap();
+    pub fn append_slice(&mut self, items: &[T::Native]) {
+        let values = self.builder.mut_values();
+        values.extend_from_slice(items);
+        self.builder.try_push_valid().unwrap();
 
-                if items.is_empty() {
-                    self.fast_explode = false;
-                }
-            }
+        if items.is_empty() {
+            self.fast_explode = false;
+        }
+    }
+
+    pub fn append_opt_slice(&mut self, opt_v: Option<&[T::Native]>) {
+        match opt_v {
+            Some(items) => self.append_slice(items),
             None => {
                 self.builder.push_null();
             }
@@ -496,6 +497,7 @@ pub fn get_list_builder(
 pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
+    fast_explode: bool,
     pub dtype: Option<DataType>,
 }
 
@@ -510,6 +512,7 @@ impl<'a> AnonymousListBuilder<'a> {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
+            fast_explode: true,
             dtype: inner_dtype,
         }
     }
@@ -538,11 +541,13 @@ impl<'a> AnonymousListBuilder<'a> {
 
     #[inline]
     pub fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null();
     }
 
     #[inline]
     pub fn append_empty(&mut self) {
+        self.fast_explode = false;
         self.builder.push_empty()
     }
 
@@ -550,7 +555,7 @@ impl<'a> AnonymousListBuilder<'a> {
         // empty arrays tend to be null type and thus differ
         // if we would push it the concat would fail.
         if s.is_empty() && matches!(s.dtype(), DataType::Null) {
-            self.builder.push_empty()
+            self.append_empty();
         } else {
             match s.dtype() {
                 #[cfg(feature = "dtype-struct")]
@@ -566,6 +571,7 @@ impl<'a> AnonymousListBuilder<'a> {
     }
 
     pub fn finish(&mut self) -> ListChunked {
+        // don't use self from here on one
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
             ListChunked::full_null_with_dtype(&slf.name, 0, &slf.dtype.unwrap_or(DataType::Null))
@@ -573,7 +579,11 @@ impl<'a> AnonymousListBuilder<'a> {
             let dtype = slf.dtype.map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(dtype.as_ref()).unwrap();
             let dtype = DataType::from(arr.data_type());
-            let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
+            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
+
+            if slf.fast_explode {
+                ca.set_fast_explode();
+            }
 
             ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca
@@ -586,6 +596,7 @@ pub struct AnonymousOwnedListBuilder {
     builder: AnonymousBuilder<'static>,
     owned: Vec<Series>,
     inner_dtype: Option<DataType>,
+    fast_explode: bool,
 }
 
 impl Default for AnonymousOwnedListBuilder {
@@ -597,7 +608,7 @@ impl Default for AnonymousOwnedListBuilder {
 impl ListBuilderTrait for AnonymousOwnedListBuilder {
     fn append_series(&mut self, s: &Series) {
         if s.is_empty() {
-            self.builder.push_empty()
+            self.append_empty();
         } else {
             // Safety
             // we deref a raw pointer with a lifetime that is not static
@@ -622,10 +633,12 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
 
     #[inline]
     fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null()
     }
 
     fn finish(&mut self) -> ListChunked {
+        // don't use self from here on one
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
             // not really empty, there were empty null list added probably e.g. []
@@ -634,10 +647,9 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                 let dtype = slf.inner_dtype.unwrap_or(NULL_DTYPE).to_arrow();
                 let array = new_null_array(dtype.clone(), real_length);
                 let dtype = ListArray::<i64>::default_datatype(dtype);
-                let array = unsafe {
-                    ListArray::new_unchecked(dtype, slf.builder.take_offsets().into(), array, None)
-                };
-                ListChunked::from_chunks(&slf.name, vec![Box::new(array)])
+                let array = ListArray::new(dtype, slf.builder.take_offsets().into(), array, None);
+                // safety: same type
+                unsafe { ListChunked::from_chunks(&slf.name, vec![Box::new(array)]) }
             } else {
                 ListChunked::full_null_with_dtype(
                     &slf.name,
@@ -649,7 +661,12 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             let inner_dtype = slf.inner_dtype.map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(inner_dtype.as_ref()).unwrap();
             let dtype = DataType::from(arr.data_type());
-            let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
+            // safety: same type
+            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
+
+            if slf.fast_explode {
+                ca.set_fast_explode();
+            }
 
             ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca
@@ -664,11 +681,13 @@ impl AnonymousOwnedListBuilder {
             builder: AnonymousBuilder::new(capacity),
             owned: Vec::with_capacity(capacity),
             inner_dtype,
+            fast_explode: true,
         }
     }
 
     #[inline]
     pub fn append_empty(&mut self) {
+        self.fast_explode = false;
         self.builder.push_empty()
     }
 }

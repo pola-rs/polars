@@ -24,3 +24,13 @@ impl TryFrom<StructArray> for DataFrame {
         DataFrame::new(columns)
     }
 }
+
+impl From<&Schema> for DataFrame {
+    fn from(schema: &Schema) -> Self {
+        let cols = schema
+            .iter()
+            .map(|(name, dtype)| Series::new_empty(name, dtype))
+            .collect();
+        DataFrame::new_no_checks(cols)
+    }
+}

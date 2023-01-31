@@ -33,7 +33,7 @@ class WhenThenThen:
             | str
             | None
             | pli.Series
-            | Sequence[(int | float | str | None)]
+            | Sequence[int | float | str | None]
         ),
     ) -> WhenThenThen:
         """
@@ -51,7 +51,7 @@ class WhenThenThen:
     def otherwise(
         self,
         expr: (
-            pli.Expr | int | float | str | None | Sequence[(int | float | str | None)]
+            pli.Expr | int | float | str | None | Sequence[int | float | str | None]
         ),
     ) -> pli.Expr:
         """
@@ -144,7 +144,9 @@ def when(expr: pli.Expr | bool) -> When:
     where it isn't.
 
     >>> df = pl.DataFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
-    >>> df.with_column(pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1)))
+    >>> df.with_columns(
+    ...     pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1))
+    ... )
     shape: (3, 3)
     ┌─────┬─────┬─────────┐
     │ foo ┆ bar ┆ literal │
@@ -152,15 +154,13 @@ def when(expr: pli.Expr | bool) -> When:
     │ i64 ┆ i64 ┆ i32     │
     ╞═════╪═════╪═════════╡
     │ 1   ┆ 3   ┆ -1      │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 4   ┆ 1       │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
     │ 4   ┆ 0   ┆ 1       │
     └─────┴─────┴─────────┘
 
     Or with multiple `when, thens` chained:
 
-    >>> df.with_column(
+    >>> df.with_columns(
     ...     pl.when(pl.col("foo") > 2)
     ...     .then(1)
     ...     .when(pl.col("bar") > 2)
@@ -174,9 +174,7 @@ def when(expr: pli.Expr | bool) -> When:
     │ i64 ┆ i64 ┆ i32     │
     ╞═════╪═════╪═════════╡
     │ 1   ┆ 3   ┆ 4       │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 4   ┆ 1       │
-    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
     │ 4   ┆ 0   ┆ 1       │
     └─────┴─────┴─────────┘
 

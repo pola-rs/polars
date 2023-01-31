@@ -1,5 +1,7 @@
 #[cfg(feature = "arg_where")]
 mod arg_where;
+#[cfg(feature = "dtype-binary")]
+mod binary;
 #[cfg(feature = "round_series")]
 mod clip;
 #[cfg(feature = "temporal")]
@@ -38,6 +40,8 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "dtype-binary")]
+pub(crate) use self::binary::BinaryFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
 pub(super) use self::nan::NanFunction;
@@ -61,9 +65,11 @@ pub enum FunctionExpr {
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "search_sorted")]
-    SearchSorted,
+    SearchSorted(SearchSortedSide),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
+    #[cfg(feature = "dtype-binary")]
+    BinaryExpr(BinaryFunction),
     #[cfg(feature = "temporal")]
     TemporalExpr(TemporalFunction),
     #[cfg(feature = "date_offset")]
@@ -109,6 +115,8 @@ pub enum FunctionExpr {
     ShrinkType,
     #[cfg(feature = "diff")]
     Diff(usize, NullBehavior),
+    #[cfg(feature = "interpolate")]
+    Interpolate(InterpolationMethod),
 }
 
 impl Display for FunctionExpr {
@@ -125,15 +133,17 @@ impl Display for FunctionExpr {
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "search_sorted")]
-            SearchSorted => "search_sorted",
+            SearchSorted(_) => "search_sorted",
             #[cfg(feature = "strings")]
-            StringExpr(s) => return write!(f, "{}", s),
+            StringExpr(s) => return write!(f, "{s}"),
+            #[cfg(feature = "dtype-binary")]
+            BinaryExpr(b) => return write!(f, "{b}"),
             #[cfg(feature = "temporal")]
-            TemporalExpr(fun) => return write!(f, "{}", fun),
+            TemporalExpr(fun) => return write!(f, "{fun}"),
             #[cfg(feature = "date_offset")]
             DateOffset(_) => "dt.offset_by",
             #[cfg(feature = "trigonometry")]
-            Trigonometry(func) => return write!(f, "{}", func),
+            Trigonometry(func) => return write!(f, "{func}"),
             #[cfg(feature = "sign")]
             Sign => "sign",
             FillNull { .. } => "fill_null",
@@ -148,9 +158,9 @@ impl Display for FunctionExpr {
                 (Some(_), None) => "clip_min",
                 _ => unreachable!(),
             },
-            ListExpr(func) => return write!(f, "{}", func),
+            ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
-            StructExpr(func) => return write!(f, "{}", func),
+            StructExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
@@ -164,8 +174,10 @@ impl Display for FunctionExpr {
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_, _) => "diff",
+            #[cfg(feature = "interpolate")]
+            Interpolate(_) => "interpolate",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -268,11 +280,13 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 wrap!(arg_where::arg_where)
             }
             #[cfg(feature = "search_sorted")]
-            SearchSorted => {
-                wrap!(search_sorted::search_sorted_impl)
+            SearchSorted(side) => {
+                map_as_slice!(search_sorted::search_sorted_impl, side)
             }
             #[cfg(feature = "strings")]
             StringExpr(s) => s.into(),
+            #[cfg(feature = "dtype-binary")]
+            BinaryExpr(s) => s.into(),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => func.into(),
 
@@ -312,6 +326,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Contains => wrap!(list::contains),
                     Slice => wrap!(list::slice),
                     Get => wrap!(list::get),
+                    #[cfg(feature = "list_take")]
+                    Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -337,6 +353,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
             Diff(n, null_behavior) => map!(dispatch::diff, n, null_behavior),
+            #[cfg(feature = "interpolate")]
+            Interpolate(method) => {
+                map!(dispatch::interpolate, method)
+            }
         }
     }
 }
@@ -346,20 +366,15 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: StringFunction) -> Self {
         use StringFunction::*;
         match func {
-            Contains { pat, literal } => {
-                map!(strings::contains, &pat, literal)
-            }
-            EndsWith(sub) => {
-                map!(strings::ends_with, &sub)
-            }
-            StartsWith(sub) => {
-                map!(strings::starts_with, &sub)
-            }
+            #[cfg(feature = "regex")]
+            Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
+            EndsWith { .. } => map_as_slice!(strings::ends_with),
+            StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract { pat, group_index } => {
                 map!(strings::extract, &pat, group_index)
             }
-            ExtractAll(pat) => {
-                map!(strings::extract_all, &pat)
+            ExtractAll => {
+                map_as_slice!(strings::extract_all)
             }
             CountMatch(pat) => {
                 map!(strings::count_match, &pat)
@@ -388,9 +403,29 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
             Uppercase => map!(strings::uppercase),
             Lowercase => map!(strings::lowercase),
-            Strip(matches) => map!(strings::strip, matches),
-            LStrip(matches) => map!(strings::lstrip, matches),
-            RStrip(matches) => map!(strings::rstrip, matches),
+            Strip(matches) => map!(strings::strip, matches.as_deref()),
+            LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
+            RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
+            #[cfg(feature = "string_from_radix")]
+            FromRadix(matches) => map!(strings::from_radix, matches),
+        }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: BinaryFunction) -> Self {
+        use BinaryFunction::*;
+        match func {
+            Contains { pat, literal } => {
+                map!(binary::contains, &pat, literal)
+            }
+            EndsWith(sub) => {
+                map!(binary::ends_with, &sub)
+            }
+            StartsWith(sub) => {
+                map!(binary::starts_with, &sub)
+            }
         }
     }
 }
@@ -418,9 +453,10 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Truncate(every, offset) => map!(datetime::truncate, &every, &offset),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
-            CastTimezone(tz) => map!(datetime::cast_timezone, &tz),
+            CastTimezone(tz) => map!(datetime::cast_timezone, tz.as_deref()),
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
+            Combine(tu) => map_as_slice!(temporal::combine, tu),
             DateRange {
                 name,
                 every,

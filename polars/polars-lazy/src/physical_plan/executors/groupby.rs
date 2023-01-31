@@ -48,7 +48,6 @@ pub(super) fn groupby_helper(
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
-        state.clear_schema_cache();
         return gb.apply(move |df| f.call_udf(df));
     }
 
@@ -86,7 +85,6 @@ pub(super) fn groupby_helper(
     let agg_columns = agg_columns?;
 
     columns.extend_from_slice(&agg_columns);
-    state.clear_schema_cache();
     DataFrame::new(columns)
 }
 
@@ -96,7 +94,6 @@ impl GroupByExec {
         state: &mut ExecutionState,
         df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        state.set_schema(self.input_schema.clone());
         let keys = self
             .keys
             .iter()

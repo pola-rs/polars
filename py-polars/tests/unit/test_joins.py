@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-import polars.testing
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy
@@ -64,7 +64,7 @@ def test_semi_anti_join() -> None:
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
-        columns=[("column", pl.Categorical), ("more", pl.Int32)],
+        schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
     df_agg = df.groupby("column").agg(pl.col("more").mean())
     assert df.join(df_agg, on="column").to_dict(False) == {
@@ -92,20 +92,20 @@ def test_sorted_merge_joins() -> None:
         join_strategies: list[JoinStrategy] = ["left", "inner"]
         for cast_to in [int, str, float]:
             for how in join_strategies:
-                df_a_ = df_a.with_column(pl.col("a").cast(cast_to))
-                df_b_ = df_b.with_column(pl.col("a").cast(cast_to))
+                df_a_ = df_a.with_columns(pl.col("a").cast(cast_to))
+                df_b_ = df_b.with_columns(pl.col("a").cast(cast_to))
 
                 # hash join
                 out_hash_join = df_a_.join(df_b_, on="a", how=how)
 
                 # sorted merge join
-                out_sorted_merge_join = df_a_.with_column(
+                out_sorted_merge_join = df_a_.with_columns(
                     pl.col("a").set_sorted(reverse)
                 ).join(
-                    df_b_.with_column(pl.col("a").set_sorted(reverse)), on="a", how=how
+                    df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how
                 )
 
-                assert out_hash_join.frame_equal(out_sorted_merge_join)
+                assert_frame_equal(out_hash_join, out_sorted_merge_join)
 
 
 def test_join_negative_integers() -> None:
@@ -126,8 +126,8 @@ def test_join_negative_integers() -> None:
 
     for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
         assert (
-            df1.with_column(pl.all().cast(dt))
-            .join(df2.with_column(pl.all().cast(dt)), on="a", how="inner")
+            df1.with_columns(pl.all().cast(dt))
+            .join(df2.with_columns(pl.all().cast(dt)), on="a", how="inner")
             .to_dict(False)
             == expected
         )
@@ -140,6 +140,31 @@ def test_join_asof_floats() -> None:
         "a": [1.0, 2.0, 3.0],
         "b": ["lrow1", "lrow2", "lrow3"],
         "b_right": ["rrow1", "rrow2", "rrow3"],
+    }
+
+    # with by argument
+    # 5740
+    df1 = pl.DataFrame(
+        {"b": np.linspace(0, 5, 7), "c": ["x" if i < 4 else "y" for i in range(7)]}
+    )
+    df2 = pl.DataFrame(
+        {
+            "val": [0, 2.5, 2.6, 2.7, 3.4, 4, 5],
+            "c": ["x", "x", "x", "y", "y", "y", "y"],
+        }
+    ).with_columns(pl.col("val").alias("b"))
+    assert df1.join_asof(df2, on="b", by="c").to_dict(False) == {
+        "b": [
+            0.0,
+            0.8333333333333334,
+            1.6666666666666667,
+            2.5,
+            3.3333333333333335,
+            4.166666666666667,
+            5.0,
+        ],
+        "c": ["x", "x", "x", "x", "y", "y", "y"],
+        "val": [0.0, 0.0, 0.0, 2.5, 2.7, 4.0, 5.0],
     }
 
 
@@ -314,11 +339,11 @@ def test_join() -> None:
     )
 
     joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
-    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2]))
+    assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2]))
 
     joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
     assert joined["c_right"].is_null().sum() == 1
-    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2, 4]))
+    assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2, 4]))
 
     joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
     assert joined["c_right"].null_count() == 1
@@ -348,7 +373,7 @@ def test_join() -> None:
 
     cols = ["a", "b", "bar", "ham"]
     assert lazy_join.shape == eager_join.shape
-    assert lazy_join.sort(by=cols).frame_equal(eager_join.sort(by=cols))
+    assert_frame_equal(lazy_join.sort(by=cols), eager_join.sort(by=cols))
 
 
 def test_joins_dispatch() -> None:
@@ -381,7 +406,7 @@ def test_join_on_cast() -> None:
     df_a = (
         pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
         .with_row_count()
-        .with_column(pl.col("a").cast(pl.Int32))
+        .with_columns(pl.col("a").cast(pl.Int32))
     )
 
     df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
@@ -450,64 +475,6 @@ def test_join_chunks_alignment_4720() -> None:
     }
 
 
-def test_join_inline_alias_4694() -> None:
-    df = pl.DataFrame(
-        [
-            {"ts": datetime(2021, 2, 1, 9, 20), "a1": 1.04, "a2": 0.9},
-            {"ts": datetime(2021, 2, 1, 9, 50), "a1": 1.04, "a2": 0.9},
-            {"ts": datetime(2021, 2, 2, 10, 20), "a1": 1.04, "a2": 0.9},
-            {"ts": datetime(2021, 2, 2, 11, 20), "a1": 1.08, "a2": 0.9},
-            {"ts": datetime(2021, 2, 3, 11, 50), "a1": 1.08, "a2": 0.9},
-            {"ts": datetime(2021, 2, 3, 13, 20), "a1": 1.16, "a2": 0.8},
-            {"ts": datetime(2021, 2, 4, 13, 50), "a1": 1.18, "a2": 0.8},
-        ]
-    ).lazy()
-
-    join_against = pl.DataFrame(
-        [
-            {"d": datetime(2021, 2, 3, 0, 0), "ets": datetime(2021, 2, 4, 0, 0)},
-            {"d": datetime(2021, 2, 3, 0, 0), "ets": datetime(2021, 2, 5, 0, 0)},
-            {"d": datetime(2021, 2, 3, 0, 0), "ets": datetime(2021, 2, 6, 0, 0)},
-        ]
-    ).lazy()
-
-    # this adds "dd" column to the lhs followed by a projection
-    # the projection optimizer must realize that this column is added inline and ensure
-    # it is not dropped.
-    assert df.join(
-        join_against,
-        left_on=pl.col("ts").dt.truncate("1d").alias("dd"),
-        right_on=pl.col("d"),
-    ).select(pl.all()).collect().to_dict(False) == {
-        "ts": [
-            datetime(2021, 2, 3, 11, 50),
-            datetime(2021, 2, 3, 11, 50),
-            datetime(2021, 2, 3, 11, 50),
-            datetime(2021, 2, 3, 13, 20),
-            datetime(2021, 2, 3, 13, 20),
-            datetime(2021, 2, 3, 13, 20),
-        ],
-        "a1": [1.08, 1.08, 1.08, 1.16, 1.16, 1.16],
-        "a2": [0.9, 0.9, 0.9, 0.8, 0.8, 0.8],
-        "dd": [
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-            datetime(2021, 2, 3, 0, 0),
-        ],
-        "ets": [
-            datetime(2021, 2, 4, 0, 0),
-            datetime(2021, 2, 5, 0, 0),
-            datetime(2021, 2, 6, 0, 0),
-            datetime(2021, 2, 4, 0, 0),
-            datetime(2021, 2, 5, 0, 0),
-            datetime(2021, 2, 6, 0, 0),
-        ],
-    }
-
-
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
     dfa = pl.DataFrame(
@@ -572,18 +539,19 @@ def test_sorted_flag_after_joins() -> None:
 @typing.no_type_check
 def test_jit_sort_joins() -> None:
     n = 200
+    # Explicitly specify numpy dtype because of different defaults on Windows
     dfa = pd.DataFrame(
         {
-            "a": np.random.randint(0, 100, n),
-            "b": np.arange(0, n),
+            "a": np.random.randint(0, 100, n, dtype=np.int64),
+            "b": np.arange(0, n, dtype=np.int64),
         }
     )
 
     n = 40
     dfb = pd.DataFrame(
         {
-            "a": np.random.randint(0, 100, n),
-            "b": np.arange(0, n),
+            "a": np.random.randint(0, 100, n, dtype=np.int64),
+            "b": np.arange(0, n, dtype=np.int64),
         }
     )
     dfa_pl = pl.from_pandas(dfa).sort("a")
@@ -596,8 +564,8 @@ def test_jit_sort_joins() -> None:
         # left key sorted right is not
         pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"])
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
-        assert a.frame_equal(pl_result, null_equal=True)
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
+        assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
 
         # left key sorted right is not
@@ -605,8 +573,8 @@ def test_jit_sort_joins() -> None:
         pd_result.columns = ["a", "b", "b_right"]
         pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"])
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
-        assert a.frame_equal(pl_result, null_equal=True)
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
+        assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
 
 
@@ -622,6 +590,40 @@ def test_asof_join_schema_5211() -> None:
         )
         .schema
     ) == {"today": pl.Int64, "next_friday": pl.Int64}
+
+
+def test_asof_join_schema_5684() -> None:
+    df_a = pl.DataFrame(
+        {
+            "id": [1],
+            "a": [1],
+            "b": [1],
+        }
+    ).lazy()
+
+    df_b = pl.DataFrame(
+        {
+            "id": [1, 1, 2],
+            "b": [3, -3, 6],
+        }
+    ).lazy()
+
+    q = (
+        df_a.join_asof(df_b, by="id", left_on="a", right_on="b")
+        .drop("b")
+        .join_asof(df_b, by="id", left_on="a", right_on="b")
+        .drop("b")
+    )
+
+    projected_result = q.select(pl.all()).collect()
+    result = q.collect()
+
+    assert_frame_equal(projected_result, result)
+    assert (
+        q.schema
+        == projected_result.schema
+        == {"id": pl.Int64, "a": pl.Int64, "b_right": pl.Int64}
+    )
 
 
 @typing.no_type_check
@@ -652,10 +654,10 @@ def test_streaming_joins() -> None:
             dfa_pl.lazy()
             .join(dfb_pl.lazy(), on="a", how=how)
             .sort(["a", "b"])
-            .collect(allow_streaming=True)
+            .collect(streaming=True)
         )
 
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
 
         pd_result = dfa.merge(dfb, on=["a", "b"], how=how)
@@ -664,11 +666,11 @@ def test_streaming_joins() -> None:
             dfa_pl.lazy()
             .join(dfb_pl.lazy(), on=["a", "b"], how=how)
             .sort(["a", "b"])
-            .collect(allow_streaming=True)
+            .collect(streaming=True)
         )
 
         # we cast to integer because pandas joins creates floats
-        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
         pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
 
 
@@ -677,6 +679,7 @@ def test_join_asof_projection() -> None:
         {
             "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
             "df1_col1": ["foo", "bar", "foo", "bar", "foo"],
+            "key": ["a", "b", "b", "a", "b"],
         }
     )
 
@@ -684,6 +687,7 @@ def test_join_asof_projection() -> None:
         {
             "df2_date": [20221012, 20221015, 20221018],
             "df2_col1": ["1", "2", "3"],
+            "key": ["a", "b", "b"],
         }
     )
 
@@ -694,4 +698,76 @@ def test_join_asof_projection() -> None:
     ).collect().to_dict(False) == {
         "df2_date": [None, 20221012, 20221012, 20221012, 20221015],
         "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
+    }
+    assert (
+        df1.lazy().join_asof(
+            df2.lazy(), by="key", left_on="df1_date", right_on="df2_date"
+        )
+    ).select(["df2_date", "df1_date"]).collect().to_dict(False) == {
+        "df2_date": [None, None, None, 20221012, 20221015],
+        "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
+    }
+
+
+def test_asof_join_by_logical_types() -> None:
+    dates = (
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 1, 2), interval="2h")
+        .cast(pl.Datetime("ns"))
+        .head(9)
+    )
+    x = pl.DataFrame({"a": dates, "b": map(float, range(9)), "c": ["1", "2", "3"] * 3})
+    assert x.join_asof(x, on="b", by=["c", "a"]).to_dict(False) == {
+        "a": [
+            datetime(2022, 1, 1, 0, 0),
+            datetime(2022, 1, 1, 2, 0),
+            datetime(2022, 1, 1, 4, 0),
+            datetime(2022, 1, 1, 6, 0),
+            datetime(2022, 1, 1, 8, 0),
+            datetime(2022, 1, 1, 10, 0),
+            datetime(2022, 1, 1, 12, 0),
+            datetime(2022, 1, 1, 14, 0),
+            datetime(2022, 1, 1, 16, 0),
+        ],
+        "b": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        "c": ["1", "2", "3", "1", "2", "3", "1", "2", "3"],
+    }
+
+
+def test_join_panic_on_binary_expr_5915() -> None:
+    df_a = pl.DataFrame({"a": [1, 2, 3]}).lazy()
+    df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]}).lazy()
+
+    z = df_a.join(df_b, left_on=[(pl.col("a") + 1).cast(int)], right_on=[pl.col("b")])
+    assert z.collect().to_dict(False) == {"a": [4]}
+
+
+def test_semi_join_projection_pushdown_6423() -> None:
+    df1 = pl.DataFrame({"x": [1]}).lazy()
+    df2 = pl.DataFrame({"y": [1], "x": [1]}).lazy()
+
+    assert (
+        df1.join(df2, left_on="x", right_on="y", how="semi")
+        .join(df2, left_on="x", right_on="y", how="semi")
+        .select(["x"])
+    ).collect().to_dict(False) == {"x": [1]}
+
+
+def test_semi_join_projection_pushdown_6455() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 1, 2],
+            "timestamp": [
+                datetime(2022, 12, 11),
+                datetime(2022, 12, 12),
+                datetime(2022, 1, 1),
+            ],
+            "value": [1, 2, 4],
+        }
+    ).lazy()
+
+    latest = df.groupby("id").agg(pl.col("timestamp").max())
+    df = df.join(latest, on=["id", "timestamp"], how="semi")
+    assert df.select(["id", "value"]).collect().to_dict(False) == {
+        "id": [1, 2],
+        "value": [2, 4],
     }

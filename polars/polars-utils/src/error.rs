@@ -13,7 +13,7 @@ impl Display for PolarsUtilsError {
         match self {
             PolarsUtilsError::ComputeError(s) => {
                 let s = s.as_ref();
-                write!(f, "{}", s)
+                write!(f, "{s}")
             }
         }
     }

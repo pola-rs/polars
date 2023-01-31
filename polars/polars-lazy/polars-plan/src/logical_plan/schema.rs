@@ -197,7 +197,7 @@ pub(crate) fn det_join_schema(
 
             for (name, dtype) in schema_left.iter() {
                 names.insert(name.as_str());
-                new_schema.with_column(name.to_string(), dtype.clone())
+                new_schema.with_column(name.to_string(), dtype.clone());
             }
 
             // make sure that expression are assigned to the schema
@@ -221,7 +221,15 @@ pub(crate) fn det_join_schema(
                     let field_right =
                         right_on.to_field_amortized(schema_right, Context::Default, &mut arena)?;
                     if field_left.name != field_right.name {
-                        new_schema.with_column(field_right.name, field_right.dtype);
+                        if schema_left.contains(&field_right.name) {
+                            use polars_core::frame::hash_join::_join_suffix_name;
+                            new_schema.with_column(
+                                _join_suffix_name(&field_right.name, options.suffix.as_ref()),
+                                field_right.dtype,
+                            );
+                        } else {
+                            new_schema.with_column(field_right.name, field_right.dtype);
+                        }
                     }
                 }
             }

@@ -29,4 +29,7 @@ impl Source for UnionSource {
         }
         Ok(SourceResult::Finished)
     }
+    fn fmt(&self) -> &str {
+        "union"
+    }
 }

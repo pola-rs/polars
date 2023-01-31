@@ -15,6 +15,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.contains
     Expr.arr.diff
     Expr.arr.eval
+    Expr.arr.explode
     Expr.arr.first
     Expr.arr.get
     Expr.arr.head
@@ -30,5 +31,6 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.sort
     Expr.arr.sum
     Expr.arr.tail
+    Expr.arr.take
     Expr.arr.to_struct
     Expr.arr.unique

@@ -1,10 +1,14 @@
+use polars_core::cloud::CloudOptions;
+
 use super::*;
 
+#[allow(dead_code)]
 pub struct ParquetExec {
     path: PathBuf,
     schema: SchemaRef,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
+    cloud_options: Option<CloudOptions>,
 }
 
 impl ParquetExec {
@@ -13,12 +17,14 @@ impl ParquetExec {
         schema: SchemaRef,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
+        cloud_options: Option<CloudOptions>,
     ) -> Self {
         ParquetExec {
             path,
             schema,
             predicate,
             options,
+            cloud_options,
         }
     }
 
@@ -34,7 +40,7 @@ impl ParquetExec {
         ParquetReader::new(file)
             .with_n_rows(n_rows)
             .read_parallel(self.options.parallel)
-            .with_row_count(std::mem::take(&mut self.options.row_count))
+            .with_row_count(mem::take(&mut self.options.row_count))
             .set_rechunk(self.options.rechunk)
             .set_low_memory(self.options.low_memory)
             ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))

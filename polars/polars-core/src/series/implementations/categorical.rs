@@ -10,9 +10,9 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
-#[cfg(feature = "is_in")]
-use crate::frame::hash_join::check_categorical_src;
 use crate::frame::hash_join::ZipOuterJoinColumn;
+#[cfg(feature = "is_in")]
+use crate::frame::hash_join::_check_categorical_src;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -74,8 +74,8 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         .into_series()
     }
 
-    fn _set_sorted(&mut self, is_sorted: IsSorted) {
-        self.0.logical_mut().set_sorted2(is_sorted)
+    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
+        self.0.logical_mut().set_sorted_flag(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -146,19 +146,14 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<CategoricalChunked> {
-    fn is_sorted(&self) -> IsSorted {
-        if self.0.logical().is_sorted() {
+    fn is_sorted_flag(&self) -> IsSorted {
+        if self.0.logical().is_sorted_flag() {
             IsSorted::Ascending
-        } else if self.0.logical().is_sorted_reverse() {
+        } else if self.0.logical().is_sorted_reverse_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
         }
-    }
-
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.clone().into_series()
     }
 
     fn rename(&mut self, name: &str) {
@@ -177,10 +172,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
     fn shrink_to_fit(&mut self) {
         self.0.logical_mut().shrink_to_fit()
-    }
-
-    fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
-        self.0.logical_mut().append_array(other)
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
@@ -294,14 +285,14 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.cast(data_type)
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         self.0.get_any_value(index)
     }
 
     #[inline]
     #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-        self.0.logical().get_any_value_unchecked(index)
+        self.0.get_any_value_unchecked(index)
     }
 
     fn sort_with(&self, options: SortOptions) -> Series {
@@ -400,7 +391,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        check_categorical_src(self.dtype(), other.dtype())?;
+        _check_categorical_src(self.dtype(), other.dtype())?;
         self.0.logical().is_in(&other.to_physical_repr())
     }
     #[cfg(feature = "repeat_by")]

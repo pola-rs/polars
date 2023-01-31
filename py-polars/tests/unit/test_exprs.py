@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import random
+import typing
 from typing import cast
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
-from polars.testing._private import verify_series_and_expr_api
+from polars.datatypes import (
+    DATETIME_DTYPES,
+    DURATION_DTYPES,
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    TEMPORAL_DTYPES,
+)
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
@@ -33,7 +41,7 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_cumcount() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], columns=["A"])
+    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
 
     out = df.groupby("A", maintain_order=True).agg(
         [pl.col("A").cumcount(reverse=False).alias("foo")]
@@ -52,19 +60,8 @@ def test_filter_where() -> None:
         pl.col("b").filter(pl.col("b") > 4).alias("c")
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
-    assert result_where.frame_equal(expected)
-    assert result_filter.frame_equal(expected)
-
-
-def test_flatten_explode() -> None:
-    df = pl.Series("a", ["Hello", "World"])
-    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
-
-    result = df.to_frame().select(pl.col("a").flatten())[:, 0]
-    assert_series_equal(result, expected)
-
-    result = df.to_frame().select(pl.col("a").explode())[:, 0]
-    assert_series_equal(result, expected)
+    assert_frame_equal(result_where, expected)
+    assert_frame_equal(result_filter, expected)
 
 
 def test_min_nulls_consistency() -> None:
@@ -81,7 +78,7 @@ def test_min_nulls_consistency() -> None:
 def test_list_join_strings() -> None:
     s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
     expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
-    verify_series_and_expr_api(s, expected, "arr.join", "-")
+    assert_series_equal(s.arr.join("-"), expected)
 
 
 def test_count_expr() -> None:
@@ -89,7 +86,7 @@ def test_count_expr() -> None:
 
     out = df.select(pl.count())
     assert out.shape == (1, 1)
-    assert cast(int, out[0, 0]) == 5
+    assert cast(int, out.item()) == 5
 
     out = df.groupby("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
@@ -103,10 +100,9 @@ def test_shuffle() -> None:
     result1 = pl.select(pl.lit(s).shuffle()).to_series()
     random.seed(1)
     result2 = pl.select(pl.lit(s).shuffle()).to_series()
-    assert result1.series_equal(result2)
+    assert_series_equal(result1, result2)
 
 
-@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
     out = pl.select(
@@ -123,20 +119,26 @@ def test_sample() -> None:
     assert out.to_list() != out.sort().to_list()
     assert out.unique().shape == (10,)
 
+    # Setting random.seed should lead to reproducible results
+    random.seed(1)
+    result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
+    random.seed(1)
+    result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
+    assert_series_equal(result1, result2)
+
 
 def test_map_alias() -> None:
     out = pl.DataFrame({"foo": [1, 2, 3]}).select(
         (pl.col("foo") * 2).map_alias(lambda name: f"{name}{name}")
     )
     expected = pl.DataFrame({"foofoo": [2, 4, 6]})
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_unique_stable() -> None:
-    a = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
+    s = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
     expected = pl.Series("a", [1, 2, 3])
-
-    verify_series_and_expr_api(a, expected, "unique", True)
+    assert_series_equal(s.unique(maintain_order=True), expected)
 
 
 def test_wildcard_expansion() -> None:
@@ -163,8 +165,8 @@ def test_split() -> None:
         ]
     )
 
-    assert out.frame_equal(expected)
-    assert df["x"].str.split("_").to_frame().frame_equal(expected)
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.split("_").to_frame(), expected)
 
     out = df.select([pl.col("x").str.split("_", inclusive=True)])
 
@@ -177,8 +179,8 @@ def test_split() -> None:
         ]
     )
 
-    assert out.frame_equal(expected)
-    assert df["x"].str.split("_", inclusive=True).to_frame().frame_equal(expected)
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
 
 
 def test_split_exact() -> None:
@@ -193,21 +195,16 @@ def test_split_exact() -> None:
         }
     )
 
-    assert out.frame_equal(expected)
-    assert (
-        df["x"]
-        .str.split_exact("_", 2, inclusive=False)
-        .to_frame()
-        .unnest("x")
-        .frame_equal(expected)
-    )
+    assert_frame_equal(out, expected)
+    out2 = df["x"].str.split_exact("_", 2, inclusive=False).to_frame().unnest("x")
+    assert_frame_equal(out2, expected)
 
     out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
 
     expected = pl.DataFrame(
         {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
     assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
 
@@ -220,8 +217,8 @@ def test_splitn() -> None:
         {"field_0": ["a", None, "b", "c"], "field_1": ["a", None, None, "c_c"]}
     )
 
-    assert out.frame_equal(expected)
-    assert df["x"].str.splitn("_", 2).to_frame().unnest("x").frame_equal(expected)
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
 
 
 def test_unique_and_drop_stability() -> None:
@@ -237,7 +234,7 @@ def test_unique_and_drop_stability() -> None:
 def test_unique_counts() -> None:
     s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
     expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
-    verify_series_and_expr_api(s, expected, "unique_counts")
+    assert_series_equal(s.unique_counts(), expected)
 
 
 def test_entropy() -> None:
@@ -247,16 +244,13 @@ def test_entropy() -> None:
             "id": [1, 2, 1, 4, 5, 4, 6],
         }
     )
-
-    assert (
-        df.groupby("group", maintain_order=True).agg(
-            pl.col("id").entropy(normalize=True)
-        )
-    ).frame_equal(
-        pl.DataFrame(
-            {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
-        )
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("id").entropy(normalize=True)
     )
+    expected = pl.DataFrame(
+        {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_dot_in_groupby() -> None:
@@ -268,18 +262,93 @@ def test_dot_in_groupby() -> None:
         }
     )
 
-    assert (
-        df.groupby("group", maintain_order=True)
-        .agg(pl.col("x").dot("y").alias("dot"))
-        .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("x").dot("y").alias("dot")
     )
+    expected = pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]})
+    assert_frame_equal(result, expected)
+
+
+def test_dtype_col_selection() -> None:
+    df = pl.DataFrame(
+        data=[],
+        schema={
+            "a1": pl.Datetime,
+            "a2": pl.Datetime("ms"),
+            "a3": pl.Datetime("ms"),
+            "a4": pl.Datetime("ns"),
+            "b": pl.Date,
+            "c": pl.Time,
+            "d1": pl.Duration,
+            "d2": pl.Duration("ms"),
+            "d3": pl.Duration("us"),
+            "d4": pl.Duration("ns"),
+            "e": pl.Int8,
+            "f": pl.Int16,
+            "g": pl.Int32,
+            "h": pl.Int64,
+            "i": pl.Float32,
+            "j": pl.Float64,
+            "k": pl.UInt8,
+            "l": pl.UInt16,
+            "m": pl.UInt32,
+            "n": pl.UInt64,
+        },
+    )
+    assert set(df.select(pl.col(INTEGER_DTYPES)).columns) == {
+        "e",
+        "f",
+        "g",
+        "h",
+        "k",
+        "l",
+        "m",
+        "n",
+    }
+    assert set(df.select(pl.col(FLOAT_DTYPES)).columns) == {"i", "j"}
+    assert set(df.select(pl.col(NUMERIC_DTYPES)).columns) == {
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+    }
+    assert set(df.select(pl.col(TEMPORAL_DTYPES)).columns) == {
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+        "b",
+        "c",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+    }
+    assert set(df.select(pl.col(DATETIME_DTYPES)).columns) == {
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+    }
+    assert set(df.select(pl.col(DURATION_DTYPES)).columns) == {
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+    }
 
 
 def test_list_eval_expression() -> None:
     df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
 
     for parallel in [True, False]:
-        assert df.with_column(
+        assert df.with_columns(
             pl.concat_list(["a", "b"])
             .arr.eval(pl.first().rank(), parallel=parallel)
             .alias("rank")
@@ -405,9 +474,10 @@ def test_rank_so_4109() -> None:
 def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
-        assert s.unique().series_equal(s)
+        assert_series_equal(s.unique(), s)
 
 
+@typing.no_type_check
 def test_search_sorted() -> None:
     for seed in [1, 2, 3]:
         np.random.seed(seed)
@@ -417,12 +487,39 @@ def test_search_sorted() -> None:
         for v in range(int(np.min(a)), int(np.max(a)), 20):
             assert np.searchsorted(a, v) == s.search_sorted(v)
 
+    a = pl.Series([1, 2, 3])
+    b = pl.Series([1, 2, 2, -1])
+    assert a.search_sorted(b).to_list() == [0, 1, 1, 0]
+    b = pl.Series([1, 2, 2, None, 3])
+    assert a.search_sorted(b).to_list() == [0, 1, 1, 0, 2]
+
+    a = pl.Series(["b", "b", "d", "d"])
+    b = pl.Series(["a", "b", "c", "d", "e"])
+    assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
+    assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
+
+    a = pl.Series([1, 1, 4, 4])
+    b = pl.Series([0, 1, 2, 4, 5])
+    assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
+    assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
+
 
 def test_abs_expr() -> None:
     df = pl.DataFrame({"x": [-1, 0, 1]})
     out = df.select(abs(pl.col("x")))
 
     assert out["x"].to_list() == [1, 0, 1]
+
+
+def test_str_parse_int() -> None:
+    df = pl.DataFrame({"bin": ["110", "101", "010"], "hex": ["fa1e", "ff00", "cafe"]})
+    out = df.with_columns(
+        [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
+    )
+
+    expected = pl.DataFrame({"bin": [6, 5, 2], "hex": [64030, 65280, 51966]})
+
+    assert out.frame_equal(expected)
 
 
 def test_logical_boolean() -> None:
@@ -444,7 +541,7 @@ def test_ewm_with_multiple_chunks() -> None:
             ("y", 4.0, 3.0),
             ("z", 3.0, 4.0),
         ],
-        columns=["a", "b", "c"],
+        schema=["a", "b", "c"],
     ).with_columns(
         [
             pl.col(pl.Float64).log().diff().prefix("ld_"),

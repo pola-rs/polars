@@ -3,6 +3,7 @@ use super::*;
 pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Series> {
     let array = &s[0];
     let fill_value = &s[1];
+
     if matches!(super_type, DataType::Unknown) {
         return Err(PolarsError::SchemaMisMatch(
             format!(

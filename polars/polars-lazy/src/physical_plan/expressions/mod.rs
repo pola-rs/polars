@@ -28,6 +28,7 @@ pub(crate) use count::*;
 pub(crate) use filter::*;
 pub(crate) use literal::*;
 use polars_arrow::export::arrow::array::ListArray;
+use polars_arrow::export::arrow::offset::Offsets;
 use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
@@ -110,6 +111,11 @@ pub struct AggregationContext<'a> {
     /// This is true when the Series and GroupsProxy still have all
     /// their original values. Not the case when filtered
     original_len: bool,
+    // special state that just should propagate nulls on aggregations.
+    // this is needed as (expr - expr.mean()) could leave nulls but is
+    // not really a final aggregation as left is still a list, but right only
+    // contains null and thus propagates that.
+    null_propagated: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -217,6 +223,7 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
+            null_propagated: false,
         }
     }
 
@@ -227,6 +234,7 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
+            null_propagated: false,
         }
     }
 
@@ -443,9 +451,9 @@ impl<'a> AggregationContext<'a> {
             // Safety:
             // offsets are monotonically increasing
             let arr = unsafe {
-                ListArray::<i64>::new_unchecked(
+                ListArray::<i64>::new(
                     DataType::List(Box::new(s.dtype().clone())).to_arrow(),
-                    offsets.into(),
+                    Offsets::new_unchecked(offsets).into(),
                     values,
                     None,
                 )
@@ -571,7 +579,7 @@ impl Display for &dyn PhysicalExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.as_expression() {
             None => Ok(()),
-            Some(e) => write!(f, "{}", e),
+            Some(e) => write!(f, "{e}"),
         }
     }
 }

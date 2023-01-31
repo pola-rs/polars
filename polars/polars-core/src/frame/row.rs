@@ -18,23 +18,23 @@ impl<'a> Row<'a> {
 
 impl DataFrame {
     /// Get a row from a DataFrame. Use of this is discouraged as it will likely be slow.
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
-    pub fn get_row(&self, idx: usize) -> Row {
-        let values = self.columns.iter().map(|s| s.get(idx)).collect::<Vec<_>>();
-        Row(values)
+    pub fn get_row(&self, idx: usize) -> PolarsResult<Row> {
+        let values = self
+            .columns
+            .iter()
+            .map(|s| s.get(idx))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        Ok(Row(values))
     }
 
     /// Amortize allocations by reusing a row.
     /// The caller is responsible to make sure that the row has at least the capacity for the number
     /// of columns in the DataFrame
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
-    pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
-        self.columns
-            .iter()
-            .zip(&mut row.0)
-            .for_each(|(s, any_val)| {
-                *any_val = s.get(idx);
-            });
+    pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) -> PolarsResult<()> {
+        for (s, any_val) in self.columns.iter().zip(&mut row.0) {
+            *any_val = s.get(idx)?;
+        }
+        Ok(())
     }
 
     /// Amortize allocations by reusing a row.
@@ -44,7 +44,6 @@ impl DataFrame {
     /// # Safety
     /// Does not do any bounds checking.
     #[inline]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub unsafe fn get_row_amortized_unchecked<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
         self.columns
             .iter()
@@ -56,14 +55,12 @@ impl DataFrame {
 
     /// Create a new DataFrame from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> PolarsResult<Self> {
         Self::from_rows_iter_and_schema(rows.iter(), schema)
     }
 
     /// Create a new DataFrame from an iterator over rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
     where
         I: Iterator<Item = &'a Row<'a>>,
@@ -106,7 +103,6 @@ impl DataFrame {
 
     /// Create a new DataFrame from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows(rows: &[Row]) -> PolarsResult<Self> {
         let schema = rows_to_schema_first_non_null(rows, Some(50));
         let has_nulls = schema
@@ -175,7 +171,6 @@ impl DataFrame {
         }
     }
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     /// Transpose a DataFrame. This is a very expensive operation.
     pub fn transpose(&self) -> PolarsResult<DataFrame> {
         let height = self.height();
@@ -254,26 +249,45 @@ fn is_nested_null(av: &AnyValue) -> bool {
         AnyValue::Null => true,
         AnyValue::List(s) => s.null_count() == s.len(),
         #[cfg(feature = "dtype-struct")]
-        AnyValue::Struct(avs, _) => avs.iter().all(is_nested_null),
+        AnyValue::Struct(_, _, _) => av._iter_struct_av().all(|av| is_nested_null(&av)),
         _ => false,
     }
 }
 
-// nested dtypes that are all null, will be set as null leaf dtype
+// nested dtypes that are all null, will be set as null leave dtype
 fn infer_dtype_dynamic(av: &AnyValue) -> DataType {
     match av {
         AnyValue::List(s) if s.null_count() == s.len() => DataType::List(Box::new(DataType::Null)),
         #[cfg(feature = "dtype-struct")]
-        AnyValue::Struct(avs, _) => DataType::Struct(
-            avs.iter()
+        AnyValue::Struct(_, _, _) => DataType::Struct(
+            av._iter_struct_av()
                 .map(|av| {
-                    let dtype = infer_dtype_dynamic(av);
+                    let dtype = infer_dtype_dynamic(&av);
                     Field::new("", dtype)
                 })
                 .collect(),
         ),
         av => av.into(),
     }
+}
+
+pub fn any_values_to_dtype(column: &[AnyValue]) -> PolarsResult<DataType> {
+    // we need an index-map as the order of dtypes influences how the
+    // struct fields are constructed.
+    let mut types_set = PlIndexSet::new();
+    for val in column.iter() {
+        let dtype = infer_dtype_dynamic(val);
+        types_set.insert(dtype);
+    }
+    types_set_to_dtype(types_set)
+}
+
+fn types_set_to_dtype(types_set: PlIndexSet<DataType>) -> PolarsResult<DataType> {
+    types_set
+        .into_iter()
+        .map(Ok)
+        .fold_first_(|a, b| try_get_supertype(&a?, &b?))
+        .unwrap()
 }
 
 /// Infer schema from rows and set the supertypes of the columns as column data type.
@@ -284,7 +298,7 @@ pub fn rows_to_schema_supertypes(
     // no of rows to use to infer dtype
     let max_infer = infer_schema_length.unwrap_or(rows.len());
 
-    let mut dtypes: Vec<PlHashSet<DataType>> = vec![PlHashSet::with_capacity(4); rows[0].0.len()];
+    let mut dtypes: Vec<PlIndexSet<DataType>> = vec![PlIndexSet::new(); rows[0].0.len()];
 
     for row in rows.iter().take(max_infer) {
         for (val, types_set) in row.0.iter().zip(dtypes.iter_mut()) {
@@ -297,12 +311,8 @@ pub fn rows_to_schema_supertypes(
         .into_iter()
         .enumerate()
         .map(|(i, types_set)| {
-            let dtype = types_set
-                .into_iter()
-                .map(Ok)
-                .fold_first_(|a, b| try_get_supertype(&a?, &b?))
-                .unwrap()?;
-            Ok(Field::new(format!("column_{}", i).as_ref(), dtype))
+            let dtype = types_set_to_dtype(types_set)?;
+            Ok(Field::new(format!("column_{i}").as_ref(), dtype))
         })
         .collect::<PolarsResult<_>>()
 }
@@ -358,7 +368,7 @@ impl From<&Row<'_>> for Schema {
     fn from(row: &Row) -> Self {
         let fields = row.0.iter().enumerate().map(|(i, av)| {
             let dtype = av.into();
-            Field::new(format!("column_{}", i).as_ref(), dtype)
+            Field::new(format!("column_{i}").as_ref(), dtype)
         });
 
         Schema::from(fields)
@@ -437,15 +447,15 @@ impl<'a> AnyValueBuffer<'a> {
             (Float32(builder), val) => builder.append_value(val.extract()?),
             (Float64(builder), val) => builder.append_value(val.extract()?),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
+            (Utf8(builder), AnyValue::Utf8Owned(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use anyvalues for that
             (All(_, vals), v) => vals.push(v),
 
             // dynamic types
             (Utf8(builder), av) => match av {
-                AnyValue::Utf8(v) => builder.append_value(v),
-                AnyValue::Int64(v) => builder.append_value(&format!("{}", v)),
-                AnyValue::Float64(v) => builder.append_value(&format!("{}", v)),
+                AnyValue::Int64(v) => builder.append_value(&format!("{v}")),
+                AnyValue::Float64(v) => builder.append_value(&format!("{v}")),
                 AnyValue::Boolean(true) => builder.append_value("true"),
                 AnyValue::Boolean(false) => builder.append_value("false"),
                 _ => return None,
@@ -457,8 +467,8 @@ impl<'a> AnyValueBuffer<'a> {
 
     pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
         self.add(val.clone()).ok_or_else(|| {
-            PolarsError::ComputeError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.\n\
-            Or consider increasing the the 'schema_inference_length' argument.", val).into())
+            PolarsError::ComputeError(format!("Could not append {val:?} to builder; make sure that all rows have the same schema.\n\
+            Or consider increasing the the 'schema_inference_length' argument.").into())
         })
     }
 
@@ -485,7 +495,7 @@ impl<'a> AnyValueBuffer<'a> {
         }
     }
 
-    pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'_> {
+    pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'a> {
         (dtype, capacity).into()
     }
 }
@@ -518,6 +528,18 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
         }
     }
+}
+
+#[inline]
+unsafe fn add_value<T: NumericNative>(
+    values_buf_ptr: usize,
+    col_idx: usize,
+    row_idx: usize,
+    value: T,
+) {
+    let column = (*(values_buf_ptr as *mut Vec<Vec<T>>)).get_unchecked_mut(col_idx);
+    let el_ptr = column.as_mut_ptr();
+    *el_ptr.add(row_idx) = value;
 }
 
 fn numeric_transpose<T>(cols: &[Series]) -> PolarsResult<DataFrame>
@@ -561,12 +583,13 @@ where
                                 .get_unchecked_mut(col_idx);
                             let el_ptr = column.as_mut_ptr();
                             *el_ptr.add(row_idx) = false;
+                            // we must initialize this memory otherwise downstream code
+                            // might access uninitialized memory when the masked out values
+                            // are changed.
+                            add_value(values_buf_ptr, col_idx, row_idx, T::Native::default());
                         },
                         Some(v) => unsafe {
-                            let column = (*(values_buf_ptr as *mut Vec<Vec<T::Native>>))
-                                .get_unchecked_mut(col_idx);
-                            let el_ptr = column.as_mut_ptr();
-                            *el_ptr.add(row_idx) = v;
+                            add_value(values_buf_ptr, col_idx, row_idx, v);
                         },
                     }
                 }
@@ -606,13 +629,16 @@ where
                     None
                 };
 
-                let arr = PrimitiveArray::<T::Native>::from_data(
+                let arr = PrimitiveArray::<T::Native>::new(
                     T::get_dtype().to_arrow(),
                     values.into(),
                     validity,
                 );
-                let name = format!("column_{}", i);
-                ChunkedArray::<T>::from_chunks(&name, vec![Box::new(arr) as ArrayRef]).into_series()
+                let name = format!("column_{i}");
+                unsafe {
+                    ChunkedArray::<T>::from_chunks(&name, vec![Box::new(arr) as ArrayRef])
+                        .into_series()
+                }
             })
             .collect()
     });
