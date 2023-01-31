@@ -93,13 +93,13 @@ impl FunctionExpr {
         };
 
         #[cfg(feature = "timezones")]
-        let cast_tz = |tz: &TimeZone| {
+        let cast_tz = |tz: Option<&TimeZone>| {
             try_map_dtype(&|dt| {
                 if let DataType::Datetime(tu, _) = dt {
-                    Ok(DataType::Datetime(*tu, Some(tz.clone())))
+                    Ok(DataType::Datetime(*tu, tz.cloned()))
                 } else {
                     Err(PolarsError::SchemaMisMatch(
-                        format!("expected Datetime got {:?}", dt).into(),
+                        format!("expected Datetime got {dt:?}").into(),
                     ))
                 }
             })
@@ -117,14 +117,16 @@ impl FunctionExpr {
             #[cfg(feature = "arg_where")]
             ArgWhere => with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
-            SearchSorted => with_dtype(IDX_DTYPE),
+            SearchSorted(_) => with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
             StringExpr(s) => {
                 use StringFunction::*;
                 match s {
-                    Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
+                    #[cfg(feature = "regex")]
+                    Contains { .. } => with_dtype(DataType::Boolean),
+                    EndsWith | StartsWith => with_dtype(DataType::Boolean),
                     Extract { .. } => same_type(),
-                    ExtractAll(_) => with_dtype(DataType::List(Box::new(DataType::Utf8))),
+                    ExtractAll => with_dtype(DataType::List(Box::new(DataType::Utf8))),
                     CountMatch(_) => with_dtype(DataType::UInt32),
                     #[cfg(feature = "string_justify")]
                     Zfill { .. } | LJust { .. } | RJust { .. } => same_type(),
@@ -137,6 +139,15 @@ impl FunctionExpr {
                     Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
                         with_dtype(DataType::Utf8)
                     }
+                    #[cfg(feature = "string_from_radix")]
+                    FromRadix { .. } => with_dtype(DataType::Int32),
+                }
+            }
+            #[cfg(feature = "dtype-binary")]
+            BinaryExpr(s) => {
+                use BinaryFunction::*;
+                match s {
+                    Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
                 }
             }
             #[cfg(feature = "temporal")]
@@ -150,8 +161,11 @@ impl FunctionExpr {
                     Truncate(..) => same_type().unwrap().dtype,
                     Round(..) => same_type().unwrap().dtype,
                     #[cfg(feature = "timezones")]
-                    CastTimezone(tz) | TzLocalize(tz) => return cast_tz(tz),
+                    CastTimezone(tz) => return cast_tz(tz.as_ref()),
+                    #[cfg(feature = "timezones")]
+                    TzLocalize(tz) => return cast_tz(Some(tz)),
                     DateRange { .. } => return super_type(),
+                    Combine(tu) => DataType::Datetime(*tu, None),
                 };
                 with_dtype(dtype)
             }
@@ -177,6 +191,8 @@ impl FunctionExpr {
                     Contains => with_dtype(DataType::Boolean),
                     Slice => same_type(),
                     Get => inner_type_list(),
+                    #[cfg(feature = "list_take")]
+                    Take(_) => same_type(),
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -219,6 +235,9 @@ impl FunctionExpr {
                 DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
                 #[cfg(feature = "dtype-time")]
                 DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
+                DataType::UInt64 | DataType::UInt32 => DataType::Int64,
+                DataType::UInt16 => DataType::Int32,
+                DataType::UInt8 => DataType::Int8,
                 dt => dt.clone(),
             }),
             #[cfg(feature = "interpolate")]

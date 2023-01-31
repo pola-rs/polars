@@ -6,10 +6,11 @@ from typing import Iterator
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture(autouse=True)
-def environ() -> Iterator[None]:
+def _environ() -> Iterator[None]:
     """Fixture to restore the environment variables/state after the test."""
     with pl.StringCache(), pl.Config():
         yield
@@ -29,9 +30,7 @@ def test_ascii_tables() -> None:
             "| i64 | i64 | i64 |\n"
             "+=================+\n"
             "| 1   | 4   | 7   |\n"
-            "|-----+-----+-----|\n"
             "| 2   | 5   | 8   |\n"
-            "|-----+-----+-----|\n"
             "| 3   | 6   | 9   |\n"
             "+-----+-----+-----+"
         )
@@ -45,9 +44,7 @@ def test_ascii_tables() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 4   ┆ 7   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 2   ┆ 5   ┆ 8   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 3   ┆ 6   ┆ 9   │\n"
         "└─────┴─────┴─────┘"
     )
@@ -63,9 +60,7 @@ def test_hide_header_elements() -> None:
         "│ a   ┆ b   ┆ c   │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 4   ┆ 7   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 2   ┆ 5   ┆ 8   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 3   ┆ 6   ┆ 9   │\n"
         "└─────┴─────┴─────┘"
     )
@@ -77,9 +72,7 @@ def test_hide_header_elements() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 4   ┆ 7   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 2   ┆ 5   ┆ 8   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 3   ┆ 6   ┆ 9   │\n"
         "└─────┴─────┴─────┘"
     )
@@ -133,7 +126,6 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ ... ┆ ... ┆ ... │\n"
         "└─────┴─────┴─────┘"
     )
@@ -150,9 +142,7 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ ... ┆ ... ┆ ... │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -175,11 +165,8 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ ... ┆ ... ┆ ... │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 3   ┆ 7   ┆ 11  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -203,11 +190,8 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 2   ┆ 6   ┆ 10  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 3   ┆ 7   ┆ 11  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -240,11 +224,8 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 6   ┆ 11  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ ... ┆ ... ┆ ... │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 4   ┆ 9   ┆ 14  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 5   ┆ 10  ┆ 15  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -270,13 +251,9 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 6   ┆ 11  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 2   ┆ 7   ┆ 12  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 3   ┆ 8   ┆ 13  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 4   ┆ 9   ┆ 14  │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 5   ┆ 10  ┆ 15  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -368,30 +345,35 @@ def test_shape_below_table_and_inlined_dtype() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
 
     pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(True)
-    pl.Config.set_tbl_formatting("UTF8_FULL_CONDENSED")
+    pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
     assert (
         str(df) == ""
-        "┌─────────┬─────────┬─────────┐\n"
+        "╭─────────┬─────────┬─────────╮\n"
         "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
         "╞═════════╪═════════╪═════════╡\n"
         "│ 1       ┆ 3       ┆ 5       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 2       ┆ 4       ┆ 6       │\n"
-        "└─────────┴─────────┴─────────┘\n"
+        "╰─────────┴─────────┴─────────╯\n"
         "shape: (2, 3)"
     )
 
     pl.Config.set_tbl_dataframe_shape_below(False)
     assert (
         str(df) == "shape: (2, 3)\n"
-        "┌─────────┬─────────┬─────────┐\n"
+        "╭─────────┬─────────┬─────────╮\n"
         "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
         "╞═════════╪═════════╪═════════╡\n"
         "│ 1       ┆ 3       ┆ 5       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 2       ┆ 4       ┆ 6       │\n"
-        "└─────────┴─────────┴─────────┘"
+        "╰─────────┴─────────┴─────────╯"
     )
-
-    pl.Config.set_tbl_column_data_type_inline(False).set_tbl_cell_alignment("RIGHT")
+    (
+        pl.Config.set_tbl_formatting(rounded_corners=False)
+        .set_tbl_column_data_type_inline(False)
+        .set_tbl_cell_alignment("RIGHT")
+    )
     assert (
         str(df) == "shape: (2, 3)\n"
         "┌─────┬─────┬─────┐\n"
@@ -400,6 +382,7 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│   1 ┆   3 ┆   5 │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│   2 ┆   4 ┆   6 │\n"
         "└─────┴─────┴─────┘"
     )
@@ -413,8 +396,8 @@ def test_string_cache() -> None:
     pl.toggle_string_cache(False)
     assert pl.using_string_cache() is False
 
-    df1a = df1.with_column(pl.col("a").cast(pl.Categorical))
-    df2a = df2.with_column(pl.col("a").cast(pl.Categorical))
+    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
         _ = df1a.join(df2a, on="a", how="inner")
 
@@ -422,15 +405,19 @@ def test_string_cache() -> None:
     pl.toggle_string_cache(True)
     assert pl.using_string_cache() is True
 
-    df1b = df1.with_column(pl.col("a").cast(pl.Categorical))
-    df2b = df2.with_column(pl.col("a").cast(pl.Categorical))
+    df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
     out = df1b.join(df2b, on="a", how="inner")
-    assert out.frame_equal(pl.DataFrame({"a": ["foo"], "b": [1], "c": [3]}))
+
+    expected = pl.DataFrame(
+        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_config_load_save() -> None:
-    # set some config options
-    pl.Config.with_columns_kwargs = True
+    # set some config options...
+    pl.Config.set_tbl_cols(12)
     pl.Config.set_verbose(True)
     assert os.environ["POLARS_VERBOSE"] == "1"
 
@@ -438,24 +425,26 @@ def test_config_load_save() -> None:
     assert isinstance(cfg, str)
     assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
-    # unset the saved options
-    pl.Config.with_columns_kwargs = False
+    # ...modify the same options...
+    pl.Config.set_tbl_cols(10)
     pl.Config.set_verbose(False)
     assert os.environ["POLARS_VERBOSE"] == "0"
 
-    # now load back from config...
+    # ...load back from config...
     pl.Config.load(cfg)
 
-    # ...and confirm the saved options were set
+    # ...and confirm the saved options were set.
+    assert os.environ["POLARS_FMT_MAX_COLS"] == "12"
     assert os.environ["POLARS_VERBOSE"] == "1"
-    assert pl.Config.with_columns_kwargs is True
 
-    # restore explicitly-set config options (unsets from env)
+    # restore all default options (unsets from env)
     pl.Config.restore_defaults()
-    assert "POLARS_VERBOSE" not in pl.Config.state(if_set=True)
-    assert "POLARS_VERBOSE" in pl.Config.state()
+    for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
+        assert e not in pl.Config.state(if_set=True)
+        assert e in pl.Config.state()
+
+    assert os.environ.get("POLARS_FMT_MAX_COLS") is None
     assert os.environ.get("POLARS_VERBOSE") is None
-    assert pl.Config.with_columns_kwargs is False
 
 
 def test_config_scope() -> None:
@@ -465,13 +454,18 @@ def test_config_scope() -> None:
     initial_state = pl.Config.state()
 
     with pl.Config() as cfg:
-        cfg.set_verbose(True).set_tbl_hide_dtype_separator(True).set_ascii_tables()
-
+        (
+            cfg.set_tbl_formatting(rounded_corners=True)
+            .set_verbose(True)
+            .set_tbl_hide_dtype_separator(True)
+            .set_ascii_tables()
+        )
         new_state_entries = set(
             {
                 "POLARS_FMT_MAX_COLS": "8",
-                "POLARS_FMT_TABLE_FORMATTING": "ASCII_FULL",
+                "POLARS_FMT_TABLE_FORMATTING": "ASCII_FULL_CONDENSED",
                 "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR": "1",
+                "POLARS_FMT_TABLE_ROUNDED_CORNERS": "1",
                 "POLARS_VERBOSE": "1",
             }.items()
         )

@@ -59,11 +59,7 @@ pub(super) fn apply_trigonometric_function(
             apply_trigonometric_function(&s, trig_function)
         }
         dt => Err(PolarsError::ComputeError(
-            format!(
-                "cannot use trigonometric function on Series of dtype: {:?}",
-                dt
-            )
-            .into(),
+            format!("cannot use trigonometric function on Series of dtype: {dt:?}",).into(),
         )),
     }
 }

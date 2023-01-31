@@ -54,11 +54,8 @@ pub(crate) fn columns_to_projection(
     let err = |column: &str| {
         let valid_fields: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
         PolarsError::NotFound(
-            format!(
-                "Unable to get field named \"{}\". Valid fields: {:?}",
-                column, valid_fields
-            )
-            .into(),
+            format!("Unable to get field named \"{column}\". Valid fields: {valid_fields:?}",)
+                .into(),
         )
     };
 

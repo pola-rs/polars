@@ -80,7 +80,7 @@ pub struct GenericGroupbySink {
 }
 
 impl GenericGroupbySink {
-    pub fn new(
+    pub(crate) fn new(
         key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<AggregateFunction>,
@@ -147,7 +147,7 @@ impl GenericGroupbySink {
                             .output_schema
                             .iter_dtypes()
                             .take(n_keys)
-                            .map(|dtype| AnyValueBuffer::new(dtype, agg_map.len()))
+                            .map(|dtype| AnyValueBuffer::new(&dtype.to_physical(), agg_map.len()))
                             .collect::<Vec<_>>();
                         let dtypes = agg_fns
                             .iter()
@@ -202,10 +202,6 @@ impl GenericGroupbySink {
 
 impl Sink for GenericGroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        let state = context.execution_state.as_ref();
-        if !state.input_schema_is_set() {
-            state.set_input_schema(self.input_schema.clone())
-        }
         let num_aggs = self.number_of_aggs();
 
         // todo! amortize allocation
@@ -255,15 +251,17 @@ impl Sink for GenericGroupbySink {
             let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
 
             let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
-                let idx = key.idx as usize;
-                if self.keys_series.len() > 1 {
-                    current_tuple.iter().enumerate().all(|(i, key)| unsafe {
-                        current_key_values.get_unchecked_release(i + idx) == key
-                    })
-                } else {
-                    unsafe {
-                        current_key_values.get_unchecked_release(idx)
-                            == current_tuple.get_unchecked_release(0)
+                key.hash == h && {
+                    let idx = key.idx as usize;
+                    if self.keys_series.len() > 1 {
+                        current_tuple.iter().enumerate().all(|(i, key)| unsafe {
+                            current_key_values.get_unchecked_release(i + idx) == key
+                        })
+                    } else {
+                        unsafe {
+                            current_key_values.get_unchecked_release(idx)
+                                == current_tuple.get_unchecked_release(0)
+                        }
                     }
                 }
             });
@@ -416,8 +414,7 @@ impl Sink for GenericGroupbySink {
         Box::new(new)
     }
 
-    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        context.execution_state.clear_input_schema();
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
         if dfs.is_empty() {
             return Ok(FinalizedSink::Finished(DataFrame::from(
@@ -430,5 +427,8 @@ impl Sink for GenericGroupbySink {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+    fn fmt(&self) -> &str {
+        "generic_groupby"
     }
 }

@@ -1,5 +1,12 @@
 use std::convert::TryFrom;
 
+#[cfg(feature = "dtype-categorical")]
+use polars_arrow::is_valid::IsValid;
+#[cfg(feature = "dtype-categorical")]
+use polars_utils::sync::SyncPtr;
+
+#[cfg(feature = "object")]
+use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 
 #[inline]
@@ -68,18 +75,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Categorical(rev_map) => {
             let arr = &*(arr as *const dyn Array as *const UInt32Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref())
+            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
         }
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
             let arr = &*(arr as *const dyn Array as *const StructArray);
-            let vals = arr
-                .values()
-                .iter()
-                .zip(flds)
-                .map(|(arr, fld)| arr_to_any_value(&**arr, idx, fld.data_type()))
-                .collect();
-            AnyValue::Struct(vals, flds)
+            AnyValue::Struct(idx, arr, flds)
         }
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => {
@@ -106,8 +107,65 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             AnyValue::Time(v)
         }
         #[cfg(feature = "object")]
-        DataType::Object(_) => panic!("should not be here"),
-        dt => panic!("not implemented for {:?}", dt),
+        DataType::Object(_) => {
+            // We should almost never hit this. The only known exception is when we put objects in
+            // structs. Any other hit should be considered a bug.
+            let arr = &*(arr as *const dyn Array as *const FixedSizeBinaryArray);
+            PolarsExtension::arr_to_av(arr, idx)
+        }
+        DataType::Null => AnyValue::Null,
+        dt => panic!("not implemented for {dt:?}"),
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl<'a> AnyValue<'a> {
+    pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue> {
+        match self {
+            AnyValue::Struct(idx, arr, flds) => {
+                let idx = *idx;
+                unsafe {
+                    arr.values().iter().zip(*flds).map(move |(arr, fld)| {
+                        // The dictionary arrays categories don't have to map to the rev-map in the dtype
+                        // so we set the array pointer with values of the dictionary array.
+                        #[cfg(feature = "dtype-categorical")]
+                        {
+                            if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
+                                let keys = arr.keys();
+                                let values = arr.values();
+                                let values =
+                                    values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                                let arr = &*(keys as *const dyn Array as *const UInt32Array);
+
+                                if arr.is_valid_unchecked(idx) {
+                                    let v = arr.value_unchecked(idx);
+                                    let DataType::Categorical(Some(rev_map)) = fld.data_type() else {
+                                        unimplemented!()
+                                    };
+                                    AnyValue::Categorical(v, rev_map, SyncPtr::from_const(values))
+                                } else {
+                                    AnyValue::Null
+                                }
+
+                            } else {
+                                arr_to_any_value(&**arr, idx, fld.data_type())
+                            }
+                        }
+
+                        #[cfg(not(feature = "dtype-categorical"))]
+                        {
+                            arr_to_any_value(&**arr, idx, fld.data_type())
+                        }
+                    })
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn _materialize_struct_av(&'a self, buf: &mut Vec<AnyValue<'a>>) {
+        let iter = self._iter_struct_av();
+        buf.extend(iter)
     }
 }
 
@@ -125,10 +183,14 @@ macro_rules! get_any_value {
     ($self:ident, $index:expr) => {{
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
         let arr = &*$self.chunks[chunk_idx];
-        assert!(idx < arr.len());
-        // SAFETY
-        // bounds are checked
-        unsafe { arr_to_any_value(arr, idx, $self.dtype()) }
+
+        if idx < arr.len() {
+            // SAFETY
+            // bounds are checked
+            Ok(unsafe { arr_to_any_value(arr, idx, $self.dtype()) })
+        } else {
+            Err(PolarsError::ComputeError("index is out of bounds".into()))
+        }
     }};
 }
 
@@ -141,7 +203,7 @@ where
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> AnyValue {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
         get_any_value!(self, index)
     }
 }
@@ -152,7 +214,7 @@ impl ChunkAnyValue for BooleanChunked {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> AnyValue {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
         get_any_value!(self, index)
     }
 }
@@ -163,7 +225,7 @@ impl ChunkAnyValue for Utf8Chunked {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> AnyValue {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
         get_any_value!(self, index)
     }
 }
@@ -175,7 +237,7 @@ impl ChunkAnyValue for BinaryChunked {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> AnyValue {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
         get_any_value!(self, index)
     }
 }
@@ -186,7 +248,7 @@ impl ChunkAnyValue for ListChunked {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> AnyValue {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
         get_any_value!(self, index)
     }
 }
@@ -201,10 +263,10 @@ impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
         }
     }
 
-    fn get_any_value(&self, index: usize) -> AnyValue {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
         match self.get_object(index) {
-            None => AnyValue::Null,
-            Some(v) => AnyValue::Object(v),
+            None => Err(PolarsError::ComputeError("index is out of bounds".into())),
+            Some(v) => Ok(AnyValue::Object(v)),
         }
     }
 }

@@ -136,14 +136,13 @@ impl<'a> IterBroadCast<'a> {
 /// The concatenated strings are separated by a `delimiter`.
 /// If no `delimiter` is needed, an empty &str should be passed as argument.
 #[cfg(feature = "concat_str")]
-#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
     if s.is_empty() {
         return Err(PolarsError::NoData(
             "expected multiple series in concat_str function".into(),
         ));
     }
-    if s[0].is_empty() {
+    if s.iter().any(|s| s.is_empty()) {
         return Ok(Utf8Chunked::full_null(s[0].name(), 0));
     }
 
@@ -165,7 +164,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
 
     if !s.iter().all(|s| s.len() == 1 || s.len() == len) {
         return Err(PolarsError::ComputeError(
-            "all series in concat_str function should have equal length or unit length".into(),
+            "All series in concat_str function should have equal length or unit length".into(),
         ));
     }
     let mut iters = cas
@@ -212,7 +211,6 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
 
 /// Concat `[DataFrame]`s horizontally.
 #[cfg(feature = "horizontal_concat")]
-#[cfg_attr(docsrs, doc(cfg(feature = "horizontal_concat")))]
 /// Concat horizontally and extend with null values if lengths don't match
 pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let max_len = dfs
@@ -253,9 +251,9 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
 
 /// Concat `[DataFrame]`s diagonally.
 #[cfg(feature = "diagonal_concat")]
-#[cfg_attr(docsrs, doc(cfg(feature = "diagonal_concat")))]
 /// Concat diagonally thereby combining different schemas.
 pub fn diag_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
+    // TODO! replace with lazy only?
     let upper_bound_width = dfs.iter().map(|df| df.width()).sum();
     let mut column_names = AHashSet::with_capacity(upper_bound_width);
     let mut schema = Vec::with_capacity(upper_bound_width);

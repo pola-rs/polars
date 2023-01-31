@@ -31,8 +31,8 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn _set_sorted(&mut self, is_sorted: IsSorted) {
-        self.0.set_sorted2(is_sorted)
+    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
+        self.0.set_sorted_flag(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -75,6 +75,18 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
+    unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+        self.0
+            .cast(&DataType::Float64)
+            .unwrap()
+            .agg_std(groups, _ddof)
+    }
+    unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+        self.0
+            .cast(&DataType::Float64)
+            .unwrap()
+            .agg_var(groups, _ddof)
+    }
 
     fn zip_outer_join_column(
         &self,
@@ -94,10 +106,10 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
-    fn is_sorted(&self) -> IsSorted {
-        if self.0.is_sorted() {
+    fn is_sorted_flag(&self) -> IsSorted {
+        if self.0.is_sorted_flag() {
             IsSorted::Ascending
-        } else if self.0.is_sorted_reverse() {
+        } else if self.0.is_sorted_reverse_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
@@ -236,7 +248,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.cast(data_type)
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         self.0.get_any_value(index)
     }
 
@@ -322,6 +334,38 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
     fn min_as_series(&self) -> Series {
         ChunkAggSeries::min_as_series(&self.0)
+    }
+    fn median_as_series(&self) -> Series {
+        // first convert array to f32 as that's cheaper
+        // finally the single value to f64
+        self.0
+            .cast(&DataType::Float32)
+            .unwrap()
+            .median_as_series()
+            .cast(&DataType::Float64)
+            .unwrap()
+    }
+    /// Get the variance of the Series as a new Series of length 1.
+    fn var_as_series(&self, _ddof: u8) -> Series {
+        // first convert array to f32 as that's cheaper
+        // finally the single value to f64
+        self.0
+            .cast(&DataType::Float32)
+            .unwrap()
+            .var_as_series(_ddof)
+            .cast(&DataType::Float64)
+            .unwrap()
+    }
+    /// Get the standard deviation of the Series as a new Series of length 1.
+    fn std_as_series(&self, _ddof: u8) -> Series {
+        // first convert array to f32 as that's cheaper
+        // finally the single value to f64
+        self.0
+            .cast(&DataType::Float32)
+            .unwrap()
+            .std_as_series(_ddof)
+            .cast(&DataType::Float64)
+            .unwrap()
     }
     fn fmt_list(&self) -> String {
         FmtList::fmt_list(&self.0)

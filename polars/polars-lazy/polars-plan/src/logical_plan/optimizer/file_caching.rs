@@ -280,6 +280,7 @@ impl FileCacher {
                     output_schema,
                     predicate,
                     mut options,
+                    cloud_options,
                 } => {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
                     let finger_print = FileFingerPrint {
@@ -305,6 +306,7 @@ impl FileCacher {
                         output_schema,
                         predicate,
                         options: options.clone(),
+                        cloud_options,
                     };
                     let lp = self.finish_rewrite(
                         lp,

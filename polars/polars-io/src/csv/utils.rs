@@ -83,8 +83,7 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
 }
 
 static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|[-+]?inf|[-+]?NaN|[-+]?\d+[eE][-+]\d+)$")
-        .unwrap()
+    Regex::new(r"^\s*[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
 });
 
 static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
@@ -516,9 +515,8 @@ fn decompress_impl<R: Read>(
                         break;
                     }
                     // now that we have enough, we compute the number of fields (also takes embedding into account)
-                    expected_fields = SplitFields::new(&out, delimiter, quote_char, eol_char)
-                        .into_iter()
-                        .count();
+                    expected_fields =
+                        SplitFields::new(&out, delimiter, quote_char, eol_char).count();
                     break;
                 }
             }

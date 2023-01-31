@@ -98,7 +98,7 @@ fn expand_regex(
     pattern: &str,
 ) -> PolarsResult<()> {
     let re = regex::Regex::new(pattern)
-        .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
+        .unwrap_or_else(|_| panic!("invalid regular expression in column: {pattern}"));
     for name in schema.iter_names() {
         if re.is_match(name) {
             let mut new_expr = expr.clone();
@@ -118,6 +118,10 @@ fn expand_regex(
     Ok(())
 }
 
+pub(crate) fn is_regex_projection(name: &str) -> bool {
+    name.starts_with('^') && name.ends_with('$')
+}
+
 #[cfg(feature = "regex")]
 /// This function searches for a regex expression in `col("..")` and expands the columns
 /// that are selected by that regex in `result`. The regex should start with `^` and end with `$`.
@@ -125,7 +129,7 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> Polars
     let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
     for name in &roots {
-        if name.starts_with('^') && name.ends_with('$') {
+        if is_regex_projection(name) {
             match regex {
                 None => {
                     regex = Some(name);
@@ -149,11 +153,17 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> Polars
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
 fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> PolarsResult<()> {
+    let mut is_valid = true;
     for name in names {
         let mut new_expr = expr.clone();
         new_expr.mutate().apply(|e| {
-            if let Expr::Columns(_) = &e {
-                *e = Expr::Column(Arc::from(name.as_str()));
+            if let Expr::Columns(members) = &e {
+                // `col([a, b]) + col([c, d])`
+                if members == names {
+                    *e = Expr::Column(Arc::from(name.as_str()));
+                } else {
+                    is_valid = false;
+                }
             }
             // always keep iterating all inputs
             true
@@ -162,7 +172,13 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> Pola
         let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
     }
-    Ok(())
+    if is_valid {
+        Ok(())
+    } else {
+        Err(PolarsError::ComputeError(
+            "Expanding more than one `col` is not yet allowed.".into(),
+        ))
+    }
 }
 
 /// This replaces the dtypes Expr with a Column Expr. It also removes the Exclude Expr from the
@@ -290,7 +306,8 @@ fn expand_function_inputs(mut expr: Expr, schema: &Schema) -> Expr {
             if options.input_wildcard_expansion =>
         {
             *input = rewrite_projections(input.clone(), schema, &[]).unwrap();
-            false
+            // continue iteration, there might be more functions.
+            true
         }
         _ => true,
     });

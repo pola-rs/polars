@@ -3,7 +3,7 @@ use crate::series::unstable::UnstableSeries;
 
 /// Transform to physical type and coerce floating point and similar sized integer to a bit representation
 /// to reduce compiler bloat
-pub(crate) fn to_physical_and_bit_repr(s: &[Series]) -> Vec<Series> {
+pub fn _to_physical_and_bit_repr(s: &[Series]) -> Vec<Series> {
     s.iter()
         .map(|s| {
             let physical = s.to_physical_repr();

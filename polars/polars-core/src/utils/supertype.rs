@@ -3,12 +3,11 @@ use super::*;
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
-    match get_supertype(l, r) {
-        Some(dt) => Ok(dt),
-        None => Err(PolarsError::ComputeError(
-            format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
-        )),
-    }
+    get_supertype(l, r).ok_or_else(|| {
+        PolarsError::ComputeError(
+            format!("Failed to determine supertype of {l:?} and {r:?}").into(),
+        )
+    })
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
@@ -196,15 +195,6 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             #[cfg(feature = "dtype-time")]
             (Time, Float64) => Some(Float64),
 
-            #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
-            (Time, Datetime(_, _)) => Some(Int64),
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype-time"))]
-            (Datetime(_, _), Time) => Some(Int64),
-            #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
-            (Time, Date) => Some(Int64),
-            #[cfg(all(feature = "dtype-date", feature = "dtype-time"))]
-            (Date, Time) => Some(Int64),
-
             // every known type can be casted to a string except binary
             #[cfg(feature = "dtype-binary")]
             (dt, Utf8) if dt != &DataType::Unknown && dt != &DataType::Binary => Some(Utf8),
@@ -279,16 +269,15 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         }
     }
 
-    match inner(l, r) {
-        Some(dt) => Some(dt),
-        None => inner(r, l),
-    }
+    inner(l, r).or_else(|| inner(r, l))
 }
 
 #[cfg(feature = "dtype-struct")]
 fn union_struct_fields(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType> {
     let (longest, shortest) = {
-        if fields_a.len() > fields_b.len() {
+        // if equal length we also take the lhs
+        // so that the lhs determines the order of the fields
+        if fields_a.len() >= fields_b.len() {
             (fields_a, fields_b)
         } else {
             (fields_b, fields_a)

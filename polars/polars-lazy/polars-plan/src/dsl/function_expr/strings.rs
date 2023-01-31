@@ -1,22 +1,28 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "timezones")]
+use once_cell::sync::Lazy;
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "timezones")]
+static TZ_AWARE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%#z)|(^%\+$)").unwrap());
+
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
+    #[cfg(feature = "regex")]
     Contains {
-        pat: String,
         literal: bool,
+        strict: bool,
     },
-    StartsWith(String),
-    EndsWith(String),
+    StartsWith,
+    EndsWith,
     Extract {
         pat: String,
         group_index: usize,
@@ -33,7 +39,7 @@ pub enum StringFunction {
         width: usize,
         fillchar: char,
     },
-    ExtractAll(String),
+    ExtractAll,
     CountMatch(String),
     #[cfg(feature = "temporal")]
     Strptime(StrpTimeOptions),
@@ -49,18 +55,21 @@ pub enum StringFunction {
     },
     Uppercase,
     Lowercase,
-    Strip(Option<char>),
-    RStrip(Option<char>),
-    LStrip(Option<char>),
+    Strip(Option<String>),
+    RStrip(Option<String>),
+    LStrip(Option<String>),
+    #[cfg(feature = "string_from_radix")]
+    FromRadix(Option<u32>),
 }
 
 impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use self::*;
         let s = match self {
+            #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
-            StringFunction::StartsWith(_) => "starts_with",
-            StringFunction::EndsWith(_) => "ends_with",
+            StringFunction::StartsWith { .. } => "starts_with",
+            StringFunction::EndsWith { .. } => "ends_with",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "string_justify")]
             StringFunction::Zfill(_) => "zfill",
@@ -68,7 +77,7 @@ impl Display for StringFunction {
             StringFunction::LJust { .. } => "str.ljust",
             #[cfg(feature = "string_justify")]
             StringFunction::RJust { .. } => "rjust",
-            StringFunction::ExtractAll(_) => "extract_all",
+            StringFunction::ExtractAll => "extract_all",
             StringFunction::CountMatch(_) => "count_match",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_) => "strptime",
@@ -83,9 +92,11 @@ impl Display for StringFunction {
             StringFunction::Strip(_) => "strip",
             StringFunction::LStrip(_) => "lstrip",
             StringFunction::RStrip(_) => "rstrip",
+            #[cfg(feature = "string_from_radix")]
+            StringFunction::FromRadix { .. } => "from_radix",
         };
 
-        write!(f, "str.{}", s)
+        write!(f, "str.{s}")
     }
 }
 
@@ -99,22 +110,105 @@ pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
     Ok(ca.to_lowercase().into_series())
 }
 
-pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    if literal {
-        ca.contains_literal(pat).map(|ca| ca.into_series())
-    } else {
-        ca.contains(pat).map(|ca| ca.into_series())
-    }
+#[cfg(feature = "regex")]
+pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
+    let ca = &s[0].utf8()?;
+    let pat = &s[1].utf8()?;
+
+    let mut out: BooleanChunked = match pat.len() {
+        1 => match pat.get(0) {
+            Some(pat) => {
+                if literal {
+                    ca.contains_literal(pat)?
+                } else {
+                    ca.contains(pat)?
+                }
+            }
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => {
+            if literal {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => src.contains(pat),
+                        _ => false,
+                    })
+                    .collect_trusted()
+            } else if strict {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => {
+                            let re = Regex::new(pat)?;
+                            Ok(re.is_match(src))
+                        }
+                        _ => Ok(false),
+                    })
+                    .collect::<PolarsResult<_>>()?
+            } else {
+                ca.into_iter()
+                    .zip(pat.into_iter())
+                    .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                        (Some(src), Some(pat)) => {
+                            let re = Regex::new(pat).ok()?;
+                            Some(re.is_match(src))
+                        }
+                        _ => Some(false),
+                    })
+                    .collect_trusted()
+            }
+        }
+    };
+
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
 
-pub(super) fn ends_with(s: &Series, sub: &str) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca.ends_with(sub).into_series())
+pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
+    let ca = &s[0].utf8()?;
+    let sub = &s[1].utf8()?;
+
+    let mut out: BooleanChunked = match sub.len() {
+        1 => match sub.get(0) {
+            Some(s) => ca.ends_with(s),
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => ca
+            .into_iter()
+            .zip(sub.into_iter())
+            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                (Some(src), Some(val)) => src.ends_with(val),
+                _ => false,
+            })
+            .collect_trusted(),
+    };
+
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
-pub(super) fn starts_with(s: &Series, sub: &str) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca.starts_with(sub).into_series())
+
+pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
+    let ca = &s[0].utf8()?;
+    let sub = &s[1].utf8()?;
+
+    let mut out: BooleanChunked = match sub.len() {
+        1 => match sub.get(0) {
+            Some(s) => ca.starts_with(s),
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => ca
+            .into_iter()
+            .zip(sub.into_iter())
+            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+                (Some(src), Some(val)) => src.starts_with(val),
+                _ => false,
+            })
+            .collect_trusted(),
+    };
+
+    out.rename(ca.name());
+    Ok(out.into_series())
 }
 
 /// Extract a regex pattern from the a string value.
@@ -142,45 +236,76 @@ pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
     Ok(ca.rjust(width, fillchar).into_series())
 }
 
-pub(super) fn strip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
-        Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_matches(matches)))
-            .into_series())
+        if matches.chars().count() == 1 {
+            // Fast path for when a single character is passed
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_matches(matches.chars().next().unwrap())))
+                .into_series())
+        } else {
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
+                .into_series())
+        }
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
     }
 }
 
-pub(super) fn lstrip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
 
     if let Some(matches) = matches {
-        Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_start_matches(matches)))
-            .into_series())
+        if matches.chars().count() == 1 {
+            // Fast path for when a single character is passed
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_start_matches(matches.chars().next().unwrap())))
+                .into_series())
+        } else {
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
+                .into_series())
+        }
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
     }
 }
 
-pub(super) fn rstrip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+pub(super) fn rstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
-        Ok(ca
-            .apply(|s| Cow::Borrowed(s.trim_end_matches(matches)))
-            .into_series())
+        if matches.chars().count() == 1 {
+            // Fast path for when a single character is passed
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_end_matches(matches.chars().next().unwrap())))
+                .into_series())
+        } else {
+            Ok(ca
+                .apply(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
+                .into_series())
+        }
     } else {
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
     }
 }
 
-pub(super) fn extract_all(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let pat = pat.to_string();
+pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let pat = &args[1];
 
     let ca = s.utf8()?;
-    ca.extract_all(&pat).map(|ca| ca.into_series())
+    let pat = pat.utf8()?;
+
+    if pat.len() == 1 {
+        let pat = pat
+            .get(0)
+            .ok_or_else(|| PolarsError::ComputeError("Expected a pattern got null".into()))?;
+        ca.extract_all(pat).map(|ca| ca.into_series())
+    } else {
+        ca.extract_all_many(pat).map(|ca| ca.into_series())
+    }
 }
 
 pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
@@ -192,6 +317,24 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
+    let tz_aware = match (options.tz_aware, &options.fmt) {
+        (true, Some(_)) => true,
+        (true, None) => {
+            return Err(PolarsError::ComputeError(
+                "Passing 'tz_aware=True' without 'fmt' is not yet supported. Please specify 'fmt'."
+                    .into(),
+            ));
+        }
+        #[cfg(feature = "regex")]
+        (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
+        (false, _) => false,
+    };
+    #[cfg(feature = "timezones")]
+    if !tz_aware && options.utc {
+        return Err(PolarsError::ComputeError(
+            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC').".into(),
+        ));
+    }
     let ca = s.utf8()?;
 
     let out = match &options.date_dtype {
@@ -205,8 +348,14 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         }
         DataType::Datetime(tu, _) => {
             if options.exact {
-                ca.as_datetime(options.fmt.as_deref(), *tu, options.cache)?
-                    .into_series()
+                ca.as_datetime(
+                    options.fmt.as_deref(),
+                    *tu,
+                    options.cache,
+                    tz_aware,
+                    options.utc,
+                )?
+                .into_series()
             } else {
                 ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
                     .into_series()
@@ -224,7 +373,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         }
         dt => {
             return Err(PolarsError::ComputeError(
-                format!("not implemented for dtype {:?}", dt).into(),
+                format!("not implemented for dtype {dt:?}").into(),
             ))
         }
     };
@@ -264,6 +413,8 @@ fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
     })
 }
 
+// used only if feature="regex"
+#[allow(dead_code)]
 fn iter_and_replace<'a, F>(ca: &'a Utf8Chunked, val: &'a Utf8Chunked, f: F) -> Utf8Chunked
 where
     F: Fn(&'a str, &'a str) -> Cow<'a, str>,
@@ -381,4 +532,10 @@ pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Se
         replace_single(column, pat, val, literal)
     }
     .map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "string_from_radix")]
+pub(super) fn from_radix(s: &Series, radix: Option<u32>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.parse_int(radix).into_series())
 }

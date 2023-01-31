@@ -3,7 +3,7 @@ pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 
 mod any_value;
-pub(crate) mod arithmetic;
+pub mod arithmetic;
 mod comparison;
 mod from;
 pub mod implementations;
@@ -178,9 +178,9 @@ impl Series {
         &mut *chunks
     }
 
-    pub fn set_sorted(&mut self, sorted: IsSorted) {
+    pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
         let inner = self._get_inner_mut();
-        inner._set_sorted(sorted)
+        inner._set_sorted_flag(sorted)
     }
 
     pub fn into_frame(self) -> DataFrame {
@@ -228,11 +228,22 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        self.0.cast(dtype)
+        match self.0.cast(dtype) {
+            Ok(out) => Ok(out),
+            Err(err) => {
+                let len = self.len();
+                if self.null_count() == len {
+                    Ok(Series::full_null(self.name(), len, dtype))
+                } else {
+                    Err(err)
+                }
+            }
+        }
     }
 
     /// Compute the sum of all values in this Series.
-    /// Returns `None` if the array is empty or only contains null values.
+    /// Returns `Some(0)` if the array is empty, and `None` if the array only
+    /// contains null values.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
@@ -364,7 +375,6 @@ impl Series {
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
     /// from `other` where the mask evaluates `false`
     #[cfg(feature = "zip_with")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let (lhs, rhs) = coerce_lhs_rhs(self, other)?;
         lhs.zip_with_same_type(mask, rhs.as_ref())
@@ -422,6 +432,15 @@ impl Series {
         });
 
         Ok(self.finish_take_threaded(series?, rechunk))
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> PolarsResult<Series> {
+        let idx = IdxCa::borrowed_from_slice("", idx);
+        self.take_unchecked(&idx)
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
@@ -505,17 +524,23 @@ impl Series {
     }
 
     #[cfg(feature = "dot_product")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
     pub fn dot(&self, other: &Series) -> Option<f64> {
         (self * other).sum::<f64>()
     }
 
     /// Get the sum of the Series as a new Series of length 1.
+    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
     pub fn sum_as_series(&self) -> Series {
         use DataType::*;
+        if self.is_empty() && self.dtype().is_numeric() {
+            return Series::new("", [0])
+                .cast(self.dtype())
+                .unwrap()
+                .sum_as_series();
+        }
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
             _ => self._sum_as_series(),
@@ -523,7 +548,6 @@ impl Series {
     }
 
     /// Get an array with the cumulative max computed at every element
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cummax(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
@@ -536,7 +560,6 @@ impl Series {
     }
 
     /// Get an array with the cumulative min computed at every element
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cummin(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
@@ -552,7 +575,6 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     #[allow(unused_variables)]
     pub fn cumsum(&self, reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
@@ -588,7 +610,7 @@ impl Series {
                     let ca = self.f64().unwrap();
                     ca.cumsum(reverse).into_series()
                 }
-                dt => panic!("cumsum not supported for dtype: {:?}", dt),
+                dt => panic!("cumsum not supported for dtype: {dt:?}"),
             }
         }
         #[cfg(not(feature = "cum_agg"))]
@@ -601,7 +623,6 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16, Int32, UInt32}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     #[allow(unused_variables)]
     pub fn cumprod(&self, reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
@@ -629,7 +650,7 @@ impl Series {
                     let ca = self.f64().unwrap();
                     ca.cumprod(reverse).into_series()
                 }
-                dt => panic!("cumprod not supported for dtype: {:?}", dt),
+                dt => panic!("cumprod not supported for dtype: {dt:?}"),
             }
         }
         #[cfg(not(feature = "cum_agg"))]
@@ -642,7 +663,6 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    #[cfg_attr(docsrs, doc(cfg(feature = "product")))]
     pub fn product(&self) -> Series {
         #[cfg(feature = "product")]
         {
@@ -665,7 +685,7 @@ impl Series {
                     let ca = self.f64().unwrap();
                     ca.prod_as_series()
                 }
-                dt => panic!("cumprod not supported for dtype: {:?}", dt),
+                dt => panic!("cumprod not supported for dtype: {dt:?}"),
             }
         }
         #[cfg(not(feature = "product"))]
@@ -675,15 +695,19 @@ impl Series {
     }
 
     #[cfg(feature = "rank")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
     pub fn rank(&self, options: RankOptions) -> Series {
         rank(self, options.method, options.descending)
     }
 
     /// Cast throws an error if conversion had overflows
-    pub fn strict_cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        let s = self.cast(data_type)?;
-        if self.null_count() != s.null_count() {
+    pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+        let null_count = self.null_count();
+        let len = self.len();
+        if null_count == len {
+            return Ok(Series::full_null(self.name(), len, dtype));
+        }
+        let s = self.0.cast(dtype)?;
+        if null_count != s.null_count() {
             let failure_mask = !self.is_null() & s.is_null();
             let failures = self.filter_threaded(&failure_mask, false)?.unique()?;
             Err(PolarsError::ComputeError(
@@ -692,7 +716,7 @@ impl Series {
                     If you were trying to cast Utf8 to Date, Time, or Datetime, \
                     consider using `strptime`.",
                     self.dtype(),
-                    data_type,
+                    dtype,
                     failures.fmt_list(),
                 )
                 .into(),
@@ -717,7 +741,7 @@ impl Series {
                 .clone()
                 .into_time()
                 .into_series(),
-            dt => panic!("date not implemented for {:?}", dt),
+            dt => panic!("date not implemented for {dt:?}"),
         }
     }
 
@@ -736,7 +760,7 @@ impl Series {
                 .clone()
                 .into_date()
                 .into_series(),
-            dt => panic!("date not implemented for {:?}", dt),
+            dt => panic!("date not implemented for {dt:?}"),
         }
     }
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
@@ -760,7 +784,7 @@ impl Series {
                 .clone()
                 .into_datetime(timeunit, tz)
                 .into_series(),
-            dt => panic!("into_datetime not implemented for {:?}", dt),
+            dt => panic!("into_datetime not implemented for {dt:?}"),
         }
     }
 
@@ -784,12 +808,11 @@ impl Series {
                 .clone()
                 .into_duration(timeunit)
                 .into_series(),
-            dt => panic!("into_duration not implemented for {:?}", dt),
+            dt => panic!("into_duration not implemented for {dt:?}"),
         }
     }
 
     #[cfg(feature = "abs")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
     /// convert numerical values to their absolute value
     pub fn abs(&self) -> PolarsResult<Series> {
         let a = self.to_physical_repr();
@@ -806,7 +829,7 @@ impl Series {
             Float64 => a.f64().unwrap().abs().into_series(),
             dt => {
                 return Err(PolarsError::InvalidOperation(
-                    format!("abs not supported for series of type {:?}", dt).into(),
+                    format!("abs not supported for series of type {dt:?}").into(),
                 ));
             }
         };
@@ -815,14 +838,21 @@ impl Series {
 
     #[cfg(feature = "private")]
     // used for formatting
-    pub fn str_value(&self, index: usize) -> Cow<str> {
-        match self.0.get(index) {
+    pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
+        let out = match self.0.get(index)? {
             AnyValue::Utf8(s) => Cow::Borrowed(s),
             AnyValue::Null => Cow::Borrowed("null"),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev) => Cow::Borrowed(rev.get(idx)),
-            av => Cow::Owned(format!("{}", av)),
-        }
+            AnyValue::Categorical(idx, rev, arr) => {
+                if arr.is_null() {
+                    Cow::Borrowed(rev.get(idx))
+                } else {
+                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(idx as usize)) }
+                }
+            }
+            av => Cow::Owned(format!("{av}")),
+        };
+        Ok(out)
     }
     /// Get the head of the Series.
     pub fn head(&self, length: Option<usize>) -> Series {
@@ -847,9 +877,14 @@ impl Series {
                 let val = &[self.mean().map(|m| m as f32)];
                 Series::new(self.name(), val)
             }
-            dt if dt.is_numeric() => {
+            dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
+            }
+            dt @ DataType::Duration(_) => {
+                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
+                    .cast(dt)
+                    .unwrap()
             }
             _ => return Series::full_null(self.name(), 1, self.dtype()),
         }
@@ -997,6 +1032,14 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-struct")]
+    fn new_series_from_empty_structs() {
+        let dtype = DataType::Struct(vec![]);
+        let empties = vec![AnyValue::StructOwned(Box::new((vec![], vec![]))); 3];
+        let s = Series::from_any_values_and_dtype("", &empties, &dtype).unwrap();
+        assert_eq!(s.len(), 3);
+    }
+    #[test]
     fn new_series_from_arrow_primitive_array() {
         let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Box::new(array);
@@ -1024,9 +1067,9 @@ mod test {
         let slice_2 = series.slice(-5, 5);
         let slice_3 = series.slice(0, 5);
 
-        assert_eq!(slice_1.get(0), AnyValue::Int64(3));
-        assert_eq!(slice_2.get(0), AnyValue::Int64(1));
-        assert_eq!(slice_3.get(0), AnyValue::Int64(1));
+        assert_eq!(slice_1.get(0).unwrap(), AnyValue::Int64(3));
+        assert_eq!(slice_2.get(0).unwrap(), AnyValue::Int64(1));
+        assert_eq!(slice_3.get(0).unwrap(), AnyValue::Int64(1));
     }
 
     #[test]

@@ -148,9 +148,11 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
                 .map(|(s, arr)| {
                     // Safety:
                     // datatypes are correct
-                    unsafe {
+                    let mut out = unsafe {
                         Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
-                    }
+                    };
+                    out.set_sorted_flag(s.is_sorted_flag());
+                    out
                 })
                 .collect(),
         );
@@ -330,11 +332,11 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
 
 #[macro_export]
 macro_rules! with_match_physical_numeric_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
-    match $key_type {
+    match $dtype {
         Int8 => __with_ty__! { i8 },
         Int16 => __with_ty__! { i16 },
         Int32 => __with_ty__! { i32 },
@@ -356,11 +358,15 @@ macro_rules! with_match_physical_numeric_polars_type {(
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $key_type {
+            #[cfg(feature = "dtype-i8")]
         Int8 => __with_ty__! { Int8Type },
+            #[cfg(feature = "dtype-i16")]
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
+            #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { UInt8Type },
+            #[cfg(feature = "dtype-u16")]
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
@@ -658,7 +664,7 @@ where
     f(out)
 }
 
-pub(crate) fn align_chunks_binary<'a, T, B>(
+pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
 ) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<B>>)
@@ -714,6 +720,7 @@ where
 }
 
 #[allow(clippy::type_complexity)]
+#[cfg(feature = "zip_with")]
 pub(crate) fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
     b: &'a ChunkedArray<B>,
@@ -834,6 +841,22 @@ pub(crate) fn index_to_chunked_index<
         } else {
             index_remainder -= chunk_len;
             current_chunk_idx += num::One::one();
+        }
+    }
+    (current_chunk_idx, index_remainder)
+}
+
+#[cfg(feature = "dtype-struct")]
+pub(crate) fn index_to_chunked_index2(chunks: &[ArrayRef], index: usize) -> (usize, usize) {
+    let mut index_remainder = index;
+    let mut current_chunk_idx = 0;
+
+    for chunk in chunks {
+        if chunk.len() > index_remainder {
+            break;
+        } else {
+            index_remainder -= chunk.len();
+            current_chunk_idx += 1;
         }
     }
     (current_chunk_idx, index_remainder)

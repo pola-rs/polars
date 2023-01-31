@@ -1,3 +1,7 @@
+import typing
+
+import numpy as np
+
 import polars as pl
 
 
@@ -8,7 +12,7 @@ def test_projection_on_semi_join_4789() -> None:
 
     ab = lfa.join(lfb, on="p", how="semi").inspect()
 
-    intermediate_agg = (ab.groupby("a").agg([pl.col("a").list().alias("seq")])).select(
+    intermediate_agg = (ab.groupby("a").agg([pl.col("a").alias("seq")])).select(
         ["a", "seq"]
     )
 
@@ -64,7 +68,7 @@ def test_unnest_projection_pushdown() -> None:
 
     mlf = (
         lf.melt()
-        .with_column(pl.col("variable").str.split_exact("|", 2))
+        .with_columns(pl.col("variable").str.split_exact("|", 2))
         .unnest("variable")
     )
     mlf = mlf.select(
@@ -95,7 +99,7 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    q = df.with_column(
+    q = df.with_columns(
         pl.col("genres")
         .str.split("|")
         .arr.to_struct(
@@ -153,4 +157,82 @@ def test_double_projection_union() -> None:
     assert q.collect().to_dict(False) == {
         "c": [1, 2, 3],
         "a": [[1, 2, 5, 7], [3, 4, 6], [8]],
+    }
+
+
+@typing.no_type_check
+def test_asof_join_projection_() -> None:
+    lf1 = pl.DataFrame(
+        {
+            "m": np.linspace(0, 5, 7),
+            "a": np.linspace(0, 5, 7),
+            "b": np.linspace(0, 5, 7),
+            "c": pl.Series(np.linspace(0, 5, 7)).cast(str),
+            "d": np.linspace(0, 5, 7),
+        }
+    ).lazy()
+    lf2 = (
+        pl.DataFrame(
+            {
+                "group": [0, 2, 3, 0, 1, 2, 3],
+                "val": [0, 2.5, 2.6, 2.7, 3.4, 4, 5],
+                "c": ["x", "x", "x", "y", "y", "y", "y"],
+            }
+        )
+        .with_columns(pl.col("val").alias("b"))
+        .lazy()
+    )
+
+    joined = lf1.join_asof(
+        lf2,
+        on="b",
+        by=["c"],
+        strategy="backward",
+    )
+
+    expressions = [
+        "m",
+        "a",
+        "b",
+        "c",
+        "d",
+        pl.lit(0).alias("group"),
+        pl.lit(0.1).alias("val"),
+    ]
+    dirty_lf1 = lf1.select(expressions)
+
+    concatted = pl.concat([joined, dirty_lf1])
+    assert concatted.select(["b", "a"]).collect().to_dict(False) == {
+        "b": [
+            0.0,
+            0.8333333333333334,
+            1.6666666666666667,
+            2.5,
+            3.3333333333333335,
+            4.166666666666667,
+            5.0,
+            0.0,
+            0.8333333333333334,
+            1.6666666666666667,
+            2.5,
+            3.3333333333333335,
+            4.166666666666667,
+            5.0,
+        ],
+        "a": [
+            0.0,
+            0.8333333333333334,
+            1.6666666666666667,
+            2.5,
+            3.3333333333333335,
+            4.166666666666667,
+            5.0,
+            0.0,
+            0.8333333333333334,
+            1.6666666666666667,
+            2.5,
+            3.3333333333333335,
+            4.166666666666667,
+            5.0,
+        ],
     }

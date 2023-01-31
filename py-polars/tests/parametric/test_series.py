@@ -141,4 +141,4 @@ def test_series_timeunits(
         if isinstance(us, int)
     ):
         for ns, us in zip(s2.dt.nanoseconds(), micros):
-            assert ns == (us * 1000)  # type: ignore[operator]
+            assert ns == (us * 1000)

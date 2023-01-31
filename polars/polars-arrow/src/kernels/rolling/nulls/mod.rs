@@ -76,7 +76,7 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    Box::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
@@ -95,7 +95,7 @@ mod test {
     fn get_null_arr() -> PrimitiveArray<f64> {
         // 1, None, -1, 4
         let buf = Buffer::from(vec![1.0, 0.0, -1.0, 4.0]);
-        PrimitiveArray::from_data(
+        PrimitiveArray::new(
             DataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
@@ -105,7 +105,7 @@ mod test {
     #[test]
     fn test_rolling_sum_nulls() {
         let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
-        let arr = &PrimitiveArray::from_data(
+        let arr = &PrimitiveArray::new(
             DataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
@@ -184,7 +184,7 @@ mod test {
     #[test]
     fn test_rolling_max_no_nulls() {
         let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
-        let arr = &PrimitiveArray::from_data(
+        let arr = &PrimitiveArray::new(
             DataType::Float64,
             buf,
             Some(Bitmap::from(&[true, true, true, true])),
@@ -205,7 +205,7 @@ mod test {
         assert_eq!(out, &[None, None, None, Some(4.0)]);
 
         let buf = Buffer::from(vec![4.0, 3.0, 2.0, 1.0]);
-        let arr = &PrimitiveArray::from_data(
+        let arr = &PrimitiveArray::new(
             DataType::Float64,
             buf,
             Some(Bitmap::from(&[true, true, true, true])),

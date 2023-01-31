@@ -14,6 +14,8 @@ use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use crate::chunked_array::cast::cast_chunks;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::extension::EXTENSION_NAME;
 use crate::prelude::*;
 
 impl Series {
@@ -24,7 +26,7 @@ impl Series {
     /// # Safety
     ///
     /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
-    pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
+    pub unsafe fn from_chunks_and_dtype_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,
         dtype: &DataType,
@@ -127,18 +129,14 @@ impl Series {
                         let offsets = arr.offsets().clone();
                         let validity = arr.validity().cloned();
 
-                        let values = Box::new(PrimitiveArray::from_data(
-                            ArrowDataType::UInt8,
-                            values,
-                            None,
-                        ));
+                        let values =
+                            Box::new(PrimitiveArray::new(ArrowDataType::UInt8, values, None));
 
                         let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
                         // Safety:
                         // offsets are monotonically increasing
-                        Box::new(ListArray::<i64>::new_unchecked(
-                            dtype, offsets, values, validity,
-                        )) as ArrayRef
+                        Box::new(ListArray::<i64>::new(dtype, offsets, values, validity))
+                            as ArrayRef
                     })
                     .collect();
                 Ok(ListChunked::from_chunks(name, chunks).into())
@@ -270,31 +268,34 @@ impl Series {
                     }};
                 }
 
-                let (keys, values) = match key_type {
-                    IntegerType::Int8 => {
-                        unpack_keys_values!(i8)
-                    }
-                    IntegerType::UInt8 => {
-                        unpack_keys_values!(u8)
-                    }
-                    IntegerType::Int16 => {
-                        unpack_keys_values!(i16)
-                    }
-                    IntegerType::UInt16 => {
-                        unpack_keys_values!(u16)
-                    }
-                    IntegerType::Int32 => {
-                        unpack_keys_values!(i32)
-                    }
-                    IntegerType::UInt32 => {
-                        unpack_keys_values!(u32)
-                    }
-                    _ => {
-                        return Err(PolarsError::ComputeError(
-                            "dictionaries with 64 bits keys are not supported by polars".into(),
-                        ))
-                    }
-                };
+                let (keys, values) =
+                    match key_type {
+                        IntegerType::Int8 => {
+                            unpack_keys_values!(i8)
+                        }
+                        IntegerType::UInt8 => {
+                            unpack_keys_values!(u8)
+                        }
+                        IntegerType::Int16 => {
+                            unpack_keys_values!(i16)
+                        }
+                        IntegerType::UInt16 => {
+                            unpack_keys_values!(u16)
+                        }
+                        IntegerType::Int32 => {
+                            unpack_keys_values!(i32)
+                        }
+                        IntegerType::UInt32 => {
+                            unpack_keys_values!(u32)
+                        }
+                        IntegerType::Int64 => {
+                            unpack_keys_values!(i64)
+                        }
+                        _ => return Err(PolarsError::ComputeError(
+                            "dictionaries with unsigned 64 bits keys are not supported by polars"
+                                .into(),
+                        )),
+                    };
                 let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
                 let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
 
@@ -303,7 +304,7 @@ impl Series {
                 Ok(CategoricalChunked::from_keys_and_values(name, keys, values).into_series())
             }
             #[cfg(feature = "object")]
-            ArrowDataType::Extension(s, _, Some(_)) if s == "POLARS_EXTENSION_TYPE" => {
+            ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
                 assert_eq!(chunks.len(), 1);
                 let arr = chunks[0]
                     .as_any()
@@ -322,34 +323,6 @@ impl Series {
                 Ok(s)
             }
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Map(_field, _sorted) => {
-                let arr = if chunks.len() > 1 {
-                    // don't spuriously call this. This triggers a read on mmaped data
-                    concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
-                } else {
-                    chunks[0].clone()
-                };
-                let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
-                // inner type is a struct
-                let struct_array = arr.field().clone();
-
-                // small list, because that's the maps offset dtype.
-                // means we are limited to i32::MAX rows
-                let data_type =
-                    ListArray::<i32>::default_datatype(struct_array.data_type().clone());
-                // physical representation of the map
-                let new_arr = ListArray::new_unchecked(
-                    data_type.clone(),
-                    arr.offsets().clone(),
-                    struct_array,
-                    arr.validity().cloned(),
-                );
-                let mut chunks = chunks;
-                chunks.clear();
-                chunks.push(Box::new(new_arr));
-                Self::try_from_arrow_unchecked(name, chunks, &data_type)
-            }
-            #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let arr = if chunks.len() > 1 {
                     // don't spuriously call this. This triggers a read on mmaped data
@@ -365,9 +338,14 @@ impl Series {
                     let new_values = struct_arr
                         .values()
                         .iter()
-                        .map(|arr| match arr.validity() {
-                            None => arr.with_validity(Some(validity.clone())),
-                            Some(arr_validity) => arr.with_validity(Some(arr_validity & validity)),
+                        .map(|arr| match arr.data_type() {
+                            ArrowDataType::Null => arr.clone(),
+                            _ => match arr.validity() {
+                                None => arr.with_validity(Some(validity.clone())),
+                                Some(arr_validity) => {
+                                    arr.with_validity(Some(arr_validity & validity))
+                                }
+                            },
                         })
                         .collect();
 
@@ -391,11 +369,33 @@ impl Series {
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(StructChunked::new_unchecked(name, &fields).into_series())
             }
+            ArrowDataType::Decimal(_, _) | ArrowDataType::Decimal256(_, _) => {
+                eprintln!(
+                    "Polars does not support decimal types so the 'Series' are read as Float64"
+                );
+                Ok(Float64Chunked::from_chunks(
+                    name,
+                    cast_chunks(&chunks, &DataType::Float64, true)?,
+                )
+                .into_series())
+            }
+            ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
             dt => Err(PolarsError::InvalidOperation(
-                format!("Cannot create polars series from {:?} type", dt).into(),
+                format!("Cannot create polars series from {dt:?} type").into(),
             )),
         }
     }
+}
+
+fn map_arrays_to_series(name: &str, chunks: Vec<ArrayRef>) -> PolarsResult<Series> {
+    let chunks = chunks
+        .iter()
+        .map(|arr| {
+            let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
+            arr.field().clone()
+        })
+        .collect::<Vec<_>>();
+    Series::try_from((name, chunks))
 }
 
 fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
@@ -412,14 +412,12 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
             let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values = convert_inner_types(arr.values());
             let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
-            unsafe {
-                Box::from(ListArray::<i64>::new_unchecked(
-                    dtype,
-                    arr.offsets().clone(),
-                    values,
-                    arr.validity().cloned(),
-                ))
-            }
+            Box::from(ListArray::<i64>::new(
+                dtype,
+                arr.offsets().clone(),
+                values,
+                arr.validity().cloned(),
+            ))
         }
         ArrowDataType::Struct(fields) => {
             let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
@@ -429,9 +427,10 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
                 .map(convert_inner_types)
                 .collect::<Vec<_>>();
 
-            let fields = fields
+            let fields = values
                 .iter()
-                .map(|f| ArrowField::new(&f.name, DataType::from(&f.data_type).to_arrow(), true))
+                .zip(fields.iter())
+                .map(|(arr, field)| ArrowField::new(&field.name, arr.data_type().clone(), true))
                 .collect();
             Box::new(StructArray::new(
                 ArrowDataType::Struct(fields),

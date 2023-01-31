@@ -43,8 +43,9 @@ impl<'a> CoreReader<'a> {
             quote_char: self.quote_char,
             eol_char: self.eol_char,
             null_values: self.null_values,
+            missing_is_null: self.missing_is_null,
             to_cast: self.to_cast,
-            ignore_parser_errors: self.ignore_parser_errors,
+            ignore_errors: self.ignore_errors,
             n_rows: self.n_rows,
             encoding: self.encoding,
             delimiter: self.delimiter,
@@ -69,8 +70,9 @@ pub struct BatchedCsvReader<'a> {
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValuesCompiled>,
+    missing_is_null: bool,
     to_cast: Vec<Field>,
-    ignore_parser_errors: bool,
+    ignore_errors: bool,
     n_rows: Option<usize>,
     encoding: CsvEncoding,
     delimiter: u8,
@@ -84,11 +86,14 @@ pub struct BatchedCsvReader<'a> {
 
 impl<'a> BatchedCsvReader<'a> {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<(IdxSize, DataFrame)>>> {
+        if n == 0 {
+            return Ok(None);
+        }
         if self.chunk_offset == self.file_chunks.len() as IdxSize {
             return Ok(None);
         }
         if let Some(n_rows) = self.n_rows {
-            if n_rows as IdxSize >= self.rows_read {
+            if self.rows_read >= n_rows as IdxSize {
                 return Ok(None);
             }
         }
@@ -110,7 +115,7 @@ impl<'a> BatchedCsvReader<'a> {
                         bytes,
                         self.delimiter,
                         self.schema.as_ref(),
-                        self.ignore_parser_errors,
+                        self.ignore_errors,
                         &self.projection,
                         bytes_offset_thread,
                         self.quote_char,
@@ -120,6 +125,7 @@ impl<'a> BatchedCsvReader<'a> {
                         &self.str_capacities,
                         self.encoding,
                         self.null_values.as_ref(),
+                        self.missing_is_null,
                         self.chunk_size,
                         stop_at_nbytes,
                         self.starting_point_offset,

@@ -1,13 +1,14 @@
-use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::try_get_supertype;
 
-fn get_exploded(series: &Series) -> PolarsResult<(Series, Buffer<i64>)> {
+fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
@@ -56,9 +57,9 @@ impl DataFrame {
 
                 // expand all the other columns based the exploded first column
                 if i == 0 {
-                    let row_idx = offsets_to_indexes(&offsets, exploded.len());
+                    let row_idx = offsets_to_indexes(offsets.as_slice(), exploded.len());
                     let mut row_idx = IdxCa::from_vec("", row_idx);
-                    row_idx.set_sorted(false);
+                    row_idx.set_sorted_flag(IsSorted::Ascending);
 
                     // Safety
                     // We just created indices that are in bounds.

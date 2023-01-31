@@ -1,11 +1,35 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import PivotAgg
+
+
+def test_pivot() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "n", "o"],
+        }
+    )
+    result = df.pivot(values="N", index="foo", columns="bar")
+
+    expected = pl.DataFrame(
+        [
+            ("A", 1, 2, None, None, None),
+            ("B", None, None, 2, 4, None),
+            ("C", None, None, None, None, 2),
+        ],
+        schema=["foo", "k", "l", "m", "n", "o"],
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_pivot_list() -> None:
@@ -20,10 +44,22 @@ def test_pivot_list() -> None:
         }
     )
     out = df.pivot("b", index="a", columns="a", aggregate_fn="first", sort_columns=True)
-    assert out.frame_equal(expected, null_equal=True)
+    assert_frame_equal(out, expected)
 
 
-def test_pivot() -> None:
+@pytest.mark.parametrize(
+    ("agg_fn", "expected_rows"),
+    [
+        ("first", [("a", 2, None, None), ("b", None, None, 10)]),
+        ("count", [("a", 2, None, None), ("b", None, 2, 1)]),
+        ("min", [("a", 2, None, None), ("b", None, 8, 10)]),
+        ("max", [("a", 4, None, None), ("b", None, 8, 10)]),
+        ("sum", [("a", 6, None, None), ("b", None, 8, 10)]),
+        ("mean", [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]),
+        ("median", [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]),
+    ],
+)
+def test_pivot_aggregate(agg_fn: PivotAgg, expected_rows: list[tuple[Any]]) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 2, 2, 3],
@@ -31,41 +67,10 @@ def test_pivot() -> None:
             "c": [2, 4, None, 8, 10],
         }
     )
-    gb = df.groupby("b").pivot(
-        pivot_column="a",
-        values_column="c",
+    result = df.pivot(
+        values="c", index="b", columns="a", aggregate_fn=agg_fn, sort_columns=True
     )
-    assert gb.count().rows() == [("a", 2, None, None), ("b", None, 2, 1)]
-    assert gb.first().rows() == [("a", 2, None, None), ("b", None, None, 10)]
-    assert gb.max().rows() == [("a", 4, None, None), ("b", None, 8, 10)]
-    assert gb.mean().rows() == [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]
-    assert gb.median().rows() == [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]
-    assert gb.min().rows() == [("a", 2, None, None), ("b", None, 8, 10)]
-    assert gb.sum().rows() == [("a", 6, None, None), ("b", None, 8, 10)]
-
-    agg_fns: list[PivotAgg] = ["sum", "min", "max", "mean", "count", "median", "mean"]
-    for agg_fn in agg_fns:
-        out = df.pivot(
-            values="c", index="b", columns="a", aggregate_fn=agg_fn, sort_columns=True
-        )
-        assert out.shape == (2, 4)
-        assert out.rows() == getattr(gb, agg_fn)().rows()
-
-    # example in polars-book
-    df = pl.DataFrame(
-        {
-            "foo": ["A", "A", "B", "B", "C"],
-            "N": [1, 2, 2, 4, 2],
-            "bar": ["k", "l", "m", "n", "o"],
-        }
-    )
-    out = df.groupby("foo").pivot(pivot_column="bar", values_column="N").first()
-    assert out.shape == (3, 6)
-    assert out.rows() == [
-        ("A", 1, 2, None, None, None),
-        ("B", None, None, 2, 4, None),
-        ("C", None, None, None, None, 2),
-    ]
+    assert result.rows() == expected_rows
 
 
 def test_pivot_categorical_3968() -> None:
@@ -77,7 +82,7 @@ def test_pivot_categorical_3968() -> None:
         }
     )
 
-    assert df.with_column(pl.col("baz").cast(str).cast(pl.Categorical)).to_dict(
+    assert df.with_columns(pl.col("baz").cast(str).cast(pl.Categorical)).to_dict(
         False
     ) == {
         "foo": ["one", "one", "one", "two", "two", "two"],
@@ -89,24 +94,16 @@ def test_pivot_categorical_3968() -> None:
 def test_pivot_categorical_index() -> None:
     df = pl.DataFrame(
         {"A": ["Fire", "Water", "Water", "Fire"], "B": ["Car", "Car", "Car", "Ship"]},
-        columns=[("A", pl.Categorical), ("B", pl.Categorical)],
+        schema=[("A", pl.Categorical), ("B", pl.Categorical)],
     )
 
+    result = df.pivot(values="B", index=["A"], columns="B", aggregate_fn="count")
     expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
-    assert (
-        df.pivot(values="B", index=["A"], columns="B", aggregate_fn="count").to_dict(
-            False
-        )
-        == expected
-    )
+    assert result.to_dict(False) == expected
 
     # test expression dispatch
-    assert (
-        df.pivot(values="B", index=["A"], columns="B", aggregate_fn=pl.count()).to_dict(
-            False
-        )
-        == expected
-    )
+    result = df.pivot(values="B", index=["A"], columns="B", aggregate_fn=pl.count())
+    assert result.to_dict(False) == expected
 
     df = pl.DataFrame(
         {
@@ -114,16 +111,16 @@ def test_pivot_categorical_index() -> None:
             "B": ["Car", "Car", "Car", "Ship"],
             "C": ["Paper", "Paper", "Paper", "Paper"],
         },
-        columns=[("A", pl.Categorical), ("B", pl.Categorical), ("C", pl.Categorical)],
+        schema=[("A", pl.Categorical), ("B", pl.Categorical), ("C", pl.Categorical)],
     )
-    assert df.pivot(
-        values="B", index=["A", "C"], columns="B", aggregate_fn="count"
-    ).to_dict(False) == {
+    result = df.pivot(values="B", index=["A", "C"], columns="B", aggregate_fn="count")
+    expected = {
         "A": ["Fire", "Water"],
         "C": ["Paper", "Paper"],
         "Car": [1, 2],
         "Ship": [1, None],
     }
+    assert result.to_dict(False) == expected
 
 
 def test_pivot_multiple_values_column_names_5116() -> None:
@@ -135,10 +132,67 @@ def test_pivot_multiple_values_column_names_5116() -> None:
             "c2": ["C", "C", "D", "D"] * 2,
         }
     )
-    assert df.pivot(values=["x1", "x2"], index="c1", columns="c2").to_dict(False) == {
+    result = df.pivot(values=["x1", "x2"], index="c1", columns="c2")
+    expected = {
         "c1": ["A", "B"],
         "x1_C": [1, 2],
         "x1_D": [3, 4],
         "x2_C": [8, 7],
         "x2_D": [6, 5],
     }
+    assert result.to_dict(False) == expected
+
+
+def test_pivot_floats() -> None:
+    df = pl.DataFrame(
+        {
+            "article": ["a", "a", "a", "b", "b", "b"],
+            "weight": [1.0, 1.0, 4.4, 1.0, 8.8, 1.0],
+            "quantity": [1.0, 5.0, 1.0, 1.0, 1.0, 7.5],
+            "price": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    )
+
+    result = df.pivot(values="price", index="weight", columns="quantity")
+    expected = {
+        "weight": [1.0, 4.4, 8.8],
+        "1.0": [1.0, 3.0, 5.0],
+        "5.0": [2.0, None, None],
+        "7.5": [6.0, None, None],
+    }
+    assert result.to_dict(False) == expected
+
+    result = df.pivot(values="price", index=["article", "weight"], columns="quantity")
+    expected = {
+        "article": ["a", "a", "b", "b"],
+        "weight": [1.0, 4.4, 1.0, 8.8],
+        "1.0": [1.0, 3.0, 4.0, 5.0],
+        "5.0": [2.0, None, None, None],
+        "7.5": [None, None, 6.0, None],
+    }
+    assert result.to_dict(False) == expected
+
+
+def test_pivot_reinterpret_5907() -> None:
+    df = pl.DataFrame(
+        {
+            "A": pl.Series([3, -2, 3, -2], dtype=pl.Int32),
+            "B": ["x", "x", "y", "y"],
+            "C": [100, 50, 500, -80],
+        }
+    )
+
+    result = df.pivot(
+        index=["A"], values=["C"], columns=["B"], aggregate_fn=pl.element().sum()
+    )
+    expected = {"A": [3, -2], "x": [100, 50], "y": [500, -80]}
+    assert result.to_dict(False) == expected
+
+
+def test_pivot_subclassed_df() -> None:
+    class SubClassedDataFrame(pl.DataFrame):
+        pass
+
+    df = SubClassedDataFrame({"a": [1, 2], "b": [3, 4]})
+    result = df.pivot(values="b", index="a", columns="a", aggregate_fn="first")
+    assert isinstance(result, SubClassedDataFrame)

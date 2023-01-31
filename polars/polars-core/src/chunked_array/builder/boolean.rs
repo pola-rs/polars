@@ -26,7 +26,6 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
             field: Arc::new(self.field),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length,
         }

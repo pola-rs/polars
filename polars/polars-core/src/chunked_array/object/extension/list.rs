@@ -1,3 +1,5 @@
+use arrow::offset::Offsets;
+
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::chunked_array::object::extension::create_extension;
 use crate::prelude::*;
@@ -77,15 +79,15 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
         // Safety:
         // offsets are monotonically increasing
         let arr = unsafe {
-            Box::new(ListArray::<i64>::new_unchecked(
+            Box::new(ListArray::<i64>::new(
                 data_type,
-                offsets.into(),
+                Offsets::new_unchecked(offsets).into(),
                 extension_array,
                 None,
             )) as ArrayRef
         };
 
-        let mut listarr = ListChunked::from_chunks(ca.name(), vec![arr]);
+        let mut listarr = unsafe { ListChunked::from_chunks(ca.name(), vec![arr]) };
         if self.fast_explode {
             listarr.set_fast_explode()
         }

@@ -1,5 +1,0 @@
-*.parquet
-*.csv
-*.avro
-*.ipc
-*.json

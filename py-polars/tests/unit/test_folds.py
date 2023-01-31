@@ -1,4 +1,5 @@
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_fold() -> None:
@@ -10,9 +11,9 @@ def test_fold() -> None:
             pl.min(["a", pl.col("b") ** 2]),
         ]
     )
-    assert out["sum"].series_equal(pl.Series("sum", [2.0, 4.0, 6.0]))
-    assert out["max"].series_equal(pl.Series("max", [1.0, 4.0, 9.0]))
-    assert out["min"].series_equal(pl.Series("min", [1.0, 2.0, 3.0]))
+    assert_series_equal(out["sum"], pl.Series("sum", [2.0, 4.0, 6.0]))
+    assert_series_equal(out["max"], pl.Series("max", [1.0, 4.0, 9.0]))
+    assert_series_equal(out["min"], pl.Series("min", [1.0, 2.0, 3.0]))
 
     out = df.select(
         pl.fold(acc=pl.lit(0), f=lambda acc, x: acc + x, exprs=pl.all()).alias("foo")

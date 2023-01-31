@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 
 use arrow::array::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
@@ -145,7 +145,7 @@ where
         for i in nulls {
             unsafe { unset_bit_raw(validity_slice, i) }
         }
-        let arr = PrimitiveArray::from_data(
+        let arr = PrimitiveArray::new(
             T::get_dtype().to_arrow(),
             new_values.into(),
             Some(validity.into()),
@@ -221,7 +221,7 @@ impl ExplodeByOffsets for ListChunked {
             if o == last {
                 if start != last {
                     let vals = arr.slice(start, last - start);
-                    let ca = ListChunked::from_chunks("", vec![Box::new(vals)]);
+                    let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
                     for s in &ca {
                         builder.append_opt_series(s.as_ref())
                     }
@@ -232,7 +232,7 @@ impl ExplodeByOffsets for ListChunked {
             last = o;
         }
         let vals = arr.slice(start, last - start);
-        let ca = ListChunked::from_chunks("", vec![Box::new(vals)]);
+        let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
         for s in &ca {
             builder.append_opt_series(s.as_ref())
         }
@@ -369,7 +369,7 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
 }
 
 impl ChunkExplode for ListChunked {
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)> {
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -381,14 +381,6 @@ impl ChunkExplode for ListChunked {
         let offsets_buf = listarr.offsets().clone();
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
-
-        // all empty
-        if offsets[offsets.len() - 1] == 0 {
-            return Ok((
-                Series::new_empty(self.name(), &self.inner_dtype()),
-                vec![].into(),
-            ));
-        }
 
         let mut s = if ca._can_fast_explode() {
             // ensure that the value array is sliced
@@ -454,7 +446,7 @@ impl ChunkExplode for ListChunked {
 }
 
 impl ChunkExplode for Utf8Chunked {
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)> {
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -471,12 +463,13 @@ impl ChunkExplode for Utf8Chunked {
             // capacity estimate
             let capacity = self.get_values_size() + validity.unset_bits();
 
+            let old_offsets = old_offsets.as_slice();
+            let mut old_offset = old_offsets[0];
             let mut new_offsets = Vec::with_capacity(capacity + 1);
-            new_offsets.push(0i64);
+            new_offsets.push(old_offset);
 
             let mut bitmap = MutableBitmap::with_capacity(capacity);
             let values = values.as_slice();
-            let mut old_offset = 0i64;
             for (&offset, valid) in old_offsets[1..].iter().zip(validity) {
                 // safety:
                 // new_offsets already has a single value, so -1 is always in bounds
@@ -521,11 +514,12 @@ impl ChunkExplode for Utf8Chunked {
 
             // capacity estimate
             let capacity = self.get_values_size();
+            let old_offsets = old_offsets.as_slice();
+            let mut old_offset = old_offsets[0];
             let mut new_offsets = Vec::with_capacity(capacity + 1);
-            new_offsets.push(0i64);
+            new_offsets.push(old_offset);
 
             let values = values.as_slice();
-            let mut old_offset = 0i64;
             for &offset in &old_offsets[1..] {
                 // safety:
                 // new_offsets already has a single value, so -1 is always in bounds
@@ -617,23 +611,6 @@ mod test {
             Vec::from(out.utf8().unwrap()),
             &[None, Some("b"), Some("c"), None]
         );
-        Ok(())
-    }
-
-    #[test]
-    fn test_explode_empty_list() -> PolarsResult<()> {
-        let mut builder = get_list_builder(&DataType::Int32, 1, 1, "a")?;
-
-        let vals: [i32; 0] = [];
-
-        builder.append_series(&Series::new("", &vals));
-        let ca = builder.finish();
-
-        // normal explode
-        let exploded = ca.explode()?;
-        assert_eq!(exploded.len(), 0);
-        assert_eq!(exploded.dtype(), &DataType::Int32);
-
         Ok(())
     }
 

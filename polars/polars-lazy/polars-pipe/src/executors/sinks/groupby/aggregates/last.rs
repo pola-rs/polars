@@ -1,13 +1,13 @@
 use std::any::Any;
 
 use polars_core::datatypes::DataType;
-use polars_core::prelude::AnyValue;
+use polars_core::prelude::{AnyValue, Series};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::groupby::aggregates::AggregateFn;
 use crate::operators::IdxSize;
 
-pub struct LastAgg {
+pub(crate) struct LastAgg {
     chunk_idx: IdxSize,
     last: AnyValue<'static>,
     pub(crate) dtype: DataType,
@@ -28,6 +28,21 @@ impl AggregateFn for LastAgg {
         let item = unsafe { item.next().unwrap_unchecked_release() };
         self.chunk_idx = chunk_idx;
         self.last = unsafe { item.into_static().unwrap_unchecked() };
+    }
+    fn pre_agg_ordered(
+        &mut self,
+        chunk_idx: IdxSize,
+        offset: IdxSize,
+        length: IdxSize,
+        values: &Series,
+    ) {
+        self.chunk_idx = chunk_idx;
+        self.last = unsafe {
+            values
+                .get_unchecked((offset + length - 1) as usize)
+                .into_static()
+                .unwrap_unchecked()
+        }
     }
 
     fn dtype(&self) -> DataType {

@@ -28,12 +28,13 @@ where
                     .map(|(l, r)| *l & *r)
                     .collect_trusted::<Vec<_>>();
 
-                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
+                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
                 Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::from_chunks(self.name(), chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -60,12 +61,13 @@ where
                     .map(|(l, r)| *l | *r)
                     .collect_trusted::<Vec<_>>();
 
-                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
+                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
                 Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::from_chunks(self.name(), chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -92,12 +94,13 @@ where
                     .map(|(l, r)| l.bitxor(*r))
                     .collect_trusted::<Vec<_>>();
 
-                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
+                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
                 Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::from_chunks(self.name(), chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -136,7 +139,8 @@ impl BitOr for &BooleanChunked {
             .zip(rhs.downcast_iter())
             .map(|(lhs, rhs)| Box::new(compute::boolean_kleene::or(lhs, rhs)) as ArrayRef)
             .collect();
-        BooleanChunked::from_chunks(self.name(), chunks)
+        // safety: same type
+        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -194,7 +198,8 @@ impl BitXor for &BooleanChunked {
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::from_chunks(self.name(), chunks)
+        // safety: same type
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -237,7 +242,8 @@ impl BitAnd for &BooleanChunked {
             .zip(rhs.downcast_iter())
             .map(|(lhs, rhs)| Box::new(compute::boolean_kleene::and(lhs, rhs)) as ArrayRef)
             .collect();
-        BooleanChunked::from_chunks(self.name(), chunks)
+        // safety: same type
+        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 }
 

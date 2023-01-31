@@ -5,12 +5,29 @@ import functools
 import os
 import sys
 import warnings
-from datetime import date, datetime, time, timedelta, timezone
+from collections.abc import MappingView, Reversible, Sized
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generator,
+    Iterable,
+    Sequence,
+    TypeVar,
+    cast,
+    overload,
+)
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
+from polars.datatypes import (
+    Date,
+    Datetime,
+    Int64,
+    PolarsDataType,
+    is_polars_dtype,
+)
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 try:
@@ -25,6 +42,13 @@ if sys.version_info >= (3, 10):
     from typing import ParamSpec, TypeGuard
 else:
     from typing_extensions import ParamSpec, TypeGuard
+
+# note: reversed views don't match as instances of MappingView
+if sys.version_info >= (3, 11):
+    _reverse_mapping_views = tuple(
+        type(reversed(cast(Reversible[Any], view)))
+        for view in ({}.keys(), {}.values(), {}.items())
+    )
 
 
 if TYPE_CHECKING:
@@ -95,6 +119,14 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int
         raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
 
 
+def _is_generator(val: object) -> bool:
+    return (
+        (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
+        or isinstance(val, MappingView)
+        or (sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views))
+    )
+
+
 def _date_to_pl_date(d: date) -> int:
     dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
     return int(dt.timestamp()) // (3600 * 24)
@@ -144,6 +176,19 @@ def is_str_sequence(
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
+def range_to_series(
+    name: str, rng: range, dtype: PolarsDataType | None = Int64
+) -> pli.Series:
+    """Fast conversion of the given range to a Series."""
+    return pli.arange(
+        low=rng.start,
+        high=rng.stop,
+        step=rng.step,
+        eager=True,
+        dtype=dtype,
+    ).rename(name, in_place=True)
+
+
 def range_to_slice(rng: range) -> slice:
     """Return the given range as an equivalent slice."""
     return slice(rng.start, rng.stop, rng.step)
@@ -162,8 +207,16 @@ def handle_projection_columns(
             columns = None
         elif not is_str_sequence(columns):
             raise ValueError(
-                "columns arg should contain a list of all integers or all strings"
+                "'columns' arg should contain a list of all integers or all strings"
                 " values."
+            )
+        if columns and len(set(columns)) != len(columns):
+            raise ValueError(
+                f"'columns' arg should only have unique values. Got '{columns}'."
+            )
+        if projection and len(set(projection)) != len(projection):
+            raise ValueError(
+                f"'columns' arg should only have unique values. Got '{projection}'."
             )
     return projection, columns  # type: ignore[return-value]
 
@@ -207,7 +260,7 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 
 def _to_python_datetime(
     value: int | float,
-    dtype: type[DataType],
+    dtype: PolarsDataType,
     tu: TimeUnit | None = "ns",
     tz: str | None = None,
 ) -> date | datetime:
@@ -256,13 +309,32 @@ def _to_python_datetime(
         raise NotImplementedError  # pragma: no cover
 
 
+# cache here as we have a single tz per column
+# and this function will be called on every conversion
+@functools.lru_cache(16)
+def _parse_fixed_tz_offset(offset: str) -> tzinfo:
+    try:
+        # use fromisoformat to parse the offset
+        dt_offset = datetime.fromisoformat("2000-01-01T00:00:00" + offset)
+
+        # alternatively, we parse the offset ourselves extracting hours and
+        # minutes, then we can construct:
+        # tzinfo=timezone(timedelta(hours=..., minutes=...))
+    except ValueError:
+        raise ValueError(f"Offset: {offset} not understood.") from None
+
+    return dt_offset.tzinfo  # type: ignore[return-value]
+
+
 def _localize(dt: datetime, tz: str) -> datetime:
-    if not _ZONEINFO_AVAILABLE:
-        raise ImportError(
-            "backports.zoneinfo is not installed. Please run "
-            "`pip install backports.zoneinfo`."
-        )
-    return dt.astimezone(zoneinfo.ZoneInfo(tz))
+    # zone info installation should already be checked
+    try:
+        tzinfo = zoneinfo.ZoneInfo(tz)
+    except zoneinfo.ZoneInfoNotFoundError:
+        # try fixed offset, which is not supported by ZoneInfo
+        tzinfo = _parse_fixed_tz_offset(tz)  # type: ignore[assignment]
+
+    return dt.astimezone(tzinfo)
 
 
 def _in_notebook() -> bool:
@@ -278,9 +350,20 @@ def _in_notebook() -> bool:
     return True
 
 
-def format_path(path: str | Path) -> str:
+def arrlen(obj: Any) -> int | None:
+    """Return length of (non-string) sequence object; returns None for non-sequences."""
+    try:
+        return None if isinstance(obj, str) else len(obj)
+    except TypeError:
+        return None
+
+
+def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> str:
     """Create a string path, expanding the home directory if present."""
-    return os.path.expanduser(path)
+    path = os.path.expanduser(path)
+    if check_not_directory and os.path.exists(path) and os.path.isdir(path):
+        raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
+    return path
 
 
 def threadpool_size() -> int:
@@ -314,6 +397,34 @@ def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T
     return deco
 
 
+def redirect(from_to: dict[str, str]) -> Callable[[type[T]], type[T]]:
+    """
+    Class decorator allowing deprecation/transition from one method name to another.
+
+    The parameters must be the same (unless they are being renamed, in
+    which case you can use this in conjunction with @deprecated_alias).
+    """
+
+    def _redirecting_getattr_(obj: T, item: Any) -> Any:
+        if isinstance(item, str) and item in from_to:
+            new_item = from_to[item]
+            warnings.warn(
+                f"`{type(obj).__name__}.{item}` has been renamed; this"
+                f" redirect is temporary, please use `.{new_item}` instead",
+                category=DeprecationWarning,
+                stacklevel=2,
+            )
+            item = new_item
+        return obj.__getattribute__(item)
+
+    def _cls_(cls: type[T]) -> type[T]:
+        # note: __getattr__ is only invoked if item isn't found on the class
+        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
+        return cls
+
+    return _cls_
+
+
 def _rename_kwargs(
     func_name: str, kwargs: dict[str, object], aliases: dict[str, str]
 ) -> None:
@@ -340,31 +451,39 @@ def _rename_kwargs(
             kwargs[new] = kwargs.pop(alias)
 
 
-if not os.getenv("BUILDING_SPHINX_DOCS"):
-    # if NOT building docs we use a simple @property decorator for namespace accessors,
-    # which plays much better with mypy, pylint, and the various IDEs' autocomplete.
-    accessor = property
-else:
-    # however, when building docs (with Sphinx) we need access to the functions
-    # associated with the namespaces from the class, as we don't have an instance.
-    NS = TypeVar("NS")
+# when building docs (with Sphinx) we need access to the functions
+# associated with the namespaces from the class, as we don't have
+# an instance; @sphinx_accessor is a @property that allows this.
+NS = TypeVar("NS")
 
-    class accessor(property):  # type: ignore[no-redef]
-        def __get__(self, instance: Any, cls: type[NS]) -> NS:  # type: ignore[override]
+
+class sphinx_accessor(property):
+    def __get__(  # type: ignore[override]
+        self,
+        instance: Any,
+        cls: type[NS],
+    ) -> NS:
+        try:
             return self.fget(  # type: ignore[misc]
                 instance if isinstance(instance, cls) else cls
             )
+        except AttributeError:
+            return None  # type: ignore[return-value]
 
 
-def scale_bytes(sz: int, to: SizeUnit) -> int | float:
+def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
     """Scale size in bytes to other size units (eg: "kb", "mb", "gb", "tb")."""
-    scaling_factor = {
-        "b": 1,
-        "k": 1024,
-        "m": 1024**2,
-        "g": 1024**3,
-        "t": 1024**4,
-    }[to[0]]
-    if scaling_factor > 1:
-        return sz / scaling_factor
-    return sz
+    if unit in {"b", "bytes"}:
+        return sz
+    elif unit in {"kb", "kilobytes"}:
+        return sz / 1024
+    elif unit in {"mb", "megabytes"}:
+        return sz / 1024**2
+    elif unit in {"gb", "gigabytes"}:
+        return sz / 1024**3
+    elif unit in {"tb", "terabytes"}:
+        return sz / 1024**4
+    else:
+        raise ValueError(
+            f"unit must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
+        )

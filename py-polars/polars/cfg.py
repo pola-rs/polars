@@ -4,11 +4,19 @@ import json
 import os
 import sys
 from types import TracebackType
+from typing import Any
 
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+try:
+    from polars.polars import set_float_fmt as _set_float_fmt
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 
 # note: register all Config-specific environment variable names here; need to constrain
@@ -26,11 +34,13 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR",
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
+    "POLARS_FMT_TABLE_ROUNDED_CORNERS",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
 }
-# register Config-local attributes (with their defaults) here
-POLARS_CFG_LOCAL_VARS = {"with_columns_kwargs": False}
+# register Config-local attributes (with their defaults) here,
+# eg: => {"misc_config_attr":True, "other_config_attr":False, etc}
+POLARS_CFG_LOCAL_VARS: dict[str, Any] = {}
 
 
 class Config:
@@ -66,7 +76,7 @@ class Config:
 
     # note: class-local attributes can be used for options that don't have
     # a Rust component (so, no need to register environment variables).
-    with_columns_kwargs: bool = False
+    # eg: misc_config_attr:bool = True
 
     @classmethod
     def load(cls, cfg: str) -> type[Config]:
@@ -105,6 +115,7 @@ class Config:
             os.environ.pop(var, None)
         for flag, value in POLARS_CFG_LOCAL_VARS.items():
             setattr(cls, flag, value)
+        cls.set_fmt_float()
         return cls
 
     @classmethod
@@ -169,14 +180,12 @@ class Config:
         # │ f64 ┆ bool  │      | f64 | bool  |
         # ╞═════╪═══════╡      +=============+
         # │ 1.0 ┆ true  │  >>  | 1.0 | true  |
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      |-----+-------|
         # │ 2.5 ┆ false │      | 2.5 | false |
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      |-----+-------|
         # │ 5.0 ┆ true  │      | 5.0 | true  |
         # └─────┴───────┘      +-----+-------+
 
         """
-        fmt = "ASCII_FULL" if active else "UTF8_FULL"
+        fmt = "ASCII_FULL_CONDENSED" if active else "UTF8_FULL_CONDENSED"
         os.environ["POLARS_FMT_TABLE_FORMATTING"] = fmt
         return cls
 
@@ -222,9 +231,7 @@ class Config:
         # │        f64 ┆       bool │
         # ╞════════════╪════════════╡
         # │        1.0 ┆       true │
-        # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         # │        2.5 ┆      false │
-        # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         # │        5.0 ┆       true │
         # └────────────┴────────────┘
 
@@ -294,11 +301,9 @@ class Config:
         # │ abc ┆ xyz   │      │ abc (f64) ┆ xyz (bool) │
         # │ --- ┆ ---   │      ╞═══════════╪════════════╡
         # │ f64 ┆ bool  │      │ 1.0       ┆ true       │
-        # ╞═════╪═══════╡      ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        # │ 1.0 ┆ true  │  >>  │ 2.5       ┆ false      │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        # │ 2.5 ┆ false │      │ 5.0       ┆ true       │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └───────────┴────────────┘
+        # ╞═════╪═══════╡  >>  │ 2.5       ┆ false      │
+        # │ 1.0 ┆ true  │      │ 5.0       ┆ true       │
+        # │ 2.5 ┆ false │      └───────────┴────────────┘
         # │ 5.0 ┆ true  │
         # └─────┴───────┘
 
@@ -321,11 +326,9 @@ class Config:
         # │ abc ┆ xyz   │      │ --- ┆ ---   │
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
         # │ f64 ┆ bool  │      ╞═════╪═══════╡
-        # ╞═════╪═══════╡      │ 1.0 ┆ true  │
-        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
-        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # ╞═════╪═══════╡  >>  │ 1.0 ┆ true  │
+        # │ 1.0 ┆ true  │      │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
         # └─────┴───────┘      shape: (3, 2)
 
@@ -336,20 +339,25 @@ class Config:
     @classmethod
     def set_tbl_formatting(
         cls,
-        format: Literal[
-            "ASCII_FULL",
-            "ASCII_NO_BORDERS",
-            "ASCII_BORDERS_ONLY",
-            "ASCII_BORDERS_ONLY_CONDENSED",
-            "ASCII_HORIZONTAL_ONLY",
-            "ASCII_MARKDOWN",
-            "UTF8_FULL",
-            "UTF8_FULL_CONDENSED",
-            "UTF8_NO_BORDERS",
-            "UTF8_BORDERS_ONLY",
-            "UTF8_HORIZONTAL_ONLY",
-            "NOTHING",
-        ],
+        format: (
+            Literal[
+                "ASCII_FULL",
+                "ASCII_FULL_CONDENSED",
+                "ASCII_NO_BORDERS",
+                "ASCII_BORDERS_ONLY",
+                "ASCII_BORDERS_ONLY_CONDENSED",
+                "ASCII_HORIZONTAL_ONLY",
+                "ASCII_MARKDOWN",
+                "UTF8_FULL",
+                "UTF8_FULL_CONDENSED",
+                "UTF8_NO_BORDERS",
+                "UTF8_BORDERS_ONLY",
+                "UTF8_HORIZONTAL_ONLY",
+                "NOTHING",
+            ]
+            | None
+        ) = None,
+        rounded_corners: bool = False,
     ) -> type[Config]:
         """
         Set table formatting style.
@@ -357,18 +365,22 @@ class Config:
         Parameters
         ----------
         format : str
-            * "ASCII_FULL": ASCII, borders / lines.
+            * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
+            * "ASCII_FULL_CONDENSED": Same as ASCII_FULL, but with dense row spacing.
             * "ASCII_NO_BORDERS": ASCII, no borders.
             * "ASCII_BORDERS_ONLY": ASCII, borders only.
             * "ASCII_BORDERS_ONLY_CONDENSED": ASCII, borders only, dense row spacing.
             * "ASCII_HORIZONTAL_ONLY": ASCII, horizontal lines only.
             * "ASCII_MARKDOWN": ASCII, Markdown compatible.
-            * "UTF8_FULL": UTF8, with all borders and lines (default).
-            * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, with dense row spacing.
+            * "UTF8_FULL": UTF8, with all borders and lines, including row dividers.
+            * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, but with dense row spacing.
             * "UTF8_NO_BORDERS": UTF8, no borders.
             * "UTF8_BORDERS_ONLY": UTF8, borders only.
             * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
             * "NOTHING": No borders or other lines.
+
+        rounded_corners : bool
+            apply rounded corners to UTF8-styled tables (no-op for ASCII formats).
 
         Notes
         -----
@@ -383,7 +395,9 @@ class Config:
         """
         # can see what the different styles look like in the comfy-table tests:
         # https://github.com/Nukesor/comfy-table/blob/main/tests/all/presets_test.rs
-        os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
+        if format:
+            os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
+        os.environ["POLARS_FMT_TABLE_ROUNDED_CORNERS"] = str(int(rounded_corners))
         return cls
 
     @classmethod
@@ -401,11 +415,9 @@ class Config:
         # │ abc ┆ xyz   │      │ abc ┆ xyz   │
         # │ --- ┆ ---   │      ╞═════╪═══════╡
         # │ f64 ┆ bool  │      │ 1.0 ┆ true  │
-        # ╞═════╪═══════╡      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └─────┴───────┘
+        # ╞═════╪═══════╡  >>  │ 2.5 ┆ false │
+        # │ 1.0 ┆ true  │      │ 5.0 ┆ true  │
+        # │ 2.5 ┆ false │      └─────┴───────┘
         # │ 5.0 ┆ true  │
         # └─────┴───────┘
 
@@ -428,11 +440,9 @@ class Config:
         # │ abc ┆ xyz   │      │ f64 ┆ bool  │
         # │ --- ┆ ---   │      ╞═════╪═══════╡
         # │ f64 ┆ bool  │      │ 1.0 ┆ true  │
-        # ╞═════╪═══════╡      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └─────┴───────┘
+        # ╞═════╪═══════╡  >>  │ 2.5 ┆ false │
+        # │ 1.0 ┆ true  │      │ 5.0 ┆ true  │
+        # │ 2.5 ┆ false │      └─────┴───────┘
         # │ 5.0 ┆ true  │
         # └─────┴───────┘
 
@@ -456,10 +466,8 @@ class Config:
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
         # │ f64 ┆ bool  │      ╞═════╪═══════╡
         # ╞═════╪═══════╡      │ 1.0 ┆ true  │
-        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
-        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
         # └─────┴───────┘
 
@@ -487,10 +495,8 @@ class Config:
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
         # │ f64 ┆ bool  │      ╞═════╪═══════╡
         # ╞═════╪═══════╡      │ 1.0 ┆ true  │
-        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
-        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
         # └─────┴───────┘
 
@@ -525,9 +531,7 @@ class Config:
         # │ f64 ┆ bool  │
         # ╞═════╪═══════╡
         # │ 1.0 ┆ true  │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         # │ ... ┆ ...   │
-        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         # │ 5.0 ┆ false │
         # └─────┴───────┘
 
@@ -553,4 +557,18 @@ class Config:
     def set_verbose(cls, active: bool = True) -> type[Config]:
         """Enable additional verbose/debug logging."""
         os.environ["POLARS_VERBOSE"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_fmt_float(cls, fmt: str = "mixed") -> type[Config]:
+        """
+        Control how floating  point values are displayed.
+
+        Parameters
+        ----------
+        fmt : {"mixed", "full"}
+            How to format floating point numbers
+
+        """
+        _set_float_fmt(fmt)
         return cls

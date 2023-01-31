@@ -189,7 +189,7 @@ mod inner_mod {
         where
             F: FnMut(&mut ChunkedArray<T>) -> Option<T::Native>,
         {
-            if window_size >= self.len() {
+            if window_size > self.len() {
                 return Ok(Self::full_null(self.name(), self.len()));
             }
             let ca = self.rechunk();
@@ -241,12 +241,12 @@ mod inner_mod {
                     }
                 }
             }
-            let arr = PrimitiveArray::from_data(
+            let arr = PrimitiveArray::new(
                 T::get_dtype().to_arrow(),
                 values.into(),
                 Some(validity.into()),
             );
-            Ok(Self::from_chunks(self.name(), vec![Box::new(arr)]))
+            unsafe { Ok(Self::from_chunks(self.name(), vec![Box::new(arr)])) }
         }
     }
 }

@@ -1,5 +1,9 @@
+// used only if feature="temporal", "dtype-date", "dynamic_groupby"
+#[allow(unused_imports)]
 use polars::export::chrono::prelude::*;
 
+// used only if feature="temporal", "dtype-date", "dynamic_groupby"
+#[allow(unused_imports)]
 use super::*;
 
 #[test]
@@ -25,7 +29,7 @@ fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
         None,
-    )
+    )?
     .into_series();
 
     let a = Int32Chunked::full("a", 1, range.len());
@@ -52,7 +56,7 @@ fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
         .agg([col("a").sum()])
         .collect()?;
     let a = out.column("a")?;
-    assert_eq!(a.get(0), AnyValue::Int32(7));
-    assert_eq!(a.get(1), AnyValue::Int32(6));
+    assert_eq!(a.get(0)?, AnyValue::Int32(7));
+    assert_eq!(a.get(1)?, AnyValue::Int32(6));
     Ok(())
 }

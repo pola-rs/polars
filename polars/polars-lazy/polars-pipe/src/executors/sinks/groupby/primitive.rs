@@ -4,9 +4,11 @@ use std::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
 use num::NumCast;
+use polars_arrow::kernels::sort_partition::partition_to_groups_amortized;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_core::POOL;
 use polars_utils::hash_to_partition;
@@ -67,13 +69,16 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     aggregation_series: Vec<Series>,
     hashes: Vec<u64>,
     slice: Option<(i64, usize)>,
+    // for sorted fast paths
+    sort_partitions: Vec<[IdxSize; 2]>,
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
+    K::Native: VecHashSingle,
 {
-    pub fn new(
+    pub(crate) fn new(
         key: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<AggregateFunction>,
@@ -101,6 +106,7 @@ where
             aggregation_series: vec![],
             hashes: vec![],
             slice,
+            sort_partitions: vec![],
         }
     }
 
@@ -174,30 +180,73 @@ where
             Ok(dfs)
         })
     }
+
+    fn sink_sorted(&mut self, ca: &ChunkedArray<K>, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        let arr = ca.downcast_iter().next().unwrap();
+        let values = arr.values().as_slice();
+        partition_to_groups_amortized(values, 0, false, 0, &mut self.sort_partitions);
+
+        let k = K::Native::get_k(self.hb.clone());
+        let pre_agg_len = self.pre_agg_partitions.len();
+        let num_aggs = self.number_of_aggs() as IdxSize;
+
+        for group in &self.sort_partitions {
+            let [offset, length] = group;
+            let first_g_value = unsafe { *values.get_unchecked_release(*offset as usize) };
+            let h = first_g_value._vec_hash_single(k);
+
+            let agg_idx = insert_and_get(
+                h,
+                Some(first_g_value),
+                pre_agg_len,
+                &mut self.pre_agg_partitions,
+                &mut self.aggregators,
+                &self.agg_fns,
+            );
+
+            for (i, aggregation_s) in (0..num_aggs).zip(&self.aggregation_series) {
+                let agg_fn = unsafe {
+                    self.aggregators
+                        .get_unchecked_release_mut((agg_idx + i) as usize)
+                };
+                agg_fn.pre_agg_ordered(chunk.chunk_index, *offset, *length, aggregation_s)
+            }
+        }
+        self.aggregation_series.clear();
+        Ok(SinkResult::CanHaveMoreInput)
+    }
 }
 
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
-    K::Native: Hash + Eq + Debug,
+    K::Native: Hash + Eq + Debug + VecHashSingle,
     ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        let state = context.execution_state.as_ref();
-        if !state.input_schema_is_set() {
-            state.set_input_schema(self.input_schema.clone())
-        }
-        let num_aggs = self.number_of_aggs();
-
         let s = self
             .key
             .evaluate(&chunk, context.execution_state.as_any())?;
         let s = s.to_physical_repr();
         let s = s.rechunk();
 
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
-
         // cow -> &series -> &dyn series_trait -> &chunkedarray
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
+
+        // todo! ammortize allocation
+        for phys_e in self.aggregation_columns.iter() {
+            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
+            let s = s.to_physical_repr();
+            self.aggregation_series.push(s.rechunk());
+        }
+
+        // sorted fast path
+        if matches!(ca.is_sorted_flag2(), IsSorted::Ascending) && ca.null_count() == 0 {
+            return self.sink_sorted(ca, chunk);
+        }
+
+        let num_aggs = self.number_of_aggs();
+
+        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
 
         // write the hashes to self.hashes buffer
         // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
@@ -207,42 +256,18 @@ where
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = self.hashes.as_ptr() as *mut i64 as *mut IdxSize;
 
-        // todo! ammortize allocation
-        for phys_e in self.aggregation_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
-            let s = s.to_physical_repr();
-            self.aggregation_series.push(s.rechunk());
-        }
-
         let arr = ca.downcast_iter().next().unwrap();
+        let pre_agg_len = self.pre_agg_partitions.len();
         for (iteration_idx, (opt_v, &h)) in arr.iter().zip(self.hashes.iter()).enumerate() {
             let opt_v = opt_v.copied();
-            let part = hash_to_partition(h, self.pre_agg_partitions.len());
-            let current_partition =
-                unsafe { self.pre_agg_partitions.get_unchecked_release_mut(part) };
-            let current_aggregators = &mut self.aggregators;
-
-            let entry = current_partition
-                .raw_entry_mut()
-                .from_hash(h, |k| k.value == opt_v);
-            let agg_idx = match entry {
-                RawEntryMut::Vacant(entry) => {
-                    let offset = unsafe {
-                        NumCast::from(current_aggregators.len()).unwrap_unchecked_release()
-                    };
-                    let key = Key {
-                        hash: h,
-                        value: opt_v,
-                    };
-                    entry.insert(key, offset);
-                    // initialize the aggregators
-                    for agg_fn in &self.agg_fns {
-                        current_aggregators.push(agg_fn.split2())
-                    }
-                    offset
-                }
-                RawEntryMut::Occupied(entry) => *entry.get(),
-            };
+            let agg_idx = insert_and_get(
+                h,
+                opt_v,
+                pre_agg_len,
+                &mut self.pre_agg_partitions,
+                &mut self.aggregators,
+                &self.agg_fns,
+            );
             // # Safety
             // we write to the hashes buffer we iterate over at the moment.
             // this is sound because we writes are trailing from iteration
@@ -307,8 +332,7 @@ where
             });
     }
 
-    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        context.execution_state.clear_input_schema();
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
         if dfs.is_empty() {
             return Ok(FinalizedSink::Finished(DataFrame::from(
@@ -335,5 +359,44 @@ where
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+    fn fmt(&self) -> &str {
+        "primitive_groupby"
+    }
+}
+
+fn insert_and_get<T>(
+    h: u64,
+    opt_v: Option<T>,
+    pre_agg_len: usize,
+    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    current_aggregators: &mut Vec<AggregateFunction>,
+    agg_fns: &Vec<AggregateFunction>,
+) -> IdxSize
+where
+    T: NumericNative + VecHashSingle,
+{
+    let part = hash_to_partition(h, pre_agg_len);
+    let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
+
+    let entry = current_partition
+        .raw_entry_mut()
+        .from_hash(h, |k| k.value == opt_v);
+    match entry {
+        RawEntryMut::Vacant(entry) => {
+            let offset =
+                unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked_release() };
+            let key = Key {
+                hash: h,
+                value: opt_v,
+            };
+            entry.insert(key, offset);
+            // initialize the aggregators
+            for agg_fn in agg_fns {
+                current_aggregators.push(agg_fn.split2())
+            }
+            offset
+        }
+        RawEntryMut::Occupied(entry) => *entry.get(),
     }
 }

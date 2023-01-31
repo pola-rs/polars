@@ -25,8 +25,8 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn _set_sorted(&mut self, is_sorted: IsSorted) {
-        self.0.set_sorted2(is_sorted)
+    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
+        self.0.set_sorted_flag(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -158,7 +158,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.cast(data_type)
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         self.0.get_any_value(index)
     }
 

@@ -32,25 +32,8 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::from_chunks("", chunks)
+        unsafe { ChunkedArray::from_chunks("", chunks) }
     }
-}
-
-macro_rules! impl_eq_missing {
-    ($self:ident, $rhs:ident) => {{
-        match ($self.has_validity(), $rhs.has_validity()) {
-            (false, false) => $self
-                .into_no_null_iter()
-                .zip($rhs.into_no_null_iter())
-                .map(|(opt_a, opt_b)| opt_a == opt_b)
-                .collect(),
-            (_, _) => $self
-                .into_iter()
-                .zip($rhs)
-                .map(|(opt_a, opt_b)| opt_a == opt_b)
-                .collect(),
-        }
-    }};
 }
 
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
@@ -58,10 +41,6 @@ where
     T: PolarsNumericType,
 {
     type Item = BooleanChunked;
-
-    fn eq_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        impl_eq_missing!(self, rhs)
-    }
 
     fn equal(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // broadcast
@@ -225,15 +204,11 @@ fn compare_bools(
         .map(|(l, r)| Box::new(f(l, r)) as ArrayRef)
         .collect();
 
-    BooleanChunked::from_chunks(lhs.name(), chunks)
+    unsafe { BooleanChunked::from_chunks(lhs.name(), chunks) }
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
     type Item = BooleanChunked;
-
-    fn eq_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        impl_eq_missing!(self, rhs)
-    }
 
     fn equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // broadcast
@@ -259,7 +234,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                         }
                                     })
                                     .collect();
-                                BooleanChunked::from_chunks("", chunks)
+                                unsafe { BooleanChunked::from_chunks("", chunks) }
                             }
                         }
                         false => {
@@ -278,12 +253,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                             as ArrayRef
                                     })
                                     .collect();
-                                BooleanChunked::from_chunks("", chunks)
+                                unsafe { BooleanChunked::from_chunks("", chunks) }
                             }
                         }
                     }
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    self.is_null()
                 }
             }
             (1, _) => rhs.equal(self),
@@ -317,7 +292,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                             as ArrayRef
                                     })
                                     .collect();
-                                BooleanChunked::from_chunks("", chunks)
+                                unsafe { BooleanChunked::from_chunks("", chunks) }
                             }
                         }
                         false => {
@@ -336,12 +311,12 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                             as ArrayRef
                                     })
                                     .collect();
-                                BooleanChunked::from_chunks("", chunks)
+                                unsafe { BooleanChunked::from_chunks("", chunks) }
                             }
                         }
                     }
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    self.is_not_null()
                 }
             }
             (1, _) => rhs.not_equal(self),
@@ -494,16 +469,12 @@ impl Utf8Chunked {
                 Box::new(arr) as ArrayRef
             })
             .collect();
-        BooleanChunked::from_chunks("", chunks)
+        unsafe { BooleanChunked::from_chunks("", chunks) }
     }
 }
 
 impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     type Item = BooleanChunked;
-
-    fn eq_missing(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        impl_eq_missing!(self, rhs)
-    }
 
     fn equal(&self, rhs: &Utf8Chunked) -> BooleanChunked {
         // broadcast
@@ -511,13 +482,13 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             if let Some(value) = rhs.get(0) {
                 self.equal(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                self.is_null()
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.equal(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                self.is_null()
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -531,13 +502,13 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             if let Some(value) = rhs.get(0) {
                 self.not_equal(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                self.is_not_null()
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.not_equal(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                self.is_not_null()
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -653,17 +624,13 @@ impl BinaryChunked {
                 Box::new(arr) as ArrayRef
             })
             .collect();
-        BooleanChunked::from_chunks("", chunks)
+        unsafe { BooleanChunked::from_chunks("", chunks) }
     }
 }
 
 #[cfg(feature = "dtype-binary")]
 impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     type Item = BooleanChunked;
-
-    fn eq_missing(&self, rhs: &BinaryChunked) -> BooleanChunked {
-        impl_eq_missing!(self, rhs)
-    }
 
     fn equal(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // broadcast
@@ -820,10 +787,6 @@ where
     Rhs: ToPrimitive,
 {
     type Item = BooleanChunked;
-    fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
-        self.equal(rhs)
-    }
-
     fn equal(&self, rhs: Rhs) -> BooleanChunked {
         self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
@@ -862,10 +825,6 @@ impl Utf8Chunked {
 
 impl ChunkCompare<&str> for Utf8Chunked {
     type Item = BooleanChunked;
-    fn eq_missing(&self, rhs: &str) -> BooleanChunked {
-        self.equal(rhs)
-    }
-
     fn equal(&self, rhs: &str) -> BooleanChunked {
         self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
@@ -905,10 +864,6 @@ impl BinaryChunked {
 #[cfg(feature = "dtype-binary")]
 impl ChunkCompare<&[u8]> for BinaryChunked {
     type Item = BooleanChunked;
-    fn eq_missing(&self, rhs: &[u8]) -> BooleanChunked {
-        self.equal(rhs)
-    }
-
     fn equal(&self, rhs: &[u8]) -> BooleanChunked {
         self.binary_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
@@ -933,76 +888,31 @@ impl ChunkCompare<&[u8]> for BinaryChunked {
     }
 }
 
-macro_rules! impl_cmp_list {
-    ($self:ident, $rhs:ident, $cmp_method:ident) => {{
-        match ($self.has_validity(), $rhs.has_validity()) {
-            (false, false) => $self
-                .into_no_null_iter()
-                .zip($rhs.into_no_null_iter())
-                .map(|(left, right)| left.$cmp_method(&right))
-                .collect_trusted(),
-            (false, _) => $self
-                .into_no_null_iter()
-                .zip($rhs.into_iter())
-                .map(|(left, opt_right)| opt_right.map(|right| left.$cmp_method(&right)))
-                .collect_trusted(),
-            (_, false) => $self
-                .into_iter()
-                .zip($rhs.into_no_null_iter())
-                .map(|(opt_left, right)| opt_left.map(|left| left.$cmp_method(&right)))
-                .collect_trusted(),
-            (_, _) => $self
-                .into_iter()
-                .zip($rhs.into_iter())
-                .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
-                    (None, None) => None,
-                    (None, Some(_)) => None,
-                    (Some(_), None) => None,
-                    (Some(left), Some(right)) => Some(left.$cmp_method(&right)),
-                })
-                .collect_trusted(),
-        }
-    }};
-}
-
 impl ChunkCompare<&ListChunked> for ListChunked {
     type Item = BooleanChunked;
-    fn eq_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        match (self.has_validity(), rhs.has_validity()) {
-            (false, false) => self
-                .into_no_null_iter()
-                .zip(rhs.into_no_null_iter())
-                .map(|(left, right)| left.eq(&right))
-                .collect_trusted(),
-            (false, _) => self
-                .into_no_null_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, opt_right)| opt_right.map(|right| left.eq(&right)))
-                .collect_trusted(),
-            (_, false) => self
-                .into_iter()
-                .zip(rhs.into_no_null_iter())
-                .map(|(opt_left, right)| opt_left.map(|left| left.eq(&right)))
-                .collect_trusted(),
-            (_, _) => self
-                .into_iter()
-                .zip(rhs.into_iter())
-                .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
-                    (None, None) => true,
-                    (None, Some(_)) => false,
-                    (Some(_), None) => false,
-                    (Some(left), Some(right)) => left.eq(&right),
-                })
-                .collect_trusted(),
-        }
-    }
-
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        impl_cmp_list!(self, rhs, series_equal)
+        self.amortized_iter()
+            .zip(rhs.amortized_iter())
+            .map(|(left, right)| match (left, right) {
+                (None, None) => true,
+                (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
+                _ => false,
+            })
+            .collect_trusted()
     }
 
     fn not_equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        self.equal(rhs).not()
+        self.amortized_iter()
+            .zip(rhs.amortized_iter())
+            .map(|(left, right)| {
+                let out = match (left, right) {
+                    (None, None) => true,
+                    (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
+                    _ => false,
+                };
+                !out
+            })
+            .collect_trusted()
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense
@@ -1034,7 +944,7 @@ impl Not for &BooleanChunked {
                 Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
-        ChunkedArray::from_chunks(self.name(), chunks)
+        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -1117,10 +1027,6 @@ impl ChunkEqualElement for ListChunked {}
 #[cfg(feature = "dtype-struct")]
 impl ChunkCompare<&StructChunked> for StructChunked {
     type Item = BooleanChunked;
-    fn eq_missing(&self, rhs: &StructChunked) -> BooleanChunked {
-        self.equal(rhs)
-    }
-
     fn equal(&self, rhs: &StructChunked) -> BooleanChunked {
         use std::ops::BitAnd;
         if self.len() != rhs.len() || self.fields().len() != rhs.fields().len() {

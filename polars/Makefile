@@ -94,8 +94,9 @@ publish:
 	sleep 20
 	cargo publish --allow-dirty -p polars-core
 	sleep 20
-	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-ops
+	sleep 20
+	cargo publish --allow-dirty -p polars-time
 	sleep 20
 	cargo publish --allow-dirty -p polars-io
 	sleep 20
@@ -113,5 +114,5 @@ publish:
 
 .PHONY: help
 help:  ## Display this help screen
-	@echo -e '\033[1mAvailable commands:\033[0m'
+	@echo -e "\033[1mAvailable commands:\033[0m\n"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort

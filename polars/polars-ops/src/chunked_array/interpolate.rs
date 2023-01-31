@@ -158,8 +158,8 @@ where
         }
 
         let array =
-            PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), Some(validity.into()));
-        ChunkedArray::from_chunks(chunked_arr.name(), vec![Box::new(array)])
+            PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), Some(validity.into()));
+        unsafe { ChunkedArray::from_chunks(chunked_arr.name(), vec![Box::new(array)]) }
     } else {
         ChunkedArray::from_vec(chunked_arr.name(), av)
     }

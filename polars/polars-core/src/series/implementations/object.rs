@@ -63,7 +63,6 @@ where
             .map(|ca| ca.into_series())
     }
 }
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
@@ -174,7 +173,7 @@ where
         ))
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         ObjectChunked::get_any_value(&self.0, index)
     }
     fn null_count(&self) -> usize {

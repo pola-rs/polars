@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_streaming_groupby_types() -> None:
@@ -119,11 +120,81 @@ def test_streaming_non_streaming_gb() -> None:
     n = 100
     df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
     q = df.lazy().groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
+    assert_frame_equal(q.collect(streaming=True), q.collect())
 
-    q = df.lazy().with_column(pl.col("a").cast(pl.Utf8))
+    q = df.lazy().with_columns(pl.col("a").cast(pl.Utf8))
     q = q.groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
-    q = df.lazy().with_column(pl.col("a").alias("b"))
+    assert_frame_equal(q.collect(streaming=True), q.collect())
+    q = df.lazy().with_columns(pl.col("a").alias("b"))
     q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
+    assert_frame_equal(q.collect(streaming=True), q.collect())
+
+
+def test_streaming_groupby_sorted_fast_path() -> None:
+    a = np.random.randint(0, 20, 80)
+    df = pl.DataFrame(
+        {
+            # test on int8 as that also tests proper conversions
+            "a": pl.Series(np.sort(a), dtype=pl.Int8)
+        }
+    ).with_row_count()
+
+    df_sorted = df.with_columns(pl.col("a").set_sorted())
+
+    for streaming in [True, False]:
+        results = []
+        for df_ in [df, df_sorted]:
+            out = (
+                df_.lazy()
+                .groupby("a")
+                .agg(
+                    [
+                        pl.first("a").alias("first"),
+                        pl.last("a").alias("last"),
+                        pl.sum("a").alias("sum"),
+                        pl.mean("a").alias("mean"),
+                        pl.count("a").alias("count"),
+                        pl.min("a").alias("min"),
+                        pl.max("a").alias("max"),
+                    ]
+                )
+                .sort("a")
+                .collect(streaming=streaming)
+            )
+            results.append(out)
+
+        assert_frame_equal(results[0], results[1])
+
+
+def test_streaming_categoricals_5921() -> None:
+    with pl.StringCache():
+        out_lazy = (
+            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+            .lazy()
+            .with_columns(pl.col("X").cast(pl.Categorical))
+            .groupby("X")
+            .agg(pl.col("Y").min())
+            .sort("X")
+            .collect(streaming=True)
+        )
+
+        out_eager = (
+            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+            .with_columns(pl.col("X").cast(pl.Categorical))
+            .groupby("X")
+            .agg(pl.col("Y").min())
+            .sort("X")
+        )
+
+    for out in [out_eager, out_lazy]:
+        assert out.dtypes == [pl.Categorical, pl.Int64]
+        assert out.to_dict(False) == {"X": ["a", "b"], "Y": [2, 1]}
+
+
+def test_streaming_block_on_literals_6054() -> None:
+    df = pl.DataFrame({"col_1": [0] * 5 + [1] * 5})
+    s = pl.Series("col_2", list(range(10)))
+
+    assert df.lazy().with_columns(s).groupby("col_1").agg(pl.all().first()).collect(
+        streaming=True
+    ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}

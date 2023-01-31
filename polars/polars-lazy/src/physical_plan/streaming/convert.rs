@@ -28,33 +28,72 @@ impl PhysicalPipedExpr for Wrap {
     fn field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.0.to_field(input_schema)
     }
+
+    fn expression(&self) -> Expr {
+        self.0.as_expression().unwrap().clone()
+    }
 }
 
 fn to_physical_piped_expr(
     node: Node,
     expr_arena: &Arena<AExpr>,
+    schema: Option<&SchemaRef>,
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
-    create_physical_expr(node, Context::Default, expr_arena)
+    create_physical_expr(node, Context::Default, expr_arena, schema)
         .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
 
+fn is_streamable_sort(args: &SortArguments) -> bool {
+    let positive_slice = match args.slice {
+        Some((offset, _)) => offset >= 0,
+        None => true,
+    };
+    positive_slice && !args.nulls_last
+}
+
 fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    expr_arena.iter(node).all(|(_, ae)| match ae {
+    // check weather leaf colum is Col or Lit
+    let mut seen_column = false;
+    let mut seen_lit_range = false;
+    let all = expr_arena.iter(node).all(|(_, ae)| match ae {
         AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
             matches!(options.collect_groups, ApplyOptions::ApplyFlat)
         }
-        AExpr::Cast { .. }
-        | AExpr::Column(_)
-        | AExpr::Literal(_)
-        | AExpr::BinaryExpr { .. }
-        | AExpr::Alias(_, _) => true,
+        AExpr::Column(_) => {
+            seen_column = true;
+            true
+        }
+        AExpr::BinaryExpr { .. } | AExpr::Alias(_, _) | AExpr::Cast { .. } => true,
+        AExpr::Literal(lv) => match lv {
+            LiteralValue::Series(_) | LiteralValue::Range { .. } => {
+                seen_lit_range = true;
+                true
+            }
+            _ => true,
+        },
         _ => false,
-    })
+    });
+
+    if all {
+        // adding a range or literal series to chunks will fail because sizes don't match
+        // if column is a leaf column then it is ok
+        // - so we want to block `with_column(lit(Series))`
+        // - but we want to allow `with_column(col("foo").is_in(Series))`
+        // that means that IFF we seen a lit_range, we only allow if we also seen a `column`.
+        return if seen_lit_range { seen_column } else { true };
+    }
+    false
 }
 
 fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     exprs.iter().all(|node| is_streamable(*node, expr_arena))
+}
+
+fn all_column(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    exprs
+        .iter()
+        .all(|node| matches!(expr_arena.get(*node), AExpr::Column(_)))
 }
 
 fn streamable_join(join_type: &JoinType) -> bool {
@@ -122,6 +161,23 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push((true, false, root));
                 stack.push((*input, state, current_idx))
             }
+            FileSink { input, .. } => {
+                state.streamable = true;
+                state.operators_sinks.push((true, false, root));
+                stack.push((*input, state, current_idx))
+            }
+            Sort {
+                input,
+                by_column,
+                args,
+            } if is_streamable_sort(args)
+                && by_column.len() == 1
+                && all_column(by_column, expr_arena) =>
+            {
+                state.streamable = true;
+                state.operators_sinks.push((true, false, root));
+                stack.push((*input, state, current_idx))
+            }
             MapFunction {
                 input,
                 function: FunctionNode::FastProjection { .. },
@@ -180,12 +236,11 @@ pub(crate) fn insert_streaming_nodes(
                 // *except* for a left join. In a left join we use the right
                 // table as build table and we stream the left table. This way
                 // we maintain order in the left join.
-                let (input_left, input_right) =
-                    if swap_join_order(options) || matches!(options.how, JoinType::Left) {
-                        (input_right, input_left)
-                    } else {
-                        (input_left, input_right)
-                    };
+                let (input_left, input_right) = if swap_join_order(options) {
+                    (input_right, input_left)
+                } else {
+                    (input_left, input_right)
+                };
 
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
@@ -287,7 +342,7 @@ pub(crate) fn insert_streaming_nodes(
 
             // the most far right branch will be the latest that sets this
             // variable and thus will point to root
-            let mut latest = Default::default();
+            let mut latest = None;
 
             let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<IdxSize>();
             let branches_in_tree = tree.len() as IdxSize;
@@ -296,6 +351,7 @@ pub(crate) fn insert_streaming_nodes(
             if (branches_in_tree - 1) != joins_in_tree {
                 continue;
             }
+            let verbose = std::env::var("POLARS_VERBOSE").is_ok();
 
             for branch in tree {
                 // should be reset for every branch
@@ -308,7 +364,7 @@ pub(crate) fn insert_streaming_nodes(
                 let mut iter = branch.operators_sinks.into_iter().rev();
 
                 for (is_sink, is_rhs_join, node) in &mut iter {
-                    latest = node;
+                    latest = Some(node);
                     let operator_offset = operators.len();
                     if is_sink && !is_rhs_join {
                         sink_nodes.push((operator_offset, node))
@@ -331,7 +387,7 @@ pub(crate) fn insert_streaming_nodes(
                                 ..
                             } = lp_arena.get(node)
                             {
-                                let slice_node = lp_arena.add(ALogicalPlan::Slice {
+                                let slice_node = lp_arena.add(Slice {
                                     input: Node::default(),
                                     offset: *offset,
                                     len: *len as IdxSize,
@@ -354,33 +410,38 @@ pub(crate) fn insert_streaming_nodes(
                     lp_arena,
                     expr_arena,
                     to_physical_piped_expr,
+                    verbose,
                 )?;
                 pipelines.push_back(pipeline);
             }
-            // the most right latest node should be the root of the pipeline
-            let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
+            // some queries only have source/sources and don't have any
+            // operators/sink so no latest
+            if let Some(latest) = latest {
+                // the most right latest node should be the root of the pipeline
+                let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
 
-            if let Some(mut most_left) = pipelines.pop_front() {
-                while let Some(rhs) = pipelines.pop_front() {
-                    most_left = most_left.with_rhs(rhs)
-                }
-                // keep the original around for formatting purposes
-                let original_lp = if fmt {
-                    let original_lp = lp_arena.take(latest);
-                    let original_node = lp_arena.add(original_lp);
-                    let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
-                    Some(original_lp)
+                if let Some(mut most_left) = pipelines.pop_front() {
+                    while let Some(rhs) = pipelines.pop_front() {
+                        most_left = most_left.with_rhs(rhs)
+                    }
+                    // keep the original around for formatting purposes
+                    let original_lp = if fmt {
+                        let original_lp = lp_arena.take(latest);
+                        let original_node = lp_arena.add(original_lp);
+                        let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
+                        Some(original_lp)
+                    } else {
+                        None
+                    };
+
+                    // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+                    let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
+                    lp_arena.replace(latest, pipeline_node);
+                    inserted = true;
                 } else {
-                    None
-                };
-
-                // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
-                let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
-                lp_arena.replace(latest, pipeline_node);
-                inserted = true;
-            } else {
-                panic!()
-            }
+                    panic!()
+                }
+            };
         }
     }
 
@@ -402,18 +463,6 @@ struct Branch {
 }
 
 impl SExecutionContext for ExecutionState {
-    fn input_schema_is_set(&self) -> bool {
-        self.schema_cache.read().unwrap().is_some()
-    }
-
-    fn set_input_schema(&self, schema: SchemaRef) {
-        self.set_schema(schema);
-    }
-
-    fn clear_input_schema(&self) {
-        self.clear_schema_cache();
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }

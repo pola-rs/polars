@@ -34,7 +34,7 @@ impl CategoricalChunked {
                 RevMapping::Local(arr) => {
                     // we don't use arrow2 sort here because its not activated
                     // that saves compilation
-                    let ca = Utf8Chunked::from_chunks("", vec![Box::from(arr.clone())]);
+                    let ca = unsafe { Utf8Chunked::from_chunks("", vec![Box::from(arr.clone())]) };
                     let sorted = ca.sort(options.descending);
                     let arr = sorted.downcast_iter().next().unwrap().clone();
                     let rev_map = RevMapping::Local(arr);
@@ -62,14 +62,18 @@ impl CategoricalChunked {
                         options.descending,
                         |(_, a), (_, b)| order_default_null(a, b),
                         |(_, a), (_, b)| order_reverse_null(a, b),
+                        options.multithreaded,
                     );
                     let cats: NoNull<UInt32Chunked> =
                         vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+                    let mut cats = cats.into_inner();
+                    cats.rename(self.name());
+
                     // safety:
                     // we only reordered the indexes so we are still in bounds
                     unsafe {
                         CategoricalChunked::from_cats_and_rev_map_unchecked(
-                            cats.into_inner(),
+                            cats,
                             self.get_rev_map().clone(),
                         )
                     }
@@ -94,6 +98,7 @@ impl CategoricalChunked {
         self.sort_with(SortOptions {
             nulls_last: false,
             descending: reverse,
+            multithreaded: true,
         })
     }
 

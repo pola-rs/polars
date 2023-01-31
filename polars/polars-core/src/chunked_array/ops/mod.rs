@@ -1,7 +1,7 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use std::marker::Sized;
 
-use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 pub use self::take::*;
@@ -49,6 +49,8 @@ pub mod zip;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 
+use crate::series::IsSorted;
+
 #[cfg(feature = "to_list")]
 pub trait ToList<T: PolarsDataType> {
     fn to_list(&self) -> PolarsResult<ListChunked> {
@@ -88,7 +90,7 @@ pub trait ChunkAnyValue {
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue;
 
     /// Get a single value. Beware this is slow.
-    fn get_any_value(&self, index: usize) -> AnyValue;
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
 }
 
 #[cfg(feature = "cum_agg")]
@@ -122,7 +124,7 @@ pub trait ChunkExplode {
     fn explode(&self) -> PolarsResult<Series> {
         self.explode_and_offsets().map(|t| t.0)
     }
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)>;
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
 pub trait ChunkBytes {
@@ -424,9 +426,6 @@ pub trait ChunkVar<T> {
 pub trait ChunkCompare<Rhs> {
     type Item;
 
-    /// Check for equality and regard missing values as equal.
-    fn eq_missing(&self, rhs: Rhs) -> Self::Item;
-
     /// Check for equality.
     fn equal(&self, rhs: Rhs) -> Self::Item;
 
@@ -477,7 +476,6 @@ pub trait ChunkUnique<T: PolarsDataType> {
 
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
     fn mode(&self) -> PolarsResult<ChunkedArray<T>> {
         Err(PolarsError::InvalidOperation(
             "mode is not implemented for this dtype".into(),
@@ -485,11 +483,22 @@ pub trait ChunkUnique<T: PolarsDataType> {
     }
 }
 
-#[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortOptions {
     pub descending: bool,
     pub nulls_last: bool,
+    pub multithreaded: bool,
+}
+
+impl Default for SortOptions {
+    fn default() -> Self {
+        Self {
+            descending: false,
+            nulls_last: false,
+            multithreaded: true,
+        }
+    }
 }
 
 /// Sort operations on `ChunkedArray`.
@@ -617,26 +626,34 @@ where
     T: PolarsNumericType,
 {
     fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
-        impl_chunk_expand!(self, length, index)
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted_flag(IsSorted::Ascending);
+        out
     }
 }
 
 impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BooleanChunked {
-        impl_chunk_expand!(self, length, index)
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted_flag(IsSorted::Ascending);
+        out
     }
 }
 
 impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     fn new_from_index(&self, index: usize, length: usize) -> Utf8Chunked {
-        impl_chunk_expand!(self, length, index)
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted_flag(IsSorted::Ascending);
+        out
     }
 }
 
 #[cfg(feature = "dtype-binary")]
 impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BinaryChunked {
-        impl_chunk_expand!(self, length, index)
+        let mut out = impl_chunk_expand!(self, length, index);
+        out.set_sorted_flag(IsSorted::Ascending);
+        out
     }
 }
 
@@ -710,7 +727,6 @@ pub trait ChunkPeaks {
 
 /// Check if element is member of list array
 #[cfg(feature = "is_in")]
-#[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
 pub trait IsIn {
     /// Check if elements of this array are in the right Series, or List values of the right Series.
     fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
@@ -732,7 +748,6 @@ pub trait ArgAgg {
 
 /// Repeat the values `n` times.
 #[cfg(feature = "repeat_by")]
-#[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
 pub trait RepeatBy {
     /// Repeat the values `n` times, where `n` is determined by the values in `by`.
     fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
@@ -741,7 +756,6 @@ pub trait RepeatBy {
 }
 
 #[cfg(feature = "is_first")]
-#[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
 /// Mask the first unique values as `true`
 pub trait IsFirst<T: PolarsDataType> {
     fn is_first(&self) -> PolarsResult<BooleanChunked> {
@@ -752,7 +766,6 @@ pub trait IsFirst<T: PolarsDataType> {
 }
 
 #[cfg(feature = "is_first")]
-#[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
 /// Mask the last unique values as `true`
 pub trait IsLast<T: PolarsDataType> {
     fn is_last(&self) -> PolarsResult<BooleanChunked> {
@@ -763,7 +776,6 @@ pub trait IsLast<T: PolarsDataType> {
 }
 
 #[cfg(feature = "concat_str")]
-#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Concat the values into a string array.
 pub trait StrConcat {
     /// Concat the values into a string array.

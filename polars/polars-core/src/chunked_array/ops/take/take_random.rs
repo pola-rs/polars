@@ -86,6 +86,7 @@ where
 {
     type Item = I;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         match self {
             Self::SingleNoNull(s) => s.get(index),
@@ -94,6 +95,7 @@ where
         }
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         match self {
             Self::SingleNoNull(s) => s.get_unchecked(index),

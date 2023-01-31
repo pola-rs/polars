@@ -1,0 +1,4 @@
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"3b7eaff9-6f0c-4d58-914c-737aa94700eb","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"name\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"age\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1664141086433}}
+{"add":{"path":"part-00000-e4a999da-df45-4fb0-bdc4-d999fc0f58aa-c000.snappy.parquet","partitionValues":{},"size":690,"modificationTime":1664141088000,"dataChange":true}}
+{"commitInfo":{"timestamp":1664141088939,"operation":"WRITE","operationParameters":{"mode":"Append","partitionBy":"[]"},"isolationLevel":"Serializable","isBlindAppend":true,"operationMetrics":{"numFiles":"1","numOutputRows":"2","numOutputBytes":"690"},"engineInfo":"Apache-Spark/3.2.0 Delta-Lake/1.1.0"}}

@@ -26,6 +26,7 @@ Manipulation/selection
     LazyFrame.last
     LazyFrame.limit
     LazyFrame.melt
+    LazyFrame.merge_sorted
     LazyFrame.rename
     LazyFrame.reverse
     LazyFrame.select

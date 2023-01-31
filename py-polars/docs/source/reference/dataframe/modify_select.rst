@@ -26,10 +26,14 @@ Manipulation/selection
     DataFrame.hstack
     DataFrame.insert_at_idx
     DataFrame.interpolate
+    DataFrame.item
+    DataFrame.iter_rows
+    DataFrame.iter_slices
     DataFrame.join
     DataFrame.join_asof
     DataFrame.limit
     DataFrame.melt
+    DataFrame.merge_sorted
     DataFrame.partition_by
     DataFrame.pipe
     DataFrame.pivot

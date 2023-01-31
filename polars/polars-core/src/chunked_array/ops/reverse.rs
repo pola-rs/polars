@@ -15,9 +15,9 @@ where
         };
         out.rename(self.name());
 
-        match self.is_sorted2() {
-            IsSorted::Ascending => out.set_sorted2(IsSorted::Descending),
-            IsSorted::Descending => out.set_sorted2(IsSorted::Ascending),
+        match self.is_sorted_flag2() {
+            IsSorted::Ascending => out.set_sorted_flag(IsSorted::Descending),
+            IsSorted::Descending => out.set_sorted_flag(IsSorted::Ascending),
             _ => {}
         }
 

@@ -66,6 +66,7 @@ macro_rules! impl_polars_datatype {
         pub struct $ca {}
 
         impl PolarsDataType for $ca {
+            #[inline]
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
@@ -118,13 +119,11 @@ impl PolarsDataType for ListType {
 }
 
 #[cfg(feature = "object")]
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
 #[cfg(feature = "object")]
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     fn get_dtype() -> DataType {
         DataType::Object(T::type_name())
@@ -178,8 +177,9 @@ pub trait NumericNative:
     + IsFloat
     + NativeArithmetics
 {
-    type POLARSTYPE;
+    type POLARSTYPE: PolarsNumericType;
 }
+
 impl NumericNative for i8 {
     type POLARSTYPE = Int8Type;
 }
@@ -258,3 +258,6 @@ impl PolarsIntegerType for Int64Type {}
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
+
+// Provide options to cloud providers (credentials, region).
+pub type CloudOptions = PlHashMap<String, String>;

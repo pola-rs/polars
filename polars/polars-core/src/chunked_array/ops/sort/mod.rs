@@ -21,6 +21,7 @@ use crate::prelude::compare_inner::PartialOrdInner;
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_impl};
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 
 /// Reverse sorting when there are no nulls
@@ -54,19 +55,27 @@ fn sort_branch<T, Fd, Fr>(
     reverse: bool,
     default_order_fn: Fd,
     reverse_order_fn: Fr,
+    parallel: bool,
 ) where
     T: PartialOrd + Send,
     Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
     Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
 {
-    match reverse {
-        true => slice.par_sort_unstable_by(reverse_order_fn),
-        false => slice.par_sort_unstable_by(default_order_fn),
+    if parallel {
+        match reverse {
+            true => slice.par_sort_unstable_by(reverse_order_fn),
+            false => slice.par_sort_unstable_by(default_order_fn),
+        }
+    } else {
+        match reverse {
+            true => slice.sort_unstable_by(reverse_order_fn),
+            false => slice.sort_unstable_by(default_order_fn),
+        }
     }
 }
 
 #[cfg(feature = "private")]
-pub fn argsort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], reverse: bool)
+pub fn argsort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], reverse: bool, parallel: bool)
 where
     T: PartialOrd + Send + IsFloat,
     Idx: PartialOrd + Send,
@@ -76,6 +85,7 @@ where
         reverse,
         |(_, a), (_, b)| compare_fn_nan_max(a, b),
         |(_, a), (_, b)| compare_fn_nan_max(b, a),
+        parallel,
     );
 }
 
@@ -84,14 +94,22 @@ pub fn argsort_branch<T, Fd, Fr>(
     reverse: bool,
     default_order_fn: Fd,
     reverse_order_fn: Fr,
+    parallel: bool,
 ) where
     T: PartialOrd + Send,
     Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
     Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
 {
-    match reverse {
-        true => slice.par_sort_by(reverse_order_fn),
-        false => slice.par_sort_by(default_order_fn),
+    if parallel {
+        match reverse {
+            true => slice.par_sort_by(reverse_order_fn),
+            false => slice.par_sort_by(default_order_fn),
+        }
+    } else {
+        match reverse {
+            true => slice.sort_by(reverse_order_fn),
+            false => slice.sort_by(default_order_fn),
+        }
     }
 }
 
@@ -116,7 +134,7 @@ macro_rules! sort_with_fast_path {
         }
 
         // we can clone if we sort in same order
-        if $options.descending && $ca.is_sorted_reverse() || ($ca.is_sorted() && !$options.descending) {
+        if $options.descending && $ca.is_sorted_reverse_flag() || ($ca.is_sorted_flag() && !$options.descending) {
             // there are nulls
             if $ca.null_count() > 0 {
                 // if the nulls are already last we can clone
@@ -134,7 +152,7 @@ macro_rules! sort_with_fast_path {
             }
         }
         // we can reverse if we sort in other order
-        else if ($options.descending && $ca.is_sorted() || $ca.is_sorted_reverse()) && $ca.null_count() == 0 {
+        else if ($options.descending && $ca.is_sorted_flag() || $ca.is_sorted_reverse_flag()) && $ca.null_count() == 0 {
             return $ca.reverse()
         };
 
@@ -152,7 +170,7 @@ where
     T: PolarsNumericType,
 {
     sort_with_fast_path!(ca, options);
-    if !ca.has_validity() {
+    if ca.null_count() == 0 {
         let mut vals = memcpy_values(ca);
 
         sort_branch(
@@ -160,10 +178,16 @@ where
             options.descending,
             order_default,
             order_reverse,
+            options.multithreaded,
         );
 
         let mut ca = ChunkedArray::from_vec(ca.name(), vals);
-        ca.set_sorted(options.descending);
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        ca.set_sorted_flag(s);
         ca
     } else {
         let null_count = ca.null_count();
@@ -186,7 +210,13 @@ where
             &mut vals[null_count..]
         };
 
-        sort_branch(mut_slice, options.descending, order_default, order_reverse);
+        sort_branch(
+            mut_slice,
+            options.descending,
+            order_default,
+            order_reverse,
+            options.multithreaded,
+        );
 
         let mut ca: ChunkedArray<T> = if options.nulls_last {
             vals.extend(std::iter::repeat(T::Native::default()).take(ca.null_count()));
@@ -196,7 +226,7 @@ where
 
             (
                 ca.name(),
-                PrimitiveArray::from_data(
+                PrimitiveArray::new(
                     T::get_dtype().to_arrow(),
                     vals.into(),
                     Some(validity.into()),
@@ -210,7 +240,7 @@ where
 
             (
                 ca.name(),
-                PrimitiveArray::from_data(
+                PrimitiveArray::new(
                     T::get_dtype().to_arrow(),
                     vals.into(),
                     Some(validity.into()),
@@ -219,7 +249,12 @@ where
                 .into()
         };
 
-        ca.set_sorted(options.descending);
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        ca.set_sorted_flag(s);
         ca
     }
 }
@@ -242,7 +277,7 @@ where
             vals.extend_trusted_len(iter);
         });
 
-        argsort_no_nulls(vals.as_mut_slice(), reverse);
+        argsort_no_nulls(vals.as_mut_slice(), reverse, options.multithreaded);
 
         let out: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut out = out.into_inner();
@@ -392,6 +427,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
             options.descending,
             order_default,
             order_reverse,
+            options.multithreaded,
         );
 
         let mut values = Vec::<u8>::with_capacity(self.get_values_size());
@@ -462,7 +498,12 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
             }
         };
 
-        ca.set_sorted(options.descending);
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        ca.set_sorted_flag(s);
         ca
     }
 
@@ -470,6 +511,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         self.sort_with(SortOptions {
             descending: reverse,
             nulls_last: false,
+            multithreaded: true,
         })
     }
 
@@ -523,6 +565,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
             options.descending,
             order_default,
             order_reverse,
+            options.multithreaded,
         );
 
         let mut values = Vec::<u8>::with_capacity(self.get_values_size());
@@ -593,7 +636,12 @@ impl ChunkSort<BinaryType> for BinaryChunked {
             }
         };
 
-        ca.set_sorted(options.descending);
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        ca.set_sorted_flag(s);
         ca
     }
 
@@ -601,6 +649,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         self.sort_with(SortOptions {
             descending: reverse,
             nulls_last: false,
+            multithreaded: true,
         })
     }
 
@@ -663,6 +712,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         self.sort_with(SortOptions {
             descending: reverse,
             nulls_last: false,
+            multithreaded: true,
         })
     }
 
@@ -772,6 +822,7 @@ mod test {
         let out = a.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
+            multithreaded: true,
         });
         assert_eq!(
             Vec::from(&out),
@@ -789,6 +840,7 @@ mod test {
         let out = a.sort_with(SortOptions {
             descending: false,
             nulls_last: true,
+            multithreaded: true,
         });
         assert_eq!(
             Vec::from(&out),
@@ -869,6 +921,7 @@ mod test {
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
+            multithreaded: true,
         });
         let expected = &[None, None, Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);
@@ -876,6 +929,7 @@ mod test {
         let out = ca.sort_with(SortOptions {
             descending: true,
             nulls_last: false,
+            multithreaded: true,
         });
 
         let expected = &[None, None, Some("c"), Some("b"), Some("a")];
@@ -884,6 +938,7 @@ mod test {
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: true,
+            multithreaded: true,
         });
         let expected = &[Some("a"), Some("b"), Some("c"), None, None];
         assert_eq!(Vec::from(&out), expected);
@@ -891,6 +946,7 @@ mod test {
         let out = ca.sort_with(SortOptions {
             descending: true,
             nulls_last: true,
+            multithreaded: true,
         });
         let expected = &[Some("c"), Some("b"), Some("a"), None, None];
         assert_eq!(Vec::from(&out), expected);

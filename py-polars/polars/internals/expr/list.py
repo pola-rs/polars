@@ -33,7 +33,6 @@ class ExprListNameSpace:
         │ u32 │
         ╞═════╡
         │ 2   │
-        ├╌╌╌╌╌┤
         │ 1   │
         └─────┘
 
@@ -55,7 +54,6 @@ class ExprListNameSpace:
         │ i64    │
         ╞════════╡
         │ 1      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 5      │
         └────────┘
 
@@ -77,7 +75,6 @@ class ExprListNameSpace:
         │ i64    │
         ╞════════╡
         │ 1      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 3      │
         └────────┘
 
@@ -99,7 +96,6 @@ class ExprListNameSpace:
         │ i64    │
         ╞════════╡
         │ 1      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 2      │
         └────────┘
 
@@ -121,7 +117,6 @@ class ExprListNameSpace:
         │ f64    │
         ╞════════╡
         │ 1.0    │
-        ├╌╌╌╌╌╌╌╌┤
         │ 2.5    │
         └────────┘
 
@@ -147,7 +142,6 @@ class ExprListNameSpace:
         │ list[i64] │
         ╞═══════════╡
         │ [1, 2, 3] │
-        ├╌╌╌╌╌╌╌╌╌╌╌┤
         │ [1, 2, 9] │
         └───────────┘
 
@@ -173,7 +167,6 @@ class ExprListNameSpace:
         │ list[i64] │
         ╞═══════════╡
         │ [1, 2, 3] │
-        ├╌╌╌╌╌╌╌╌╌╌╌┤
         │ [2, 1, 9] │
         └───────────┘
 
@@ -231,7 +224,6 @@ class ExprListNameSpace:
         │ list[str]       │
         ╞═════════════════╡
         │ ["a", "b", "c"] │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ ["x", "y", "z"] │
         └─────────────────┘
 
@@ -274,15 +266,40 @@ class ExprListNameSpace:
         │ i64  │
         ╞══════╡
         │ 3    │
-        ├╌╌╌╌╌╌┤
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 1    │
         └──────┘
 
         """
         index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_get(index))
+
+    def take(
+        self,
+        index: pli.Expr | pli.Series | list[int] | list[list[int]],
+        null_on_oob: bool = False,
+    ) -> pli.Expr:
+        """
+        Take sublists by multiple indices.
+
+        The indices may be defined in a single column, or by sublists in another
+        column of dtype ``List``.
+
+        Parameters
+        ----------
+        index
+            Indices to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
+
+        """
+        if isinstance(index, list):
+            index = pli.Series(index)
+        index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
+        return pli.wrap_expr(self._pyexpr.lst_take(index, null_on_oob))
 
     def __getitem__(self, item: int) -> pli.Expr:
         return self.get(item)
@@ -302,9 +319,7 @@ class ExprListNameSpace:
         │ i64  │
         ╞══════╡
         │ 3    │
-        ├╌╌╌╌╌╌┤
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 1    │
         └──────┘
 
@@ -326,9 +341,7 @@ class ExprListNameSpace:
         │ i64  │
         ╞══════╡
         │ 1    │
-        ├╌╌╌╌╌╌┤
         │ null │
-        ├╌╌╌╌╌╌┤
         │ 2    │
         └──────┘
 
@@ -361,9 +374,7 @@ class ExprListNameSpace:
         │ bool  │
         ╞═══════╡
         │ true  │
-        ├╌╌╌╌╌╌╌┤
         │ false │
-        ├╌╌╌╌╌╌╌┤
         │ true  │
         └───────┘
 
@@ -398,7 +409,6 @@ class ExprListNameSpace:
         │ str   │
         ╞═══════╡
         │ a b c │
-        ├╌╌╌╌╌╌╌┤
         │ x y   │
         └───────┘
 
@@ -428,7 +438,6 @@ class ExprListNameSpace:
         │ u32 │
         ╞═════╡
         │ 0   │
-        ├╌╌╌╌╌┤
         │ 1   │
         └─────┘
 
@@ -458,7 +467,6 @@ class ExprListNameSpace:
         │ u32 │
         ╞═════╡
         │ 1   │
-        ├╌╌╌╌╌┤
         │ 0   │
         └─────┘
 
@@ -481,7 +489,7 @@ class ExprListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.diff()
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [null, 1, ... 1]
             [null, -8, -1]
@@ -504,7 +512,7 @@ class ExprListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.shift()
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [null, 1, ... 3]
             [null, 10, 2]
@@ -532,7 +540,7 @@ class ExprListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.slice(1, 2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [2, 3]
             [2, 1]
@@ -557,7 +565,7 @@ class ExprListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.head(2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [1, 2]
             [10, 2]
@@ -580,7 +588,7 @@ class ExprListNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.tail(2)
         shape: (2,)
-        Series: 'a' [list]
+        Series: 'a' [list[i64]]
         [
             [3, 4]
             [2, 1]
@@ -590,10 +598,40 @@ class ExprListNameSpace:
         offset = -pli.expr_to_lit_or_expr(n, str_to_lit=False)
         return self.slice(offset, n)
 
+    def explode(self) -> pli.Expr:
+        """
+        Returns a column with a separate row for every list element.
+
+        Returns
+        -------
+        Exploded column with the datatype of the list elements.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
+        >>> df.select(pl.col("a").arr.explode())
+        shape: (6, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        │ 4   │
+        │ 5   │
+        │ 6   │
+        └─────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.explode())
+
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
         name_generator: Callable[[int], str] | None = None,
+        upper_bound: int = 0,
     ) -> pli.Expr:
         """
         Convert the series of type ``List`` to a series of type ``Struct``.
@@ -605,6 +643,14 @@ class ExprListNameSpace:
         name_generator
             A custom function that can be used to generate the field names.
             Default field names are `field_0, field_1 .. field_n`
+        upper_bound
+            A polars `LazyFrame` needs to know the schema at all time.
+            The caller therefore must provide an `upper_bound` of
+            struct fields that will be set.
+            If this is incorrectly downstream operation may fail.
+            For instance an `all().sum()` expression will look in
+            the current schema to determine which columns to select.
+            It is adviced to set this value in a lazy query.
 
         Examples
         --------
@@ -617,7 +663,6 @@ class ExprListNameSpace:
         │ struct[3]  │
         ╞════════════╡
         │ {1,2,3}    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {1,2,null} │
         └────────────┘
         >>> df.select(
@@ -632,7 +677,7 @@ class ExprListNameSpace:
 
         """
         return pli.wrap_expr(
-            self._pyexpr.lst_to_struct(n_field_strategy, name_generator)
+            self._pyexpr.lst_to_struct(n_field_strategy, name_generator, upper_bound)
         )
 
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Expr:
@@ -654,7 +699,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)
@@ -664,9 +709,7 @@ class ExprListNameSpace:
         │ i64 ┆ i64 ┆ list[f32]  │
         ╞═════╪═════╪════════════╡
         │ 1   ┆ 4   ┆ [1.0, 2.0] │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 8   ┆ 5   ┆ [2.0, 1.0] │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ 2   ┆ [2.0, 1.0] │
         └─────┴─────┴────────────┘
 

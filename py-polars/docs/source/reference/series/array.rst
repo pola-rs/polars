@@ -15,6 +15,7 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.contains
     Series.arr.diff
     Series.arr.eval
+    Series.arr.explode
     Series.arr.first
     Series.arr.get
     Series.arr.head
@@ -30,5 +31,6 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.sort
     Series.arr.sum
     Series.arr.tail
+    Series.arr.take
     Series.arr.to_struct
     Series.arr.unique

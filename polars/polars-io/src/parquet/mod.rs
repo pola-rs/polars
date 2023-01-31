@@ -14,6 +14,8 @@
 //! }
 //! ```
 //!
+#[cfg(feature = "async")]
+pub(super) mod async_impl;
 pub(super) mod mmap;
 pub mod predicates;
 mod read;
@@ -21,7 +23,7 @@ mod read_impl;
 mod write;
 
 pub use read::*;
-pub use write::*;
+pub use write::{BrotliLevel, GzipLevel, ZstdLevel, *};
 
 use super::*;
 

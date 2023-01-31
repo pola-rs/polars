@@ -77,7 +77,7 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                     interpol,
                 } => AAggExpr::Quantile {
                     expr: to_aexpr(*expr, arena),
-                    quantile,
+                    quantile: to_aexpr(*quantile, arena),
                     interpol,
                 },
                 AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr(*expr, arena)),
@@ -175,7 +175,10 @@ pub fn to_alp(
             options,
         },
         #[cfg(feature = "python")]
-        LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan { options },
+        LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan {
+            options,
+            predicate: None,
+        },
         LogicalPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
@@ -239,12 +242,14 @@ pub fn to_alp(
             file_info,
             predicate,
             options,
+            cloud_options,
         } => ALogicalPlan::ParquetScan {
             path,
             file_info,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             options,
+            cloud_options,
         },
         LogicalPlan::DataFrameScan {
             df,
@@ -396,8 +401,7 @@ pub fn to_alp(
         LogicalPlan::Error { err, .. } => {
             // We just take the error. The LogicalPlan should not be used anymore once this
             // is taken.
-            let mut err = err.lock().unwrap();
-            return Err(err.take().unwrap());
+            return Err(err.take());
         }
         LogicalPlan::ExtContext {
             input,
@@ -414,6 +418,10 @@ pub fn to_alp(
                 contexts,
                 schema,
             }
+        }
+        LogicalPlan::FileSink { input, payload } => {
+            let input = to_alp(*input, expr_arena, lp_arena)?;
+            ALogicalPlan::FileSink { input, payload }
         }
     };
     Ok(lp_arena.add(v))
@@ -540,10 +548,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 quantile,
                 interpol,
             } => {
-                let exp = node_to_expr(expr, expr_arena);
+                let expr = node_to_expr(expr, expr_arena);
+                let quantile = node_to_expr(quantile, expr_arena);
                 AggExpr::Quantile {
-                    expr: Box::new(exp),
-                    quantile,
+                    expr: Box::new(expr),
+                    quantile: Box::new(quantile),
                     interpol,
                 }
                 .into()
@@ -667,7 +676,7 @@ impl ALogicalPlan {
                 options,
             },
             #[cfg(feature = "python")]
-            ALogicalPlan::PythonScan { options } => LogicalPlan::PythonScan { options },
+            ALogicalPlan::PythonScan { options, .. } => LogicalPlan::PythonScan { options },
             ALogicalPlan::Union { inputs, options } => {
                 let inputs = inputs
                     .into_iter()
@@ -724,11 +733,13 @@ impl ALogicalPlan {
                 output_schema: _,
                 predicate,
                 options,
+                cloud_options,
             } => LogicalPlan::ParquetScan {
                 path,
                 file_info,
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 options,
+                cloud_options,
             },
             ALogicalPlan::DataFrameScan {
                 df,
@@ -889,6 +900,10 @@ impl ALogicalPlan {
                     contexts,
                     schema,
                 }
+            }
+            ALogicalPlan::FileSink { input, payload } => {
+                let input = Box::new(convert_to_lp(input, lp_arena));
+                LogicalPlan::FileSink { input, payload }
             }
         }
     }

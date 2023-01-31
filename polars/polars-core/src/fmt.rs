@@ -1,7 +1,8 @@
-#[cfg(feature = "fmt")]
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 #[cfg(any(
     feature = "dtype-date",
@@ -9,11 +10,14 @@ use std::fmt::{Debug, Display, Formatter};
     feature = "dtype-time"
 ))]
 use arrow::temporal_conversions::*;
+use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-#[cfg(feature = "fmt")]
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+use comfy_table::modifiers::*;
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::presets::*;
-#[cfg(feature = "fmt")]
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
 use num::{Num, NumCast};
 
@@ -21,6 +25,26 @@ use crate::config::*;
 use crate::prelude::*;
 
 const LIMIT: usize = 25;
+
+#[derive(Copy, Clone)]
+#[repr(u8)]
+pub enum FloatFmt {
+    Mixed,
+    Full,
+}
+static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
+
+fn get_float_fmt() -> FloatFmt {
+    match FLOAT_FMT.load(Ordering::Relaxed) {
+        0 => FloatFmt::Mixed,
+        1 => FloatFmt::Full,
+        _ => panic!(),
+    }
+}
+
+pub fn set_float_fmt(fmt: FloatFmt) {
+    FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
+}
 
 macro_rules! format_array {
     ($f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
@@ -72,20 +96,20 @@ macro_rules! format_array {
         if limit < $a.len() {
             if limit > 0 {
                 for i in 0..std::cmp::max((limit / 2), 1) {
-                    let v = $a.get_any_value(i);
+                    let v = $a.get_any_value(i).unwrap();
                     write_fn(v, $f)?;
                 }
             }
             write!($f, "\t...\n")?;
             if limit > 1 {
                 for i in ($a.len() - (limit + 1) / 2)..$a.len() {
-                    let v = $a.get_any_value(i);
+                    let v = $a.get_any_value(i).unwrap();
                     write_fn(v, $f)?;
                 }
             }
         } else {
             for i in 0..limit {
-                let v = $a.get_any_value(i);
+                let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
             }
         }
@@ -116,7 +140,7 @@ fn format_object_array(
 
             for i in 0..limit {
                 let v = object.str_value(i);
-                writeln!(f, "\t{}", v)?;
+                writeln!(f, "\t{}", v.unwrap())?;
             }
 
             write!(f, "]")
@@ -180,21 +204,21 @@ where
             for i in 0..limit / 2 {
                 match taker.get(i) {
                     None => writeln!(f, "\tnull")?,
-                    Some(val) => writeln!(f, "\t{}", val)?,
+                    Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
             writeln!(f, "\t...")?;
             for i in (0..limit / 2).rev() {
                 match taker.get(self.len() - i - 1) {
                     None => writeln!(f, "\tnull")?,
-                    Some(val) => writeln!(f, "\t{}", val)?,
+                    Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
         } else {
             for i in 0..limit {
                 match taker.get(i) {
                     None => writeln!(f, "\tnull")?,
-                    Some(val) => writeln!(f, "\t{}", val)?,
+                    Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
         }
@@ -256,7 +280,8 @@ impl Debug for Series {
                 format_array!(f, self.duration().unwrap(), &dt, self.name(), "Series")
             }
             DataType::List(_) => {
-                format_array!(f, self.list().unwrap(), "list", self.name(), "Series")
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
             }
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
@@ -268,7 +293,7 @@ impl Debug for Series {
             dt @ DataType::Struct(_) => format_array!(
                 f,
                 self.struct_().unwrap(),
-                format!("{}", dt),
+                format!("{dt}"),
                 self.name(),
                 "Series"
             ),
@@ -279,7 +304,7 @@ impl Debug for Series {
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
             }
-            dt => panic!("{:?} not impl", dt),
+            dt => panic!("{dt:?} not impl"),
         }
     }
 }
@@ -295,7 +320,7 @@ impl Debug for DataFrame {
         Display::fmt(self, f)
     }
 }
-#[cfg(feature = "fmt")]
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn make_str_val(v: &str, truncate: usize) -> String {
     let v_trunc = &v[..v
         .char_indices()
@@ -306,11 +331,11 @@ fn make_str_val(v: &str, truncate: usize) -> String {
     if v == v_trunc {
         v.to_string()
     } else {
-        format!("{}...", v_trunc)
+        format!("{v_trunc}...")
     }
 }
 
-#[cfg(feature = "fmt")]
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn prepare_row(
     row: Vec<Cow<'_, str>>,
     n_first: usize,
@@ -337,7 +362,7 @@ fn env_is_true(varname: &str) -> bool {
 
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        #[cfg(feature = "fmt")]
+        #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
         {
             let height = self.height();
             assert!(
@@ -396,9 +421,9 @@ impl Display for DataFrame {
                 let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
                     & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
                 {
-                    format!("{} ({})", column_name, column_data_type)
+                    format!("{column_name} ({column_data_type})")
                 } else {
-                    format!("{}{}{}", column_name, column_separator, column_data_type)
+                    format!("{column_name}{column_separator}{column_data_type}")
                 };
                 (s, lower_bounds)
             };
@@ -421,24 +446,25 @@ impl Display for DataFrame {
                 names.push(s);
                 constraints.push(tbl_lower_bounds(l));
             }
-            let preset = match std::env::var(FMT_TABLE_FORMATTING)
+            let (preset, is_utf8) = match std::env::var(FMT_TABLE_FORMATTING)
                 .as_deref()
                 .unwrap_or("DEFAULT")
             {
-                "ASCII_FULL" => ASCII_FULL,
-                "ASCII_NO_BORDERS" => ASCII_NO_BORDERS,
-                "ASCII_BORDERS_ONLY" => ASCII_BORDERS_ONLY,
-                "ASCII_BORDERS_ONLY_CONDENSED" => ASCII_BORDERS_ONLY_CONDENSED,
-                "ASCII_HORIZONTAL_ONLY" => ASCII_HORIZONTAL_ONLY,
-                "ASCII_MARKDOWN" => ASCII_MARKDOWN,
-                "UTF8_FULL" => UTF8_FULL,
-                "UTF8_FULL_CONDENSED" => UTF8_FULL_CONDENSED,
-                "UTF8_NO_BORDERS" => UTF8_NO_BORDERS,
-                "UTF8_BORDERS_ONLY" => UTF8_BORDERS_ONLY,
-                "UTF8_HORIZONTAL_ONLY" => UTF8_HORIZONTAL_ONLY,
-                "NOTHING" => NOTHING,
-                "DEFAULT" => UTF8_FULL,
-                _ => UTF8_FULL,
+                "ASCII_FULL" => (ASCII_FULL, false),
+                "ASCII_FULL_CONDENSED" => (ASCII_FULL_CONDENSED, false),
+                "ASCII_NO_BORDERS" => (ASCII_NO_BORDERS, false),
+                "ASCII_BORDERS_ONLY" => (ASCII_BORDERS_ONLY, false),
+                "ASCII_BORDERS_ONLY_CONDENSED" => (ASCII_BORDERS_ONLY_CONDENSED, false),
+                "ASCII_HORIZONTAL_ONLY" => (ASCII_HORIZONTAL_ONLY, false),
+                "ASCII_MARKDOWN" => (ASCII_MARKDOWN, false),
+                "UTF8_FULL" => (UTF8_FULL, true),
+                "UTF8_FULL_CONDENSED" => (UTF8_FULL_CONDENSED, true),
+                "UTF8_NO_BORDERS" => (UTF8_NO_BORDERS, true),
+                "UTF8_BORDERS_ONLY" => (UTF8_BORDERS_ONLY, true),
+                "UTF8_HORIZONTAL_ONLY" => (UTF8_HORIZONTAL_ONLY, true),
+                "NOTHING" => (NOTHING, false),
+                "DEFAULT" => (UTF8_FULL_CONDENSED, true),
+                _ => (UTF8_FULL_CONDENSED, true),
             };
 
             let mut table = Table::new();
@@ -446,18 +472,29 @@ impl Display for DataFrame {
                 .load_preset(preset)
                 .set_content_arrangement(ContentArrangement::Dynamic);
 
+            if is_utf8 && env_is_true(FMT_TABLE_ROUNDED_CORNERS) {
+                table.apply_modifier(UTF8_ROUND_CORNERS);
+            }
             if max_n_rows > 0 {
                 if height > max_n_rows {
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
                     for i in 0..std::cmp::max(max_n_rows / 2, 1) {
-                        let row = self.columns.iter().map(|s| s.str_value(i)).collect();
+                        let row = self
+                            .columns
+                            .iter()
+                            .map(|s| s.str_value(i).unwrap())
+                            .collect();
                         rows.push(prepare_row(row, n_first, n_last, str_truncate));
                     }
                     let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                     rows.push(dots);
                     if max_n_rows > 1 {
                         for i in (height - (max_n_rows + 1) / 2)..height {
-                            let row = self.columns.iter().map(|s| s.str_value(i)).collect();
+                            let row = self
+                                .columns
+                                .iter()
+                                .map(|s| s.str_value(i).unwrap())
+                                .collect();
                             rows.push(prepare_row(row, n_first, n_last, str_truncate));
                         }
                     }
@@ -465,7 +502,11 @@ impl Display for DataFrame {
                 } else {
                     for i in 0..height {
                         if self.width() > 0 {
-                            let row = self.columns.iter().map(|s| s.str_value(i)).collect();
+                            let row = self
+                                .columns
+                                .iter()
+                                .map(|s| s.str_value(i).unwrap())
+                                .collect();
                             table.add_row(prepare_row(row, n_first, n_last, str_truncate));
                         } else {
                             break;
@@ -499,7 +540,12 @@ impl Display for DataFrame {
 
             // if no tbl_width (its not-tty && it is not explicitly set), then set default.
             // this is needed to support non-tty applications
-            if !table.is_tty() && table.width().is_none() {
+            #[cfg(feature = "fmt")]
+            if table.width().is_none() && !table.is_tty() {
+                table.set_width(100);
+            }
+            #[cfg(feature = "fmt_no_tty")]
+            if table.width().is_none() {
                 table.set_width(100);
             }
 
@@ -523,19 +569,19 @@ impl Display for DataFrame {
 
             // establish 'shape' information (above/below/hidden)
             if env_is_true(FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION) {
-                write!(f, "{}", table)?;
+                write!(f, "{table}")?;
             } else if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
-                write!(f, "{}\nshape: {:?}", table, self.shape())?;
+                write!(f, "{table}\nshape: {:?}", self.shape())?;
             } else {
                 write!(f, "shape: {:?}\n{}", self.shape(), table)?;
             }
         }
 
-        #[cfg(not(feature = "fmt"))]
+        #[cfg(not(any(feature = "fmt", feature = "fmt_no_tty")))]
         {
             write!(
                 f,
-                "shape: {:?}\nto see more, compile with the 'fmt' feature",
+                "shape: {:?}\nto see more, compile with the 'fmt' or 'fmt_no_tty' feature",
                 self.shape()
             )?;
         }
@@ -549,23 +595,27 @@ fn fmt_integer<T: Num + NumCast + Display>(
     width: usize,
     v: T,
 ) -> fmt::Result {
-    write!(f, "{:>width$}", v, width = width)
+    write!(f, "{v:>width$}")
 }
 
 const SCIENTIFIC_BOUND: f64 = 999999.0;
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
+    if matches!(get_float_fmt(), FloatFmt::Full) {
+        return write!(f, "{v:>width$}");
+    }
+
     // show integers as 0.0, 1.0 ... 101.0
     if v.fract() == 0.0 && v.abs() < SCIENTIFIC_BOUND {
-        write!(f, "{:>width$.1}", v, width = width)
-    } else if format!("{}", v).len() > 9 {
+        write!(f, "{v:>width$.1}")
+    } else if format!("{v}").len() > 9 {
         // large and small floats in scientific notation
         if !(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND) {
-            write!(f, "{:>width$.4e}", v, width = width)
+            write!(f, "{v:>width$.4e}")
         } else {
             // this makes sure we don't write 12.00000 in case of a long flt that is 12.0000000001
             // instead we write 12.0
-            let s = format!("{:>width$.6}", v, width = width);
+            let s = format!("{v:>width$.6}");
 
             if s.ends_with('0') {
                 let mut s = s.as_str();
@@ -576,21 +626,21 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
                     len -= 1;
                 }
                 if s.ends_with('.') {
-                    write!(f, "{}0", s)
+                    write!(f, "{s}0")
                 } else {
-                    write!(f, "{}", s)
+                    write!(f, "{s}")
                 }
             } else {
                 // 12.0934509341243124
                 // written as
                 // 12.09345
-                write!(f, "{:>width$.6}", v, width = width)
+                write!(f, "{v:>width$.6}")
             }
         }
     } else if v.fract() == 0.0 {
-        write!(f, "{:>width$e}", v, width = width)
+        write!(f, "{v:>width$e}")
     } else {
-        write!(f, "{:>width$}", v, width = width)
+        write!(f, "{v:>width$}")
     }
 }
 
@@ -625,9 +675,9 @@ fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     }
     format_duration(f, v, SIZES_US.as_slice(), NAMES.as_slice())?;
     if v % 1000 != 0 {
-        write!(f, "{}µs", (v % 1_000_000_000) / 1000)?;
+        write!(f, "{}µs", (v % 1_000_000))?;
     } else if v % 1_000_000 != 0 {
-        write!(f, "{}ms", (v % 1_000_000_000) / 1_000_000)?;
+        write!(f, "{}ms", (v % 1_000_000) / 1_000)?;
     }
     Ok(())
 }
@@ -638,7 +688,7 @@ fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     }
     format_duration(f, v, SIZES_MS.as_slice(), NAMES.as_slice())?;
     if v % 1_000 != 0 {
-        write!(f, "{}ms", (v % 1_000_000_000) / 1_000_000)?;
+        write!(f, "{}ms", (v % 1_000))?;
     }
     Ok(())
 }
@@ -665,10 +715,10 @@ impl Display for AnyValue<'_> {
         let width = 0;
         match self {
             AnyValue::Null => write!(f, "null"),
-            AnyValue::UInt8(v) => write!(f, "{}", v),
-            AnyValue::UInt16(v) => write!(f, "{}", v),
-            AnyValue::UInt32(v) => write!(f, "{}", v),
-            AnyValue::UInt64(v) => write!(f, "{}", v),
+            AnyValue::UInt8(v) => write!(f, "{v}"),
+            AnyValue::UInt16(v) => write!(f, "{v}"),
+            AnyValue::UInt32(v) => write!(f, "{v}"),
+            AnyValue::UInt64(v) => write!(f, "{v}"),
             AnyValue::Int8(v) => fmt_integer(f, width, *v),
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
@@ -676,8 +726,8 @@ impl Display for AnyValue<'_> {
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
-            AnyValue::Utf8(v) => write!(f, "{}", format_args!("\"{}\"", v)),
-            AnyValue::Utf8Owned(v) => write!(f, "{}", format_args!("\"{}\"", v)),
+            AnyValue::Utf8(v) => write!(f, "{}", format_args!("\"{v}\"")),
+            AnyValue::Utf8Owned(v) => write!(f, "{}", format_args!("\"{v}\"")),
             #[cfg(feature = "dtype-binary")]
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => write!(f, "[binary data]"),
             #[cfg(feature = "dtype-date")]
@@ -690,19 +740,9 @@ impl Display for AnyValue<'_> {
                     TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
                 };
                 match tz {
-                    None => write!(f, "{}", ndt),
-                    Some(_tz) => {
-                        #[cfg(feature = "timezones")]
-                        {
-                            let tz = _tz.parse::<chrono_tz::Tz>().unwrap();
-                            let dt_utc = chrono::Utc.from_local_datetime(&ndt).unwrap();
-                            let dt_tz_aware = dt_utc.with_timezone(&tz);
-                            write!(f, "{}", dt_tz_aware)
-                        }
-                        #[cfg(not(feature = "timezones"))]
-                        {
-                            panic!("activate 'timezones' feature")
-                        }
+                    None => write!(f, "{ndt}"),
+                    Some(tz) => {
+                        write!(f, "{}", PlTzAware::new(ndt, tz))
                     }
                 }
             }
@@ -715,20 +755,67 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: chrono::NaiveTime = self.into();
-                write!(f, "{}", nt)
+                write!(f, "{nt}")
             }
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev) => {
-                let s = rev.get(*idx);
-                write!(f, "\"{}\"", s)
+            AnyValue::Categorical(idx, rev, arr) => {
+                let s = if arr.is_null() {
+                    rev.get(*idx)
+                } else {
+                    unsafe { arr.deref_unchecked().value(*idx as usize) }
+                };
+                write!(f, "\"{s}\"")
             }
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
-            AnyValue::Object(v) => write!(f, "{}", v),
+            AnyValue::Object(v) => write!(f, "{v}"),
+            #[cfg(feature = "object")]
+            AnyValue::ObjectOwned(v) => write!(f, "{}", v.0.as_ref()),
             #[cfg(feature = "dtype-struct")]
-            AnyValue::Struct(vals, _) => fmt_struct(f, vals),
+            av @ AnyValue::Struct(_, _, _) => {
+                let mut avs = vec![];
+                av._materialize_struct_av(&mut avs);
+                fmt_struct(f, &avs)
+            }
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
+        }
+    }
+}
+
+/// Utility struct to format a timezone aware datetime.
+#[allow(dead_code)]
+pub struct PlTzAware<'a> {
+    ndt: NaiveDateTime,
+    tz: &'a str,
+}
+impl<'a> PlTzAware<'a> {
+    pub fn new(ndt: NaiveDateTime, tz: &'a str) -> Self {
+        Self { ndt, tz }
+    }
+}
+
+impl Display for PlTzAware<'_> {
+    #[allow(unused_variables)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        #[cfg(feature = "timezones")]
+        match self.tz.parse::<chrono_tz::Tz>() {
+            Ok(tz) => {
+                let dt_utc = chrono::Utc.from_local_datetime(&self.ndt).unwrap();
+                let dt_tz_aware = dt_utc.with_timezone(&tz);
+                write!(f, "{dt_tz_aware}")
+            }
+            Err(_) => match parse_offset(self.tz) {
+                Ok(offset) => {
+                    let dt_tz_aware = offset.from_utc_datetime(&self.ndt);
+                    write!(f, "{dt_tz_aware}")
+                }
+                Err(_) => write!(f, "invalid timezone"),
+            },
+        }
+        #[cfg(not(feature = "timezones"))]
+        {
+            panic!("activate 'timezones' feature")
         }
     }
 }
@@ -738,7 +825,7 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
     write!(f, "{{")?;
     if !vals.is_empty() {
         for v in &vals[..vals.len() - 1] {
-            write!(f, "{},", v)?;
+            write!(f, "{v},")?;
         }
         // last value has no trailing comma
         write!(f, "{}", vals[vals.len() - 1])?;
@@ -750,19 +837,23 @@ macro_rules! impl_fmt_list {
     ($self:ident) => {{
         match $self.len() {
             0 => format!("[]"),
-            1 => format!("[{}]", $self.get_any_value(0)),
-            2 => format!("[{}, {}]", $self.get_any_value(0), $self.get_any_value(1)),
+            1 => format!("[{}]", $self.get_any_value(0).unwrap()),
+            2 => format!(
+                "[{}, {}]",
+                $self.get_any_value(0).unwrap(),
+                $self.get_any_value(1).unwrap()
+            ),
             3 => format!(
                 "[{}, {}, {}]",
-                $self.get_any_value(0),
-                $self.get_any_value(1),
-                $self.get_any_value(2)
+                $self.get_any_value(0).unwrap(),
+                $self.get_any_value(1).unwrap(),
+                $self.get_any_value(2).unwrap()
             ),
             _ => format!(
                 "[{}, {}, ... {}]",
-                $self.get_any_value(0),
-                $self.get_any_value(1),
-                $self.get_any_value($self.len() - 1)
+                $self.get_any_value(0).unwrap(),
+                $self.get_any_value(1).unwrap(),
+                $self.get_any_value($self.len() - 1).unwrap()
             ),
         }
     }};
@@ -869,13 +960,13 @@ mod test {
     fn test_fmt_list() {
         let mut builder =
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
-        builder.append_slice(Some(&[1, 2, 3]));
-        builder.append_slice(None);
+        builder.append_opt_slice(Some(&[1, 2, 3]));
+        builder.append_opt_slice(None);
         let list = builder.finish().into_series();
 
         assert_eq!(
             r#"shape: (2,)
-Series: 'a' [list]
+Series: 'a' [list[i32]]
 [
 	[1, 2, 3]
 	null

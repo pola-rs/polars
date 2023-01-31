@@ -146,7 +146,7 @@ fn test_sorted_path() -> PolarsResult<()> {
         .collect()?;
 
     let s = out.column("row_nr")?;
-    assert_eq!(s.is_sorted(), IsSorted::Ascending);
+    assert_eq!(s.is_sorted_flag(), IsSorted::Ascending);
 
     Ok(())
 }
@@ -163,12 +163,12 @@ fn test_sorted_path_joins() -> PolarsResult<()> {
 
     let out = dfa
         .lazy()
-        .with_column(col("a").set_sorted(IsSorted::Ascending))
+        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
         .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left)
         .collect()?;
 
     let s = out.column("a")?;
-    assert_eq!(s.is_sorted(), IsSorted::Ascending);
+    assert_eq!(s.is_sorted_flag(), IsSorted::Ascending);
 
     Ok(())
 }
@@ -226,5 +226,47 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
     let out = out.i32()?;
 
     assert_eq!(Vec::from(out), &[Some(16)]);
+    Ok(())
+}
+
+#[test]
+fn test_groupby_on_lists() -> PolarsResult<()> {
+    let s0 = Series::new("", [1i32, 2, 3]);
+    let s1 = Series::new("groups", [4i32, 5]);
+
+    let mut builder =
+        ListPrimitiveChunkedBuilder::<Int32Type>::new("arrays", 10, 10, DataType::Int32);
+    builder.append_series(&s0);
+    builder.append_series(&s1);
+    let s2 = builder.finish().into_series();
+
+    let df = DataFrame::new(vec![s1, s2])?;
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("groups")])
+        .agg([col("arrays").first()])
+        .collect()?;
+
+    assert_eq!(
+        out.column("arrays")?.dtype(),
+        &DataType::List(Box::new(DataType::Int32))
+    );
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("groups")])
+        .agg([col("arrays").list()])
+        .collect()?;
+
+    // a list of lists
+    assert_eq!(
+        out.column("arrays")?.dtype(),
+        &DataType::List(Box::new(DataType::List(Box::new(DataType::List(
+            Box::new(DataType::Int32)
+        )))))
+    );
+
     Ok(())
 }

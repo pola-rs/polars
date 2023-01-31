@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import typing
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 import numpy as np
 import pytest
@@ -41,7 +41,7 @@ def test_error_on_invalid_by_in_asof_join() -> None:
         }
     )
 
-    df2 = df1.with_column(pl.col("a").cast(pl.Categorical))
+    df2 = df1.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
         df1.join_asof(df2, on="b", by=["a", "c"])
 
@@ -121,7 +121,6 @@ def test_not_found_on_rename() -> None:
 
 
 @typing.no_type_check
-@pytest.mark.filterwarnings("ignore:setting a DataFrame by indexing:DeprecationWarning")
 def test_getitem_errs() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -135,7 +134,7 @@ def test_getitem_errs() -> None:
     with pytest.raises(
         ValueError,
         match=r"Cannot __getitem__ on Series of dtype: "
-        r"'<class 'polars.datatypes.Int64'>' with argument: "
+        r"'Int64' with argument: "
         r"'{'strange'}' of type: '<class 'set'>'.",
     ):
         df["a"][{"strange"}]
@@ -218,7 +217,7 @@ def test_err_asof_join_null_values() -> None:
         }
     )
     with pytest.raises(
-        pl.ComputeError, match="Keys are not allowed to have null values in asof join."
+        pl.ComputeError, match=".sof join must not have null values in 'on' argument"
     ):
         (
             df_coor.sort("timestamp").join_asof(
@@ -271,9 +270,10 @@ def test_lazy_concat_err() -> None:
         }
     )
 
-    for how in ["horizontal", "diagonal"]:
+    for how in ["horizontal"]:
         with pytest.raises(
-            ValueError, match="Lazy only allows 'vertical' concat strategy."
+            ValueError,
+            match="Lazy only allows {{'vertical', 'diagonal'}} concat strategy.",
         ):
             pl.concat([df1.lazy(), df2.lazy()], how=how).collect()
 
@@ -292,4 +292,143 @@ def test_invalid_sort_by() -> None:
         pl.ComputeError,
         match="The sortby operation produced a different length than the Series that has to be sorted.",  # noqa: E501
     ):
-        df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", True))
+        df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", reverse=True))
+
+
+def test_epoch_time_type() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="Cannot compute timestamp of a series with dtype 'Time'"
+    ):
+        pl.Series([time(0, 0, 1)]).dt.epoch("s")
+
+
+def test_duplicate_columns_arg_csv() -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}).write_csv(f)
+    f.seek(0)
+    with pytest.raises(
+        ValueError, match=r"'columns' arg should only have unique values"
+    ):
+        pl.read_csv(f, columns=["x", "x", "y"])
+
+
+def test_datetime_time_add_err() -> None:
+    with pytest.raises(pl.ComputeError):
+        pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
+
+
+@typing.no_type_check
+def test_invalid_dtype() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",  # noqa: E501
+    ):
+        pl.Series([1, 2], dtype="mayonnaise")
+
+
+def test_arr_eval_named_cols() -> None:
+    df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
+
+    with pytest.raises(
+        pl.ComputeError,
+    ):
+        df.select(pl.col("B").arr.eval(pl.element().append(pl.col("A"))))
+
+
+def test_alias_in_join_keys() -> None:
+    df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"'alias' is not allowed in a join key. Use 'with_columns' first",
+    ):
+        df.join(df, on=pl.col("A").alias("foo"))
+
+
+def test_sort_by_different_lengths() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a"] * 3 + ["b"] * 3,
+            "col1": [1, 2, 3, 300, 200, 100],
+            "col2": [1, 2, 3, 300, 1, 1],
+        }
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"The expression in 'sort_by' argument must lead to the same length",
+    ):
+        df.groupby("group").agg(
+            [
+                pl.col("col1").sort_by(pl.col("col2").unique()),
+            ]
+        )
+
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"The expression in 'sort_by' argument must lead to the same length",
+    ):
+        df.groupby("group").agg(
+            [
+                pl.col("col1").sort_by(pl.col("col2").arg_unique()),
+            ]
+        )
+
+
+def test_err_filter_no_expansion() -> None:
+    # df contains floats
+    df = pl.DataFrame(
+        {
+            "a": [0.1, 0.2],
+        }
+    )
+
+    with pytest.raises(
+        pl.ComputeError, match=r"The predicate expanded to zero expressions"
+    ):
+        # we filter by ints
+        df.filter(pl.col(pl.Int16).min() < 0.1)
+
+
+def test_date_string_comparison() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                "2022-11-01",
+                "2022-11-02",
+                "2022-11-05",
+            ],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
+
+    with pytest.raises(
+        pl.ComputeError, match=r"Cannot compare 'date/datetime/time' to a string value"
+    ):
+        df.select(pl.col("date") > "2021-11-10")
+
+
+def test_err_on_multiple_column_expansion() -> None:
+    # this would be a great feature :)
+    with pytest.raises(
+        pl.ComputeError, match=r"Expanding more than one `col` is not yet allowed"
+    ):
+        pl.DataFrame(
+            {
+                "a": [1],
+                "b": [2],
+                "c": [3],
+                "d": [4],
+            }
+        ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])])
+
+
+def test_compare_different_len() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": list(range(5)),
+        }
+    )
+
+    s = pl.Series([2, 5, 8])
+    with pytest.raises(
+        pl.ComputeError, match=r"annot evaluate two Series of different length"
+    ):
+        df.filter(pl.col("idx") == s)

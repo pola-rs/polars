@@ -42,6 +42,10 @@ except ImportError:
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: E501
 
 
+class InvalidAssert(Exception):
+    """Exception raised when an unsupported testing assert is made."""
+
+
 class RowsException(Exception):
     """Exception raised when the number of returned rows does not match expectation."""
 

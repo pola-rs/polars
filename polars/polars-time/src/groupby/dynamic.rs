@@ -130,8 +130,7 @@ impl Wrap<&DataFrame> {
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
-                    dt
+                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
                 )
                     .into(),
                 ))
@@ -198,8 +197,7 @@ impl Wrap<&DataFrame> {
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
-                    dt
+                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
                 )
                     .into(),
                 ))
@@ -216,6 +214,10 @@ impl Wrap<&DataFrame> {
         tu: TimeUnit,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+        if dt.is_empty() {
+            return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
+        }
+
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
         let tz = dt.time_zone();
@@ -506,7 +508,7 @@ mod test {
                     "2020-01-08 23:16:43",
                 ],
             )
-            .as_datetime(None, tu, false)?
+            .as_datetime(None, tu, false, false, false)?
             .into_series();
             let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
@@ -544,7 +546,7 @@ mod test {
                 "2020-01-08 23:16:43",
             ],
         )
-        .as_datetime(None, TimeUnit::Milliseconds, false)?
+        .as_datetime(None, TimeUnit::Milliseconds, false, false, false)?
         .into_series();
         let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
@@ -601,7 +603,7 @@ mod test {
     }
 
     #[test]
-    fn test_dynamic_groupby_window() {
+    fn test_dynamic_groupby_window() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -620,7 +622,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
 
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
@@ -672,7 +674,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
@@ -695,7 +697,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
@@ -711,6 +713,7 @@ mod test {
             .into(),
         );
         assert_eq!(expected, groups);
+        Ok(())
     }
 
     #[test]
@@ -733,7 +736,7 @@ mod test {
     }
 
     #[test]
-    fn test_truncate_offset() {
+    fn test_truncate_offset() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 3, 1)
             .unwrap()
             .and_hms_opt(12, 0, 0)
@@ -752,7 +755,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
 
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
@@ -777,5 +780,6 @@ mod test {
         time_key.rename("");
         lower_bound.rename("");
         assert!(time_key.series_equal(&lower_bound));
+        Ok(())
     }
 }

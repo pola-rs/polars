@@ -161,8 +161,8 @@ fn test_parquet_globbing() -> PolarsResult<()> {
     .collect()?;
     assert_eq!(df.shape(), (54, 4));
     let cal = df.column("calories")?;
-    assert_eq!(cal.get(0), AnyValue::Int64(45));
-    assert_eq!(cal.get(53), AnyValue::Int64(194));
+    assert_eq!(cal.get(0)?, AnyValue::Int64(45));
+    assert_eq!(cal.get(53)?, AnyValue::Int64(194));
 
     Ok(())
 }
@@ -186,8 +186,8 @@ fn test_ipc_globbing() -> PolarsResult<()> {
     .collect()?;
     assert_eq!(df.shape(), (54, 4));
     let cal = df.column("calories")?;
-    assert_eq!(cal.get(0), AnyValue::Int64(45));
-    assert_eq!(cal.get(53), AnyValue::Int64(194));
+    assert_eq!(cal.get(0)?, AnyValue::Int64(45));
+    assert_eq!(cal.get(53)?, AnyValue::Int64(194));
 
     Ok(())
 }
@@ -211,8 +211,8 @@ fn test_csv_globbing() -> PolarsResult<()> {
     // all 5 files * 27 rows
     assert_eq!(full_df.shape(), (135, 4));
     let cal = full_df.column("calories")?;
-    assert_eq!(cal.get(0), AnyValue::Int64(45));
-    assert_eq!(cal.get(53), AnyValue::Int64(194));
+    assert_eq!(cal.get(0)?, AnyValue::Int64(45));
+    assert_eq!(cal.get(53)?, AnyValue::Int64(194));
 
     let glob = "../../examples/datasets/*.csv";
     let lf = LazyCsvReader::new(glob).finish()?.slice(0, 100);
@@ -325,7 +325,7 @@ fn skip_rows_and_slice() -> PolarsResult<()> {
         .finish()?
         .limit(1)
         .collect()?;
-    assert_eq!(out.column("fruit")?.get(0), AnyValue::Utf8("seafood"));
+    assert_eq!(out.column("fruit")?.get(0)?, AnyValue::Utf8("seafood"));
     assert_eq!(out.shape(), (1, 4));
     Ok(())
 }

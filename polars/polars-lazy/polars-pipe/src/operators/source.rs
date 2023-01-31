@@ -7,4 +7,6 @@ pub enum SourceResult {
 
 pub trait Source: Send + Sync {
     fn get_batches(&mut self, context: &PExecutionContext) -> PolarsResult<SourceResult>;
+
+    fn fmt(&self) -> &str;
 }

@@ -45,7 +45,7 @@ pub(crate) fn cast_columns(
         (Utf8, Datetime(tu, _)) => s
             .utf8()
             .unwrap()
-            .as_datetime(None, *tu, false)
+            .as_datetime(None, *tu, false, false, false)
             .map(|ca| ca.into_series()),
         (_, dt) => s.cast(dt),
     };
@@ -81,7 +81,7 @@ pub(crate) struct CoreReader<'a> {
     projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
     line_number: usize,
-    ignore_parser_errors: bool,
+    ignore_errors: bool,
     skip_rows_before_header: usize,
     // after the header, we need to take embedded lines into account
     skip_rows_after_header: usize,
@@ -97,6 +97,7 @@ pub(crate) struct CoreReader<'a> {
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValuesCompiled>,
+    missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_count: Option<RowCount>,
@@ -170,7 +171,7 @@ impl<'a> CoreReader<'a> {
         max_records: Option<usize>,
         delimiter: Option<u8>,
         has_header: bool,
-        ignore_parser_errors: bool,
+        ignore_errors: bool,
         schema: Option<&'a Schema>,
         columns: Option<Vec<String>>,
         encoding: CsvEncoding,
@@ -184,6 +185,7 @@ impl<'a> CoreReader<'a> {
         quote_char: Option<u8>,
         eol_char: u8,
         null_values: Option<NullValues>,
+        missing_is_null: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         to_cast: Vec<Field>,
         skip_rows_after_header: usize,
@@ -264,7 +266,7 @@ impl<'a> CoreReader<'a> {
             schema,
             projection,
             line_number: usize::from(has_header),
-            ignore_parser_errors,
+            ignore_errors,
             skip_rows_before_header: skip_rows,
             skip_rows_after_header,
             n_rows,
@@ -279,6 +281,7 @@ impl<'a> CoreReader<'a> {
             quote_char,
             eol_char,
             null_values,
+            missing_is_null,
             predicate,
             to_cast,
             row_count,
@@ -363,7 +366,7 @@ impl<'a> CoreReader<'a> {
             self.quote_char,
         ) {
             if logging {
-                eprintln!("avg line length: {}\nstd. dev. line length: {}", mean, std);
+                eprintln!("avg line length: {mean}\nstd. dev. line length: {std}");
             }
 
             // x % upper bound of byte length per line assuming normally distributed
@@ -391,7 +394,7 @@ impl<'a> CoreReader<'a> {
                 }
             }
             if logging {
-                eprintln!("initial row estimate: {}", total_rows)
+                eprintln!("initial row estimate: {total_rows}")
             }
         }
         if total_rows == 128 {
@@ -406,8 +409,7 @@ impl<'a> CoreReader<'a> {
         let n_chunks = total_rows / chunk_size;
         if logging {
             eprintln!(
-                "no. of chunks: {} processed by: {} threads at 1 chunk/thread",
-                n_chunks, n_threads
+                "no. of chunks: {n_chunks} processed by: {n_threads} threads at 1 chunk/thread",
             );
         }
 
@@ -486,7 +488,9 @@ impl<'a> CoreReader<'a> {
 
         // If the number of threads given by the user is lower than our global thread pool we create
         // new one.
+        #[cfg(not(target_family = "wasm"))]
         let owned_pool;
+        #[cfg(not(target_family = "wasm"))]
         let pool = if POOL.current_num_threads() != n_threads {
             owned_pool = Some(
                 ThreadPoolBuilder::new()
@@ -498,7 +502,8 @@ impl<'a> CoreReader<'a> {
         } else {
             &POOL
         };
-
+        #[cfg(target_family = "wasm")] // use a pre-created pool for wasm
+        let pool = &POOL;
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             // TODO! add DataFrame::new_from_schema
@@ -509,7 +514,7 @@ impl<'a> CoreReader<'a> {
                 &self.init_string_size_stats(&str_columns, 0),
                 self.quote_char,
                 self.encoding,
-                self.ignore_parser_errors,
+                self.ignore_errors,
             )?;
             let df = DataFrame::new_no_checks(
                 buffers
@@ -531,12 +536,11 @@ impl<'a> CoreReader<'a> {
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
                         let delimiter = self.delimiter;
                         let schema = self.schema.as_ref();
-                        let ignore_parser_errors = self.ignore_parser_errors;
+                        let ignore_errors = self.ignore_errors;
                         let projection = &projection;
 
                         let mut read = bytes_offset_thread;
                         let mut dfs = Vec::with_capacity(256);
-
                         let mut last_read = usize::MAX;
                         loop {
                             if read >= stop_at_nbytes || read == last_read {
@@ -550,7 +554,7 @@ impl<'a> CoreReader<'a> {
                                 &str_capacities,
                                 self.quote_char,
                                 self.encoding,
-                                self.ignore_parser_errors,
+                                self.ignore_errors,
                             )?;
 
                             let local_bytes = &bytes[read..stop_at_nbytes];
@@ -565,9 +569,10 @@ impl<'a> CoreReader<'a> {
                                 self.quote_char,
                                 self.eol_char,
                                 self.null_values.as_ref(),
+                                self.missing_is_null,
                                 projection,
                                 &mut buffers,
-                                ignore_parser_errors,
+                                ignore_errors,
                                 chunk_size,
                                 self.schema.len(),
                             )?;
@@ -625,7 +630,7 @@ impl<'a> CoreReader<'a> {
                             bytes,
                             self.delimiter,
                             self.schema.as_ref(),
-                            self.ignore_parser_errors,
+                            self.ignore_errors,
                             &projection,
                             bytes_offset_thread,
                             self.quote_char,
@@ -635,6 +640,7 @@ impl<'a> CoreReader<'a> {
                             &str_capacities,
                             self.encoding,
                             self.null_values.as_ref(),
+                            self.missing_is_null,
                             usize::MAX,
                             stop_at_nbytes,
                             starting_point_offset,
@@ -702,7 +708,7 @@ fn read_chunk(
     bytes: &[u8],
     delimiter: u8,
     schema: &Schema,
-    ignore_parser_errors: bool,
+    ignore_errors: bool,
     projection: &[usize],
     bytes_offset_thread: usize,
     quote_char: Option<u8>,
@@ -712,6 +718,7 @@ fn read_chunk(
     str_capacities: &[RunningSize],
     encoding: CsvEncoding,
     null_values: Option<&NullValuesCompiled>,
+    missing_is_null: bool,
     chunk_size: usize,
     stop_at_nbytes: usize,
     starting_point_offset: Option<usize>,
@@ -724,7 +731,7 @@ fn read_chunk(
         str_capacities,
         quote_char,
         encoding,
-        ignore_parser_errors,
+        ignore_errors,
     )?;
 
     let mut last_read = usize::MAX;
@@ -744,9 +751,10 @@ fn read_chunk(
             quote_char,
             eol_char,
             null_values,
+            missing_is_null,
             projection,
             &mut buffers,
-            ignore_parser_errors,
+            ignore_errors,
             chunk_size,
             schema.len(),
         )?;

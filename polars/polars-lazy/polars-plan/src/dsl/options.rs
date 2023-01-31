@@ -19,6 +19,10 @@ pub struct StrpTimeOptions {
     pub exact: bool,
     /// use a cache of unique, converted dates to apply the datetime conversion.
     pub cache: bool,
+    /// Parse a timezone aware timestamp
+    pub tz_aware: bool,
+    /// Convert timezone aware to UTC
+    pub utc: bool,
 }
 
 impl Default for StrpTimeOptions {
@@ -29,6 +33,8 @@ impl Default for StrpTimeOptions {
             strict: false,
             exact: false,
             cache: true,
+            tz_aware: false,
+            utc: false,
         }
     }
 }
@@ -41,6 +47,8 @@ pub struct JoinOptions {
     pub how: JoinType,
     pub suffix: Cow<'static, str>,
     pub slice: Option<(i64, usize)>,
+    /// Proxy of the number of rows in both sides of the joins
+    /// Holds `(Option<known_size>, estimated_size)`
     pub rows_left: (Option<usize>, usize),
     pub rows_right: (Option<usize>, usize),
 }

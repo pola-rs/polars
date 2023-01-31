@@ -7,11 +7,10 @@ from polars.datatypes import (
     DataType,
     Date,
     Datetime,
-    TemporalDataType,
+    PolarsTemporalType,
     Time,
     is_polars_dtype,
 )
-from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -27,11 +26,13 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: TemporalDataType,
+        datatype: PolarsTemporalType,
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
+        tz_aware: bool = False,
+        utc: bool = False,
     ) -> pli.Expr:
         """
         Parse a Utf8 expression to a Date/Datetime/Time type.
@@ -44,6 +45,9 @@ class ExprStringNameSpace:
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
+            Note that the ``Z`` suffix for "Zulu time" in ISO8601 formats is not (yet!)
+            fully supported: you should first try ``"%+"`` and if that fails, insert a
+            ``Z`` in your ``fmt`` string and then use ``dt.with_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -51,6 +55,12 @@ class ExprStringNameSpace:
             - If False, allow the format to match anywhere in the target string.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
+        tz_aware
+            Parse timezone aware datetimes. This may be automatically toggled by the
+            'fmt' given.
+        utc
+            Parse timezone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
 
         Notes
         -----
@@ -71,16 +81,12 @@ class ExprStringNameSpace:
         ...         "Sun Jul  8 00:34:60 2001",
         ...     ],
         ... )
-        >>> (
-        ...     s.to_frame().with_column(
-        ...         pl.col("date")
-        ...         .str.strptime(pl.Date, "%F", strict=False)
-        ...         .fill_null(
-        ...             pl.col("date").str.strptime(pl.Date, "%F %T", strict=False)
-        ...         )
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
-        ...     )
+        >>> s.to_frame().with_columns(
+        ...     pl.col("date")
+        ...     .str.strptime(pl.Date, "%F", strict=False)
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%F %T", strict=False))
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
+        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
         ... )
         shape: (4, 1)
         ┌────────────┐
@@ -89,11 +95,8 @@ class ExprStringNameSpace:
         │ date       │
         ╞════════════╡
         │ 2021-04-22 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2022-01-04 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2022-01-31 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-07-08 │
         └────────────┘
 
@@ -106,7 +109,9 @@ class ExprStringNameSpace:
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
             dtcol = pli.wrap_expr(
-                self._pyexpr.str_parse_datetime(fmt, strict, exact, cache)
+                self._pyexpr.str_parse_datetime(
+                    fmt, strict, exact, cache, tz_aware, utc, tu
+                )
             )
             return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
         elif datatype == Time:
@@ -139,11 +144,8 @@ class ExprStringNameSpace:
         │ str  ┆ u32    ┆ u32    │
         ╞══════╪════════╪════════╡
         │ Café ┆ 5      ┆ 4      │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ null ┆ null   ┆ null   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 345  ┆ 3      ┆ 3      │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 東京  ┆ 6      ┆ 2      │
         └──────┴────────┴────────┘
 
@@ -175,11 +177,8 @@ class ExprStringNameSpace:
         │ str  ┆ u32    ┆ u32    │
         ╞══════╪════════╪════════╡
         │ Café ┆ 4      ┆ 5      │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ null ┆ null   ┆ null   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 345  ┆ 3      ┆ 3      │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 東京  ┆ 2      ┆ 6      │
         └──────┴────────┴────────┘
 
@@ -230,7 +229,6 @@ class ExprStringNameSpace:
         │ str │
         ╞═════╡
         │ CAT │
-        ├╌╌╌╌╌┤
         │ DOG │
         └─────┘
 
@@ -252,99 +250,136 @@ class ExprStringNameSpace:
         │ str │
         ╞═════╡
         │ cat │
-        ├╌╌╌╌╌┤
         │ dog │
         └─────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_to_lowercase())
 
-    def strip(self, matches: None | str = None) -> pli.Expr:
-        """
-        Remove leading and trailing whitespace.
+    def strip(self, matches: str | None = None) -> pli.Expr:
+        r"""
+        Remove leading and trailing characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
         >>> df.select(pl.col("foo").str.strip())
-        shape: (3, 1)
+        shape: (2, 1)
         ┌───────┐
         │ foo   │
         │ ---   │
         │ str   │
         ╞═══════╡
-        │ lead  │
-        ├╌╌╌╌╌╌╌┤
-        │ trail │
-        ├╌╌╌╌╌╌╌┤
-        │ both  │
+        │ hello │
+        │ world │
         └───────┘
 
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> df.select(pl.col("foo").str.strip("od\t"))
+        shape: (2, 1)
+        ┌─────────┐
+        │ foo     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │  hello  │
+        │ worl    │
+        └─────────┘
+
         """
-        if matches is not None and len(matches) > 1:
-            raise ValueError("matches should contain a single character")
         return pli.wrap_expr(self._pyexpr.str_strip(matches))
 
-    def lstrip(self, matches: None | str = None) -> pli.Expr:
-        """
-        Remove leading whitespace.
+    def lstrip(self, matches: str | None = None) -> pli.Expr:
+        r"""
+        Remove leading characters.
+
+        Parameters
+        ----------
+        matches
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
         >>> df.select(pl.col("foo").str.lstrip())
-        shape: (3, 1)
+        shape: (2, 1)
         ┌────────┐
         │ foo    │
         │ ---    │
         │ str    │
         ╞════════╡
-        │ lead   │
-        ├╌╌╌╌╌╌╌╌┤
-        │ trail  │
-        ├╌╌╌╌╌╌╌╌┤
-        │ both   │
+        │ hello  │
+        │ world  │
         └────────┘
 
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> df.select(pl.col("foo").str.lstrip("wod\t"))
+        shape: (2, 1)
+        ┌─────────┐
+        │ foo     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │  hello  │
+        │ rld     │
+        └─────────┘
+
         """
-        if matches is not None and len(matches) > 1:
-            raise ValueError("matches should contain a single character")
         return pli.wrap_expr(self._pyexpr.str_lstrip(matches))
 
-    def rstrip(self, matches: None | str = None) -> pli.Expr:
-        """
-        Remove trailing whitespace.
+    def rstrip(self, matches: str | None = None) -> pli.Expr:
+        r"""
+        Remove trailing characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df = pl.DataFrame({"foo": [" hello ", "world\t"]})
         >>> df.select(pl.col("foo").str.rstrip())
-        shape: (3, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │  lead │
-        ├╌╌╌╌╌╌╌┤
-        │ trail │
-        ├╌╌╌╌╌╌╌┤
-        │  both │
-        └───────┘
+        shape: (2, 1)
+        ┌────────┐
+        │ foo    │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │  hello │
+        │ world  │
+        └────────┘
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> df.select(pl.col("foo").str.rstrip("wod\t"))
+        shape: (2, 1)
+        ┌─────────┐
+        │ foo     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │  hello  │
+        │ worl    │
+        └─────────┘
 
         """
-        if matches is not None and len(matches) > 1:
-            raise ValueError("matches should contain a single character")
         return pli.wrap_expr(self._pyexpr.str_rstrip(matches))
 
     def zfill(self, alignment: int) -> pli.Expr:
@@ -370,7 +405,7 @@ class ExprStringNameSpace:
         ...         "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
         ...     }
         ... )
-        >>> df.with_column(pl.col("num").cast(str).str.zfill(5))
+        >>> df.with_columns(pl.col("num").cast(str).str.zfill(5))
         shape: (11, 1)
         ┌─────────┐
         │ num     │
@@ -378,21 +413,13 @@ class ExprStringNameSpace:
         │ str     │
         ╞═════════╡
         │ -0010   │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ -0001   │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 00000   │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 00001   │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ ...     │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 10000   │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 100000  │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 1000000 │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
         └─────────┘
 
@@ -425,11 +452,8 @@ class ExprStringNameSpace:
         │ str          │
         ╞══════════════╡
         │ cow*****     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ monkey**     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ hippopotamus │
         └──────────────┘
 
@@ -462,18 +486,17 @@ class ExprStringNameSpace:
         │ str          │
         ╞══════════════╡
         │ *****cow     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ **monkey     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ hippopotamus │
         └──────────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
-    def contains(self, pattern: str, literal: bool = False) -> pli.Expr:
+    def contains(
+        self, pattern: str | pli.Expr, literal: bool = False, strict: bool = True
+    ) -> pli.Expr:
         """
         Check if string contains a substring that matches a regex.
 
@@ -483,6 +506,9 @@ class ExprStringNameSpace:
             A valid regex pattern.
         literal
             Treat pattern as a literal string.
+        strict
+            Raise an error if the underlying pattern is not a valid regex expression,
+            otherwise mask out with a null value.
 
         Examples
         --------
@@ -501,11 +527,8 @@ class ExprStringNameSpace:
         │ str         ┆ bool  ┆ bool    │
         ╞═════════════╪═══════╪═════════╡
         │ Crab        ┆ false ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ cat and dog ┆ true  ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ rab$bit     ┆ true  ┆ true    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
 
@@ -515,9 +538,10 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal))
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
+        return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
-    def ends_with(self, sub: str) -> pli.Expr:
+    def ends_with(self, sub: str | pli.Expr) -> pli.Expr:
         """
         Check if string values end with a substring.
 
@@ -529,7 +553,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
         ... )
         shape: (3, 2)
@@ -539,9 +563,7 @@ class ExprStringNameSpace:
         │ str    ┆ bool       │
         ╞════════╪════════════╡
         │ apple  ┆ false      │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ mango  ┆ true       │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null   ┆ null       │
         └────────┴────────────┘
 
@@ -563,9 +585,10 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
+        sub = pli.expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_ends_with(sub))
 
-    def starts_with(self, sub: str) -> pli.Expr:
+    def starts_with(self, sub: str | pli.Expr) -> pli.Expr:
         """
         Check if string values start with a substring.
 
@@ -577,7 +600,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
         ... )
         shape: (3, 2)
@@ -587,9 +610,7 @@ class ExprStringNameSpace:
         │ str    ┆ bool       │
         ╞════════╪════════════╡
         │ apple  ┆ true       │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ mango  ┆ false      │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null   ┆ null       │
         └────────┴────────────┘
 
@@ -611,6 +632,7 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
+        sub = pli.expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_starts_with(sub))
 
     def json_path_match(self, json_path: str) -> pli.Expr:
@@ -646,20 +668,16 @@ class ExprStringNameSpace:
         │ str      │
         ╞══════════╡
         │ 1        │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2        │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2.1      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
         │ true     │
         └──────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
-    def decode(self, encoding: TransferEncoding, strict: bool = False) -> pli.Expr:
+    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> pli.Expr:
         """
         Decode a value using the provided encoding.
 
@@ -668,27 +686,8 @@ class ExprStringNameSpace:
         encoding : {'hex', 'base64'}
             The encoding to use.
         strict
-            How to handle invalid inputs:
-
-            - ``True``: An error will be thrown if unable to decode a value.
-            - ``False``: Unhandled values will be replaced with `None`.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"encoded": ["666f6f", "626172", None]})
-        >>> df.select(pl.col("encoded").str.decode("hex"))
-        shape: (3, 1)
-        ┌─────────┐
-        │ encoded │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ foo     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ bar     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ null    │
-        └─────────┘
+            Raise an error if the underlying value cannot be decoded,
+            otherwise mask out with a null value.
 
         """
         if encoding == "hex":
@@ -724,9 +723,7 @@ class ExprStringNameSpace:
         │ str     │
         ╞═════════╡
         │ 666f6f  │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ 626172  │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
         └─────────┘
 
@@ -780,16 +777,14 @@ class ExprStringNameSpace:
         │ str     │
         ╞═════════╡
         │ messi   │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ ronaldo │
         └─────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
-    def extract_all(self, pattern: str) -> pli.Expr:
+    def extract_all(self, pattern: str | pli.Expr) -> pli.Expr:
         r"""
         Extracts all matches for the given regex pattern.
 
@@ -821,12 +816,12 @@ class ExprStringNameSpace:
         │ list[str]      │
         ╞════════════════╡
         │ ["123", "45"]  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ ["678", "910"] │
         └────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_extract_all(pattern))
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
+        return pli.wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
 
     def count_match(self, pattern: str) -> pli.Expr:
         r"""
@@ -856,7 +851,6 @@ class ExprStringNameSpace:
         │ u32          │
         ╞══════════════╡
         │ 5            │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 6            │
         └──────────────┘
 
@@ -885,9 +879,7 @@ class ExprStringNameSpace:
         │ list[str]             │
         ╞═══════════════════════╡
         │ ["foo", "bar"]        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ ["foo-bar"]           │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ ["foo", "bar", "baz"] │
         └───────────────────────┘
 
@@ -932,11 +924,8 @@ class ExprStringNameSpace:
         │ struct[2]   │
         ╞═════════════╡
         │ {"a","1"}   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {null,null} │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"c",null}  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"d","4"}   │
         └─────────────┘
 
@@ -959,11 +948,8 @@ class ExprStringNameSpace:
         │ str  ┆ str        ┆ str         │
         ╞══════╪════════════╪═════════════╡
         │ a_1  ┆ a          ┆ 1           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null ┆ null       ┆ null        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ c    ┆ c          ┆ null        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ d_4  ┆ d          ┆ 4           │
         └──────┴────────────┴─────────────┘
 
@@ -1002,11 +988,8 @@ class ExprStringNameSpace:
         │ struct[2]         │
         ╞═══════════════════╡
         │ {"foo","bar"}     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {null,null}       │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"foo-bar",null}  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"foo","bar baz"} │
         └───────────────────┘
 
@@ -1028,11 +1011,8 @@ class ExprStringNameSpace:
         │ str         ┆ str        ┆ str         │
         ╞═════════════╪════════════╪═════════════╡
         │ foo bar     ┆ foo        ┆ bar         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null        ┆ null       ┆ null        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ foo-bar     ┆ foo-bar    ┆ null        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ foo bar baz ┆ foo        ┆ bar baz     │
         └─────────────┴────────────┴─────────────┘
 
@@ -1065,7 +1045,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("text").str.replace(r"abc\b", "ABC")
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
@@ -1075,7 +1055,6 @@ class ExprStringNameSpace:
         │ i64 ┆ str    │
         ╞═════╪════════╡
         │ 1   ┆ 123ABC │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 2   ┆ abc456 │
         └─────┴────────┘
 
@@ -1108,7 +1087,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["abcabc", "123a123"]})
-        >>> df.with_column(pl.col("text").str.replace_all("a", "-"))
+        >>> df.with_columns(pl.col("text").str.replace_all("a", "-"))
         shape: (2, 2)
         ┌─────┬─────────┐
         │ id  ┆ text    │
@@ -1116,7 +1095,6 @@ class ExprStringNameSpace:
         │ i64 ┆ str     │
         ╞═════╪═════════╡
         │ 1   ┆ -bc-bc  │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
 
@@ -1127,7 +1105,6 @@ class ExprStringNameSpace:
             self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
         )
 
-    @deprecated_alias(start="offset")
     def slice(self, offset: int, length: int | None = None) -> pli.Expr:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -1148,7 +1125,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("s").str.slice(-3).alias("s_sliced"),
         ... )
         shape: (4, 2)
@@ -1158,17 +1135,14 @@ class ExprStringNameSpace:
         │ str         ┆ str      │
         ╞═════════════╪══════════╡
         │ pear        ┆ ear      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ null        ┆ null     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ papaya      ┆ aya      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ dragonfruit ┆ uit      │
         └─────────────┴──────────┘
 
         Using the optional `length` parameter
 
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.col("s").str.slice(4, length=3).alias("s_sliced"),
         ... )
         shape: (4, 2)
@@ -1178,13 +1152,86 @@ class ExprStringNameSpace:
         │ str         ┆ str      │
         ╞═════════════╪══════════╡
         │ pear        ┆          │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ null        ┆ null     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ papaya      ┆ ya       │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ dragonfruit ┆ onf      │
         └─────────────┴──────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_slice(offset, length))
+
+    def explode(self) -> pli.Expr:
+        """
+        Returns a column with a separate row for every string character.
+
+        Returns
+        -------
+        Exploded column with string datatype.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": ["foo", "bar"]})
+        >>> df.select(pl.col("a").str.explode())
+        shape: (6, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ f   │
+        │ o   │
+        │ o   │
+        │ b   │
+        │ a   │
+        │ r   │
+        └─────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.explode())
+
+    def parse_int(self, radix: int = 2) -> pli.Expr:
+        """
+        Parse integers with base radix from strings.
+
+        By default base 2.
+
+        Parameters
+        ----------
+        radix
+            Positive integer which is the base of the string we are parsing.
+            Default: 2
+
+        Returns
+        -------
+        Column of parsed integers in i32 format
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"bin": ["110", "101", "010"]})
+        >>> df.select(pl.col("bin").str.parse_int(2))
+        shape: (3, 1)
+        ┌─────┐
+        │ bin │
+        │ --- │
+        │ i32 │
+        ╞═════╡
+        │ 6   │
+        │ 5   │
+        │ 2   │
+        └─────┘
+
+        >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe"]})
+        >>> df.select(pl.col("hex").str.parse_int(16))
+        shape: (3, 1)
+        ┌───────┐
+        │ hex   │
+        │ ---   │
+        │ i32   │
+        ╞═══════╡
+        │ 64030 │
+        │ 65280 │
+        │ 51966 │
+        └───────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.str_parse_int(radix))

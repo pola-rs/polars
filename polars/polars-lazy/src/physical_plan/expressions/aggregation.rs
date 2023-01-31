@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_arrow::export::arrow::array::*;
 use polars_arrow::export::arrow::compute::concatenate::concatenate;
+use polars_arrow::export::arrow::offset::Offsets;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
@@ -49,7 +50,7 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.series().name().to_string();
 
         let check_flat = || {
-            if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
+            if !ac.null_propagated && matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
                 Err(PolarsError::ComputeError(
                     format!(
                         "Cannot aggregate as {}. The column is already aggregated.",
@@ -168,7 +169,14 @@ impl PhysicalExpr for AggregationExpr {
                 }
                 GroupByMethod::List => {
                     let agg = ac.aggregated();
-                    rename_series(agg, &keep_name)
+
+                    if state.unset_finalize_window_as_list() {
+                        rename_series(agg, &keep_name)
+                    } else {
+                        let ca = agg.list().unwrap();
+                        let s = run_list_agg(ca);
+                        rename_series(s, &keep_name)
+                    }
                 }
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
@@ -418,18 +426,18 @@ impl PartitionedAggregation for AggregationExpr {
                 // Safety:
                 // offsets are monotonically increasing
                 let arr = unsafe {
-                    Box::new(ListArray::<i64>::new_unchecked(
+                    Box::new(ListArray::<i64>::new(
                         data_type,
-                        offsets.into(),
+                        Offsets::new_unchecked(offsets).into(),
                         values,
                         None,
                     )) as ArrayRef
                 };
-                let mut ca = ListChunked::from_chunks(&new_name, vec![arr]);
+                let mut ca = unsafe { ListChunked::from_chunks(&new_name, vec![arr]) };
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
-                Ok(ca.into_series())
+                Ok(run_list_agg(&ca))
             }
             GroupByMethod::First => {
                 let mut agg = unsafe { partitioned.agg_first(groups) };
@@ -457,22 +465,34 @@ impl PartitionedAggregation for AggregationExpr {
 }
 
 pub struct AggQuantileExpr {
-    pub(crate) expr: Arc<dyn PhysicalExpr>,
-    pub(crate) quantile: f64,
+    pub(crate) input: Arc<dyn PhysicalExpr>,
+    pub(crate) quantile: Arc<dyn PhysicalExpr>,
     pub(crate) interpol: QuantileInterpolOptions,
 }
 
 impl AggQuantileExpr {
     pub fn new(
-        expr: Arc<dyn PhysicalExpr>,
-        quantile: f64,
+        input: Arc<dyn PhysicalExpr>,
+        quantile: Arc<dyn PhysicalExpr>,
         interpol: QuantileInterpolOptions,
     ) -> Self {
         Self {
-            expr,
+            input,
             quantile,
             interpol,
         }
+    }
+
+    fn get_quantile(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<f64> {
+        let quantile = self.quantile.evaluate(df, state)?;
+        if quantile.len() > 1 {
+            return Err(PolarsError::ComputeError(
+                "Polars only supports computing a single quantile. \
+            Make sure the 'quantile' expression input produces a single quantile."
+                    .into(),
+            ));
+        }
+        quantile.get(0).unwrap().try_extract::<f64>()
     }
 }
 
@@ -481,8 +501,10 @@ impl PhysicalExpr for AggQuantileExpr {
         None
     }
 
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
-        unimplemented!()
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+        let input = self.input.evaluate(df, state)?;
+        let quantile = self.get_quantile(df, state)?;
+        input.quantile_as_series(quantile, self.interpol)
     }
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
@@ -491,26 +513,44 @@ impl PhysicalExpr for AggQuantileExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
+
+        let quantile = self.get_quantile(df, state)?;
 
         // safety:
         // groups are in bounds
         let mut agg = unsafe {
             ac.flat_naive()
                 .into_owned()
-                .agg_quantile(ac.groups(), self.quantile, self.interpol)
+                .agg_quantile(ac.groups(), quantile, self.interpol)
         };
         agg.rename(&keep_name);
         Ok(AggregationContext::new(agg, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema)
+        self.input.to_field(input_schema)
     }
 
     fn is_valid_aggregation(&self) -> bool {
         true
     }
+}
+
+fn run_list_agg(ca: &ListChunked) -> Series {
+    assert_eq!(ca.chunks().len(), 1);
+    let arr = ca.chunks()[0].clone();
+
+    let offsets = (0i64..(ca.len() as i64 + 1)).collect::<Vec<_>>();
+    let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+    let new_arr = LargeListArray::new(
+        DataType::List(Box::new(ca.dtype().clone())).to_arrow(),
+        offsets.into(),
+        arr,
+        None,
+    );
+    unsafe { ListChunked::from_chunks(ca.name(), vec![Box::new(new_arr)]).into_series() }
 }

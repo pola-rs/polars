@@ -51,7 +51,7 @@ impl CsvSource {
             .has_header(options.has_header)
             .with_schema(schema_ref)
             .with_delimiter(options.delimiter)
-            .with_ignore_parser_errors(options.ignore_errors)
+            .with_ignore_errors(options.ignore_errors)
             .with_skip_rows(options.skip_rows)
             .with_n_rows(n_rows)
             .with_columns(with_columns.map(|mut cols| std::mem::take(Arc::make_mut(&mut cols))))
@@ -109,5 +109,8 @@ impl Source for CsvSource {
                     .collect(),
             ),
         })
+    }
+    fn fmt(&self) -> &str {
+        "csv"
     }
 }

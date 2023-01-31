@@ -2,7 +2,6 @@ use std::io::BufWriter;
 use std::ops::Deref;
 
 use numpy::IntoPyArray;
-use polars::frame::groupby::GroupBy;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
@@ -17,6 +16,7 @@ use polars_core::frame::*;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
+#[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
@@ -53,6 +53,7 @@ impl PyDataFrame {
         schema_overwrite: Option<Schema>,
     ) -> PyResult<Self> {
         // object builder must be registered.
+        #[cfg(feature = "object")]
         crate::object::register_object_builder();
 
         let schema =
@@ -77,7 +78,7 @@ impl PyDataFrame {
                         *dtype_ = dtype;
                     }
                 } else {
-                    schema.with_column(name, dtype)
+                    schema.with_column(name, dtype);
                 }
             }
         }
@@ -131,6 +132,13 @@ impl PyDataFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv-file")]
+    #[pyo3(signature = (
+        py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
+        skip_rows, projection, sep, rechunk, columns, encoding, n_threads, path,
+        overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
+        null_values, missing_utf8_is_empty_string, parse_dates, skip_rows_after_header,
+        row_count, sample_size, eol_char)
+    )]
     pub fn read_csv(
         py_f: &PyAny,
         infer_schema_length: Option<usize>,
@@ -152,6 +160,7 @@ impl PyDataFrame {
         comment_char: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
+        missing_utf8_is_empty_string: bool,
         parse_dates: bool,
         skip_rows_after_header: usize,
         row_count: Option<(String, IdxSize)>,
@@ -161,9 +170,7 @@ impl PyDataFrame {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let eol_char = eol_char.as_bytes()[0];
-
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-
         let quote_char = if let Some(s) = quote_char {
             if s.is_empty() {
                 None
@@ -196,7 +203,7 @@ impl PyDataFrame {
             .with_n_rows(n_rows)
             .with_delimiter(sep.as_bytes()[0])
             .with_skip_rows(skip_rows)
-            .with_ignore_parser_errors(ignore_errors)
+            .with_ignore_errors(ignore_errors)
             .with_projection(projection)
             .with_rechunk(rechunk)
             .with_chunk_size(chunk_size)
@@ -207,8 +214,9 @@ impl PyDataFrame {
             .with_dtypes(overwrite_dtype.as_ref())
             .with_dtypes_slice(overwrite_dtype_slice.as_deref())
             .low_memory(low_memory)
-            .with_comment_char(comment_char)
             .with_null_values(null_values)
+            .with_missing_is_null(!missing_utf8_is_empty_string)
+            .with_comment_char(comment_char)
             .with_parse_dates(parse_dates)
             .with_quote_char(quote_char)
             .with_end_of_line_char(eol_char)
@@ -222,6 +230,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory))]
     pub fn read_parquet(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -260,6 +269,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "ipc")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, row_count, memory_map))]
     pub fn read_ipc(
         py_f: &PyAny,
         columns: Option<Vec<String>>,
@@ -283,6 +293,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "avro")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows))]
     pub fn read_avro(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -302,6 +313,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
+    #[pyo3(signature = (py_f, compression))]
     pub fn write_avro(
         &mut self,
         py: Python,
@@ -335,7 +347,7 @@ impl PyDataFrame {
             let out = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::JsonLines)
                 .finish()
-                .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+                .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
             Ok(out.into())
         } else {
             // memmap the file first
@@ -353,7 +365,7 @@ impl PyDataFrame {
                     let out = JsonReader::new(mmap_bytes_r)
                         .with_json_format(JsonFormat::Json)
                         .finish()
-                        .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+                        .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
                     Ok(out.into())
                 }
             }
@@ -368,34 +380,24 @@ impl PyDataFrame {
         let out = JsonReader::new(mmap_bytes_r)
             .with_json_format(JsonFormat::JsonLines)
             .finish()
-            .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+            .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
         Ok(out.into())
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(
-        &mut self,
-        py_f: PyObject,
-        pretty: bool,
-        row_oriented: bool,
-        json_lines: bool,
-    ) -> PyResult<()> {
+    pub fn write_json(&mut self, py_f: PyObject, pretty: bool, row_oriented: bool) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
-        let r = match (pretty, row_oriented, json_lines) {
-            (_, true, true) => panic!("{}", "only one of {row_oriented, json_lines} should be set"),
-            (_, _, true) => JsonWriter::new(file)
-                .with_json_format(JsonFormat::JsonLines)
-                .finish(&mut self.df),
-            (_, true, false) => JsonWriter::new(file)
+        let r = match (pretty, row_oriented) {
+            (_, true) => JsonWriter::new(file)
                 .with_json_format(JsonFormat::Json)
                 .finish(&mut self.df),
-            (true, _, _) => serde_json::to_writer_pretty(file, &self.df)
-                .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
-            (false, _, _) => serde_json::to_writer(file, &self.df)
-                .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
+            (true, _) => serde_json::to_writer_pretty(file, &self.df)
+                .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
+            (false, _) => serde_json::to_writer(file, &self.df)
+                .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
         };
-        r.map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+        r.map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -407,7 +409,7 @@ impl PyDataFrame {
             .with_json_format(JsonFormat::JsonLines)
             .finish(&mut self.df);
 
-        r.map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+        r.map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -440,17 +442,17 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        let (rows, mut names) = dicts_to_rows(dicts, infer_schema_length.unwrap_or(50))?;
-
-        // ensure the new names are used
+        // if given, read dict fields in schema order
+        let mut schema_columns = PlIndexSet::new();
         if let Some(schema) = &schema_overwrite {
-            for (new_name, name) in schema.0.iter_names().zip(names.iter_mut()) {
-                *name = new_name.clone();
-            }
+            schema_columns.extend(schema.0.iter_names().map(|n| n.to_string()))
         }
+        let infer_schema_length = std::cmp::max(infer_schema_length.unwrap_or(50), 1);
+        let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
+
         let mut pydf = Self::finish_from_rows(
             rows,
-            infer_schema_length,
+            Some(infer_schema_length),
             schema_overwrite.map(|wrap| wrap.0),
         )?;
 
@@ -513,20 +515,22 @@ impl PyDataFrame {
         let null = null_value.unwrap_or_default();
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
-            // no need for a buffered writer, because the csv writer does internal buffering
-            CsvWriter::new(f)
-                .has_header(has_header)
-                .with_delimiter(sep)
-                .with_quoting_char(quote)
-                .with_batch_size(batch_size)
-                .with_datetime_format(datetime_format)
-                .with_date_format(date_format)
-                .with_time_format(time_format)
-                .with_float_precision(float_precision)
-                .with_null_value(null)
-                .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
+            py.allow_threads(|| {
+                let f = std::fs::File::create(s).unwrap();
+                // no need for a buffered writer, because the csv writer does internal buffering
+                CsvWriter::new(f)
+                    .has_header(has_header)
+                    .with_delimiter(sep)
+                    .with_quoting_char(quote)
+                    .with_batch_size(batch_size)
+                    .with_datetime_format(datetime_format)
+                    .with_date_format(date_format)
+                    .with_time_format(time_format)
+                    .with_float_precision(float_precision)
+                    .with_null_value(null)
+                    .finish(&mut self.df)
+                    .map_err(PyPolarsErr::from)
+            })?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
@@ -554,11 +558,13 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
-            IpcWriter::new(f)
-                .with_compression(compression.0)
-                .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
+            py.allow_threads(|| {
+                let f = std::fs::File::create(s).unwrap();
+                IpcWriter::new(f)
+                    .with_compression(compression.0)
+                    .finish(&mut self.df)
+                    .map_err(PyPolarsErr::from)
+            })?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
 
@@ -571,13 +577,18 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "object")]
-    pub fn row_tuple(&self, idx: i64) -> PyObject {
-        Python::with_gil(|py| {
-            let idx = if idx < 0 {
-                (self.df.height() as i64 + idx) as usize
-            } else {
-                idx as usize
-            };
+    pub fn row_tuple(&self, idx: i64) -> PyResult<PyObject> {
+        let idx = if idx < 0 {
+            (self.df.height() as i64 + idx) as usize
+        } else {
+            idx as usize
+        };
+        if idx >= self.df.height() {
+            Err(PolarsError::ComputeError("Index out of bounds.".into()))
+                .map_err(PyPolarsErr::from)?;
+        }
+
+        let out = Python::with_gil(|py| {
             PyTuple::new(
                 py,
                 self.df.get_columns().iter().map(|s| match s.dtype() {
@@ -585,11 +596,12 @@ impl PyDataFrame {
                         let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                         obj.to_object(py)
                     }
-                    _ => Wrap(s.get(idx)).into_py(py),
+                    _ => Wrap(s.get(idx).unwrap()).into_py(py),
                 }),
             )
             .into_py(py)
-        })
+        });
+        Ok(out)
     }
 
     #[cfg(feature = "object")]
@@ -607,7 +619,8 @@ impl PyDataFrame {
                                     s.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
                             }
-                            _ => Wrap(s.get(idx)).into_py(py),
+                            // safety: we are in bounds.
+                            _ => unsafe { Wrap(s.get_unchecked(idx)).into_py(py) },
                         }),
                     )
                 }),
@@ -665,6 +678,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
+    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size))]
     pub fn write_parquet(
         &mut self,
         py: Python,
@@ -678,12 +692,14 @@ impl PyDataFrame {
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
-            ParquetWriter::new(f)
-                .with_compression(compression)
-                .with_statistics(statistics)
-                .with_row_group_size(row_group_size)
-                .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
+            py.allow_threads(|| {
+                ParquetWriter::new(f)
+                    .with_compression(compression)
+                    .with_statistics(statistics)
+                    .with_row_group_size(row_group_size)
+                    .finish(&mut self.df)
+                    .map_err(PyPolarsErr::from)
+            })?;
         } else {
             let buf = get_file_like(py_f, true)?;
             ParquetWriter::new(buf)
@@ -972,6 +988,7 @@ impl PyDataFrame {
                 SortOptions {
                     descending: reverse,
                     nulls_last,
+                    multithreaded: true,
                 },
             )
             .map_err(PyPolarsErr::from)?;
@@ -1006,13 +1023,13 @@ impl PyDataFrame {
         df.into()
     }
 
-    pub fn head(&self, length: Option<usize>) -> Self {
-        let df = self.df.head(length);
+    pub fn head(&self, n: usize) -> Self {
+        let df = self.df.head(Some(n));
         PyDataFrame::new(df)
     }
 
-    pub fn tail(&self, length: Option<usize>) -> Self {
-        let df = self.df.tail(length);
+    pub fn tail(&self, n: usize) -> Self {
+        let df = self.df.tail(Some(n));
         PyDataFrame::new(df)
     }
 
@@ -1040,16 +1057,6 @@ impl PyDataFrame {
             .with_row_count(name, offset)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
-    }
-
-    pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {
-        let gb = Python::with_gil(|py| py.allow_threads(|| self.df.groupby(&by)))
-            .map_err(PyPolarsErr::from)?;
-        let selection = match select.as_ref() {
-            Some(s) => gb.select(s),
-            None => gb,
-        };
-        finish_groupby(selection, agg)
     }
 
     pub fn groupby_apply(&self, by: Vec<&str>, lambda: PyObject) -> PyResult<Self> {
@@ -1088,21 +1095,6 @@ impl PyDataFrame {
         let df = gb.apply(function).map_err(PyPolarsErr::from)?;
 
         Ok(df.into())
-    }
-
-    #[allow(deprecated)]
-    pub fn groupby_quantile(
-        &self,
-        by: Vec<&str>,
-        select: Vec<String>,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-    ) -> PyResult<Self> {
-        let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
-        let selection = gb.select(&select);
-        let df = selection.quantile(quantile, interpolation.0);
-        let df = df.map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
     }
 
     pub fn clone(&self) -> Self {
@@ -1169,6 +1161,7 @@ impl PyDataFrame {
         self.df.shift(periods).into()
     }
 
+    #[pyo3(signature = (maintain_order, subset, keep))]
     pub fn unique(
         &self,
         py: Python,
@@ -1267,6 +1260,7 @@ impl PyDataFrame {
         df.into()
     }
 
+    #[pyo3(signature = (lambda, output_type, inference_size))]
     pub fn apply(
         &self,
         lambda: &PyAny,
@@ -1383,29 +1377,4 @@ impl PyDataFrame {
         let df = self.df.unnest(names).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
-}
-
-#[allow(deprecated)]
-fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
-    Python::with_gil(|py| {
-        let df = py.allow_threads(|| match agg {
-            "min" => gb.min(),
-            "max" => gb.max(),
-            "mean" => gb.mean(),
-            "first" => gb.first(),
-            "last" => gb.last(),
-            "sum" => gb.sum(),
-            "count" => gb.count(),
-            "n_unique" => gb.n_unique(),
-            "median" => gb.median(),
-            "agg_list" => gb.agg_list(),
-            "groups" => gb.groups(),
-            a => Err(PolarsError::ComputeError(
-                format!("agg fn {} does not exists", a).into(),
-            )),
-        });
-
-        let df = df.map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    })
 }

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "polars/**"
+      - "Cargo.toml"
       - "py-polars/tests/db-benchmark/**"
       - ".github/workflows/benchmark.yaml"
 
@@ -50,7 +51,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-11-24
+          toolchain: nightly-2023-01-19
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2

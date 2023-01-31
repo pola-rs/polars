@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_date_datetime() -> None:
@@ -22,8 +23,8 @@ def test_date_datetime() -> None:
             pl.date("year", "month", "day").dt.day().cast(int).alias("date"),
         ]
     )
-    assert out["date"].series_equal(df["day"].rename("date"))
-    assert out["h2"].series_equal(df["hour"].rename("h2"))
+    assert_series_equal(out["date"], df["day"].rename("date"))
+    assert_series_equal(out["h2"], df["hour"].rename("h2"))
 
 
 def test_diag_concat() -> None:
@@ -31,17 +32,20 @@ def test_diag_concat() -> None:
     b = pl.DataFrame({"b": ["a", "b"], "c": [1, 2]})
     c = pl.DataFrame({"a": [5, 7], "c": [1, 2], "d": [1, 2]})
 
-    out = pl.concat([a, b, c], how="diagonal")
-    expected = pl.DataFrame(
-        {
-            "a": [1, 2, None, None, 5, 7],
-            "b": [None, None, "a", "b", None, None],
-            "c": [None, None, 1, 2, 1, 2],
-            "d": [None, None, None, None, 1, 2],
-        }
-    )
+    for out in [
+        pl.concat([a, b, c], how="diagonal"),
+        pl.concat([a.lazy(), b.lazy(), c.lazy()], how="diagonal").collect(),
+    ]:
+        expected = pl.DataFrame(
+            {
+                "a": [1, 2, None, None, 5, 7],
+                "b": [None, None, "a", "b", None, None],
+                "c": [None, None, 1, 2, 1, 2],
+                "d": [None, None, None, None, 1, 2],
+            }
+        )
 
-    assert out.frame_equal(expected, null_equal=True)
+        assert_frame_equal(out, expected)
 
 
 def test_concat_horizontal() -> None:
@@ -58,7 +62,7 @@ def test_concat_horizontal() -> None:
             "e": [1, 2, 1, 2],
         }
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_all_any_horizontally() -> None:
@@ -70,7 +74,7 @@ def test_all_any_horizontally() -> None:
             [False, None, True],
             [None, None, False],
         ],
-        columns=["var1", "var2", "var3"],
+        schema=["var1", "var2", "var3"],
     )
     expected = pl.DataFrame(
         {
@@ -78,12 +82,13 @@ def test_all_any_horizontally() -> None:
             "all": [False, False, False, None, False],
         }
     )
-    assert df.select(
+    result = df.select(
         [
             pl.any([pl.col("var2"), pl.col("var3")]),
             pl.all([pl.col("var2"), pl.col("var3")]),
         ]
-    ).frame_equal(expected)
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_cut() -> None:
@@ -136,9 +141,9 @@ def test_null_handling_correlation() -> None:
     df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
     df2 = pl.DataFrame({"a": [np.nan, 1, 2], "b": [np.nan, 2, 1]})
 
-    assert np.isclose(df1.select(pl.spearman_rank_corr("a", "b"))[0, 0], -1.0)
+    assert np.isclose(df1.select(pl.spearman_rank_corr("a", "b")).item(), -1.0)
     assert (
-        str(df2.select(pl.spearman_rank_corr("a", "b", propagate_nans=True))[0, 0])
+        str(df2.select(pl.spearman_rank_corr("a", "b", propagate_nans=True)).item())
         == "nan"
     )
 
@@ -182,7 +187,7 @@ def test_align_frames() -> None:
         .insert_at_idx(0, pf1["date"])
     )
     # confirm we match the same operation in pandas
-    assert pl_dot.frame_equal(pl.from_pandas(pd_dot))
+    assert_frame_equal(pl_dot, pl.from_pandas(pd_dot))
     pd.testing.assert_frame_equal(pd_dot, pl_dot.to_pandas())
 
     # (also: confirm alignment function works with lazyframes)
@@ -192,8 +197,8 @@ def test_align_frames() -> None:
         on="date",
     )
     assert isinstance(lf1, pl.LazyFrame)
-    assert lf1.collect().frame_equal(pf1)
-    assert lf2.collect().frame_equal(pf2)
+    assert_frame_equal(lf1.collect(), pf1)
+    assert_frame_equal(lf2.collect(), pf2)
 
     # misc
     assert [] == pl.align_frames(on="date")
@@ -269,3 +274,14 @@ def test_ones_zeros() -> None:
     zeros = pl.zeros(3, dtype=pl.UInt8)
     assert zeros.dtype == pl.UInt8
     assert zeros.to_list() == [0, 0, 0]
+
+
+def test_overflow_diff() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [20, 10, 30],
+        }
+    )
+    assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(False) == {
+        "a": [None, -10, 20]
+    }

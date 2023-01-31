@@ -15,6 +15,8 @@ mod anonymous_scan;
 pub mod pivot;
 
 use std::borrow::Cow;
+#[cfg(any(feature = "parquet", feature = "ipc"))]
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use anonymous_scan::*;
@@ -85,8 +87,7 @@ impl From<LogicalPlan> for LazyFrame {
 impl LazyFrame {
     /// Get a hold on the schema of the current LazyFrame computation.
     pub fn schema(&self) -> PolarsResult<SchemaRef> {
-        let logical_plan = self.clone().get_plan_builder().build();
-        logical_plan.schema().map(|schema| schema.into_owned())
+        self.logical_plan.schema().map(|schema| schema.into_owned())
     }
 
     pub(crate) fn get_plan_builder(self) -> LogicalPlanBuilder {
@@ -152,7 +153,6 @@ impl LazyFrame {
 
     /// Toggle common subplan elimination optimization on or off
     #[cfg(feature = "cse")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "cse")))]
     pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
         self.opt_state.common_subplan_elimination = toggle;
         self
@@ -266,74 +266,44 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
-    fn rename_impl_swapping(self, mut existing: Vec<String>, mut new: Vec<String>) -> Self {
+    fn rename_impl_swapping(self, existing: Vec<String>, new: Vec<String>) -> Self {
         assert_eq!(new.len(), existing.len());
-        let mut removed = 0;
-        for mut idx in 0..existing.len() {
-            // remove "name" -> "name
-            // these are no ops.
-            idx -= removed;
-            if existing[idx] == new[idx] {
-                existing.swap_remove(idx);
-                new.swap_remove(idx);
-                removed += 1;
-            }
-        }
 
         let existing2 = existing.clone();
         let new2 = new.clone();
-        let udf_schema = move |s: &Schema| {
+        let udf_schema = move |old_schema: &Schema| {
+            let mut new_schema = old_schema.clone();
+
             // schema after renaming
-            let mut new_schema = s.clone();
             for (old, new) in existing2.iter().zip(new2.iter()) {
-                new_schema
-                    .rename(old, new.to_string())
-                    .ok_or_else(|| PolarsError::NotFound(old.to_string().into()))?
+                let dtype = old_schema.try_get(old)?;
+                if new_schema.with_column(new.clone(), dtype.clone()).is_none() {
+                    new_schema.remove(old);
+                }
             }
             Ok(Arc::new(new_schema))
         };
 
-        let prefix = "__POLARS_TEMP_";
-
-        let new: Vec<String> = new
-            .iter()
-            .map(|name| format!("{}{}", prefix, name))
-            .collect();
-
-        self.with_columns(
-            existing
-                .iter()
-                .zip(&new)
-                .map(|(old, new)| col(old).alias(new))
-                .collect::<Vec<_>>(),
-        )
-        .map(
+        self.map(
             move |mut df: DataFrame| {
-                let mut cols = std::mem::take(df.get_columns_mut());
-                // we must find the indices before we start swapping,
-                // because swapping may influence the positions we find if columns are swapped for instance.
-                // e.g. a -> b
-                //      b -> a
-                #[allow(clippy::needless_collect)]
-                let existing_idx = existing
+                let positions = existing
                     .iter()
-                    .map(|name| cols.iter().position(|s| s.name() == name.as_str()).unwrap())
-                    .collect::<Vec<_>>();
-                let new_idx = new
-                    .iter()
-                    .map(|name| cols.iter().position(|s| s.name() == name.as_str()).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|old| df.try_find_idx_by_name(old))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
-                for (existing_i, new_i) in existing_idx.into_iter().zip(new_idx) {
-                    cols.swap(existing_i, new_i);
-                    let s = &mut cols[existing_i];
-                    let name = &s.name()[prefix.len()..].to_string();
-                    s.rename(name);
+                for (pos, name) in positions.iter().zip(new.iter()) {
+                    df.get_columns_mut()[*pos].rename(name);
                 }
-                cols.truncate(cols.len() - existing.len());
-                DataFrame::new(cols)
+                // recreate dataframe so we check duplicates
+                let columns = std::mem::take(df.get_columns_mut());
+                DataFrame::new(columns)
             },
-            None,
+            // Don't allow optimizations. Swapping names are opaque to the optimizer
+            AllowedOptimizations {
+                projection_pushdown: false,
+                predicate_pushdown: false,
+                ..Default::default()
+            },
             Some(Arc::new(udf_schema)),
             Some("RENAME_SWAPPING"),
         )
@@ -379,7 +349,7 @@ impl LazyFrame {
                 cols.truncate(cols.len() - (existing.len() - removed_count));
                 Ok(df)
             },
-            None,
+            Default::default(),
             Some(Arc::new(udf_schema)),
             Some("RENAME"),
         )
@@ -537,7 +507,10 @@ impl LazyFrame {
     }
 
     #[allow(unused_mut)]
-    fn prepare_collect(mut self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
+    fn prepare_collect(
+        mut self,
+        check_sink: bool,
+    ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
         let file_caching = self.opt_state.file_caching;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
@@ -559,13 +532,20 @@ impl LazyFrame {
         } else {
             None
         };
+
+        // file sink should be replaced
+        let no_file_sink = if check_sink {
+            !matches!(lp_arena.get(lp_top), ALogicalPlan::FileSink { .. })
+        } else {
+            true
+        };
         let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::with_finger_prints(finger_prints);
-        Ok((state, physical_plan))
+        Ok((state, physical_plan, no_file_sink))
     }
 
-    /// Execute all the lazy operations and collect them into a [DataFrame](polars_core::frame::DataFrame).
+    /// Execute all the lazy operations and collect them into a [`DataFrame`].
     /// Before execution the query is being optimized.
     ///
     /// # Example
@@ -582,7 +562,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        let (mut state, mut physical_plan) = self.prepare_collect()?;
+        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {
@@ -600,11 +580,57 @@ impl LazyFrame {
     ////
     //// The units of the timings are microseconds.
     pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
-        let (mut state, mut physical_plan) = self.prepare_collect()?;
+        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
         state.time_nodes();
         let out = physical_plan.execute(&mut state)?;
         let timer_df = state.finish_timer()?;
         Ok((out, timer_df))
+    }
+
+    //// Stream a query result into a parquet file. This is useful if the final result doesn't fit
+    /// into memory. This methods will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(feature = "parquet")]
+    pub fn sink_parquet(mut self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::FileSink {
+            input: Box::new(self.logical_plan),
+            payload: FileSinkOptions {
+                path: Arc::new(path),
+                file_type: FileType::Parquet(options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+
+        if is_streaming {
+            let _ = physical_plan.execute(&mut state)?;
+            Ok(())
+        } else {
+            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
+        }
+    }
+
+    //// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
+    /// into memory. This methods will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(feature = "ipc")]
+    pub fn sink_ipc(mut self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::FileSink {
+            input: Box::new(self.logical_plan),
+            payload: FileSinkOptions {
+                path: Arc::new(path),
+                file_type: FileType::Ipc(options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+
+        if is_streaming {
+            let _ = physical_plan.execute(&mut state)?;
+            Ok(())
+        } else {
+            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
+        }
     }
 
     /// Filter by some predicate expression.
@@ -684,7 +710,7 @@ impl LazyFrame {
     ///        .agg([
     ///            col("rain").min(),
     ///            col("rain").sum(),
-    ///            col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
+    ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
     /// }
     /// ```
@@ -727,7 +753,6 @@ impl LazyFrame {
     /// individual values and are not of constant intervals. For constant intervals use
     /// *groupby_dynamic*
     #[cfg(feature = "dynamic_groupby")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dynamic_groupby")))]
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -760,7 +785,6 @@ impl LazyFrame {
     /// The `by` argument should be empty `[]` if you don't want to combine this
     /// with a ordinary groupby on these keys.
     #[cfg(feature = "dynamic_groupby")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dynamic_groupby")))]
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -982,7 +1006,7 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their quantile values.
-    pub fn quantile(self, quantile: f64, interpol: QuantileInterpolOptions) -> LazyFrame {
+    pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> LazyFrame {
         self.select_local(vec![col("*").quantile(quantile, interpol)])
     }
 
@@ -1100,7 +1124,7 @@ impl LazyFrame {
     pub fn map<F>(
         self,
         function: F,
-        optimizations: Option<AllowedOptimizations>,
+        optimizations: AllowedOptimizations,
         schema: Option<Arc<dyn UdfSchema>>,
         name: Option<&'static str>,
     ) -> LazyFrame
@@ -1112,7 +1136,7 @@ impl LazyFrame {
             .get_plan_builder()
             .map(
                 function,
-                optimizations.unwrap_or_default(),
+                optimizations,
                 schema,
                 name.unwrap_or("ANONYMOUS UDF"),
             )
@@ -1188,7 +1212,7 @@ impl LazyFrame {
                     Ok(df)
                 }
             },
-            Some(opt),
+            opt,
             Some(Arc::new(udf_schema)),
             Some("WITH ROW COUNT"),
         )
@@ -1197,11 +1221,23 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
         self.map_private(FunctionNode::Unnest {
             columns: Arc::new(cols.into_iter().map(|s| Arc::from(s.as_ref())).collect()),
         })
+    }
+
+    #[cfg(feature = "merge_sorted")]
+    pub fn merge_sorted(self, other: LazyFrame, key: &str) -> PolarsResult<LazyFrame> {
+        // The two DataFrames are temporary concatenated
+        // this indicates until which chunk the data is from the left df
+        // this trick allows us to reuse the `Union` architecture to get map over
+        // two DataFrames
+        let left = self.map_private(FunctionNode::Rechunk);
+        let q = concat(&[left, other], false, true)?;
+        Ok(q.map_private(FunctionNode::MergeSorted {
+            column: Arc::from(key),
+        }))
     }
 }
 
@@ -1237,7 +1273,7 @@ impl LazyGroupBy {
     ///        .agg([
     ///            col("rain").min(),
     ///            col("rain").sum(),
-    ///            col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
+    ///            col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
     /// }
     /// ```
@@ -1269,7 +1305,7 @@ impl LazyGroupBy {
             .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
+        self.agg([col("*").exclude(&keys).head(n).keep_name()])
             .explode([col("*").exclude(&keys)])
     }
 

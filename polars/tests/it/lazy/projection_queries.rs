@@ -11,7 +11,7 @@ fn test_sum_after_filter() -> PolarsResult<()> {
     .select([col("values").sum()])
     .collect()?;
 
-    assert_eq!(df.column("values")?.get(0), AnyValue::Int32(130));
+    assert_eq!(df.column("values")?.get(0)?, AnyValue::Int32(130));
     Ok(())
 }
 
@@ -148,6 +148,26 @@ fn test_projection_5086() -> PolarsResult<()> {
     ]?;
 
     assert!(out.frame_equal(&expected));
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_unnest_pushdown() -> PolarsResult<()> {
+    let df = df![
+        "collection" => Series::full_null("", 1, &DataType::Int32),
+        "users" => Series::full_null("", 1, &DataType::List(Box::new(DataType::Struct(vec![Field::new("email", DataType::Utf8)])))),
+    ]?;
+
+    let out = df
+        .lazy()
+        .explode(["users"])
+        .unnest(["users"])
+        .select([col("email")])
+        .collect()?;
+
+    assert_eq!(out.get_column_names(), &["email"]);
 
     Ok(())
 }

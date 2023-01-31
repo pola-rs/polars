@@ -53,7 +53,6 @@ macro_rules! finish_list_builder {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             ..Default::default()
         };
         ca.compute_len();
@@ -85,17 +84,19 @@ where
         }
     }
 
-    pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
-        match opt_v {
-            Some(items) => {
-                let values = self.builder.mut_values();
-                values.extend_from_slice(items);
-                self.builder.try_push_valid().unwrap();
+    pub fn append_slice(&mut self, items: &[T::Native]) {
+        let values = self.builder.mut_values();
+        values.extend_from_slice(items);
+        self.builder.try_push_valid().unwrap();
 
-                if items.is_empty() {
-                    self.fast_explode = false;
-                }
-            }
+        if items.is_empty() {
+            self.fast_explode = false;
+        }
+    }
+
+    pub fn append_opt_slice(&mut self, opt_v: Option<&[T::Native]>) {
+        match opt_v {
+            Some(items) => self.append_slice(items),
             None => {
                 self.builder.push_null();
             }
@@ -540,6 +541,7 @@ impl<'a> AnonymousListBuilder<'a> {
 
     #[inline]
     pub fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null();
     }
 
@@ -569,6 +571,7 @@ impl<'a> AnonymousListBuilder<'a> {
     }
 
     pub fn finish(&mut self) -> ListChunked {
+        // don't use self from here on one
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
             ListChunked::full_null_with_dtype(&slf.name, 0, &slf.dtype.unwrap_or(DataType::Null))
@@ -576,9 +579,9 @@ impl<'a> AnonymousListBuilder<'a> {
             let dtype = slf.dtype.map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(dtype.as_ref()).unwrap();
             let dtype = DataType::from(arr.data_type());
-            let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
+            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
-            if self.fast_explode {
+            if slf.fast_explode {
                 ca.set_fast_explode();
             }
 
@@ -630,10 +633,12 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
 
     #[inline]
     fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null()
     }
 
     fn finish(&mut self) -> ListChunked {
+        // don't use self from here on one
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
             // not really empty, there were empty null list added probably e.g. []
@@ -642,10 +647,9 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                 let dtype = slf.inner_dtype.unwrap_or(NULL_DTYPE).to_arrow();
                 let array = new_null_array(dtype.clone(), real_length);
                 let dtype = ListArray::<i64>::default_datatype(dtype);
-                let array = unsafe {
-                    ListArray::new_unchecked(dtype, slf.builder.take_offsets().into(), array, None)
-                };
-                ListChunked::from_chunks(&slf.name, vec![Box::new(array)])
+                let array = ListArray::new(dtype, slf.builder.take_offsets().into(), array, None);
+                // safety: same type
+                unsafe { ListChunked::from_chunks(&slf.name, vec![Box::new(array)]) }
             } else {
                 ListChunked::full_null_with_dtype(
                     &slf.name,
@@ -657,9 +661,10 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             let inner_dtype = slf.inner_dtype.map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(inner_dtype.as_ref()).unwrap();
             let dtype = DataType::from(arr.data_type());
-            let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
+            // safety: same type
+            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
-            if self.fast_explode {
+            if slf.fast_explode {
                 ca.set_fast_explode();
             }
 

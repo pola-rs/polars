@@ -337,8 +337,14 @@ pub trait TemporalMethods: AsSeries {
     /// Convert date(time) object to timestamp in [`TimeUnit`].
     fn timestamp(&self, tu: TimeUnit) -> PolarsResult<Int64Chunked> {
         let s = self.as_series();
-        s.cast(&DataType::Datetime(tu, None))
-            .map(|s| s.datetime().unwrap().deref().clone())
+        if matches!(s.dtype(), DataType::Time) {
+            Err(PolarsError::ComputeError(
+                "Cannot compute timestamp of a series with dtype 'Time'".into(),
+            ))
+        } else {
+            s.cast(&DataType::Datetime(tu, None))
+                .map(|s| s.datetime().unwrap().deref().clone())
+        }
     }
 }
 

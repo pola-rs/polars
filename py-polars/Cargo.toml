@@ -1,14 +1,7 @@
 [package]
 name = "py-polars"
-version = "0.15.1"
-authors = ["ritchie46 <ritchie46@gmail.com>"]
-documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
+version = "0.16.1"
 edition = "2021"
-homepage = "https://github.com/pola-rs/polars"
-license = "MIT"
-readme = "README.md"
-repository = "https://github.com/pola-rs/polars"
-description = "Blazingly fast DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -26,11 +19,11 @@ bincode = "1.3"
 # todo: unfix when compilation problem is solved
 libc = "0.2"
 ndarray = "0.15"
-numpy = "0.16"
+numpy = "0.18"
 once_cell = "1"
-polars-core = { path = "../polars/polars-core", default-features = false }
+polars-core = { path = "../polars/polars-core", features = ["python"], default-features = false }
 polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
-pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
+pyo3 = { version = "0.18.0", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
@@ -63,6 +56,12 @@ top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
 build_info = ["dep:pyo3-built", "dep:built"]
+performant = ["polars/performant"]
+timezones = ["polars/timezones"]
+cse = ["polars/cse"]
+merge_sorted = ["polars/merge_sorted"]
+list_take = ["polars/list_take"]
+binary_encoding = ["polars/binary_encoding"]
 
 all = [
   "json",
@@ -77,24 +76,26 @@ all = [
   "cross_join",
   "pct_change",
   "search_sorted",
+  "merge_sorted",
   "meta",
   "decompress",
   "lazy_regex",
   "csv-file",
   "extract_jsonpath",
-  "polars/timezones",
+  "timezones",
   "object",
   "pivot",
   "top_k",
   "build_info",
-  # we need to add this, as maturin fails if we don't
-  # remove this once polars-algo is released
-  "polars/algo",
-  "polars/cse",
+  "cse",
   "propagate_nans",
   "polars/groupby_list",
   "sql",
   "polars/dtype-binary",
+  "binary_encoding",
+  "streaming",
+  "performant",
+  "list_take",
 ]
 
 # we cannot conditionaly activate simd
@@ -104,7 +105,6 @@ all = [
 default = [
   "all",
   "nightly",
-  "streaming",
 ]
 
 [dependencies.polars]
@@ -118,7 +118,6 @@ features = [
   "temporal",
   "random",
   "fmt",
-  "performant",
   "dtype-full",
   "rows",
   "private",
@@ -157,12 +156,10 @@ features = [
   "list_to_struct",
   "to_dummies",
   "string_justify",
+  "string_from_radix",
   "arg_where",
   "date_offset",
 ]
-
-[patch.crates-io]
-cmake = { git = "https://github.com/messense/cmake-rs.git", branch = "cross-compile" }
 
 [lib]
 name = "polars"

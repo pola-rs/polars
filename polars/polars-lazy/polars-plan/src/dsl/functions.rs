@@ -178,7 +178,6 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
 ///     If to `false` then `NaN` are regarded as larger than any finite number
 ///     and thus lead to the highest rank.
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "rank", feature = "propagate_nans"))))]
 pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> Expr {
     use polars_ops::prelude::nan_propagating_aggregate::nan_max_s;
 
@@ -188,7 +187,13 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         let name = "spearman_rank_correlation";
         if propagate_nans && a.dtype().is_float() {
             for s in [&a, &b] {
-                if nan_max_s(s, "").get(0).extract::<f64>().unwrap().is_nan() {
+                if nan_max_s(s, "")
+                    .get(0)
+                    .unwrap()
+                    .extract::<f64>()
+                    .unwrap()
+                    .is_nan()
+                {
                     return Ok(Series::new(name, &[f64::NAN]));
                 }
             }
@@ -248,7 +253,6 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Horizontally concat string columns in linear time
 pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
     let input = s.as_ref().to_vec();
@@ -267,7 +271,6 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
 /// Format the results of an array of expressions using a format string
 pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
     let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
@@ -306,7 +309,7 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
         input: s,
         function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
             fmt_str: "concat_list",
             ..Default::default()
@@ -318,12 +321,42 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
 /// - if `low` and `high` are a column, every element will expand into an array in a list column.
 /// - if `low` and `high` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
-#[cfg_attr(docsrs, doc(cfg(feature = "arange")))]
 pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
-    if (matches!(low, Expr::Literal(_)) && !matches!(low, Expr::Literal(LiteralValue::Series(_))))
-        || matches!(high, Expr::Literal(_))
-            && !matches!(high, Expr::Literal(LiteralValue::Series(_)))
-    {
+    let has_col_without_agg = |e: &Expr| {
+        has_expr(e, |ae| matches!(ae, Expr::Column(_)))
+            &&
+            // check if there is no aggregation
+            !has_expr(e, |ae| {
+                matches!(
+                    ae,
+                    Expr::Agg(_)
+                        | Expr::Count
+                        | Expr::AnonymousFunction {
+                            options: FunctionOptions {
+                                collect_groups: ApplyOptions::ApplyGroups,
+                                ..
+                            },
+                            ..
+                        }
+                        | Expr::Function {
+                            options: FunctionOptions {
+                                collect_groups: ApplyOptions::ApplyGroups,
+                                ..
+                            },
+                            ..
+                        },
+                )
+            })
+    };
+    let has_lit = |e: &Expr| {
+        (matches!(e, Expr::Literal(_)) && !matches!(e, Expr::Literal(LiteralValue::Series(_))))
+    };
+
+    let any_column_no_agg = has_col_without_agg(&low) || has_col_without_agg(&high);
+    let literal_low = has_lit(&low);
+    let literal_high = has_lit(&high);
+
+    if (literal_low || literal_high) && !any_column_no_agg {
         let f = move |sa: Series, sb: Series| {
             let sa = sa.cast(&DataType::Int64)?;
             let sb = sb.cast(&DataType::Int64)?;
@@ -336,15 +369,18 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 .get(0)
                 .ok_or_else(|| PolarsError::NoData("no data in `high` evaluation".into()))?;
 
-            if step > 1 {
-                let mut ca = Int64Chunked::from_iter_values("arange", (low..high).step_by(step));
-                ca.set_sorted(high < low);
-                Ok(ca.into_series())
+            let mut ca = if step > 1 {
+                Int64Chunked::from_iter_values("arange", (low..high).step_by(step))
             } else {
-                let mut ca = Int64Chunked::from_iter_values("arange", low..high);
-                ca.set_sorted(high < low);
-                Ok(ca.into_series())
-            }
+                Int64Chunked::from_iter_values("arange", low..high)
+            };
+            let is_sorted = if high < low {
+                IsSorted::Descending
+            } else {
+                IsSorted::Ascending
+            };
+            ca.set_sorted_flag(is_sorted);
+            Ok(ca.into_series())
         };
         apply_binary(
             low,
@@ -354,8 +390,21 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
         )
     } else {
         let f = move |sa: Series, sb: Series| {
-            let sa = sa.cast(&DataType::Int64)?;
-            let sb = sb.cast(&DataType::Int64)?;
+            let mut sa = sa.cast(&DataType::Int64)?;
+            let mut sb = sb.cast(&DataType::Int64)?;
+
+            if sa.len() != sb.len() {
+                if sa.len() == 1 {
+                    sa = sa.new_from_index(0, sb.len())
+                } else if sb.len() == 1 {
+                    sb = sb.new_from_index(0, sa.len())
+                } else {
+                    let msg = format!("The length of the 'low' and 'high' arguments cannot be matched in the 'arange' expression.. \
+                    Length of 'low': {}, length of 'high': {}", sa.len(), sb.len());
+                    return Err(PolarsError::ComputeError(msg.into()));
+                }
+            }
+
             let low = sa.i64()?;
             let high = sb.i64()?;
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
@@ -530,7 +579,7 @@ pub fn duration(args: DurationArgs) -> Expr {
 
         let condition = |s: &Series| {
             // check if not literal 0 || full column
-            (s.len() != max_len && s.get(0) != AnyValue::Int64(0)) || s.len() == max_len
+            (s.len() != max_len && s.get(0).unwrap() != AnyValue::Int64(0)) || s.len() == max_len
         };
 
         if nanoseconds.len() != max_len {
@@ -667,7 +716,7 @@ pub fn median(name: &str) -> Expr {
 }
 
 /// Find a specific quantile of all the values in this Expression.
-pub fn quantile(name: &str, quantile: f64, interpol: QuantileInterpolOptions) -> Expr {
+pub fn quantile(name: &str, quantile: Expr, interpol: QuantileInterpolOptions) -> Expr {
     col(name).quantile(quantile, interpol)
 }
 
@@ -790,7 +839,6 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-#[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
 pub fn cumreduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
@@ -836,7 +884,6 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-#[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
 pub fn cumfold_exprs<F: 'static, E: AsRef<[Expr]>>(
     acc: Expr,
     f: F,
@@ -1002,8 +1049,8 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
 /// Repeat a literal `value` `n` times.
 pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
     let function = |s: Series, n: Series| {
-        let n = n.get(0).extract::<usize>().ok_or_else(|| {
-            PolarsError::ComputeError(format!("could not extract a size from {:?}", n).into())
+        let n = n.get(0).unwrap().extract::<usize>().ok_or_else(|| {
+            PolarsError::ComputeError(format!("could not extract a size from {n:?}").into())
         })?;
         Ok(s.new_from_index(0, n))
     };
@@ -1011,7 +1058,6 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
 }
 
 #[cfg(feature = "arg_where")]
-#[cfg_attr(docsrs, doc(cfg(feature = "arg_where")))]
 /// Get the indices where `condition` evaluates `true`.
 pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
     let condition = condition.into();

@@ -46,7 +46,6 @@ impl BinaryChunkedBuilder {
             field: Arc::new(self.field),
             chunks: vec![arr],
             phantom: PhantomData,
-            categorical_map: None,
             bit_settings: Default::default(),
             length,
         }

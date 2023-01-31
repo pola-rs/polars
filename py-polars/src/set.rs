@@ -84,7 +84,7 @@ pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> Polars
             let values = values.utf8()?;
             ca.set_at_idx2(idx, values)
         }
-        _ => panic!("not yet implemented for dtype: {}", logical_dtype),
+        _ => panic!("not yet implemented for dtype: {logical_dtype}"),
     };
 
     s.and_then(|s| s.cast(&logical_dtype))

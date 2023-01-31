@@ -17,6 +17,15 @@ impl AggregateFn for NullAgg {
     fn pre_agg(&mut self, _chunk_idx: IdxSize, _item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
         // no-op
     }
+    fn pre_agg_ordered(
+        &mut self,
+        _chunk_idx: IdxSize,
+        _offset: IdxSize,
+        _length: IdxSize,
+        _values: &Series,
+    ) {
+        // no-op
+    }
 
     fn dtype(&self) -> DataType {
         self.0.clone()

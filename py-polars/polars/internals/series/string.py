@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import TemporalDataType
+from polars.datatypes import PolarsTemporalType
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -23,11 +22,13 @@ class StringNameSpace:
 
     def strptime(
         self,
-        datatype: TemporalDataType,
+        datatype: PolarsTemporalType,
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
+        tz_aware: bool = False,
+        utc: bool = False,
     ) -> pli.Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
@@ -41,6 +42,9 @@ class StringNameSpace:
             `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
+            Note that the ``Z`` suffix for "Zulu time" in ISO8601 formats is not (yet!)
+            fully supported: you should first try ``"%+"`` and if that fails, insert a
+            ``Z`` in your ``fmt`` string and then use ``dt.with_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -48,6 +52,12 @@ class StringNameSpace:
             - If False, allow the format to match anywhere in the target string.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
+        tz_aware
+            Parse timezone aware datetimes. This may be automatically toggled by the
+            'fmt' given.
+        utc
+            Parse timezone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
 
         Returns
         -------
@@ -67,7 +77,7 @@ class StringNameSpace:
         ...     ],
         ... )
         >>> (
-        ...     s.to_frame().with_column(
+        ...     s.to_frame().with_columns(
         ...         pl.col("date")
         ...         .str.strptime(pl.Date, "%F", strict=False)
         ...         .fill_null(
@@ -84,11 +94,8 @@ class StringNameSpace:
         │ date       │
         ╞════════════╡
         │ 2021-04-22 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2022-01-04 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2022-01-31 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-07-08 │
         └────────────┘
 
@@ -170,7 +177,9 @@ class StringNameSpace:
 
         """
 
-    def contains(self, pattern: str, literal: bool = False) -> pli.Series:
+    def contains(
+        self, pattern: str | pli.Expr, literal: bool = False, strict: bool = True
+    ) -> pli.Series:
         """
         Check if strings in Series contain a substring that matches a regex.
 
@@ -180,6 +189,9 @@ class StringNameSpace:
             A valid regex pattern.
         literal
             Treat pattern as a literal string.
+        strict
+            Raise an error if the underlying pattern is not a valid regex expression,
+            otherwise mask out with a null value.
 
         Returns
         -------
@@ -209,7 +221,7 @@ class StringNameSpace:
 
         """
 
-    def ends_with(self, sub: str) -> pli.Series:
+    def ends_with(self, sub: str | pli.Expr) -> pli.Series:
         """
         Check if string values end with a substring.
 
@@ -237,7 +249,7 @@ class StringNameSpace:
 
         """
 
-    def starts_with(self, sub: str) -> pli.Series:
+    def starts_with(self, sub: str | pli.Expr) -> pli.Series:
         """
         Check if string values start with a substring.
 
@@ -265,7 +277,7 @@ class StringNameSpace:
 
         """
 
-    def decode(self, encoding: TransferEncoding, strict: bool = False) -> pli.Series:
+    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> pli.Series:
         """
         Decode a value using the provided encoding.
 
@@ -274,22 +286,8 @@ class StringNameSpace:
         encoding : {'hex', 'base64'}
             The encoding to use.
         strict
-            How to handle invalid inputs:
-
-            - ``True``: An error will be thrown if unable to decode a value.
-            - ``False``: Unhandled values will be replaced with `None`.
-
-        Examples
-        --------
-        >>> s = pl.Series(["666f6f", "626172", None])
-        >>> s.str.decode("hex")
-        shape: (3,)
-        Series: '' [str]
-        [
-            "foo"
-            "bar"
-            null
-        ]
+            Raise an error if the underlying value cannot be decoded,
+            otherwise mask out with a null value.
 
         """
 
@@ -394,15 +392,13 @@ class StringNameSpace:
         │ str     │
         ╞═════════╡
         │ messi   │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
-        ├╌╌╌╌╌╌╌╌╌┤
         │ ronaldo │
         └─────────┘
 
         """
 
-    def extract_all(self, pattern: str) -> pli.Series:
+    def extract_all(self, pattern: str | pli.Series) -> pli.Series:
         r"""
         Extracts all matches for the given regex pattern.
 
@@ -424,7 +420,7 @@ class StringNameSpace:
         >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
         >>> s.str.extract_all(r"(\d+)")
         shape: (2,)
-        Series: 'foo' [list]
+        Series: 'foo' [list[str]]
         [
             ["123", "45"]
             ["678", "910"]
@@ -524,11 +520,8 @@ class StringNameSpace:
         │ str        ┆ str         │
         ╞════════════╪═════════════╡
         │ a          ┆ 1           │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null       ┆ null        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ c          ┆ null        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ d          ┆ 4           │
         └────────────┴─────────────┘
 
@@ -584,11 +577,8 @@ class StringNameSpace:
         │ str        ┆ str         │
         ╞════════════╪═════════════╡
         │ foo        ┆ bar         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ null       ┆ null        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ foo-bar    ┆ null        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ foo        ┆ bar baz     │
         └────────────┴─────────────┘
 
@@ -662,36 +652,108 @@ class StringNameSpace:
 
         """
 
-    def strip(self, matches: None | str = None) -> pli.Series:
-        """
-        Remove leading and trailing whitespace.
+    def strip(self, matches: str | None = None) -> pli.Series:
+        r"""
+        Remove leading and trailing characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([" hello ", "\tworld"])
+        >>> s.str.strip()
+        shape: (2,)
+        Series: '' [str]
+        [
+                "hello"
+                "world"
+        ]
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> s.str.strip("od\t")
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello "
+                "worl"
+        ]
 
         """
 
-    def lstrip(self, matches: None | str = None) -> pli.Series:
-        """
-        Remove leading whitespace.
+    def lstrip(self, matches: str | None = None) -> pli.Series:
+        r"""
+        Remove leading characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([" hello ", "\tworld"])
+        >>> s.str.lstrip()
+        shape: (2,)
+        Series: '' [str]
+        [
+                "hello "
+                "world"
+        ]
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> s.str.lstrip("wod\t")
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello "
+                "rld"
+        ]
 
         """
 
-    def rstrip(self, matches: None | str = None) -> pli.Series:
-        """
-        Remove trailing whitespace.
+    def rstrip(self, matches: str | None = None) -> pli.Series:
+        r"""
+        Remove trailing characters.
 
         Parameters
         ----------
         matches
-            An optional single character that should be trimmed
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([" hello ", "world\t"])
+        >>> s.str.rstrip()
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello"
+                "world"
+        ]
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> s.str.rstrip("wod\t")
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello "
+                "worl"
+        ]
 
         """
 
@@ -777,7 +839,6 @@ class StringNameSpace:
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
 
-    @deprecated_alias(start="offset")
     def slice(self, offset: int, length: int | None = None) -> pli.Series:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -821,7 +882,68 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame().select(pli.col(s.name).str.slice(offset, length)).to_series()
-        )
+
+    def explode(self) -> pli.Series:
+        """
+        Returns a column with a separate row for every string character.
+
+        Returns
+        -------
+        Exploded column with string datatype.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", ["foo", "bar"])
+        >>> s.str.explode()
+        shape: (6,)
+        Series: 'a' [str]
+        [
+                "f"
+                "o"
+                "o"
+                "b"
+                "a"
+                "r"
+        ]
+
+        """
+
+    def parse_int(self, radix: int = 2) -> pli.Series:
+        r"""
+        Parse integers with base radix from strings.
+
+        By default base 2.
+
+        Parameters
+        ----------
+        radix
+            Positive integer which is the base of the string we are parsing.
+            Default: 2
+
+        Returns
+        -------
+        Column of parsed integers in i32 format
+
+        Examples
+        --------
+        >>> s = pl.Series("bin", ["110", "101", "010"])
+        >>> s.str.parse_int(2)
+        shape: (3,)
+        Series: 'bin' [i32]
+        [
+                6
+                5
+                2
+        ]
+
+        >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe"])
+        >>> s.str.parse_int(16)
+        shape: (3,)
+        Series: 'hex' [i32]
+        [
+                64030
+                65280
+                51966
+        ]
+
+        """

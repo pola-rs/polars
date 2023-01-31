@@ -61,8 +61,8 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _set_sorted(&mut self, is_sorted: IsSorted) {
-        self.0.deref_mut().set_sorted2(is_sorted)
+    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
+        self.0.deref_mut().set_sorted_flag(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -156,11 +156,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
             }
             (dtl, dtr) => Err(PolarsError::ComputeError(
-                format!(
-                    "cannot do subtraction on these date types: {:?}, {:?}",
-                    dtl, dtr
-                )
-                .into(),
+                format!("cannot do subtraction on these date types: {dtl:?}, {dtr:?}",).into(),
             )),
         }
     }
@@ -182,11 +178,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     .into_series())
             }
             (dtl, dtr) => Err(PolarsError::ComputeError(
-                format!(
-                    "cannot do addition on these date types: {:?}, {:?}",
-                    dtl, dtr
-                )
-                .into(),
+                format!("cannot do addition on these date types: {dtl:?}, {dtr:?}",).into(),
             )),
         }
     }
@@ -215,10 +207,10 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DurationChunked> {
-    fn is_sorted(&self) -> IsSorted {
-        if self.0.is_sorted() {
+    fn is_sorted_flag(&self) -> IsSorted {
+        if self.0.is_sorted_flag() {
             IsSorted::Ascending
-        } else if self.0.is_sorted_reverse() {
+        } else if self.0.is_sorted_reverse_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
@@ -327,8 +319,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
         let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
-        if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
-            out.set_sorted2(idx.is_sorted2())
+        if self.0.is_sorted_flag() && (idx.is_sorted_flag() || idx.is_sorted_reverse_flag()) {
+            out.set_sorted_flag(idx.is_sorted_flag2())
         }
 
         Ok(out.into_duration(self.0.time_unit()).into_series())
@@ -368,16 +360,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.cast(data_type)
     }
 
-    fn get(&self, index: usize) -> AnyValue {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         self.0.get_any_value(index)
     }
 
     #[inline]
     #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-        self.0
-            .get_any_value_unchecked(index)
-            .into_duration(self.0.time_unit())
+        self.0.get_any_value_unchecked(index)
     }
 
     fn sort_with(&self, options: SortOptions) -> Series {

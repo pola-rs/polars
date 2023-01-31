@@ -73,7 +73,7 @@ impl PredicatePushDown {
             // we should not pass these projections
             if exprs
                 .iter()
-                .any(|e_n| project_other_column_is_predicate_pushdown_boundary(*e_n, expr_arena))
+                .any(|e_n| projection_is_definite_pushdown_boundary(*e_n, expr_arena))
             {
                 return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
             }
@@ -291,6 +291,7 @@ impl PredicatePushDown {
                 output_schema,
                 predicate,
                 options,
+                cloud_options,
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
 
@@ -302,6 +303,7 @@ impl PredicatePushDown {
                     output_schema,
                     predicate,
                     options,
+                    cloud_options,
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
@@ -373,9 +375,16 @@ impl PredicatePushDown {
 
             Explode { input, columns, schema } => {
                 let condition = |name: Arc<str>| columns.iter().any(|s| s.as_str() == &*name);
+
+                // first columns that refer to the exploded columns should be done here
                 let mut local_predicates =
                     transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-                local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
+
+                // if any predicate is a pushdown boundary, thus influenced by order of predicates e.g.: sum(), over(), sort
+                // we do all here. #5950
+                if acc_predicates.values().chain(local_predicates.iter()).any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
+                    local_predicates.extend(acc_predicates.drain().map(|(_name, node)| node))
+                }
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 let lp = Explode { input, columns, schema };
@@ -528,7 +537,7 @@ impl PredicatePushDown {
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             // Pushed down passed these nodes
-            lp @ Sort { .. } => {
+            lp @ Sort { .. } |lp @ FileSink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
@@ -544,9 +553,28 @@ impl PredicatePushDown {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
             #[cfg(feature = "python")]
-            // python node does not yet support predicates
-             lp @ PythonScan {..} => {
-                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+             PythonScan {mut options, predicate} => {
+                if options.pyarrow {
+                    let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
+
+                    if let Some(predicate) = predicate {
+                        match super::super::pyarrow::predicate_to_pa(predicate, expr_arena) {
+                            // we we able to create a pyarrow string, mutate the options
+                            Some(eval_str) => {
+                                options.predicate = Some(eval_str)
+                            },
+                            // we were not able to translate the predicate
+                            // apply here
+                            None => {
+                                let lp = PythonScan { options, predicate: None };
+                                return Ok(self.optional_apply_predicate(lp, vec![predicate], lp_arena, expr_arena))
+                            }
+                        }
+                    }
+                    Ok(PythonScan {options, predicate})
+                } else {
+                    self.no_pushdown_restart_opt(PythonScan {options, predicate}, acc_predicates, lp_arena, expr_arena)
+                }
             }
 
         }

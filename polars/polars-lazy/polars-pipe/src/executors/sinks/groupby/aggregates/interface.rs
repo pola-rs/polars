@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 
 use enum_dispatch::enum_dispatch;
 use polars_core::datatypes::DataType;
-use polars_core::prelude::AnyValue;
+use polars_core::prelude::{AnyValue, Series};
 
 use crate::executors::sinks::groupby::aggregates::count::CountAgg;
 use crate::executors::sinks::groupby::aggregates::first::FirstAgg;
@@ -15,16 +15,21 @@ use crate::executors::sinks::groupby::aggregates::SumAgg;
 use crate::operators::IdxSize;
 
 #[enum_dispatch(AggregateFunction)]
-pub trait AggregateFn: Send + Sync {
+pub(crate) trait AggregateFn: Send + Sync {
     fn has_physical_agg(&self) -> bool {
         false
     }
     fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>);
-
+    fn pre_agg_ordered(
+        &mut self,
+        _chunk_idx: IdxSize,
+        offset: IdxSize,
+        length: IdxSize,
+        values: &Series,
+    );
     fn pre_agg_u8(&mut self, _chunk_idx: IdxSize, _item: Option<u8>) {
         unimplemented!()
     }
-
     fn pre_agg_u16(&mut self, _chunk_idx: IdxSize, _item: Option<u16>) {
         unimplemented!()
     }
@@ -65,7 +70,7 @@ pub trait AggregateFn: Send + Sync {
 // We dispatch via an enum
 // as that saves an indirection
 #[enum_dispatch]
-pub enum AggregateFunction {
+pub(crate) enum AggregateFunction {
     First(FirstAgg),
     Last(LastAgg),
     Count(CountAgg),

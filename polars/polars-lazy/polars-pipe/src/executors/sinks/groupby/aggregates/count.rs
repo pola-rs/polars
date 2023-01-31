@@ -1,13 +1,13 @@
 use std::any::Any;
 
 use polars_core::datatypes::{AnyValue, DataType};
-use polars_core::prelude::IDX_DTYPE;
+use polars_core::prelude::{Series, IDX_DTYPE};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
 use crate::operators::IdxSize;
 
-pub struct CountAgg {
+pub(crate) struct CountAgg {
     count: IdxSize,
 }
 
@@ -27,6 +27,15 @@ impl AggregateFn for CountAgg {
 
     fn pre_agg(&mut self, _chunk_idx: IdxSize, _item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
         self.incr();
+    }
+    fn pre_agg_ordered(
+        &mut self,
+        _chunk_idx: IdxSize,
+        _offset: IdxSize,
+        length: IdxSize,
+        _values: &Series,
+    ) {
+        self.count += length
     }
 
     fn dtype(&self) -> DataType {

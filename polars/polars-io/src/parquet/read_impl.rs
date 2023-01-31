@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::sync::Arc;
 
 use arrow::array::new_empty_array;
@@ -12,6 +12,7 @@ use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
 
+use super::mmap::ColumnStore;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
@@ -26,7 +27,7 @@ fn column_idx_to_series(
     md: &RowGroupMetaData,
     remaining_rows: usize,
     schema: &ArrowSchema,
-    bytes: &[u8],
+    store: &mmap::ColumnStore,
     chunk_size: usize,
 ) -> PolarsResult<Series> {
     let mut field = schema.fields[column_i].clone();
@@ -39,7 +40,7 @@ fn column_idx_to_series(
         _ => {}
     }
 
-    let columns = mmap_columns(bytes, md.columns(), &field.name);
+    let columns = mmap_columns(store, md.columns(), &field.name);
     let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
 
     if remaining_rows < md.num_rows() {
@@ -49,7 +50,7 @@ fn column_idx_to_series(
     }
 }
 
-fn array_iter_to_series(
+pub(super) fn array_iter_to_series(
     iter: ArrayIter,
     field: &ArrowField,
     num_rows: Option<usize>,
@@ -84,7 +85,7 @@ fn array_iter_to_series(
 #[allow(clippy::too_many_arguments)]
 // might parallelize over columns
 fn rg_to_dfs(
-    bytes: &[u8],
+    store: &mmap::ColumnStore,
     previous_row_count: &mut IdxSize,
     row_group_start: usize,
     row_group_end: usize,
@@ -123,7 +124,7 @@ fn rg_to_dfs(
                             md,
                             *remaining_rows,
                             schema,
-                            bytes,
+                            store,
                             chunk_size,
                         )
                     })
@@ -133,7 +134,7 @@ fn rg_to_dfs(
             projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(*column_i, md, *remaining_rows, schema, bytes, chunk_size)
+                    column_idx_to_series(*column_i, md, *remaining_rows, schema, store, chunk_size)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
@@ -160,7 +161,7 @@ fn rg_to_dfs(
 #[allow(clippy::too_many_arguments)]
 // parallelizes over row groups
 fn rg_to_dfs_par(
-    bytes: &[u8],
+    store: &mmap::ColumnStore,
     row_group_start: usize,
     row_group_end: usize,
     previous_row_count: &mut IdxSize,
@@ -207,7 +208,7 @@ fn rg_to_dfs_par(
             let columns = projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(*column_i, md, local_limit, schema, bytes, chunk_size)
+                    column_idx_to_series(*column_i, md, local_limit, schema, store, chunk_size)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -259,9 +260,10 @@ pub fn read_parquet<R: MmapBytesReader>(
 
     let reader = ReaderBytes::from(&reader);
     let bytes = reader.deref();
+    let store = mmap::ColumnStore::Local(bytes);
     let dfs = match parallel {
         ParallelStrategy::Columns | ParallelStrategy::None => rg_to_dfs(
-            bytes,
+            &store,
             &mut 0,
             0,
             row_group_len,
@@ -274,7 +276,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             &projection,
         )?,
         ParallelStrategy::RowGroups => rg_to_dfs_par(
-            bytes,
+            &store,
             0,
             file_metadata.row_groups.len(),
             &mut 0,
@@ -301,11 +303,41 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 }
 
+/// Provide RowGroup content to the BatchedReader.
+/// This allows us to share the code to do in-memory processing for different use cases.
+pub trait FetchRowGroups: Sync + Send {
+    /// Fetch the row groups in the given range and package them in a ColumnStore.
+    fn fetch_row_groups(&mut self, row_groups: Range<usize>) -> PolarsResult<ColumnStore>;
+}
+
+pub(crate) struct FetchRowGroupsFromMmapReader(ReaderBytes<'static>);
+
+impl FetchRowGroupsFromMmapReader {
+    pub fn new(mut reader: Box<dyn MmapBytesReader>) -> PolarsResult<Self> {
+        // safety we will keep ownership on the struct and reference the bytes on the heap.
+        // this should not work with passed bytes so we check if it is a file
+        assert!(reader.to_file().is_some());
+        let reader_ptr = unsafe {
+            std::mem::transmute::<&mut dyn MmapBytesReader, &'static mut dyn MmapBytesReader>(
+                reader.as_mut(),
+            )
+        };
+        let reader_bytes = get_reader_bytes(reader_ptr)?;
+        Ok(FetchRowGroupsFromMmapReader(reader_bytes))
+    }
+}
+
+/// There is nothing to do when fetching a mmap-ed file.
+impl FetchRowGroups for FetchRowGroupsFromMmapReader {
+    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+        Ok(mmap::ColumnStore::Local(self.0.deref()))
+    }
+}
+
 pub struct BatchedParquetReader {
     // use to keep ownership
     #[allow(dead_code)]
-    reader: Box<dyn MmapBytesReader>,
-    reader_bytes: ReaderBytes<'static>,
+    row_group_fetcher: Box<dyn FetchRowGroups>,
     limit: usize,
     projection: Vec<usize>,
     schema: ArrowSchema,
@@ -321,13 +353,13 @@ pub struct BatchedParquetReader {
 
 impl BatchedParquetReader {
     pub fn new(
-        mut reader: Box<dyn MmapBytesReader>,
+        row_group_fetcher: Box<dyn FetchRowGroups>,
+        metadata: FileMetaData,
         limit: usize,
         projection: Option<Vec<usize>>,
         row_count: Option<RowCount>,
         chunk_size: usize,
     ) -> PolarsResult<Self> {
-        let metadata = read::read_metadata(&mut reader)?;
         let schema = read::schema::infer_schema(&metadata)?;
         let n_row_groups = metadata.row_groups.len();
         let projection =
@@ -340,18 +372,8 @@ impl BatchedParquetReader {
                 ParallelStrategy::Columns
             };
 
-        // safety we will keep ownership on the struct and reference the bytes on the heap.
-        // this should not work with passed bytes so we check if it is a file
-        assert!(reader.to_file().is_some());
-        let reader_ptr = unsafe {
-            std::mem::transmute::<&mut dyn MmapBytesReader, &'static mut dyn MmapBytesReader>(
-                reader.as_mut(),
-            )
-        };
-        let reader_bytes = get_reader_bytes(reader_ptr)?;
         Ok(BatchedParquetReader {
-            reader,
-            reader_bytes,
+            row_group_fetcher,
             limit,
             projection,
             schema,
@@ -369,13 +391,18 @@ impl BatchedParquetReader {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         // fill up fifo stack
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
+            let row_group_start = self.row_group_offset;
+            let row_group_end = std::cmp::min(self.row_group_offset + n, self.n_row_groups);
+            let store = self
+                .row_group_fetcher
+                .fetch_row_groups(row_group_start..row_group_end)?;
             let dfs = match self.parallel {
                 ParallelStrategy::Columns => {
                     let dfs = rg_to_dfs(
-                        self.reader_bytes.deref(),
+                        &store,
                         &mut self.rows_read,
-                        self.row_group_offset,
-                        std::cmp::min(self.row_group_offset + n, self.n_row_groups),
+                        row_group_start,
+                        row_group_end,
                         &mut self.limit,
                         &self.metadata,
                         &self.schema,
@@ -389,7 +416,7 @@ impl BatchedParquetReader {
                 }
                 ParallelStrategy::RowGroups => {
                     let dfs = rg_to_dfs_par(
-                        self.reader_bytes.deref(),
+                        &store,
                         self.row_group_offset,
                         std::cmp::min(self.row_group_offset + n, self.n_row_groups),
                         &mut self.rows_read,
@@ -436,6 +463,39 @@ impl BatchedParquetReader {
             }
 
             Ok(Some(chunks))
+        }
+    }
+
+    /// Turn the batched reader into an iterator.
+    pub fn iter(self, batch_size: usize) -> BatchedParquetIter {
+        BatchedParquetIter {
+            batch_size,
+            inner: self,
+            current_batch: vec![].into_iter(),
+        }
+    }
+}
+
+pub struct BatchedParquetIter {
+    batch_size: usize,
+    inner: BatchedParquetReader,
+    current_batch: std::vec::IntoIter<DataFrame>,
+}
+
+impl Iterator for BatchedParquetIter {
+    type Item = PolarsResult<DataFrame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current_batch.next() {
+            Some(df) => Some(Ok(df)),
+            None => match self.inner.next_batches(self.batch_size) {
+                Err(e) => Some(Err(e)),
+                Ok(opt_batch) => {
+                    let batch = opt_batch?;
+                    self.current_batch = batch.into_iter();
+                    self.current_batch.next().map(Ok)
+                }
+            },
         }
     }
 }

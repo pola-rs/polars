@@ -26,14 +26,12 @@ build-release: venv  ## Compile and install a faster Polars binary
 
 .PHONY: fmt
 fmt: venv  ## Run autoformatting and linting
-	$(VENV_BIN)/isort .
 	$(VENV_BIN)/black .
 	$(VENV_BIN)/blackdoc .
-	$(VENV_BIN)/pyupgrade --py37-plus `find polars tests docs -name "*.py" -type f`
+	$(VENV_BIN)/ruff .
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy
-	-$(VENV_BIN)/flake8
 
 .PHONY: clippy
 clippy:  ## Run clippy
@@ -44,7 +42,7 @@ pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest tests/unit/
+	$(VENV_BIN)/pytest tests/unit/ --numprocesses=auto
 
 .PHONY: doctest
 doctest: venv build  ## Run doctests
@@ -52,12 +50,12 @@ doctest: venv build  ## Run doctests
 
 .PHONY: test-all
 test-all: venv build  ## Run all tests
-	$(VENV_BIN)/pytest
+	$(VENV_BIN)/pytest --numprocesses=auto
 	$(VENV_BIN)/python tests/docs/run_doc_examples.py
 
 .PHONY: coverage
 coverage: venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov
+	$(VENV_BIN)/pytest --cov --numprocesses=auto
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
@@ -77,5 +75,5 @@ clean:  ## Clean up caches and build artifacts
 
 .PHONY: help
 help:  ## Display this help screen
-	@echo -e '\033[1mAvailable commands:\033[0m'
+	@echo -e "\033[1mAvailable commands:\033[0m\n"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort

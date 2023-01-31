@@ -7,7 +7,8 @@ use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::physical_plan::state::{ExecutionState, StateFlags};
+use crate::physical_plan::errors::expression_err;
+use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct BinaryExpr {
@@ -58,6 +59,7 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
 }
 
 pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
+    use DataType::*;
     match op {
         Operator::Gt => ChunkCompare::<&Series>::gt(left, right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::<&Series>::gt_eq(left, right).map(|ca| ca.into_series()),
@@ -72,16 +74,19 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
         Operator::TrueDivide => match left.dtype() {
-            DataType::Date | DataType::Datetime(_, _) | DataType::Float32 | DataType::Float64 => {
-                Ok(left / right)
-            }
-            _ => Ok(&left.cast(&DataType::Float64)? / &right.cast(&DataType::Float64)?),
+            Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
+            _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
         },
-        Operator::FloorDivide => match left.dtype() {
+        Operator::FloorDivide => {
             #[cfg(feature = "round_series")]
-            DataType::Float32 | DataType::Float64 => (left / right).floor(),
-            _ => Ok(left / right),
-        },
+            {
+                floor_div_series(left, right)
+            }
+            #[cfg(not(feature = "round_series"))]
+            {
+                panic!("activate 'round_series' feature")
+            }
+        }
         Operator::And => left.bitand(right),
         Operator::Or => left.bitor(right),
         Operator::Xor => left.bitxor(right),
@@ -97,14 +102,22 @@ impl PhysicalExpr for BinaryExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
         // don't cache window functions as they run in parallel
-        state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
+        state.remove_cache_window_flag();
         let (lhs, rhs) = POOL.install(|| {
             rayon::join(
                 || self.left.evaluate(df, &state),
                 || self.right.evaluate(df, &state),
             )
         });
-        apply_operator_owned(lhs?, rhs?, self.op)
+        let lhs = lhs?;
+        let rhs = rhs?;
+        let lhs_len = lhs.len();
+        let rhs_len = rhs.len();
+        if lhs_len != rhs_len && !(lhs_len == 1 || rhs_len == 1) {
+            let msg = format!("Cannot evaluate two Series of different length. Got lhs of length: {lhs_len} and rhs of length: {rhs_len}.");
+            return Err(expression_err!(msg, self.expr, ComputeError));
+        }
+        apply_operator_owned(lhs, rhs, self.op)
     }
 
     #[allow(clippy::ptr_arg)]
@@ -126,7 +139,7 @@ impl PhysicalExpr for BinaryExpr {
         match (
             ac_l.agg_state(),
             ac_r.agg_state(),
-            state.overlapping_groups(),
+            state.has_overlapping_groups(),
         ) {
             // Some aggregations must return boolean masks that fit the group. That's why not all literals can take this path.
             // only literals that are used in arithmetic
@@ -268,13 +281,13 @@ impl PhysicalExpr for BinaryExpr {
             // when groups overlap, step 2 creates more values than rows
             // and the original group lengths will be incorrect
             (
-                AggState::AggregatedList(_),
+                AggState::AggregatedList(_) | AggState::AggregatedFlat(_),
                 AggState::NotAggregated(_) | AggState::Literal(_),
                 false,
             )
             | (
                 AggState::NotAggregated(_) | AggState::Literal(_),
-                AggState::AggregatedList(_),
+                AggState::AggregatedList(_) | AggState::AggregatedFlat(_),
                 false,
             ) => {
                 ac_l.sort_by_groups();
@@ -283,16 +296,37 @@ impl PhysicalExpr for BinaryExpr {
                 let lhs = ac_l.flat_naive().as_ref().clone();
                 let rhs = ac_r.flat_naive().as_ref().clone();
 
-                // drop lhs so that we might operate in place
-                {
-                    let _ = ac_l.take();
+                match null_propagate_empty(ac_l.series(), ac_r.series()) {
+                    Some(null_prop) => {
+                        ac_l.with_update_groups(UpdateGroups::No);
+                        // this null prop can exist due to:
+                        // assuming 2 rows
+                        //
+                        // expr = col().filter(false)
+                        //
+                        // this would null propagate
+                        // (expr - expr.mean()) -> [None, None]
+                        //
+                        // but adding another aggregation is valid:
+                        // (expr - expr.mean()).mean()
+                        ac_l.with_series(null_prop, true);
+                        ac_l.null_propagated = true;
+                    }
+                    None => {
+                        let out = null_propagate_empty(ac_l.series(), ac_r.series())
+                            .map(Ok)
+                            .unwrap_or_else(|| apply_operator_owned(lhs, rhs, self.op))?;
+
+                        // drop lhs so that we might operate in place
+                        {
+                            let _ = ac_l.take();
+                        }
+
+                        // we flattened the series, so that sorts by group
+                        ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
+                        ac_l.with_series(out, false);
+                    }
                 }
-
-                let out = apply_operator_owned(lhs, rhs, self.op)?;
-
-                // we flattened the series, so that sorts by group
-                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
-                ac_l.with_series(out, false);
                 Ok(ac_l)
             }
             // # Flatten the Series and apply the operators.
@@ -525,6 +559,20 @@ mod stats {
 
     impl BinaryExpr {
         fn impl_should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
+            // See: #5864 for the rationale behind this.
+            use Expr::*;
+            use Operator::*;
+            if !self.expr.into_iter().all(|e| match e {
+                BinaryExpr { op, .. } => !matches!(
+                    op,
+                    Multiply | Divide | TrueDivide | FloorDivide | Modulus | Eq | NotEq
+                ),
+                Column(_) | Literal(_) | Alias(_, _) => true,
+                _ => false,
+            }) {
+                return Ok(true);
+            }
+
             let schema = stats.schema();
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
@@ -536,7 +584,7 @@ mod stats {
                     (DataType::Utf8, DataType::Categorical(_)) => {}
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::Categorical(_), DataType::Utf8) => {}
-                    (l, r) if l != r => panic!("implementation error: {:?}, {:?}", l, r),
+                    (l, r) if l != r => panic!("implementation error: {l:?}, {r:?}"),
                     _ => {}
                 }
             }
@@ -625,5 +673,29 @@ impl PartitionedAggregation for BinaryExpr {
         _state: &ExecutionState,
     ) -> PolarsResult<Series> {
         Ok(partitioned)
+    }
+}
+
+//  A    B
+// []    null
+// []    null
+//
+// A - B should return null
+fn null_propagate_empty(lhs: &Series, rhs: &Series) -> Option<Series> {
+    match (lhs.dtype(), rhs.dtype()) {
+        (DataType::List(_), _) => {
+            let lhs = lhs.list().unwrap();
+            if !lhs.is_empty() {
+                let flat = lhs.explode().unwrap();
+                if rhs.null_count() == rhs.len()
+                    && (flat.null_count() == rhs.len() || flat.is_empty())
+                {
+                    return Some(rhs.clone());
+                }
+            }
+            None
+        }
+        (_, DataType::List(_)) => null_propagate_empty(rhs, lhs),
+        _ => None,
     }
 }

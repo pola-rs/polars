@@ -196,7 +196,7 @@ impl<'a> CoreJsonReader<'a> {
             }
         }
 
-        if total_rows == 128 {
+        if total_rows <= 128 {
             n_threads = 1;
         }
 
@@ -208,7 +208,6 @@ impl<'a> CoreJsonReader<'a> {
         } else {
             std::cmp::min(rows_per_thread, max_proxy)
         };
-
         let file_chunks = get_file_chunks_json(bytes, n_threads);
         let dfs = POOL.install(|| {
             file_chunks
@@ -216,12 +215,11 @@ impl<'a> CoreJsonReader<'a> {
                 .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity)?;
                     let _ = parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers);
-
                     DataFrame::new(
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
-                            .collect::<PolarsResult<_>>()?,
+                            .collect::<_>(),
                     )
                 })
                 .collect::<PolarsResult<Vec<_>>>()
@@ -278,7 +276,7 @@ fn parse_impl(
         n => {
             let value: simd_json::BorrowedValue =
                 simd_json::to_borrowed_value(line).map_err(|e| {
-                    PolarsError::ComputeError(format!("Error parsing line: {}", e).into())
+                    PolarsError::ComputeError(format!("Error parsing line: {e}").into())
                 })?;
 
             match value {
@@ -316,7 +314,7 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
 
     if offset != total_bytes {
         return Err(PolarsError::ComputeError(
-            format!("Expected {} bytes, but only parsed {}", total_bytes, offset).into(),
+            format!("Expected {total_bytes} bytes, but only parsed {offset}").into(),
         ));
     };
 
@@ -349,10 +347,15 @@ pub(crate) fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, 
 
     let mut n_read = 0;
 
+    let bytes_len = bytes.len();
+
     // sample from start and 75% in the file
-    for offset in [0, (bytes.len() as f32 * 0.75) as usize] {
+    for offset in [0, (bytes_len as f32 * 0.75) as usize] {
         bytes_trunc = &bytes[offset..];
         let pos = next_line_position_naive_json(bytes_trunc)?;
+        if pos >= bytes_len {
+            return None;
+        }
         bytes_trunc = &bytes_trunc[pos + 1..];
 
         for _ in offset..(offset + n_lines_per_iter) {

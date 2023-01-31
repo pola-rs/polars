@@ -23,13 +23,13 @@ fn test_date_range() {
         TimeUnit::Nanoseconds,
     );
     let expected = [
-        NaiveDate::from_ymd(2022, 1, 1),
-        NaiveDate::from_ymd(2022, 2, 1),
-        NaiveDate::from_ymd(2022, 3, 1),
-        NaiveDate::from_ymd(2022, 4, 1),
+        NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
     ]
     .iter()
-    .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
 }
@@ -52,11 +52,11 @@ fn test_feb_date_range() {
         TimeUnit::Nanoseconds,
     );
     let expected = [
-        NaiveDate::from_ymd(2022, 2, 1),
-        NaiveDate::from_ymd(2022, 3, 1),
+        NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
     ]
     .iter()
-    .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
 }
@@ -84,7 +84,7 @@ fn test_groups_large_interval() {
     ];
     let ts = dates
         .iter()
-        .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
         .collect::<Vec<_>>();
 
     let dur = Duration::parse("2d");
@@ -129,8 +129,10 @@ fn test_groups_large_interval() {
 
 #[test]
 fn test_offset() {
-    let t = NaiveDate::from_ymd(2020, 1, 2)
-        .and_hms(0, 0, 0)
+    let t = NaiveDate::from_ymd_opt(2020, 1, 2)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
         .timestamp_nanos();
     let w = Window::new(
         Duration::parse("5m"),
@@ -139,16 +141,24 @@ fn test_offset() {
     );
 
     let b = w.get_earliest_bounds_ns(t);
-    let start = NaiveDate::from_ymd(2020, 1, 1)
-        .and_hms(23, 58, 0)
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(23, 58, 0)
+        .unwrap()
         .timestamp_nanos();
     assert_eq!(b.start, start);
 }
 
 #[test]
 fn test_boundaries() {
-    let start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
-    let stop = NaiveDate::from_ymd(2021, 12, 16).and_hms(3, 0, 0);
+    let start = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(3, 0, 0)
+        .unwrap();
 
     let ts = date_range_vec(
         start.timestamp_nanos(),
@@ -190,9 +200,18 @@ fn test_boundaries() {
     // 2021-12-16 00:30:00
     // 2021-12-16 01:00:00
     let g = take_groups_slice(&groups, 0, &ts);
-    let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
-    let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 30, 0);
-    let t2 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 0, 0);
+    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(0, 30, 0)
+        .unwrap();
+    let t2 = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(1, 0, 0)
+        .unwrap();
     assert_eq!(
         g,
         &[
@@ -201,8 +220,14 @@ fn test_boundaries() {
             t2.timestamp_nanos()
         ]
     );
-    let b_start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
-    let b_end = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 0, 0);
+    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(1, 0, 0)
+        .unwrap();
     assert_eq!(
         &[lower[0], higher[0]],
         &[b_start.timestamp_nanos(), b_end.timestamp_nanos()]
@@ -346,11 +371,23 @@ fn test_boundaries_2() {
     // (note that we don't expect 01:30:00 because we close left (and thus open interval right))
     // see: https://pandas.pydata.org/docs/reference/api/pandas.Interval.html
     let g = take_groups_slice(&groups, 0, &ts);
-    let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 30, 0);
-    let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 0, 0);
+    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(0, 30, 0)
+        .unwrap();
+    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(1, 0, 0)
+        .unwrap();
     assert_eq!(g, &[t0.timestamp_nanos(), t1.timestamp_nanos()]);
-    let b_start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 30, 0);
-    let b_end = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 30, 0);
+    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(0, 30, 0)
+        .unwrap();
+    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(1, 30, 0)
+        .unwrap();
     assert_eq!(
         &[lower[0], higher[0]],
         &[b_start.timestamp_nanos(), b_end.timestamp_nanos()]
@@ -364,11 +401,23 @@ fn test_boundaries_2() {
     // 2021-12-16 03:00:00
     // (note that we don't expect 03:30:00 because we close left)
     let g = take_groups_slice(&groups, 1, &ts);
-    let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(2, 30, 0);
-    let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(3, 0, 0);
+    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(2, 30, 0)
+        .unwrap();
+    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(3, 0, 0)
+        .unwrap();
     assert_eq!(g, &[t0.timestamp_nanos(), t1.timestamp_nanos()]);
-    let b_start = NaiveDate::from_ymd(2021, 12, 16).and_hms(2, 30, 0);
-    let b_end = NaiveDate::from_ymd(2021, 12, 16).and_hms(3, 30, 0);
+    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(2, 30, 0)
+        .unwrap();
+    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(3, 30, 0)
+        .unwrap();
     assert_eq!(
         &[lower[1], higher[1]],
         &[b_start.timestamp_nanos(), b_end.timestamp_nanos()]
@@ -377,8 +426,14 @@ fn test_boundaries_2() {
 
 #[test]
 fn test_boundaries_ms() {
-    let start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
-    let stop = NaiveDate::from_ymd(2021, 12, 16).and_hms(3, 0, 0);
+    let start = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
+        .unwrap()
+        .and_hms_opt(3, 0, 0)
+        .unwrap();
 
     let ts = date_range_vec(
         start.timestamp_millis(),
@@ -643,11 +698,15 @@ fn test_rolling_lookback() {
 #[test]
 fn test_end_membership() {
     let time = [
-        NaiveDate::from_ymd(2021, 2, 1)
-            .and_hms(0, 0, 0)
+        NaiveDate::from_ymd_opt(2021, 2, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             .timestamp_millis(),
-        NaiveDate::from_ymd(2021, 5, 1)
-            .and_hms(0, 0, 0)
+        NaiveDate::from_ymd_opt(2021, 5, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             .timestamp_millis(),
     ];
     let window = Window::new(

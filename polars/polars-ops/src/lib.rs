@@ -1,7 +1,7 @@
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 mod chunked_array;
-mod frame;
 #[cfg(feature = "pivot")]
-pub mod pivot;
+pub use frame::pivot;
+mod frame;
 pub mod prelude;
 mod series;
