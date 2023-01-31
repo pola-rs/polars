@@ -432,3 +432,9 @@ def test_compare_different_len() -> None:
         pl.ComputeError, match=r"annot evaluate two Series of different length"
     ):
         df.filter(pl.col("idx") == s)
+
+
+def test_take_negative_index_is_oob() -> None:
+    df = pl.DataFrame({"value": [1, 2, 3]})
+    with pytest.raises(pl.ComputeError, match=r"Out of bounds"):
+        df["value"].take(-1)
