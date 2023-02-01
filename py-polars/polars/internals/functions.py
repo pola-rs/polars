@@ -722,7 +722,7 @@ def align_frames(
     │ 47.0  │
     └───────┘
 
-    """  # noqa: E501
+    """  # noqa: W505
     if not frames:
         return []  # type: ignore[return-value]
     elif len({type(f) for f in frames}) != 1:

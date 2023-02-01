@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import reduce
 from typing import Any
 
 import polars.internals as pli
@@ -231,9 +230,8 @@ def assert_series_equal(
     if left.shape != right.shape:
         raise_assert_detail(obj, "Shape mismatch", left.shape, right.shape)
 
-    if check_names:
-        if left.name != right.name:
-            raise_assert_detail(obj, "Name mismatch", left.name, right.name)
+    if check_names and left.name != right.name:
+        raise_assert_detail(obj, "Name mismatch", left.name, right.name)
 
     _assert_series_inner(
         left, right, check_dtype, check_exact, nans_compare_equal, atol, rtol, obj
@@ -315,9 +313,8 @@ def _assert_series_inner(
         can_be_subtracted = False
 
     check_exact = check_exact or not can_be_subtracted or left.dtype == Boolean
-    if check_dtype:
-        if left.dtype != right.dtype:
-            raise_assert_detail(obj, "Dtype mismatch", left.dtype, right.dtype)
+    if check_dtype and left.dtype != right.dtype:
+        raise_assert_detail(obj, "Dtype mismatch", left.dtype, right.dtype)
 
     # confirm that we can call 'is_nan' on both sides
     left_is_float = left.dtype in (Float32, Float64)
@@ -380,18 +377,6 @@ def raise_assert_detail(
     raise AssertionError(msg)
 
 
-def _getattr_multi(obj: object, op: str) -> Any:
-    """
-    Allow `op` to be multiple layers deep.
-
-    For example, op="str.lengths" will mean we first get the attribute "str", and then
-    the attribute "lengths".
-
-    """
-    op_list = op.split(".")
-    return reduce(lambda o, m: getattr(o, m), op_list, obj)
-
-
 def is_categorical_dtype(data_type: Any) -> bool:
     """Check if the input is a polars Categorical dtype."""
     return (
@@ -404,8 +389,7 @@ def is_categorical_dtype(data_type: Any) -> bool:
 def assert_frame_equal_local_categoricals(
     df_a: pli.DataFrame, df_b: pli.DataFrame
 ) -> None:
-
-    for ((a_name, a_value), (b_name, b_value)) in zip(
+    for (a_name, a_value), (b_name, b_value) in zip(
         df_a.schema.items(), df_b.schema.items()
     ):
         if a_name != b_name:
@@ -416,6 +400,6 @@ def assert_frame_equal_local_categoricals(
             raise AssertionError
 
     cat_to_str = pli.col(Categorical).cast(str)
-    assert df_a.with_columns(cat_to_str).frame_equal(df_b.with_columns(cat_to_str))
+    assert_frame_equal(df_a.with_columns(cat_to_str), df_b.with_columns(cat_to_str))
     cat_to_phys = pli.col(Categorical).to_physical()
-    assert df_a.with_columns(cat_to_phys).frame_equal(df_b.with_columns(cat_to_phys))
+    assert_frame_equal(df_a.with_columns(cat_to_phys), df_b.with_columns(cat_to_phys))

@@ -517,11 +517,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .unwrap()
             .clone()
     }
-    #[cfg(feature = "is_first")]
-    fn is_first(&self) -> PolarsResult<BooleanChunked> {
-        self.0.is_first()
-    }
-
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Series> {
         self.0

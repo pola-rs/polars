@@ -253,7 +253,7 @@ def test_groupby_rolling_negative_offset_3914() -> None:
         }
     )
 
-    assert df.groupby_rolling(index_column="ints", period="2i", offset="-5i",).agg(
+    assert df.groupby_rolling(index_column="ints", period="2i", offset="-5i").agg(
         [pl.col("ints").alias("matches")]
     )["matches"].to_list() == [
         [],
@@ -408,7 +408,7 @@ def test_groupby_all_masked_out() -> None:
     )
     parts = df.partition_by("val")
     assert len(parts) == 1
-    assert parts[0].frame_equal(df)
+    assert_frame_equal(parts[0], df)
 
 
 def test_groupby_min_max_string_type() -> None:

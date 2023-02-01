@@ -93,10 +93,10 @@ impl FunctionExpr {
         };
 
         #[cfg(feature = "timezones")]
-        let cast_tz = |tz: &TimeZone| {
+        let cast_tz = |tz: Option<&TimeZone>| {
             try_map_dtype(&|dt| {
                 if let DataType::Datetime(tu, _) = dt {
-                    Ok(DataType::Datetime(*tu, Some(tz.clone())))
+                    Ok(DataType::Datetime(*tu, tz.cloned()))
                 } else {
                     Err(PolarsError::SchemaMisMatch(
                         format!("expected Datetime got {dt:?}").into(),
@@ -139,6 +139,8 @@ impl FunctionExpr {
                     Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
                         with_dtype(DataType::Utf8)
                     }
+                    #[cfg(feature = "string_from_radix")]
+                    FromRadix { .. } => with_dtype(DataType::Int32),
                 }
             }
             #[cfg(feature = "dtype-binary")]
@@ -159,7 +161,9 @@ impl FunctionExpr {
                     Truncate(..) => same_type().unwrap().dtype,
                     Round(..) => same_type().unwrap().dtype,
                     #[cfg(feature = "timezones")]
-                    CastTimezone(tz) | TzLocalize(tz) => return cast_tz(tz),
+                    CastTimezone(tz) => return cast_tz(tz.as_ref()),
+                    #[cfg(feature = "timezones")]
+                    TzLocalize(tz) => return cast_tz(Some(tz)),
                     DateRange { .. } => return super_type(),
                     Combine(tu) => DataType::Datetime(*tu, None),
                 };

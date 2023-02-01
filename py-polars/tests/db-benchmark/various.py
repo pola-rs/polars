@@ -6,6 +6,7 @@ from typing import cast
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 # https://github.com/pola-rs/polars/issues/1942
 t0 = time.time()
@@ -84,7 +85,7 @@ def test_cross_join() -> None:
     df2 = pl.DataFrame({"frame2": pl.arange(0, 100, eager=True)})
     out = df2.join(df1, how="cross")
     df2 = pl.DataFrame({"frame2": pl.arange(0, 101, eager=True)})
-    assert df2.join(df1, how="cross").slice(0, 100).frame_equal(out)
+    assert_frame_equal(df2.join(df1, how="cross").slice(0, 100), out)
 
 
 def test_cross_join_slice_pushdown() -> None:

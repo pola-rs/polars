@@ -212,7 +212,7 @@ class Series:
             and py_type_to_dtype(dtype, raise_unmatched=False) is None
         ):
             raise ValueError(
-                f"Given dtype: '{dtype}' is not a valid Polars data type and cannot be converted into one."  # noqa: E501
+                f"Given dtype: '{dtype}' is not a valid Polars data type and cannot be converted into one."
             )
 
         # Handle case where values are passed as the first argument
@@ -767,7 +767,6 @@ class Series:
             int | Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool]
         ),
     ) -> Any:
-
         if isinstance(item, Series) and item.dtype in {
             UInt8,
             UInt16,
@@ -3454,7 +3453,9 @@ class Series:
         skip_nulls: bool = True,
     ) -> Series:
         """
-        Apply a custom/user-defined function (UDF) over elements in this Series and return a new Series.
+        Apply a custom/user-defined function (UDF) over elements in this Series.
+
+        Returns a new Series.
 
         If the function returns another datatype, the return_dtype arg should be set,
         otherwise the method will fail.
@@ -3487,7 +3488,7 @@ class Series:
         -------
         Series
 
-        """  # noqa: E501
+        """
         if return_dtype is None:
             pl_return_dtype = None
         else:

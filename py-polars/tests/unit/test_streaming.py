@@ -1,9 +1,12 @@
+import os
 from datetime import date
+from typing import Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_streaming_groupby_types() -> None:
@@ -119,14 +122,14 @@ def test_streaming_non_streaming_gb() -> None:
     n = 100
     df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
     q = df.lazy().groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
+    assert_frame_equal(q.collect(streaming=True), q.collect())
 
     q = df.lazy().with_columns(pl.col("a").cast(pl.Utf8))
     q = q.groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
+    assert_frame_equal(q.collect(streaming=True), q.collect())
     q = df.lazy().with_columns(pl.col("a").alias("b"))
     q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
+    assert_frame_equal(q.collect(streaming=True), q.collect())
 
 
 def test_streaming_groupby_sorted_fast_path() -> None:
@@ -162,7 +165,7 @@ def test_streaming_groupby_sorted_fast_path() -> None:
             )
             results.append(out)
 
-        assert results[0].frame_equal(results[1])
+        assert_frame_equal(results[0], results[1])
 
 
 def test_streaming_categoricals_5921() -> None:
@@ -197,3 +200,21 @@ def test_streaming_block_on_literals_6054() -> None:
     assert df.lazy().with_columns(s).groupby("col_1").agg(pl.all().first()).collect(
         streaming=True
     ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}
+
+
+@pytest.mark.xdist_group(name="group1")
+def test_streaming_streamable_functions(capfd: Any) -> None:
+    os.environ["POLARS_VERBOSE"] = "1"
+    assert (
+        pl.DataFrame({"a": [1, 2, 3]})
+        .lazy()
+        .map(
+            f=lambda df: df.with_columns(pl.col("a").alias("b")),
+            schema={"a": pl.Int64, "b": pl.Int64},
+            streamable=True,
+        )
+    ).collect(streaming=True).to_dict(False) == {"a": [1, 2, 3], "b": [1, 2, 3]}
+
+    (_, err) = capfd.readouterr()
+    assert "df -> function -> ordered_sink" in err
+    os.unsetenv("POLARS_VERBOSE")

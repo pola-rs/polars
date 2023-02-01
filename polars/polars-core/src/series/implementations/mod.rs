@@ -514,11 +514,6 @@ macro_rules! impl_dyn_series {
                 self.0.checked_div(rhs)
             }
 
-            #[cfg(feature = "is_first")]
-            fn is_first(&self) -> PolarsResult<BooleanChunked> {
-                self.0.is_first()
-            }
-
             #[cfg(feature = "object")]
             fn as_any(&self) -> &dyn Any {
                 &self.0

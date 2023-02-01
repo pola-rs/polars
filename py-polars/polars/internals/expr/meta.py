@@ -11,11 +11,11 @@ class ExprMetaNameSpace:
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 
-    def __eq__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override] # noqa: #501
+    def __eq__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override]
         return self._pyexpr.meta_eq(other._pyexpr)
 
-    def __ne__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override] # noqa: #501
-        return not self == other  # noqa: SIM201
+    def __ne__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override]
+        return not self == other
 
     def pop(self) -> list[pli.Expr]:
         """

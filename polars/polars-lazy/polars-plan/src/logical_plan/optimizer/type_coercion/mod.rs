@@ -1,3 +1,5 @@
+mod binary;
+
 use std::borrow::Cow;
 
 use polars_core::prelude::*;
@@ -5,6 +7,7 @@ use polars_core::utils::get_supertype;
 
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
+use crate::logical_plan::optimizer::type_coercion::binary::process_binary;
 use crate::logical_plan::Context;
 use crate::utils::is_scan;
 
@@ -201,176 +204,7 @@ impl OptimizationRule for TypeCoercionRule {
                 left: node_left,
                 op,
                 right: node_right,
-            } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (left, type_left) =
-                    unpack!(get_aexpr_and_type(expr_arena, node_left, &input_schema));
-
-                let (right, type_right) =
-                    unpack!(get_aexpr_and_type(expr_arena, node_right, &input_schema));
-                unpack!(early_escape(&type_left, &type_right));
-
-                // don't coerce string with number comparisons. They must error
-                match (&type_left, &type_right, op) {
-                    #[cfg(not(feature = "dtype-categorical"))]
-                    (DataType::Utf8, dt, op) | (dt, DataType::Utf8, op)
-                        if op.is_comparison() && dt.is_numeric() =>
-                    {
-                        return Ok(None)
-                    }
-                    #[cfg(feature = "dtype-categorical")]
-                    (DataType::Utf8 | DataType::Categorical(_), dt, op)
-                    | (dt, DataType::Utf8 | DataType::Categorical(_), op)
-                        if op.is_comparison() && dt.is_numeric() =>
-                    {
-                        return Ok(None)
-                    }
-                    #[cfg(feature = "dtype-date")]
-                    (DataType::Date, DataType::Utf8, op) if op.is_comparison() => {
-                        err_date_str_compare()?
-                    }
-                    #[cfg(feature = "dtype-datetime")]
-                    (DataType::Datetime(_, _), DataType::Utf8, op) if op.is_comparison() => {
-                        err_date_str_compare()?
-                    }
-                    #[cfg(feature = "dtype-time")]
-                    (DataType::Time, DataType::Utf8, op) if op.is_comparison() => {
-                        err_date_str_compare()?
-                    }
-                    // structs can be arbitrarily nested, leave the complexity to the caller for now.
-                    #[cfg(feature = "dtype-struct")]
-                    (DataType::Struct(_), DataType::Struct(_), _op) => return Ok(None),
-                    _ => {}
-                }
-
-                #[allow(unused_mut, unused_assignments)]
-                let mut compare_cat_to_string = false;
-                #[cfg(feature = "dtype-categorical")]
-                {
-                    compare_cat_to_string = matches!(
-                        op,
-                        Operator::Eq
-                            | Operator::NotEq
-                            | Operator::Gt
-                            | Operator::Lt
-                            | Operator::GtEq
-                            | Operator::LtEq
-                    ) && (matches!(type_left, DataType::Categorical(_))
-                        && type_right == DataType::Utf8)
-                        || (type_left == DataType::Utf8
-                            && matches!(type_right, DataType::Categorical(_)));
-                }
-
-                let datetime_arithmetic = matches!(op, Operator::Minus | Operator::Plus)
-                    && matches!(
-                        (&type_left, &type_right),
-                        (DataType::Datetime(_, _), DataType::Duration(_))
-                            | (DataType::Duration(_), DataType::Datetime(_, _))
-                            | (DataType::Date, DataType::Duration(_))
-                            | (DataType::Duration(_), DataType::Date)
-                    );
-
-                let list_arithmetic = op.is_arithmetic()
-                    && matches!(
-                        (&type_left, &type_right),
-                        (DataType::List(_), _) | (_, DataType::List(_))
-                    );
-
-                // Special path for list arithmetic
-                if list_arithmetic {
-                    match (&type_left, &type_right) {
-                        (DataType::List(inner), _) => {
-                            return if type_right != **inner {
-                                let new_node_right = expr_arena.add(AExpr::Cast {
-                                    expr: node_right,
-                                    data_type: *inner.clone(),
-                                    strict: false,
-                                });
-
-                                Ok(Some(AExpr::BinaryExpr {
-                                    left: node_left,
-                                    op,
-                                    right: new_node_right,
-                                }))
-                            } else {
-                                Ok(None)
-                            };
-                        }
-                        (_, DataType::List(inner)) => {
-                            return if type_left != **inner {
-                                let new_node_left = expr_arena.add(AExpr::Cast {
-                                    expr: node_left,
-                                    data_type: *inner.clone(),
-                                    strict: false,
-                                });
-
-                                Ok(Some(AExpr::BinaryExpr {
-                                    left: new_node_left,
-                                    op,
-                                    right: node_right,
-                                }))
-                            } else {
-                                Ok(None)
-                            };
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-
-                if compare_cat_to_string
-                    || datetime_arithmetic
-                    || early_escape(&type_left, &type_right).is_none()
-                {
-                    None
-                } else {
-                    let st = unpack!(get_supertype(&type_left, &type_right));
-                    let mut st = modify_supertype(st, left, right, &type_left, &type_right);
-
-                    #[allow(unused_mut, unused_assignments)]
-                    let mut cat_str_arithmetic = false;
-
-                    #[cfg(feature = "dtype-categorical")]
-                    {
-                        cat_str_arithmetic = (matches!(type_left, DataType::Categorical(_))
-                            && type_right == DataType::Utf8)
-                            || (type_left == DataType::Utf8
-                                && matches!(type_right, DataType::Categorical(_)));
-                    }
-
-                    if cat_str_arithmetic {
-                        st = DataType::Utf8
-                    }
-
-                    // only cast if the type is not already the super type.
-                    // this can prevent an expensive flattening and subsequent aggregation
-                    // in a groupby context. To be able to cast the groups need to be
-                    // flattened
-                    let new_node_left = if type_left != st {
-                        expr_arena.add(AExpr::Cast {
-                            expr: node_left,
-                            data_type: st.clone(),
-                            strict: false,
-                        })
-                    } else {
-                        node_left
-                    };
-                    let new_node_right = if type_right != st {
-                        expr_arena.add(AExpr::Cast {
-                            expr: node_right,
-                            data_type: st,
-                            strict: false,
-                        })
-                    } else {
-                        node_right
-                    };
-
-                    Some(AExpr::BinaryExpr {
-                        left: new_node_left,
-                        op,
-                        right: new_node_right,
-                    })
-                }
-            }
+            } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 function: FunctionExpr::IsIn,

@@ -132,6 +132,13 @@ impl PyDataFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv-file")]
+    #[pyo3(signature = (
+        py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
+        skip_rows, projection, sep, rechunk, columns, encoding, n_threads, path,
+        overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
+        null_values, missing_utf8_is_empty_string, parse_dates, skip_rows_after_header,
+        row_count, sample_size, eol_char)
+    )]
     pub fn read_csv(
         py_f: &PyAny,
         infer_schema_length: Option<usize>,
@@ -223,6 +230,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory))]
     pub fn read_parquet(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -261,6 +269,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "ipc")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, row_count, memory_map))]
     pub fn read_ipc(
         py_f: &PyAny,
         columns: Option<Vec<String>>,
@@ -284,6 +293,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "avro")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows))]
     pub fn read_avro(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -303,6 +313,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
+    #[pyo3(signature = (py_f, compression))]
     pub fn write_avro(
         &mut self,
         py: Python,
@@ -667,6 +678,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
+    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size))]
     pub fn write_parquet(
         &mut self,
         py: Python,
@@ -1149,6 +1161,7 @@ impl PyDataFrame {
         self.df.shift(periods).into()
     }
 
+    #[pyo3(signature = (maintain_order, subset, keep))]
     pub fn unique(
         &self,
         py: Python,
@@ -1247,6 +1260,7 @@ impl PyDataFrame {
         df.into()
     }
 
+    #[pyo3(signature = (lambda, output_type, inference_size))]
     pub fn apply(
         &self,
         lambda: &PyAny,

@@ -59,6 +59,9 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             if lst.is_empty() {
                 return Ok(Series::new_empty(s.name(), output_field.data_type()));
             }
+            if lst.null_count() == lst.len() {
+                return Ok(s);
+            }
 
             let phys_expr =
                 prepare_expression_for_context("", &expr, &lst.inner_dtype(), Context::Default)?;

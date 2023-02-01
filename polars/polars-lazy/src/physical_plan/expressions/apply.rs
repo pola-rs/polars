@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::utils::CustomIterTools;
@@ -24,6 +25,7 @@ pub struct ApplyExpr {
     pub auto_explode: bool,
     pub allow_rename: bool,
     pub pass_name_to_apply: bool,
+    pub input_schema: Option<SchemaRef>,
 }
 
 impl ApplyExpr {
@@ -41,6 +43,7 @@ impl ApplyExpr {
             auto_explode: false,
             allow_rename: false,
             pass_name_to_apply: false,
+            input_schema: None,
         }
     }
 
@@ -73,6 +76,13 @@ impl ApplyExpr {
             ac.with_update_groups(UpdateGroups::WithSeriesLen);
         }
         ac
+    }
+
+    fn get_input_schema(&self, df: &DataFrame) -> Cow<Schema> {
+        match &self.input_schema {
+            Some(schema) => Cow::Borrowed(schema.as_ref()),
+            None => Cow::Owned(df.schema()),
+        }
     }
 }
 
@@ -242,7 +252,8 @@ impl PhysicalExpr for ApplyExpr {
                         apply_multiple_flat(acs, self.function.as_ref(), &self.expr)
                     } else {
                         let mut container = vec![Default::default(); acs.len()];
-                        let name = acs[0].series().name().to_string();
+                        let schema = self.get_input_schema(df);
+                        let field = self.to_field(&schema)?;
 
                         // aggregate representation of the aggregation contexts
                         // then unpack the lists and finally create iterators from this list chunked arrays.
@@ -253,6 +264,16 @@ impl PhysicalExpr for ApplyExpr {
 
                         // length of the items to iterate over
                         let len = iters[0].size_hint().0;
+
+                        if len == 0 {
+                            let out = Series::full_null(field.name(), 0, &field.dtype);
+
+                            drop(iters);
+                            // take the first aggregation context that as that is the input series
+                            let mut ac = acs.swap_remove(0);
+                            ac.with_series(out, true);
+                            return Ok(ac);
+                        }
 
                         let mut ca: ListChunked = (0..len)
                             .map(|_| {
@@ -266,7 +287,8 @@ impl PhysicalExpr for ApplyExpr {
                                 self.function.call_udf(&mut container).ok()
                             })
                             .collect_trusted();
-                        ca.rename(&name);
+
+                        ca.rename(&field.name);
                         drop(iters);
 
                         // take the first aggregation context that as that is the input series

@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_schema_on_agg() -> None:
@@ -116,7 +117,7 @@ def test_lazy_map_schema() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
 
     # identity
-    assert df.lazy().map(lambda x: x).collect().frame_equal(df)
+    assert_frame_equal(df.lazy().map(lambda x: x).collect(), df)
 
     def custom(df: pl.DataFrame) -> pl.Series:
         return df["a"]

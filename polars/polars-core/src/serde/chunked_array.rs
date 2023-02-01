@@ -120,6 +120,9 @@ impl_serialize!(Utf8Chunked);
 impl_serialize!(BooleanChunked);
 impl_serialize!(ListChunked);
 
+#[cfg(feature = "dtype-binary")]
+impl_serialize!(BinaryChunked);
+
 #[cfg(feature = "dtype-categorical")]
 impl Serialize for CategoricalChunked {
     fn serialize<S>(
@@ -140,7 +143,7 @@ impl Serialize for CategoricalChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
+#[cfg(feature = "dtype-struct")]
 impl Serialize for StructChunked {
     fn serialize<S>(
         &self,

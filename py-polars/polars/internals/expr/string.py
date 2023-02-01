@@ -1188,3 +1188,50 @@ class ExprStringNameSpace:
 
         """
         return pli.wrap_expr(self._pyexpr.explode())
+
+    def parse_int(self, radix: int = 2) -> pli.Expr:
+        """
+        Parse integers with base radix from strings.
+
+        By default base 2.
+
+        Parameters
+        ----------
+        radix
+            Positive integer which is the base of the string we are parsing.
+            Default: 2
+
+        Returns
+        -------
+        Column of parsed integers in i32 format
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"bin": ["110", "101", "010"]})
+        >>> df.select(pl.col("bin").str.parse_int(2))
+        shape: (3, 1)
+        ┌─────┐
+        │ bin │
+        │ --- │
+        │ i32 │
+        ╞═════╡
+        │ 6   │
+        │ 5   │
+        │ 2   │
+        └─────┘
+
+        >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe"]})
+        >>> df.select(pl.col("hex").str.parse_int(16))
+        shape: (3, 1)
+        ┌───────┐
+        │ hex   │
+        │ ---   │
+        │ i32   │
+        ╞═══════╡
+        │ 64030 │
+        │ 65280 │
+        │ 51966 │
+        └───────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.str_parse_int(radix))

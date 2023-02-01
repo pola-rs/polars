@@ -26,6 +26,7 @@ pub enum FunctionNode {
         predicate_pd: bool,
         ///  allow projection pushdown optimizations
         projection_pd: bool,
+        streamable: bool,
         // used for formatting
         #[cfg_attr(feature = "serde", serde(skip))]
         fmt_str: &'static str,
@@ -70,6 +71,18 @@ impl PartialEq for FunctionNode {
 }
 
 impl FunctionNode {
+    /// Whether this function can run on batches of data at a time.
+    pub fn is_streamable(&self) -> bool {
+        use FunctionNode::*;
+        match self {
+            Rechunk | Pipeline { .. } => false,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => false,
+            DropNulls { .. } | FastProjection { .. } | Unnest { .. } => true,
+            Opaque { streamable, .. } => *streamable,
+        }
+    }
+
     pub(crate) fn schema<'a>(
         &self,
         input_schema: &'a SchemaRef,

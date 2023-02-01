@@ -58,3 +58,4 @@ def test_meta_has_multiple_outputs() -> None:
 def test_meta_is_regex_projection() -> None:
     e = pl.col("^.*$").alias("bar")
     assert e.meta.is_regex_projection()
+    assert e.meta.has_multiple_outputs()

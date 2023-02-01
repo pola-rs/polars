@@ -194,7 +194,6 @@ def test_rolling_groupby_extrema() -> None:
     )
 
     for df in [sorted_df, not_sorted_df]:
-
         assert (
             df.groupby_rolling(
                 index_column="row_nr",
@@ -317,7 +316,7 @@ def test_overlapping_groups_4628() -> None:
         }
     )
     assert (
-        df.groupby_rolling(index_column="index", period="3i",).agg(
+        df.groupby_rolling(index_column="index", period="3i").agg(
             [
                 pl.col("val").diff(n=1).alias("val.diff"),
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),

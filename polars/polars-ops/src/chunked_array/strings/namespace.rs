@@ -7,6 +7,7 @@ use base64::Engine as _;
 use polars_arrow::export::arrow::compute::substring::substring;
 use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
+use polars_core::export::num::Num;
 use polars_core::export::regex::{escape, Regex};
 
 use super::*;
@@ -57,6 +58,15 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     fn base64_encode(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
         ca.apply(|s| general_purpose::STANDARD.encode(s).into())
+    }
+
+    #[cfg(feature = "string_from_radix")]
+    // Parse a string number with base _radix_ into a decimal (i32)
+    fn parse_int(&self, radix: Option<u32>) -> Int32Chunked {
+        let ca = self.as_utf8();
+
+        let f = |s: &str| <i32 as Num>::from_str_radix(s, radix.unwrap_or(2)).unwrap();
+        ca.apply_cast_numeric(f)
     }
 
     /// Get the length of the string values as number of chars.

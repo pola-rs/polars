@@ -9,6 +9,7 @@ Conversion
    :toctree: api/
 
     from_arrow
+    from_dataframe
     from_dict
     from_dicts
     from_numpy

@@ -16,6 +16,7 @@ from polars.build_info import build_info
 from polars.cfg import Config
 from polars.convert import (
     from_arrow,
+    from_dataframe,
     from_dict,
     from_dicts,
     from_numpy,
@@ -291,6 +292,7 @@ __all__ = [
     "duration",
     "coalesce",
     # polars.convert
+    "from_dataframe",
     "from_dict",
     "from_dicts",
     "from_records",

@@ -825,12 +825,11 @@ def read_ipc(
     DataFrame
 
     """
-    if use_pyarrow:
-        if n_rows and not memory_map:
-            raise ValueError(
-                "``n_rows`` cannot be used with ``use_pyarrow=True` "
-                "and memory_map=False`."
-            )
+    if use_pyarrow and n_rows and not memory_map:
+        raise ValueError(
+            "``n_rows`` cannot be used with ``use_pyarrow=True` "
+            "and memory_map=False`."
+        )
 
     storage_options = storage_options or {}
     with _prepare_file_arg(file, use_pyarrow=use_pyarrow, **storage_options) as data:

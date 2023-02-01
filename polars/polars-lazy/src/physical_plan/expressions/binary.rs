@@ -7,6 +7,7 @@ use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
 use rayon::prelude::*;
 
+use crate::physical_plan::errors::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -108,7 +109,15 @@ impl PhysicalExpr for BinaryExpr {
                 || self.right.evaluate(df, &state),
             )
         });
-        apply_operator_owned(lhs?, rhs?, self.op)
+        let lhs = lhs?;
+        let rhs = rhs?;
+        let lhs_len = lhs.len();
+        let rhs_len = rhs.len();
+        if lhs_len != rhs_len && !(lhs_len == 1 || rhs_len == 1) {
+            let msg = format!("Cannot evaluate two Series of different length. Got lhs of length: {lhs_len} and rhs of length: {rhs_len}.");
+            return Err(expression_err!(msg, self.expr, ComputeError));
+        }
+        apply_operator_owned(lhs, rhs, self.op)
     }
 
     #[allow(clippy::ptr_arg)]

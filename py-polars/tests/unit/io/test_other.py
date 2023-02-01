@@ -4,16 +4,17 @@ import copy
 from typing import cast
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_copy() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
-    assert copy.copy(df).frame_equal(df, True)
-    assert copy.deepcopy(df).frame_equal(df, True)
+    assert_frame_equal(copy.copy(df), df)
+    assert_frame_equal(copy.deepcopy(df), df)
 
     a = pl.Series("a", [1, 2])
-    assert copy.copy(a).series_equal(a, True)
-    assert copy.deepcopy(a).series_equal(a, True)
+    assert_series_equal(copy.copy(a), a)
+    assert_series_equal(copy.deepcopy(a), a)
 
 
 def test_categorical_round_trip() -> None:
@@ -44,7 +45,7 @@ Series: 'mydate' [list[date]]
 	[2020-01-01]
 	[2020-01-02]
 	[2020-01-05, 2020-01-05]
-]"""  # noqa: E101, W191
+]"""
     )
 
 

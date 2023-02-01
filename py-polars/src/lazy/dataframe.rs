@@ -90,10 +90,11 @@ impl PyLazyGroupBy {
                     pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
 
                 // call the lambda and get a python side DataFrame wrapper
-                let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
-                    Ok(pyobj) => pyobj,
-                    Err(e) => panic!("UDF failed: {}", e.value(py)),
-                };
+                let result_df_wrapper = lambda.call1(py, (python_df_wrapper,)).map_err(|e| {
+                    PolarsError::ComputeError(
+                        format!("User provided python function failed: {e}").into(),
+                    )
+                })?;
                 // unpack the wrapper in a PyDataFrame
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
                 "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
@@ -166,6 +167,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[cfg(feature = "json")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (path, infer_schema_length, batch_size, n_rows, low_memory, rechunk, row_count))]
     pub fn new_from_ndjson(
         path: String,
         infer_schema_length: Option<usize>,
@@ -192,6 +194,12 @@ impl PyLazyFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv-file")]
+    #[pyo3(signature = (path, sep, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
+        low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
+        infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
+        encoding, row_count, parse_dates, eol_char,
+    )
+    )]
     pub fn new_from_csv(
         path: String,
         sep: &str,
@@ -277,6 +285,9 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (path, n_rows, cache, parallel, rechunk, row_count,
+        low_memory, cloud_options)
+    )]
     pub fn new_from_parquet(
         path: String,
         n_rows: Option<usize>,
@@ -306,6 +317,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
+    #[pyo3(signature = (path, n_rows, cache, rechunk, row_count, memory_map))]
     pub fn new_from_ipc(
         path: String,
         n_rows: Option<usize>,
@@ -440,6 +452,7 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "streaming")]
+    #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order))]
     pub fn sink_parquet(
         &self,
         py: Python,
@@ -472,6 +485,7 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "streaming")]
+    #[pyo3(signature = (path, compression, maintain_order))]
     pub fn sink_ipc(
         &self,
         py: Python,
@@ -592,6 +606,7 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "asof_join")]
+    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str))]
     pub fn join_asof(
         &self,
         other: PyLazyFrame,
@@ -745,6 +760,7 @@ impl PyLazyFrame {
         ldf.explode(column).into()
     }
 
+    #[pyo3(signature = (maintain_order, subset, keep))]
     pub fn unique(
         &self,
         maintain_order: bool,
@@ -798,12 +814,15 @@ impl PyLazyFrame {
         ldf.with_row_count(name, offset).into()
     }
 
+    #[pyo3(signature = (lambda, predicate_pushdown, projection_pushdown, slice_pushdown, streamable, schema, validate_output))]
+    #[allow(clippy::too_many_arguments)]
     pub fn map(
         &self,
         lambda: PyObject,
         predicate_pushdown: bool,
         projection_pushdown: bool,
         slice_pushdown: bool,
+        streamable: bool,
         schema: Option<Wrap<Schema>>,
         validate_output: bool,
     ) -> Self {
@@ -811,6 +830,7 @@ impl PyLazyFrame {
             predicate_pushdown,
             projection_pushdown,
             slice_pushdown,
+            streaming: streamable,
             ..Default::default()
         };
         let schema = schema.map(|schema| Arc::new(schema.0));
@@ -841,23 +861,22 @@ impl PyLazyFrame {
                     .call1(py, (pydf,))
                     .unwrap();
                 // call the lambda and get a python side Series wrapper
-                let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
-                    Ok(pyobj) => pyobj,
-                    Err(e) => panic!("UDF failed: {}", e.value(py)),
-                };
+
+                let result_df_wrapper = lambda.call1(py, (python_df_wrapper,)).map_err(|e| {
+                    PolarsError::ComputeError(
+                        format!("User provided python function failed: {e}").into(),
+                    )
+                })?;
                 // unpack the wrapper in a PyDataFrame
-                let py_pydf = match result_df_wrapper.getattr(py, "_df") {
-                    Ok(df) => df,
-                    Err(_) => {
-                        let pytype = result_df_wrapper.as_ref(py).get_type();
-                        return Err(PolarsError::ComputeError(
-                            format!(
-                                "Expected 'LazyFrame.map' to return a 'DataFrame', got a {pytype}",
-                            )
-                            .into(),
-                        ));
-                    }
-                };
+                let py_pydf = result_df_wrapper.getattr(py, "_df").map_err(|_| {
+                    let pytype = result_df_wrapper.as_ref(py).get_type();
+                    PolarsError::ComputeError(
+                        format!(
+                            "Expected 'LazyFrame.map' to return a 'DataFrame', got a '{pytype}'",
+                        )
+                        .into(),
+                    )
+                })?;
 
                 // Downcast to Rust
                 let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();

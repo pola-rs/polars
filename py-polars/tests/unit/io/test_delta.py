@@ -4,7 +4,7 @@ import pyarrow.fs
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 
 @pytest.fixture()
@@ -23,7 +23,7 @@ def test_scan_delta_version(delta_table_path: Path) -> None:
     df1 = pl.scan_delta(str(delta_table_path), version=0).collect()
     df2 = pl.scan_delta(str(delta_table_path), version=1).collect()
 
-    assert not df1.frame_equal(df2)
+    assert_frame_not_equal(df1, df2)
 
 
 def test_scan_delta_columns(delta_table_path: Path) -> None:
@@ -50,7 +50,7 @@ def test_scan_delta_relative(delta_table_path: Path) -> None:
     assert_frame_equal(expected, ldf.collect(), check_dtype=False)
 
     ldf = pl.scan_delta(rel_delta_table_path, version=1)
-    assert not expected.frame_equal(ldf.collect())
+    assert_frame_not_equal(expected, ldf.collect())
 
 
 def test_read_delta(delta_table_path: Path) -> None:
@@ -64,7 +64,7 @@ def test_read_delta_version(delta_table_path: Path) -> None:
     df1 = pl.read_delta(str(delta_table_path), version=0)
     df2 = pl.read_delta(str(delta_table_path), version=1)
 
-    assert not df1.frame_equal(df2)
+    assert_frame_not_equal(df1, df2)
 
 
 def test_read_delta_columns(delta_table_path: Path) -> None:

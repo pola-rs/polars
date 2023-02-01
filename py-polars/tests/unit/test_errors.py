@@ -290,7 +290,7 @@ def test_invalid_sort_by() -> None:
     # `select a where b order by c desc`
     with pytest.raises(
         pl.ComputeError,
-        match="The sortby operation produced a different length than the Series that has to be sorted.",  # noqa: E501
+        match="The sortby operation produced a different length than the Series that has to be sorted.",
     ):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", reverse=True))
 
@@ -321,7 +321,7 @@ def test_datetime_time_add_err() -> None:
 def test_invalid_dtype() -> None:
     with pytest.raises(
         ValueError,
-        match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",  # noqa: E501
+        match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
     ):
         pl.Series([1, 2], dtype="mayonnaise")
 
@@ -418,3 +418,31 @@ def test_err_on_multiple_column_expansion() -> None:
                 "d": [4],
             }
         ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])])
+
+
+def test_compare_different_len() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": list(range(5)),
+        }
+    )
+
+    s = pl.Series([2, 5, 8])
+    with pytest.raises(
+        pl.ComputeError, match=r"annot evaluate two Series of different length"
+    ):
+        df.filter(pl.col("idx") == s)
+
+
+def test_take_negative_index_is_oob() -> None:
+    df = pl.DataFrame({"value": [1, 2, 3]})
+    with pytest.raises(pl.ComputeError, match=r"Out of bounds"):
+        df["value"].take(-1)
+
+
+def test_string_numeric_arithmetic_err() -> None:
+    df = pl.DataFrame({"s": ["x"]})
+    with pytest.raises(
+        pl.ComputeError, match=r"Arithmetic on string and numeric not allowed"
+    ):
+        df.select(pl.col("s") + 1)

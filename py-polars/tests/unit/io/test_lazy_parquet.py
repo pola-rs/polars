@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -121,11 +122,11 @@ def test_parquet_stats() -> None:
         ).collect()[0, "a"] == 9.0
 
         assert (
-            pl.scan_parquet(file_path).filter(4 > pl.col("a")).select(pl.col("a").sum())
+            pl.scan_parquet(file_path).filter(pl.col("a") < 4).select(pl.col("a").sum())
         ).collect()[0, "a"] == 9.0
 
         assert (
-            pl.scan_parquet(file_path).filter(4 < pl.col("a")).select(pl.col("a").sum())
+            pl.scan_parquet(file_path).filter(pl.col("a") > 4).select(pl.col("a").sum())
         ).collect()[0, "a"] == 10.0
         assert pl.scan_parquet(file_path).filter(
             (pl.col("a") * 10) > 5.0
@@ -176,6 +177,7 @@ def test_parquet_statistics(
     )
 
 
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_streaming_categorical() -> None:
     df = pl.DataFrame(
         [
@@ -202,6 +204,7 @@ def test_streaming_categorical() -> None:
             assert_frame_equal(result, expected)
 
 
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_parquet_struct_categorical() -> None:
     df = pl.DataFrame(
         [

@@ -16,8 +16,7 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
 )
-from polars.testing import assert_series_equal
-from polars.testing._private import verify_series_and_expr_api
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
@@ -61,8 +60,8 @@ def test_filter_where() -> None:
         pl.col("b").filter(pl.col("b") > 4).alias("c")
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
-    assert result_where.frame_equal(expected)
-    assert result_filter.frame_equal(expected)
+    assert_frame_equal(result_where, expected)
+    assert_frame_equal(result_filter, expected)
 
 
 def test_min_nulls_consistency() -> None:
@@ -79,7 +78,7 @@ def test_min_nulls_consistency() -> None:
 def test_list_join_strings() -> None:
     s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
     expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
-    verify_series_and_expr_api(s, expected, "arr.join", "-")
+    assert_series_equal(s.arr.join("-"), expected)
 
 
 def test_count_expr() -> None:
@@ -101,7 +100,7 @@ def test_shuffle() -> None:
     result1 = pl.select(pl.lit(s).shuffle()).to_series()
     random.seed(1)
     result2 = pl.select(pl.lit(s).shuffle()).to_series()
-    assert result1.series_equal(result2)
+    assert_series_equal(result1, result2)
 
 
 def test_sample() -> None:
@@ -125,7 +124,7 @@ def test_sample() -> None:
     result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
     random.seed(1)
     result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    assert result1.series_equal(result2)
+    assert_series_equal(result1, result2)
 
 
 def test_map_alias() -> None:
@@ -133,14 +132,13 @@ def test_map_alias() -> None:
         (pl.col("foo") * 2).map_alias(lambda name: f"{name}{name}")
     )
     expected = pl.DataFrame({"foofoo": [2, 4, 6]})
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_unique_stable() -> None:
-    a = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
+    s = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
     expected = pl.Series("a", [1, 2, 3])
-
-    verify_series_and_expr_api(a, expected, "unique", True)
+    assert_series_equal(s.unique(maintain_order=True), expected)
 
 
 def test_wildcard_expansion() -> None:
@@ -167,8 +165,8 @@ def test_split() -> None:
         ]
     )
 
-    assert out.frame_equal(expected)
-    assert df["x"].str.split("_").to_frame().frame_equal(expected)
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.split("_").to_frame(), expected)
 
     out = df.select([pl.col("x").str.split("_", inclusive=True)])
 
@@ -181,8 +179,8 @@ def test_split() -> None:
         ]
     )
 
-    assert out.frame_equal(expected)
-    assert df["x"].str.split("_", inclusive=True).to_frame().frame_equal(expected)
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
 
 
 def test_split_exact() -> None:
@@ -197,21 +195,16 @@ def test_split_exact() -> None:
         }
     )
 
-    assert out.frame_equal(expected)
-    assert (
-        df["x"]
-        .str.split_exact("_", 2, inclusive=False)
-        .to_frame()
-        .unnest("x")
-        .frame_equal(expected)
-    )
+    assert_frame_equal(out, expected)
+    out2 = df["x"].str.split_exact("_", 2, inclusive=False).to_frame().unnest("x")
+    assert_frame_equal(out2, expected)
 
     out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
 
     expected = pl.DataFrame(
         {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
     assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
 
@@ -224,8 +217,8 @@ def test_splitn() -> None:
         {"field_0": ["a", None, "b", "c"], "field_1": ["a", None, None, "c_c"]}
     )
 
-    assert out.frame_equal(expected)
-    assert df["x"].str.splitn("_", 2).to_frame().unnest("x").frame_equal(expected)
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
 
 
 def test_unique_and_drop_stability() -> None:
@@ -241,7 +234,7 @@ def test_unique_and_drop_stability() -> None:
 def test_unique_counts() -> None:
     s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
     expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
-    verify_series_and_expr_api(s, expected, "unique_counts")
+    assert_series_equal(s.unique_counts(), expected)
 
 
 def test_entropy() -> None:
@@ -251,16 +244,13 @@ def test_entropy() -> None:
             "id": [1, 2, 1, 4, 5, 4, 6],
         }
     )
-
-    assert (
-        df.groupby("group", maintain_order=True).agg(
-            pl.col("id").entropy(normalize=True)
-        )
-    ).frame_equal(
-        pl.DataFrame(
-            {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
-        )
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("id").entropy(normalize=True)
     )
+    expected = pl.DataFrame(
+        {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_dot_in_groupby() -> None:
@@ -272,11 +262,11 @@ def test_dot_in_groupby() -> None:
         }
     )
 
-    assert (
-        df.groupby("group", maintain_order=True)
-        .agg(pl.col("x").dot("y").alias("dot"))
-        .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("x").dot("y").alias("dot")
     )
+    expected = pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]})
+    assert_frame_equal(result, expected)
 
 
 def test_dtype_col_selection() -> None:
@@ -484,7 +474,7 @@ def test_rank_so_4109() -> None:
 def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
-        assert s.unique().series_equal(s)
+        assert_series_equal(s.unique(), s)
 
 
 @typing.no_type_check
@@ -519,6 +509,17 @@ def test_abs_expr() -> None:
     out = df.select(abs(pl.col("x")))
 
     assert out["x"].to_list() == [1, 0, 1]
+
+
+def test_str_parse_int() -> None:
+    df = pl.DataFrame({"bin": ["110", "101", "010"], "hex": ["fa1e", "ff00", "cafe"]})
+    out = df.with_columns(
+        [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
+    )
+
+    expected = pl.DataFrame({"bin": [6, 5, 2], "hex": [64030, 65280, 51966]})
+
+    assert out.frame_equal(expected)
 
 
 def test_logical_boolean() -> None:

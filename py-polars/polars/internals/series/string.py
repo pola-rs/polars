@@ -907,3 +907,43 @@ class StringNameSpace:
         ]
 
         """
+
+    def parse_int(self, radix: int = 2) -> pli.Series:
+        r"""
+        Parse integers with base radix from strings.
+
+        By default base 2.
+
+        Parameters
+        ----------
+        radix
+            Positive integer which is the base of the string we are parsing.
+            Default: 2
+
+        Returns
+        -------
+        Column of parsed integers in i32 format
+
+        Examples
+        --------
+        >>> s = pl.Series("bin", ["110", "101", "010"])
+        >>> s.str.parse_int(2)
+        shape: (3,)
+        Series: 'bin' [i32]
+        [
+                6
+                5
+                2
+        ]
+
+        >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe"])
+        >>> s.str.parse_int(16)
+        shape: (3,)
+        Series: 'hex' [i32]
+        [
+                64030
+                65280
+                51966
+        ]
+
+        """
