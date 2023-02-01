@@ -5,7 +5,10 @@ from contextlib import suppress
 from datetime import date
 import pytest
 import polars as pl
-from typing import Literal
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import SQLEngine
 
 
 @pytest.mark.parametrize(
@@ -15,7 +18,7 @@ from typing import Literal
         pytest.param("adbc", id="Testing adbc"),
     ],
 )
-def test_read_sql(engine: Literal["connectorx", "adbc"]) -> None:
+def test_read_sql(engine: SQLEngine) -> None:
     import sqlite3
     import tempfile
 
