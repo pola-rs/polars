@@ -15,7 +15,9 @@ from typing import Literal
         pytest.param("adbc", id="Testing adbc"),
     ],
 )
-def test_read_sql(engine: Literal["connectorx", "adbc"]) -> None:
+def test_read_sql(
+    engine: Literal["connectorx", "adbc"],  # type: ignore
+) -> None:
     import sqlite3
     import tempfile
 
