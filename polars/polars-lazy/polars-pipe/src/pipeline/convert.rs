@@ -320,6 +320,12 @@ where
             };
             Box::new(op) as Box<dyn Operator>
         }
+        MapFunction { function, .. } => {
+            let op = operators::FunctionOperator {
+                function: function.clone(),
+            };
+            Box::new(op) as Box<dyn Operator>
+        }
 
         lp => {
             panic!("operator {lp:?} not (yet) supported")

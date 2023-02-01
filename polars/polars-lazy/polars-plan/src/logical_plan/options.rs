@@ -217,9 +217,12 @@ pub struct FunctionOptions {
 }
 
 impl FunctionOptions {
-    /// Whether this can simply applied elementwise
-    pub fn is_mappable(&self) -> bool {
-        !matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+    /// Any function that is sensitive to the number of elements in a group
+    /// - Aggregations
+    /// - Sorts
+    /// - Counts
+    pub fn is_groups_sensitive(&self) -> bool {
+        matches!(self.collect_groups, ApplyOptions::ApplyGroups)
     }
 }
 

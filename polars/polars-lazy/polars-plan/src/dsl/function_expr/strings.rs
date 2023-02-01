@@ -325,7 +325,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                     .into(),
             ));
         }
-        #[cfg(feature = "regex")]
+        #[cfg(feature = "timezones")]
         (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
         (false, _) => false,
     };
