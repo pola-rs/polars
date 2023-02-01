@@ -253,7 +253,7 @@ def test_groupby_rolling_negative_offset_3914() -> None:
         }
     )
 
-    assert df.groupby_rolling(index_column="ints", period="2i", offset="-5i",).agg(
+    assert df.groupby_rolling(index_column="ints", period="2i", offset="-5i").agg(
         [pl.col("ints").alias("matches")]
     )["matches"].to_list() == [
         [],

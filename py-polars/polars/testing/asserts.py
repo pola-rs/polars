@@ -389,8 +389,7 @@ def is_categorical_dtype(data_type: Any) -> bool:
 def assert_frame_equal_local_categoricals(
     df_a: pli.DataFrame, df_b: pli.DataFrame
 ) -> None:
-
-    for ((a_name, a_value), (b_name, b_value)) in zip(
+    for (a_name, a_value), (b_name, b_value) in zip(
         df_a.schema.items(), df_b.schema.items()
     ):
         if a_name != b_name:

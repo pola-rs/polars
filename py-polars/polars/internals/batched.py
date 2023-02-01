@@ -55,7 +55,6 @@ class BatchedCsvReader:
         eol_char: str = "\n",
         new_columns: list[str] | None = None,
     ):
-
         path: str | None
         if isinstance(file, (str, Path)):
             path = normalise_filepath(file)

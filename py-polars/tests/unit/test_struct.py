@@ -458,7 +458,7 @@ def test_struct_comparison() -> None:
 
 
 def test_struct_order() -> None:
-    assert pl.DataFrame({"col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],}).to_dict(
+    assert pl.DataFrame({"col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}]}).to_dict(
         False
     ) == {"col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]}
 

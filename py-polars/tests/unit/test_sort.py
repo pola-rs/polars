@@ -356,7 +356,6 @@ def test_sort_by_in_over_5499() -> None:
 
 
 def test_merge_sorted() -> None:
-
     df_a = (
         pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo")
         .to_frame("range")
