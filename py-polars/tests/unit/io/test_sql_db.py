@@ -3,11 +3,19 @@ from __future__ import annotations
 import os
 from contextlib import suppress
 from datetime import date
-
+import pytest
 import polars as pl
+from typing import Literal
 
 
-def test_read_sql() -> None:
+@pytest.mark.parametrize(
+    "engine",
+    [
+        pytest.param("connectorx", id="Testing connectorx"),
+        pytest.param("adbc", id="Testing adbc"),
+    ],
+)
+def test_read_sql(engine: Literal["connectorx", "adbc"]) -> None:
     import sqlite3
     import tempfile
 
@@ -32,7 +40,9 @@ def test_read_sql() -> None:
             conn.close()
 
             df = pl.read_sql(
-                connection_uri=f"sqlite:///{test_db}", sql="SELECT * FROM test_data"
+                connection_uri=f"sqlite:///{test_db}",
+                sql="SELECT * FROM test_data",
+                engine=engine,
             )
             # ┌─────┬───────┬───────┬────────────┐
             # │ id  ┆ name  ┆ value ┆ date       │
