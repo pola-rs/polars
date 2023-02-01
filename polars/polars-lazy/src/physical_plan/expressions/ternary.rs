@@ -286,7 +286,7 @@ impl PhysicalExpr for TernaryExpr {
                             Expr::Agg(_) => has_agg = true,
                             Expr::Function { options, .. }
                             | Expr::AnonymousFunction { options, .. }
-                                if !options.is_mappable() =>
+                                if options.is_groups_sensitive() =>
                             {
                                 has_agg = true
                             }

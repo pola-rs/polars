@@ -687,6 +687,7 @@ impl LogicalPlanBuilder {
                 schema,
                 predicate_pd: optimizations.predicate_pushdown,
                 projection_pd: optimizations.projection_pushdown,
+                streamable: optimizations.streaming,
                 fmt_str: name,
             },
         }

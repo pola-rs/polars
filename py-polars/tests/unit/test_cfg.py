@@ -414,6 +414,7 @@ def test_string_cache() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.xdist_group(name="group1")
 def test_config_load_save() -> None:
     # set some config options...
     pl.Config.set_tbl_cols(12)

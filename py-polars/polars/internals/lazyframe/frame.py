@@ -3794,6 +3794,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         no_optimizations: bool = False,
         schema: None | SchemaDict = None,
         validate_output_schema: bool = True,
+        streamable: bool = False,
     ) -> LDF:
         """
         Apply a custom function.
@@ -3820,6 +3821,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             the output schema of this function will be checked with the expected schema.
             Setting this to ``False`` will not do this check, but may lead to hard to
             debug bugs.
+        streamable
+            Whether the function that is given is eligible ot running in the streaming
+            engine. That means that the function must produce the same result if it
+            is exectuted on batches as it would when executed on the full dataset.
 
         Warnings
         --------
@@ -3856,8 +3861,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 predicate_pushdown,
                 projection_pushdown,
                 slice_pushdown,
-                schema,
-                validate_output_schema,
+                streamable=streamable,
+                schema=schema,
+                validate_output=validate_output_schema,
             )
         )
 

@@ -1542,6 +1542,7 @@ def test_lazy_cache_same_key() -> None:
     ).collect().to_dict(False) == {"a": [-1, 2, 7], "c": ["x", "y", "z"]}
 
 
+@pytest.mark.xdist_group(name="group1")
 def test_lazy_cache_hit(capfd: Any) -> None:
     os.environ["POLARS_VERBOSE"] = "1"
     df = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]}).lazy()
@@ -1551,6 +1552,7 @@ def test_lazy_cache_hit(capfd: Any) -> None:
     ).collect().to_dict(False) == {"a": [0, 0, 0], "c": ["x", "y", "z"]}
     (out, _) = capfd.readouterr()
     assert "CACHE HIT" in out
+    os.unsetenv("POLARS_VERBOSE")
 
 
 def test_quadratic_behavior_4736() -> None:

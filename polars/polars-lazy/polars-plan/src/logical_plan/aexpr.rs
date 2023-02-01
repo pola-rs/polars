@@ -118,7 +118,7 @@ impl AExpr {
         use AExpr::*;
         match self {
             Function { options, .. } | AnonymousFunction { options, .. } => {
-                options.collect_groups == ApplyOptions::ApplyGroups
+                options.is_groups_sensitive()
             }
             Sort { .. }
             | SortBy { .. }

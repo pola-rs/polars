@@ -302,6 +302,7 @@ impl LazyFrame {
             AllowedOptimizations {
                 projection_pushdown: false,
                 predicate_pushdown: false,
+                streaming: true,
                 ..Default::default()
             },
             Some(Arc::new(udf_schema)),
@@ -1198,6 +1199,7 @@ impl LazyFrame {
             AllowedOptimizations {
                 slice_pushdown: false,
                 predicate_pushdown: false,
+                streaming: false,
                 ..Default::default()
             }
         } else {

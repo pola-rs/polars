@@ -1,4 +1,6 @@
+import os
 from datetime import date
+from typing import Any
 
 import numpy as np
 import pytest
@@ -198,3 +200,21 @@ def test_streaming_block_on_literals_6054() -> None:
     assert df.lazy().with_columns(s).groupby("col_1").agg(pl.all().first()).collect(
         streaming=True
     ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}
+
+
+@pytest.mark.xdist_group(name="group1")
+def test_streaming_streamable_functions(capfd: Any) -> None:
+    os.environ["POLARS_VERBOSE"] = "1"
+    assert (
+        pl.DataFrame({"a": [1, 2, 3]})
+        .lazy()
+        .map(
+            f=lambda df: df.with_columns(pl.col("a").alias("b")),
+            schema={"a": pl.Int64, "b": pl.Int64},
+            streamable=True,
+        )
+    ).collect(streaming=True).to_dict(False) == {"a": [1, 2, 3], "b": [1, 2, 3]}
+
+    (_, err) = capfd.readouterr()
+    assert "df -> function -> ordered_sink" in err
+    os.unsetenv("POLARS_VERBOSE")
