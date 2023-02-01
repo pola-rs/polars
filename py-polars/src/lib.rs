@@ -481,21 +481,13 @@ fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> 
 
 #[pyfunction]
 pub fn map_mul(
-    py: Python,
     pyexpr: Vec<PyExpr>,
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
     apply_groups: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    lazy::map_mul(
-        &pyexpr,
-        py,
-        lambda,
-        output_type,
-        apply_groups,
-        returns_scalar,
-    )
+    lazy::map_mul(pyexpr, lambda, output_type, apply_groups, returns_scalar)
 }
 
 #[pyfunction]

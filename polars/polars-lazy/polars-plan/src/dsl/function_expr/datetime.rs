@@ -1,4 +1,7 @@
+use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
+use polars_core::export::chrono::NaiveDate;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+use polars_core::utils::CustomIterTools;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +37,10 @@ pub enum TemporalFunction {
         closed: ClosedWindow,
         tz: Option<TimeZone>,
     },
+    /// Convert to Datetime
+    ToDatetime,
+    /// Convert to Duration
+    ToDuration,
 }
 
 impl Display for TemporalFunction {
@@ -62,6 +69,8 @@ impl Display for TemporalFunction {
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
+            ToDatetime => return write!(f, "dattime"),
+            ToDuration => return write!(f, "duration"),
         };
         write!(f, "dt.{s}")
     }
@@ -274,4 +283,116 @@ pub(super) fn date_range_dispatch(
         let to_type = DataType::List(Box::new(dtype.clone()));
         list.cast(&to_type)
     }
+}
+
+pub(super) fn to_datetime(s: &mut [Series]) -> PolarsResult<Series> {
+    assert_eq!(s.len(), 7);
+    let max_len = s.iter().map(|s| s.len()).max().unwrap();
+    let mut year = s[0].cast(&DataType::Int32)?;
+    if year.len() < max_len {
+        year = year.new_from_index(0, max_len)
+    }
+    let year = year.i32()?;
+    let mut month = s[1].cast(&DataType::UInt32)?;
+    if month.len() < max_len {
+        month = month.new_from_index(0, max_len);
+    }
+    let month = month.u32()?;
+    let mut day = s[2].cast(&DataType::UInt32)?;
+    if day.len() < max_len {
+        day = day.new_from_index(0, max_len);
+    }
+    let day = day.u32()?;
+    let mut hour = s[3].cast(&DataType::UInt32)?;
+    if hour.len() < max_len {
+        hour = hour.new_from_index(0, max_len);
+    }
+    let hour = hour.u32()?;
+
+    let mut minute = s[4].cast(&DataType::UInt32)?;
+    if minute.len() < max_len {
+        minute = minute.new_from_index(0, max_len);
+    }
+    let minute = minute.u32()?;
+
+    let mut second = s[5].cast(&DataType::UInt32)?;
+    if second.len() < max_len {
+        second = second.new_from_index(0, max_len);
+    }
+    let second = second.u32()?;
+
+    let mut microsecond = s[6].cast(&DataType::UInt32)?;
+    if microsecond.len() < max_len {
+        microsecond = microsecond.new_from_index(0, max_len);
+    }
+    let microsecond = microsecond.u32()?;
+
+    let ca: Int64Chunked = year
+        .into_iter()
+        .zip(month.into_iter())
+        .zip(day.into_iter())
+        .zip(hour.into_iter())
+        .zip(minute.into_iter())
+        .zip(second.into_iter())
+        .zip(microsecond.into_iter())
+        .map(|((((((y, m), d), h), mnt), s), us)| {
+            if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
+                (y, m, d, h, mnt, s, us)
+            {
+                NaiveDate::from_ymd_opt(y, m, d)
+                    .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
+                    .map(|ndt| ndt.timestamp_micros())
+            } else {
+                None
+            }
+        })
+        .collect_trusted();
+
+    Ok(ca.into_datetime(TimeUnit::Microseconds, None).into_series())
+}
+
+pub(super) fn to_duration(s: &mut [Series]) -> PolarsResult<Series> {
+    assert_eq!(s.len(), 8);
+    let days = s[0].cast(&DataType::Int64).unwrap();
+    let seconds = s[1].cast(&DataType::Int64).unwrap();
+    let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
+    let microseconds = s[3].cast(&DataType::Int64).unwrap();
+    let milliseconds = s[4].cast(&DataType::Int64).unwrap();
+    let minutes = s[5].cast(&DataType::Int64).unwrap();
+    let hours = s[6].cast(&DataType::Int64).unwrap();
+    let weeks = s[7].cast(&DataType::Int64).unwrap();
+
+    let max_len = s.iter().map(|s| s.len()).max().unwrap();
+
+    let condition = |s: &Series| {
+        // check if not literal 0 || full column
+        (s.len() != max_len && s.get(0).unwrap() != AnyValue::Int64(0)) || s.len() == max_len
+    };
+
+    if nanoseconds.len() != max_len {
+        nanoseconds = nanoseconds.new_from_index(0, max_len);
+    }
+    if condition(&microseconds) {
+        nanoseconds = nanoseconds + (microseconds * 1_000);
+    }
+    if condition(&milliseconds) {
+        nanoseconds = nanoseconds + (milliseconds * 1_000_000);
+    }
+    if condition(&seconds) {
+        nanoseconds = nanoseconds + (seconds * NANOSECONDS);
+    }
+    if condition(&days) {
+        nanoseconds = nanoseconds + (days * NANOSECONDS * SECONDS_IN_DAY);
+    }
+    if condition(&minutes) {
+        nanoseconds = nanoseconds + minutes * NANOSECONDS * 60;
+    }
+    if condition(&hours) {
+        nanoseconds = nanoseconds + hours * NANOSECONDS * 60 * 60;
+    }
+    if condition(&weeks) {
+        nanoseconds = nanoseconds + weeks * NANOSECONDS * SECONDS_IN_DAY * 7;
+    }
+
+    nanoseconds.cast(&DataType::Duration(TimeUnit::Nanoseconds))
 }

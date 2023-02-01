@@ -526,6 +526,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         file: IOBase | str | Path | None = None,
         *,
         to_string: bool | None = None,
+        udf_serializer: Any,
     ) -> str | None:
         """
         Write the logical plan of this LazyFrame to a file or string in JSON format.
@@ -563,6 +564,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             )
         else:
             to_string = False
+
+        if udf_serializer is not None:
+            polars.polars.
 
         if isinstance(file, (str, Path)):
             file = normalise_filepath(file)

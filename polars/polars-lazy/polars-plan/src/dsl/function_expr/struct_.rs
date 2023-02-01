@@ -7,6 +7,7 @@ use super::*;
 pub enum StructFunction {
     FieldByIndex(i64),
     FieldByName(Arc<str>),
+    RenameFields(Vec<String>),
 }
 
 impl Display for StructFunction {
@@ -15,6 +16,7 @@ impl Display for StructFunction {
         match self {
             StructFunction::FieldByIndex(_) => write!(f, "struct.field_by_name"),
             StructFunction::FieldByName(_) => write!(f, "struct.field_by_index"),
+            StructFunction::RenameFields(_) => write!(f, "struct.rename_fields"),
         }
     }
 }
@@ -30,4 +32,18 @@ pub(super) fn get_by_index(s: &Series, index: i64) -> PolarsResult<Series> {
 pub(super) fn get_by_name(s: &Series, name: Arc<str>) -> PolarsResult<Series> {
     let ca = s.struct_()?;
     ca.field_by_name(name.as_ref())
+}
+pub(super) fn rename_fields(s: &Series, names: &[String]) -> PolarsResult<Series> {
+    let ca = s.struct_()?;
+    let fields = ca
+        .fields()
+        .iter()
+        .zip(names.as_ref())
+        .map(|(s, name)| {
+            let mut s = s.clone();
+            s.rename(name);
+            s
+        })
+        .collect::<Vec<_>>();
+    StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
 }

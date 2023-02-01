@@ -27,6 +27,7 @@ pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multipl
 pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
+serde = { version = "1", features = ["derive"] }
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]

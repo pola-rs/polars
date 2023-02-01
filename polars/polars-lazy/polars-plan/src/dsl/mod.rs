@@ -42,6 +42,7 @@ use polars_ops::prelude::SeriesOps;
 use polars_time::series::SeriesOpsTime;
 
 pub use crate::logical_plan::lit;
+pub use crate::logical_plan::options::{ApplyOptions, FunctionOptions};
 use crate::prelude::*;
 use crate::utils::has_expr;
 #[cfg(feature = "is_in")]
@@ -833,21 +834,13 @@ impl Expr {
     /// Get mask of finite values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_finite(self) -> Self {
-        self.map(
-            |s: Series| s.is_finite().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_finite")
+        self.map_private(NumericFunction::IsFinite.into())
     }
 
     /// Get mask of infinite values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_infinite(self) -> Self {
-        self.map(
-            |s: Series| s.is_infinite().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_infinite")
+        self.map_private(NumericFunction::IsInfinite.into())
     }
 
     /// Get mask of NaN values if dtype is Float
@@ -979,22 +972,19 @@ impl Expr {
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
     pub fn round(self, decimals: u32) -> Self {
-        self.map(move |s: Series| s.round(decimals), GetOutput::same_type())
-            .with_fmt("round")
+        self.map_private(NumericFunction::Round(decimals).into())
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn floor(self) -> Self {
-        self.map(move |s: Series| s.floor(), GetOutput::same_type())
-            .with_fmt("floor")
+        self.map_private(NumericFunction::Floor.into())
     }
 
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn ceil(self) -> Self {
-        self.map(move |s: Series| s.ceil(), GetOutput::same_type())
-            .with_fmt("ceil")
+        self.map_private(NumericFunction::Ceil.into())
     }
 
     /// Clip underlying values to a set boundary.
@@ -1027,8 +1017,7 @@ impl Expr {
     /// Convert all values to their absolute/positive value.
     #[cfg(feature = "abs")]
     pub fn abs(self) -> Self {
-        self.map(move |s: Series| s.abs(), GetOutput::same_type())
-            .with_fmt("abs")
+        self.map_private(NumericFunction::Abs.into())
     }
 
     /// Apply window function over a subgroup.

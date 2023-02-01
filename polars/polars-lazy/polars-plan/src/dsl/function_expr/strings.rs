@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
@@ -52,37 +53,65 @@ pub enum StringFunction {
     Strip(Option<String>),
     RStrip(Option<String>),
     LStrip(Option<String>),
+    Split {
+        by: String,
+        inclusive: bool,
+    },
+    SplitExact {
+        by: String,
+        inclusive: bool,
+        n: usize,
+    },
+    SplitN {
+        by: String,
+        n: usize,
+    },
 }
 
 impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use self::*;
+        use StringFunction::*;
         let s = match self {
-            StringFunction::Contains { .. } => "contains",
-            StringFunction::StartsWith(_) => "starts_with",
-            StringFunction::EndsWith(_) => "ends_with",
-            StringFunction::Extract { .. } => "extract",
+            Contains { .. } => "contains",
+            StartsWith(_) => "starts_with",
+            EndsWith(_) => "ends_with",
+            Extract { .. } => "extract",
             #[cfg(feature = "string_justify")]
-            StringFunction::Zfill(_) => "zfill",
+            Zfill(_) => "zfill",
             #[cfg(feature = "string_justify")]
-            StringFunction::LJust { .. } => "str.ljust",
+            LJust { .. } => "str.ljust",
             #[cfg(feature = "string_justify")]
-            StringFunction::RJust { .. } => "rjust",
-            StringFunction::ExtractAll => "extract_all",
-            StringFunction::CountMatch(_) => "count_match",
+            RJust { .. } => "rjust",
+            ExtractAll => "extract_all",
+            CountMatch(_) => "count_match",
             #[cfg(feature = "temporal")]
-            StringFunction::Strptime(_) => "strptime",
+            Strptime(_) => "strptime",
             #[cfg(feature = "concat_str")]
-            StringFunction::ConcatVertical(_) => "concat_vertical",
+            ConcatVertical(_) => "concat_vertical",
             #[cfg(feature = "concat_str")]
-            StringFunction::ConcatHorizontal(_) => "concat_horizontal",
+            ConcatHorizontal(_) => "concat_horizontal",
             #[cfg(feature = "regex")]
-            StringFunction::Replace { .. } => "replace",
-            StringFunction::Uppercase => "uppercase",
-            StringFunction::Lowercase => "lowercase",
-            StringFunction::Strip(_) => "strip",
-            StringFunction::LStrip(_) => "lstrip",
-            StringFunction::RStrip(_) => "rstrip",
+            Replace { .. } => "replace",
+            Uppercase => "uppercase",
+            Lowercase => "lowercase",
+            Strip(_) => "strip",
+            LStrip(_) => "lstrip",
+            RStrip(_) => "rstrip",
+            Split { inclusive, .. } => {
+                if *inclusive {
+                    "split_inclusive"
+                } else {
+                    "split"
+                }
+            }
+            SplitExact { inclusive, .. } => {
+                if *inclusive {
+                    "split_exact_inclusive"
+                } else {
+                    "split_exact"
+                }
+            }
+            SplitN { by, n } => "splitn",
         };
 
         write!(f, "str.{s}")
@@ -414,4 +443,100 @@ pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Se
         replace_single(column, pat, val, literal)
     }
     .map(|ca| ca.into_series())
+}
+
+pub(super) fn split(s: &Series, by: &str, inclusive: bool) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+
+    let mut builder = ListUtf8ChunkedBuilder::new(s.name(), s.len(), ca.get_values_size());
+    ca.into_iter().for_each(|opt_s| match opt_s {
+        None => builder.append_null(),
+        Some(s) => {
+            if !inclusive {
+                let iter = s.split(&by);
+                builder.append_values_iter(iter);
+            } else {
+                let iter = s.split_inclusive(&by);
+                builder.append_values_iter(iter);
+            }
+        }
+    });
+    Ok(builder.finish().into_series())
+}
+
+pub(super) fn split_exact(s: &Series, by: &str, inclusive: bool, n: usize) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+
+    let mut arrs = (0..n + 1)
+        .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+        .collect::<Vec<_>>();
+
+    ca.into_iter().for_each(|opt_s| match opt_s {
+        None => {
+            for arr in &mut arrs {
+                arr.push_null()
+            }
+        }
+        Some(s) => {
+            let mut arr_iter = arrs.iter_mut();
+            if !inclusive {
+                let split_iter = s.split(&by);
+                (split_iter)
+                    .zip(&mut arr_iter)
+                    .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+            } else {
+                let split_iter = s.split_inclusive(&by);
+                (split_iter)
+                    .zip(&mut arr_iter)
+                    .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+            }
+            // fill the remaining with null
+            for arr in arr_iter {
+                arr.push_null()
+            }
+        }
+    });
+    let fields = arrs
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut arr)| {
+            Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
+        })
+        .collect::<Vec<_>>();
+    Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+}
+
+pub(super) fn splitn(s: &Series, by: &str, n: usize) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+
+    let mut arrs = (0..n)
+        .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+        .collect::<Vec<_>>();
+
+    ca.into_iter().for_each(|opt_s| match opt_s {
+        None => {
+            for arr in &mut arrs {
+                arr.push_null()
+            }
+        }
+        Some(s) => {
+            let mut arr_iter = arrs.iter_mut();
+            let split_iter = s.splitn(n, &by);
+            (split_iter)
+                .zip(&mut arr_iter)
+                .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+            // fill the remaining with null
+            for arr in arr_iter {
+                arr.push_null()
+            }
+        }
+    });
+    let fields = arrs
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut arr)| {
+            Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
+        })
+        .collect::<Vec<_>>();
+    Ok(StructChunked::new(ca.name(), &fields)?.into_series())
 }

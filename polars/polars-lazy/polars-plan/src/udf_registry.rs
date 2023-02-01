@@ -10,13 +10,11 @@ use serde::de::{DeserializeOwned, DeserializeSeed, Error, MapAccess, Visitor};
 use serde::ser::SerializeMap;
 pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub static UDF_DESERIALIZE_REGISTRY: OnceCell<UdfSerializeRegistry> = OnceCell::new();
-
 // Serialization
 
 pub fn serialize_udf<S: Serializer>(
     ty: &str,
-    obj: &dyn erased_serde::Serialize,
+    obj: &dyn ErasedSerialize,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     // { "type": <type>, "data": <data> }
@@ -27,6 +25,7 @@ pub fn serialize_udf<S: Serializer>(
 }
 
 // Deserialization
+
 struct MapLookupVisitor<T: 'static> {
     registry: &'static Registry<T>,
 }
@@ -77,7 +76,7 @@ impl<'de, T: 'static> Visitor<'de> for MapLookupVisitor<T> {
             where
                 D: Deserializer<'de>,
             {
-                let mut erased = <dyn erased_serde::Deserializer>::erase(deserializer);
+                let mut erased = <dyn ErasedDeserializer>::erase(deserializer);
                 (self.f)(&mut erased).map_err(Error::custom)
             }
         }
@@ -96,9 +95,10 @@ pub fn deserialize_udf<'de, D: Deserializer<'de>, T: 'static>(
 
 // Deserialization: Registry
 
-pub type DeserializeFn<T> = Box<
-    dyn Fn(&mut dyn erased_serde::Deserializer) -> Result<T, erased_serde::Error> + Send + Sync,
->;
+pub static UDF_DESERIALIZE_REGISTRY: OnceCell<UdfSerializeRegistry> = OnceCell::new();
+
+pub type DeserializeFn<T> =
+    Box<dyn Fn(&mut dyn ErasedDeserializer) -> Result<T, ErasedError> + Send + Sync>;
 
 pub struct Registry<T> {
     map: HashMap<&'static str, DeserializeFn<T>>,
@@ -135,9 +135,7 @@ impl<T> Registry<T> {
     ) -> &mut Self {
         self.map.insert(
             key,
-            Box::new(move |deser: &mut dyn erased_serde::Deserializer| {
-                D::deserialize(deser).map(&make_t)
-            }),
+            Box::new(move |deser: &mut dyn ErasedDeserializer| D::deserialize(deser).map(&make_t)),
         );
 
         self

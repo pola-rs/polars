@@ -9,6 +9,39 @@ use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
+/// This struct is a wrapper to implement Eq, which can only be derived.
+/// It acts as a f64, serializes as a f64, but Eq and Hash use the value
+/// as its underlying bits.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HashF64(u64);
+impl From<f64> for HashF64 {
+    fn from(value: f64) -> Self {
+        HashF64(value.to_bits())
+    }
+}
+impl From<HashF64> for f64 {
+    fn from(value: HashF64) -> Self {
+        f64::from_bits(value.0)
+    }
+}
+impl std::fmt::Debug for HashF64 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&f64::from(*self), f)
+    }
+}
+#[cfg(feature = "serde")]
+impl serde::Serialize for HashF64 {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        f64::from(*self).serialize(s)
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for HashF64 {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        f64::deserialize(d).map(Into::into)
+    }
+}
+
 /// Utility to write comma delimited
 pub fn column_delimited(mut s: String, items: &[String]) -> String {
     s.push('(');

@@ -2,10 +2,6 @@
 //!
 //! Functions on expressions that might be useful.
 //!
-use std::ops::{BitAnd, BitOr};
-
-use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
-use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "rank")]
 use polars_core::utils::coalesce_nulls_series;
 #[cfg(feature = "dtype-struct")]
@@ -13,9 +9,9 @@ use polars_core::utils::get_supertype;
 
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
-use crate::dsl::function_expr::ListFunction;
 #[cfg(feature = "strings")]
 use crate::dsl::function_expr::StringFunction;
+use crate::dsl::function_expr::{ListFunction, NumericFunction};
 use crate::dsl::*;
 use crate::prelude::*;
 
@@ -235,14 +231,10 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
 /// be used and so on.
 pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
-    let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
-        polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
-    }) as Arc<dyn SeriesUdf>);
 
-    Expr::AnonymousFunction {
+    Expr::Function {
         input: by.as_ref().to_vec(),
-        function,
-        output_type: GetOutput::from_type(IDX_DTYPE),
+        function: FunctionExpr::ArgSortBy { reverse },
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
@@ -458,9 +450,6 @@ pub struct DatetimeArgs {
 
 #[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
-    use polars_core::export::chrono::NaiveDate;
-    use polars_core::utils::CustomIterTools;
-
     let year = args.year;
     let month = args.month;
     let day = args.day;
@@ -469,73 +458,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     let second = args.second;
     let microsecond = args.microsecond;
 
-    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        assert_eq!(s.len(), 7);
-        let max_len = s.iter().map(|s| s.len()).max().unwrap();
-        let mut year = s[0].cast(&DataType::Int32)?;
-        if year.len() < max_len {
-            year = year.new_from_index(0, max_len)
-        }
-        let year = year.i32()?;
-        let mut month = s[1].cast(&DataType::UInt32)?;
-        if month.len() < max_len {
-            month = month.new_from_index(0, max_len);
-        }
-        let month = month.u32()?;
-        let mut day = s[2].cast(&DataType::UInt32)?;
-        if day.len() < max_len {
-            day = day.new_from_index(0, max_len);
-        }
-        let day = day.u32()?;
-        let mut hour = s[3].cast(&DataType::UInt32)?;
-        if hour.len() < max_len {
-            hour = hour.new_from_index(0, max_len);
-        }
-        let hour = hour.u32()?;
-
-        let mut minute = s[4].cast(&DataType::UInt32)?;
-        if minute.len() < max_len {
-            minute = minute.new_from_index(0, max_len);
-        }
-        let minute = minute.u32()?;
-
-        let mut second = s[5].cast(&DataType::UInt32)?;
-        if second.len() < max_len {
-            second = second.new_from_index(0, max_len);
-        }
-        let second = second.u32()?;
-
-        let mut microsecond = s[6].cast(&DataType::UInt32)?;
-        if microsecond.len() < max_len {
-            microsecond = microsecond.new_from_index(0, max_len);
-        }
-        let microsecond = microsecond.u32()?;
-
-        let ca: Int64Chunked = year
-            .into_iter()
-            .zip(month.into_iter())
-            .zip(day.into_iter())
-            .zip(hour.into_iter())
-            .zip(minute.into_iter())
-            .zip(second.into_iter())
-            .zip(microsecond.into_iter())
-            .map(|((((((y, m), d), h), mnt), s), us)| {
-                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
-                    (y, m, d, h, mnt, s, us)
-                {
-                    NaiveDate::from_ymd_opt(y, m, d)
-                        .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
-                        .map(|ndt| ndt.timestamp_micros())
-                } else {
-                    None
-                }
-            })
-            .collect_trusted();
-
-        Ok(ca.into_datetime(TimeUnit::Microseconds, None).into_series())
-    }) as Arc<dyn SeriesUdf>);
-
-    Expr::AnonymousFunction {
+    Expr::Function {
         input: vec![
             year,
             month,
@@ -545,8 +468,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             second.unwrap_or_else(|| lit(0)),
             microsecond.unwrap_or_else(|| lit(0)),
         ],
-        function,
-        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Microseconds, None)),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::ToDatetime),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
@@ -571,53 +493,7 @@ pub struct DurationArgs {
 
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
-    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        assert_eq!(s.len(), 8);
-        let days = s[0].cast(&DataType::Int64).unwrap();
-        let seconds = s[1].cast(&DataType::Int64).unwrap();
-        let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
-        let microseconds = s[3].cast(&DataType::Int64).unwrap();
-        let milliseconds = s[4].cast(&DataType::Int64).unwrap();
-        let minutes = s[5].cast(&DataType::Int64).unwrap();
-        let hours = s[6].cast(&DataType::Int64).unwrap();
-        let weeks = s[7].cast(&DataType::Int64).unwrap();
-
-        let max_len = s.iter().map(|s| s.len()).max().unwrap();
-
-        let condition = |s: &Series| {
-            // check if not literal 0 || full column
-            (s.len() != max_len && s.get(0).unwrap() != AnyValue::Int64(0)) || s.len() == max_len
-        };
-
-        if nanoseconds.len() != max_len {
-            nanoseconds = nanoseconds.new_from_index(0, max_len);
-        }
-        if condition(&microseconds) {
-            nanoseconds = nanoseconds + (microseconds * 1_000);
-        }
-        if condition(&milliseconds) {
-            nanoseconds = nanoseconds + (milliseconds * 1_000_000);
-        }
-        if condition(&seconds) {
-            nanoseconds = nanoseconds + (seconds * NANOSECONDS);
-        }
-        if condition(&days) {
-            nanoseconds = nanoseconds + (days * NANOSECONDS * SECONDS_IN_DAY);
-        }
-        if condition(&minutes) {
-            nanoseconds = nanoseconds + minutes * NANOSECONDS * 60;
-        }
-        if condition(&hours) {
-            nanoseconds = nanoseconds + hours * NANOSECONDS * 60 * 60;
-        }
-        if condition(&weeks) {
-            nanoseconds = nanoseconds + weeks * NANOSECONDS * SECONDS_IN_DAY * 7;
-        }
-
-        nanoseconds.cast(&DataType::Duration(TimeUnit::Nanoseconds))
-    }) as Arc<dyn SeriesUdf>);
-
-    Expr::AnonymousFunction {
+    Expr::Function {
         input: vec![
             args.days.unwrap_or_else(|| lit(0i64)),
             args.seconds.unwrap_or_else(|| lit(0i64)),
@@ -628,8 +504,7 @@ pub fn duration(args: DurationArgs) -> Expr {
             args.hours.unwrap_or_else(|| lit(0i64)),
             args.weeks.unwrap_or_else(|| lit(0i64)),
         ],
-        function,
-        output_type: GetOutput::from_type(DataType::Duration(TimeUnit::Nanoseconds)),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::ToDuration),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
@@ -739,6 +614,7 @@ macro_rules! prepare_binary_function {
 }
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
+/// Please note that the resulting expression will not be serializable.
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
@@ -747,6 +623,7 @@ where
     a.map_many(function, &[b], output_type)
 }
 
+/// Please note that the resulting expression will not be serializable.
 pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
@@ -775,6 +652,7 @@ fn cumfold_dtype() -> GetOutput {
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
+/// Please note that the resulting expression will not be serializable.
 pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
@@ -806,6 +684,8 @@ where
     }
 }
 
+/// Reduce over multiple columns horizontally / row wise.
+/// Please note that the resulting expression will not be serializable.
 pub fn reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
@@ -844,25 +724,22 @@ where
     }
 }
 
-pub fn custom_series_flat_udf_fn<E: AsRef<[Expr]>, F: SeriesUdf + FunctionOutputField + 'static>(
-    f: Arc<F>,
-    exprs: E,
+/// Make an UDF (User Defined Function) expression.
+pub fn make_udf_expr<F: SeriesUdf + FunctionOutputField + 'static>(
+    input: Vec<Expr>,
+    udf: Arc<F>,
+    options: FunctionOptions,
 ) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
     Expr::AnonymousFunction {
-        input: exprs,
-        function: SpecialEq::new(Arc::clone(&f) as _),
-        output_type: SpecialEq::new(f),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
-            input_wildcard_expansion: true,
-            fmt_str: "hello",
-            ..Default::default()
-        },
+        input,
+        function: SpecialEq::new(Arc::clone(&udf) as _),
+        output_type: SpecialEq::new(udf),
+        options,
     }
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
+/// Please note that the resulting expression will not be serializable.
 #[cfg(feature = "dtype-struct")]
 pub fn cumreduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
@@ -908,6 +785,7 @@ where
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
+/// Please note that the resulting expression will not be serializable.
 #[cfg(feature = "dtype-struct")]
 pub fn cumfold_exprs<F: 'static, E: AsRef<[Expr]>>(
     acc: Expr,
@@ -957,13 +835,24 @@ where
 /// Get the the sum of the values per row
 pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let mut exprs = exprs.as_ref().to_vec();
-    let func = |s1, s2| Ok(&s1 + &s2);
     let init = match exprs.pop() {
         Some(e) => e,
         // use u32 as that is not cast to float as eagerly
         _ => lit(0u32),
     };
-    fold_exprs(init, func, exprs).alias("sum")
+
+    exprs.push(init); // fold: accumulator is supplied as last input
+    Expr::Function {
+        input: exprs,
+        function: NumericFunction::RowSum.into(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            ..Default::default()
+        },
+    }
+    .alias("sum")
 }
 
 /// Get the the maximum value per row
@@ -972,37 +861,74 @@ pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
-    let func = |s1, s2| {
-        let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmax().map(|s| s.unwrap())
-    };
-    reduce_exprs(func, exprs).alias("max")
+
+    Expr::Function {
+        input: exprs,
+        function: NumericFunction::RowMax.into(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            ..Default::default()
+        },
+    }
+    .alias("max")
 }
 
+/// Get the the minimum value per row
 pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
-    let func = |s1, s2| {
-        let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmin().map(|s| s.unwrap())
-    };
-    reduce_exprs(func, exprs).alias("min")
+
+    Expr::Function {
+        input: exprs,
+        function: NumericFunction::RowMin.into(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            ..Default::default()
+        },
+    }
+    .alias("min")
 }
 
-/// Evaluate all the expressions with a bitwise or
+/// Evaluate all the expressions with a bitwise or per row
 pub fn any_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitor(s2.bool()?).into_series());
-    fold_exprs(lit(false), func, exprs)
+    let mut exprs = exprs.as_ref().to_vec();
+
+    exprs.push(lit(false)); // fold: accumulator is supplied as last input
+    Expr::Function {
+        input: exprs,
+        function: NumericFunction::RowAny.into(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            ..Default::default()
+        },
+    }
+    .alias("any")
 }
 
-/// Evaluate all the expressions with a bitwise and
+/// Evaluate all the expressions with a bitwise and per row
 pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitand(s2.bool()?).into_series());
-    fold_exprs(lit(true), func, exprs)
+    let mut exprs = exprs.as_ref().to_vec();
+
+    exprs.push(lit(true)); // fold: accumulator is supplied as last input
+    Expr::Function {
+        input: exprs,
+        function: NumericFunction::RowAll.into(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            ..Default::default()
+        },
+    }
+    .alias("all")
 }
 
 /// [Not](Expr::Not) expression.

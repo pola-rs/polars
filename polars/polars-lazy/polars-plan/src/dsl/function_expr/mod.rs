@@ -12,6 +12,7 @@ mod fill_null;
 mod is_in;
 mod list;
 mod nan;
+mod numeric;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
@@ -34,6 +35,7 @@ mod temporal;
 mod trigonometry;
 
 use std::fmt::{Display, Formatter};
+use std::ops::{BitAnd, BitOr};
 
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
@@ -45,6 +47,7 @@ pub(crate) use self::binary::BinaryFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
 pub(super) use self::nan::NanFunction;
+pub(super) use self::numeric::NumericFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -117,6 +120,13 @@ pub enum FunctionExpr {
     Diff(usize, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
+    /// ArgSort by arg
+    ArgSortBy {
+        reverse: Vec<bool>,
+    },
+    NumFunction(NumericFunction),
+    Unique,
+    UniqueStable,
 }
 
 impl Display for FunctionExpr {
@@ -176,6 +186,10 @@ impl Display for FunctionExpr {
             Diff(_, _) => "diff",
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
+            ArgSortBy { .. } => "argsort_by",
+            NumFunction(func) => return write!(f, "{func}"),
+            Unique => "unique",
+            UniqueStable => "unique_stable",
         };
         write!(f, "{s}")
     }
@@ -186,6 +200,7 @@ macro_rules! wrap {
         SpecialEq::new(Arc::new($e))
     };
 }
+pub(crate) use wrap;
 
 // Fn(&[Series], args)
 // all expression arguments are in the slice.
@@ -234,7 +249,7 @@ macro_rules! map_owned {
 // Fn(&Series, args)
 #[macro_export(super)]
 macro_rules! map {
-    ($func:path) => {{
+    ($func:expr) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
             $func(s)
@@ -243,7 +258,7 @@ macro_rules! map {
         SpecialEq::new(Arc::new(f))
     }};
 
-    ($func:path, $($args:expr),*) => {{
+    ($func:expr, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
             $func(s, $($args),*)
@@ -252,10 +267,12 @@ macro_rules! map {
         SpecialEq::new(Arc::new(f))
     }};
 }
+pub(crate) use map;
 
 impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
+
         match func {
             NullCount => {
                 let f = |s: &mut [Series]| {
@@ -336,6 +353,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 match sf {
                     FieldByIndex(index) => map!(struct_::get_by_index, index),
                     FieldByName(name) => map!(struct_::get_by_name, name.clone()),
+                    RenameFields(names) => map!(struct_::rename_fields, &names),
                 }
             }
             #[cfg(feature = "top_k")]
@@ -357,6 +375,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Interpolate(method) => {
                 map!(dispatch::interpolate, method)
             }
+            ArgSortBy { reverse } => {
+                let f = move |by: &mut [Series]| {
+                    polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
+                };
+                wrap!(f)
+            }
+            NumFunction(func) => func.into(),
+            Unique => map!(|s: &Series| s.unique()),
+            UniqueStable => map!(|s: &Series| s.unique_stable()),
         }
     }
 }
@@ -411,6 +438,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Strip(matches) => map!(strings::strip, matches.as_deref()),
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
+            Split { by, inclusive } => map!(strings::split, &by, inclusive),
+            SplitExact { by, inclusive, n } => map!(strings::split_exact, &by, inclusive, n),
+            SplitN { by, n } => map!(strings::splitn, &by, n),
         }
     }
 }
@@ -473,6 +503,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     tz.clone()
                 )
             }
+            ToDatetime => map_as_slice!(datetime::to_datetime),
+            ToDuration => map_as_slice!(datetime::to_duration),
         }
     }
 }
