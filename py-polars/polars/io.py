@@ -1143,6 +1143,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
                 "ADBC sqlite driver not detected. Please run `pip install "
                 "adbc_driver_sqlite`."
             ) from None
+        connection_uri = connection_uri.replace(r"sqlite:///", "")
     elif connection_uri.startswith("postgres"):
         try:
             import adbc_driver_postgresql.dbapi as adbc  # type: ignore[import]

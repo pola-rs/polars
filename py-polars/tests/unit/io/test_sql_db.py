@@ -12,13 +12,31 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    "engine",
+    "engine,expected_dtypes,expected_dates",
     [
-        pytest.param("connectorx", id="Testing connectorx"),
-        pytest.param("adbc", id="Testing adbc"),
+        pytest.param(
+            "connectorx",
+            {
+                "id": pl.Int64,
+                "name": pl.Utf8,
+                "value": pl.Float64,
+                "date": pl.Date,
+            },
+            [date(2020, 1, 1), date(2021, 12, 31)],
+        ),
+        pytest.param(
+            "adbc",
+            {
+                "id": pl.Int64,
+                "name": pl.Utf8,
+                "value": pl.Float64,
+                "date": pl.Utf8,
+            },
+            ["2020-01-01", "2021-12-31"],
+        ),
     ],
 )
-def test_read_sql(engine: SQLEngine) -> None:
+def test_read_sql(engine: SQLEngine, expected_dtypes, expected_dates) -> None:
     import sqlite3
     import tempfile
 
@@ -56,13 +74,7 @@ def test_read_sql(engine: SQLEngine) -> None:
             # │ 2   ┆ other ┆ -99.5 ┆ 2021-12-31 │
             # └─────┴───────┴───────┴────────────┘
 
-            expected = {
-                "id": pl.Int64,
-                "name": pl.Utf8,
-                "value": pl.Float64,
-                "date": pl.Date,
-            }
-            assert df.schema == expected
+            assert df.schema == expected_dtypes
             assert df.shape == (2, 4)
-            assert df["date"].to_list() == [date(2020, 1, 1), date(2021, 12, 31)]
+            assert df["date"].to_list() == expected_dates
             # assert df.rows() == ...
