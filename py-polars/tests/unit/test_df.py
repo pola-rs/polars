@@ -2332,6 +2332,22 @@ def test_fill_null_limits() -> None:
     }
 
 
+def test_selection_misc() -> None:
+    df = pl.DataFrame({"x": "abc"}, schema={"x": pl.Utf8})
+
+    # literal values (as scalar/list)
+    for zero in (0, [0]):
+        assert df.select(zero)["literal"].to_list() == [0]  # type: ignore[arg-type]
+    assert df.select(literal=0)["literal"].to_list() == [0]
+
+    # expect string values to be interpreted as cols
+    for x in ("x", ["x"], pl.col("x")):
+        assert df.select(x).rows() == [("abc",)]  # type: ignore[arg-type]
+
+    # string col + lit
+    assert df.with_columns(["x", 0]).to_dicts() == [{"x": "abc", "literal": 0}]
+
+
 def test_selection_regex_and_multicol() -> None:
     test_df = pl.DataFrame(
         {

@@ -122,6 +122,8 @@ if TYPE_CHECKING:
         ParallelStrategy,
         ParquetCompression,
         PivotAgg,
+        PolarsExprType,
+        PythonLiteral,
         RollingInterpolationMethod,
         SizeUnit,
         StartBy,
@@ -5543,10 +5545,9 @@ class DataFrame:
     def select(
         self: DF,
         exprs: (
-            str
-            | pli.Expr
-            | pli.Series
-            | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
+            PolarsExprType
+            | PythonLiteral
+            | Iterable[PolarsExprType | PythonLiteral]
             | None
         ) = None,
         **named_exprs: Any,
@@ -5658,7 +5659,12 @@ class DataFrame:
 
     def with_columns(
         self,
-        exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
+        exprs: (
+            PolarsExprType
+            | PythonLiteral
+            | Iterable[PolarsExprType | PythonLiteral]
+            | None
+        ) = None,
         **named_exprs: Any,
     ) -> DataFrame:
         """

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import typing
-from typing import Any, Sequence
+from typing import Any, Iterable
 
 try:
     from polars.polars import when as pywhen
@@ -11,6 +11,7 @@ except ImportError:
     _DOCUMENTING = True
 
 from polars import internals as pli
+from polars.internals.type_aliases import PolarsExprType, PythonLiteral
 
 
 class WhenThenThen:
@@ -27,13 +28,10 @@ class WhenThenThen:
     def then(
         self,
         expr: (
-            pli.Expr
-            | int
-            | float
-            | str
+            PolarsExprType
+            | PythonLiteral
+            | Iterable[PolarsExprType | PythonLiteral]
             | None
-            | pli.Series
-            | Sequence[int | float | str | None]
         ),
     ) -> WhenThenThen:
         """
@@ -51,7 +49,10 @@ class WhenThenThen:
     def otherwise(
         self,
         expr: (
-            pli.Expr | int | float | str | None | Sequence[int | float | str | None]
+            PolarsExprType
+            | PythonLiteral
+            | Iterable[PolarsExprType | PythonLiteral]
+            | None
         ),
     ) -> pli.Expr:
         """
@@ -83,7 +84,15 @@ class WhenThen:
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
-    def otherwise(self, expr: pli.Expr | int | float | str | None) -> pli.Expr:
+    def otherwise(
+        self,
+        expr: (
+            PolarsExprType
+            | PythonLiteral
+            | Iterable[PolarsExprType | PythonLiteral]
+            | None
+        ),
+    ) -> pli.Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -111,13 +120,10 @@ class When:
     def then(
         self,
         expr: (
-            pli.Expr
-            | pli.Series
-            | int
-            | float
-            | str
+            PolarsExprType
+            | PythonLiteral
+            | Iterable[PolarsExprType | PythonLiteral]
             | None
-            | Sequence[None | int | float | str]
         ),
     ) -> WhenThen:
         """

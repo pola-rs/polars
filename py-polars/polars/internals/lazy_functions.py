@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Sequence, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -23,7 +23,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.internals.type_aliases import EpochTimeUnit
+from polars.internals.type_aliases import EpochTimeUnit, PolarsExprType
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
@@ -72,6 +72,7 @@ else:
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         IntoExpr,
+        PythonLiteral,
         RollingInterpolationMethod,
         TimeUnit,
     )
@@ -2246,7 +2247,9 @@ def collect_all(
 
 
 def select(
-    exprs: str | pli.Expr | Sequence[str | pli.Expr] | pli.Series,
+    exprs: (
+        PolarsExprType | PythonLiteral | Iterable[PolarsExprType | PythonLiteral] | None
+    ) = None,
     **named_exprs: Any,
 ) -> pli.DataFrame:
     """
