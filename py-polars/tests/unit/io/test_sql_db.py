@@ -5,7 +5,7 @@ from contextlib import suppress
 from datetime import date
 import pytest
 import polars as pl
-from typing import Literal  # type: ignore [attr-defined]
+from typing import Literal
 
 
 @pytest.mark.parametrize(
@@ -15,9 +15,7 @@ from typing import Literal  # type: ignore [attr-defined]
         pytest.param("adbc", id="Testing adbc"),
     ],
 )
-def test_read_sql(
-    engine: Literal["connectorx", "adbc"],  # type: ignore [name-defined]
-) -> None:
+def test_read_sql(engine: Literal["connectorx", "adbc"]) -> None:
     import sqlite3
     import tempfile
 
