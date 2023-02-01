@@ -1126,6 +1126,15 @@ def _read_sql_connectorx(
 
 
 def _read_sql_adbc(sql: str, connection_uri: str) -> DataFrame:
+    with _open_adbc_connection(connection_uri) as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        tbl = cursor.fetch_arrow_table()
+        cursor.close()
+    return cast(DataFrame, from_arrow(tbl))
+
+
+def _open_adbc_connection(connection_uri: str) -> Any:
     if connection_uri.startswith("sqlite"):
         try:
             import adbc_driver_sqlite.dbapi as adbc  # type: ignore[import]
@@ -1144,12 +1153,7 @@ def _read_sql_adbc(sql: str, connection_uri: str) -> DataFrame:
             ) from None
     else:
         raise ValueError("ADBC does not currently support this database.")
-    with adbc.connect(connection_uri) as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql)
-        tbl = cursor.fetch_arrow_table()
-        cursor.close()
-    return cast(DataFrame, from_arrow(tbl))
+    return adbc.connect(connection_uri)
 
 
 @overload

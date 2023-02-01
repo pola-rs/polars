@@ -25,7 +25,6 @@ from typing import (
     TypeVar,
     overload,
 )
-
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
@@ -2416,6 +2415,45 @@ class DataFrame:
             self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
             )
+
+    def write_sql(
+        self,
+        table_name: str,
+        connection_uri: str,
+        mode: Literal["append", "create"] = "create",
+        engine: Literal["adbc"] = "adbc",
+    ) -> None:
+        """
+        Write a polars frame to an SQL database.
+
+        ADBC
+        Currently this can only connect to sqlite and postgres.
+
+        Parameters
+        ----------
+        table_name
+            Name of the table to append to or create in the SQL database.
+        connection_uri
+            Connection uri, for example
+
+            * "postgresql://username:password@server:port/database"
+        mode
+            The insert mode, create will create a new sql table, append will insert the
+            table as new rows.
+
+            * "append", "create"
+        engine
+            Select the engine used for reading the data from sql.
+
+            * "adbc"
+        """
+        from polars.io import _open_adbc_connection
+
+        with _open_adbc_connection(connection_uri) as conn:
+            cursor = conn.cursor()
+            cursor.adbc_ingest(table_name, self.to_arrow(), mode)
+            cursor.close()
+            conn.commit()
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
