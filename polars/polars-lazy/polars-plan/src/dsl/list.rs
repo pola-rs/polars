@@ -287,7 +287,7 @@ impl ListNameSpace {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,
                 auto_explode: true,
-                fmt_str: "arr.contains",
+                fmt_str: "arr.contains".into(),
                 ..Default::default()
             },
         }

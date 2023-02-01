@@ -2,15 +2,59 @@ from typing import Any, Union
 from abc import ABC
 
 class UdfSerializer(ABC):
-    def serialize_udf(udf: Any) -> Union[str, bytes]:
+    """
+    A custom UDF (User-Defined Function) serializer/deserializer, for use in
+    ``LazyFrame`` serialization and deserialization functions.
+
+    See Also
+    --------
+    polars.LazyFrame.from_json, polars.LazyFrame.read_json, polars.LazyFrame.write_json
+
+    """
+
+    def serialize_udf(self, udf: Any) -> Union[str, bytes]:
+        """
+        Defines how an UDF is serialized.
+
+        Parameters
+        ----------
+        udf
+            The UDF to serialize.
+
+        """
         pass
-    def deserialize_udf(udf: Union[str, bytes]) -> Any:
+
+    def deserialize_udf(self, data: Union[str, bytes]) -> Any:
+        """
+        Defines how an UDF is deserialized.
+
+        Parameters
+        ----------
+        data
+            The data representing the UDF.
+
+        """
         pass
 
 class PickleUdfSerializer(UdfSerializer):
-    def serialize_udf(udf: Any) -> Union[str, bytes]:
+    """
+    An UDF (User-Defined Function) serializer/deserializer that uses pickle,
+    followed by base64 encoding (so that it can be embedded in a json).
+
+    See Also
+    --------
+    UdfSerializer
+
+    """
+    
+    def serialize_udf(self, udf: Any) -> Union[str, bytes]:
         import pickle
-        return pickle.dumps(udf)
-    def deserialize_udf(udf: Union[str, bytes]) -> Any:
+        import base64
+
+        return str(base64.b64encode(pickle.dumps(udf)), 'ascii')
+
+    def deserialize_udf(self, data: Union[str, bytes]) -> Any:
         import pickle
-        return pickle.loads(udf)
+        import base64
+
+        return pickle.loads(base64.b64decode(data))

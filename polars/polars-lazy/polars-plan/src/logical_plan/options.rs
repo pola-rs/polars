@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
@@ -158,7 +159,7 @@ pub struct WindowOptions {
     pub explode: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
@@ -192,8 +193,7 @@ pub struct FunctionOptions {
     /// sum(x) -> {4}
     pub auto_explode: bool,
     // used for formatting, (only for anonymous functions)
-    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
-    pub fmt_str: &'static str,
+    pub fmt_str: Cow<'static, str>,
 
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
@@ -217,7 +217,7 @@ impl Default for FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: false,
             auto_explode: false,
-            fmt_str: "",
+            fmt_str: "".into(),
             cast_to_supertypes: false,
             allow_rename: false,
             pass_name_to_apply: false,

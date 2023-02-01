@@ -133,18 +133,23 @@ impl From<LazyFrame> for PyLazyFrame {
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
     #[cfg(all(feature = "json", feature = "serde_json"))]
-    pub fn write_json(&self, py_f: PyObject) -> PyResult<()> {
+    pub fn write_json(&self, py_f: PyObject, udf_serializer: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
+
+        super::UdfSerializer::set_current(Some(udf_serializer));
+
         serde_json::to_writer(file, &self.ldf.logical_plan)
             .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+
         Ok(())
     }
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn read_json(py_f: PyObject) -> PyResult<Self> {
+    pub fn read_json(py_f: PyObject, udf_serializer: PyObject) -> PyResult<Self> {
         // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
         // so don't bother with files.
+
         let mut json = String::new();
         let _ = get_file_like(py_f, false)?
             .read_to_string(&mut json)
@@ -158,8 +163,11 @@ impl PyLazyFrame {
         // in this scope
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
+        super::UdfSerializer::set_current(Some(udf_serializer));
+
         let lp = serde_json::from_str::<LogicalPlan>(json)
             .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+
         Ok(LazyFrame::from(lp).into())
     }
 

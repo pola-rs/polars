@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
@@ -62,6 +63,7 @@ pub enum StringFunction {
         inclusive: bool,
         n: usize,
     },
+    #[cfg(feature = "dtype-struct")]
     SplitN {
         by: String,
         n: usize,
@@ -111,7 +113,8 @@ impl Display for StringFunction {
                     "split_exact"
                 }
             }
-            SplitN { by, n } => "splitn",
+            #[cfg(feature = "dtype-struct")]
+            SplitN { .. } => "splitn",
         };
 
         write!(f, "str.{s}")

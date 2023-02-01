@@ -74,7 +74,7 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
     )
     .with_function_options(|mut options| {
         options.auto_explode = true;
-        options.fmt_str = "cov";
+        options.fmt_str = "cov".into();
         options
     })
 }
@@ -159,7 +159,7 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
     )
     .with_function_options(|mut options| {
         options.auto_explode = true;
-        options.fmt_str = "pearson_corr";
+        options.fmt_str = "pearson_corr".into();
         options
     })
 }
@@ -219,7 +219,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
     apply_binary(a, b, function, GetOutput::from_type(DataType::Float64)).with_function_options(
         |mut options| {
             options.auto_explode = true;
-            options.fmt_str = "spearman_rank_correlation";
+            options.fmt_str = "spearman_rank_correlation".into();
             options
         },
     )
@@ -238,7 +238,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            fmt_str: "argsort_by",
+            fmt_str: "argsort_by".into(),
             ..Default::default()
         },
     }
@@ -303,7 +303,7 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            fmt_str: "concat_list",
+            fmt_str: "concat_list".into(),
             ..Default::default()
         },
     }
@@ -472,7 +472,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            fmt_str: "datetime",
+            fmt_str: "datetime".into(),
             ..Default::default()
         },
     }
@@ -508,7 +508,7 @@ pub fn duration(args: DurationArgs) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            fmt_str: "duration",
+            fmt_str: "duration".into(),
             ..Default::default()
         },
     }
@@ -678,7 +678,7 @@ where
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
             auto_explode: true,
-            fmt_str: "fold",
+            fmt_str: "fold".into(),
             ..Default::default()
         },
     }
@@ -718,7 +718,7 @@ where
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
             auto_explode: true,
-            fmt_str: "reduce",
+            fmt_str: "reduce".into(),
             ..Default::default()
         },
     }
@@ -778,7 +778,7 @@ where
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
             auto_explode: true,
-            fmt_str: "cumreduce",
+            fmt_str: "cumreduce".into(),
             ..Default::default()
         },
     }
@@ -826,7 +826,7 @@ where
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
             auto_explode: true,
-            fmt_str: "cumfold",
+            fmt_str: "cumfold".into(),
             ..Default::default()
         },
     }
@@ -992,7 +992,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
     )
     .with_function_options(|mut options| {
         options.input_wildcard_expansion = true;
-        options.fmt_str = "as_struct";
+        options.fmt_str = "as_struct".into();
         options
     })
 }
@@ -1017,7 +1017,7 @@ pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
         function: FunctionExpr::ArgWhere,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            fmt_str: "arg_where",
+            fmt_str: "arg_where".into(),
             ..Default::default()
         },
     }

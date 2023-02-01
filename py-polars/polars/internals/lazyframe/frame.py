@@ -47,6 +47,7 @@ from polars.datatypes import (
 from polars.dependencies import pyarrow as pa
 from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
+from polars.internals.lazyframe.udf_serializer import UdfSerializer, PickleUdfSerializer
 from polars.internals.slice import LazyPolarsSlice
 from polars.utils import (
     _in_notebook,
@@ -306,7 +307,13 @@ class LazyFrame:
         return self
 
     @classmethod
-    def from_json(cls, json: str) -> LazyFrame:
+    def from_json(
+        cls,
+        json: str,
+        *,
+        udf_serializer: UdfSerializer | None = None,
+        pickle_udf: bool = False,
+    ) -> LazyFrame:
         """
         Read a logical plan from a JSON string to construct a LazyFrame.
 
@@ -314,20 +321,31 @@ class LazyFrame:
         ----------
         json
             String in JSON format.
+        udf_serializer
+            A ``UdfSerializer`` instance representing how Python UDFs
+            (User-Defined Functions) should be deserialized.
+        pickle_udf
+            If set, Python UDFs (User-Defined Functions) will be deserialized using pickle.
 
         See Also
         --------
         read_json
 
         """
+        if pickle_udf:
+            udf_serializer = PickleUdfSerializer()
+
         bytes = StringIO(json).getvalue().encode()
         file = BytesIO(bytes)
-        return wrap_ldf(PyLazyFrame.read_json(file))
+        return wrap_ldf(PyLazyFrame.read_json(file, udf_serializer))
 
     @classmethod
     def read_json(
         cls,
         file: str | Path | IOBase,
+        *,
+        udf_serializer: UdfSerializer | None = None,
+        pickle_udf: bool = False,
     ) -> LazyFrame:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
@@ -336,18 +354,26 @@ class LazyFrame:
         ----------
         file
             Path to a file or a file-like object.
+        udf_serializer
+            A ``UdfSerializer`` instance representing how Python UDFs
+            (User-Defined Functions) should be deserialized.
+        pickle_udf
+            If set, Python UDFs (User-Defined Functions) will be deserialized using pickle.
 
         See Also
         --------
         LazyFrame.from_json, LazyFrame.write_json
 
         """
+        if pickle_udf:
+            udf_serializer = PickleUdfSerializer()
+
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
             file = normalise_filepath(file)
 
-        return wrap_ldf(PyLazyFrame.read_json(file))
+        return wrap_ldf(PyLazyFrame.read_json(file, udf_serializer))
 
     @classmethod
     def _scan_python_function(
@@ -509,6 +535,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         file: None = None,
         *,
         to_string: bool | None = ...,
+        udf_serializer: UdfSerializer | None = None,
+        pickle_udf: bool = False,
     ) -> str:
         ...
 
@@ -518,6 +546,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         file: IOBase | str | Path,
         *,
         to_string: bool | None = ...,
+        udf_serializer: UdfSerializer | None = None,
+        pickle_udf: bool = False,
     ) -> None:
         ...
 
@@ -525,8 +555,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         self,
         file: IOBase | str | Path | None = None,
         *,
+        udf_serializer: UdfSerializer | None = None,
+        pickle_udf: bool = False,
         to_string: bool | None = None,
-        udf_serializer: Any,
     ) -> str | None:
         """
         Write the logical plan of this LazyFrame to a file or string in JSON format.
@@ -536,6 +567,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         file
             File path to which the result should be written. If set to ``None``
             (default), the output is returned as a string instead.
+        udf_serializer
+            A ``UdfSerializer`` instance representing how Python UDFs
+            (User-Defined Functions) should be serialized.
+        pickle_udf
+            If set, Python UDFs (User-Defined Functions) will be serialized using pickle.
         to_string
             Deprecated argument. Ignore file argument and return a string.
 
@@ -565,15 +601,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         else:
             to_string = False
 
-        if udf_serializer is not None:
-            polars.polars.
+        if pickle_udf:
+            udf_serializer = PickleUdfSerializer()
 
         if isinstance(file, (str, Path)):
             file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
-                self._ldf.write_json(buf)
+                self._ldf.write_json(buf, udf_serializer)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -582,7 +618,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             else:
                 return json_str
         else:
-            self._ldf.write_json(file)
+            self._ldf.write_json(file, udf_serializer)
         return None
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

@@ -231,7 +231,7 @@ impl Expr {
     #[doc(hidden)]
     pub fn with_fmt(self, name: &'static str) -> Expr {
         self.with_function_options(|mut options| {
-            options.fmt_str = name;
+            options.fmt_str = name.into();
             options
         })
     }
@@ -494,7 +494,7 @@ impl Expr {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             auto_explode: true,
-            fmt_str: "arg_min",
+            fmt_str: "arg_min".into(),
             ..Default::default()
         };
 
@@ -510,7 +510,7 @@ impl Expr {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             auto_explode: true,
-            fmt_str: "arg_max",
+            fmt_str: "arg_max".into(),
             ..Default::default()
         };
 
@@ -525,7 +525,7 @@ impl Expr {
     pub fn arg_sort(self, sort_options: SortOptions) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            fmt_str: "arg_sort",
+            fmt_str: "arg_sort".into(),
             ..Default::default()
         };
 
@@ -546,7 +546,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 auto_explode: true,
-                fmt_str: "search_sorted",
+                fmt_str: "search_sorted".into(),
                 cast_to_supertypes: true,
                 ..Default::default()
             },
@@ -635,7 +635,7 @@ impl Expr {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
                 auto_explode: false,
-                fmt_str: "map",
+                fmt_str: "map".into(),
                 cast_to_supertypes: false,
                 allow_rename: false,
                 pass_name_to_apply: false,
@@ -674,7 +674,7 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "",
+                fmt_str: "".into(),
                 ..Default::default()
             },
         }
@@ -699,7 +699,7 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
-                fmt_str: "map_list",
+                fmt_str: "map_list".into(),
                 ..Default::default()
             },
         }
@@ -746,7 +746,7 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                fmt_str: "",
+                fmt_str: "".into(),
                 ..Default::default()
             },
         }
@@ -779,7 +779,7 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                fmt_str: "",
+                fmt_str: "".into(),
                 auto_explode: true,
                 ..Default::default()
             },
@@ -933,7 +933,7 @@ impl Expr {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             auto_explode: true,
-            fmt_str: "product",
+            fmt_str: "product".into(),
             ..Default::default()
         };
 
@@ -1323,7 +1323,7 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTanh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "arctanh",
+                fmt_str: "arctanh".into(),
                 ..Default::default()
             },
         }
@@ -1808,7 +1808,7 @@ impl Expr {
             GetOutput::from_type(DataType::Float64),
         )
         .with_function_options(|mut options| {
-            options.fmt_str = "skew";
+            options.fmt_str = "skew".into();
             options.auto_explode = true;
             options
         })
@@ -1824,7 +1824,7 @@ impl Expr {
             GetOutput::from_type(DataType::Float64),
         )
         .with_function_options(|mut options| {
-            options.fmt_str = "kurtosis";
+            options.fmt_str = "kurtosis".into();
             options.auto_explode = true;
             options
         })
@@ -2035,7 +2035,7 @@ impl Expr {
             GetOutput::from_type(DataType::Boolean),
         )
         .with_function_options(|mut opt| {
-            opt.fmt_str = "any";
+            opt.fmt_str = "any".into();
             opt.auto_explode = true;
             opt
         })
@@ -2062,7 +2062,7 @@ impl Expr {
             GetOutput::from_type(DataType::Boolean),
         )
         .with_function_options(|mut opt| {
-            opt.fmt_str = "all";
+            opt.fmt_str = "all".into();
             opt.auto_explode = true;
             opt
         })
@@ -2150,7 +2150,7 @@ impl Expr {
             }),
         )
         .with_function_options(|mut options| {
-            options.fmt_str = "entropy";
+            options.fmt_str = "entropy".into();
             options.auto_explode = true;
             options
         })
@@ -2279,7 +2279,7 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
-            fmt_str: "",
+            fmt_str: "".into(),
             ..Default::default()
         },
     }
@@ -2306,7 +2306,7 @@ where
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
             auto_explode: true,
-            fmt_str: "",
+            fmt_str: "".into(),
             ..Default::default()
         },
     }
@@ -2342,7 +2342,7 @@ where
             // don't set this to true
             // this is for the caller to decide
             auto_explode: returns_scalar,
-            fmt_str: "",
+            fmt_str: "".into(),
             ..Default::default()
         },
     }

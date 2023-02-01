@@ -8,10 +8,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use super::*;
 use crate::py_modules::POLARS;
 
-struct UdfSerializer(PyObject);
+pub struct UdfSerializer(PyObject);
 
 impl UdfSerializer {
-    fn get_current(py: Python) -> Option<UdfSerializer> {
+    pub fn set_current(ser: Option<PyObject>) {
+        // register our registry if not already done (lazy init)
         use udf_registry::*;
         UDF_DESERIALIZE_REGISTRY.get_or_init(|| UdfSerializeRegistry {
             expr_series_udf: Registry::default()
@@ -21,13 +22,21 @@ impl UdfSerializer {
             ..Default::default()
         });
 
+        Python::with_gil(|py| {
+            let pypolars = POLARS.cast_as::<PyModule>(py).unwrap();
+            let val = ser.unwrap_or_else(|| py.None());
+            pypolars.setattr("_current_udf_serializer", val).unwrap()
+        })
+    }
+
+    fn get_current(py: Python) -> Option<UdfSerializer> {
         let pypolars = POLARS.cast_as::<PyModule>(py).unwrap();
-        Some(UdfSerializer(
-            pypolars
-                .getattr("_current_udf_serializer")
-                .ok()?
-                .to_object(py),
-        ))
+        let val = pypolars.getattr("_current_udf_serializer").ok()?;
+
+        if val.is_none() {
+            return None;
+        }
+        Some(UdfSerializer(val.to_object(py)))
     }
 
     fn call_serialize(&self, py: Python, lambda: &PyLambda) -> PyObject {
@@ -83,8 +92,8 @@ impl<'de> Deserialize<'de> for PyLambda {
             fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
                 Ok(PyBytes::new(self.0, v).to_object(self.0))
             }
-            fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Self::Value, E> {
-                Ok(PyString::new(self.0, &v).to_object(self.0))
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(PyString::new(self.0, v).to_object(self.0))
             }
         }
 

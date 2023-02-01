@@ -440,6 +440,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
             Split { by, inclusive } => map!(strings::split, &by, inclusive),
             SplitExact { by, inclusive, n } => map!(strings::split_exact, &by, inclusive, n),
+            #[cfg(feature = "dtype-struct")]
             SplitN { by, n } => map!(strings::splitn, &by, n),
         }
     }

@@ -137,7 +137,8 @@ impl polars_lazy::dsl::SeriesUdf for PyUdfLambda {
                                         .map_err(|e| {
                                             PolarsError::ComputeError(format!("{e}").into())
                                         })?
-                                        .to_series(py, &POLARS, &name);
+                                        .to_series(py, &POLARS, "");
+                                acc.rename(&name);
                                 result.push(acc.clone());
                             }
 
@@ -226,12 +227,12 @@ impl PyUdfLambda {
         let opt = match self.op {
             UdfLambdaOp::MapSingle { agg_list: false } => FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "map",
+                fmt_str: "map".into(),
                 ..Default::default()
             },
             UdfLambdaOp::MapSingle { agg_list: true } => FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
-                fmt_str: "map_list",
+                fmt_str: "map_list".into(),
                 ..Default::default()
             },
             UdfLambdaOp::MapMultiple {
@@ -240,7 +241,7 @@ impl PyUdfLambda {
             } => FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 auto_explode: returns_scalar,
-                fmt_str: "apply_multiple",
+                fmt_str: "apply_multiple".into(),
                 ..Default::default()
             },
             UdfLambdaOp::MapMultiple {
@@ -248,35 +249,35 @@ impl PyUdfLambda {
                 ..
             } => FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "map_multiple",
+                fmt_str: "map_multiple".into(),
                 ..Default::default()
             },
             UdfLambdaOp::Fold => FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: true,
                 auto_explode: true,
-                fmt_str: "fold",
+                fmt_str: "fold".into(),
                 ..Default::default()
             },
             UdfLambdaOp::Reduce => FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: true,
                 auto_explode: true,
-                fmt_str: "reduce",
+                fmt_str: "reduce".into(),
                 ..Default::default()
             },
             UdfLambdaOp::CumFold { .. } => FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: true,
                 auto_explode: true,
-                fmt_str: "cumfold",
+                fmt_str: "cumfold".into(),
                 ..Default::default()
             },
             UdfLambdaOp::CumReduce => FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: true,
                 auto_explode: true,
-                fmt_str: "cumreduce",
+                fmt_str: "cumreduce".into(),
                 ..Default::default()
             },
         };

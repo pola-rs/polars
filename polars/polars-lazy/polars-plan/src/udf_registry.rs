@@ -34,7 +34,7 @@ impl<'de, T: 'static> Visitor<'de> for MapLookupVisitor<T> {
     type Value = T;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "{{user defined function}}")
+        write!(formatter, "a user-defined function")
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>

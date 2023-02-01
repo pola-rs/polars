@@ -336,7 +336,7 @@ fn string_addition_to_linear_concat(
                         Some(AExpr::Function {
                             input,
                             function: fun_l.clone(),
-                            options: *options,
+                            options: options.clone(),
                         })
                     } else {
                         None
@@ -358,7 +358,7 @@ fn string_addition_to_linear_concat(
                         Some(AExpr::Function {
                             input,
                             function: fun.clone(),
-                            options: *options,
+                            options: options.clone(),
                         })
                     } else {
                         None
@@ -381,7 +381,7 @@ fn string_addition_to_linear_concat(
                         Some(AExpr::Function {
                             input,
                             function: fun.clone(),
-                            options: *options,
+                            options: options.clone(),
                         })
                     } else {
                         None
@@ -636,7 +636,7 @@ impl OptimizationRule for SimplifyExprRule {
                     Some(AExpr::Function {
                         input: new_inputs,
                         function: function.clone(),
-                        options: *options,
+                        options: options.clone(),
                     })
                 } else {
                     None

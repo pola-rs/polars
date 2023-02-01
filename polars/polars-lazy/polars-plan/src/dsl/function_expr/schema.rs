@@ -158,6 +158,7 @@ impl FunctionExpr {
                                 .collect(),
                         ),
                     ),
+                    #[cfg(feature = "dtype-struct")]
                     SplitN { n, .. } => with_dtype(
                         fields,
                         DataType::Struct(

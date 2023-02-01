@@ -131,7 +131,7 @@ impl OptimizationRule for TypeCoercionRule {
         lp_node: Node,
     ) -> Option<AExpr> {
         let expr = expr_arena.get(expr_node);
-        match *expr {
+        match expr.clone() {
             AExpr::Ternary {
                 truthy: truthy_node,
                 falsy: falsy_node,
