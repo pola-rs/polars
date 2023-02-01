@@ -3,16 +3,18 @@ from __future__ import annotations
 import os
 from contextlib import suppress
 from datetime import date
-import pytest
-import polars as pl
 from typing import TYPE_CHECKING
+
+import pytest
+
+import polars as pl
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import SQLEngine
 
 
 @pytest.mark.parametrize(
-    "engine,expected_dtypes,expected_dates",
+    ("engine", "expected_dtypes", "expected_dates"),
     [
         pytest.param(
             "connectorx",
@@ -36,7 +38,11 @@ if TYPE_CHECKING:
         ),
     ],
 )
-def test_read_sql(engine: SQLEngine, expected_dtypes, expected_dates) -> None:
+def test_read_sql(
+    engine: SQLEngine,
+    expected_dtypes: dict[str, pl.DataType],
+    expected_dates: list[date | str],
+) -> None:
     import sqlite3
     import tempfile
 

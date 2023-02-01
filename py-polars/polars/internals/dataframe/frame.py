@@ -25,6 +25,7 @@ from typing import (
     TypeVar,
     overload,
 )
+
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
