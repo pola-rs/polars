@@ -197,7 +197,7 @@ impl Display for FunctionExpr {
 
 macro_rules! wrap {
     ($e:expr) => {
-        SpecialEq::new(Arc::new($e))
+        SpecialEq(Arc::new($e))
     };
 }
 pub(crate) use wrap;
@@ -211,7 +211,7 @@ macro_rules! map_as_slice {
             $func(s)
         };
 
-        SpecialEq::new(Arc::new(f))
+        SpecialEq(Arc::new(f))
     }};
 
     ($func:path, $($args:expr),*) => {{
@@ -219,7 +219,7 @@ macro_rules! map_as_slice {
             $func(s, $($args),*)
         };
 
-        SpecialEq::new(Arc::new(f))
+        SpecialEq(Arc::new(f))
     }};
 }
 
@@ -233,7 +233,7 @@ macro_rules! map_owned {
             $func(s)
         };
 
-        SpecialEq::new(Arc::new(f))
+        SpecialEq(Arc::new(f))
     }};
 
     ($func:path, $($args:expr),*) => {{
@@ -242,7 +242,7 @@ macro_rules! map_owned {
             $func(s, $($args),*)
         };
 
-        SpecialEq::new(Arc::new(f))
+        SpecialEq(Arc::new(f))
     }};
 }
 
@@ -255,7 +255,7 @@ macro_rules! map {
             $func(s)
         };
 
-        SpecialEq::new(Arc::new(f))
+        SpecialEq(Arc::new(f))
     }};
 
     ($func:expr, $($args:expr),*) => {{
@@ -264,12 +264,12 @@ macro_rules! map {
             $func(s, $($args),*)
         };
 
-        SpecialEq::new(Arc::new(f))
+        SpecialEq(Arc::new(f))
     }};
 }
 pub(crate) use map;
 
-impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesEval>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
 
@@ -389,7 +389,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
 }
 
 #[cfg(feature = "strings")]
-impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<StringFunction> for SpecialEq<Arc<dyn SeriesEval>> {
     fn from(func: StringFunction) -> Self {
         use StringFunction::*;
         match func {
@@ -447,7 +447,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 }
 
 #[cfg(feature = "dtype-binary")]
-impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesEval>> {
     fn from(func: BinaryFunction) -> Self {
         use BinaryFunction::*;
         match func {
@@ -465,7 +465,7 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 }
 
 #[cfg(feature = "temporal")]
-impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesEval>> {
     fn from(func: TemporalFunction) -> Self {
         use TemporalFunction::*;
         match func {

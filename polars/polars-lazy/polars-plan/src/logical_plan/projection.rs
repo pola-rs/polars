@@ -40,7 +40,7 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
             }
             Expr::RenameAlias { expr, function } => {
                 let name = get_single_leaf(&expr).unwrap();
-                let name = function.call(&name)?;
+                let name = function.map_name(&name)?;
                 Ok(Expr::Alias(expr, Arc::from(name)))
             }
             _ => panic!("`keep_name`, `suffix`, `prefix` should be last expression"),

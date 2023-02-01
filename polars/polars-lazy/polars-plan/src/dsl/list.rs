@@ -21,7 +21,7 @@ impl ListNameSpace {
             Ok(ca.lst_lengths().into_series())
         };
         self.0
-            .map(function, GetOutput::from_type(IDX_DTYPE))
+            .map(function, get_field::with_dtype(IDX_DTYPE))
             .with_fmt("arr.len")
     }
 
@@ -30,7 +30,7 @@ impl ListNameSpace {
         self.0
             .map(
                 |s| Ok(s.list()?.lst_max()),
-                GetOutput::map_field(|f| {
+                get_field::map_field(|f| {
                     if let DataType::List(adt) = f.data_type() {
                         Field::new(f.name(), *adt.clone())
                     } else {
@@ -47,7 +47,7 @@ impl ListNameSpace {
         self.0
             .map(
                 |s| Ok(s.list()?.lst_min()),
-                GetOutput::map_field(|f| {
+                get_field::map_field(|f| {
                     if let DataType::List(adt) = f.data_type() {
                         Field::new(f.name(), *adt.clone())
                     } else {
@@ -64,7 +64,7 @@ impl ListNameSpace {
         self.0
             .map(
                 |s| Ok(s.list()?.lst_sum()),
-                GetOutput::map_field(|f| {
+                get_field::map_field(|f| {
                     if let DataType::List(adt) = f.data_type() {
                         Field::new(f.name(), *adt.clone())
                     } else {
@@ -81,7 +81,7 @@ impl ListNameSpace {
         self.0
             .map(
                 |s| Ok(s.list()?.lst_mean().into_series()),
-                GetOutput::from_type(DataType::Float64),
+                get_field::with_dtype(DataType::Float64),
             )
             .with_fmt("arr.mean")
     }
@@ -91,7 +91,7 @@ impl ListNameSpace {
         self.0
             .map(
                 move |s| Ok(s.list()?.lst_sort(options).into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("arr.sort")
     }
@@ -101,7 +101,7 @@ impl ListNameSpace {
         self.0
             .map(
                 move |s| Ok(s.list()?.lst_reverse().into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("arr.reverse")
     }
@@ -111,7 +111,7 @@ impl ListNameSpace {
         self.0
             .map(
                 move |s| Ok(s.list()?.lst_unique()?.into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("arr.unique")
     }
@@ -154,7 +154,7 @@ impl ListNameSpace {
         self.0
             .map(
                 move |s| s.list()?.lst_join(&separator).map(|ca| ca.into_series()),
-                GetOutput::from_type(DataType::Utf8),
+                get_field::with_dtype(DataType::Utf8),
             )
             .with_fmt("arr.join")
     }
@@ -164,7 +164,7 @@ impl ListNameSpace {
         self.0
             .map(
                 |s| Ok(s.list()?.lst_arg_min().into_series()),
-                GetOutput::from_type(IDX_DTYPE),
+                get_field::with_dtype(IDX_DTYPE),
             )
             .with_fmt("arr.arg_min")
     }
@@ -174,7 +174,7 @@ impl ListNameSpace {
         self.0
             .map(
                 |s| Ok(s.list()?.lst_arg_max().into_series()),
-                GetOutput::from_type(IDX_DTYPE),
+                get_field::with_dtype(IDX_DTYPE),
             )
             .with_fmt("arr.arg_max")
     }
@@ -185,7 +185,7 @@ impl ListNameSpace {
         self.0
             .map(
                 move |s| Ok(s.list()?.lst_diff(n, null_behavior).into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("arr.diff")
     }
@@ -195,7 +195,7 @@ impl ListNameSpace {
         self.0
             .map(
                 move |s| Ok(s.list()?.lst_shift(periods).into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("arr.shift")
     }
@@ -247,7 +247,7 @@ impl ListNameSpace {
                         .map(|s| s.into_series())
                 },
                 // we don't yet know the fields
-                GetOutput::map_dtype(move |dt: &DataType| {
+                get_field::map_dtype(move |dt: &DataType| {
                     let out = out_dtype.read().unwrap();
                     match out.as_ref() {
                         // dtype already set

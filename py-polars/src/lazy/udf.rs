@@ -1,9 +1,10 @@
 //! UDF (User-Defined Functions) definitions for use in polars_lazy Expr.
 
+use std::fmt::Debug;
+
 use polars::prelude::*;
 use polars_core::utils::get_supertype;
 use polars_lazy::dsl::{ApplyOptions, FunctionOptions};
-use polars_lazy::udf_registry::ErasedSerialize;
 use pyo3::prelude::*;
 use pyo3::types::PyFloat;
 use serde::{Deserialize, Serialize};
@@ -15,10 +16,12 @@ use crate::lazy::dsl::PyExpr;
 use crate::py_modules::POLARS;
 use crate::series::PySeries;
 
+#[derive(Debug)]
 pub(crate) struct PyLambda(pub(crate) PyObject);
 
 /// This enum describes how a python UDF should be called.
 #[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Debug)]
 enum UdfLambdaOp {
     // fn(a) -> r, flat
     MapSingle {
@@ -39,18 +42,15 @@ enum UdfLambdaOp {
 }
 
 #[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Debug)]
 pub(crate) struct PyUdfLambda {
     lambda: PyLambda,
     output_type: Option<DataType>,
     op: UdfLambdaOp,
 }
 
-impl polars_lazy::dsl::SeriesUdf for PyUdfLambda {
-    #[cfg(feature = "json")]
-    fn as_serialize(&self) -> Option<(&str, &dyn ErasedSerialize)> {
-        Some(("py-lambda", self))
-    }
-    fn call_udf(&self, series: &mut [Series]) -> PolarsResult<Series> {
+impl polars_lazy::dsl::SerializableUdf for PyUdfLambda {
+    fn call_series_slice(&self, series: &mut [Series]) -> PolarsResult<Series> {
         let output_type = self.output_type.as_ref().unwrap_or(&DataType::Unknown);
         Python::with_gil(|py| {
             let res = match &self.op {
@@ -161,36 +161,30 @@ impl polars_lazy::dsl::SeriesUdf for PyUdfLambda {
             }
         })
     }
-}
 
-impl polars_lazy::dsl::FunctionOutputField for PyUdfLambda {
-    #[cfg(feature = "json")]
-    fn as_serialize(&self) -> Option<(&str, &dyn ErasedSerialize)> {
-        Some(("py-lambda", self))
-    }
     fn get_field(
         &self,
         _input_schema: &Schema,
         _cntxt: polars_lazy::dsl::Context,
         fields: &[Field],
-    ) -> Field {
+    ) -> PolarsResult<Field> {
         match &self.op {
             UdfLambdaOp::MapSingle { .. } => {
                 let fld = &fields[0];
                 match self.output_type {
-                    Some(ref dt) => Field::new(fld.name(), dt.clone()),
+                    Some(ref dt) => Ok(Field::new(fld.name(), dt.clone())),
                     None => {
                         let mut fld = fld.clone();
                         fld.coerce(DataType::Unknown);
-                        fld
+                        Ok(fld)
                     }
                 }
             }
             UdfLambdaOp::MapMultiple { .. } => {
                 let fld = &fields[0];
                 match self.output_type {
-                    Some(ref dt) => Field::new(fld.name(), dt.clone()),
-                    None => fld.clone(),
+                    Some(ref dt) => Ok(Field::new(fld.name(), dt.clone())),
+                    None => Ok(fld.clone()),
                 }
             }
             UdfLambdaOp::Fold | UdfLambdaOp::Reduce => {
@@ -201,14 +195,14 @@ impl polars_lazy::dsl::FunctionOutputField for PyUdfLambda {
                     new_type = get_supertype(&new_type, f.data_type()).unwrap();
                 }
                 fld.coerce(new_type);
-                fld
+                Ok(fld)
             }
             UdfLambdaOp::CumFold { .. } | UdfLambdaOp::CumReduce => {
                 let mut st = fields[0].dtype.clone();
                 for fld in &fields[1..] {
                     st = get_supertype(&st, &fld.dtype).unwrap();
                 }
-                Field::new(
+                Ok(Field::new(
                     &fields[0].name,
                     DataType::Struct(
                         fields
@@ -216,9 +210,20 @@ impl polars_lazy::dsl::FunctionOutputField for PyUdfLambda {
                             .map(|fld| Field::new(fld.name(), st.clone()))
                             .collect(),
                     ),
-                )
+                ))
             }
         }
+    }
+
+    // upcasting
+
+    #[cfg(feature = "json")]
+    fn as_serialize(&self) -> Option<&dyn ErasedSerialize> {
+        Some(self)
+    }
+
+    fn as_debug(&self) -> &dyn Debug {
+        self
     }
 }
 
@@ -418,7 +423,11 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .rolling_apply(Arc::new(function), GetOutput::same_type(), options)
+            .rolling_apply(
+                Arc::new(function),
+                Arc::new(get_field::same_type()),
+                options,
+            )
             .with_fmt("rolling_apply")
             .into()
     }

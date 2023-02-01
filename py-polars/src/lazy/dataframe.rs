@@ -136,7 +136,7 @@ impl PyLazyFrame {
     pub fn write_json(&self, py_f: PyObject, udf_serializer: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
-        super::UdfSerializer::set_current(Some(udf_serializer));
+        super::PyUdfSerializerObject::set_current(Some(udf_serializer));
 
         serde_json::to_writer(file, &self.ldf.logical_plan)
             .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
@@ -163,7 +163,7 @@ impl PyLazyFrame {
         // in this scope
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
-        super::UdfSerializer::set_current(Some(udf_serializer));
+        super::PyUdfSerializerObject::set_current(Some(udf_serializer));
 
         let lp = serde_json::from_str::<LogicalPlan>(json)
             .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;

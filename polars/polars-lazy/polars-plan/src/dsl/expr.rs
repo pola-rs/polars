@@ -3,156 +3,41 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 
-/// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
-pub trait SeriesUdf: Send + Sync {
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series>;
+pub trait SeriesEval: Send + Sync {
+    fn call(&self, _s: &mut [Series]) -> PolarsResult<Series>;
+}
 
-    #[cfg(feature = "serde")]
-    fn as_serialize(&self) -> Option<(&str, &dyn erased_serde::Serialize)> {
-        None
+impl SeriesEval for UdfWrapper {
+    fn call(&self, s: &mut [Series]) -> PolarsResult<Series> {
+        self.call_series_slice(s)
     }
 }
 
-// implementing it for SpecialEq to avoid orphan rule issues [temporary]
-#[cfg(feature = "serde")]
-impl serde::Serialize for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (ty, obj) = self.as_serialize().ok_or_else(|| {
-            serde::ser::Error::custom("Cannot serialize SeriesUdf without a serializer")
-        })?;
-
-        crate::udf_registry::serialize_udf(ty, obj, serializer)
+impl From<UdfWrapper> for SpecialEq<Arc<dyn SeriesEval>> {
+    fn from(value: UdfWrapper) -> Self {
+        Self::new(Arc::new(value))
     }
 }
 
-#[cfg(feature = "serde")]
-impl<'de> Deserialize<'de> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn deserialize<D: serde::de::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
-        crate::udf_registry::deserialize_udf(
-            deser,
-            &crate::udf_registry::UDF_DESERIALIZE_REGISTRY
-                .get()
-                .ok_or_else(|| {
-                    serde::de::Error::custom(
-                        "Cannot deserialize SeriesUdf without a deserializer in the registry",
-                    )
-                })?
-                .expr_series_udf,
-        )
-        .map(SpecialEq::new)
-    }
-}
-
-impl<F> SeriesUdf for F
+impl<F> SeriesEval for F
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Series> + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + Send + Sync + 'static,
 {
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series> {
+    fn call(&self, s: &mut [Series]) -> PolarsResult<Series> {
         self(s)
-    }
-}
-
-impl Debug for dyn SeriesUdf {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SeriesUdf")
-    }
-}
-
-/// A wrapper trait for any binary closure `Fn(Series, Series) -> PolarsResult<Series>`
-pub trait SeriesBinaryUdf: Send + Sync {
-    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series>;
-}
-
-impl<F> SeriesBinaryUdf for F
-where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
-{
-    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series> {
-        self(a, b)
-    }
-}
-
-impl Debug for dyn SeriesBinaryUdf {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SeriesBinaryUdf")
-    }
-}
-
-impl Default for SpecialEq<Arc<dyn SeriesBinaryUdf>> {
-    fn default() -> Self {
-        panic!("implementation error");
-    }
-}
-
-impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
-    fn default() -> Self {
-        let output_field = move |_: &Schema, _: Context, _: &Field, _: &Field| None;
-        SpecialEq::new(Arc::new(output_field))
-    }
-}
-
-pub trait RenameAliasFn: Send + Sync {
-    fn call(&self, name: &str) -> PolarsResult<String>;
-
-    #[cfg(feature = "serde")]
-    fn as_serialize(&self) -> Option<(&str, &dyn erased_serde::Serialize)> {
-        None
-    }
-}
-
-// implementing it for SpecialEq to avoid orphan rule issues [temporary]
-#[cfg(feature = "serde")]
-impl serde::Serialize for SpecialEq<Arc<dyn RenameAliasFn>> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (ty, obj) = self.as_serialize().ok_or_else(|| {
-            serde::ser::Error::custom("Cannot serialize RenameAliasFn without a serializer")
-        })?;
-
-        crate::udf_registry::serialize_udf(ty, obj, serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> Deserialize<'de> for SpecialEq<Arc<dyn RenameAliasFn>> {
-    fn deserialize<D: serde::de::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
-        crate::udf_registry::deserialize_udf(
-            deser,
-            &crate::udf_registry::UDF_DESERIALIZE_REGISTRY
-                .get()
-                .ok_or_else(|| {
-                    serde::de::Error::custom(
-                        "Cannot deserialize RenameAliasFn without a deserializer in the registry",
-                    )
-                })?
-                .expr_rename_alias,
-        )
-        .map(SpecialEq::new)
-    }
-}
-
-impl<F: Fn(&str) -> PolarsResult<String> + Send + Sync> RenameAliasFn for F {
-    fn call(&self, name: &str) -> PolarsResult<String> {
-        self(name)
-    }
-}
-
-impl Debug for dyn RenameAliasFn {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RenameAliasFn")
     }
 }
 
 #[derive(Clone)]
 /// Wrapper type that has special equality properties
 /// depending on the inner type specialization
-pub struct SpecialEq<T>(T);
+pub struct SpecialEq<T>(pub T);
 
 impl<T> SpecialEq<T> {
     pub fn new(val: T) -> Self {
@@ -183,145 +68,6 @@ impl<T> Deref for SpecialEq<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-pub trait BinaryUdfOutputField: Send + Sync {
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        cntxt: Context,
-        field_a: &Field,
-        field_b: &Field,
-    ) -> Option<Field>;
-}
-
-impl<F> BinaryUdfOutputField for F
-where
-    F: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
-{
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        cntxt: Context,
-        field_a: &Field,
-        field_b: &Field,
-    ) -> Option<Field> {
-        self(input_schema, cntxt, field_a, field_b)
-    }
-}
-
-pub trait FunctionOutputField: Send + Sync {
-    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
-
-    #[cfg(feature = "serde")]
-    fn as_serialize(&self) -> Option<(&str, &dyn erased_serde::Serialize)> {
-        None
-    }
-}
-
-// implementing it for SpecialEq to avoid orphan rule issues [temporary]
-#[cfg(feature = "serde")]
-impl serde::Serialize for SpecialEq<Arc<dyn FunctionOutputField>> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (ty, obj) = self.as_serialize().ok_or_else(|| {
-            serde::ser::Error::custom("Cannot serialize FunctionOutputField without a serializer")
-        })?;
-
-        crate::udf_registry::serialize_udf(ty, obj, serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> Deserialize<'de> for SpecialEq<Arc<dyn FunctionOutputField>> {
-    fn deserialize<D: serde::de::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
-        crate::udf_registry::deserialize_udf(
-            deser,
-            &crate::udf_registry::UDF_DESERIALIZE_REGISTRY
-                .get()
-                .ok_or_else(|| {
-                    serde::de::Error::custom(
-                        "Cannot deserialize FunctionOutputField without a deserializer in the registry",
-                    )
-                })?
-                .expr_fn_output_field,
-        )
-        .map(SpecialEq::new)
-    }
-}
-
-pub type GetOutput = SpecialEq<Arc<dyn FunctionOutputField>>;
-
-impl Default for GetOutput {
-    fn default() -> Self {
-        SpecialEq::new(Arc::new(
-            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| fields[0].clone(),
-        ))
-    }
-}
-
-impl GetOutput {
-    pub fn same_type() -> Self {
-        Default::default()
-    }
-
-    pub fn from_type(dt: DataType) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            Field::new(flds[0].name(), dt.clone())
-        }))
-    }
-
-    pub fn map_field<F: 'static + Fn(&Field) -> Field + Send + Sync>(f: F) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            f(&flds[0])
-        }))
-    }
-
-    pub fn map_fields<F: 'static + Fn(&[Field]) -> Field + Send + Sync>(f: F) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            f(flds)
-        }))
-    }
-
-    pub fn map_dtype<F: 'static + Fn(&DataType) -> DataType + Send + Sync>(f: F) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            let mut fld = flds[0].clone();
-            let new_type = f(fld.data_type());
-            fld.coerce(new_type);
-            fld
-        }))
-    }
-
-    pub fn super_type() -> Self {
-        Self::map_dtypes(|dtypes| {
-            let mut st = dtypes[0].clone();
-            for dt in &dtypes[1..] {
-                st = get_supertype(&st, dt).unwrap();
-            }
-            st
-        })
-    }
-
-    pub fn map_dtypes<F>(f: F) -> Self
-    where
-        F: 'static + Fn(&[&DataType]) -> DataType + Send + Sync,
-    {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            let mut fld = flds[0].clone();
-            let dtypes = flds.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
-            let new_type = f(&dtypes);
-            fld.coerce(new_type);
-            fld
-        }))
-    }
-}
-
-impl<F> FunctionOutputField for F
-where
-    F: Fn(&Schema, Context, &[Field]) -> Field + Send + Sync,
-{
-    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field {
-        self(input_schema, cntxt, fields)
     }
 }
 
@@ -454,16 +200,14 @@ pub enum Expr {
     Nth(i64),
     // skipped fields must be last otherwise serde fails in pickle
     RenameAlias {
-        function: SpecialEq<Arc<dyn RenameAliasFn>>,
+        function: UdfWrapper,
         expr: Box<Expr>,
     },
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
-        /// output dtype of the function
-        output_type: GetOutput,
+        function: UdfWrapper,
         options: FunctionOptions,
     },
 }

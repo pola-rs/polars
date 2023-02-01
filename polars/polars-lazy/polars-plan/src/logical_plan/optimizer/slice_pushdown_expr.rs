@@ -74,7 +74,6 @@ impl OptimizationRule for SlicePushDown {
                     if let AnonymousFunction {
                         input,
                         function,
-                        output_type,
                         options,
                     } = m.clone()
                     {
@@ -86,7 +85,6 @@ impl OptimizationRule for SlicePushDown {
                         Some(AnonymousFunction {
                             input,
                             function,
-                            output_type,
                             options,
                         })
                     } else {

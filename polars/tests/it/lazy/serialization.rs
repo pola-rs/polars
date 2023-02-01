@@ -1,6 +1,6 @@
 use polars_lazy::dsl::{custom_series_flat_udf_fn, Expr};
 use polars_lazy::prelude::*;
-use polars_lazy::udf_registry::*;
+use polars_lazy::udf::*;
 use serde::{Deserialize, Serialize};
 
 use super::*;

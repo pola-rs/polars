@@ -53,7 +53,7 @@ impl NanFunction {
     }
 }
 
-impl From<NanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<NanFunction> for SpecialEq<Arc<dyn SeriesEval>> {
     fn from(nan_function: NanFunction) -> Self {
         match nan_function {
             NanFunction::IsNan => map!(is_nan),

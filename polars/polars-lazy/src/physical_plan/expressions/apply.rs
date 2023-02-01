@@ -18,7 +18,7 @@ use crate::prelude::*;
 
 pub struct ApplyExpr {
     pub inputs: Vec<Arc<dyn PhysicalExpr>>,
-    pub function: SpecialEq<Arc<dyn SeriesUdf>>,
+    pub function: SpecialEq<Arc<dyn SeriesEval>>,
     pub expr: Expr,
     pub collect_groups: ApplyOptions,
     pub auto_explode: bool,
@@ -29,7 +29,7 @@ pub struct ApplyExpr {
 impl ApplyExpr {
     pub(crate) fn new_minimal(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn SeriesEval>>,
         expr: Expr,
         collect_groups: ApplyOptions,
     ) -> Self {
@@ -105,10 +105,10 @@ impl PhysicalExpr for ApplyExpr {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         if self.allow_rename {
-            return self.function.call_udf(&mut inputs);
+            return self.function.call(&mut inputs);
         }
         let in_name = inputs[0].name().to_string();
-        let mut out = self.function.call_udf(&mut inputs)?;
+        let mut out = self.function.call(&mut inputs)?;
         if in_name != out.name() {
             out.rename(&in_name);
         }
@@ -126,7 +126,7 @@ impl PhysicalExpr for ApplyExpr {
 
             match (state.overlapping_groups(), self.collect_groups) {
                 (_, ApplyOptions::ApplyList) => {
-                    let s = self.function.call_udf(&mut [ac.aggregated()])?;
+                    let s = self.function.call(&mut [ac.aggregated()])?;
                     ac.with_series(s, true);
                     Ok(ac)
                 }
@@ -154,7 +154,7 @@ impl PhysicalExpr for ApplyExpr {
 
                         let input = Series::full_null("", 0, &input_dtype);
 
-                        let output = self.function.call_udf(&mut [input])?;
+                        let output = self.function.call(&mut [input])?;
                         let ca = ListChunked::full(&name, &output, 0);
                         return Ok(self.finish_apply_groups(ac, ca));
                     }
@@ -169,7 +169,7 @@ impl PhysicalExpr for ApplyExpr {
                                     s.rename(&name);
                                 }
                                 let mut container = [s];
-                                self.function.call_udf(&mut container).ok()
+                                self.function.call(&mut container).ok()
                             })
                         })
                         .collect();
@@ -195,7 +195,7 @@ impl PhysicalExpr for ApplyExpr {
 
                     let input = ac.flat_naive().into_owned();
                     let input_len = input.len();
-                    let s = self.function.call_udf(&mut [input])?;
+                    let s = self.function.call(&mut [input])?;
 
                     check_map_output_len(input_len, s.len(), &self.expr)?;
                     ac.with_series(s, false);
@@ -215,7 +215,7 @@ impl PhysicalExpr for ApplyExpr {
             match (state.overlapping_groups(), self.collect_groups) {
                 (_, ApplyOptions::ApplyList) => {
                     let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
-                    let s = self.function.call_udf(&mut s)?;
+                    let s = self.function.call(&mut s)?;
                     // take the first aggregation context that as that is the input series
                     let mut ac = acs.swap_remove(0);
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
@@ -263,7 +263,7 @@ impl PhysicalExpr for ApplyExpr {
                                         Some(s) => container.push(s.deep_clone()),
                                     }
                                 }
-                                self.function.call_udf(&mut container).ok()
+                                self.function.call(&mut container).ok()
                             })
                             .collect_trusted();
                         ca.rename(&name);
@@ -312,7 +312,7 @@ impl PhysicalExpr for ApplyExpr {
 
 fn apply_multiple_flat<'a>(
     mut acs: Vec<AggregationContext<'a>>,
-    function: &dyn SeriesUdf,
+    function: &dyn SeriesEval,
     expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
     let mut s = acs
@@ -329,7 +329,7 @@ fn apply_multiple_flat<'a>(
         .collect::<Vec<_>>();
 
     let input_len = s[0].len();
-    let s = function.call_udf(&mut s)?;
+    let s = function.call(&mut s)?;
     check_map_output_len(input_len, s.len(), expr)?;
 
     // take the first aggregation context that as that is the input series
@@ -377,10 +377,10 @@ impl PartitionedAggregation for ApplyExpr {
         let s = a.evaluate_partitioned(df, groups, state)?;
 
         if self.allow_rename {
-            return self.function.call_udf(&mut [s]);
+            return self.function.call(&mut [s]);
         }
         let in_name = s.name().to_string();
-        let mut out = self.function.call_udf(&mut [s])?;
+        let mut out = self.function.call(&mut [s])?;
         if in_name != out.name() {
             out.rename(&in_name);
         }

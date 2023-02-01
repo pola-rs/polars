@@ -200,7 +200,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .select([map_multiple(
             multiply,
             [col("A"), col("B")],
-            GetOutput::from_type(DataType::Float64),
+            get_field::with_dtype(DataType::Float64),
         )])
         .collect()?;
     let out = out.column("A")?;
@@ -216,7 +216,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .agg([apply_multiple(
             multiply,
             [col("A"), col("B")],
-            GetOutput::from_type(DataType::Float64),
+            get_field::with_dtype(DataType::Float64),
             true,
         )])
         .collect()?;

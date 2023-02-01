@@ -305,7 +305,7 @@ impl PyExpr {
         Ok(self
             .inner
             .clone()
-            .apply(move |s| s.fill_null(strat), GetOutput::same_type())
+            .apply(move |s| s.fill_null(strat), get_field::same_type())
             .with_fmt("fill_null_with_strategy")
             .into())
     }
@@ -349,7 +349,7 @@ impl PyExpr {
     pub fn take_every(&self, n: usize) -> PyExpr {
         self.clone()
             .inner
-            .map(move |s: Series| Ok(s.take_every(n)), GetOutput::same_type())
+            .map(move |s: Series| Ok(s.take_every(n)), get_field::same_type())
             .with_fmt("take_every")
             .into()
     }
@@ -372,7 +372,7 @@ impl PyExpr {
     pub fn rechunk(&self) -> PyExpr {
         self.inner
             .clone()
-            .map(|s| Ok(s.rechunk()), GetOutput::same_type())
+            .map(|s| Ok(s.rechunk()), get_field::same_type())
             .into()
     }
 
@@ -633,7 +633,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(DataType::Utf8))
+            .map(function, get_field::with_dtype(DataType::Utf8))
             .with_fmt("str.slice")
             .into()
     }
@@ -653,7 +653,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
+            .map(function, get_field::with_dtype(DataType::UInt32))
             .with_fmt("str.lengths")
             .into()
     }
@@ -665,7 +665,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
+            .map(function, get_field::with_dtype(DataType::UInt32))
             .with_fmt("str.n_chars")
             .into()
     }
@@ -732,7 +732,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.utf8().map(|s| s.hex_encode().into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("str.hex_encode")
             .into()
@@ -742,7 +742,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.utf8()?.hex_decode().map(|s| s.into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("str.hex_decode")
             .into()
@@ -752,7 +752,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.utf8().map(|s| s.base64_encode().into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("str.base64_encode")
             .into()
@@ -763,7 +763,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.utf8()?.base64_decode().map(|s| s.into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("str.base64_decode")
             .into()
@@ -774,7 +774,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.binary().map(|s| s.hex_encode().into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("binary.hex_encode")
             .into()
@@ -784,7 +784,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.binary()?.hex_decode().map(|s| s.into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("binary.hex_decode")
             .into()
@@ -794,7 +794,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.binary().map(|s| s.base64_encode().into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("binary.base64_encode")
             .into()
@@ -805,7 +805,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.binary()?.base64_decode().map(|s| s.into_series()),
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("binary.base64_decode")
             .into()
@@ -822,7 +822,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(DataType::Utf8))
+            .map(function, get_field::with_dtype(DataType::Utf8))
             .with_fmt("str.json_path_match")
             .into()
     }
@@ -916,7 +916,7 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.duration()?.days().into_series()),
-                GetOutput::from_type(DataType::Int64),
+                get_field::with_dtype(DataType::Int64),
             )
             .into()
     }
@@ -925,7 +925,7 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.duration()?.hours().into_series()),
-                GetOutput::from_type(DataType::Int64),
+                get_field::with_dtype(DataType::Int64),
             )
             .into()
     }
@@ -934,7 +934,7 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.duration()?.minutes().into_series()),
-                GetOutput::from_type(DataType::Int64),
+                get_field::with_dtype(DataType::Int64),
             )
             .into()
     }
@@ -943,7 +943,7 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.duration()?.seconds().into_series()),
-                GetOutput::from_type(DataType::Int64),
+                get_field::with_dtype(DataType::Int64),
             )
             .into()
     }
@@ -952,7 +952,7 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.duration()?.nanoseconds().into_series()),
-                GetOutput::from_type(DataType::Int64),
+                get_field::with_dtype(DataType::Int64),
             )
             .into()
     }
@@ -961,7 +961,7 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.duration()?.microseconds().into_series()),
-                GetOutput::from_type(DataType::Int64),
+                get_field::with_dtype(DataType::Int64),
             )
             .into()
     }
@@ -970,7 +970,7 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.duration()?.milliseconds().into_series()),
-                GetOutput::from_type(DataType::Int64),
+                get_field::with_dtype(DataType::Int64),
             )
             .into()
     }
@@ -991,7 +991,7 @@ impl PyExpr {
                     s.timestamp(TimeUnit::Milliseconds)
                         .map(|ca| (ca / 1000).into_series())
                 },
-                GetOutput::from_type(DataType::Int64),
+                get_field::with_dtype(DataType::Int64),
             )
             .into()
     }
@@ -1040,7 +1040,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(dt))
+            .map(function, get_field::with_dtype(dt))
             .into()
     }
     pub fn mode(&self) -> PyExpr {
@@ -1394,7 +1394,7 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.to_physical_repr().into_owned()),
-                GetOutput::map_dtype(|dt| dt.to_physical()),
+                get_field::map_dtype(|dt| dt.to_physical()),
             )
             .with_fmt("to_physical")
             .into()
@@ -1468,7 +1468,7 @@ impl PyExpr {
                         s.extend_constant(value, n)
                     })
                 },
-                GetOutput::same_type(),
+                get_field::same_type(),
             )
             .with_fmt("extend")
             .into()

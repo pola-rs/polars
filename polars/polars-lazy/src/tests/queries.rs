@@ -88,7 +88,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").map(|s| Ok(s * 200.0), GetOutput::same_type())])
+        .select([col("sepal.width").map(|s| Ok(s * 200.0), get_field::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
@@ -220,7 +220,7 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(s * 2), GetOutput::same_type()))
+        .with_column(col("a").map(|s| Ok(s * 2), get_field::same_type()))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
@@ -255,7 +255,7 @@ fn test_lazy_query_4() {
         .agg([
             col("day").list().alias("day"),
             col("cumcases")
-                .apply(|s: Series| Ok(&s - &(s.shift(1))), GetOutput::same_type())
+                .apply(|s: Series| Ok(&s - &(s.shift(1))), get_field::same_type())
                 .alias("diff_cases"),
         ])
         .explode([col("day"), col("diff_cases")])
@@ -685,7 +685,7 @@ fn test_lazy_groupby_apply() {
         .groupby([col("fruits")])
         .agg([col("cars").apply(
             |s: Series| Ok(Series::new("", &[s.len() as u32])),
-            GetOutput::same_type(),
+            get_field::same_type(),
         )])
         .collect()
         .unwrap();
@@ -1275,7 +1275,7 @@ fn test_filter_in_groupby_agg() -> PolarsResult<()> {
         .groupby([col("a")])
         .agg([(col("b")
             .filter(col("b").eq(lit(100)))
-            .map(Ok, GetOutput::same_type()))
+            .map(Ok, get_field::same_type()))
         .mean()
         .alias("b_mean")])
         .collect()?;

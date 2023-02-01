@@ -274,7 +274,7 @@
 //!
 //!             Ok(out.into_series())
 //!         },
-//!         GetOutput::from_type(DataType::Float32),
+//!         get_field::with_dtype(DataType::Float32),
 //!     )])
 //!     .collect()
 //! }

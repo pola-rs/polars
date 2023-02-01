@@ -24,7 +24,7 @@ impl CategoricalNameSpace {
                     ca.set_lexical_sorted(set_lexical);
                     Ok(ca.into_series())
                 },
-                GetOutput::from_type(DataType::Categorical(None)),
+                get_field::with_dtype(DataType::Categorical(None)),
             )
             .with_fmt("set_ordering")
     }

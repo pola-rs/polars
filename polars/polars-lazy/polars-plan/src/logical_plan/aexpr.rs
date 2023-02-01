@@ -80,8 +80,7 @@ pub enum AExpr {
     },
     AnonymousFunction {
         input: Vec<Node>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
-        output_type: GetOutput,
+        function: UdfWrapper,
         options: FunctionOptions,
     },
     Function {
@@ -374,14 +373,14 @@ impl AExpr {
                 }
             }
             AnonymousFunction {
-                output_type, input, ..
+                function, input, ..
             } => {
                 let fields = input
                     .iter()
                     // default context because `col()` would return a list in aggregation context
                     .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
                     .collect::<PolarsResult<Vec<_>>>()?;
-                Ok(output_type.get_field(schema, ctxt, &fields))
+                function.get_field(schema, ctxt, &fields)
             }
             Function {
                 function, input, ..

@@ -64,7 +64,7 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
         a,
         b,
         function,
-        GetOutput::map_dtype(|dt| {
+        get_field::map_dtype(|dt| {
             if matches!(dt, DataType::Float32) {
                 DataType::Float32
             } else {
@@ -149,7 +149,7 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
         a,
         b,
         function,
-        GetOutput::map_dtype(|dt| {
+        get_field::map_dtype(|dt| {
             if matches!(dt, DataType::Float32) {
                 DataType::Float32
             } else {
@@ -216,7 +216,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         ))
     };
 
-    apply_binary(a, b, function, GetOutput::from_type(DataType::Float64)).with_function_options(
+    apply_binary(a, b, function, get_field::with_dtype(DataType::Float64)).with_function_options(
         |mut options| {
             options.auto_explode = true;
             options.fmt_str = "spearman_rank_correlation".into();
@@ -385,7 +385,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             low,
             high,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::Int64)),
+            get_field::map_field(|_| Field::new("arange", DataType::Int64)),
         )
     } else {
         let f = move |sa: Series, sb: Series| {
@@ -432,7 +432,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             low,
             high,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
+            get_field::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
         )
     }
 }
@@ -615,26 +615,28 @@ macro_rules! prepare_binary_function {
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
 /// Please note that the resulting expression will not be serializable.
-pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
+pub fn map_binary<F: 'static, O>(a: Expr, b: Expr, f: F, output_type: O) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
+    O: Fn(&[Field]) -> PolarsResult<Field> + Send + Sync + 'static,
 {
     let function = prepare_binary_function!(f);
     a.map_many(function, &[b], output_type)
 }
 
 /// Please note that the resulting expression will not be serializable.
-pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
+pub fn apply_binary<F: 'static, O>(a: Expr, b: Expr, f: F, output_type: O) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
+    O: Fn(&[Field]) -> PolarsResult<Field> + Send + Sync + 'static,
 {
     let function = prepare_binary_function!(f);
     a.apply_many(function, &[b], output_type)
 }
 
 #[cfg(feature = "dtype-struct")]
-fn cumfold_dtype() -> GetOutput {
-    GetOutput::map_fields(|fields| {
+fn cumfold_dtype() -> impl Fn(&[Field]) -> PolarsResult<Field> {
+    get_field::map_fields(|fields| {
         let mut st = fields[0].dtype.clone();
         for fld in &fields[1..] {
             st = get_supertype(&st, &fld.dtype).unwrap();
@@ -660,20 +662,22 @@ where
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
 
-    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-        let mut series = series.to_vec();
-        let mut acc = series.pop().unwrap();
+    let function = make_series_udf(
+        move |series: &mut [Series]| {
+            let mut series = series.to_vec();
+            let mut acc = series.pop().unwrap();
 
-        for s in series {
-            acc = f(acc, s)?;
-        }
-        Ok(acc)
-    }) as Arc<dyn SeriesUdf>);
+            for s in series {
+                acc = f(acc, s)?;
+            }
+            Ok(acc)
+        },
+        get_field::super_type(),
+    );
 
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: GetOutput::super_type(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
@@ -692,28 +696,30 @@ where
 {
     let exprs = exprs.as_ref().to_vec();
 
-    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-        let mut s_iter = series.iter();
+    let function = make_series_udf(
+        move |series: &mut [Series]| {
+            let mut s_iter = series.iter();
 
-        match s_iter.next() {
-            Some(acc) => {
-                let mut acc = acc.clone();
+            match s_iter.next() {
+                Some(acc) => {
+                    let mut acc = acc.clone();
 
-                for s in s_iter {
-                    acc = f(acc, s.clone())?;
+                    for s in s_iter {
+                        acc = f(acc, s.clone())?;
+                    }
+                    Ok(acc)
                 }
-                Ok(acc)
+                None => Err(PolarsError::ComputeError(
+                    "Reduce did not have any expressions to fold".into(),
+                )),
             }
-            None => Err(PolarsError::ComputeError(
-                "Reduce did not have any expressions to fold".into(),
-            )),
-        }
-    }) as Arc<dyn SeriesUdf>);
+        },
+        get_field::super_type(),
+    );
 
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: GetOutput::super_type(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
@@ -725,15 +731,14 @@ where
 }
 
 /// Make an UDF (User Defined Function) expression.
-pub fn make_udf_expr<F: SeriesUdf + FunctionOutputField + 'static>(
+pub fn make_udf_expr(
     input: Vec<Expr>,
-    udf: Arc<F>,
+    function: Arc<dyn SerializableUdf>,
     options: FunctionOptions,
 ) -> Expr {
     Expr::AnonymousFunction {
         input,
-        function: SpecialEq::new(Arc::clone(&udf) as _),
-        output_type: SpecialEq::new(udf),
+        function: UdfWrapper(function),
         options,
     }
 }
@@ -747,33 +752,35 @@ where
 {
     let exprs = exprs.as_ref().to_vec();
 
-    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-        let mut s_iter = series.iter();
+    let function = make_series_udf(
+        move |series: &mut [Series]| {
+            let mut s_iter = series.iter();
 
-        match s_iter.next() {
-            Some(acc) => {
-                let mut acc = acc.clone();
-                let mut result = vec![acc.clone()];
+            match s_iter.next() {
+                Some(acc) => {
+                    let mut acc = acc.clone();
+                    let mut result = vec![acc.clone()];
 
-                for s in s_iter {
-                    let name = s.name().to_string();
-                    acc = f(acc, s.clone())?;
-                    acc.rename(&name);
-                    result.push(acc.clone());
+                    for s in s_iter {
+                        let name = s.name().to_string();
+                        acc = f(acc, s.clone())?;
+                        acc.rename(&name);
+                        result.push(acc.clone());
+                    }
+
+                    StructChunked::new(acc.name(), &result).map(|ca| ca.into_series())
                 }
-
-                StructChunked::new(acc.name(), &result).map(|ca| ca.into_series())
+                None => Err(PolarsError::ComputeError(
+                    "Reduce did not have any expressions to fold".into(),
+                )),
             }
-            None => Err(PolarsError::ComputeError(
-                "Reduce did not have any expressions to fold".into(),
-            )),
-        }
-    }) as Arc<dyn SeriesUdf>);
+        },
+        cumfold_dtype(),
+    );
 
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: cumfold_dtype(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
@@ -799,29 +806,31 @@ where
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
 
-    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-        let mut series = series.to_vec();
-        let mut acc = series.pop().unwrap();
+    let function = make_series_udf(
+        move |series: &mut [Series]| {
+            let mut series = series.to_vec();
+            let mut acc = series.pop().unwrap();
 
-        let mut result = vec![];
-        if include_init {
-            result.push(acc.clone())
-        }
+            let mut result = vec![];
+            if include_init {
+                result.push(acc.clone())
+            }
 
-        for s in series {
-            let name = s.name().to_string();
-            acc = f(acc, s)?;
-            acc.rename(&name);
-            result.push(acc.clone());
-        }
+            for s in series {
+                let name = s.name().to_string();
+                acc = f(acc, s)?;
+                acc.rename(&name);
+                result.push(acc.clone());
+            }
 
-        StructChunked::new(acc.name(), &result).map(|ca| ca.into_series())
-    }) as Arc<dyn SeriesUdf>);
+            StructChunked::new(acc.name(), &result).map(|ca| ca.into_series())
+        },
+        cumfold_dtype(),
+    );
 
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: cumfold_dtype(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
@@ -988,7 +997,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
     map_multiple(
         |s| StructChunked::new("", s).map(|ca| ca.into_series()),
         exprs,
-        GetOutput::map_fields(|fld| Field::new(fld[0].name(), DataType::Struct(fld.to_vec()))),
+        get_field::map_fields(|fld| Field::new(fld[0].name(), DataType::Struct(fld.to_vec()))),
     )
     .with_function_options(|mut options| {
         options.input_wildcard_expansion = true;
@@ -1005,7 +1014,7 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
         })?;
         Ok(s.new_from_index(0, n))
     };
-    apply_binary(lit(value), n_times, function, GetOutput::same_type())
+    apply_binary(lit(value), n_times, function, get_field::same_type())
 }
 
 #[cfg(feature = "arg_where")]

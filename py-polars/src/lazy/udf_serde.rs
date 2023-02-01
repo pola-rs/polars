@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_lazy::udf_registry;
+use polars_lazy::dsl::{set_udf_deserializer, UdfDeserializer};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -8,19 +8,22 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use super::*;
 use crate::py_modules::POLARS;
 
-pub struct UdfSerializer(PyObject);
+pub struct PolarsUdfDeserializer;
+impl UdfDeserializer for PolarsUdfDeserializer {
+    fn deserialize_udf(
+        &self,
+        deserializer: &mut dyn polars_lazy::dsl::ErasedDeserializer,
+    ) -> Result<Arc<dyn polars_lazy::dsl::SerializableUdf>, polars_lazy::dsl::ErasedError> {
+        Ok(Arc::new(PyUdfLambda::deserialize(deserializer)?) as _)
+    }
+}
 
-impl UdfSerializer {
+pub struct PyUdfSerializerObject(PyObject);
+
+impl PyUdfSerializerObject {
     pub fn set_current(ser: Option<PyObject>) {
         // register our registry if not already done (lazy init)
-        use udf_registry::*;
-        UDF_DESERIALIZE_REGISTRY.get_or_init(|| UdfSerializeRegistry {
-            expr_series_udf: Registry::default()
-                .with::<PyUdfLambda>("py-lambda", |e| Arc::new(e) as _),
-            expr_fn_output_field: Registry::default()
-                .with::<PyUdfLambda>("py-lambda", |e| Arc::new(e) as _),
-            ..Default::default()
-        });
+        let _ = set_udf_deserializer(Box::new(PolarsUdfDeserializer));
 
         Python::with_gil(|py| {
             let pypolars = POLARS.cast_as::<PyModule>(py).unwrap();
@@ -29,14 +32,14 @@ impl UdfSerializer {
         })
     }
 
-    fn get_current(py: Python) -> Option<UdfSerializer> {
+    fn get_current(py: Python) -> Option<PyUdfSerializerObject> {
         let pypolars = POLARS.cast_as::<PyModule>(py).unwrap();
         let val = pypolars.getattr("_current_udf_serializer").ok()?;
 
         if val.is_none() {
             return None;
         }
-        Some(UdfSerializer(val.to_object(py)))
+        Some(PyUdfSerializerObject(val.to_object(py)))
     }
 
     fn call_serialize(&self, py: Python, lambda: &PyLambda) -> PyObject {
@@ -61,7 +64,7 @@ impl UdfSerializer {
 impl Serialize for PyLambda {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         Python::with_gil(|py| {
-            let py_obj = UdfSerializer::get_current(py)
+            let py_obj = PyUdfSerializerObject::get_current(py)
                 .ok_or_else(|| {
                     serde::ser::Error::custom(
                         "Cannot serialize User-Defined Functions without an UDF serializer.",
@@ -98,7 +101,7 @@ impl<'de> Deserialize<'de> for PyLambda {
         }
 
         Python::with_gil(|py| {
-            let udfser = UdfSerializer::get_current(py).ok_or_else(|| {
+            let udfser = PyUdfSerializerObject::get_current(py).ok_or_else(|| {
                 serde::de::Error::custom(
                     "Cannot deserialize User-Defined Functions without an UDF serializer.",
                 )

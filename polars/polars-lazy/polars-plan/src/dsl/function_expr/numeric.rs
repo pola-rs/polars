@@ -22,6 +22,7 @@ pub enum NumericFunction {
     /// Argument is the base
     #[cfg(feature = "log")]
     Log(HashF64),
+    #[cfg(feature = "log")]
     Exp,
     CumSum {
         reverse: bool,
@@ -62,13 +63,18 @@ impl Display for NumericFunction {
         match self {
             IsFinite => write!(f, "is_finite"),
             IsInfinite => write!(f, "is_infinite"),
+            #[cfg(feature = "round_series")]
             Round(_) => write!(f, "round"),
+            #[cfg(feature = "round_series")]
             Floor => write!(f, "floor"),
+            #[cfg(feature = "round_series")]
             Ceil => write!(f, "ceil"),
             Abs => write!(f, "abs"),
             UpperBound => write!(f, "upper_bound"),
             LowerBound => write!(f, "lower_bound"),
+            #[cfg(feature = "log")]
             Log(_) => write!(f, "log"),
+            #[cfg(feature = "log")]
             Exp => write!(f, "exp"),
             CumSum { .. } => write!(f, "cumsum"),
             CumProd { .. } => write!(f, "cumprod"),
@@ -91,23 +97,23 @@ impl NumericFunction {
         _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
+        use get_field::*;
         use NumericFunction::*;
 
-        use super::schema::*;
         match self {
-            IsFinite | IsInfinite => with_dtype(fields, DataType::Boolean),
+            IsFinite | IsInfinite => with_dtype(DataType::Boolean)(fields),
             #[cfg(feature = "round_series")]
-            Round(_) | Floor | Ceil => same_type(fields),
-            UpperBound | LowerBound | Abs => same_type(fields),
+            Round(_) | Floor | Ceil => same_type()(fields),
+            UpperBound | LowerBound | Abs => same_type()(fields),
             #[cfg(feature = "log")]
-            Log(_) | Exp => map_dtype(fields, &|dt| {
+            Log(_) | Exp => map_dtype(|dt| {
                 if matches!(dt, DataType::Float32) {
                     DataType::Float32
                 } else {
                     DataType::Float64
                 }
-            }),
-            CumSum { .. } => map_dtype(fields, &|dt| {
+            })(fields),
+            CumSum { .. } => map_dtype(|dt| {
                 use DataType::*;
                 if dt.is_logical() {
                     dt.clone()
@@ -122,8 +128,8 @@ impl NumericFunction {
                         _ => Int64,
                     }
                 }
-            }),
-            CumProd { .. } => map_dtype(fields, &|dt| {
+            })(fields),
+            CumProd { .. } => map_dtype(|dt| {
                 use DataType::*;
                 match dt {
                     Boolean => Int64,
@@ -132,19 +138,19 @@ impl NumericFunction {
                     Float64 => Float64,
                     _ => Int64,
                 }
-            }),
-            CumMin { .. } | CumMax { .. } => same_type(fields),
-            CumCount { .. } => with_dtype(fields, IDX_DTYPE),
-            RowMax | RowMin | RowSum | RowAny | RowAll => super_type(fields),
+            })(fields),
+            CumMin { .. } | CumMax { .. } => same_type()(fields),
+            CumCount { .. } => with_dtype(IDX_DTYPE)(fields),
+            RowMax | RowMin | RowSum | RowAny | RowAll => super_type()(fields),
         }
     }
 }
 
-impl From<NumericFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<NumericFunction> for SpecialEq<Arc<dyn SeriesEval>> {
     fn from(func: NumericFunction) -> Self {
         fn make_row_fold(
             f: impl Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone + 'static,
-        ) -> SpecialEq<Arc<dyn SeriesUdf>> {
+        ) -> SpecialEq<Arc<dyn SeriesEval>> {
             // Accumulator is implicitely supplied as the last input
             wrap!(move |series: &mut [Series]| {
                 let mut series = series.to_vec();
@@ -159,7 +165,7 @@ impl From<NumericFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 
         fn make_row_reduce(
             f: impl Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone + 'static,
-        ) -> SpecialEq<Arc<dyn SeriesUdf>> {
+        ) -> SpecialEq<Arc<dyn SeriesEval>> {
             wrap!(move |series: &mut [Series]| {
                 let mut s_iter = series.iter();
 

@@ -104,12 +104,10 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
         } => AExpr::AnonymousFunction {
             input: to_aexprs(input, arena),
             function,
-            output_type,
             options,
         },
         Expr::Function {
@@ -596,12 +594,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
         } => Expr::AnonymousFunction {
             input: nodes_to_exprs(&input, expr_arena),
             function,
-            output_type,
             options,
         },
         AExpr::Function {

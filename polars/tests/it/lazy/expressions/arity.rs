@@ -60,7 +60,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
                         .contains("not_exist")
                         .map(Into::into)
                 },
-                GetOutput::from_type(DataType::Boolean),
+                get_field::with_dtype(DataType::Boolean),
             ))
             .then(lit("unexpected"))
             .when(col("a").eq(lit("a1".to_string())))
@@ -90,7 +90,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
                         .contains_literal("non-existent")
                         .map(Into::into)
                 },
-                GetOutput::from_type(DataType::Boolean),
+                get_field::with_dtype(DataType::Boolean),
             ))
             .then(lit("weird-1"))
             .when(col("a").eq(lit("a1".to_string())))

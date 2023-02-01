@@ -136,7 +136,7 @@
 //!             Ok(Series::new("", &[6.0f32, 6.0, 6.0, 6.0, 6.0]))
 //!         },
 //!         // return type of the closure
-//!         GetOutput::from_type(DataType::Float64)).alias("new_column")
+//!         get_field::with_dtype(DataType::Float64)).alias("new_column")
 //!     )
 //!     .collect()
 //!     .unwrap();
@@ -194,5 +194,3 @@ pub mod prelude;
 #[cfg(test)]
 mod tests;
 pub mod utils;
-#[cfg(feature = "serde")]
-pub use polars_plan::udf_registry;

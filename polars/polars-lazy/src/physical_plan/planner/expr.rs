@@ -186,7 +186,7 @@ pub(crate) fn create_physical_expr(
                                     }
                                 }
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -239,7 +239,7 @@ pub(crate) fn create_physical_expr(
                                     }
                                 }
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -260,7 +260,7 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 parallel_op_series(|s| Ok(s.sum_as_series()), s, None)
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -282,7 +282,7 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(s.std_as_series(ddof))
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -304,7 +304,7 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(s.var_as_series(ddof))
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -325,7 +325,7 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(s.mean_as_series())
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -346,7 +346,7 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(s.median_as_series())
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -367,7 +367,7 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(s.head(Some(1)))
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -388,7 +388,7 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(s.tail(Some(1)))
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -409,7 +409,7 @@ pub(crate) fn create_physical_expr(
                                 let s = &s[0];
                                 s.to_list().map(|ca| ca.into_series())
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -434,7 +434,7 @@ pub(crate) fn create_physical_expr(
                                         .into_series()
                                 })
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -464,7 +464,7 @@ pub(crate) fn create_physical_expr(
                     //             let s = std::mem::take(&mut s[0]);
                     //             s.quantile_as_series(quantile, interpol)
                     //         })
-                    //             as Arc<dyn SeriesUdf>);
+                    //             as Arc<dyn SeriesEval>);
                     //         Ok(Arc::new(ApplyExpr::new_minimal(
                     //             vec![input],
                     //             function,
@@ -497,7 +497,7 @@ pub(crate) fn create_physical_expr(
                                 Ok(UInt32Chunked::from_slice(s.name(), &[count as u32])
                                     .into_series())
                             })
-                                as Arc<dyn SeriesUdf>);
+                                as Arc<dyn SeriesEval>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
                                 vec![input],
                                 function,
@@ -540,14 +540,13 @@ pub(crate) fn create_physical_expr(
         AnonymousFunction {
             input,
             function,
-            output_type: _,
             options,
         } => {
             let input = create_physical_expressions(&input, ctxt, expr_arena, schema)?;
 
             Ok(Arc::new(ApplyExpr {
                 inputs: input,
-                function,
+                function: function.into(),
                 expr: node_to_expr(expression, expr_arena),
                 collect_groups: options.collect_groups,
                 auto_explode: options.auto_explode,
@@ -593,7 +592,7 @@ pub(crate) fn create_physical_expr(
             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                 let s = std::mem::take(&mut s[0]);
                 s.explode()
-            }) as Arc<dyn SeriesUdf>);
+            }) as Arc<dyn SeriesEval>);
             Ok(Arc::new(ApplyExpr::new_minimal(
                 vec![input],
                 function,

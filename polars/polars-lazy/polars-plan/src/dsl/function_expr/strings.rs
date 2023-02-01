@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-#[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
 use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
