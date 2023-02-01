@@ -767,7 +767,6 @@ class Series:
             int | Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool]
         ),
     ) -> Any:
-
         if isinstance(item, Series) and item.dtype in {
             UInt8,
             UInt16,

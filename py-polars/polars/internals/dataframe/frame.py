@@ -1479,7 +1479,6 @@ class DataFrame:
 
             # df[:, unknown]
             if isinstance(row_selection, slice):
-
                 # multiple slices
                 # df[:, :]
                 if isinstance(col_selection, slice):
@@ -1512,7 +1511,7 @@ class DataFrame:
                             f" boolean mask. Got {len(col_selection)}."
                         )
                     series_list = []
-                    for (i, val) in enumerate(col_selection):
+                    for i, val in enumerate(col_selection):
                         if val:
                             series_list.append(self.to_series(i))
 
@@ -1631,7 +1630,7 @@ class DataFrame:
 
             # todo! we can parallelize this by calling from_numpy
             columns = []
-            for (i, name) in enumerate(key):
+            for i, name in enumerate(key):
                 columns.append(pli.Series(name, value[:, i]))
             self._df = self.with_columns(columns)._df
 

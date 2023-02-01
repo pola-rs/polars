@@ -75,6 +75,7 @@ def _prepare_file_arg(
     fsspec too.
 
     """
+
     # Small helper to use a variable as context
     @contextmanager
     def managed_file(file: Any) -> Iterator[Any]:

@@ -100,7 +100,6 @@ def test_set_tbl_cols() -> None:
 
 
 def test_set_tbl_rows() -> None:
-
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8], "c": [9, 10, 11, 12]})
     ser = pl.Series("ser", [1, 2, 3, 4, 5])
 

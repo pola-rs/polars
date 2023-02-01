@@ -582,7 +582,7 @@ def test_arrow_list_null_5697() -> None:
     df = pl.from_arrow(pa_table)
     pa_table = df.to_arrow()
     # again to polars to test the schema
-    assert pl.from_arrow(pa_table,).schema == {  # type: ignore[union-attr]
+    assert pl.from_arrow(pa_table).schema == {  # type: ignore[union-attr]
         "mycol": pl.List(pl.Null)
     }
 
