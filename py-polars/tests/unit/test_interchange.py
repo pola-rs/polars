@@ -1,8 +1,8 @@
 import sys
+from typing import Any
 
 import pandas as pd
 import pytest
-from _pytest.monkeypatch import MonkeyPatch
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -18,7 +18,7 @@ def test_interchange() -> None:
     assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
 
 
-def test_interchange_pyarrow_required(monkeypatch: MonkeyPatch) -> None:
+def test_interchange_pyarrow_required(monkeypatch: Any) -> None:
     monkeypatch.setattr(pl.internals.dataframe.frame, "_PYARROW_AVAILABLE", False)
 
     df = pl.DataFrame({"a": [1, 2]})
@@ -26,7 +26,7 @@ def test_interchange_pyarrow_required(monkeypatch: MonkeyPatch) -> None:
         df.__dataframe__()
 
 
-def test_interchange_pyarrow_min_version(monkeypatch: MonkeyPatch) -> None:
+def test_interchange_pyarrow_min_version(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         pl.internals.dataframe.frame.pa,  # type: ignore[attr-defined]
         "__version__",
@@ -93,7 +93,7 @@ def test_from_dataframe_invalid_type() -> None:
         pl.from_dataframe(df)
 
 
-def test_from_dataframe_pyarrow_required(monkeypatch: MonkeyPatch) -> None:
+def test_from_dataframe_pyarrow_required(monkeypatch: Any) -> None:
     monkeypatch.setattr(pl.convert, "_PYARROW_AVAILABLE", False)
 
     df = pl.DataFrame({"a": [1, 2]})
@@ -105,7 +105,7 @@ def test_from_dataframe_pyarrow_required(monkeypatch: MonkeyPatch) -> None:
     assert_frame_equal(result, df)
 
 
-def test_from_dataframe_pyarrow_min_version(monkeypatch: MonkeyPatch) -> None:
+def test_from_dataframe_pyarrow_min_version(monkeypatch: Any) -> None:
     dfi = pl.DataFrame({"a": [1, 2]}).__dataframe__()
 
     monkeypatch.setattr(

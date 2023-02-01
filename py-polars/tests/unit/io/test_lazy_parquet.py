@@ -3,12 +3,10 @@ from __future__ import annotations
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytest
-from _pytest.capture import CaptureFixture
-from _pytest.monkeypatch import MonkeyPatch
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -141,9 +139,7 @@ def test_row_count_schema(parquet_file_path: Path) -> None:
     ).dtypes == [pl.UInt32, pl.Utf8]
 
 
-def test_parquet_statistics(
-    capfd: CaptureFixture[str], monkeypatch: MonkeyPatch
-) -> None:
+def test_parquet_statistics(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_columns(
