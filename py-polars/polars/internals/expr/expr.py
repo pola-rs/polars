@@ -50,7 +50,11 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 def selection_to_pyexpr_list(
     exprs: (
-        PolarsExprType | PythonLiteral | Iterable[PolarsExprType | PythonLiteral] | None
+        PolarsExprType
+        | PythonLiteral
+        | pli.Series
+        | Iterable[PolarsExprType | PythonLiteral | pli.Series]
+        | None
     ),
     structify: bool = False,
 ) -> list[PyExpr]:
@@ -75,7 +79,11 @@ def expr_output_name(expr: pli.Expr) -> str | None:
 
 def expr_to_lit_or_expr(
     expr: (
-        PolarsExprType | PythonLiteral | Iterable[PolarsExprType | PythonLiteral] | None
+        PolarsExprType
+        | PythonLiteral
+        | pli.Series
+        | Iterable[PolarsExprType | PythonLiteral | pli.Series]
+        | None
     ),
     str_to_lit: bool = True,
     structify: bool = False,

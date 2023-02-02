@@ -2248,9 +2248,14 @@ def collect_all(
 
 def select(
     exprs: (
-        PolarsExprType | PythonLiteral | Iterable[PolarsExprType | PythonLiteral] | None
+        str
+        | PolarsExprType
+        | PythonLiteral
+        | pli.Series
+        | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+        | None
     ) = None,
-    **named_exprs: Any,
+    **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
 ) -> pli.DataFrame:
     """
     Run polars expressions without a context.

@@ -30,7 +30,8 @@ class WhenThenThen:
         expr: (
             PolarsExprType
             | PythonLiteral
-            | Iterable[PolarsExprType | PythonLiteral]
+            | pli.Series
+            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
             | None
         ),
     ) -> WhenThenThen:
@@ -51,7 +52,8 @@ class WhenThenThen:
         expr: (
             PolarsExprType
             | PythonLiteral
-            | Iterable[PolarsExprType | PythonLiteral]
+            | pli.Series
+            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
             | None
         ),
     ) -> pli.Expr:
@@ -89,7 +91,8 @@ class WhenThen:
         expr: (
             PolarsExprType
             | PythonLiteral
-            | Iterable[PolarsExprType | PythonLiteral]
+            | pli.Series
+            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
             | None
         ),
     ) -> pli.Expr:
@@ -122,7 +125,8 @@ class When:
         expr: (
             PolarsExprType
             | PythonLiteral
-            | Iterable[PolarsExprType | PythonLiteral]
+            | pli.Series
+            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
             | None
         ),
     ) -> WhenThen:

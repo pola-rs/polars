@@ -19,7 +19,7 @@ else:
 from typing import Union
 
 # Types that qualify as expressions (eg: for use in 'select', 'with_columns'...)
-PolarsExprType: TypeAlias = Union[pli.Expr, pli.WhenThen, pli.WhenThenThen, pli.Series]
+PolarsExprType: TypeAlias = "pli.Expr | pli.WhenThen | pli.WhenThenThen"
 
 IntoExpr: TypeAlias = "int | float | str | pli.Expr | pli.Series"
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]

@@ -1558,12 +1558,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def select(
         self: LDF,
         exprs: (
-            PolarsExprType
+            str
+            | PolarsExprType
             | PythonLiteral
-            | Iterable[PolarsExprType | PythonLiteral]
+            | pli.Series
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
             | None
         ) = None,
-        **named_exprs: Any,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
         Select columns from this DataFrame.
@@ -2462,12 +2464,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def with_columns(
         self: LDF,
         exprs: (
-            PolarsExprType
+            str
+            | PolarsExprType
             | PythonLiteral
-            | Iterable[PolarsExprType | PythonLiteral]
+            | pli.Series
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
             | None
         ) = None,
-        **named_exprs: Any,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
         Return a new LazyFrame with the columns added (if new), or replaced.

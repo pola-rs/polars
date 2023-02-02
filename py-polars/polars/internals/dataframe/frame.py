@@ -5545,12 +5545,14 @@ class DataFrame:
     def select(
         self: DF,
         exprs: (
-            PolarsExprType
+            str
+            | PolarsExprType
             | PythonLiteral
-            | Iterable[PolarsExprType | PythonLiteral]
+            | pli.Series
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
             | None
         ) = None,
-        **named_exprs: Any,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> DF:
         """
         Select columns from this DataFrame.
@@ -5660,12 +5662,14 @@ class DataFrame:
     def with_columns(
         self,
         exprs: (
-            PolarsExprType
+            str
+            | PolarsExprType
             | PythonLiteral
-            | Iterable[PolarsExprType | PythonLiteral]
+            | pli.Series
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
             | None
         ) = None,
-        **named_exprs: Any,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> DataFrame:
         """
         Return a new DataFrame with the columns added (if new), or replaced.
