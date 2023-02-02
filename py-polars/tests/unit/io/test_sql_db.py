@@ -11,11 +11,11 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import SQLEngine
+    from typing import Literal
 
 
-@pytest.fixture
-def sample_df():
+@pytest.fixture()
+def sample_df() -> pl.DataFrame:
     return pl.DataFrame(
         {
             "id": [1, 2],
@@ -26,7 +26,7 @@ def sample_df():
     )
 
 
-def create_temp_sqlite_db(test_db):
+def create_temp_sqlite_db(test_db: str) -> None:
     import sqlite3
 
     conn = sqlite3.connect(test_db)
@@ -79,7 +79,7 @@ def create_temp_sqlite_db(test_db):
     ],
 )
 def test_read_sql(
-    engine: SQLEngine,
+    engine: Literal["connectorx", "adbc"],
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
 ) -> None:
@@ -130,7 +130,9 @@ def test_read_sql(
         ),
     ],
 )
-def test_read_sql_exceptions(engine, sql, database, err):
+def test_read_sql_exceptions(
+    engine: Literal["connectorx", "adbc"], sql: str, database: str, err: str
+) -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmpdir_name:
@@ -138,7 +140,7 @@ def test_read_sql_exceptions(engine, sql, database, err):
         create_temp_sqlite_db(test_db)
 
         with pytest.raises(ValueError, match=err):
-            df = pl.read_sql(
+            pl.read_sql(
                 connection_uri=f"{database}:///{test_db}",
                 sql=sql,
                 engine=engine,
@@ -152,7 +154,9 @@ def test_read_sql_exceptions(engine, sql, database, err):
         pytest.param("adbc", "append", id="append"),
     ],
 )
-def test_write_sql(engine, mode, sample_df: pl.DataFrame):
+def test_write_sql(
+    engine: Literal["adbc"], mode: Literal["create", "append"], sample_df: pl.DataFrame
+) -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmpdir_name:
