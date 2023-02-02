@@ -22,7 +22,7 @@ impl CategoricalNameSpace {
                         CategoricalOrdering::Physical => false,
                     };
                     ca.set_lexical_sorted(set_lexical);
-                    Ok(ca.into_series())
+                    Ok(Some(ca.into_series()))
                 },
                 GetOutput::from_type(DataType::Categorical(None)),
             )

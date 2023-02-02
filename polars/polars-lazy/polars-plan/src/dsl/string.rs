@@ -138,7 +138,7 @@ impl StringNameSpace {
                     builder.append_values_iter(iter);
                 }
             });
-            Ok(builder.finish().into_series())
+            Ok(Some(builder.finish().into_series()))
         };
         self.0
             .map(
@@ -163,7 +163,7 @@ impl StringNameSpace {
                     builder.append_values_iter(iter);
                 }
             });
-            Ok(builder.finish().into_series())
+            Ok(Some(builder.finish().into_series()))
         };
         self.0
             .map(
@@ -210,7 +210,7 @@ impl StringNameSpace {
                     Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
                 })
                 .collect::<Vec<_>>();
-            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
         };
         self.0
             .map(
@@ -262,7 +262,7 @@ impl StringNameSpace {
                     Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
                 })
                 .collect::<Vec<_>>();
-            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
         };
         self.0
             .map(
@@ -314,7 +314,7 @@ impl StringNameSpace {
                     Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
                 })
                 .collect::<Vec<_>>();
-            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
         };
         self.0
             .map(

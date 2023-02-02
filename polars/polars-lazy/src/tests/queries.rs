@@ -88,7 +88,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").map(|s| Ok(s * 200.0), GetOutput::same_type())])
+        .select([col("sepal.width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
@@ -220,7 +220,7 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(s * 2), GetOutput::same_type()))
+        .with_column(col("a").map(|s| Ok(Some(s * 2)), GetOutput::same_type()))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
@@ -255,7 +255,10 @@ fn test_lazy_query_4() {
         .agg([
             col("day").alias("day"),
             col("cumcases")
-                .apply(|s: Series| Ok(&s - &(s.shift(1))), GetOutput::same_type())
+                .apply(
+                    |s: Series| Ok(Some(&s - &(s.shift(1)))),
+                    GetOutput::same_type(),
+                )
                 .alias("diff_cases"),
         ])
         .explode([col("day"), col("diff_cases")])
@@ -688,7 +691,7 @@ fn test_lazy_groupby_apply() {
     df.lazy()
         .groupby([col("fruits")])
         .agg([col("cars").apply(
-            |s: Series| Ok(Series::new("", &[s.len() as u32])),
+            |s: Series| Ok(Some(Series::new("", &[s.len() as u32]))),
             GetOutput::same_type(),
         )])
         .collect()
@@ -1157,32 +1160,6 @@ fn test_cross_join() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_fold_wildcard() -> PolarsResult<()> {
-    let df1 = df![
-    "a" => [1, 2, 3],
-    "b" => [1, 2, 3]
-    ]?;
-
-    let out = df1
-        .clone()
-        .lazy()
-        .select([fold_exprs(lit(0), |a, b| Ok(&a + &b), [col("*")]).alias("foo")])
-        .collect()?;
-
-    assert_eq!(
-        Vec::from(out.column("foo")?.i32()?),
-        &[Some(2), Some(4), Some(6)]
-    );
-
-    // test if we don't panic due to wildcard
-    let _out = df1
-        .lazy()
-        .select([all_exprs([col("*").is_not_null()])])
-        .collect()?;
-    Ok(())
-}
-
-#[test]
 fn test_select_empty_df() -> PolarsResult<()> {
     // https://github.com/pola-rs/polars/issues/1056
     let df1 = df![
@@ -1247,41 +1224,6 @@ fn test_regex_selection() -> PolarsResult<()> {
     let out = df.lazy().select([col("^a.*o.*$")]).collect()?;
 
     assert_eq!(out.get_column_names(), &["anton", "arnold schwars"]);
-    Ok(())
-}
-
-#[test]
-fn test_filter_in_groupby_agg() -> PolarsResult<()> {
-    // This tests if the filter is correctly handled by the binary expression.
-    // This could lead to UB if it were not the case. The filter creates an empty column.
-    // but the group tuples could still be untouched leading to out of bounds aggregation.
-    let df = df![
-        "a" => [1, 1, 2],
-        "b" => [1, 2, 3]
-    ]?;
-
-    let out = df
-        .clone()
-        .lazy()
-        .groupby([col("a")])
-        .agg([(col("b").filter(col("b").eq(lit(100))) * lit(2))
-            .mean()
-            .alias("b_mean")])
-        .collect()?;
-
-    assert_eq!(out.column("b_mean")?.null_count(), 2);
-
-    let out = df
-        .lazy()
-        .groupby([col("a")])
-        .agg([(col("b")
-            .filter(col("b").eq(lit(100)))
-            .map(Ok, GetOutput::same_type()))
-        .mean()
-        .alias("b_mean")])
-        .collect()?;
-    assert_eq!(out.column("b_mean")?.null_count(), 2);
-
     Ok(())
 }
 

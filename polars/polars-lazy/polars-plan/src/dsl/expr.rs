@@ -12,14 +12,14 @@ use crate::prelude::*;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait SeriesUdf: Send + Sync {
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series>;
+    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>>;
 }
 
 impl<F> SeriesUdf for F
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Series> + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + Send + Sync,
 {
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series> {
+    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
         self(s)
     }
 }

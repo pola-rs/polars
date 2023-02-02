@@ -3,6 +3,7 @@ mod aggregation;
 mod cse;
 mod explodes;
 mod expressions;
+mod folds;
 mod functions;
 mod groupby;
 mod groupby_dynamic;

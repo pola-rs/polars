@@ -11,7 +11,7 @@ impl DateLikeNameSpace {
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(self, fmt: &str) -> Expr {
         let fmt = fmt.to_string();
-        let function = move |s: Series| s.strftime(&fmt);
+        let function = move |s: Series| s.strftime(&fmt).map(Some);
         self.0
             .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("strftime")
@@ -23,12 +23,12 @@ impl DateLikeNameSpace {
             move |s| match s.dtype() {
                 DataType::Datetime(_, _) => {
                     let ca = s.datetime().unwrap();
-                    Ok(ca.cast_time_unit(tu).into_series())
+                    Ok(Some(ca.cast_time_unit(tu).into_series()))
                 }
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let ca = s.duration().unwrap();
-                    Ok(ca.cast_time_unit(tu).into_series())
+                    Ok(Some(ca.cast_time_unit(tu).into_series()))
                 }
                 dt => Err(PolarsError::ComputeError(
                     format!("Series of dtype {dt:?} has got no time unit").into(),
@@ -49,13 +49,13 @@ impl DateLikeNameSpace {
                 DataType::Datetime(_, _) => {
                     let mut ca = s.datetime().unwrap().clone();
                     ca.set_time_unit(tu);
-                    Ok(ca.into_series())
+                    Ok(Some(ca.into_series()))
                 }
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let mut ca = s.duration().unwrap().clone();
                     ca.set_time_unit(tu);
-                    Ok(ca.into_series())
+                    Ok(Some(ca.into_series()))
                 }
                 dt => Err(PolarsError::ComputeError(
                     format!("Series of dtype {dt:?} has got no time unit").into(),
@@ -72,7 +72,7 @@ impl DateLikeNameSpace {
                 DataType::Datetime(_, _) => {
                     let mut ca = s.datetime().unwrap().clone();
                     ca.set_time_zone(tz.clone())?;
-                    Ok(ca.into_series())
+                    Ok(Some(ca.into_series()))
                 }
                 dt => Err(PolarsError::ComputeError(
                     format!("Series of dtype {dt:?} has got no time zone").into(),

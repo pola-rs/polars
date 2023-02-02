@@ -62,7 +62,7 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
                 Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
             }
         };
-        Ok(s)
+        Ok(Some(s))
     };
     apply_binary(
         a,
@@ -147,7 +147,7 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
                 )
             }
         };
-        Ok(s)
+        Ok(Some(s))
     };
     apply_binary(
         a,
@@ -194,7 +194,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
                     .unwrap()
                     .is_nan()
                 {
-                    return Ok(Series::new(name, &[f64::NAN]));
+                    return Ok(Some(Series::new(name, &[f64::NAN])));
                 }
             }
         }
@@ -214,10 +214,10 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         let a_idx = a_idx.idx().unwrap();
         let b_idx = b_idx.idx().unwrap();
 
-        Ok(Series::new(
+        Ok(Some(Series::new(
             name,
             &[polars_core::functions::pearson_corr_i(a_idx, b_idx, ddof)],
-        ))
+        )))
     };
 
     apply_binary(a, b, function, GetOutput::from_type(DataType::Float64)).with_function_options(
@@ -236,7 +236,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
 pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
     let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
-        polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
+        polars_core::functions::argsort_by(by, &reverse).map(|ca| Some(ca.into_series()))
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
@@ -380,7 +380,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 IsSorted::Ascending
             };
             ca.set_sorted_flag(is_sorted);
-            Ok(ca.into_series())
+            Ok(Some(ca.into_series()))
         };
         apply_binary(
             low,
@@ -427,7 +427,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                     _ => builder.append_null(),
                 });
 
-            Ok(builder.finish().into_series())
+            Ok(Some(builder.finish().into_series()))
         };
         apply_binary(
             low,
@@ -525,7 +525,9 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             })
             .collect_trusted();
 
-        Ok(ca.into_datetime(TimeUnit::Microseconds, None).into_series())
+        Ok(Some(
+            ca.into_datetime(TimeUnit::Microseconds, None).into_series(),
+        ))
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
@@ -607,7 +609,9 @@ pub fn duration(args: DurationArgs) -> Expr {
             nanoseconds = nanoseconds + weeks * NANOSECONDS * SECONDS_IN_DAY * 7;
         }
 
-        nanoseconds.cast(&DataType::Duration(TimeUnit::Nanoseconds))
+        nanoseconds
+            .cast(&DataType::Duration(TimeUnit::Nanoseconds))
+            .map(Some)
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
@@ -734,7 +738,7 @@ macro_rules! prepare_binary_function {
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
+    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync,
 {
     let function = prepare_binary_function!(f);
     a.map_many(function, &[b], output_type)
@@ -742,7 +746,7 @@ where
 
 pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
+    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync,
 {
     let function = prepare_binary_function!(f);
     a.apply_many(function, &[b], output_type)
@@ -770,7 +774,7 @@ fn cumfold_dtype() -> GetOutput {
 /// Accumulate over multiple columns horizontally / row wise.
 pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
+    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
 {
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
@@ -780,9 +784,11 @@ where
         let mut acc = series.pop().unwrap();
 
         for s in series {
-            acc = f(acc, s)?;
+            if let Some(a) = f(acc.clone(), s)? {
+                acc = a
+            }
         }
-        Ok(acc)
+        Ok(Some(acc))
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
@@ -801,7 +807,7 @@ where
 
 pub fn reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
+    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
 {
     let exprs = exprs.as_ref().to_vec();
 
@@ -813,9 +819,11 @@ where
                 let mut acc = acc.clone();
 
                 for s in s_iter {
-                    acc = f(acc, s.clone())?;
+                    if let Some(a) = f(acc.clone(), s.clone())? {
+                        acc = a
+                    }
                 }
-                Ok(acc)
+                Ok(Some(acc))
             }
             None => Err(PolarsError::ComputeError(
                 "Reduce did not have any expressions to fold".into(),
@@ -841,7 +849,7 @@ where
 #[cfg(feature = "dtype-struct")]
 pub fn cumreduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
+    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
 {
     let exprs = exprs.as_ref().to_vec();
 
@@ -855,12 +863,14 @@ where
 
                 for s in s_iter {
                     let name = s.name().to_string();
-                    acc = f(acc, s.clone())?;
+                    if let Some(a) = f(acc.clone(), s.clone())? {
+                        acc = a;
+                    }
                     acc.rename(&name);
                     result.push(acc.clone());
                 }
 
-                StructChunked::new(acc.name(), &result).map(|ca| ca.into_series())
+                StructChunked::new(acc.name(), &result).map(|ca| Some(ca.into_series()))
             }
             None => Err(PolarsError::ComputeError(
                 "Reduce did not have any expressions to fold".into(),
@@ -891,7 +901,7 @@ pub fn cumfold_exprs<F: 'static, E: AsRef<[Expr]>>(
     include_init: bool,
 ) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
+    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
 {
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
@@ -907,12 +917,14 @@ where
 
         for s in series {
             let name = s.name().to_string();
-            acc = f(acc, s)?;
-            acc.rename(&name);
-            result.push(acc.clone());
+            if let Some(a) = f(acc.clone(), s)? {
+                acc = a;
+                acc.rename(&name);
+                result.push(acc.clone());
+            }
         }
 
-        StructChunked::new(acc.name(), &result).map(|ca| ca.into_series())
+        StructChunked::new(acc.name(), &result).map(|ca| Some(ca.into_series()))
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
@@ -932,7 +944,7 @@ where
 /// Get the the sum of the values per row
 pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let mut exprs = exprs.as_ref().to_vec();
-    let func = |s1, s2| Ok(&s1 + &s2);
+    let func = |s1, s2| Ok(Some(&s1 + &s2));
     let init = match exprs.pop() {
         Some(e) => e,
         // use u32 as that is not cast to float as eagerly
@@ -949,7 +961,7 @@ pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     }
     let func = |s1, s2| {
         let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmax().map(|s| s.unwrap())
+        df.hmax()
     };
     reduce_exprs(func, exprs).alias("max")
 }
@@ -961,7 +973,7 @@ pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     }
     let func = |s1, s2| {
         let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmin().map(|s| s.unwrap())
+        df.hmin()
     };
     reduce_exprs(func, exprs).alias("min")
 }
@@ -969,14 +981,14 @@ pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 /// Evaluate all the expressions with a bitwise or
 pub fn any_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitor(s2.bool()?).into_series());
+    let func = |s1: Series, s2: Series| Ok(Some(s1.bool()?.bitor(s2.bool()?).into_series()));
     fold_exprs(lit(false), func, exprs)
 }
 
 /// Evaluate all the expressions with a bitwise and
 pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitand(s2.bool()?).into_series());
+    let func = |s1: Series, s2: Series| Ok(Some(s1.bool()?.bitand(s2.bool()?).into_series()));
     fold_exprs(lit(true), func, exprs)
 }
 
@@ -1035,7 +1047,7 @@ pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
 #[cfg(feature = "dtype-struct")]
 pub fn as_struct(exprs: &[Expr]) -> Expr {
     map_multiple(
-        |s| StructChunked::new("", s).map(|ca| ca.into_series()),
+        |s| StructChunked::new("", s).map(|ca| Some(ca.into_series())),
         exprs,
         GetOutput::map_fields(|fld| Field::new(fld[0].name(), DataType::Struct(fld.to_vec()))),
     )
@@ -1052,7 +1064,7 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
         let n = n.get(0).unwrap().extract::<usize>().ok_or_else(|| {
             PolarsError::ComputeError(format!("could not extract a size from {n:?}").into())
         })?;
-        Ok(s.new_from_index(0, n))
+        Ok(Some(s.new_from_index(0, n)))
     };
     apply_binary(lit(value), n_times, function, GetOutput::same_type())
 }

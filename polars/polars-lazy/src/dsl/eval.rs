@@ -108,9 +108,9 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
             let s = Series::new(&name, avs);
 
             if s.dtype() != output_field.data_type() {
-                s.cast(output_field.data_type())
+                s.cast(output_field.data_type()).map(Some)
             } else {
-                Ok(s)
+                Ok(Some(s))
             }
         };
 

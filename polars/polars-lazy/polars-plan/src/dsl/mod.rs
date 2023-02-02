@@ -290,7 +290,7 @@ impl Expr {
 
     /// Drop null values
     pub fn drop_nulls(self) -> Self {
-        self.apply(|s| Ok(s.drop_nulls()), GetOutput::same_type())
+        self.apply(|s| Ok(Some(s.drop_nulls())), GetOutput::same_type())
     }
 
     /// Drop NaN values
@@ -449,7 +449,7 @@ impl Expr {
                     b = b.cast(&dtype)?;
                 }
                 a.append(&b)?;
-                Ok(a)
+                Ok(Some(a))
             },
             output_type,
         )
@@ -468,21 +468,24 @@ impl Expr {
 
     /// Get unique values of this expression.
     pub fn unique(self) -> Self {
-        self.apply(|s: Series| s.unique(), GetOutput::same_type())
+        self.apply(|s: Series| s.unique().map(Some), GetOutput::same_type())
             .with_fmt("unique")
     }
 
     /// Get unique values of this expression, while maintaining order.
     /// This requires more work than [`Expr::unique`].
     pub fn unique_stable(self) -> Self {
-        self.apply(|s: Series| s.unique_stable(), GetOutput::same_type())
-            .with_fmt("unique_stable")
+        self.apply(
+            |s: Series| s.unique_stable().map(Some),
+            GetOutput::same_type(),
+        )
+        .with_fmt("unique_stable")
     }
 
     /// Get the first index of unique values of this expression.
     pub fn arg_unique(self) -> Self {
         self.apply(
-            |s: Series| s.arg_unique().map(|ca| ca.into_series()),
+            |s: Series| s.arg_unique().map(|ca| Some(ca.into_series())),
             GetOutput::from_type(IDX_DTYPE),
         )
         .with_fmt("arg_unique")
@@ -498,7 +501,12 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(Series::new(s.name(), &[s.arg_min().map(|idx| idx as u32)])),
+            move |s: Series| {
+                Ok(Some(Series::new(
+                    s.name(),
+                    &[s.arg_min().map(|idx| idx as u32)],
+                )))
+            },
             GetOutput::from_type(IDX_DTYPE),
             options,
         )
@@ -514,7 +522,12 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(Series::new(s.name(), &[s.arg_max().map(|idx| idx as u32)])),
+            move |s: Series| {
+                Ok(Some(Series::new(
+                    s.name(),
+                    &[s.arg_max().map(|idx| idx as u32)],
+                )))
+            },
             GetOutput::from_type(IDX_DTYPE),
             options,
         )
@@ -529,7 +542,7 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(s.argsort(sort_options).into_series()),
+            move |s: Series| Ok(Some(s.argsort(sort_options).into_series())),
             GetOutput::from_type(IDX_DTYPE),
             options,
         )
@@ -622,7 +635,7 @@ impl Expr {
     /// the correct output_type. If None given the output type of the input expr is used.
     pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -662,7 +675,7 @@ impl Expr {
     /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
-        F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
+        F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
@@ -688,7 +701,7 @@ impl Expr {
     ///  * `map_list` should be used when the function expects a list aggregated series.
     pub fn map_list<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -712,7 +725,7 @@ impl Expr {
         options: FunctionOptions,
     ) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -735,7 +748,7 @@ impl Expr {
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
     pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -767,7 +780,7 @@ impl Expr {
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
-        F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
+        F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
@@ -834,7 +847,7 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     pub fn is_finite(self) -> Self {
         self.map(
-            |s: Series| s.is_finite().map(|ca| ca.into_series()),
+            |s: Series| s.is_finite().map(|ca| Some(ca.into_series())),
             GetOutput::from_type(DataType::Boolean),
         )
         .with_fmt("is_finite")
@@ -844,7 +857,7 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     pub fn is_infinite(self) -> Self {
         self.map(
-            |s: Series| s.is_infinite().map(|ca| ca.into_series()),
+            |s: Series| s.is_infinite().map(|ca| Some(ca.into_series())),
             GetOutput::from_type(DataType::Boolean),
         )
         .with_fmt("is_infinite")
@@ -878,7 +891,7 @@ impl Expr {
     /// Get an array with the cumulative sum computed at every element
     pub fn cumsum(self, reverse: bool) -> Self {
         self.apply(
-            move |s: Series| Ok(s.cumsum(reverse)),
+            move |s: Series| Ok(Some(s.cumsum(reverse))),
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
                 if dt.is_logical() {
@@ -902,7 +915,7 @@ impl Expr {
     /// Get an array with the cumulative product computed at every element
     pub fn cumprod(self, reverse: bool) -> Self {
         self.apply(
-            move |s: Series| Ok(s.cumprod(reverse)),
+            move |s: Series| Ok(Some(s.cumprod(reverse))),
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
                 match dt {
@@ -920,7 +933,7 @@ impl Expr {
     /// Get an array with the cumulative min computed at every element
     pub fn cummin(self, reverse: bool) -> Self {
         self.apply(
-            move |s: Series| Ok(s.cummin(reverse)),
+            move |s: Series| Ok(Some(s.cummin(reverse))),
             GetOutput::same_type(),
         )
         .with_fmt("cummin")
@@ -929,7 +942,7 @@ impl Expr {
     /// Get an array with the cumulative max computed at every element
     pub fn cummax(self, reverse: bool) -> Self {
         self.apply(
-            move |s: Series| Ok(s.cummax(reverse)),
+            move |s: Series| Ok(Some(s.cummax(reverse))),
             GetOutput::same_type(),
         )
         .with_fmt("cummax")
@@ -945,7 +958,7 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(s.product()),
+            move |s: Series| Ok(Some(s.product())),
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
                 match dt {
@@ -961,7 +974,7 @@ impl Expr {
     /// Fill missing value with next non-null.
     pub fn backward_fill(self, limit: FillNullLimit) -> Self {
         self.apply(
-            move |s: Series| s.fill_null(FillNullStrategy::Backward(limit)),
+            move |s: Series| s.fill_null(FillNullStrategy::Backward(limit)).map(Some),
             GetOutput::same_type(),
         )
         .with_fmt("backward_fill")
@@ -970,7 +983,7 @@ impl Expr {
     /// Fill missing value with previous non-null.
     pub fn forward_fill(self, limit: FillNullLimit) -> Self {
         self.apply(
-            move |s: Series| s.fill_null(FillNullStrategy::Forward(limit)),
+            move |s: Series| s.fill_null(FillNullStrategy::Forward(limit)).map(Some),
             GetOutput::same_type(),
         )
         .with_fmt("forward_fill")
@@ -979,21 +992,24 @@ impl Expr {
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
     pub fn round(self, decimals: u32) -> Self {
-        self.map(move |s: Series| s.round(decimals), GetOutput::same_type())
-            .with_fmt("round")
+        self.map(
+            move |s: Series| s.round(decimals).map(Some),
+            GetOutput::same_type(),
+        )
+        .with_fmt("round")
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn floor(self) -> Self {
-        self.map(move |s: Series| s.floor(), GetOutput::same_type())
+        self.map(move |s: Series| s.floor().map(Some), GetOutput::same_type())
             .with_fmt("floor")
     }
 
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn ceil(self) -> Self {
-        self.map(move |s: Series| s.ceil(), GetOutput::same_type())
+        self.map(move |s: Series| s.ceil().map(Some), GetOutput::same_type())
             .with_fmt("ceil")
     }
 
@@ -1027,7 +1043,7 @@ impl Expr {
     /// Convert all values to their absolute/positive value.
     #[cfg(feature = "abs")]
     pub fn abs(self) -> Self {
-        self.map(move |s: Series| s.abs(), GetOutput::same_type())
+        self.map(move |s: Series| s.abs().map(Some), GetOutput::same_type())
             .with_fmt("abs")
     }
 
@@ -1413,7 +1429,7 @@ impl Expr {
             let by = &s[1];
             let s = &s[0];
             let by = by.cast(&IDX_DTYPE)?;
-            Ok(s.repeat_by(by.idx()?).into_series())
+            Ok(Some(s.repeat_by(by.idx()?).into_series()))
         };
 
         self.apply_many(
@@ -1436,7 +1452,7 @@ impl Expr {
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
         self.apply(
-            |s| is_first(&s).map(|s| s.into_series()),
+            |s| is_first(&s).map(|s| Some(s.into_series())),
             GetOutput::from_type(DataType::Boolean),
         )
         .with_fmt("is_first")
@@ -1444,7 +1460,7 @@ impl Expr {
 
     #[cfg(feature = "dot_product")]
     fn dot_impl(self, other: Expr) -> Expr {
-        let function = |s: &mut [Series]| Ok((&s[0] * &s[1]).sum_as_series());
+        let function = |s: &mut [Series]| Ok(Some((&s[0] * &s[1]).sum_as_series()));
 
         self.apply_many(function, &[other], GetOutput::same_type())
             .with_fmt("dot")
@@ -1459,7 +1475,7 @@ impl Expr {
     /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
         self.apply(
-            |s| s.mode().map(|ca| ca.into_series()),
+            |s| s.mode().map(|ca| Some(ca.into_series())),
             GetOutput::same_type(),
         )
         .with_fmt("mode")
@@ -1594,7 +1610,7 @@ impl Expr {
                         closed_window: options.closed_window,
                     };
 
-                    rolling_fn(s, options)
+                    rolling_fn(s, options).map(Some)
                 },
                 &[col(by)],
                 GetOutput::same_type(),
@@ -1606,7 +1622,7 @@ impl Expr {
             }
 
             self.apply(
-                move |s| rolling_fn(&s, options.clone().into()),
+                move |s| rolling_fn(&s, options.clone().into()).map(Some),
                 GetOutput::same_type(),
             )
             .with_fmt(expr_name)
@@ -1729,7 +1745,7 @@ impl Expr {
         options: RollingOptionsFixedWindow,
     ) -> Expr {
         self.apply(
-            move |s| s.rolling_apply(f.as_ref(), options.clone()),
+            move |s| s.rolling_apply(f.as_ref(), options.clone()).map(Some),
             output_type,
         )
         .with_fmt("rolling_apply")
@@ -1759,9 +1775,9 @@ impl Expr {
                         .map(|ca| ca.into_series()),
                 }?;
                 if let DataType::Float32 = s.dtype() {
-                    out.cast(&DataType::Float32)
+                    out.cast(&DataType::Float32).map(Some)
                 } else {
-                    Ok(out)
+                    Ok(Some(out))
                 }
             },
             GetOutput::map_field(|field| match field.data_type() {
@@ -1776,7 +1792,7 @@ impl Expr {
     #[cfg(feature = "rank")]
     pub fn rank(self, options: RankOptions) -> Expr {
         self.apply(
-            move |s| Ok(s.rank(options)),
+            move |s| Ok(Some(s.rank(options))),
             GetOutput::map_field(move |fld| match options.method {
                 RankMethod::Average => Field::new(fld.name(), DataType::Float32),
                 _ => Field::new(fld.name(), IDX_DTYPE),
@@ -1794,7 +1810,7 @@ impl Expr {
     pub fn pct_change(self, n: usize) -> Expr {
         use DataType::*;
         self.apply(
-            move |s| s.pct_change(n),
+            move |s| s.pct_change(n).map(Some),
             GetOutput::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
@@ -1815,7 +1831,11 @@ impl Expr {
     /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024
     pub fn skew(self, bias: bool) -> Expr {
         self.apply(
-            move |s| s.skew(bias).map(|opt_v| Series::new(s.name(), &[opt_v])),
+            move |s| {
+                s.skew(bias)
+                    .map(|opt_v| Series::new(s.name(), &[opt_v]))
+                    .map(Some)
+            },
             GetOutput::from_type(DataType::Float64),
         )
         .with_function_options(|mut options| {
@@ -1830,7 +1850,7 @@ impl Expr {
         self.apply(
             move |s| {
                 s.kurtosis(fisher, bias)
-                    .map(|opt_v| Series::new(s.name(), &[opt_v]))
+                    .map(|opt_v| Some(Series::new(s.name(), &[opt_v])))
             },
             GetOutput::from_type(DataType::Float64),
         )
@@ -1868,7 +1888,7 @@ impl Expr {
                         ))
                     }
                 };
-                Ok(s)
+                Ok(Some(s))
             },
             GetOutput::same_type(),
         )
@@ -1902,7 +1922,7 @@ impl Expr {
                         ))
                     }
                 };
-                Ok(s)
+                Ok(Some(s))
             },
             GetOutput::same_type(),
         )
@@ -1932,7 +1952,7 @@ impl Expr {
                 Field::new(fld.name(), DataType::List(Box::new(dtype)))
             })
         };
-        self.apply(move |s| s.reshape(&dims), output_type)
+        self.apply(move |s| s.reshape(&dims).map(Some), output_type)
             .with_fmt("reshape")
     }
 
@@ -1944,12 +1964,12 @@ impl Expr {
                     let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
                     let mut ca = ca.into_inner();
                     ca.rename(s.name());
-                    Ok(ca.into_series())
+                    Ok(Some(ca.into_series()))
                 } else {
                     let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).collect();
                     let mut ca = ca.into_inner();
                     ca.rename(s.name());
-                    Ok(ca.into_series())
+                    Ok(Some(ca.into_series()))
                 }
             },
             GetOutput::from_type(IDX_DTYPE),
@@ -1959,7 +1979,7 @@ impl Expr {
 
     #[cfg(feature = "random")]
     pub fn shuffle(self, seed: Option<u64>) -> Self {
-        self.apply(move |s| Ok(s.shuffle(seed)), GetOutput::same_type())
+        self.apply(move |s| Ok(Some(s.shuffle(seed))), GetOutput::same_type())
             .with_fmt("shuffle")
     }
 
@@ -1972,7 +1992,7 @@ impl Expr {
         seed: Option<u64>,
     ) -> Self {
         self.apply(
-            move |s| s.sample_n(n, with_replacement, shuffle, seed),
+            move |s| s.sample_n(n, with_replacement, shuffle, seed).map(Some),
             GetOutput::same_type(),
         )
         .with_fmt("sample_n")
@@ -1987,7 +2007,10 @@ impl Expr {
         seed: Option<u64>,
     ) -> Self {
         self.apply(
-            move |s| s.sample_frac(frac, with_replacement, shuffle, seed),
+            move |s| {
+                s.sample_frac(frac, with_replacement, shuffle, seed)
+                    .map(Some)
+            },
             GetOutput::same_type(),
         )
         .with_fmt("sample_frac")
@@ -1997,7 +2020,7 @@ impl Expr {
     pub fn ewm_mean(self, options: EWMOptions) -> Self {
         use DataType::*;
         self.apply(
-            move |s| s.ewm_mean(options),
+            move |s| s.ewm_mean(options).map(Some),
             GetOutput::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
@@ -2010,7 +2033,7 @@ impl Expr {
     pub fn ewm_std(self, options: EWMOptions) -> Self {
         use DataType::*;
         self.apply(
-            move |s| s.ewm_std(options),
+            move |s| s.ewm_std(options).map(Some),
             GetOutput::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
@@ -2023,7 +2046,7 @@ impl Expr {
     pub fn ewm_var(self, options: EWMOptions) -> Self {
         use DataType::*;
         self.apply(
-            move |s| s.ewm_var(options),
+            move |s| s.ewm_var(options).map(Some),
             GetOutput::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
@@ -2038,9 +2061,9 @@ impl Expr {
             move |s| {
                 let boolean = s.bool()?;
                 if boolean.any() {
-                    Ok(Series::new(s.name(), [true]))
+                    Ok(Some(Series::new(s.name(), [true])))
                 } else {
-                    Ok(Series::new(s.name(), [false]))
+                    Ok(Some(Series::new(s.name(), [false])))
                 }
             },
             GetOutput::from_type(DataType::Boolean),
@@ -2065,9 +2088,9 @@ impl Expr {
             move |s| {
                 let boolean = s.bool()?;
                 if boolean.all() {
-                    Ok(Series::new(s.name(), [true]))
+                    Ok(Some(Series::new(s.name(), [true])))
                 } else {
-                    Ok(Series::new(s.name(), [false]))
+                    Ok(Some(Series::new(s.name(), [false])))
                 }
             },
             GetOutput::from_type(DataType::Boolean),
@@ -2086,7 +2109,7 @@ impl Expr {
         self.apply(
             move |s| {
                 s.value_counts(multithreaded, sorted)
-                    .map(|df| df.into_struct(s.name()).into_series())
+                    .map(|df| Some(df.into_struct(s.name()).into_series()))
             },
             GetOutput::map_field(|fld| {
                 Field::new(
@@ -2108,7 +2131,7 @@ impl Expr {
     /// values, only the counts and might be faster
     pub fn unique_counts(self) -> Self {
         self.apply(
-            |s| Ok(s.unique_counts().into_series()),
+            |s| Ok(Some(s.unique_counts().into_series())),
             GetOutput::from_type(IDX_DTYPE),
         )
         .with_fmt("unique_counts")
@@ -2118,7 +2141,7 @@ impl Expr {
     /// Compute the logarithm to a given base
     pub fn log(self, base: f64) -> Self {
         self.map(
-            move |s| Ok(s.log(base)),
+            move |s| Ok(Some(s.log(base))),
             GetOutput::map_dtype(|dt| {
                 if matches!(dt, DataType::Float32) {
                     DataType::Float32
@@ -2134,7 +2157,7 @@ impl Expr {
     /// Calculate the exponential of all elements in the input array
     pub fn exp(self) -> Self {
         self.map(
-            move |s| Ok(s.exp()),
+            move |s| Ok(Some(s.exp())),
             GetOutput::map_dtype(|dt| {
                 if matches!(dt, DataType::Float32) {
                     DataType::Float32
@@ -2151,7 +2174,7 @@ impl Expr {
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.apply(
-            move |s| Ok(Series::new(s.name(), [s.entropy(base, normalize)])),
+            move |s| Ok(Some(Series::new(s.name(), [s.entropy(base, normalize)]))),
             GetOutput::map_dtype(|dt| {
                 if matches!(dt, DataType::Float32) {
                     DataType::Float32
@@ -2184,7 +2207,7 @@ impl Expr {
         self.apply(
             move |mut s| {
                 s.set_sorted_flag(sorted);
-                Ok(s)
+                Ok(Some(s))
             },
             GetOutput::same_type(),
         )
@@ -2279,7 +2302,7 @@ impl Rem for Expr {
 /// the correct output_type. If None given the output type of the input expr is used.
 pub fn map_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -2305,7 +2328,7 @@ where
 ///  * `map_list_mul` should be used when the function expects a list aggregated series.
 pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -2339,7 +2362,7 @@ pub fn apply_multiple<F, E>(
     returns_scalar: bool,
 ) -> Expr
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
