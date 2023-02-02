@@ -1115,12 +1115,6 @@ def test_slice() -> None:
         assert s[py_slice].to_list() == s.to_list()[py_slice]
 
 
-def test_str_slice() -> None:
-    df = pl.DataFrame({"a": ["foobar", "barfoo"]})
-    assert df["a"].str.slice(-3).to_list() == ["bar", "foo"]
-    assert df.select([pl.col("a").str.slice(2, 4)])["a"].to_list() == ["obar", "rfoo"]
-
-
 def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
     out = df.select([pl.arange(0, pl.col("a").count() * 10)])
@@ -1183,24 +1177,6 @@ def test_mode() -> None:
 
     df = pl.DataFrame([s])
     assert df.select([pl.col("a").mode()])["a"].to_list() == [1]
-
-
-def test_jsonpath_single() -> None:
-    s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
-    expected = pl.Series(["1", None, "2", "2.1", "true"])
-    assert_series_equal(s.str.json_path_match("$.a"), expected)
-
-
-def test_extract_regex() -> None:
-    s = pl.Series(
-        [
-            "http://vote.com/ballon_dor?candidate=messi&ref=polars",
-            "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
-            "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
-        ]
-    )
-    expected = pl.Series(["messi", None, "ronaldo"])
-    assert_series_equal(s.str.extract(r"candidate=(\w+)", 1), expected)
 
 
 def test_rank() -> None:
@@ -1752,156 +1728,6 @@ def test_shrink_to_fit() -> None:
     assert s is not sf
 
 
-def test_str_concat() -> None:
-    s = pl.Series(["1", None, "2"])
-    result = s.str.concat()
-    expected = pl.Series(["1-null-2"])
-    assert_series_equal(result, expected)
-
-
-def test_str_lengths() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    expected = pl.Series([5, None, 3, 6], dtype=UInt32)
-    assert_series_equal(s.str.lengths(), expected)
-
-
-def test_str_n_chars() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    expected = pl.Series([4, None, 3, 2], dtype=UInt32)
-    assert_series_equal(s.str.n_chars(), expected)
-
-
-def test_str_contains() -> None:
-    s = pl.Series(["messi", "ronaldo", "ibrahimovic"])
-    expected = pl.Series([True, False, False])
-    assert_series_equal(s.str.contains("mes"), expected)
-
-
-def test_str_encode() -> None:
-    s = pl.Series(["foo", "bar", None])
-    hex_encoded = pl.Series(["666f6f", "626172", None])
-    base64_encoded = pl.Series(["Zm9v", "YmFy", None])
-    assert_series_equal(s.str.encode("hex"), hex_encoded)
-    assert_series_equal(s.str.encode("base64"), base64_encoded)
-    with pytest.raises(ValueError):
-        s.str.encode("utf8")  # type: ignore[arg-type]
-
-
-def test_str_decode() -> None:
-    hex_encoded = pl.Series(["666f6f", "626172", None])
-    base64_encoded = pl.Series(["Zm9v", "YmFy", None])
-    expected = pl.Series([b"foo", b"bar", None])
-
-    assert_series_equal(hex_encoded.str.decode("hex"), expected)
-    assert_series_equal(base64_encoded.str.decode("base64"), expected)
-
-
-def test_str_decode_exception() -> None:
-    s = pl.Series(["not a valid", "626172", None])
-    with pytest.raises(Exception):
-        s.str.decode(encoding="hex")
-    with pytest.raises(Exception):
-        s.str.decode(encoding="base64")
-    with pytest.raises(ValueError):
-        s.str.decode("utf8")  # type: ignore[arg-type]
-
-
-def test_str_replace_str_replace_all() -> None:
-    s = pl.Series(["hello", "world", "test", "root"])
-    expected = pl.Series(["hell0", "w0rld", "test", "r0ot"])
-    assert_series_equal(s.str.replace("o", "0"), expected)
-
-    expected = pl.Series(["hell0", "w0rld", "test", "r00t"])
-    assert_series_equal(s.str.replace_all("o", "0"), expected)
-
-
-def test_str_to_lowercase() -> None:
-    s = pl.Series(["Hello", "WORLD"])
-    expected = pl.Series(["hello", "world"])
-    assert_series_equal(s.str.to_lowercase(), expected)
-
-
-def test_str_to_uppercase() -> None:
-    s = pl.Series(["Hello", "WORLD"])
-    expected = pl.Series(["HELLO", "WORLD"])
-    assert_series_equal(s.str.to_uppercase(), expected)
-
-
-def test_str_parse_int() -> None:
-    bin = pl.Series(["110", "101", "010"])
-    assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(Int32))
-
-    hex = pl.Series(["fa1e", "ff00", "cafe"])
-    assert_series_equal(
-        hex.str.parse_int(16), pl.Series([64030, 65280, 51966]).cast(Int32)
-    )
-
-
-def test_str_strip() -> None:
-    s = pl.Series([" hello ", "world\t "])
-    expected = pl.Series(["hello", "world"])
-    assert_series_equal(s.str.strip(), expected)
-
-    expected = pl.Series(["hello", "worl"])
-    assert_series_equal(s.str.strip().str.strip("d"), expected)
-
-    expected = pl.Series(["ell", "rld\t"])
-    assert_series_equal(s.str.strip(" hwo"), expected)
-
-
-def test_str_lstrip() -> None:
-    s = pl.Series([" hello ", "\t world"])
-    expected = pl.Series(["hello ", "world"])
-    assert_series_equal(s.str.lstrip(), expected)
-
-    expected = pl.Series(["ello ", "world"])
-    assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
-
-    expected = pl.Series(["ello ", "\t world"])
-    assert_series_equal(s.str.lstrip("hw "), expected)
-
-
-def test_str_rstrip() -> None:
-    s = pl.Series([" hello ", "world\t "])
-    expected = pl.Series([" hello", "world"])
-    assert_series_equal(s.str.rstrip(), expected)
-
-    expected = pl.Series([" hell", "world"])
-    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
-
-    expected = pl.Series([" he", "wor"])
-    assert_series_equal(s.str.rstrip("odl \t"), expected)
-
-
-def test_str_strip_whitespace() -> None:
-    s = pl.Series("a", ["trailing  ", "  leading", "  both  "])
-
-    expected = pl.Series("a", ["trailing", "  leading", "  both"])
-    assert_series_equal(s.str.rstrip(), expected)
-
-    expected = pl.Series("a", ["trailing  ", "leading", "both  "])
-    assert_series_equal(s.str.lstrip(), expected)
-
-    expected = pl.Series("a", ["trailing", "leading", "both"])
-    assert_series_equal(s.str.strip(), expected)
-
-
-def test_str_strptime() -> None:
-    s = pl.Series(["2020-01-01", "2020-02-02"])
-    expected = pl.Series([date(2020, 1, 1), date(2020, 2, 2)])
-    assert_series_equal(s.str.strptime(pl.Date, "%Y-%m-%d"), expected)
-
-    s = pl.Series(["2020-01-01 00:00:00", "2020-02-02 03:20:10"])
-    expected = pl.Series(
-        [datetime(2020, 1, 1, 0, 0, 0), datetime(2020, 2, 2, 3, 20, 10)]
-    )
-    assert_series_equal(s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"), expected)
-
-    s = pl.Series(["00:00:00", "03:20:10"])
-    expected = pl.Series([0, 12010000000000], dtype=pl.Time)
-    assert_series_equal(s.str.strptime(pl.Time, "%H:%M:%S"), expected)
-
-
 def test_dt_strftime() -> None:
     s = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
     assert s.dtype == pl.Date
@@ -2309,22 +2135,6 @@ def test_mean_overflow() -> None:
     assert arr.mean() == 255.0
 
 
-def test_str_split() -> None:
-    a = pl.Series("a", ["a, b", "a", "ab,c,de"])
-    for out in [a.str.split(","), pl.select(pl.lit(a).str.split(",")).to_series()]:
-        assert out[0].to_list() == ["a", " b"]
-        assert out[1].to_list() == ["a"]
-        assert out[2].to_list() == ["ab", "c", "de"]
-
-    for out in [
-        a.str.split(",", inclusive=True),
-        pl.select(pl.lit(a).str.split(",", inclusive=True)).to_series(),
-    ]:
-        assert out[0].to_list() == ["a,", " b"]
-        assert out[1].to_list() == ["a"]
-        assert out[2].to_list() == ["ab,", "c,", "de"]
-
-
 def test_sign() -> None:
     # Integers
     a = pl.Series("a", [-9, -0, 0, 4, None])
@@ -2534,3 +2344,8 @@ def test_ptr() -> None:
 
     ptr2 = s2.rechunk()._get_ptr()
     assert ptr != ptr2
+
+def test_null_comparisons() -> None:
+    s = pl.Series("s", [None, "str", "a"])
+    assert (s.shift() == s).null_count() == 0
+    assert (s.shift() != s).null_count() == 0

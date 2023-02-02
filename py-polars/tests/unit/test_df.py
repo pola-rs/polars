@@ -2966,3 +2966,18 @@ def test_frame_equal() -> None:
     # The null_equal parameter determines if None values are considered equal
     assert df.frame_equal(df)
     assert not df.frame_equal(df, null_equal=False)
+
+
+def test_format_empty_df() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("val1", [], dtype=pl.Categorical),
+            pl.Series("val2", [], dtype=pl.Categorical),
+        ]
+    ).select(
+        [
+            pl.format("{}:{}", pl.col("val1"), pl.col("val2")).alias("cat"),
+        ]
+    )
+    assert df.shape == (0, 1)
+    assert df.dtypes == [pl.Utf8]
