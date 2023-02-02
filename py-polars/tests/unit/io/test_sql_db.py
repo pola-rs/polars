@@ -8,9 +8,22 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import SQLEngine
+
+
+@pytest.fixture
+def sample_df():
+    return pl.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["misc", "other"],
+            "value": [100.0, -99.5],
+            "date": ["2020-01-01", "2021-12-31"],
+        }
+    )
 
 
 def create_temp_sqlite_db(test_db):
@@ -130,3 +143,37 @@ def test_read_sql_exceptions(engine, sql, database, err):
                 sql=sql,
                 engine=engine,
             )
+
+
+@pytest.mark.parametrize(
+    ("engine", "mode"),
+    [
+        pytest.param("adbc", "create", id="create"),
+        pytest.param("adbc", "append", id="append"),
+    ],
+)
+def test_write_sql(engine, mode, sample_df: pl.DataFrame):
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir_name:
+        test_db = os.path.join(tmpdir_name, "test.db")
+
+        sample_df.write_sql(
+            table_name="test_data",
+            connection_uri=f"sqlite:///{test_db}",
+            mode="create",
+            engine=engine,
+        )
+
+        if mode == "append":
+            sample_df.write_sql(
+                table_name="test_data",
+                connection_uri=f"sqlite:///{test_db}",
+                mode="append",
+                engine=engine,
+            )
+            sample_df = pl.concat([sample_df, sample_df])
+
+        assert_frame_equal(
+            sample_df, pl.read_sql("SELECT * FROM test_data", f"sqlite:///{test_db}")
+        )
