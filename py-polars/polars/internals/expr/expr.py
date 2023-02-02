@@ -24,6 +24,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
+from polars.internals.type_aliases import PolarsExprType, PythonLiteral
 from polars.utils import _timedelta_to_pl_duration, sphinx_accessor
 
 try:
@@ -49,32 +50,23 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 def selection_to_pyexpr_list(
     exprs: (
-        str
-        | Expr
+        PolarsExprType
+        | PythonLiteral
         | pli.Series
-        | Iterable[
-            str
-            | Expr
-            | pli.Series
-            | timedelta
-            | date
-            | datetime
-            | int
-            | float
-            | pli.WhenThen
-            | pli.WhenThenThen
-        ]
+        | Iterable[PolarsExprType | PythonLiteral | pli.Series]
         | None
     ),
     structify: bool = False,
 ) -> list[PyExpr]:
     if exprs is None:
         exprs = []
-    elif isinstance(exprs, (str, Expr, pli.Series)):
+    elif isinstance(exprs, (str, Expr, pli.Series, pli.WhenThen, pli.WhenThenThen)):
+        exprs = [exprs]
+    elif not isinstance(exprs, Iterable):
         exprs = [exprs]
     return [
         expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
-        for e in exprs
+        for e in exprs  # type: ignore[union-attr]
     ]
 
 
@@ -87,20 +79,11 @@ def expr_output_name(expr: pli.Expr) -> str | None:
 
 def expr_to_lit_or_expr(
     expr: (
-        Expr
-        | bool
-        | int
-        | float
-        | str
+        PolarsExprType
+        | PythonLiteral
         | pli.Series
+        | Iterable[PolarsExprType | PythonLiteral | pli.Series]
         | None
-        | date
-        | datetime
-        | time
-        | timedelta
-        | pli.WhenThen
-        | pli.WhenThenThen
-        | Sequence[int | float | str | None]
     ),
     str_to_lit: bool = True,
     structify: bool = False,
@@ -2049,10 +2032,7 @@ class Expr:
             indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
         else:
-            indices_lit = pli.expr_to_lit_or_expr(
-                indices,  # type: ignore[arg-type]
-                str_to_lit=False,
-            )
+            indices_lit = pli.expr_to_lit_or_expr(indices, str_to_lit=False)
         return pli.wrap_expr(self._pyexpr.take(indices_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Expr:

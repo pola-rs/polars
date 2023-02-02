@@ -122,6 +122,8 @@ if TYPE_CHECKING:
         ParallelStrategy,
         ParquetCompression,
         PivotAgg,
+        PolarsExprType,
+        PythonLiteral,
         RollingInterpolationMethod,
         SizeUnit,
         StartBy,
@@ -5544,12 +5546,13 @@ class DataFrame:
         self: DF,
         exprs: (
             str
-            | pli.Expr
+            | PolarsExprType
+            | PythonLiteral
             | pli.Series
-            | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
             | None
         ) = None,
-        **named_exprs: Any,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> DF:
         """
         Select columns from this DataFrame.
@@ -5658,8 +5661,15 @@ class DataFrame:
 
     def with_columns(
         self,
-        exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: Any,
+        exprs: (
+            str
+            | PolarsExprType
+            | PythonLiteral
+            | pli.Series
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+            | None
+        ) = None,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> DataFrame:
         """
         Return a new DataFrame with the columns added (if new), or replaced.

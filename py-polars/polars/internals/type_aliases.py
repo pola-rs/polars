@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 
 from polars import internals as pli
 
@@ -13,6 +15,11 @@ if sys.version_info >= (3, 10):
     from typing import TypeAlias
 else:
     from typing_extensions import TypeAlias
+
+from typing import Union
+
+# Types that qualify as expressions (eg: for use in 'select', 'with_columns'...)
+PolarsExprType: TypeAlias = "pli.Expr | pli.WhenThen | pli.WhenThenThen"
 
 IntoExpr: TypeAlias = "int | float | str | pli.Expr | pli.Series"
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
@@ -73,3 +80,8 @@ EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]
 TransferEncoding: TypeAlias = Literal["hex", "base64"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
+
+# literal types that are allowed in expressions (auto-converted to pl.lit)
+PythonLiteral: TypeAlias = Union[
+    str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal
+]

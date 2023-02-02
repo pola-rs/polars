@@ -48,6 +48,7 @@ from polars.dependencies import pyarrow as pa
 from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
+from polars.internals.type_aliases import PythonLiteral
 from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
@@ -77,6 +78,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         JoinStrategy,
         ParallelStrategy,
+        PolarsExprType,
         RollingInterpolationMethod,
         StartBy,
         UniqueKeepStrategy,
@@ -1557,12 +1559,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         self: LDF,
         exprs: (
             str
-            | pli.Expr
+            | PolarsExprType
+            | PythonLiteral
             | pli.Series
-            | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
             | None
         ) = None,
-        **named_exprs: Any,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
         Select columns from this DataFrame.
@@ -2460,11 +2463,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def with_columns(
         self: LDF,
-        exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: Any,
+        exprs: (
+            str
+            | PolarsExprType
+            | PythonLiteral
+            | pli.Series
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+            | None
+        ) = None,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
-        Return a new LazyFrame with the columns added, if new, or replaced.
+        Return a new LazyFrame with the columns added (if new), or replaced.
 
         Notes
         -----
