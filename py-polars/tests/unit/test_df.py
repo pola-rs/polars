@@ -13,7 +13,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES, PolarsDataType
 from polars.dependencies import zoneinfo
 from polars.internals.construction import iterable_to_pydf
 from polars.testing import (
@@ -2785,6 +2785,26 @@ def test_glimpse() -> None:
         $ k    <list[str]> ['A', 'a'], ['B', 'b'], ['C', 'c']
         """
     )
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        (pl.Int16, "i16"),
+        (pl.Float64, "f64"),
+        (pl.Boolean, "bool"),
+        (pl.Utf8, "str"),
+        (pl.Datetime("ms"), "datetime[ms]"),
+        (pl.Datetime("us"), "datetime[μs]"),
+        (pl.Datetime("ns"), "datetime[ns]"),
+        (pl.List(pl.Int64), "list[i64]"),
+        (pl.List(pl.Float64), "list[f64]"),
+        (pl.List(pl.Utf8), "list[str]"),
+    ],
+)
+def test_string_repr(dtype: PolarsDataType, expected: str) -> None:
+    result = dtype.string_repr()
     assert result == expected
 
 
