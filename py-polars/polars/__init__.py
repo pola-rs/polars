@@ -130,7 +130,7 @@ from polars.internals.lazy_functions import (
     var,
 )
 from polars.internals.lazy_functions import to_list as list
-from polars.internals.lazyframe import LazyFrame
+from polars.internals.lazyframe import LazyFrame, UdfSerializer, PickleUdfSerializer
 
 # TODO: remove need for wrap_s
 from polars.internals.series import wrap_s  # noqa: F401
@@ -303,6 +303,9 @@ __all__ = [
     "show_versions",
     "build_info",
     "SQLContext",
+    # lazyframe serialize
+    "UdfSerializer",
+    "PickleUdfSerializer",
 ]
 
 __version__ = version()

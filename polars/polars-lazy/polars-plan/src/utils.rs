@@ -9,10 +9,9 @@ use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
-/// This struct is a wrapper to implement Eq, which can only be derived.
-/// It acts as a f64, serializes as a f64, but Eq and Hash use the value
-/// as its underlying bits.
+/// This struct is a wrapper to implement Eq and Hash for f64.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
 pub struct HashF64(u64);
 impl From<f64> for HashF64 {
     fn from(value: f64) -> Self {

@@ -118,7 +118,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
         this.0
             .map(
                 func,
-                get_field::map_field(move |f| field_to_dtype(f, &expr2)),
+                get_output::map_field(move |f| field_to_dtype(f, &expr2)),
             )
             .with_fmt("eval")
     }

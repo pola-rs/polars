@@ -3,13 +3,11 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 #[cfg(feature = "serde")]
-pub use erased_serde::{
-    Deserializer as ErasedDeserializer, Error as ErasedError, Serialize as ErasedSerialize,
-};
+pub use erased_serde;
 use polars_core::export::once_cell::sync::OnceCell;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
-pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::prelude::*;
 
@@ -17,12 +15,13 @@ use crate::prelude::*;
 pub trait UdfDeserializer: Send + Sync {
     fn deserialize_udf(
         &self,
-        deserializer: &mut dyn ErasedDeserializer,
-    ) -> Result<Arc<dyn SerializableUdf>, ErasedError>;
+        deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<Arc<dyn SerializableUdf>, erased_serde::Error>;
 }
 
 #[cfg(feature = "serde")]
 static UDF_DESERIALIZER: OnceCell<Box<dyn UdfDeserializer>> = OnceCell::new();
+/// Set the global UDF Deserializer instance.
 #[cfg(feature = "serde")]
 pub fn set_udf_deserializer(
     udf_serializer: Box<dyn UdfDeserializer>,
@@ -52,7 +51,7 @@ pub trait SerializableUdf: Send + Sync {
     // upcasting methods
 
     #[cfg(feature = "serde")]
-    fn as_serialize(&self) -> Option<&dyn ErasedSerialize> {
+    fn as_serialize(&self) -> Option<&dyn erased_serde::Serialize> {
         None
     }
 
@@ -148,7 +147,7 @@ impl<'de> Deserialize<'de> for UdfWrapper {
         })?;
 
         let val = udf_serde
-            .deserialize_udf(&mut <dyn ErasedDeserializer>::erase(deserializer))
+            .deserialize_udf(&mut <dyn erased_serde::Deserializer>::erase(deserializer))
             .map_err(serde::de::Error::custom)?;
         Ok(UdfWrapper(val))
     }

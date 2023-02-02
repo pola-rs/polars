@@ -75,7 +75,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
         this.apply(
             func,
-            get_field::map_field(move |f| {
+            get_output::map_field(move |f| {
                 // dummy df to determine output dtype
                 let dtype = f
                     .data_type()

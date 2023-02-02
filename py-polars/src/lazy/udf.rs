@@ -1,12 +1,14 @@
-//! UDF (User-Defined Functions) definitions for use in polars_lazy Expr.
+//! This file also contains the definition of every operation that require the use of
+//! python UDFs.
 
 use std::fmt::Debug;
 
 use polars::prelude::*;
 use polars_core::utils::get_supertype;
-use polars_lazy::dsl::{ApplyOptions, FunctionOptions};
+use polars_lazy::dsl::{get_output, ApplyOptions, FunctionOptions};
 use pyo3::prelude::*;
 use pyo3::types::PyFloat;
+#[cfg(feature = "json")]
 use serde::{Deserialize, Serialize};
 
 use super::utils::py_exprs_to_exprs;
@@ -170,47 +172,38 @@ impl polars_lazy::dsl::SerializableUdf for PyUdfLambda {
     ) -> PolarsResult<Field> {
         match &self.op {
             UdfLambdaOp::MapSingle { .. } => {
-                let fld = &fields[0];
-                match self.output_type {
-                    Some(ref dt) => Ok(Field::new(fld.name(), dt.clone())),
+                get_output::map_field(move |fld| match self.output_type {
+                    Some(ref dt) => Field::new(fld.name(), dt.clone()),
                     None => {
                         let mut fld = fld.clone();
                         fld.coerce(DataType::Unknown);
-                        Ok(fld)
+                        fld
                     }
-                }
+                })(fields)
             }
             UdfLambdaOp::MapMultiple { .. } => {
-                let fld = &fields[0];
-                match self.output_type {
-                    Some(ref dt) => Ok(Field::new(fld.name(), dt.clone())),
-                    None => Ok(fld.clone()),
-                }
+                get_output::map_field(move |fld| match self.output_type {
+                    Some(ref dt) => Field::new(fld.name(), dt.clone()),
+                    None => fld.clone(),
+                })(fields)
             }
-            UdfLambdaOp::Fold | UdfLambdaOp::Reduce => {
-                // super_type
-                let mut fld = fields[0].clone();
-                let mut new_type = fields[0].data_type().clone();
-                for f in &fields[1..] {
-                    new_type = get_supertype(&new_type, f.data_type()).unwrap();
-                }
-                fld.coerce(new_type);
-                Ok(fld)
-            }
+            UdfLambdaOp::Fold | UdfLambdaOp::Reduce => get_output::super_type()(fields),
             UdfLambdaOp::CumFold { .. } | UdfLambdaOp::CumReduce => {
-                let mut st = fields[0].dtype.clone();
-                for fld in &fields[1..] {
-                    st = get_supertype(&st, &fld.dtype).unwrap();
-                }
-                Ok(Field::new(
-                    &fields[0].name,
-                    DataType::Struct(
-                        fields
-                            .iter()
-                            .map(|fld| Field::new(fld.name(), st.clone()))
-                            .collect(),
-                    ),
-                ))
+                get_output::map_fields(|fields| {
+                    let mut st = fields[0].dtype.clone();
+                    for fld in &fields[1..] {
+                        st = get_supertype(&st, &fld.dtype).unwrap();
+                    }
+                    Field::new(
+                        &fields[0].name,
+                        DataType::Struct(
+                            fields
+                                .iter()
+                                .map(|fld| Field::new(fld.name(), st.clone()))
+                                .collect(),
+                        ),
+                    )
+                })(fields)
             }
         }
     }
@@ -218,7 +211,7 @@ impl polars_lazy::dsl::SerializableUdf for PyUdfLambda {
     // upcasting
 
     #[cfg(feature = "json")]
-    fn as_serialize(&self) -> Option<&dyn ErasedSerialize> {
+    fn as_serialize(&self) -> Option<&dyn erased_serde::Serialize> {
         Some(self)
     }
 
@@ -425,7 +418,7 @@ impl PyExpr {
             .inner
             .rolling_apply(
                 Arc::new(function),
-                Arc::new(get_field::same_type()),
+                Arc::new(get_output::same_type()),
                 options,
             )
             .with_fmt("rolling_apply")

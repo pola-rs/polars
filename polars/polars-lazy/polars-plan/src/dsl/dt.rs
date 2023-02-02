@@ -13,7 +13,7 @@ impl DateLikeNameSpace {
         let fmt = fmt.to_string();
         let function = move |s: Series| s.strftime(&fmt);
         self.0
-            .map(function, get_field::with_dtype(DataType::Utf8))
+            .map(function, get_output::with_dtype(DataType::Utf8))
             .with_fmt("strftime")
     }
 
@@ -34,7 +34,7 @@ impl DateLikeNameSpace {
                     format!("Series of dtype {dt:?} has got no time unit").into(),
                 )),
             },
-            get_field::map_dtype(move |dtype| match dtype {
+            get_output::map_dtype(move |dtype| match dtype {
                 DataType::Duration(_) => DataType::Duration(tu),
                 DataType::Datetime(_, tz) => DataType::Datetime(tu, tz.clone()),
                 _ => panic!("expected duration or datetime"),
@@ -61,7 +61,7 @@ impl DateLikeNameSpace {
                     format!("Series of dtype {dt:?} has got no time unit").into(),
                 )),
             },
-            get_field::same_type(),
+            get_output::same_type(),
         )
     }
 
@@ -78,7 +78,7 @@ impl DateLikeNameSpace {
                     format!("Series of dtype {dt:?} has got no time zone").into(),
                 )),
             },
-            get_field::same_type(),
+            get_output::same_type(),
         )
     }
 

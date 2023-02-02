@@ -97,7 +97,7 @@ impl NumericFunction {
         _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
-        use get_field::*;
+        use get_output::*;
         use NumericFunction::*;
 
         match self {

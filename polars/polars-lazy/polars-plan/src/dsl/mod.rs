@@ -12,7 +12,7 @@ mod from;
 pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
 pub mod functions;
-pub mod get_field;
+pub mod get_output;
 mod list;
 #[cfg(feature = "meta")]
 mod meta;
@@ -292,7 +292,7 @@ impl Expr {
 
     /// Drop null values
     pub fn drop_nulls(self) -> Self {
-        self.apply(|s| Ok(s.drop_nulls()), get_field::same_type())
+        self.apply(|s| Ok(s.drop_nulls()), get_output::same_type())
     }
 
     /// Drop NaN values
@@ -449,9 +449,9 @@ impl Expr {
             },
             move |fields| {
                 if upcast {
-                    get_field::super_type()(fields)
+                    get_output::super_type()(fields)
                 } else {
-                    get_field::same_type()(fields)
+                    get_output::same_type()(fields)
                 }
             },
         )
@@ -470,14 +470,14 @@ impl Expr {
 
     /// Get unique values of this expression.
     pub fn unique(self) -> Self {
-        self.apply(|s: Series| s.unique(), get_field::same_type())
+        self.apply(|s: Series| s.unique(), get_output::same_type())
             .with_fmt("unique")
     }
 
     /// Get unique values of this expression, while maintaining order.
     /// This requires more work than [`Expr::unique`].
     pub fn unique_stable(self) -> Self {
-        self.apply(|s: Series| s.unique_stable(), get_field::same_type())
+        self.apply(|s: Series| s.unique_stable(), get_output::same_type())
             .with_fmt("unique_stable")
     }
 
@@ -485,7 +485,7 @@ impl Expr {
     pub fn arg_unique(self) -> Self {
         self.apply(
             |s: Series| s.arg_unique().map(|ca| ca.into_series()),
-            get_field::with_dtype(IDX_DTYPE),
+            get_output::with_dtype(IDX_DTYPE),
         )
         .with_fmt("arg_unique")
     }
@@ -501,7 +501,7 @@ impl Expr {
 
         self.function_with_options(
             move |s: Series| Ok(Series::new(s.name(), &[s.arg_min().map(|idx| idx as u32)])),
-            get_field::with_dtype(IDX_DTYPE),
+            get_output::with_dtype(IDX_DTYPE),
             options,
         )
     }
@@ -517,7 +517,7 @@ impl Expr {
 
         self.function_with_options(
             move |s: Series| Ok(Series::new(s.name(), &[s.arg_max().map(|idx| idx as u32)])),
-            get_field::with_dtype(IDX_DTYPE),
+            get_output::with_dtype(IDX_DTYPE),
             options,
         )
     }
@@ -532,7 +532,7 @@ impl Expr {
 
         self.function_with_options(
             move |s: Series| Ok(s.argsort(sort_options).into_series()),
-            get_field::with_dtype(IDX_DTYPE),
+            get_output::with_dtype(IDX_DTYPE),
             options,
         )
     }
@@ -622,6 +622,8 @@ impl Expr {
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
+    ///
+    /// Please note that the resulting expression will not be serializable.
     pub fn map<F, O>(self, function: F, output_type: O) -> Self
     where
         F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
@@ -662,6 +664,8 @@ impl Expr {
     /// Apply a function/closure once the logical plan get executed with many arguments
     ///
     /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
+    ///
+    /// Please note that the resulting expression will not be serializable.
     pub fn map_many<F, O>(self, function: F, arguments: &[Expr], output_type: O) -> Self
     where
         F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
@@ -688,6 +692,8 @@ impl Expr {
     ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
     ///  * `map_list` should be used when the function expects a list aggregated series.
+    ///
+    /// Please note that the resulting expression will not be serializable.
     pub fn map_list<F, O>(self, function: F, output_type: O) -> Self
     where
         F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
@@ -707,6 +713,8 @@ impl Expr {
     }
 
     /// A function that cannot be expressed with `map` or `apply` and requires extra settings.
+    ///
+    /// Please note that the resulting expression will not be serializable.
     pub fn function_with_options<F, O>(
         self,
         function: F,
@@ -735,6 +743,8 @@ impl Expr {
     ///
     /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+    ///
+    /// Please note that the resulting expression will not be serializable.
     pub fn apply<F, O>(self, function: F, output_type: O) -> Self
     where
         F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
@@ -767,6 +777,8 @@ impl Expr {
     /// Apply a function/closure over the groups with many arguments. This should only be used in a groupby aggregation.
     ///
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
+    ///
+    /// Please note that the resulting expression will not be serializable.
     pub fn apply_many<F, O>(self, function: F, arguments: &[Expr], output_type: O) -> Self
     where
         F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
@@ -873,7 +885,7 @@ impl Expr {
     pub fn cumsum(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cumsum(reverse)),
-            get_field::map_dtype(|dt| {
+            get_output::map_dtype(|dt| {
                 use DataType::*;
                 if dt.is_logical() {
                     dt.clone()
@@ -897,7 +909,7 @@ impl Expr {
     pub fn cumprod(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cumprod(reverse)),
-            get_field::map_dtype(|dt| {
+            get_output::map_dtype(|dt| {
                 use DataType::*;
                 match dt {
                     Boolean => Int64,
@@ -915,7 +927,7 @@ impl Expr {
     pub fn cummin(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cummin(reverse)),
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("cummin")
     }
@@ -924,7 +936,7 @@ impl Expr {
     pub fn cummax(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cummax(reverse)),
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("cummax")
     }
@@ -940,7 +952,7 @@ impl Expr {
 
         self.function_with_options(
             move |s: Series| Ok(s.product()),
-            get_field::map_dtype(|dt| {
+            get_output::map_dtype(|dt| {
                 use DataType::*;
                 match dt {
                     Float32 => Float32,
@@ -956,7 +968,7 @@ impl Expr {
     pub fn backward_fill(self, limit: FillNullLimit) -> Self {
         self.apply(
             move |s: Series| s.fill_null(FillNullStrategy::Backward(limit)),
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("backward_fill")
     }
@@ -965,7 +977,7 @@ impl Expr {
     pub fn forward_fill(self, limit: FillNullLimit) -> Self {
         self.apply(
             move |s: Series| s.fill_null(FillNullStrategy::Forward(limit)),
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("forward_fill")
     }
@@ -1409,7 +1421,7 @@ impl Expr {
         self.apply_many(
             function,
             &[by],
-            get_field::map_dtype(|dt| DataType::List(dt.clone().into())),
+            get_output::map_dtype(|dt| DataType::List(dt.clone().into())),
         )
         .with_fmt("repeat_by")
     }
@@ -1427,7 +1439,7 @@ impl Expr {
     pub fn is_first(self) -> Expr {
         self.apply(
             |s| s.is_first().map(|ca| ca.into_series()),
-            get_field::with_dtype(DataType::Boolean),
+            get_output::with_dtype(DataType::Boolean),
         )
         .with_fmt("is_first")
     }
@@ -1436,7 +1448,7 @@ impl Expr {
     fn dot_impl(self, other: Expr) -> Expr {
         let function = |s: &mut [Series]| Ok((&s[0] * &s[1]).sum_as_series());
 
-        self.apply_many(function, &[other], get_field::same_type())
+        self.apply_many(function, &[other], get_output::same_type())
             .with_fmt("dot")
     }
 
@@ -1450,7 +1462,7 @@ impl Expr {
     pub fn mode(self) -> Expr {
         self.apply(
             |s| s.mode().map(|ca| ca.into_series()),
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("mode")
     }
@@ -1474,6 +1486,8 @@ impl Expr {
     }
 
     /// Define an alias by mapping a function over the original root column name.
+    ///
+    /// Please note that the resulting expression will not be serializable.
     pub fn map_alias<F>(self, function: F) -> Expr
     where
         F: Fn(&str) -> PolarsResult<String> + 'static + Send + Sync,
@@ -1587,7 +1601,7 @@ impl Expr {
                     rolling_fn(s, options)
                 },
                 &[col(by)],
-                get_field::same_type(),
+                get_output::same_type(),
             )
             .with_fmt(expr_name_by)
         } else {
@@ -1597,7 +1611,7 @@ impl Expr {
 
             self.apply(
                 move |s| rolling_fn(&s, options.clone().into()),
-                get_field::same_type(),
+                get_output::same_type(),
             )
             .with_fmt(expr_name)
         }
@@ -1754,7 +1768,7 @@ impl Expr {
                     Ok(out)
                 }
             },
-            get_field::map_field(|field| match field.data_type() {
+            get_output::map_field(|field| match field.data_type() {
                 DataType::Float64 => field.clone(),
                 DataType::Float32 => Field::new(field.name(), DataType::Float32),
                 _ => Field::new(field.name(), DataType::Float64),
@@ -1767,7 +1781,7 @@ impl Expr {
     pub fn rank(self, options: RankOptions) -> Expr {
         self.apply(
             move |s| Ok(s.rank(options)),
-            get_field::map_field(move |fld| match options.method {
+            get_output::map_field(move |fld| match options.method {
                 RankMethod::Average => Field::new(fld.name(), DataType::Float32),
                 _ => Field::new(fld.name(), IDX_DTYPE),
             }),
@@ -1785,7 +1799,7 @@ impl Expr {
         use DataType::*;
         self.apply(
             move |s| s.pct_change(n),
-            get_field::map_dtype(|dt| match dt {
+            get_output::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
             }),
@@ -1806,7 +1820,7 @@ impl Expr {
     pub fn skew(self, bias: bool) -> Expr {
         self.apply(
             move |s| s.skew(bias).map(|opt_v| Series::new(s.name(), &[opt_v])),
-            get_field::with_dtype(DataType::Float64),
+            get_output::with_dtype(DataType::Float64),
         )
         .with_function_options(|mut options| {
             options.fmt_str = "skew".into();
@@ -1822,7 +1836,7 @@ impl Expr {
                 s.kurtosis(fisher, bias)
                     .map(|opt_v| Series::new(s.name(), &[opt_v]))
             },
-            get_field::with_dtype(DataType::Float64),
+            get_output::with_dtype(DataType::Float64),
         )
         .with_function_options(|mut options| {
             options.fmt_str = "kurtosis".into();
@@ -1860,7 +1874,7 @@ impl Expr {
                 };
                 Ok(s)
             },
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("upper_bound")
     }
@@ -1894,7 +1908,7 @@ impl Expr {
                 };
                 Ok(s)
             },
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("lower_bound")
     }
@@ -1906,7 +1920,7 @@ impl Expr {
             move |s| s.reshape(&dims),
             move |fields| {
                 if len == 1 {
-                    get_field::map_field(|fld| {
+                    get_output::map_field(|fld| {
                         Field::new(
                             fld.name(),
                             fld.data_type()
@@ -1916,7 +1930,7 @@ impl Expr {
                         )
                     })(fields)
                 } else {
-                    get_field::map_field(|fld| {
+                    get_output::map_field(|fld| {
                         let dtype = fld
                             .data_type()
                             .inner_dtype()
@@ -1947,14 +1961,14 @@ impl Expr {
                     Ok(ca.into_series())
                 }
             },
-            get_field::with_dtype(IDX_DTYPE),
+            get_output::with_dtype(IDX_DTYPE),
         )
         .with_fmt("cumcount")
     }
 
     #[cfg(feature = "random")]
     pub fn shuffle(self, seed: Option<u64>) -> Self {
-        self.apply(move |s| Ok(s.shuffle(seed)), get_field::same_type())
+        self.apply(move |s| Ok(s.shuffle(seed)), get_output::same_type())
             .with_fmt("shuffle")
     }
 
@@ -1968,7 +1982,7 @@ impl Expr {
     ) -> Self {
         self.apply(
             move |s| s.sample_n(n, with_replacement, shuffle, seed),
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("sample_n")
     }
@@ -1983,7 +1997,7 @@ impl Expr {
     ) -> Self {
         self.apply(
             move |s| s.sample_frac(frac, with_replacement, shuffle, seed),
-            get_field::same_type(),
+            get_output::same_type(),
         )
         .with_fmt("sample_frac")
     }
@@ -1993,7 +2007,7 @@ impl Expr {
         use DataType::*;
         self.apply(
             move |s| s.ewm_mean(options),
-            get_field::map_dtype(|dt| match dt {
+            get_output::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
             }),
@@ -2006,7 +2020,7 @@ impl Expr {
         use DataType::*;
         self.apply(
             move |s| s.ewm_std(options),
-            get_field::map_dtype(|dt| match dt {
+            get_output::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
             }),
@@ -2019,7 +2033,7 @@ impl Expr {
         use DataType::*;
         self.apply(
             move |s| s.ewm_var(options),
-            get_field::map_dtype(|dt| match dt {
+            get_output::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
             }),
@@ -2038,7 +2052,7 @@ impl Expr {
                     Ok(Series::new(s.name(), [false]))
                 }
             },
-            get_field::with_dtype(DataType::Boolean),
+            get_output::with_dtype(DataType::Boolean),
         )
         .with_function_options(|mut opt| {
             opt.fmt_str = "any".into();
@@ -2065,7 +2079,7 @@ impl Expr {
                     Ok(Series::new(s.name(), [false]))
                 }
             },
-            get_field::with_dtype(DataType::Boolean),
+            get_output::with_dtype(DataType::Boolean),
         )
         .with_function_options(|mut opt| {
             opt.fmt_str = "all".into();
@@ -2083,7 +2097,7 @@ impl Expr {
                 s.value_counts(multithreaded, sorted)
                     .map(|df| df.into_struct(s.name()).into_series())
             },
-            get_field::map_field(|fld| {
+            get_output::map_field(|fld| {
                 Field::new(
                     fld.name(),
                     DataType::Struct(vec![fld.clone(), Field::new("counts", IDX_DTYPE)]),
@@ -2104,7 +2118,7 @@ impl Expr {
     pub fn unique_counts(self) -> Self {
         self.apply(
             |s| Ok(s.unique_counts().into_series()),
-            get_field::with_dtype(IDX_DTYPE),
+            get_output::with_dtype(IDX_DTYPE),
         )
         .with_fmt("unique_counts")
     }
@@ -2114,7 +2128,7 @@ impl Expr {
     pub fn log(self, base: f64) -> Self {
         self.map(
             move |s| Ok(s.log(base)),
-            get_field::map_dtype(|dt| {
+            get_output::map_dtype(|dt| {
                 if matches!(dt, DataType::Float32) {
                     DataType::Float32
                 } else {
@@ -2130,7 +2144,7 @@ impl Expr {
     pub fn exp(self) -> Self {
         self.map(
             move |s| Ok(s.exp()),
-            get_field::map_dtype(|dt| {
+            get_output::map_dtype(|dt| {
                 if matches!(dt, DataType::Float32) {
                     DataType::Float32
                 } else {
@@ -2147,7 +2161,7 @@ impl Expr {
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.apply(
             move |s| Ok(Series::new(s.name(), [s.entropy(base, normalize)])),
-            get_field::map_dtype(|dt| {
+            get_output::map_dtype(|dt| {
                 if matches!(dt, DataType::Float32) {
                     DataType::Float32
                 } else {
@@ -2181,7 +2195,7 @@ impl Expr {
                 s.set_sorted_flag(sorted);
                 Ok(s)
             },
-            get_field::same_type(),
+            get_output::same_type(),
         )
     }
 
@@ -2272,6 +2286,8 @@ impl Rem for Expr {
 ///
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
+///
+/// Please note that the resulting expression will not be serializable.
 pub fn map_multiple<F, E, O>(function: F, expr: E, output_type: O) -> Expr
 where
     F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
@@ -2298,6 +2314,8 @@ where
 ///  * `map_mul` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 ///  * `apply_mul` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
 ///  * `map_list_mul` should be used when the function expects a list aggregated series.
+///
+/// Please note that the resulting expression will not be serializable.
 pub fn map_list_multiple<F, E, O>(function: F, expr: E, output_type: O) -> Expr
 where
     F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
@@ -2327,6 +2345,8 @@ where
 ///
 /// * `[map_mul]` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 /// * `[apply_mul]` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+///
+/// Please note that the resulting expression will not be serializable.
 pub fn apply_multiple<F, E, O>(function: F, expr: E, output_type: O, returns_scalar: bool) -> Expr
 where
     F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,

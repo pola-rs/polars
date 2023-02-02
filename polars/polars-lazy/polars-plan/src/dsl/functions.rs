@@ -64,7 +64,7 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
         a,
         b,
         function,
-        get_field::map_dtype(|dt| {
+        get_output::map_dtype(|dt| {
             if matches!(dt, DataType::Float32) {
                 DataType::Float32
             } else {
@@ -149,7 +149,7 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
         a,
         b,
         function,
-        get_field::map_dtype(|dt| {
+        get_output::map_dtype(|dt| {
             if matches!(dt, DataType::Float32) {
                 DataType::Float32
             } else {
@@ -216,7 +216,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         ))
     };
 
-    apply_binary(a, b, function, get_field::with_dtype(DataType::Float64)).with_function_options(
+    apply_binary(a, b, function, get_output::with_dtype(DataType::Float64)).with_function_options(
         |mut options| {
             options.auto_explode = true;
             options.fmt_str = "spearman_rank_correlation".into();
@@ -385,7 +385,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             low,
             high,
             f,
-            get_field::map_field(|_| Field::new("arange", DataType::Int64)),
+            get_output::map_field(|_| Field::new("arange", DataType::Int64)),
         )
     } else {
         let f = move |sa: Series, sb: Series| {
@@ -432,7 +432,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             low,
             high,
             f,
-            get_field::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
+            get_output::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
         )
     }
 }
@@ -636,7 +636,7 @@ where
 
 #[cfg(feature = "dtype-struct")]
 fn cumfold_dtype() -> impl Fn(&[Field]) -> PolarsResult<Field> {
-    get_field::map_fields(|fields| {
+    get_output::map_fields(|fields| {
         let mut st = fields[0].dtype.clone();
         for fld in &fields[1..] {
             st = get_supertype(&st, &fld.dtype).unwrap();
@@ -654,6 +654,7 @@ fn cumfold_dtype() -> impl Fn(&[Field]) -> PolarsResult<Field> {
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
+///
 /// Please note that the resulting expression will not be serializable.
 pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
 where
@@ -672,7 +673,7 @@ where
             }
             Ok(acc)
         },
-        get_field::super_type(),
+        get_output::super_type(),
     );
 
     Expr::AnonymousFunction {
@@ -689,6 +690,7 @@ where
 }
 
 /// Reduce over multiple columns horizontally / row wise.
+///
 /// Please note that the resulting expression will not be serializable.
 pub fn reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
@@ -714,7 +716,7 @@ where
                 )),
             }
         },
-        get_field::super_type(),
+        get_output::super_type(),
     );
 
     Expr::AnonymousFunction {
@@ -744,6 +746,7 @@ pub fn make_udf_expr(
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
+///
 /// Please note that the resulting expression will not be serializable.
 #[cfg(feature = "dtype-struct")]
 pub fn cumreduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
@@ -792,6 +795,7 @@ where
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
+///
 /// Please note that the resulting expression will not be serializable.
 #[cfg(feature = "dtype-struct")]
 pub fn cumfold_exprs<F: 'static, E: AsRef<[Expr]>>(
@@ -997,7 +1001,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
     map_multiple(
         |s| StructChunked::new("", s).map(|ca| ca.into_series()),
         exprs,
-        get_field::map_fields(|fld| Field::new(fld[0].name(), DataType::Struct(fld.to_vec()))),
+        get_output::map_fields(|fld| Field::new(fld[0].name(), DataType::Struct(fld.to_vec()))),
     )
     .with_function_options(|mut options| {
         options.input_wildcard_expansion = true;
@@ -1014,7 +1018,7 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
         })?;
         Ok(s.new_from_index(0, n))
     };
-    apply_binary(lit(value), n_times, function, get_field::same_type())
+    apply_binary(lit(value), n_times, function, get_output::same_type())
 }
 
 #[cfg(feature = "arg_where")]

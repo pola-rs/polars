@@ -69,7 +69,7 @@ impl Display for TemporalFunction {
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
-            ToDatetime => return write!(f, "dattime"),
+            ToDatetime => return write!(f, "datetime"),
             ToDuration => return write!(f, "duration"),
         };
         write!(f, "dt.{s}")

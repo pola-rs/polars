@@ -12,8 +12,9 @@ pub struct PolarsUdfDeserializer;
 impl UdfDeserializer for PolarsUdfDeserializer {
     fn deserialize_udf(
         &self,
-        deserializer: &mut dyn polars_lazy::dsl::ErasedDeserializer,
-    ) -> Result<Arc<dyn polars_lazy::dsl::SerializableUdf>, polars_lazy::dsl::ErasedError> {
+        deserializer: &mut dyn polars_lazy::dsl::erased_serde::Deserializer,
+    ) -> Result<Arc<dyn polars_lazy::dsl::SerializableUdf>, polars_lazy::dsl::erased_serde::Error>
+    {
         Ok(Arc::new(PyUdfLambda::deserialize(deserializer)?) as _)
     }
 }

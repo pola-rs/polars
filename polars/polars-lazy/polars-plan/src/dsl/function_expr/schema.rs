@@ -7,7 +7,7 @@ impl FunctionExpr {
         cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
-        use get_field::*;
+        use get_output::*;
 
         #[cfg(any(feature = "rolling_window", feature = "trigonometry"))]
         // set float supertype

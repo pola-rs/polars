@@ -1,4 +1,4 @@
-from typing import Any, Union
+from typing import Callable, Union
 from abc import ABC
 
 class UdfSerializer(ABC):
@@ -12,7 +12,7 @@ class UdfSerializer(ABC):
 
     """
 
-    def serialize_udf(self, udf: Any) -> Union[str, bytes]:
+    def serialize_udf(self, udf: Callable) -> Union[str, bytes]:
         """
         Defines how an UDF is serialized.
 
@@ -24,7 +24,7 @@ class UdfSerializer(ABC):
         """
         pass
 
-    def deserialize_udf(self, data: Union[str, bytes]) -> Any:
+    def deserialize_udf(self, data: Union[str, bytes]) -> Callable:
         """
         Defines how an UDF is deserialized.
 
@@ -47,13 +47,13 @@ class PickleUdfSerializer(UdfSerializer):
 
     """
     
-    def serialize_udf(self, udf: Any) -> Union[str, bytes]:
+    def serialize_udf(self, udf: Callable) -> Union[str, bytes]:
         import pickle
         import base64
 
         return str(base64.b64encode(pickle.dumps(udf)), 'ascii')
 
-    def deserialize_udf(self, data: Union[str, bytes]) -> Any:
+    def deserialize_udf(self, data: Union[str, bytes]) -> Callable:
         import pickle
         import base64
 

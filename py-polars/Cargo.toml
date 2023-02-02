@@ -27,7 +27,7 @@ pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multipl
 pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"], optional = true  }
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
@@ -35,7 +35,7 @@ avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json", "polars/json"]
+json = ["dep:serde", "polars/serde", "serde_json", "polars/json"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]

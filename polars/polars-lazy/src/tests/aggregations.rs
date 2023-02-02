@@ -11,7 +11,7 @@ fn test_agg_exprs() -> PolarsResult<()> {
         .lazy()
         .groupby_stable([col("cars")])
         .agg([(lit(1) - col("A"))
-            .map(|s| Ok(&s * 2), get_field::same_type())
+            .map(|s| Ok(&s * 2), get_output::same_type())
             .list()
             .alias("foo")])
         .collect()?;

@@ -197,7 +197,7 @@ impl Display for FunctionExpr {
 
 macro_rules! wrap {
     ($e:expr) => {
-        SpecialEq(Arc::new($e))
+        SpecialEq::new(Arc::new($e))
     };
 }
 pub(crate) use wrap;
@@ -211,7 +211,7 @@ macro_rules! map_as_slice {
             $func(s)
         };
 
-        SpecialEq(Arc::new(f))
+        SpecialEq::new(Arc::new(f))
     }};
 
     ($func:path, $($args:expr),*) => {{
@@ -219,7 +219,7 @@ macro_rules! map_as_slice {
             $func(s, $($args),*)
         };
 
-        SpecialEq(Arc::new(f))
+        SpecialEq::new(Arc::new(f))
     }};
 }
 
@@ -233,7 +233,7 @@ macro_rules! map_owned {
             $func(s)
         };
 
-        SpecialEq(Arc::new(f))
+        SpecialEq::new(Arc::new(f))
     }};
 
     ($func:path, $($args:expr),*) => {{
@@ -242,7 +242,7 @@ macro_rules! map_owned {
             $func(s, $($args),*)
         };
 
-        SpecialEq(Arc::new(f))
+        SpecialEq::new(Arc::new(f))
     }};
 }
 
@@ -255,7 +255,7 @@ macro_rules! map {
             $func(s)
         };
 
-        SpecialEq(Arc::new(f))
+        SpecialEq::new(Arc::new(f))
     }};
 
     ($func:expr, $($args:expr),*) => {{
@@ -264,7 +264,7 @@ macro_rules! map {
             $func(s, $($args),*)
         };
 
-        SpecialEq(Arc::new(f))
+        SpecialEq::new(Arc::new(f))
     }};
 }
 pub(crate) use map;
