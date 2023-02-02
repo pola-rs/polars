@@ -11,7 +11,11 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from typing import Literal
+    from polars.internals.type_aliases import (
+        SQLReadEngine,
+        SQLWriteEngine,
+        SQLWriteMode,
+    )
 
 
 @pytest.fixture()
@@ -79,7 +83,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
     ],
 )
 def test_read_sql(
-    engine: Literal["connectorx", "adbc"],
+    engine: SQLReadEngine,
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
 ) -> None:
@@ -131,7 +135,7 @@ def test_read_sql(
     ],
 )
 def test_read_sql_exceptions(
-    engine: Literal["connectorx", "adbc"], sql: str, database: str, err: str
+    engine: SQLReadEngine, sql: str, database: str, err: str
 ) -> None:
     import tempfile
 
@@ -155,7 +159,7 @@ def test_read_sql_exceptions(
     ],
 )
 def test_write_sql(
-    engine: Literal["adbc"], mode: Literal["create", "append"], sample_df: pl.DataFrame
+    engine: SQLWriteEngine, mode: SQLWriteMode, sample_df: pl.DataFrame
 ) -> None:
     import tempfile
 
