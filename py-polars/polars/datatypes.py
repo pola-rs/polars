@@ -369,7 +369,7 @@ class Field:
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.name!r}: {self.dtype})"
+        return f"{class_name}({self.name!r}, {self.dtype})"
 
 
 class Struct(NestedType):
