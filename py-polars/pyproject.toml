@@ -99,6 +99,9 @@ warn_return_any = false
 addopts = [
   "--import-mode=importlib",
 ]
+markers = [
+  "slow: Tests with a longer than average runtime.",
+]
 
 [tool.coverage.run]
 source = ["polars"]

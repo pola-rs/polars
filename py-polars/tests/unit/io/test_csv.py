@@ -1126,3 +1126,10 @@ def test_read_csv_chunked() -> None:
 
     # The next value should always be higher if monotonically increasing.
     assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
+
+
+@pytest.mark.slow()
+def test_read_web_file() -> None:
+    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/datasets/foods1.csv"
+    df = pl.read_csv(url)
+    assert df.shape == (27, 4)

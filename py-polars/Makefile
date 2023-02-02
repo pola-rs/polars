@@ -42,7 +42,7 @@ pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest tests/unit/ --numprocesses=auto
+	$(VENV_BIN)/pytest tests/unit/ --numprocesses=auto -m 'not slow'
 
 .PHONY: doctest
 doctest: venv build  ## Run doctests
