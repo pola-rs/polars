@@ -22,7 +22,6 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 use ahash::RandomState;
 pub use aliases::*;
 pub use any_value::*;
-use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
@@ -41,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 pub use time_unit::*;
 
+use crate::chunked_array::arithmetic::ArrayArithmetics;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -118,6 +118,17 @@ impl PolarsDataType for ListType {
     }
 }
 
+#[cfg(feature = "dtype-i128")]
+pub struct Int128Type {}
+
+#[cfg(feature = "dtype-i128")]
+impl PolarsDataType for Int128Type {
+    fn get_dtype() -> DataType {
+        // we cannot know precision/scale statically
+        DataType::Decimal128(None)
+    }
+}
+
 #[cfg(feature = "object")]
 pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
@@ -150,6 +161,8 @@ pub type Int8Chunked = ChunkedArray<Int8Type>;
 pub type Int16Chunked = ChunkedArray<Int16Type>;
 pub type Int32Chunked = ChunkedArray<Int32Type>;
 pub type Int64Chunked = ChunkedArray<Int64Type>;
+#[cfg(feature = "dtype-i128")]
+pub type Int128Chunked = ChunkedArray<Int128Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
@@ -175,7 +188,7 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + IsFloat
-    + NativeArithmetics
+    + ArrayArithmetics
 {
     type POLARSTYPE: PolarsNumericType;
 }
