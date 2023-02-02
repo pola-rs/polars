@@ -199,6 +199,22 @@ class ListNameSpace:
             [null, -8, -1]
         ]
 
+        >>> s.arr.diff(n=2)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [null, null, ... 2]
+            [null, null, -9]
+        ]
+
+        >>> s.arr.diff(n=2, null_behavior="drop")
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [2, 2]
+            [-9]
+        ]
+
         """
 
     def shift(self, periods: int = 1) -> pli.Series:
