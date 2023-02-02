@@ -34,6 +34,7 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
+    DataTypeClass,
     Float64,
     Int8,
     Int16,
@@ -2784,7 +2785,11 @@ class DataFrame:
         max_num_values = min(10, self.height)
 
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
-            dtype_str = f"<{dtype.string_repr()}>"
+            dtype_str = (
+                f"<{DataTypeClass._string_repr(dtype)}>"
+                if isinstance(dtype, DataTypeClass)
+                else f"<{dtype._string_repr()}>"
+            )
             val = self[:max_num_values][col_name].to_list()
             val_str = ", ".join(map(str, val))
             return col_name, dtype_str, val_str

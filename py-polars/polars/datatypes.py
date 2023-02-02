@@ -24,11 +24,6 @@ from typing import (
 )
 
 from polars.dependencies import pyarrow as pa
-from polars.utils import (
-    _datetime_to_pl_timestamp,
-    _timedelta_to_pl_timedelta,
-    class_or_instance_method,
-)
 
 try:
     from polars.polars import dtype_str_repr
@@ -131,9 +126,8 @@ class DataTypeClass(type):
     def __repr__(cls) -> str:
         return cls.__name__
 
-    @class_or_instance_method
-    def string_repr(cls_or_self) -> str:
-        return dtype_str_repr(cls_or_self)
+    def _string_repr(cls) -> str:
+        return dtype_str_repr(cls)
 
 
 class DataType(metaclass=DataTypeClass):
@@ -149,9 +143,8 @@ class DataType(metaclass=DataTypeClass):
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
 
-    @class_or_instance_method
-    def string_repr(cls_or_self) -> str:
-        return dtype_str_repr(cls_or_self)
+    def _string_repr(self) -> str:
+        return dtype_str_repr(self)
 
 
 class NumericType(DataType):
@@ -797,6 +790,8 @@ def maybe_cast(
 ) -> Any:
     """Try casting a value to a value that is valid for the given Polars dtype."""
     # cast el if it doesn't match
+    from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
+
     if isinstance(el, datetime):
         return _datetime_to_pl_timestamp(el, time_unit)
     elif isinstance(el, timedelta):
