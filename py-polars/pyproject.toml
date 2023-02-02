@@ -98,6 +98,7 @@ warn_return_any = false
 [tool.pytest.ini_options]
 addopts = [
   "--import-mode=importlib",
+  "-m not slow", # Default to skipping slow tests. To run ALL tests, run: pytest -m ""
 ]
 markers = [
   "slow: Tests with a longer than average runtime.",
