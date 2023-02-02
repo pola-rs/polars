@@ -2,11 +2,11 @@ use polars_arrow::trusted_len::PushUnchecked;
 
 use super::*;
 
-pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {
-        Ok(Series::full_null(predicate.name(), 0, &IDX_DTYPE))
+        Ok(Some(Series::full_null(predicate.name(), 0, &IDX_DTYPE)))
     } else {
         let capacity = predicate.sum().unwrap();
         let mut out = Vec::with_capacity(capacity as usize);
@@ -29,6 +29,10 @@ pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Series> {
             }
         });
         let arr = Box::new(IdxArr::from_vec(out)) as ArrayRef;
-        unsafe { Ok(IdxCa::from_chunks(predicate.name(), vec![arr]).into_series()) }
+        unsafe {
+            Ok(Some(
+                IdxCa::from_chunks(predicate.name(), vec![arr]).into_series(),
+            ))
+        }
     }
 }

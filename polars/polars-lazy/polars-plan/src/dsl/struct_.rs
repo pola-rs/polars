@@ -46,7 +46,7 @@ impl StructNameSpace {
                             s
                         })
                         .collect::<Vec<_>>();
-                    StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
+                    StructChunked::new(ca.name(), &fields).map(|ca| Some(ca.into_series()))
                 },
                 GetOutput::map_dtype(move |dt| match dt {
                     DataType::Struct(fields) => {

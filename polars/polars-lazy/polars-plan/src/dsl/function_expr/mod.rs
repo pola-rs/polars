@@ -193,7 +193,7 @@ macro_rules! wrap {
 macro_rules! map_as_slice {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
-            $func(s)
+            $func(s).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -201,7 +201,7 @@ macro_rules! map_as_slice {
 
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
-            $func(s, $($args),*)
+            $func(s, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -215,7 +215,7 @@ macro_rules! map_owned {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
             let s = std::mem::take(&mut s[0]);
-            $func(s)
+            $func(s).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -224,7 +224,7 @@ macro_rules! map_owned {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             let s = std::mem::take(&mut s[0]);
-            $func(s, $($args),*)
+            $func(s, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -237,7 +237,7 @@ macro_rules! map {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
-            $func(s)
+            $func(s).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -246,7 +246,7 @@ macro_rules! map {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
-            $func(s, $($args),*)
+            $func(s, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -260,7 +260,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             NullCount => {
                 let f = |s: &mut [Series]| {
                     let s = &s[0];
-                    Ok(Series::new(s.name(), [s.null_count() as IdxSize]))
+                    Ok(Some(Series::new(s.name(), [s.null_count() as IdxSize])))
                 };
                 wrap!(f)
             }

@@ -57,10 +57,10 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             // ensure we get the new schema
             let output_field = eval_field_to_dtype(lst.ref_field(), &expr, true);
             if lst.is_empty() {
-                return Ok(Series::new_empty(s.name(), output_field.data_type()));
+                return Ok(Some(Series::new_empty(s.name(), output_field.data_type())));
             }
             if lst.null_count() == lst.len() {
-                return Ok(s);
+                return Ok(Some(s));
             }
 
             let phys_expr =
@@ -113,10 +113,10 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             ca.rename(s.name());
 
             if ca.dtype() != output_field.data_type() {
-                ca.cast(output_field.data_type())
+                ca.cast(output_field.data_type()).map(Some)
             } else {
                 match err {
-                    None => Ok(ca.into_series()),
+                    None => Ok(Some(ca.into_series())),
                     Some(e) => Err(e),
                 }
             }

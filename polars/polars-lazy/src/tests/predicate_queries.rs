@@ -71,7 +71,7 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
     let q = df
         .lazy()
         .with_column(col("A").map(
-            |s| Ok(s.is_null().into_series()),
+            |s| Ok(Some(s.is_null().into_series())),
             GetOutput::from_type(DataType::Boolean),
         ))
         .filter(col("B").gt(lit(10i32)));
@@ -234,7 +234,7 @@ fn test_predicate_pd_apply() -> PolarsResult<()> {
         // map_list is use in python `col().apply`
         col("a"),
         col("a")
-            .map_list(|s| Ok(s), GetOutput::same_type())
+            .map_list(|s| Ok(Some(s)), GetOutput::same_type())
             .alias("a_applied"),
     ])
     .filter(col("a").lt(lit(3)));

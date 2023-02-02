@@ -179,7 +179,7 @@ pub(crate) fn create_physical_expr(
 
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
-                                        Ok(s.min_as_series())
+                                        Ok(Some(s.min_as_series()))
                                     }
                                     IsSorted::Not => {
                                         parallel_op_series(|s| Ok(s.min_as_series()), s, None)
@@ -232,7 +232,7 @@ pub(crate) fn create_physical_expr(
 
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
-                                        Ok(s.max_as_series())
+                                        Ok(Some(s.max_as_series()))
                                     }
                                     IsSorted::Not => {
                                         parallel_op_series(|s| Ok(s.max_as_series()), s, None)
@@ -280,7 +280,7 @@ pub(crate) fn create_physical_expr(
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                Ok(s.std_as_series(ddof))
+                                Ok(Some(s.std_as_series(ddof)))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -302,7 +302,7 @@ pub(crate) fn create_physical_expr(
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                Ok(s.var_as_series(ddof))
+                                Ok(Some(s.var_as_series(ddof)))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -323,7 +323,7 @@ pub(crate) fn create_physical_expr(
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                Ok(s.mean_as_series())
+                                Ok(Some(s.mean_as_series()))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -344,7 +344,7 @@ pub(crate) fn create_physical_expr(
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                Ok(s.median_as_series())
+                                Ok(Some(s.median_as_series()))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -365,7 +365,7 @@ pub(crate) fn create_physical_expr(
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                Ok(s.head(Some(1)))
+                                Ok(Some(s.head(Some(1))))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -386,7 +386,7 @@ pub(crate) fn create_physical_expr(
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                Ok(s.tail(Some(1)))
+                                Ok(Some(s.tail(Some(1))))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -407,7 +407,7 @@ pub(crate) fn create_physical_expr(
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = &s[0];
-                                s.to_list().map(|ca| ca.into_series())
+                                s.to_list().map(|ca| Some(ca.into_series()))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -430,8 +430,10 @@ pub(crate) fn create_physical_expr(
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 s.n_unique().map(|count| {
-                                    UInt32Chunked::from_slice(s.name(), &[count as u32])
-                                        .into_series()
+                                    Some(
+                                        UInt32Chunked::from_slice(s.name(), &[count as u32])
+                                            .into_series(),
+                                    )
                                 })
                             })
                                 as Arc<dyn SeriesUdf>);
@@ -494,8 +496,10 @@ pub(crate) fn create_physical_expr(
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 let count = s.len();
-                                Ok(UInt32Chunked::from_slice(s.name(), &[count as u32])
-                                    .into_series())
+                                Ok(Some(
+                                    UInt32Chunked::from_slice(s.name(), &[count as u32])
+                                        .into_series(),
+                                ))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -592,9 +596,9 @@ pub(crate) fn create_physical_expr(
         }
         Explode(expr) => {
             let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
-            let function = SpecialEq::new(
-                Arc::new(move |s: &mut [Series]| s[0].explode()) as Arc<dyn SeriesUdf>
-            );
+            let function =
+                SpecialEq::new(Arc::new(move |s: &mut [Series]| s[0].explode().map(Some))
+                    as Arc<dyn SeriesUdf>);
             Ok(Arc::new(ApplyExpr::new_minimal(
                 vec![input],
                 function,

@@ -32,17 +32,17 @@ impl Display for ListFunction {
 }
 
 #[cfg(feature = "is_in")]
-pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let list = &args[0];
     let is_in = &args[1];
 
     is_in.is_in(list).map(|mut ca| {
         ca.rename(list.name());
-        ca.into_series()
+        Some(ca.into_series())
     })
 }
 
-pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let s = &args[0];
     let list_ca = s.list()?;
     let offset_s = &args[1];
@@ -56,7 +56,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
                 .unwrap()
                 .extract::<usize>()
                 .unwrap_or(usize::MAX);
-            return Ok(list_ca.lst_slice(offset, slice_len).into_series());
+            return Ok(Some(list_ca.lst_slice(offset, slice_len).into_series()));
         }
         (1, length_slice_len) => {
             if length_slice_len != list_ca.len() {
@@ -127,10 +127,10 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
         }
     };
     out.rename(s.name());
-    Ok(out.into_series())
+    Ok(Some(out.into_series()))
 }
 
-pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
@@ -141,10 +141,10 @@ pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Series> {
             first.list().unwrap()
         }
     };
-    first_ca.lst_concat(other).map(|ca| ca.into_series())
+    first_ca.lst_concat(other).map(|ca| Some(ca.into_series()))
 }
 
-pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let ca = s[0].list()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
@@ -153,7 +153,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
         1 => {
             let index = index.get(0);
             if let Some(index) = index {
-                ca.lst_get(index)
+                ca.lst_get(index).map(Some)
             } else {
                 Err(PolarsError::ComputeError("Expression 'arr.get' expected a valid index, got 'null' instead.".into()))
             }
@@ -181,7 +181,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
                 })
             }).collect::<IdxCa>();
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
-            unsafe { s.take_unchecked(&take_by) }
+            unsafe { s.take_unchecked(&take_by) }.map(Some)
         }
         len => {
             Err(PolarsError::ComputeError(format!("Expression 'arr.get' got an index array of length: {} where there were {} elements in the list.", len, ca.len()).into()))
