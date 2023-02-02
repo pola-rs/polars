@@ -5630,11 +5630,16 @@ class DataFrame:
         │ 10      │
         └─────────┘
 
-        Note that, when using kwargs syntax, expressions with multiple
-        outputs are automatically instantiated as Struct columns:
+        Expressions with multiple outputs can be automatically instantiated as Structs
+        by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
         >>> from polars.datatypes import INTEGER_DTYPES
-        >>> df.select(is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"))
+        >>> with pl.Config() as cfg:
+        ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
+        ...     df.select(
+        ...         is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
+        ...     )
+        ...
         shape: (3, 1)
         ┌───────────┐
         │ is_odd    │
@@ -5751,12 +5756,15 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
 
-        Note that, when using kwargs syntax, expressions with multiple
-        outputs are automatically instantiated as Struct columns:
+        Expressions with multiple outputs can be automatically instantiated as Structs
+        by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
-        >>> df.drop("c").with_columns(
-        ...     diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
-        ... )
+        >>> with pl.Config() as cfg:
+        ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
+        ...     df.drop("c").with_columns(
+        ...         diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
+        ...     )
+        ...
         shape: (4, 3)
         ┌─────┬──────┬─────────────┐
         │ a   ┆ b    ┆ diffs       │

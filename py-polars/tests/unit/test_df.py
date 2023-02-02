@@ -1557,10 +1557,15 @@ def test_select_by_dtype(df: pl.DataFrame) -> None:
     assert out.columns == ["strings", "strings_nulls", "bools", "bools_nulls"]
     out = df.select(pl.col(INTEGER_DTYPES))
     assert out.columns == ["int", "int_nulls"]
-    out = df.select(ints=pl.col(INTEGER_DTYPES))
-    assert out.schema == {
-        "ints": pl.Struct([pl.Field("int", pl.Int64), pl.Field("int_nulls", pl.Int64)])
-    }
+
+    with pl.Config() as cfg:
+        cfg.set_auto_structify(True)
+        out = df.select(ints=pl.col(INTEGER_DTYPES))
+        assert out.schema == {
+            "ints": pl.Struct(
+                [pl.Field("int", pl.Int64), pl.Field("int_nulls", pl.Int64)]
+            )
+        }
 
 
 def test_with_row_count() -> None:
@@ -2380,31 +2385,34 @@ def test_selection_regex_and_multicol() -> None:
     }
 
     # kwargs
-    df = test_df.select(
-        re=pl.col("^\\w$"),
-        odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
-        maxes=pl.all().max().suffix("_max"),
-    ).head(2)
-    # ┌───────────┬───────────┬─────────────┐
-    # │ re        ┆ odd       ┆ maxes       │
-    # │ ---       ┆ ---       ┆ ---         │
-    # │ struct[3] ┆ struct[4] ┆ struct[4]   │
-    # ╞═══════════╪═══════════╪═════════════╡
-    # │ {1,5,9}   ┆ {1,1,1,1} ┆ {4,8,12,16} │
-    # │ {2,6,10}  ┆ {0,0,0,0} ┆ {4,8,12,16} │
-    # └───────────┴───────────┴─────────────┘
-    assert df.rows() == [
-        (
-            {"a": 1, "b": 5, "c": 9},
-            {"a_is_odd": 1, "b_is_odd": 1, "c_is_odd": 1, "foo_is_odd": 1},
-            {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
-        ),
-        (
-            {"a": 2, "b": 6, "c": 10},
-            {"a_is_odd": 0, "b_is_odd": 0, "c_is_odd": 0, "foo_is_odd": 0},
-            {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
-        ),
-    ]
+    with pl.Config() as cfg:
+        cfg.set_auto_structify(True)
+
+        df = test_df.select(
+            pl.col("^\\w$").alias("re"),
+            odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
+            maxes=pl.all().max().suffix("_max"),
+        ).head(2)
+        # ┌───────────┬───────────┬─────────────┐
+        # │ re        ┆ odd       ┆ maxes       │
+        # │ ---       ┆ ---       ┆ ---         │
+        # │ struct[3] ┆ struct[4] ┆ struct[4]   │
+        # ╞═══════════╪═══════════╪═════════════╡
+        # │ {1,5,9}   ┆ {1,1,1,1} ┆ {4,8,12,16} │
+        # │ {2,6,10}  ┆ {0,0,0,0} ┆ {4,8,12,16} │
+        # └───────────┴───────────┴─────────────┘
+        assert df.rows() == [
+            (
+                {"a": 1, "b": 5, "c": 9},
+                {"a_is_odd": 1, "b_is_odd": 1, "c_is_odd": 1, "foo_is_odd": 1},
+                {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
+            ),
+            (
+                {"a": 2, "b": 6, "c": 10},
+                {"a_is_odd": 0, "b_is_odd": 0, "c_is_odd": 0, "foo_is_odd": 0},
+                {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
+            ),
+        ]
 
 
 def test_with_columns() -> None:
@@ -2482,47 +2490,50 @@ def test_with_columns() -> None:
     assert_frame_equal(dx, expected)
 
     # automatically upconvert multi-output expressions to struct
-    ldf = (
-        pl.DataFrame({"x1": [1, 2, 6], "x2": [1, 2, 3]})
-        .lazy()
-        .with_columns(
-            pct_change=pl.col(["x1", "x2"]).pct_change(),
-            maxes=pl.all().max().suffix("_max"),
-            xcols=pl.col("^x.*$"),
+    with pl.Config() as cfg:
+        cfg.set_auto_structify(True)
+
+        ldf = (
+            pl.DataFrame({"x1": [1, 2, 6], "x2": [1, 2, 3]})
+            .lazy()
+            .with_columns(
+                pl.col(["x1", "x2"]).pct_change().alias("pct_change"),
+                maxes=pl.all().max().suffix("_max"),
+                xcols=pl.col("^x.*$"),
+            )
         )
-    )
-    # ┌─────┬─────┬─────────────┬───────────┬───────────┐
-    # │ x1  ┆ x2  ┆ pct_change  ┆ maxes     ┆ xcols     │
-    # │ --- ┆ --- ┆ ---         ┆ ---       ┆ ---       │
-    # │ i64 ┆ i64 ┆ struct[2]   ┆ struct[2] ┆ struct[2] │
-    # ╞═════╪═════╪═════════════╪═══════════╪═══════════╡
-    # │ 1   ┆ 1   ┆ {null,null} ┆ {6,3}     ┆ {1,1}     │
-    # │ 2   ┆ 2   ┆ {1.0,1.0}   ┆ {6,3}     ┆ {2,2}     │
-    # │ 6   ┆ 3   ┆ {2.0,0.5}   ┆ {6,3}     ┆ {6,3}     │
-    # └─────┴─────┴─────────────┴───────────┴───────────┘
-    assert ldf.collect().to_dicts() == [
-        {
-            "x1": 1,
-            "x2": 1,
-            "pct_change": {"x1": None, "x2": None},
-            "maxes": {"x1_max": 6, "x2_max": 3},
-            "xcols": {"x1": 1, "x2": 1},
-        },
-        {
-            "x1": 2,
-            "x2": 2,
-            "pct_change": {"x1": 1.0, "x2": 1.0},
-            "maxes": {"x1_max": 6, "x2_max": 3},
-            "xcols": {"x1": 2, "x2": 2},
-        },
-        {
-            "x1": 6,
-            "x2": 3,
-            "pct_change": {"x1": 2.0, "x2": 0.5},
-            "maxes": {"x1_max": 6, "x2_max": 3},
-            "xcols": {"x1": 6, "x2": 3},
-        },
-    ]
+        # ┌─────┬─────┬─────────────┬───────────┬───────────┐
+        # │ x1  ┆ x2  ┆ pct_change  ┆ maxes     ┆ xcols     │
+        # │ --- ┆ --- ┆ ---         ┆ ---       ┆ ---       │
+        # │ i64 ┆ i64 ┆ struct[2]   ┆ struct[2] ┆ struct[2] │
+        # ╞═════╪═════╪═════════════╪═══════════╪═══════════╡
+        # │ 1   ┆ 1   ┆ {null,null} ┆ {6,3}     ┆ {1,1}     │
+        # │ 2   ┆ 2   ┆ {1.0,1.0}   ┆ {6,3}     ┆ {2,2}     │
+        # │ 6   ┆ 3   ┆ {2.0,0.5}   ┆ {6,3}     ┆ {6,3}     │
+        # └─────┴─────┴─────────────┴───────────┴───────────┘
+        assert ldf.collect().to_dicts() == [
+            {
+                "x1": 1,
+                "x2": 1,
+                "pct_change": {"x1": None, "x2": None},
+                "maxes": {"x1_max": 6, "x2_max": 3},
+                "xcols": {"x1": 1, "x2": 1},
+            },
+            {
+                "x1": 2,
+                "x2": 2,
+                "pct_change": {"x1": 1.0, "x2": 1.0},
+                "maxes": {"x1_max": 6, "x2_max": 3},
+                "xcols": {"x1": 2, "x2": 2},
+            },
+            {
+                "x1": 6,
+                "x2": 3,
+                "pct_change": {"x1": 2.0, "x2": 0.5},
+                "maxes": {"x1_max": 6, "x2_max": 3},
+                "xcols": {"x1": 6, "x2": 3},
+            },
+        ]
 
     # require at least one of exprs / **named_exprs
     with pytest.raises(ValueError):

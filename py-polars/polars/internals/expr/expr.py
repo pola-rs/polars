@@ -64,12 +64,25 @@ def selection_to_pyexpr_list(
             | pli.WhenThen
             | pli.WhenThenThen
         ]
+        | None
     ),
+    structify: bool = False,
 ) -> list[PyExpr]:
-    if isinstance(exprs, (str, Expr, pli.Series)):
+    if exprs is None:
+        exprs = []
+    elif isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
+    return [
+        expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
+        for e in exprs
+    ]
 
-    return [expr_to_lit_or_expr(e, str_to_lit=False)._pyexpr for e in exprs]
+
+def expr_output_name(expr: pli.Expr) -> str | None:
+    try:
+        return expr.meta.output_name()
+    except Exception:
+        return None
 
 
 def expr_to_lit_or_expr(
@@ -91,6 +104,7 @@ def expr_to_lit_or_expr(
     ),
     str_to_lit: bool = True,
     structify: bool = False,
+    name: str | None = None,
 ) -> Expr:
     """
     Convert args to expressions.
@@ -100,11 +114,13 @@ def expr_to_lit_or_expr(
     expr
         Any argument.
     str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`,
-        If False it will be converted to `col("foo")`
+        If True string argument `"foo"` will be converted to `lit("foo")`.
+        If False it will be converted to `col("foo")`.
     structify
         If the final unaliased expression has multiple output names,
-        automagically convert it to struct
+        automatically convert it to struct.
+    name
+        Apply the given name as an alias to the resulting expression.
 
     Returns
     -------
@@ -133,9 +149,11 @@ def expr_to_lit_or_expr(
     if structify:
         unaliased_expr = expr.meta.undo_aliases()
         if unaliased_expr.meta.has_multiple_outputs():
-            expr = cast(Expr, pli.struct(expr))
+            expr_name = expr_output_name(expr)
+            expr = cast(Expr, pli.struct(expr if expr_name is None else unaliased_expr))
+            name = name or expr_name
 
-    return expr
+    return expr if name is None else expr.alias(name)
 
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
