@@ -188,6 +188,9 @@ class DataFrame:
     infer_schema_length : int, default None
         Maximum number of rows to read for schema inference; only applies if the input
         data is a sequence or generator of rows; other input is read as-is.
+    nan_to_null : bool, default False
+        If the data comes from one or more numpy arrays, can optionally convert input
+        data np.nan values to null instead. This is a no-op for all other input data.
 
     Examples
     --------
@@ -324,6 +327,7 @@ class DataFrame:
         schema_overrides: SchemaDict | None = None,
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
+        nan_to_null: bool = False,
     ):
         if data is None:
             self._df = dict_to_pydf(
@@ -332,7 +336,10 @@ class DataFrame:
 
         elif isinstance(data, dict):
             self._df = dict_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides
+                data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                nan_to_null=nan_to_null,
             )
 
         elif isinstance(data, (list, tuple, Sequence)):
@@ -350,7 +357,11 @@ class DataFrame:
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, orient=orient
+                data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                orient=orient,
+                nan_to_null=nan_to_null,
             )
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
@@ -585,14 +596,14 @@ class DataFrame:
         )
 
     @classmethod
-    @deprecated_alias(columns="schema")
+    @deprecated_alias(columns="schema", nan_to_none="nan_to_null")
     def _from_pandas(
         cls: type[DF],
         data: pd.DataFrame,
         schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
-        nan_to_none: bool = True,
+        nan_to_null: bool = True,
     ) -> DF:
         """
         Construct a Polars DataFrame from a pandas DataFrame.
@@ -616,8 +627,8 @@ class DataFrame:
             any dtypes inferred from the columns param will be overridden.
         rechunk : bool, default True
             Make sure that all data is in contiguous memory.
-        nan_to_none : bool, default True
-            If data contains NaN values PyArrow will convert the NaN to None
+        nan_to_null : bool, default True
+            If the data contains NaN values they will be converted to null/None.
 
         Returns
         -------
@@ -630,7 +641,7 @@ class DataFrame:
                 schema=schema,
                 schema_overrides=schema_overrides,
                 rechunk=rechunk,
-                nan_to_none=nan_to_none,
+                nan_to_null=nan_to_null,
             )
         )
 
