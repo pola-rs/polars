@@ -119,7 +119,7 @@ class HTMLFormatter:
         self.elements.append(inner)
 
     def render(self) -> list[str]:
-        with Tag(self.elements, "table", {"border": "1", "class": "dataframe"}):
+        with Tag(self.elements, "table", {"border": "1", "class": "pl-dataframe"}):
             self.write_header()
             self.write_body()
         return self.elements
@@ -134,35 +134,14 @@ class NotebookFormatter(HTMLFormatter):
     """
 
     def write_style(self) -> None:
-        # SNIPPET Forked from pandas.
-
-        # We use the "scoped" attribute here so that the desired
-        # style properties for the data frame are not then applied
-        # throughout the entire notebook.
-        template_first = """\
-            <style scoped>"""
-        template_last = """\
-            </style>"""
-        template_select = """\
-                .dataframe %s {
-                    %s: %s;
-                }"""
-        element_props = [
-            ("tbody tr th:only-of-type", "vertical-align", "middle"),
-            ("tbody tr th", "vertical-align", "top"),
-            ("thead th", "text-align", "right"),
-            ("td", "white-space", "pre"),
-            ("td", "padding-top", "0"),
-            ("td", "padding-bottom", "0"),
-        ]
-        # vs code cannot deal with that css line
-        # see #4102
-        if not in_vscode_notebook():
-            element_props.append(("td", "line-height", "95%"))
-
-        template_mid = "\n\n".join(template_select % t for t in element_props)
-        template = dedent("\n".join((template_first, template_mid, template_last)))
-        self.write(template)
+        style = """\
+            <style>
+            .pl-dataframe > thead > tr > th {
+              text-align: right;
+            }
+            </style>
+        """
+        self.write(dedent(style))
 
     def render(self) -> list[str]:
         """Return the lines needed to render a HTML table."""
@@ -170,15 +149,3 @@ class NotebookFormatter(HTMLFormatter):
             self.write_style()
             super().render()
         return self.elements
-
-
-def in_vscode_notebook() -> bool:
-    try:
-        # autoimported by notebooks
-        get_ipython()  # type: ignore[name-defined]
-        os.environ["VSCODE_CWD"]
-    except NameError:
-        return False  # not in notebook
-    except KeyError:
-        return False  # not in VSCode
-    return True
