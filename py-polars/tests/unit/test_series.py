@@ -1728,57 +1728,6 @@ def test_shrink_to_fit() -> None:
     assert s is not sf
 
 
-def test_dt_strftime() -> None:
-    s = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
-    assert s.dtype == pl.Date
-    expected = pl.Series("a", ["1997-05-19", "2024-10-04", "2052-02-20"])
-    assert_series_equal(s.dt.strftime("%F"), expected)
-
-
-def test_dt_year_month_week_day_ordinal_day() -> None:
-    s = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
-
-    assert_series_equal(s.dt.year(), pl.Series("a", [1997, 2024, 2052], dtype=Int32))
-
-    assert_series_equal(s.dt.month(), pl.Series("a", [5, 10, 2], dtype=UInt32))
-    assert_series_equal(s.dt.weekday(), pl.Series("a", [1, 5, 2], dtype=UInt32))
-    assert_series_equal(s.dt.week(), pl.Series("a", [21, 40, 8], dtype=UInt32))
-    assert_series_equal(s.dt.day(), pl.Series("a", [19, 4, 20], dtype=UInt32))
-    assert_series_equal(
-        s.dt.ordinal_day(), pl.Series("a", [139, 278, 51], dtype=UInt32)
-    )
-
-    assert s.dt.median() == date(2024, 10, 4)
-    assert s.dt.mean() == date(2024, 10, 4)
-
-
-def test_dt_datetimes() -> None:
-    s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
-    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
-
-    # hours, minutes, seconds, milliseconds, microseconds, and nanoseconds
-    assert_series_equal(s.dt.hour(), pl.Series("", [0, 3], dtype=UInt32))
-    assert_series_equal(s.dt.minute(), pl.Series("", [0, 20], dtype=UInt32))
-    assert_series_equal(s.dt.second(), pl.Series("", [0, 10], dtype=UInt32))
-    assert_series_equal(s.dt.millisecond(), pl.Series("", [0, 987], dtype=UInt32))
-    assert_series_equal(s.dt.microsecond(), pl.Series("", [0, 987654], dtype=UInt32))
-    assert_series_equal(s.dt.nanosecond(), pl.Series("", [0, 987654321], dtype=UInt32))
-
-    # epoch methods
-    assert_series_equal(s.dt.epoch(tu="d"), pl.Series("", [18262, 18294], dtype=Int32))
-    assert_series_equal(
-        s.dt.epoch(tu="s"), pl.Series("", [1_577_836_800, 1_580_613_610], dtype=Int64)
-    )
-    assert_series_equal(
-        s.dt.epoch(tu="ms"),
-        pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=Int64),
-    )
-    # fractional seconds
-    assert_series_equal(
-        s.dt.second(fractional=True), pl.Series("", [0.0, 10.987654321], dtype=Float64)
-    )
-
-
 @pytest.mark.parametrize("unit", ["ns", "us", "ms"])
 def test_cast_datetime_to_time(unit: TimeUnit) -> None:
     a = pl.Series(
@@ -2106,30 +2055,6 @@ def test_duration_arithmetic() -> None:
         assert_series_equal(df1["d_offset"], df2["d_offset"])
 
 
-def test_duration_extract_times() -> None:
-    a = pl.Series("a", [datetime(2021, 1, 1)])
-    b = pl.Series("b", [datetime(2021, 1, 2)])
-
-    duration = b - a
-    expected = pl.Series("b", [1])
-    assert_series_equal(duration.dt.days(), expected)
-
-    expected = pl.Series("b", [24])
-    assert_series_equal(duration.dt.hours(), expected)
-
-    expected = pl.Series("b", [3600 * 24])
-    assert_series_equal(duration.dt.seconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e3)])
-    assert_series_equal(duration.dt.milliseconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e6)])
-    assert_series_equal(duration.dt.microseconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e9)])
-    assert_series_equal(duration.dt.nanoseconds(), expected)
-
-
 def test_mean_overflow() -> None:
     arr = np.array([255] * (1 << 17), dtype="int16")
     assert arr.mean() == 255.0
@@ -2344,6 +2269,7 @@ def test_ptr() -> None:
 
     ptr2 = s2.rechunk()._get_ptr()
     assert ptr != ptr2
+
 
 def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])

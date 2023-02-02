@@ -1,9 +1,14 @@
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
 
 
 def test_str_slice() -> None:
@@ -452,3 +457,63 @@ def test_starts_ends_with() -> None:
         "starts_None": [False, False, False],
         "starts_sub": [True, False, False],
     }
+
+
+def test_strptime_precision() -> None:
+    s = pl.Series(
+        "date", ["2022-09-12 21:54:36.789321456", "2022-09-13 12:34:56.987456321"]
+    )
+    ds = s.str.strptime(pl.Datetime)
+    assert ds.cast(pl.Date) != None  # noqa: E711  (note: *deliberately* testing "!=")
+    assert getattr(ds.dtype, "tu", None) == "us"
+
+    time_units: list[TimeUnit] = ["ms", "us", "ns"]
+    suffixes = ["%.3f", "%.6f", "%.9f"]
+    test_data = zip(
+        time_units,
+        suffixes,
+        (
+            [789000000, 987000000],
+            [789321000, 987456000],
+            [789321456, 987456321],
+        ),
+    )
+    for precision, suffix, expected_values in test_data:
+        ds = s.str.strptime(pl.Datetime(precision), f"%Y-%m-%d %H:%M:%S{suffix}")
+        assert getattr(ds.dtype, "tu", None) == precision
+        assert ds.dt.nanosecond().to_list() == expected_values
+
+
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [("ms", "123000000"), ("us", "123456000"), ("ns", "123456789")],
+)
+@pytest.mark.parametrize("fmt", ["%Y-%m-%d %H:%M:%S.%f", None])
+def test_strptime_precision_with_time_unit(
+    unit: TimeUnit, expected: str, fmt: str
+) -> None:
+    ser = pl.Series(["2020-01-01 00:00:00.123456789"])
+    result = ser.str.strptime(pl.Datetime(unit), fmt=fmt).dt.strftime("%f")[0]
+    assert result == expected
+
+
+def test_date_parse_omit_day() -> None:
+    df = pl.DataFrame({"month": ["2022-01"]})
+    assert df.select(pl.col("month").str.strptime(pl.Date, fmt="%Y-%m")).item() == date(
+        2022, 1, 1
+    )
+    assert df.select(
+        pl.col("month").str.strptime(pl.Datetime, fmt="%Y-%m")
+    ).item() == datetime(2022, 1, 1)
+
+
+@pytest.mark.parametrize("fmt", ["%Y-%m-%dT%H:%M:%S", None])
+def test_utc_with_tz_naive(fmt: str | None) -> None:
+    with pytest.raises(
+        ComputeError,
+        match=(
+            r"^Cannot use 'utc=True' with tz-naive data. "
+            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\).$"
+        ),
+    ):
+        pl.Series(["2020-01-01 00:00:00"]).str.strptime(pl.Datetime, fmt, utc=True)

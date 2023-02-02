@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import sys
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, cast, no_type_check
+from typing import cast, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -24,9 +24,6 @@ from polars.testing import (
     assert_series_equal,
     assert_series_not_equal,
 )
-
-if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
 
 
 def test_fill_null() -> None:
@@ -425,66 +422,6 @@ def test_to_numpy() -> None:
     s3 = pl.Series([timedelta(hours=1), timedelta(hours=-2)])
     out = np.array([3_600_000_000_000, -7_200_000_000_000], dtype="timedelta64[ns]")
     assert (s3.to_numpy() == out).all()
-
-
-def test_truncate() -> None:
-    start = datetime(2001, 1, 1)
-    stop = datetime(2001, 1, 2)
-
-    s1 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[ms]", time_unit="ms"
-    )
-    s2 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[us]", time_unit="us"
-    )
-    s3 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[ns]", time_unit="ns"
-    )
-
-    # can pass strings and timedeltas
-    for out in [
-        s1.dt.truncate("1h"),
-        s2.dt.truncate("1h0m0s"),
-        s3.dt.truncate(timedelta(hours=1)),
-    ]:
-        assert out.dt[0] == start
-        assert out.dt[1] == start
-        assert out.dt[2] == start + timedelta(hours=1)
-        assert out.dt[3] == start + timedelta(hours=1)
-        # ...
-        assert out.dt[-3] == stop - timedelta(hours=1)
-        assert out.dt[-2] == stop - timedelta(hours=1)
-        assert out.dt[-1] == stop
-
-
-def test_round() -> None:
-    start = datetime(2001, 1, 1)
-    stop = datetime(2001, 1, 2)
-
-    s1 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[ms]", time_unit="ms"
-    )
-    s2 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[us]", time_unit="us"
-    )
-    s3 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[ns]", time_unit="ns"
-    )
-
-    # can pass strings and timedeltas
-    for out in [
-        s1.dt.round("1h"),
-        s2.dt.round("1h0m0s"),
-        s3.dt.round(timedelta(hours=1)),
-    ]:
-        assert out.dt[0] == start
-        assert out.dt[1] == start + timedelta(hours=1)
-        assert out.dt[2] == start + timedelta(hours=1)
-        assert out.dt[3] == start + timedelta(hours=2)
-        # ...
-        assert out.dt[-3] == stop - timedelta(hours=1)
-        assert out.dt[-2] == stop
-        assert out.dt[-1] == stop
 
 
 def test_date_range() -> None:
@@ -935,19 +872,6 @@ def test_microseconds_accuracy() -> None:
     assert df["timestamp"].to_list() == timestamps
 
 
-def test_cast_time_units() -> None:
-    dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
-    dates_in_ns = np.array([978307200000000000, 981022089000000000])
-
-    assert dates.dt.cast_time_unit("ns").cast(int).to_list() == list(dates_in_ns)
-    assert dates.dt.cast_time_unit("us").cast(int).to_list() == list(
-        dates_in_ns // 1_000
-    )
-    assert dates.dt.cast_time_unit("ms").cast(int).to_list() == list(
-        dates_in_ns // 1_000_000
-    )
-
-
 def test_read_utc_times_parquet() -> None:
     df = pd.DataFrame(
         data={
@@ -962,19 +886,6 @@ def test_read_utc_times_parquet() -> None:
     df_in = pl.read_parquet(f)
     tz = zoneinfo.ZoneInfo("UTC")
     assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0, tzinfo=tz)
-
-
-def test_epoch() -> None:
-    dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
-
-    for unit in DTYPE_TEMPORAL_UNITS:
-        assert_series_equal(dates.dt.epoch(unit), dates.dt.timestamp(unit))
-
-    assert_series_equal(dates.dt.epoch("s"), dates.dt.timestamp("ms") // 1000)
-    assert_series_equal(
-        dates.dt.epoch("d"),
-        (dates.dt.timestamp("ms") // (1000 * 3600 * 24)).cast(pl.Int32),
-    )
 
 
 def test_default_negative_every_offset_dynamic_groupby() -> None:
@@ -1009,44 +920,6 @@ def test_strptime_dates_datetimes() -> None:
         datetime(2021, 4, 22, 0, 0),
         datetime(2022, 1, 4, 0, 0),
     ]
-
-
-def test_strptime_precision() -> None:
-    s = pl.Series(
-        "date", ["2022-09-12 21:54:36.789321456", "2022-09-13 12:34:56.987456321"]
-    )
-    ds = s.str.strptime(pl.Datetime)
-    assert ds.cast(pl.Date) != None  # noqa: E711  (note: *deliberately* testing "!=")
-    assert getattr(ds.dtype, "tu", None) == "us"
-
-    time_units: list[TimeUnit] = ["ms", "us", "ns"]
-    suffixes = ["%.3f", "%.6f", "%.9f"]
-    test_data = zip(
-        time_units,
-        suffixes,
-        (
-            [789000000, 987000000],
-            [789321000, 987456000],
-            [789321456, 987456321],
-        ),
-    )
-    for precision, suffix, expected_values in test_data:
-        ds = s.str.strptime(pl.Datetime(precision), f"%Y-%m-%d %H:%M:%S{suffix}")
-        assert getattr(ds.dtype, "tu", None) == precision
-        assert ds.dt.nanosecond().to_list() == expected_values
-
-
-@pytest.mark.parametrize(
-    ("unit", "expected"),
-    [("ms", "123000000"), ("us", "123456000"), ("ns", "123456789")],
-)
-@pytest.mark.parametrize("fmt", ["%Y-%m-%d %H:%M:%S.%f", None])
-def test_strptime_precision_with_time_unit(
-    unit: TimeUnit, expected: str, fmt: str
-) -> None:
-    ser = pl.Series(["2020-01-01 00:00:00.123456789"])
-    result = ser.str.strptime(pl.Datetime(unit), fmt=fmt).dt.strftime("%f")[0]
-    assert result == expected
 
 
 def test_asof_join_tolerance_grouper() -> None:
@@ -1148,44 +1021,6 @@ def test_date_duration_offset() -> None:
         "sub_days": [date(9, 1, 1), date(2000, 6, 28), date(9991, 1, 31)],
         "add_weeks": [date(16, 12, 30), date(2000, 8, 23), date(9990, 5, 28)],
         "sub_weeks": [date(3, 1, 3), date(2000, 5, 17), date(9991, 8, 5)],
-    }
-
-
-def test_date_time_combine() -> None:
-    # test combining datetime/date and time (as expr/col and as literal)
-    df = pl.DataFrame(
-        {
-            "dtm": [
-                datetime(2022, 12, 31, 10, 30, 45),
-                datetime(2023, 7, 5, 23, 59, 59),
-            ],
-            "dt": [date(2022, 10, 10), date(2022, 7, 5)],
-            "tm": [time(1, 2, 3, 456000), time(7, 8, 9, 101000)],
-        }
-    ).select(
-        [
-            pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),
-            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),
-            pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),
-        ]
-    )
-    # if combining with datetime, the time component should be overwritten.
-    # if combining with date, should write both parts 'as-is' into the new datetime.
-    assert df.to_dict(False) == {
-        "d1": [
-            datetime(2022, 12, 31, 1, 2, 3, 456000),
-            datetime(2023, 7, 5, 7, 8, 9, 101000),
-        ],
-        "d2": [
-            datetime(2022, 10, 10, 1, 2, 3, 456000),
-            datetime(2022, 7, 5, 7, 8, 9, 101000),
-        ],
-        "d3": [datetime(2022, 10, 10, 4, 5, 6), datetime(2022, 7, 5, 4, 5, 6)],
-    }
-    assert df.schema == {
-        "d1": pl.Datetime("us"),
-        "d2": pl.Datetime("us"),
-        "d3": pl.Datetime("us"),
     }
 
 
@@ -1786,49 +1621,6 @@ def test_groupby_rolling_by_() -> None:
     }
 
 
-def test_quarter() -> None:
-    assert pl.date_range(
-        datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo"
-    ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
-
-
-def test_date_offset() -> None:
-    out = pl.DataFrame(
-        {"dates": pl.date_range(datetime(2000, 1, 1), datetime(2020, 1, 1), "1y")}
-    ).with_columns(
-        [
-            pl.col("dates").dt.offset_by("1y").alias("date_plus_1y"),
-            pl.col("dates").dt.offset_by("-1y2mo").alias("date_min"),
-        ]
-    )
-
-    assert (out["date_plus_1y"].dt.day() == 1).all()
-    assert (out["date_min"].dt.day() == 1).all()
-    assert out["date_min"].to_list() == [
-        datetime(1998, 11, 1, 0, 0),
-        datetime(1999, 11, 1, 0, 0),
-        datetime(2000, 11, 1, 0, 0),
-        datetime(2001, 11, 1, 0, 0),
-        datetime(2002, 11, 1, 0, 0),
-        datetime(2003, 11, 1, 0, 0),
-        datetime(2004, 11, 1, 0, 0),
-        datetime(2005, 11, 1, 0, 0),
-        datetime(2006, 11, 1, 0, 0),
-        datetime(2007, 11, 1, 0, 0),
-        datetime(2008, 11, 1, 0, 0),
-        datetime(2009, 11, 1, 0, 0),
-        datetime(2010, 11, 1, 0, 0),
-        datetime(2011, 11, 1, 0, 0),
-        datetime(2012, 11, 1, 0, 0),
-        datetime(2013, 11, 1, 0, 0),
-        datetime(2014, 11, 1, 0, 0),
-        datetime(2015, 11, 1, 0, 0),
-        datetime(2016, 11, 1, 0, 0),
-        datetime(2017, 11, 1, 0, 0),
-        datetime(2018, 11, 1, 0, 0),
-    ]
-
-
 def test_sorted_unique() -> None:
     assert (
         pl.DataFrame(
@@ -1865,11 +1657,6 @@ def test_date_to_time_cast_5111() -> None:
     assert df["xyz"].to_list() == [time(0), time(0), time(0), time(0), time(0)]
 
 
-def test_year_empty_df() -> None:
-    df = pl.DataFrame(pl.Series(name="date", dtype=pl.Date))
-    assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]
-
-
 def test_sum_duration() -> None:
     assert pl.DataFrame(
         [
@@ -1892,26 +1679,11 @@ def test_supertype_timezones_4174() -> None:
         {
             "dt": pl.date_range(datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"),
         }
-    ).with_columns(
-        [
-            pl.col("dt").dt.cast_time_zone("Europe/London").suffix("_London"),
-        ]
-    )
+    ).with_columns(pl.col("dt").dt.cast_time_zone("Europe/London").suffix("_London"))
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
     df.with_columns(df["dt_London"].shift_and_fill(1, date_to_fill))
-
-
-def test_weekday() -> None:
-    # monday
-    s = pl.Series([datetime(2020, 1, 6)])
-
-    time_units: list[TimeUnit] = ["ns", "us", "ms"]
-    for tu in time_units:
-        assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 1
-
-    assert s.cast(pl.Date).dt.weekday()[0] == 1
 
 
 @pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
@@ -1922,16 +1694,6 @@ def test_from_dict_tu_consistency() -> None:
     from_dicts = pl.from_dicts([{"dt": dt}])
 
     assert from_dict.dtypes == from_dicts.dtypes
-
-
-def test_date_parse_omit_day() -> None:
-    df = pl.DataFrame({"month": ["2022-01"]})
-    assert df.select(pl.col("month").str.strptime(pl.Date, fmt="%Y-%m")).item() == date(
-        2022, 1, 1
-    )
-    assert df.select(
-        pl.col("month").str.strptime(pl.Datetime, fmt="%Y-%m")
-    ).item() == datetime(2022, 1, 1)
 
 
 @pytest.mark.parametrize(
@@ -2798,15 +2560,3 @@ def test_tz_aware_without_fmt() -> None:
         ),
     ):
         pl.Series(["2020-01-01"]).str.strptime(pl.Datetime, tz_aware=True)
-
-
-@pytest.mark.parametrize("fmt", ["%Y-%m-%dT%H:%M:%S", None])
-def test_utc_with_tz_naive(fmt: str | None) -> None:
-    with pytest.raises(
-        ComputeError,
-        match=(
-            r"^Cannot use 'utc=True' with tz-naive data. "
-            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\).$"
-        ),
-    ):
-        pl.Series(["2020-01-01 00:00:00"]).str.strptime(pl.Datetime, fmt, utc=True)
