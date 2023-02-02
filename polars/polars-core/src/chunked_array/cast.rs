@@ -133,13 +133,35 @@ impl ChunkCast for Utf8Chunked {
 }
 
 #[cfg(feature = "dtype-binary")]
+unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
+    let values = from.values().clone();
+    let offsets = from.offsets().clone();
+    Utf8Array::<i64>::try_new_unchecked(
+        ArrowDataType::LargeUtf8,
+        offsets,
+        values,
+        from.validity().cloned(),
+    )
+    .unwrap()
+}
+
+#[cfg(feature = "dtype-binary")]
 impl ChunkCast for BinaryChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         cast_impl(self.name(), &self.chunks, data_type)
     }
 
     fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.cast(data_type)
+        match data_type {
+            DataType::Utf8 => unsafe {
+                let chunks = self
+                    .downcast_iter()
+                    .map(|arr| Box::new(binary_to_utf8_unchecked(arr)) as ArrayRef)
+                    .collect();
+                Ok(Utf8Chunked::from_chunks(self.name(), chunks).into_series())
+            },
+            _ => self.cast(data_type),
+        }
     }
 }
 

@@ -543,19 +543,6 @@ pub enum FillNullStrategy {
     /// replace with the minimal value of that data type
     MinBound,
 }
-
-/// Replace None values with various strategies
-pub trait ChunkFillNull {
-    /// Replace None values with one of the following strategies:
-    /// * Forward fill (replace None with the previous value)
-    /// * Backward fill (replace None with the next value)
-    /// * Mean fill (replace None with the mean of the whole array)
-    /// * Min fill (replace None with the minimum of the whole array)
-    /// * Max fill (replace None with the maximum of the whole array)
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self>
-    where
-        Self: Sized;
-}
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.

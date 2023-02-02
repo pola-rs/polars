@@ -415,12 +415,6 @@ macro_rules! impl_dyn_series {
                 self.0.shift(periods).$into_logical().into_series()
             }
 
-            fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-                self.0
-                    .fill_null(strategy)
-                    .map(|ca| ca.$into_logical().into_series())
-            }
-
             fn _sum_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
                     .cast(self.dtype())

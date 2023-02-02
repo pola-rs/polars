@@ -445,12 +445,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-        self.0
-            .fill_null(strategy)
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
-    }
-
     fn _sum_as_series(&self) -> Series {
         self.0.sum_as_series().into_duration(self.0.time_unit())
     }
