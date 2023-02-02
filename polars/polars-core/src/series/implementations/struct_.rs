@@ -334,12 +334,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.apply_fields(|s| s.shift(periods)).into_series()
     }
 
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-        self.0
-            .try_apply_fields(|s| s.fill_null(strategy))
-            .map(|ca| ca.into_series())
-    }
-
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         self.0.is_in(other)

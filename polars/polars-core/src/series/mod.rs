@@ -241,6 +241,22 @@ impl Series {
         }
     }
 
+    /// Cast from physical to logical types without any checks on the validity of the cast.
+    ///
+    /// # Safety
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
+        match self.dtype() {
+            dt if dt.is_numeric() => {
+                with_match_physical_numeric_polars_type!(dt, |$T| {
+                    let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
+                        ca.cast_unchecked(dtype)
+                })
+            }
+            _ => self.cast(dtype),
+        }
+    }
+
     /// Compute the sum of all values in this Series.
     /// Returns `Some(0)` if the array is empty, and `None` if the array only
     /// contains null values.

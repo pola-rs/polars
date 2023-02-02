@@ -220,10 +220,6 @@ where
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-        ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
-    }
-
     fn fmt_list(&self) -> String {
         FmtList::fmt_list(&self.0)
     }

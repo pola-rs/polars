@@ -1813,6 +1813,48 @@ def test_fill_null() -> None:
         df.fill_null(strategy="max"), pl.DataFrame({"a": [1, 2], "b": [3, 3]})
     )
 
+    # utf8 and list data
+    # utf8 goes via binary
+    df = pl.DataFrame(
+        {
+            "c": [
+                ["Apple", "Orange"],
+                ["Apple", "Orange"],
+                None,
+                ["Carrot"],
+                None,
+                None,
+            ],
+            "b": ["Apple", "Orange", None, "Carrot", None, None],
+        }
+    )
+
+    assert df.select(
+        [
+            pl.all().forward_fill().suffix("_forward"),
+            pl.all().backward_fill().suffix("_backward"),
+        ]
+    ).to_dict(False) == {
+        "c_forward": [
+            ["Apple", "Orange"],
+            ["Apple", "Orange"],
+            ["Apple", "Orange"],
+            ["Carrot"],
+            ["Carrot"],
+            ["Carrot"],
+        ],
+        "b_forward": ["Apple", "Orange", "Orange", "Carrot", "Carrot", "Carrot"],
+        "c_backward": [
+            ["Apple", "Orange"],
+            ["Apple", "Orange"],
+            ["Carrot"],
+            ["Carrot"],
+            None,
+            None,
+        ],
+        "b_backward": ["Apple", "Orange", "Carrot", "Carrot", None, None],
+    }
+
 
 def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("nan")]})

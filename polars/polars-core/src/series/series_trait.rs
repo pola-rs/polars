@@ -514,46 +514,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Replace None values with one of the following strategies:
-    /// * Forward fill (replace None with the previous value)
-    /// * Backward fill (replace None with the next value)
-    /// * Mean fill (replace None with the mean of the whole array)
-    /// * Min fill (replace None with the minimum of the whole array)
-    /// * Max fill (replace None with the maximum of the whole array)
-    ///
-    /// *NOTE: If you want to fill the Nones with a value use the
-    /// [`fill_null` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkFillNull.html)*.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// fn example() -> PolarsResult<()> {
-    ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::Forward(None))?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::Backward(None))?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::Min)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::Max)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::Mean)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
-    ///
-    ///     Ok(())
-    /// }
-    /// example();
-    /// ```
-    fn fill_null(&self, _strategy: FillNullStrategy) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
-    }
-
     /// Get the sum of the Series as a new Series of length 1.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
