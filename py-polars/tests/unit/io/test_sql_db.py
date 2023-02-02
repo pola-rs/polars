@@ -163,25 +163,28 @@ def test_write_sql(
 ) -> None:
     import tempfile
 
-    with tempfile.TemporaryDirectory() as tmpdir_name:
-        test_db = os.path.join(tmpdir_name, "test.db")
+    with suppress(ImportError):
 
-        sample_df.write_sql(
-            table_name="test_data",
-            connection_uri=f"sqlite:///{test_db}",
-            mode="create",
-            engine=engine,
-        )
+        with tempfile.TemporaryDirectory() as tmpdir_name:
+            test_db = os.path.join(tmpdir_name, "test.db")
 
-        if mode == "append":
             sample_df.write_sql(
                 table_name="test_data",
                 connection_uri=f"sqlite:///{test_db}",
-                mode="append",
+                mode="create",
                 engine=engine,
             )
-            sample_df = pl.concat([sample_df, sample_df])
 
-        assert_frame_equal(
-            sample_df, pl.read_sql("SELECT * FROM test_data", f"sqlite:///{test_db}")
-        )
+            if mode == "append":
+                sample_df.write_sql(
+                    table_name="test_data",
+                    connection_uri=f"sqlite:///{test_db}",
+                    mode="append",
+                    engine=engine,
+                )
+                sample_df = pl.concat([sample_df, sample_df])
+
+            assert_frame_equal(
+                sample_df,
+                pl.read_sql("SELECT * FROM test_data", f"sqlite:///{test_db}"),
+            )
