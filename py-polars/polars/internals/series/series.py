@@ -651,6 +651,9 @@ class Series:
     def __neg__(self) -> Series:
         return 0 - self
 
+    def __pos__(self) -> Series:
+        return 0 + self
+
     def __abs__(self) -> Series:
         return self.abs()
 

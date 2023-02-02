@@ -298,6 +298,9 @@ class Expr:
     def __neg__(self) -> Expr:
         return pli.lit(0) - self
 
+    def __pos__(self) -> Expr:
+        return pli.lit(0) + self
+
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Expr:
