@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -1045,12 +1046,27 @@ class DateTimeNameSpace:
         This method takes a naive Datetime Series and makes this time zone aware.
         It does not move the time to another time zone.
 
+        .. deprecated:: 0.16.3
+            `with_column` will be removed in favor of the more generic `with_columns`
+            in version 0.18.0.
+
         Parameters
         ----------
         tz
             Time zone for the `Datetime` Series.
-
         """
+        warnings.warn(
+            "`tz_localize` has been deprecated in favor of `cast_time_zone`."
+            " This method will be removed in version 0.18.0",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).dt.tz_localize(tz))
+            .to_series()
+        )
 
     def days(self) -> pli.Series:
         """
