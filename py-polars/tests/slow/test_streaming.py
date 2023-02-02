@@ -1,5 +1,5 @@
-import os
 import time
+from typing import Any
 
 import numpy as np
 
@@ -17,10 +17,8 @@ def test_cross_join_stack() -> None:
     assert (t1 - t0) < 0.5
 
 
-def test_ooc_sort() -> None:
-    # not sure if monkeypatch will be visible in rust
-    env = "POLARS_FORCE_OOC_SORT"
-    os.environ[env] = "1"
+def test_ooc_sort(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
 
@@ -32,5 +30,3 @@ def test_ooc_sort() -> None:
         ).to_series()
 
         assert_series_equal(out, s.sort(reverse=reverse))
-
-    os.unsetenv(env)

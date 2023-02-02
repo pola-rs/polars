@@ -414,12 +414,11 @@ def test_string_cache() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.xdist_group(name="group1")
 def test_config_load_save() -> None:
     # set some config options...
     pl.Config.set_tbl_cols(12)
     pl.Config.set_verbose(True)
-    assert os.environ["POLARS_VERBOSE"] == "1"
+    assert os.environ.get("POLARS_VERBOSE") == "1"
 
     cfg = pl.Config.save()
     assert isinstance(cfg, str)
@@ -428,14 +427,14 @@ def test_config_load_save() -> None:
     # ...modify the same options...
     pl.Config.set_tbl_cols(10)
     pl.Config.set_verbose(False)
-    assert os.environ["POLARS_VERBOSE"] == "0"
+    assert os.environ.get("POLARS_VERBOSE") == "0"
 
     # ...load back from config...
     pl.Config.load(cfg)
 
     # ...and confirm the saved options were set.
-    assert os.environ["POLARS_FMT_MAX_COLS"] == "12"
-    assert os.environ["POLARS_VERBOSE"] == "1"
+    assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
+    assert os.environ.get("POLARS_VERBOSE") == "1"
 
     # restore all default options (unsets from env)
     pl.Config.restore_defaults()

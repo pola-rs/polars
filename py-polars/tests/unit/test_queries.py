@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from _pytest.monkeypatch import MonkeyPatch
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -138,7 +138,7 @@ def test_maintain_order_after_sampling() -> None:
     ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
 
 
-def test_sorted_groupby_optimization(monkeypatch: MonkeyPatch) -> None:
+def test_sorted_groupby_optimization(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_NO_STREAMING_GROUPBY", "1")
 
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})

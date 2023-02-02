@@ -1,4 +1,3 @@
-import os
 from datetime import date
 from typing import Any
 
@@ -202,9 +201,8 @@ def test_streaming_block_on_literals_6054() -> None:
     ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
 
-@pytest.mark.xdist_group(name="group1")
-def test_streaming_streamable_functions(capfd: Any) -> None:
-    os.environ["POLARS_VERBOSE"] = "1"
+def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
     assert (
         pl.DataFrame({"a": [1, 2, 3]})
         .lazy()
@@ -217,4 +215,3 @@ def test_streaming_streamable_functions(capfd: Any) -> None:
 
     (_, err) = capfd.readouterr()
     assert "df -> function -> ordered_sink" in err
-    os.unsetenv("POLARS_VERBOSE")
