@@ -21,13 +21,6 @@ from typing import (
 )
 
 import polars.internals as pli
-from polars.datatypes import (
-    Date,
-    Datetime,
-    Int64,
-    PolarsDataType,
-    is_polars_dtype,
-)
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 try:
@@ -52,6 +45,10 @@ if sys.version_info >= (3, 11):
 
 
 if TYPE_CHECKING:
+    from polars.datatypes import (
+        PolarsDataType,
+        is_polars_dtype,
+    )
     from polars.internals.type_aliases import SizeUnit, TimeUnit
 
 
@@ -177,9 +174,13 @@ def is_str_sequence(
 
 
 def range_to_series(
-    name: str, rng: range, dtype: PolarsDataType | None = Int64
+    name: str, rng: range, dtype: PolarsDataType | None = None
 ) -> pli.Series:
     """Fast conversion of the given range to a Series."""
+    from polars.datatypes import Int64
+
+    if dtype is None:
+        dtype = Int64
     return pli.arange(
         low=rng.start,
         high=rng.stop,
@@ -264,6 +265,11 @@ def _to_python_datetime(
     tu: TimeUnit | None = "ns",
     tz: str | None = None,
 ) -> date | datetime:
+    from polars.datatypes import (
+        Date,
+        Datetime,
+    )
+
     if dtype == Date:
         # days to seconds
         # important to create from utc. Not doing this leads
@@ -487,3 +493,22 @@ def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
         raise ValueError(
             f"unit must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
         )
+
+
+class class_or_instance_method:
+    """
+    Make method available to either instantiated or non-instantiated class.
+
+    Source: https://stackoverflow.com/a/29473221/4451315
+    """
+
+    def __init__(self, func: Callable[[Any], object]) -> None:
+        self.func = func
+        self.cmdescriptor = classmethod(func)
+
+    def __get__(
+        self, instance: object, cls: type | None = None
+    ) -> Callable[[], object]:
+        if instance is None:
+            return self.cmdescriptor.__get__(None, cls)
+        return self.func.__get__(instance, cls)

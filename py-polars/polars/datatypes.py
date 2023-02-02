@@ -24,6 +24,11 @@ from typing import (
 )
 
 from polars.dependencies import pyarrow as pa
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_pl_timedelta,
+    class_or_instance_method,
+)
 
 try:
     from polars.polars import dtype_str_repr
@@ -93,25 +98,6 @@ SchemaDefinition: TypeAlias = Union[
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
 DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
-
-
-class class_or_instance_method:
-    """
-    Make method available to either instantiated or non-instantiated class.
-
-    Source: https://stackoverflow.com/a/29473221/4451315
-    """
-
-    def __init__(self, func: Callable[[Any], object]) -> None:
-        self.func = func
-        self.cmdescriptor = classmethod(func)
-
-    def __get__(
-        self, instance: object, cls: type | None = None
-    ) -> Callable[[], object]:
-        if instance is None:
-            return self.cmdescriptor.__get__(None, cls)
-        return self.func.__get__(instance, cls)
 
 
 def get_idx_type() -> PolarsDataType:
@@ -811,8 +797,6 @@ def maybe_cast(
 ) -> Any:
     """Try casting a value to a value that is valid for the given Polars dtype."""
     # cast el if it doesn't match
-    from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
-
     if isinstance(el, datetime):
         return _datetime_to_pl_timestamp(el, time_unit)
     elif isinstance(el, timedelta):
