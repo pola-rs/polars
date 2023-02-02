@@ -425,21 +425,19 @@ def test_struct_pyarrow_dataset_5796() -> None:
 
 
 @pytest.mark.slow()
-def test_parquet_chunks_545() -> None:
-    cases = [1048576, 1048577]
+@pytest.mark.parametrize("case", [1048576, 1048577])
+def test_parquet_chunks_545(case: int) -> None:
+    f = io.BytesIO()
+    # repeat until it has case instances
+    df = pd.DataFrame(
+        np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),
+        columns=["floats", "dates"],
+    )
 
-    for case in cases:
-        f = io.BytesIO()
-        # repeat until it has case instances
-        df = pd.DataFrame(
-            np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),
-            columns=["floats", "dates"],
-        )
+    # write as parquet
+    df.to_parquet(f)
+    f.seek(0)
 
-        # write as parquet
-        df.to_parquet(f)
-        f.seek(0)
-
-        # read it with polars
-        polars_df = pl.read_parquet(f)
-        assert_frame_equal(pl.DataFrame(df), polars_df)
+    # read it with polars
+    polars_df = pl.read_parquet(f)
+    assert_frame_equal(pl.DataFrame(df), polars_df)
