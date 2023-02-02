@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from functools import reduce
 from operator import add
 from string import ascii_letters
@@ -1217,12 +1217,14 @@ def test_is_between_data_types() -> None:
         {
             "flt": [1.4, 1.2, 2.5],
             "int": [2, 3, 4],
+            "str": ["xyz", "str", "abc"],
             "date": [date(2020, 1, 1), date(2020, 2, 2), date(2020, 3, 3)],
             "datetime": [
                 datetime(2020, 1, 1, 0, 0, 0),
                 datetime(2020, 1, 1, 10, 0, 0),
                 datetime(2020, 1, 1, 12, 0, 0),
             ],
+            "tm": [time(10, 30), time(0, 45), time(15, 15)],
         }
     )
 
@@ -1235,7 +1237,6 @@ def test_is_between_data_types() -> None:
         df.select(pl.col("int").is_between(1.5, 3))[:, 0],
         pl.Series("is_between", [True, True, False]),
     )
-
     assert_series_equal(
         df.select(pl.col("date").is_between(date(2019, 1, 1), date(2020, 2, 5)))[:, 0],
         pl.Series("is_between", [True, True, False]),
@@ -1247,6 +1248,20 @@ def test_is_between_data_types() -> None:
             )
         )[:, 0],
         pl.Series("is_between", [False, True, False]),
+    )
+    assert_series_equal(
+        df.select(
+            pl.col("str").is_between(pl.lit("str"), pl.lit("zzz"), closed="left")
+        )[:, 0],
+        pl.Series("is_between", [True, True, False]),
+    )
+    assert_series_equal(
+        df.select(
+            pl.col("tm")
+            .is_between(time(0, 45), time(10, 30), closed="right")
+            .alias("tm_between")
+        )[:, 0],
+        pl.Series("tm_between", [True, False, False]),
     )
 
 

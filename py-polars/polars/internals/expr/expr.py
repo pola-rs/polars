@@ -3391,19 +3391,19 @@ class Expr:
 
     def is_between(
         self,
-        start: Expr | datetime | date | time | int | float,
-        end: Expr | datetime | date | time | int | float,
+        start: Expr | datetime | date | time | int | float | str,
+        end: Expr | datetime | date | time | int | float | str,
         closed: ClosedInterval = "both",
     ) -> Expr:
         """
-        Check if this expression is between start and end.
+        Check if this expression is between the given start and end values.
 
         Parameters
         ----------
         start
-            Lower bound as primitive type or datetime.
+            Lower bound value (can be an expression or literal).
         end
-            Upper bound as primitive type or datetime.
+            Upper bound value (can be an expression or literal).
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 
@@ -3428,7 +3428,7 @@ class Expr:
         │ 5   ┆ false      │
         └─────┴────────────┘
 
-        Use the ``closed`` argument to include or exclude the values at the bounds.
+        Use the ``closed`` argument to include or exclude the values at the bounds:
 
         >>> df.with_columns(pl.col("num").is_between(2, 4, closed="left"))
         shape: (5, 2)
@@ -3444,9 +3444,30 @@ class Expr:
         │ 5   ┆ false      │
         └─────┴────────────┘
 
+        Can also use strings as well as numeric/temporal values (note: ensure that
+        string literals are wrapped with ``lit`` so as not to conflate them with
+        column names):
+
+        >>> df = pl.DataFrame({"a": ["a", "b", "c", "d", "e"]})
+        >>> df.with_columns(
+        ...     pl.col("a").is_between(pl.lit("a"), pl.lit("c"), closed="both")
+        ... )
+        shape: (5, 2)
+        ┌─────┬────────────┐
+        │ a   ┆ is_between │
+        │ --- ┆ ---        │
+        │ str ┆ bool       │
+        ╞═════╪════════════╡
+        │ a   ┆ true       │
+        │ b   ┆ true       │
+        │ c   ┆ true       │
+        │ d   ┆ false      │
+        │ e   ┆ false      │
+        └─────┴────────────┘
         """
         start = expr_to_lit_or_expr(start, str_to_lit=False)
         end = expr_to_lit_or_expr(end, str_to_lit=False)
+
         if closed == "none":
             return ((self > start) & (self < end)).alias("is_between")
         elif closed == "both":
