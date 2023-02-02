@@ -13,6 +13,33 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import SQLEngine
 
 
+def create_temp_sqlite_db(test_db):
+    import sqlite3
+
+    conn = sqlite3.connect(test_db)
+    # ┌─────┬───────┬───────┬────────────┐
+    # │ id  ┆ name  ┆ value ┆ date       │
+    # │ --- ┆ ---   ┆ ---   ┆ ---        │
+    # │ i64 ┆ str   ┆ f64   ┆ date       │
+    # ╞═════╪═══════╪═══════╪════════════╡
+    # │ 1   ┆ misc  ┆ 100.0 ┆ 2020-01-01 │
+    # │ 2   ┆ other ┆ -99.5 ┆ 2021-12-31 │
+    # └─────┴───────┴───────┴────────────┘
+    conn.executescript(
+        """
+        CREATE TABLE test_data (
+            id    INTEGER PRIMARY KEY,
+            name  TEXT NOT NULL,
+            value FLOAT,
+            date  DATE
+        );
+        INSERT INTO test_data(name,value,date)
+        VALUES ('misc',100.0,'2020-01-01'), ('other',-99.5,'2021-12-31');
+        """
+    )
+    conn.close()
+
+
 @pytest.mark.parametrize(
     ("engine", "expected_dtypes", "expected_dates"),
     [
@@ -43,7 +70,6 @@ def test_read_sql(
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
 ) -> None:
-    import sqlite3
     import tempfile
 
     with suppress(ImportError):
@@ -51,36 +77,56 @@ def test_read_sql(
 
         with tempfile.TemporaryDirectory() as tmpdir_name:
             test_db = os.path.join(tmpdir_name, "test.db")
-            conn = sqlite3.connect(test_db)
-            conn.executescript(
-                """
-                CREATE TABLE test_data (
-                    id    INTEGER PRIMARY KEY,
-                    name  TEXT NOT NULL,
-                    value FLOAT,
-                    date  DATE
-                );
-                INSERT INTO test_data(name,value,date)
-                VALUES ('misc',100.0,'2020-01-01'), ('other',-99.5,'2021-12-31');
-                """
-            )
-            conn.close()
+            create_temp_sqlite_db(test_db)
 
             df = pl.read_sql(
                 connection_uri=f"sqlite:///{test_db}",
                 sql="SELECT * FROM test_data",
                 engine=engine,
             )
-            # ┌─────┬───────┬───────┬────────────┐
-            # │ id  ┆ name  ┆ value ┆ date       │
-            # │ --- ┆ ---   ┆ ---   ┆ ---        │
-            # │ i64 ┆ str   ┆ f64   ┆ date       │
-            # ╞═════╪═══════╪═══════╪════════════╡
-            # │ 1   ┆ misc  ┆ 100.0 ┆ 2020-01-01 │
-            # │ 2   ┆ other ┆ -99.5 ┆ 2021-12-31 │
-            # └─────┴───────┴───────┴────────────┘
 
             assert df.schema == expected_dtypes
             assert df.shape == (2, 4)
             assert df["date"].to_list() == expected_dates
             # assert df.rows() == ...
+
+
+@pytest.mark.parametrize(
+    ("engine", "sql", "database", "err"),
+    [
+        pytest.param(
+            "not_engine",
+            "SELECT * FROM test_data",
+            "sqlite",
+            "Engine is not implemented, try either connectorx or adbc.",
+            id="Not an available sql engine",
+        ),
+        pytest.param(
+            "adbc",
+            ["SELECT * FROM test_data", "SELECT * FROM test_data"],
+            "sqlite",
+            "Only a single SQL query string is accepted for adbc.",
+            id="Unavailable list of queries for adbc.",
+        ),
+        pytest.param(
+            "adbc",
+            "SELECT * FROM test_data",
+            "mysql",
+            "ADBC does not currently support this database.",
+            id="Unavailable database for adbc.",
+        ),
+    ],
+)
+def test_read_sql_exceptions(engine, sql, database, err):
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir_name:
+        test_db = os.path.join(tmpdir_name, "test.db")
+        create_temp_sqlite_db(test_db)
+
+        with pytest.raises(ValueError, match=err):
+            df = pl.read_sql(
+                connection_uri=f"{database}:///{test_db}",
+                sql=sql,
+                engine=engine,
+            )
