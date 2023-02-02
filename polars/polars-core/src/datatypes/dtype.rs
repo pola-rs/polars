@@ -15,6 +15,10 @@ pub enum DataType {
     Int64,
     Float32,
     Float64,
+    #[cfg(feature = "dtype-i128")]
+    /// Fixed point decimal type with precision and scale.
+    /// This is backed by 128 bits which allows for 38 significant digits.
+    Decimal128(Option<(usize, usize)>),
     /// String data
     Utf8,
     #[cfg(feature = "dtype-binary")]
@@ -208,6 +212,8 @@ impl DataType {
             Int64 => ArrowDataType::Int64,
             Float32 => ArrowDataType::Float32,
             Float64 => ArrowDataType::Float64,
+            #[cfg(feature = "dtype-i128")]
+            Decimal128(_) => todo!(),
             Utf8 => ArrowDataType::LargeUtf8,
             #[cfg(feature = "dtype-binary")]
             Binary => ArrowDataType::LargeBinary,
@@ -261,6 +267,8 @@ impl Display for DataType {
             DataType::Int64 => "i64",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
+            #[cfg(feature = "dtype-i128")]
+            DataType::Decimal128(_) => "i128",
             DataType::Utf8 => "str",
             #[cfg(feature = "dtype-binary")]
             DataType::Binary => "binary",

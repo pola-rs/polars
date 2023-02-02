@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import typing
@@ -47,6 +48,7 @@ from polars.dependencies import pyarrow as pa
 from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
+from polars.internals.type_aliases import PythonLiteral
 from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
@@ -56,7 +58,7 @@ from polars.utils import (
 )
 
 try:
-    from polars.polars import PyLazyFrame
+    from polars.polars import PyExpr, PyLazyFrame
 
     _DOCUMENTING = False
 except ImportError:
@@ -76,6 +78,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         JoinStrategy,
         ParallelStrategy,
+        PolarsExprType,
         RollingInterpolationMethod,
         StartBy,
         UniqueKeepStrategy,
@@ -1556,12 +1559,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         self: LDF,
         exprs: (
             str
-            | pli.Expr
+            | PolarsExprType
+            | PythonLiteral
             | pli.Series
-            | Iterable[str | pli.Expr | pli.Series | pli.WhenThen | pli.WhenThenThen]
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
             | None
         ) = None,
-        **named_exprs: Any,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
         Select columns from this DataFrame.
@@ -1575,14 +1579,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> ldf = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, 7, 8],
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... ).lazy()
-        >>> df.select("foo").collect()
+        >>> ldf.select("foo").collect()
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -1593,7 +1597,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 2   │
         │ 3   │
         └─────┘
-        >>> df.select(["foo", "bar"]).collect()
+        >>> ldf.select(["foo", "bar"]).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -1605,7 +1609,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 3   ┆ 8   │
         └─────┴─────┘
 
-        >>> df.select(pl.col("foo") + 1).collect()
+        >>> ldf.select(pl.col("foo") + 1).collect()
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -1617,7 +1621,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   │
         └─────┘
 
-        >>> df.select([pl.col("foo") + 1, pl.col("bar") + 1]).collect()
+        >>> ldf.select([pl.col("foo") + 1, pl.col("bar") + 1]).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -1629,23 +1633,30 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 9   │
         └─────┴─────┘
 
-        >>> df.select(pl.when(pl.col("foo") > 2).then(10).otherwise(0)).collect()
+        >>> ldf.select(
+        ...     value=pl.when(pl.col("foo") > 2).then(10).otherwise(0),
+        ... ).collect()
         shape: (3, 1)
-        ┌─────────┐
-        │ literal │
-        │ ---     │
-        │ i32     │
-        ╞═════════╡
-        │ 0       │
-        │ 0       │
-        │ 10      │
-        └─────────┘
+        ┌───────┐
+        │ value │
+        │ ---   │
+        │ i32   │
+        ╞═══════╡
+        │ 0     │
+        │ 0     │
+        │ 10    │
+        └───────┘
 
-        Note that, when using kwargs syntax, expressions with multiple
-        outputs are automatically instantiated as Struct columns:
+        Expressions with multiple outputs can be automatically instantiated as Structs
+        by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
         >>> from polars.datatypes import INTEGER_DTYPES
-        >>> df.select(is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd")).collect()
+        >>> with pl.Config() as cfg:
+        ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
+        ...     ldf.select(
+        ...         is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
+        ...     ).collect()
+        ...
         shape: (3, 1)
         ┌───────────┐
         │ is_odd    │
@@ -1663,9 +1674,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         elif exprs is None:
             exprs = []
 
-        exprs = pli.selection_to_pyexpr_list(exprs)
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+        exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
         exprs.extend(
-            pli.expr_to_lit_or_expr(expr, structify=True)._pyexpr.alias(name)
+            pli.expr_to_lit_or_expr(
+                expr, structify=structify, name=name, str_to_lit=False
+            )._pyexpr
             for name, expr in named_exprs.items()
         )
         return self._from_pyldf(self._ldf.select(exprs))
@@ -2449,11 +2463,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def with_columns(
         self: LDF,
-        exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: Any,
+        exprs: (
+            str
+            | PolarsExprType
+            | PythonLiteral
+            | pli.Series
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+            | None
+        ) = None,
+        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
-        Return a new LazyFrame with the columns added, if new, or replaced.
+        Return a new LazyFrame with the columns added (if new), or replaced.
 
         Notes
         -----
@@ -2547,12 +2568,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
 
-        Note that, when using kwargs syntax, expressions with multiple
-        outputs are automatically instantiated as Struct columns:
+        Expressions with multiple outputs can be automatically instantiated as Structs
+        by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
-        >>> ldf.drop("c").with_columns(
-        ...     diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
-        ... ).collect()
+        >>> with pl.Config() as cfg:
+        ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
+        ...     ldf.drop("c").with_columns(
+        ...         diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
+        ...     ).collect()
+        ...
         shape: (4, 3)
         ┌─────┬──────┬─────────────┐
         │ a   ┆ b    ┆ diffs       │
@@ -2568,22 +2592,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         if exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
-        elif exprs is None:
-            exprs = []
-        elif isinstance(exprs, pli.Expr):
-            exprs = [exprs]
-        elif isinstance(exprs, pli.Series):
-            exprs = [pli.lit(exprs)]
-        else:
-            exprs = list(exprs)
 
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+        exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
         exprs.extend(
-            pli.expr_to_lit_or_expr(expr, structify=True).alias(name)
+            pli.expr_to_lit_or_expr(expr, structify=structify, name=name)
             for name, expr in named_exprs.items()
         )
         pyexprs = []
         for e in exprs:
-            if isinstance(e, pli.Expr):
+            if isinstance(e, PyExpr):
+                pyexprs.append(e)
+            elif isinstance(e, pli.Expr):
                 pyexprs.append(e._pyexpr)
             elif isinstance(e, pli.Series):
                 pyexprs.append(pli.lit(e)._pyexpr)

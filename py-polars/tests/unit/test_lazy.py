@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import date, datetime
 from functools import reduce
 from operator import add
@@ -1542,17 +1541,17 @@ def test_lazy_cache_same_key() -> None:
     ).collect().to_dict(False) == {"a": [-1, 2, 7], "c": ["x", "y", "z"]}
 
 
-@pytest.mark.xdist_group(name="group1")
-def test_lazy_cache_hit(capfd: Any) -> None:
-    os.environ["POLARS_VERBOSE"] = "1"
+def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     df = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]}).lazy()
     add_node = df.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
     assert add_node.join(add_node, on="c", suffix="_mult").select(
         [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
     ).collect().to_dict(False) == {"a": [0, 0, 0], "c": ["x", "y", "z"]}
+
     (out, _) = capfd.readouterr()
     assert "CACHE HIT" in out
-    os.unsetenv("POLARS_VERBOSE")
 
 
 def test_quadratic_behavior_4736() -> None:

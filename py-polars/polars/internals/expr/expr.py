@@ -24,6 +24,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
+from polars.internals.type_aliases import PolarsExprType, PythonLiteral
 from polars.utils import _timedelta_to_pl_duration, sphinx_accessor
 
 try:
@@ -49,48 +50,44 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 def selection_to_pyexpr_list(
     exprs: (
-        str
-        | Expr
+        PolarsExprType
+        | PythonLiteral
         | pli.Series
-        | Iterable[
-            str
-            | Expr
-            | pli.Series
-            | timedelta
-            | date
-            | datetime
-            | int
-            | float
-            | pli.WhenThen
-            | pli.WhenThenThen
-        ]
+        | Iterable[PolarsExprType | PythonLiteral | pli.Series]
+        | None
     ),
+    structify: bool = False,
 ) -> list[PyExpr]:
-    if isinstance(exprs, (str, Expr, pli.Series)):
+    if exprs is None:
+        exprs = []
+    elif isinstance(exprs, (str, Expr, pli.Series, pli.WhenThen, pli.WhenThenThen)):
         exprs = [exprs]
+    elif not isinstance(exprs, Iterable):
+        exprs = [exprs]
+    return [
+        expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
+        for e in exprs  # type: ignore[union-attr]
+    ]
 
-    return [expr_to_lit_or_expr(e, str_to_lit=False)._pyexpr for e in exprs]
+
+def expr_output_name(expr: pli.Expr) -> str | None:
+    try:
+        return expr.meta.output_name()
+    except Exception:
+        return None
 
 
 def expr_to_lit_or_expr(
     expr: (
-        Expr
-        | bool
-        | int
-        | float
-        | str
+        PolarsExprType
+        | PythonLiteral
         | pli.Series
+        | Iterable[PolarsExprType | PythonLiteral | pli.Series]
         | None
-        | date
-        | datetime
-        | time
-        | timedelta
-        | pli.WhenThen
-        | pli.WhenThenThen
-        | Sequence[int | float | str | None]
     ),
     str_to_lit: bool = True,
     structify: bool = False,
+    name: str | None = None,
 ) -> Expr:
     """
     Convert args to expressions.
@@ -100,11 +97,13 @@ def expr_to_lit_or_expr(
     expr
         Any argument.
     str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`,
-        If False it will be converted to `col("foo")`
+        If True string argument `"foo"` will be converted to `lit("foo")`.
+        If False it will be converted to `col("foo")`.
     structify
         If the final unaliased expression has multiple output names,
-        automagically convert it to struct
+        automatically convert it to struct.
+    name
+        Apply the given name as an alias to the resulting expression.
 
     Returns
     -------
@@ -133,9 +132,11 @@ def expr_to_lit_or_expr(
     if structify:
         unaliased_expr = expr.meta.undo_aliases()
         if unaliased_expr.meta.has_multiple_outputs():
-            expr = cast(Expr, pli.struct(expr))
+            expr_name = expr_output_name(expr)
+            expr = cast(Expr, pli.struct(expr if expr_name is None else unaliased_expr))
+            name = name or expr_name
 
-    return expr
+    return expr if name is None else expr.alias(name)
 
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
@@ -279,6 +280,9 @@ class Expr:
 
     def __neg__(self) -> Expr:
         return pli.lit(0) - self
+
+    def __pos__(self) -> Expr:
+        return pli.lit(0) + self
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -2028,10 +2032,7 @@ class Expr:
             indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
         else:
-            indices_lit = pli.expr_to_lit_or_expr(
-                indices,  # type: ignore[arg-type]
-                str_to_lit=False,
-            )
+            indices_lit = pli.expr_to_lit_or_expr(indices, str_to_lit=False)
         return pli.wrap_expr(self._pyexpr.take(indices_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Expr:

@@ -2,6 +2,7 @@ import typing
 from datetime import date
 
 import numpy as np
+import pytest
 
 import polars as pl
 
@@ -93,3 +94,12 @@ def test_floor_division_float_int_consistency() -> None:
     assert (pl.Series(a, dtype=pl.Int32) // 5).to_list() == list(
         (a.astype(int) // 5).astype(int)
     )
+
+
+def test_unary_plus() -> None:
+    data = [1, 2]
+    df = pl.DataFrame({"x": data})
+    assert df.select(+pl.col("x"))[:, 0].to_list() == data
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.select(+pl.lit(""))
