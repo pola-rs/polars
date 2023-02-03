@@ -97,6 +97,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         NullBehavior,
+        PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
@@ -4803,19 +4804,17 @@ class Series:
 
         """
 
-    def extend_constant(
-        self, value: int | float | str | bool | date | None, n: int
-    ) -> Series:
+    def extend_constant(self, value: PythonLiteral | None, n: int) -> Series:
         """
-        Extend the Series with given number of values.
+        Extremely fast method for extending the Series with 'n' copies of a value.
 
         Parameters
         ----------
         value
-            A constant literal value (not an expression) with which to extend the
-            Series; can pass None to fill the Series with nulls.
+            A constant literal value (not an expression) with which to extend
+            the Series; can pass None to extend with nulls.
         n
-            The number of additional values that will be added into the Series.
+            The number of additional values that will be added.
 
         Examples
         --------
