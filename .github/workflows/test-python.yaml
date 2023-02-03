@@ -65,7 +65,7 @@ jobs:
           maturin develop
 
       - name: Run tests and report coverage
-        run: pytest --cov --numprocesses=auto
+        run: pytest --cov -n auto -m "slow or not slow"
 
       - name: Run doctests
         run: python tests/docs/run_doc_examples.py
@@ -129,7 +129,7 @@ jobs:
           pip install target/wheels/polars-*.whl
 
       - name: Run tests
-        run: pytest --numprocesses=auto
+        run: pytest -n auto -m "slow or not slow"
 
       - name: Check import without optional dependencies
         run: |

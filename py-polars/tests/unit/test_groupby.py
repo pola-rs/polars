@@ -491,3 +491,17 @@ def test_groupby_dynamic_iter() -> None:
         ((2, datetime(2020, 1, 1, 11)), (1, 3)),
     ]
     assert result2 == expected2
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32])
+def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("data", [10_00_00_00] * 100_000, dtype=dtype),
+            pl.Series("group", [1, 2] * 50_000, dtype=dtype),
+        ]
+    )
+    assert df.groupby("group").agg(pl.col("data").mean()).sort(by="group").to_dict(
+        False
+    ) == {"group": [1, 2], "data": [10000000.0, 10000000.0]}

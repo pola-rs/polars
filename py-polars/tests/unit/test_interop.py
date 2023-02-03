@@ -127,7 +127,7 @@ def test_from_pandas() -> None:
         assert out.schema[col] == dtype
 
 
-def test_from_pandas_nan_to_none() -> None:
+def test_from_pandas_nan_to_null() -> None:
     df = pd.DataFrame(
         {
             "bools_nulls": [None, True, False],
@@ -138,13 +138,13 @@ def test_from_pandas_nan_to_none() -> None:
         }
     )
     out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
+    out_false = pl.from_pandas(df, nan_to_null=False)
     assert all(val is None for val in out_true["nulls"])
     assert all(np.isnan(val) for val in out_false["nulls"][1:])
 
     df = pd.Series([2, np.nan, None], name="pd")  # type: ignore[assignment]
     out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
+    out_false = pl.from_pandas(df, nan_to_null=False)
     assert [val is None for val in out_true]
     assert [np.isnan(val) for val in out_false[1:]]
 

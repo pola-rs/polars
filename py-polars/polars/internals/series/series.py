@@ -75,6 +75,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _is_generator,
     _time_to_pl_time,
+    deprecated_alias,
     is_int_sequence,
     range_to_series,
     range_to_slice,
@@ -97,6 +98,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         NullBehavior,
+        PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
@@ -141,7 +143,7 @@ class Series:
         Throw error on numeric overflow.
     nan_to_null
         In case a numpy array is used to create this Series, indicate how to deal
-        with np.nan values.
+        with np.nan values. (This parameter is a no-op on non-numpy data).
     dtype_if_empty=dtype_if_empty : DataType, default None
         If no dtype is specified and values contains None or an empty list,
         set the Polars dtype of the Series data. If not specified, Float32 is used.
@@ -301,12 +303,13 @@ class Series:
         return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
 
     @classmethod
+    @deprecated_alias(nan_to_none="nan_to_null")
     def _from_pandas(
-        cls, name: str, values: pd.Series | pd.DatetimeIndex, nan_to_none: bool = True
+        cls, name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
     ) -> Series:
         """Construct a Series from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
-            pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
+            pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
     def _get_ptr(self) -> int:
@@ -4803,19 +4806,17 @@ class Series:
 
         """
 
-    def extend_constant(
-        self, value: int | float | str | bool | date | None, n: int
-    ) -> Series:
+    def extend_constant(self, value: PythonLiteral | None, n: int) -> Series:
         """
-        Extend the Series with given number of values.
+        Extremely fast method for extending the Series with 'n' copies of a value.
 
         Parameters
         ----------
         value
-            A constant literal value (not an expression) with which to extend the
-            Series; can pass None to fill the Series with nulls.
+            A constant literal value (not an expression) with which to extend
+            the Series; can pass None to extend with nulls.
         n
-            The number of additional values that will be added into the Series.
+            The number of additional values that will be added.
 
         Examples
         --------

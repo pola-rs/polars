@@ -392,7 +392,7 @@ def from_arrow(
 def from_pandas(
     df: pd.DataFrame,
     rechunk: bool = True,
-    nan_to_none: bool = True,
+    nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     ...
@@ -402,16 +402,17 @@ def from_pandas(
 def from_pandas(
     df: pd.Series | pd.DatetimeIndex,
     rechunk: bool = True,
-    nan_to_none: bool = True,
+    nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
 ) -> Series:
     ...
 
 
+@deprecated_alias(nan_to_none="nan_to_null")
 def from_pandas(
     df: pd.DataFrame | pd.Series | pd.DatetimeIndex,
     rechunk: bool = True,
-    nan_to_none: bool = True,
+    nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame | Series:
     """
@@ -427,7 +428,7 @@ def from_pandas(
         Data represented as a pandas DataFrame, Series, or DatetimeIndex.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
-    nan_to_none : bool, default True
+    nan_to_null : bool, default True
         If data contains `NaN` values PyArrow will convert the ``NaN`` to ``None``
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
@@ -470,12 +471,12 @@ def from_pandas(
 
     """
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
-        return Series._from_pandas("", df, nan_to_none=nan_to_none)
+        return Series._from_pandas("", df, nan_to_null=nan_to_null)
     elif isinstance(df, pd.DataFrame):
         return DataFrame._from_pandas(
             df,
             rechunk=rechunk,
-            nan_to_none=nan_to_none,
+            nan_to_null=nan_to_null,
             schema_overrides=schema_overrides,
         )
     else:

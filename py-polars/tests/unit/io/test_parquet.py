@@ -7,8 +7,10 @@ import typing
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
 
@@ -402,3 +404,40 @@ def test_fetch_union() -> None:
 
     expected = pl.DataFrame({"a": [0, 3], "b": [1, 4]})
     assert_frame_equal(result_glob, expected)
+
+
+@pytest.mark.slow()
+@typing.no_type_check
+@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+def test_struct_pyarrow_dataset_5796() -> None:
+    num_rows = 2**17 + 1
+
+    df = pl.from_records(
+        [dict(id=i, nested=dict(a=i)) for i in range(num_rows)]  # noqa: C408
+    )
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "out.parquet"
+        df.write_parquet(file_path, use_pyarrow=True)
+        tbl = ds.dataset(file_path).to_table()
+        result = pl.from_arrow(tbl)
+
+    assert_frame_equal(result, df)
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize("case", [1048576, 1048577])
+def test_parquet_chunks_545(case: int) -> None:
+    f = io.BytesIO()
+    # repeat until it has case instances
+    df = pd.DataFrame(
+        np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),
+        columns=["floats", "dates"],
+    )
+
+    # write as parquet
+    df.to_parquet(f)
+    f.seek(0)
+
+    # read it with polars
+    polars_df = pl.read_parquet(f)
+    assert_frame_equal(pl.DataFrame(df), polars_df)

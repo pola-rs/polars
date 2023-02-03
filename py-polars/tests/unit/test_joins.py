@@ -74,38 +74,35 @@ def test_join_same_cat_src() -> None:
     }
 
 
-def test_sorted_merge_joins() -> None:
-    for reverse in [False, True]:
-        n = 30
-        df_a = pl.DataFrame(
-            {"a": np.sort(np.random.randint(0, n // 2, n))}
-        ).with_row_count("row_a")
+@pytest.mark.parametrize("reverse", [False, True])
+def test_sorted_merge_joins(reverse: bool) -> None:
+    n = 30
+    df_a = pl.DataFrame({"a": np.sort(np.random.randint(0, n // 2, n))}).with_row_count(
+        "row_a"
+    )
+    df_b = pl.DataFrame(
+        {"a": np.sort(np.random.randint(0, n // 2, n // 2))}
+    ).with_row_count("row_b")
 
-        df_b = pl.DataFrame(
-            {"a": np.sort(np.random.randint(0, n // 2, n // 2))}
-        ).with_row_count("row_b")
+    if reverse:
+        df_a = df_a.select(pl.all().reverse())
+        df_b = df_b.select(pl.all().reverse())
 
-        if reverse:
-            df_a = df_a.select(pl.all().reverse())
-            df_b = df_b.select(pl.all().reverse())
+    join_strategies: list[JoinStrategy] = ["left", "inner"]
+    for cast_to in [int, str, float]:
+        for how in join_strategies:
+            df_a_ = df_a.with_columns(pl.col("a").cast(cast_to))
+            df_b_ = df_b.with_columns(pl.col("a").cast(cast_to))
 
-        join_strategies: list[JoinStrategy] = ["left", "inner"]
-        for cast_to in [int, str, float]:
-            for how in join_strategies:
-                df_a_ = df_a.with_columns(pl.col("a").cast(cast_to))
-                df_b_ = df_b.with_columns(pl.col("a").cast(cast_to))
+            # hash join
+            out_hash_join = df_a_.join(df_b_, on="a", how=how)
 
-                # hash join
-                out_hash_join = df_a_.join(df_b_, on="a", how=how)
+            # sorted merge join
+            out_sorted_merge_join = df_a_.with_columns(
+                pl.col("a").set_sorted(reverse)
+            ).join(df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how)
 
-                # sorted merge join
-                out_sorted_merge_join = df_a_.with_columns(
-                    pl.col("a").set_sorted(reverse)
-                ).join(
-                    df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how
-                )
-
-                assert_frame_equal(out_hash_join, out_sorted_merge_join)
+            assert_frame_equal(out_hash_join, out_sorted_merge_join)
 
 
 def test_join_negative_integers() -> None:

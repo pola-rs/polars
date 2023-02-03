@@ -2215,9 +2215,14 @@ def test_ewm_param_validation() -> None:
     ("const", "dtype"),
     [
         (1, pl.Int8),
-        (date.today(), pl.Date),
-        ("xyz", pl.Utf8),
+        (4, pl.UInt32),
+        (4.5, pl.Float32),
         (None, pl.Float64),
+        ("白鵬翔", pl.Utf8),
+        (date.today(), pl.Date),
+        (datetime.now(), pl.Datetime("ns")),
+        (time(23, 59, 59), pl.Time),
+        (timedelta(hours=7, seconds=123), pl.Duration("ms")),
     ],
 )
 def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
