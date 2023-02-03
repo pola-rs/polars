@@ -609,7 +609,7 @@ def _unpack_schema(
     column_dtypes = {
         lookup.get(col[0], col[0]): col[1]
         for col in (schema or [])
-        if not isinstance(col, str) and col[1]
+        if not isinstance(col, str) and col[1] is not None
     }
     if schema_overrides:
         column_dtypes.update(schema_overrides)
@@ -617,6 +617,9 @@ def _unpack_schema(
             column_names = column_names + [
                 col for col in column_dtypes if col not in column_names
             ]
+    for col, dtype in column_dtypes.items():
+        if not is_polars_dtype(dtype, include_unknown=True) and dtype is not None:
+            column_dtypes[col] = py_type_to_dtype(dtype)
 
     return (
         column_names or None,  # type: ignore[return-value]
