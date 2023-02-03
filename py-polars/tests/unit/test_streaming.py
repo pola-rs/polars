@@ -1,3 +1,4 @@
+import time
 from datetime import date
 from typing import Any
 
@@ -5,7 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_streaming_groupby_types() -> None:
@@ -215,3 +216,30 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 
     (_, err) = capfd.readouterr()
     assert "df -> function -> ordered_sink" in err
+
+
+@pytest.mark.slow()
+def test_cross_join_stack() -> None:
+    a = pl.Series(np.arange(100_000)).to_frame().lazy()
+    t0 = time.time()
+    # this should be instant if directly pushed into sink
+    # if not the cross join will first fill the stack with all matches of a single chunk
+    assert a.join(a, how="cross").head().collect(streaming=True).shape == (5, 2)
+    t1 = time.time()
+    assert (t1 - t0) < 0.5
+
+
+@pytest.mark.slow()
+def test_ooc_sort(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+
+    s = pl.arange(0, 100_000, eager=True).rename("idx")
+
+    df = s.shuffle().to_frame()
+
+    for reverse in [True, False]:
+        out = (
+            df.lazy().sort("idx", reverse=reverse).collect(streaming=True)
+        ).to_series()
+
+        assert_series_equal(out, s.sort(reverse=reverse))
