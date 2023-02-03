@@ -1178,38 +1178,22 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_is_between(fruits_cars: pl.DataFrame) -> None:
-    result = fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"]
-    assert_series_equal(
-        result, pl.Series("is_between", [False, True, True, True, False])
-    )
+    result = fruits_cars.select(pl.col("A").is_between(2, 4)).to_series()
+    assert_series_equal(result, pl.Series("A", [False, True, True, True, False]))
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="none"))[
-        "is_between"
-    ]
-    assert_series_equal(
-        result, pl.Series("is_between", [False, False, True, False, False])
-    )
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="none")).to_series()
+    assert_series_equal(result, pl.Series("A", [False, False, True, False, False]))
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="both"))[
-        "is_between"
-    ]
-    assert_series_equal(
-        result, pl.Series("is_between", [False, True, True, True, False])
-    )
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="both")).to_series()
+    assert_series_equal(result, pl.Series("A", [False, True, True, True, False]))
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="right"))[
-        "is_between"
-    ]
-    assert_series_equal(
-        result, pl.Series("is_between", [False, False, True, True, False])
-    )
+    result = fruits_cars.select(
+        pl.col("A").is_between(2, 4, closed="right")
+    ).to_series()
+    assert_series_equal(result, pl.Series("A", [False, False, True, True, False]))
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="left"))[
-        "is_between"
-    ]
-    assert_series_equal(
-        result, pl.Series("is_between", [False, True, True, False, False])
-    )
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, closed="left")).to_series()
+    assert_series_equal(result, pl.Series("A", [False, True, True, False, False]))
 
 
 def test_is_between_data_types() -> None:
@@ -1231,15 +1215,15 @@ def test_is_between_data_types() -> None:
     # on purpose, for float and int, we pass in a mixture of bound data types
     assert_series_equal(
         df.select(pl.col("flt").is_between(1, 2.3))[:, 0],
-        pl.Series("is_between", [True, True, False]),
+        pl.Series("flt", [True, True, False]),
     )
     assert_series_equal(
         df.select(pl.col("int").is_between(1.5, 3))[:, 0],
-        pl.Series("is_between", [True, True, False]),
+        pl.Series("int", [True, True, False]),
     )
     assert_series_equal(
         df.select(pl.col("date").is_between(date(2019, 1, 1), date(2020, 2, 5)))[:, 0],
-        pl.Series("is_between", [True, True, False]),
+        pl.Series("date", [True, True, False]),
     )
     assert_series_equal(
         df.select(
@@ -1247,13 +1231,13 @@ def test_is_between_data_types() -> None:
                 datetime(2020, 1, 1, 5, 0, 0), datetime(2020, 1, 1, 11, 0, 0)
             )
         )[:, 0],
-        pl.Series("is_between", [False, True, False]),
+        pl.Series("datetime", [False, True, False]),
     )
     assert_series_equal(
         df.select(
             pl.col("str").is_between(pl.lit("str"), pl.lit("zzz"), closed="left")
         )[:, 0],
-        pl.Series("is_between", [True, True, False]),
+        pl.Series("str", [True, True, False]),
     )
     assert_series_equal(
         df.select(

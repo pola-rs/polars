@@ -2053,8 +2053,8 @@ def test_is_between_datetime() -> None:
     expected = pl.Series("a", [False, True])
 
     # only on the expression api
-    result = s.to_frame().with_columns(pl.col("*").is_between(start, end))["is_between"]
-    assert_series_equal(result.rename("a"), expected)
+    result = s.to_frame().with_columns(pl.col("*").is_between(start, end)).to_series()
+    assert_series_equal(result, expected)
 
 
 @pytest.mark.parametrize(
