@@ -687,11 +687,14 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
 
 def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
-    if data_type == Unknown:
-        # does not represent a realisable dtype, so ignore by default
-        return include_unknown
-    else:
-        return isinstance(data_type, (DataType, DataTypeClass))
+    try:
+        if data_type == Unknown:
+            # does not represent a realisable dtype, so ignore by default
+            return include_unknown
+        else:
+            return isinstance(data_type, (DataType, DataTypeClass))
+    except ValueError:
+        return False
 
 
 @overload
@@ -733,12 +736,11 @@ def py_type_to_dtype(
             data_type = possible_types[0]
     try:
         return DataTypeMappings.PY_TYPE_TO_DTYPE[data_type]
-    except KeyError:  # pragma: no cover
+    except (KeyError, TypeError):  # pragma: no cover
         if not raise_unmatched:
             return None
-        raise NotImplementedError(
-            f"Conversion of Python data type '{data_type}' to Polars data type not"
-            " implemented."
+        raise ValueError(
+            f"Cannot infer dtype from '{data_type}' (type: {type(data_type).__name__})"
         ) from None
 
 
@@ -780,7 +782,7 @@ def numpy_char_code_to_dtype(dtype: str) -> PolarsDataType:
     try:
         return DataTypeMappings.NUMPY_CHAR_CODE_TO_DTYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError(
+        raise ValueError(
             f"Cannot parse numpy data type {dtype} into Polars data type."
         ) from None
 
