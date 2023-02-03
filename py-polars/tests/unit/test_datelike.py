@@ -2060,35 +2060,23 @@ def test_cast_timezone_invalid_timezone() -> None:
 
 
 @pytest.mark.parametrize(
-    ("from_tz", "to_tz", "tzinfo"),
+    ("to_tz", "tzinfo"),
     [
-        (
-            "America/Barbados",
-            "+01:00",
-            timezone(timedelta(seconds=3600)),
-        ),
-        ("+01:00", "America/Barbados", zoneinfo.ZoneInfo(key="America/Barbados")),
-        (
-            "America/Barbados",
-            "Europe/Helsinki",
-            zoneinfo.ZoneInfo(key="Europe/Helsinki"),
-        ),
-        (
-            "+02:00",
-            "+01:00",
-            timezone(timedelta(seconds=3600)),
-        ),
+        ("+01:00", timezone(timedelta(seconds=3600))),
+        ("America/Barbados", zoneinfo.ZoneInfo(key="America/Barbados")),
+        (None, None),
     ],
 )
+@pytest.mark.parametrize("from_tz", ["Asia/Seoul", "-01:00", None])
 @pytest.mark.parametrize("tu", ["ms", "us", "ns"])
-def test_cast_timezone_fixed_offsets_and_area_location(
+def test_cast_timezone_from_to(
     from_tz: str,
     to_tz: str,
     tzinfo: timezone | zoneinfo.ZoneInfo,
     tu: TimeUnit,
 ) -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(tu))
-    result = ts.dt.tz_localize(from_tz).dt.cast_time_zone(to_tz).item()
+    result = ts.dt.cast_time_zone(from_tz).dt.cast_time_zone(to_tz).item()
     expected = datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo)
     assert result == expected
 
@@ -2209,7 +2197,7 @@ def test_logical_nested_take() -> None:
     }
 
 
-def test_tz_localize() -> None:
+def test_cast_time_zone_from_naive() -> None:
     df = pl.DataFrame(
         {
             "date": pl.Series(["2022-01-01", "2022-01-02"]).str.strptime(
@@ -2219,7 +2207,7 @@ def test_tz_localize() -> None:
     )
 
     assert df.select(
-        pl.col("date").cast(pl.Datetime).dt.tz_localize("America/New_York")
+        pl.col("date").cast(pl.Datetime).dt.cast_time_zone("America/New_York")
     ).to_dict(False) == {
         "date": [
             datetime(
@@ -2235,14 +2223,18 @@ def test_tz_localize() -> None:
 @pytest.mark.parametrize("time_zone", ["UTC", "Africa/Abidjan"])
 def test_tz_localize_from_utc(time_zone: str) -> None:
     ts_utc = (
-        pl.Series(["2018-10-28"]).str.strptime(pl.Datetime).dt.tz_localize(time_zone)
+        pl.Series(["2018-10-28"]).str.strptime(pl.Datetime).dt.cast_time_zone(time_zone)
     )
-    with pytest.raises(
-        ComputeError,
-        match=(
-            "^Cannot localize a tz-aware datetime. Consider using "
-            "'dt.with_time_zone' or 'dt.cast_time_zone'$"
-        ),
+    err_msg = (
+        "^Cannot localize a tz-aware datetime. Consider using "
+        "'dt.with_time_zone' or 'dt.cast_time_zone'$"
+    )
+    deprecation_msg = (
+        "`tz_localize` has been deprecated in favor of `cast_time_zone`."
+        " This method will be removed in version 0.18.0"
+    )
+    with pytest.raises(ComputeError, match=err_msg), pytest.warns(
+        DeprecationWarning, match=deprecation_msg
     ):
         ts_utc.dt.tz_localize("America/Maceio")
 
@@ -2259,7 +2251,7 @@ def test_tz_aware_truncate() -> None:
         {
             "dt": pl.date_range(
                 low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="12h"
-            ).dt.tz_localize("America/New_York")
+            ).dt.cast_time_zone("America/New_York")
         }
     )
     assert test.with_columns(pl.col("dt").dt.truncate("1d").alias("trunced")).to_dict(
@@ -2323,7 +2315,7 @@ def test_tz_aware_truncate() -> None:
             )
         }
     ).lazy()
-    lf = lf.with_columns(pl.col("naive").dt.tz_localize("UTC").alias("UTC"))
+    lf = lf.with_columns(pl.col("naive").dt.cast_time_zone("UTC").alias("UTC"))
     lf = lf.with_columns(pl.col("UTC").dt.with_time_zone("US/Central").alias("CST"))
     lf = lf.with_columns(pl.col("CST").dt.truncate("1d").alias("CST truncated"))
     assert lf.collect().to_dict(False) == {
@@ -2401,7 +2393,7 @@ def test_tz_aware_strftime() -> None:
         {
             "dt": pl.date_range(
                 low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="24h"
-            ).dt.tz_localize("America/New_York")
+            ).dt.cast_time_zone("America/New_York")
         }
     )
     assert df.with_columns(pl.col("dt").dt.strftime("%c").alias("fmt")).to_dict(
@@ -2437,7 +2429,7 @@ def test_tz_aware_filter_lit() -> None:
 
     assert (
         pl.DataFrame({"date": pl.date_range(start, stop, "1h")})
-        .with_columns(pl.col("date").dt.tz_localize("America/New_York").alias("nyc"))
+        .with_columns(pl.col("date").dt.cast_time_zone("America/New_York").alias("nyc"))
         .filter(pl.col("nyc") < dt)
     ).to_dict(False) == {
         "date": [

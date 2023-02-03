@@ -339,7 +339,7 @@ def sequence_to_pyseries(
             if dtype == Datetime and value.tzinfo is not None:
                 py_series = PySeries.new_from_anyvalues(name, values)
                 tz = str(value.tzinfo)
-                return pli.wrap_s(py_series).dt.tz_localize(tz)._s
+                return pli.wrap_s(py_series).dt.cast_time_zone(tz)._s
 
             # TODO: use anyvalues here (no need to require pyarrow for this).
             arrow_dtype = dtype_to_arrow_type(dtype)
