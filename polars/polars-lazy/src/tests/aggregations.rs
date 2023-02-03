@@ -562,3 +562,36 @@ fn test_take_in_groups() -> PolarsResult<()> {
     );
     Ok(())
 }
+
+#[test]
+#[should_panic(expected = "hardcoded error")]
+fn test_apply_multiple_error() {
+
+    fn issue() -> Expr {
+        apply_multiple(
+            move |columns| {
+            return Err(PolarsError::ComputeError("hardcoded error".into()))
+            },
+            &[
+                col("x"),
+                col("y")
+            ],
+            GetOutput::from_type(DataType::Float64),
+            true
+        )
+    };
+
+    let df = df![
+                 "rf" => ["App", "App", "Gg", "App"],
+                 "x" => ["Hey", "There", "Ante", "R"],
+                 "y" => [Some(-1.11), Some(2.),None, Some(3.4)],
+                 "z" => [Some(-1.11), Some(2.),None, Some(3.4)],
+             ].unwrap();
+             
+    let res = df.lazy()
+        .with_streaming(false)
+        .groupby_stable([col("rf")])
+        .agg([issue().alias("RESULT")])
+        .collect()
+        .unwrap();
+}
