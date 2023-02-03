@@ -1899,7 +1899,10 @@ def test_supertype_timezones_4174() -> None:
         }
     ).with_columns(
         [
-            pl.col("dt").dt.tz_localize('UTC').dt.with_time_zone("Europe/London").suffix("_London"),
+            pl.col("dt")
+            .dt.tz_localize("UTC")
+            .dt.with_time_zone("Europe/London")
+            .suffix("_London"),
         ]
     )
 
@@ -2086,9 +2089,7 @@ def test_invalid_date_parsing_4898() -> None:
 def test_cast_timezone() -> None:
     ny = zoneinfo.ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
-        pl.col("a")
-        .dt.tz_localize("America/New_York")
-        .alias("b")
+        pl.col("a").dt.tz_localize("America/New_York").alias("b")
     ).to_dict(False) == {
         "a": [datetime(2022, 9, 25, 14, 0)],
         "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
@@ -2140,7 +2141,16 @@ def test_cast_timezone_fixed_offsets_and_area_location(
 def test_with_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):
-        ts.dt.tz_localize('UTC').dt.with_time_zone("foo")
+        ts.dt.tz_localize("UTC").dt.with_time_zone("foo")
+
+
+def test_with_time_zone_on_tz_naive() -> None:
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    with pytest.raises(
+        ComputeError,
+        match=r"Series of dtype Datetime\(Microseconds, None\) has got no time zone",
+    ):
+        ts.dt.with_time_zone("Africa/Bamako")
 
 
 def test_with_time_zone_fixed_offset() -> None:
@@ -2284,7 +2294,7 @@ def test_tz_localize_from_utc(time_zone: str) -> None:
 
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.tz_localize('UTC').dt.with_time_zone("Europe/Brussels")
+    tz_aware = tz_naive.dt.tz_localize("UTC").dt.with_time_zone("Europe/Brussels")
     result = tz_aware.dt.cast_time_zone(None).item()
     assert result == datetime(2020, 1, 1, 4)
 
@@ -2630,7 +2640,9 @@ def test_cast_time_to_duration() -> None:
 def test_tz_aware_day_weekday() -> None:
     start = datetime(2001, 1, 1)
     stop = datetime(2001, 1, 9)
-    df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3), time_zone='UTC')})
+    df = pl.DataFrame(
+        {"date": pl.date_range(start, stop, timedelta(days=3), time_zone="UTC")}
+    )
 
     df = df.with_columns(
         [
