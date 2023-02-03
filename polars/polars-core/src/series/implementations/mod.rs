@@ -11,6 +11,8 @@ mod categorical;
 mod dates_time;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
+#[cfg(feature = "dtype-i128")]
+mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
 mod floats;
