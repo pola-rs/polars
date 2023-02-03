@@ -75,8 +75,10 @@ impl DateLikeNameSpace {
                     ca.set_time_zone(tz.clone())?;
                     Ok(Some(ca.into_series()))
                 }
-                dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {dt:?} has got no time zone").into(),
+                _ => Err(PolarsError::ComputeError(
+                    format!(
+                        "Cannot call with_time_zone on tz-naive. Set a time zone first with tz_localize"
+                    ).into(),
                 )),
             },
             GetOutput::same_type(),
