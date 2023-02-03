@@ -152,6 +152,7 @@ fn upsample_single_impl(
                         TimeUnit::Milliseconds => offset.add_ms(first),
                     };
                     let range = match tz {
+                        #[cfg(feature = "timezones")]
                         Some(tz) => date_range_impl(
                             index_col_name,
                             first,
@@ -164,7 +165,7 @@ fn upsample_single_impl(
                         .with_time_zone(tz.clone())?
                         .into_series()
                         .into_frame(),
-                        None => date_range_impl(
+                        _ => date_range_impl(
                             index_col_name,
                             first,
                             last,

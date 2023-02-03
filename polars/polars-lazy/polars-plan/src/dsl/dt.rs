@@ -66,10 +66,11 @@ impl DateLikeNameSpace {
     }
 
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
+    #[cfg(feature = "timezones")]
     pub fn with_time_zone(self, tz: TimeZone) -> Expr {
         self.0.map(
             move |s| match s.dtype() {
-                DataType::Datetime(_, _) => {
+                DataType::Datetime(_, Some(_)) => {
                     let mut ca = s.datetime().unwrap().clone();
                     ca.set_time_zone(tz.clone())?;
                     Ok(Some(ca.into_series()))
