@@ -65,7 +65,7 @@ jobs:
           maturin develop
 
       - name: Run tests and report coverage
-        run: pytest --cov -n auto -m ""
+        run: pytest --cov -n auto -m "slow or not slow"
 
       - name: Run doctests
         run: python tests/docs/run_doc_examples.py
