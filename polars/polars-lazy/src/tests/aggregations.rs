@@ -565,6 +565,7 @@ fn test_take_in_groups() -> PolarsResult<()> {
 
 #[test]
 #[should_panic(expected = "hardcoded error")]
+/// Test where apply_multiple returns an error
 fn test_apply_multiple_error() {
 
     fn issue() -> Expr {
@@ -591,7 +592,7 @@ fn test_apply_multiple_error() {
     let res = df.lazy()
         .with_streaming(false)
         .groupby_stable([col("rf")])
-        .agg([issue().alias("RESULT")])
+        .agg([issue()])
         .collect()
         .unwrap();
 }
