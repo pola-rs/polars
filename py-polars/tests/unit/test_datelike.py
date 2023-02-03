@@ -841,7 +841,7 @@ def test_upsample() -> None:
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.tz_localize("UTC"))
+    ).with_columns(pl.col("time").dt.cast_time_zone("UTC"))
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
@@ -872,7 +872,7 @@ def test_upsample() -> None:
             ],
             "test2": [0, 0, 0, 2, 1, 1, 3],
         }
-    ).with_columns(pl.col("time").dt.tz_localize("UTC"))
+    ).with_columns(pl.col("time").dt.cast_time_zone("UTC"))
 
     assert_frame_equal(up, expected)
 
@@ -911,13 +911,8 @@ def test_upsample_time_zones(
             "values": [1.0, 3.0, 5.0, 7.0],
         }
     )
-    if time_zone is not None:
-        # TODO once cast_time_zone can operate on tz-naive,
-        # replace this with (no if-statement needed):
-        # df = df.with_columns(pl.col("time").dt.cast_time_zone(time_zone))
-        # expected = expected.with_columns(pl.col("time").dt.cast_time_zone(time_zone))
-        df = df.with_columns(pl.col("time").dt.tz_localize(time_zone))
-        expected = expected.with_columns(pl.col("time").dt.tz_localize(time_zone))
+    df = df.with_columns(pl.col("time").dt.cast_time_zone(time_zone))
+    expected = expected.with_columns(pl.col("time").dt.cast_time_zone(time_zone))
     result = df.upsample(time_column="time", every="60m").fill_null(strategy="forward")
     assert_frame_equal(result, expected)
 
@@ -1899,10 +1894,7 @@ def test_supertype_timezones_4174() -> None:
         }
     ).with_columns(
         [
-            pl.col("dt")
-            .dt.tz_localize("UTC")
-            .dt.with_time_zone("Europe/London")
-            .suffix("_London"),
+            pl.col("dt").dt.cast_time_zone("Europe/London").suffix("_London"),
         ]
     )
 
@@ -2089,7 +2081,7 @@ def test_invalid_date_parsing_4898() -> None:
 def test_cast_timezone() -> None:
     ny = zoneinfo.ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
-        pl.col("a").dt.tz_localize("America/New_York").alias("b")
+        pl.col("a").dt.cast_time_zone("America/New_York").alias("b")
     ).to_dict(False) == {
         "a": [datetime(2022, 9, 25, 14, 0)],
         "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
@@ -2129,7 +2121,7 @@ def test_cast_timezone_from_to(
 def test_with_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):
-        ts.dt.tz_localize("UTC").dt.with_time_zone("foo")
+        ts.dt.cast_time_zone("UTC").dt.with_time_zone("foo")
 
 
 def test_with_time_zone_on_tz_naive() -> None:
@@ -2143,7 +2135,7 @@ def test_with_time_zone_on_tz_naive() -> None:
 
 def test_with_time_zone_fixed_offset() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    result = ts.dt.tz_localize("+00:00")
+    result = ts.dt.cast_time_zone("+00:00")
     assert result.dtype == pl.Datetime("us", "+00:00")
     assert result.item() == datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
 
@@ -2286,7 +2278,7 @@ def test_tz_localize_from_utc(time_zone: str) -> None:
 
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.tz_localize("UTC").dt.with_time_zone("Europe/Brussels")
+    tz_aware = tz_naive.dt.cast_time_zone("UTC").dt.with_time_zone("Europe/Brussels")
     result = tz_aware.dt.cast_time_zone(None).item()
     assert result == datetime(2020, 1, 1, 4)
 
