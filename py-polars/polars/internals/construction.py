@@ -54,7 +54,13 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
-from polars.utils import _is_generator, arrlen, range_to_series, threadpool_size
+from polars.utils import (
+    _is_generator,
+    arrlen,
+    deprecated_alias,
+    range_to_series,
+    threadpool_size,
+)
 
 if version_info >= (3, 10):
 
@@ -455,9 +461,10 @@ def sequence_to_pyseries(
                         raise error
 
 
+@deprecated_alias(nan_to_none="nan_to_null")
 def _pandas_series_to_arrow(
     values: pd.Series | pd.DatetimeIndex,
-    nan_to_none: bool = True,
+    nan_to_null: bool = True,
     min_len: int | None = None,
 ) -> pa.Array:
     """
@@ -467,7 +474,7 @@ def _pandas_series_to_arrow(
     ----------
     values : :class:`pandas.Series` or :class:`pandas.DatetimeIndex`
         Series to convert to arrow
-    nan_to_none : bool, default = True
+    nan_to_null : bool, default = True
         Interpret `NaN` as missing values
     min_len : int, optional
         in case of null values, this length will be used to create a dummy f64 array
@@ -482,12 +489,12 @@ def _pandas_series_to_arrow(
     if dtype == "object":
         first_non_none = _get_first_non_none(values.values)  # type: ignore[arg-type]
         if isinstance(first_non_none, str):
-            return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
+            return pa.array(values, pa.large_utf8(), from_pandas=nan_to_null)
         elif first_non_none is None:
             return pa.nulls(min_len, pa.large_utf8())
-        return pa.array(values, from_pandas=nan_to_none)
+        return pa.array(values, from_pandas=nan_to_null)
     elif dtype:
-        return pa.array(values, from_pandas=nan_to_none)
+        return pa.array(values, from_pandas=nan_to_null)
     else:
         # Pandas Series is actually a Pandas DataFrame when the original dataframe
         # contains duplicated columns and a duplicated column is requested with df["a"].
@@ -497,15 +504,16 @@ def _pandas_series_to_arrow(
         )
 
 
+@deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pyseries(
-    name: str, values: pd.Series | pd.DatetimeIndex, nan_to_none: bool = True
+    name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
     if not name and values.name is not None:
         name = str(values.name)
     return arrow_to_pyseries(
-        name, _pandas_series_to_arrow(values, nan_to_none=nan_to_none)
+        name, _pandas_series_to_arrow(values, nan_to_null=nan_to_null)
     )
 
 
@@ -620,8 +628,9 @@ def _expand_dict_scalars(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series],
     schema_overrides: SchemaDict | None = None,
     order: Sequence[str] | None = None,
+    nan_to_null: bool = False,
 ) -> dict[str, pli.Series]:
-    """Expand scalar values in dict data (propagate literal as array)."""
+    """Expand any scalar values in dict data (propagate literal as array)."""
     updated_data = {}
     if data:
         dtypes = schema_overrides or {}
@@ -633,7 +642,9 @@ def _expand_dict_scalars(
                     updated_data[name] = pli.DataFrame(val).to_struct(name)
 
                 elif arrlen(val) is not None or _is_generator(val):
-                    updated_data[name] = pli.Series(name=name, values=val, dtype=dtype)
+                    updated_data[name] = pli.Series(
+                        name=name, values=val, dtype=dtype, nan_to_null=nan_to_null
+                    )
 
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool)
@@ -668,6 +679,7 @@ def dict_to_pydf(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series],
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
     if not schema:
@@ -686,11 +698,17 @@ def dict_to_pydf(
         )
         if not data and schema_overrides:
             data_series = [
-                pli.Series(name, [], schema_overrides.get(name))._s for name in columns
+                pli.Series(
+                    name, [], dtype=schema_overrides.get(name), nan_to_null=nan_to_null
+                )._s
+                for name in columns
             ]
         else:
             data_series = [
-                s._s for s in _expand_dict_scalars(data, schema_overrides).values()
+                s._s
+                for s in _expand_dict_scalars(
+                    data, schema_overrides, nan_to_null=nan_to_null
+                ).values()
             ]
 
         data_series = _handle_columns_arg(data_series, columns=columns, from_dict=True)
@@ -921,6 +939,7 @@ def numpy_to_pydf(
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
     orient: Orientation | None = None,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a numpy ndarray."""
     shape = data.shape
@@ -974,21 +993,31 @@ def numpy_to_pydf(
 
     elif len(shape) == 1:
         data_series = [
-            pli.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
+            pli.Series(
+                name=column_names[0],
+                values=data,
+                dtype=schema_overrides.get(column_names[0]),
+                nan_to_null=nan_to_null,
+            )._s
         ]
-
     else:
         if orient == "row":
             data_series = [
                 pli.Series(
-                    column_names[i], data[:, i], schema_overrides.get(column_names[i])
+                    name=column_names[i],
+                    values=data[:, i],
+                    dtype=schema_overrides.get(column_names[i]),
+                    nan_to_null=nan_to_null,
                 )._s
                 for i in range(n_columns)
             ]
         else:
             data_series = [
                 pli.Series(
-                    column_names[i], data[i], schema_overrides.get(column_names[i])
+                    name=column_names[i],
+                    values=data[i],
+                    dtype=schema_overrides.get(column_names[i]),
+                    nan_to_null=nan_to_null,
                 )._s
                 for i in range(n_columns)
             ]
@@ -1192,18 +1221,19 @@ def iterable_to_pydf(
     return (df.rechunk() if n_chunks > 0 else df)._df
 
 
+@deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pydf(
     data: pd.DataFrame,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
-    nan_to_none: bool = True,
+    nan_to_null: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
     length = data.shape[0]
     arrow_dict = {
         str(col): _pandas_series_to_arrow(
-            data[col], nan_to_none=nan_to_none, min_len=length
+            data[col], nan_to_null=nan_to_null, min_len=length
         )
         for col in data.columns
     }
