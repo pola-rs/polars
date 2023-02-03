@@ -3414,7 +3414,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"num": [1, 2, 3, 4, 5]})
-        >>> df.with_columns(pl.col("num").is_between(2, 4))
+        >>> df.with_columns(pl.col("num").is_between(2, 4).alias("is_between"))
         shape: (5, 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
@@ -3430,7 +3430,9 @@ class Expr:
 
         Use the ``closed`` argument to include or exclude the values at the bounds:
 
-        >>> df.with_columns(pl.col("num").is_between(2, 4, closed="left"))
+        >>> df.with_columns(
+        ...     pl.col("num").is_between(2, 4, closed="left").alias("is_between")
+        ... )
         shape: (5, 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
@@ -3444,13 +3446,15 @@ class Expr:
         │ 5   ┆ false      │
         └─────┴────────────┘
 
-        Can also use strings as well as numeric/temporal values (note: ensure that
+        You can also use strings as well as numeric/temporal values (note: ensure that
         string literals are wrapped with ``lit`` so as not to conflate them with
         column names):
 
         >>> df = pl.DataFrame({"a": ["a", "b", "c", "d", "e"]})
         >>> df.with_columns(
-        ...     pl.col("a").is_between(pl.lit("a"), pl.lit("c"), closed="both")
+        ...     pl.col("a")
+        ...     .is_between(pl.lit("a"), pl.lit("c"), closed="both")
+        ...     .alias("is_between")
         ... )
         shape: (5, 2)
         ┌─────┬────────────┐
@@ -3469,13 +3473,13 @@ class Expr:
         end = expr_to_lit_or_expr(end, str_to_lit=False)
 
         if closed == "none":
-            return ((self > start) & (self < end)).alias("is_between")
+            return (self > start) & (self < end)
         elif closed == "both":
-            return ((self >= start) & (self <= end)).alias("is_between")
+            return (self >= start) & (self <= end)
         elif closed == "right":
-            return ((self > start) & (self <= end)).alias("is_between")
+            return (self > start) & (self <= end)
         elif closed == "left":
-            return ((self >= start) & (self < end)).alias("is_between")
+            return (self >= start) & (self < end)
         else:
             raise ValueError(
                 "closed must be one of {'left', 'right', 'both', 'none'},"
