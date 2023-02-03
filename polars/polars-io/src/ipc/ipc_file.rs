@@ -79,7 +79,7 @@ pub struct IpcReader<R: MmapBytesReader> {
 
 impl<R: MmapBytesReader> IpcReader<R> {
     #[doc(hidden)]
-    /// A very bad estimated of the number of rows
+    /// A very bad estimate of the number of rows
     /// This estimation will be entirely off if the file is compressed.
     /// And will be varying off depending on the data types.
     pub fn _num_rows(&mut self) -> PolarsResult<usize> {
@@ -131,8 +131,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         self
     }
 
-    /// Set the reader's column projection. This counts from 0, meaning that
-    /// `vec![0, 4]` would select the 1st and 5th column.
+    /// Set if the file is to be memory_mapped. Only works with uncompressed files.
     pub fn memory_mapped(mut self, toggle: bool) -> Self {
         self.memmap = toggle;
         self
