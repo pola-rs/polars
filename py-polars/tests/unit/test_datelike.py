@@ -2093,15 +2093,6 @@ def test_cast_timezone_fixed_offsets_and_area_location(
     assert result == expected
 
 
-def test_with_time_zone_none() -> None:
-    brussels = pl.Series("dt", [datetime(2001, 1, 1)]).dt.with_time_zone(
-        tz="Europe/Brussels"
-    )
-    result = brussels.dt.with_time_zone(None)
-    assert result.dtype == pl.Datetime("us", None)
-    assert result.item() == datetime(2001, 1, 1, 0, 0)
-
-
 def test_with_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):

@@ -1153,9 +1153,9 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    def with_time_zone(self, tz: str | None) -> pli.Expr:
+    def with_time_zone(self, tz: str) -> pli.Expr:
         """
-        Set time zone for a Series of type Datetime.
+        Convert to given time zone for a Series of type Datetime.
 
         Parameters
         ----------

@@ -906,9 +906,9 @@ class DateTimeNameSpace:
 
         """
 
-    def with_time_zone(self, tz: str | None) -> pli.Series:
+    def with_time_zone(self, tz: str) -> pli.Series:
         """
-        Set time zone a Series of type Datetime.
+        Convert to given time zone for a Series of type Datetime.
 
         Parameters
         ----------

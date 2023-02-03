@@ -66,7 +66,7 @@ impl DateLikeNameSpace {
     }
 
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
-    pub fn with_time_zone(self, tz: Option<TimeZone>) -> Expr {
+    pub fn with_time_zone(self, tz: TimeZone) -> Expr {
         self.0.map(
             move |s| match s.dtype() {
                 DataType::Datetime(_, _) => {

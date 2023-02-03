@@ -1046,7 +1046,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_with_time_zone(&self, tz: Option<TimeZone>) -> PyExpr {
+    pub fn dt_with_time_zone(&self, tz: TimeZone) -> PyExpr {
         self.inner.clone().dt().with_time_zone(tz).into()
     }
 
