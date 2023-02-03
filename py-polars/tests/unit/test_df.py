@@ -276,7 +276,7 @@ def test_from_dict_with_column_order() -> None:
 def test_from_dict_with_scalars() -> None:
     import polars as pl
 
-    # one or more valid arrays, with some scalars
+    # one or more valid arrays, with some scalars (inc. None)
     df1 = pl.DataFrame(
         {"key": ["aa", "bb", "cc"], "misc": "xyz", "other": None, "value": 0}
     )
@@ -300,8 +300,8 @@ def test_from_dict_with_scalars() -> None:
     df3 = pl.DataFrame({"vals": map(float, [1, 2, 3])})
     assert df3.to_dict(False) == {"vals": [1.0, 2.0, 3.0]}
 
-    # ensure we don't accidentally consume or expand map/range/generator cols
-    # and can properly apply schema dtype/ordering directives (via 'columns')
+    # ensure we don't accidentally consume or expand map/range/generator
+    # cols, and can properly apply schema dtype/ordering directives
     df4 = pl.DataFrame(
         {
             "key": range(1, 4),
@@ -347,6 +347,30 @@ def test_from_dict_with_scalars() -> None:
             "y": pl.Int8,
             "z": pl.Utf8,
         }
+
+    # mixed with numpy cols...
+    df6 = pl.DataFrame(
+        {"x": np.ones(3), "y": np.zeros(3), "z": 1.0},
+    )
+    assert df6.rows() == [(1.0, 0.0, 1.0), (1.0, 0.0, 1.0), (1.0, 0.0, 1.0)]
+
+    # ...and trigger multithreaded load codepath
+    df7 = pl.DataFrame(
+        {
+            "w": np.zeros(1001, dtype=np.uint8),
+            "x": np.ones(1001, dtype=np.uint8),
+            "y": np.zeros(1001, dtype=np.uint8),
+            "z": 1,
+        },
+        schema_overrides={"z": pl.UInt8},
+    )
+    assert df7[999:].rows() == [(0, 1, 0, 1), (0, 1, 0, 1)]
+    assert df7.schema == {
+        "w": pl.UInt8,
+        "x": pl.UInt8,
+        "y": pl.UInt8,
+        "z": pl.UInt8,
+    }
 
 
 def test_dataframe_membership_operator() -> None:
