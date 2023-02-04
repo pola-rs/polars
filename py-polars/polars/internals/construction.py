@@ -685,68 +685,67 @@ def dict_to_pydf(
     nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
-    if not schema:
-        schema = list(data)
-    if schema:
-        # the columns arg may also set the dtype/column order of the series
-        if isinstance(schema, dict) and data:
-            if not all((col in schema) for col in data):
-                raise ValueError(
-                    "The given column-schema names do not match the data dictionary"
-                )
-            data = {col: data[col] for col in schema}
+    if isinstance(schema, dict) and data:
+        if not all((col in schema) for col in data):
+            raise ValueError(
+                "The given column-schema names do not match the data dictionary"
+            )
+        data = {col: data[col] for col in schema}
 
-        columns, schema_overrides = _unpack_schema(
-            schema, lookup_names=data.keys(), schema_overrides=schema_overrides
-        )
-        if not data and schema_overrides:
-            data_series = [
-                pli.Series(
-                    name, [], dtype=schema_overrides.get(name), nan_to_null=nan_to_null
-                )._s
-                for name in columns
-            ]
-        else:
-            data_series = [
-                s._s
-                for s in _expand_dict_scalars(
-                    data, schema_overrides, nan_to_null=nan_to_null
-                ).values()
-            ]
-
-        data_series = _handle_columns_arg(data_series, columns=columns, from_dict=True)
-        return PyDataFrame(data_series)
+    column_names, schema_overrides = _unpack_schema(
+        schema, lookup_names=data.keys(), schema_overrides=schema_overrides
+    )
+    if not column_names:
+        column_names = list(data)
 
     if _NUMPY_AVAILABLE:
-        count_numpy = 0
-        for val in data.values():
-            # only start a thread pool from a reasonable size.
-            count_numpy += int(
+        # if there are 3 or more numpy arrays of sufficient size, we multi-thread:
+        count_numpy = sum(
+            int(
                 _check_for_numpy(val)
                 and isinstance(val, np.ndarray)
                 and len(val) > 1000
             )
+            for val in data.values()
+        )
+        if count_numpy >= 3:
+            # yes, multi-threading was easier in python here; we cannot have multiple
+            # threads running python and release the gil in pyo3 (it will deadlock).
 
-        # if we have more than 3 numpy arrays we multi-thread
-        if count_numpy > 2:
-            # yes, multi-threading was easier in python here
-            # we cannot run multiple threads that run python code
-            # and release the gil in pyo3
-            # it will deadlock.
-
-            # dummy is threaded
+            # (note: 'dummy' is threaded)
             import multiprocessing.dummy
 
             pool_size = threadpool_size()
             with multiprocessing.dummy.Pool(pool_size) as pool:
-                data_series = pool.map(
-                    lambda t: pli.Series(t[0], t[1])._s,
-                    [(k, v) for k, v in data.items()],
+                data = dict(
+                    zip(
+                        column_names,
+                        pool.map(
+                            lambda t: pli.Series(t[0], t[1])
+                            if isinstance(t[1], np.ndarray)
+                            else t[1],
+                            [(k, v) for k, v in data.items()],
+                        ),
+                    )
                 )
-            return PyDataFrame(data_series)
 
-    data = _expand_dict_scalars(data)
-    return PyDataFrame.read_dict(data)
+    if not data and schema_overrides:
+        data_series = [
+            pli.Series(
+                name, [], dtype=schema_overrides.get(name), nan_to_null=nan_to_null
+            )._s
+            for name in column_names
+        ]
+    else:
+        data_series = [
+            s._s
+            for s in _expand_dict_scalars(
+                data, schema_overrides, nan_to_null=nan_to_null
+            ).values()
+        ]
+
+    data_series = _handle_columns_arg(data_series, columns=column_names, from_dict=True)
+    return PyDataFrame(data_series)
 
 
 def sequence_to_pydf(

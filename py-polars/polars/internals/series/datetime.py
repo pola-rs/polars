@@ -907,9 +907,9 @@ class DateTimeNameSpace:
 
         """
 
-    def with_time_zone(self, tz: str | None) -> pli.Series:
+    def with_time_zone(self, tz: str) -> pli.Series:
         """
-        Set time zone a Series of type Datetime.
+        Convert to given time zone for a Series of type Datetime.
 
         Parameters
         ----------
@@ -921,14 +921,14 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2020, 3, 1)
         >>> stop = datetime(2020, 5, 1)
-        >>> date = pl.date_range(start, stop, "1mo")
+        >>> date = pl.date_range(start, stop, "1mo", time_zone="UTC")
         >>> date
         shape: (3,)
-        Series: '' [datetime[μs]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-03-01 00:00:00
-                2020-04-01 00:00:00
-                2020-05-01 00:00:00
+                2020-03-01 00:00:00 UTC
+                2020-04-01 00:00:00 UTC
+                2020-05-01 00:00:00 UTC
         ]
         >>> date = date.dt.with_time_zone(tz="Europe/London").alias("London")
         >>> date
@@ -938,31 +938,6 @@ class DateTimeNameSpace:
             2020-03-01 00:00:00 GMT
             2020-04-01 01:00:00 BST
             2020-05-01 01:00:00 BST
-        ]
-
-        If starting from a naive Datetime, then conversion will happen
-        as if starting from UTC:
-
-        >>> brussels_ts = date.dt.with_time_zone(tz="Europe/Brussels").alias("Brussels")
-        >>> brussels_ts
-        shape: (3,)
-        Series: 'Brussels' [datetime[μs, Europe/Brussels]]
-        [
-                2020-03-01 01:00:00 CET
-                2020-04-01 02:00:00 CEST
-                2020-05-01 02:00:00 CEST
-        ]
-
-        If starting from a tz-aware Datetime, then passing ``tz=None``
-        will make the result timezone-naive:
-
-        >>> brussels_ts.dt.with_time_zone(tz=None).alias("")
-        shape: (3,)
-        Series: '' [datetime[μs]]
-        [
-                2020-03-01 00:00:00
-                2020-04-01 00:00:00
-                2020-05-01 00:00:00
         ]
         """
 
@@ -983,14 +958,14 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2020, 3, 1)
         >>> stop = datetime(2020, 5, 1)
-        >>> date = pl.date_range(start, stop, "1mo")
+        >>> date = pl.date_range(start, stop, "1mo", time_zone="UTC")
         >>> date
         shape: (3,)
-        Series: '' [datetime[μs]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-03-01 00:00:00
-                2020-04-01 00:00:00
-                2020-05-01 00:00:00
+                2020-03-01 00:00:00 UTC
+                2020-04-01 00:00:00 UTC
+                2020-05-01 00:00:00 UTC
         ]
         >>> date.dt.epoch(tu="s")
         shape: (3,)

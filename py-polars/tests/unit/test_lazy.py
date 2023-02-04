@@ -691,10 +691,38 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
 
 def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
-    out = df.select(col(["A", "B"]).sum())
-    assert out.columns == ["A", "B"]
-    assert out.shape == (1, 2)
-    assert out.row(0) == (15, 15)
+    result = df.select(col(["A", "B"]).sum())
+    expected = pl.DataFrame({"A": 15, "B": 15})
+    assert_frame_equal(result, expected)
+
+
+def test_select_args_kwargs() -> None:
+    df = pl.DataFrame({"foo": [1, 2], "bar": [3, 4], "ham": ["a", "b"]})
+
+    # Single column name
+    result = df.select("foo")
+    expected = pl.DataFrame({"foo": [1, 2]})
+    assert_frame_equal(result, expected)
+
+    # Column names as list
+    result = df.select(["foo", "bar"])
+    expected = pl.DataFrame({"foo": [1, 2], "bar": [3, 4]})
+    assert_frame_equal(result, expected)
+
+    # Column names as positional arguments
+    result = df.select("foo", "bar", "ham")
+    expected = df
+    assert_frame_equal(result, expected)
+
+    # Keyword arguments
+    result = df.select(oof="foo")
+    expected = pl.DataFrame({"oof": [1, 2]})
+    assert_frame_equal(result, expected)
+
+    # Mixed
+    result = df.select(["bar"], "foo", oof="foo")
+    expected = pl.DataFrame({"bar": [3, 4], "foo": [1, 2], "oof": [1, 2]})
+    assert_frame_equal(result, expected)
 
 
 def test_rolling(fruits_cars: pl.DataFrame) -> None:

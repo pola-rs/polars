@@ -151,18 +151,32 @@ fn upsample_single_impl(
                         TimeUnit::Microseconds => offset.add_us(first),
                         TimeUnit::Milliseconds => offset.add_ms(first),
                     };
-                    let range = date_range_impl(
-                        index_col_name,
-                        first,
-                        last,
-                        every,
-                        ClosedWindow::Both,
-                        *tu,
-                        None,
-                    )?
-                    .with_time_zone(tz.clone())?
-                    .into_series()
-                    .into_frame();
+                    let range = match tz {
+                        #[cfg(feature = "timezones")]
+                        Some(tz) => date_range_impl(
+                            index_col_name,
+                            first,
+                            last,
+                            every,
+                            ClosedWindow::Both,
+                            *tu,
+                            Some(&"UTC".to_string()),
+                        )?
+                        .with_time_zone(tz.clone())?
+                        .into_series()
+                        .into_frame(),
+                        _ => date_range_impl(
+                            index_col_name,
+                            first,
+                            last,
+                            every,
+                            ClosedWindow::Both,
+                            *tu,
+                            None,
+                        )?
+                        .into_series()
+                        .into_frame(),
+                    };
                     range.join(
                         source,
                         &[index_col_name],

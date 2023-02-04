@@ -159,6 +159,7 @@ impl DataType {
             | DataType::Datetime(_, _)
             | DataType::Duration(_)
             | DataType::Boolean
+            | DataType::Unknown
             | DataType::Null => false,
             #[cfg(feature = "dtype-binary")]
             DataType::Binary => false,

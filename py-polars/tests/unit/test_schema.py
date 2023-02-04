@@ -308,3 +308,9 @@ def test_emtpy_list_eval_schema_5734() -> None:
     assert df.filter(False).select(
         pl.col("a").arr.eval(pl.element().struct.field("b"))
     ).schema == {"a": pl.List(pl.Int64)}
+
+
+def test_schema_true_divide_6643() -> None:
+    df = pl.DataFrame({"a": [1]})
+    a = pl.col("a")
+    assert df.lazy().select(a / 2).select(pl.col(pl.Int64)).collect().shape == (0, 0)

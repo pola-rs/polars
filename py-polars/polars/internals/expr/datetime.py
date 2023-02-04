@@ -1154,9 +1154,9 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    def with_time_zone(self, tz: str | None) -> pli.Expr:
+    def with_time_zone(self, tz: str) -> pli.Expr:
         """
-        Set time zone for a Series of type Datetime.
+        Convert to given time zone for a Series of type Datetime.
 
         Parameters
         ----------
@@ -1169,7 +1169,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 5, 1),
+        ...             "1mo",
+        ...             time_zone="UTC",
         ...         ),
         ...     }
         ... )
@@ -1182,16 +1185,15 @@ class ExprDateTimeNameSpace:
         ...     ]
         ... )
         shape: (3, 2)
-        ┌─────────────────────┬─────────────────────────────┐
-        │ date                ┆ London                      │
-        │ ---                 ┆ ---                         │
-        │ datetime[μs]        ┆ datetime[μs, Europe/London] │
-        ╞═════════════════════╪═════════════════════════════╡
-        │ 2020-03-01 00:00:00 ┆ 2020-03-01 00:00:00 GMT     │
-        │ 2020-04-01 00:00:00 ┆ 2020-04-01 01:00:00 BST     │
-        │ 2020-05-01 00:00:00 ┆ 2020-05-01 01:00:00 BST     │
-        └─────────────────────┴─────────────────────────────┘
-
+        ┌─────────────────────────┬─────────────────────────────┐
+        │ date                    ┆ London                      │
+        │ ---                     ┆ ---                         │
+        │ datetime[μs, UTC]       ┆ datetime[μs, Europe/London] │
+        ╞═════════════════════════╪═════════════════════════════╡
+        │ 2020-03-01 00:00:00 UTC ┆ 2020-03-01 00:00:00 GMT     │
+        │ 2020-04-01 00:00:00 UTC ┆ 2020-04-01 01:00:00 BST     │
+        │ 2020-05-01 00:00:00 UTC ┆ 2020-05-01 01:00:00 BST     │
+        └─────────────────────────┴─────────────────────────────┘
         """
         return pli.wrap_expr(self._pyexpr.dt_with_time_zone(tz))
 
@@ -1213,7 +1215,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "london_timezone": pl.date_range(
-        ...             datetime(2020, 3, 1), datetime(2020, 7, 1), "1mo"
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 7, 1),
+        ...             "1mo",
+        ...             time_zone="UTC",
         ...         ).dt.with_time_zone(tz="Europe/London"),
         ...     }
         ... )
