@@ -1713,7 +1713,7 @@ def test_with_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(
         ComputeError,
-        match="Cannot call with_time_zone on tz-naive. Set a time zone first with tz_localize",
+        match="Cannot call with_time_zone on tz-naive. Set a time zone first with cast_time_zone",
     ):
         ts.dt.with_time_zone("Africa/Bamako")
 
