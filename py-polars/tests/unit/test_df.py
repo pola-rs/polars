@@ -2549,7 +2549,21 @@ def test_with_columns() -> None:
     )
     assert_frame_equal(dx, expected)
 
-    # as **kwargs
+    # as positional arguments
+    dx = df.with_columns(
+        (pl.col("a") * pl.col("b")).alias("d"),
+        ~pl.col("c").alias("e"),
+        srs_named,
+        pl.lit(True).alias("g"),
+        pl.lit(1).alias("h"),
+        pl.lit(3.2).alias("i"),
+        pl.col("a").alias("j"),
+        pl.lit(None).alias("k"),
+        pl.lit(datetime.datetime(2001, 1, 1, 0, 0)).alias("l"),
+    )
+    assert_frame_equal(dx, expected)
+
+    # as keyword arguments
     dx = df.with_columns(
         d=pl.col("a") * pl.col("b"),
         e=~pl.col("c"),
@@ -2566,7 +2580,7 @@ def test_with_columns() -> None:
     # mixed
     dx = df.with_columns(
         [(pl.col("a") * pl.col("b")).alias("d")],
-        e=~pl.col("c"),
+        ~pl.col("c").alias("e"),
         f=srs_unnamed,
         g=True,
         h=1,
