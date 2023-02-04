@@ -2758,12 +2758,25 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
-    def glimpse(self: DF) -> str:
-        """
-        Print a dense preview of the dataframe.
+    @overload
+    def glimpse(self: DF, return_as_string: Literal[False]) -> None:
+        ...
 
-        Printing is done one line per column, so wide dataframes show nicely. Each
-        line will show the column name, the data type and the first few values.
+    @overload
+    def glimpse(self: DF, return_as_string: Literal[True]) -> str:
+        ...
+
+    def glimpse(self: DF, return_as_string: bool = False) -> str | None:
+        """
+        Return a dense preview of the dataframe.
+
+        The formatting is done one line per column, so wide dataframes show nicely.
+        Each line will show the column name, the data type and the first few values.
+
+        Parameters
+        ----------
+        return_as_string
+            If True, return as string rather than printing to stdout.
 
         See Also
         --------
@@ -2782,7 +2795,7 @@ class DataFrame:
         ...         "f": [date(2020, 1, 1), date(2021, 1, 2), date(2022, 1, 1)],
         ...     }
         ... )
-        >>> print(df.glimpse())
+        >>> df.glimpse()
         Rows: 3
         Columns: 6
         $ a  <f64> 1.0, 2.8, 3.0
@@ -2831,7 +2844,13 @@ class DataFrame:
                 f" {val_str:<{min(len(val_str), max_col_values)}}\n"
             )
 
-        return output.getvalue()
+        s = output.getvalue()
+
+        if not return_as_string:
+            print(s, end=None)
+            return None
+        else:
+            return s
 
     def describe(self: DF) -> DF:
         """
