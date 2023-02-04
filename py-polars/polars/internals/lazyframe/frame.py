@@ -1574,15 +1574,18 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         exprs
-            Column expression(s) to select.
+            Column or columns to select. Accepts expression input. Strings are parsed
+            as column names, other non-expression inputs are parsed as literals.
         *more_exprs
-            Additional column expression(s) to select, specified as positional
-            parameters.
+            Additional columns to select, specified as positional arguments.
         **named_exprs
-            Named column expressions, provided as kwargs.
+            Additional columns to select, specified as keyword arguments. The columns
+            will be renamed to the keyword used.
 
         Examples
         --------
+        Pass the name of a column to select that column.
+
         >>> ldf = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -1601,6 +1604,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 2   │
         │ 3   │
         └─────┘
+
+        Multiple columns can be selected by passing a list of column names.
+
         >>> ldf.select(["foo", "bar"]).collect()
         shape: (3, 2)
         ┌─────┬─────┐
@@ -1613,43 +1619,36 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 3   ┆ 8   │
         └─────┴─────┘
 
-        >>> ldf.select(pl.col("foo") + 1).collect()
-        shape: (3, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 2   │
-        │ 3   │
-        │ 4   │
-        └─────┘
+        Multiple columns can also be selected using positional arguments instead of a
+        list. Expressions are also accepted.
 
-        >>> ldf.select([pl.col("foo") + 1, pl.col("bar") + 1]).collect()
+        >>> ldf.select(pl.col("foo"), pl.col("bar") + 1).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 2   ┆ 7   │
-        │ 3   ┆ 8   │
-        │ 4   ┆ 9   │
+        │ 1   ┆ 7   │
+        │ 2   ┆ 8   │
+        │ 3   ┆ 9   │
         └─────┴─────┘
 
+        Use keyword arguments to easily name your expression inputs.
+
         >>> ldf.select(
-        ...     value=pl.when(pl.col("foo") > 2).then(10).otherwise(0),
+        ...     threshold=pl.when(pl.col("foo") > 2).then(10).otherwise(0)
         ... ).collect()
         shape: (3, 1)
-        ┌───────┐
-        │ value │
-        │ ---   │
-        │ i32   │
-        ╞═══════╡
-        │ 0     │
-        │ 0     │
-        │ 10    │
-        └───────┘
+        ┌───────────┐
+        │ threshold │
+        │ ---       │
+        │ i32       │
+        ╞═══════════╡
+        │ 0         │
+        │ 0         │
+        │ 10        │
+        └───────────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
         by enabling the experimental setting ``Config.set_auto_structify(True)``:

@@ -2261,17 +2261,17 @@ def select(
     """
     Run polars expressions without a context.
 
-    This is syntactic sugar for running `df.select` on an empty DataFrame.
+    This is syntactic sugar for running ``df.select`` on an empty DataFrame.
 
     Parameters
     ----------
     exprs
-        Expressions to run
+        Expression or expressions to run.
     *more_exprs
-        Additional column expression(s) to select, specified as positional
-        parameters.
+        Additional expressions to run, specified as positional arguments.
     **named_exprs
-        Named expressions, provided as kwargs.
+        Additional expressions to run, specified as keyword arguments. The expressions
+        will be renamed to the keyword used.
 
     Returns
     -------
@@ -2281,11 +2281,7 @@ def select(
     --------
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
-    >>> pl.select(
-    ...     [
-    ...         pl.min([foo, bar]),
-    ...     ]
-    ... )
+    >>> pl.select(pl.min([foo, bar]))
     shape: (3, 1)
     ┌─────┐
     │ min │
