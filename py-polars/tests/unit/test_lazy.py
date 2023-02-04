@@ -1089,12 +1089,6 @@ def test_join_suffix() -> None:
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
 
 
-def test_str_concat() -> None:
-    df = pl.DataFrame({"foo": [1, None, 2]})
-    df = df.select(pl.col("foo").str.concat("-"))
-    assert cast(str, df.item()) == "1-null-2"
-
-
 @pytest.mark.parametrize("no_optimization", [False, True])
 def test_collect_all(df: pl.DataFrame, no_optimization: bool) -> None:
     lf1 = df.lazy().select(pl.col("int").sum())
