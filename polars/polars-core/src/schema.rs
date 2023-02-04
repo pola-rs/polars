@@ -122,13 +122,13 @@ impl Schema {
 
     pub fn try_get(&self, name: &str) -> PolarsResult<&DataType> {
         self.get(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| PolarsError::SchemaFieldNotFound(name.to_string().into()))
     }
 
     pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &String, &DataType)> {
         self.inner
             .get_full(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| PolarsError::SchemaFieldNotFound(name.to_string().into()))
     }
 
     pub fn remove(&mut self, name: &str) -> Option<DataType> {
@@ -148,7 +148,7 @@ impl Schema {
     pub fn try_get_field(&self, name: &str) -> PolarsResult<Field> {
         self.inner
             .get(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| PolarsError::SchemaFieldNotFound(name.to_string().into()))
             .map(|dtype| Field::new(name, dtype.clone()))
     }
 
