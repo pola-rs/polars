@@ -540,8 +540,7 @@ def test_date_range() -> None:
 
 
 def test_range_invalid_unit() -> None:
-    msg = "unit: 'D' not supported. Available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'mo', 'y', 'i'"
-    with pytest.raises(PanicException, match=msg):
+    with pytest.raises(PanicException, match="'D' not supported"):
         pl.date_range(
             low=datetime(2021, 12, 16), high=datetime(2021, 12, 16, 3), interval="1D"
         )
