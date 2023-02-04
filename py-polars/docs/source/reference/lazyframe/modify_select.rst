@@ -38,7 +38,6 @@ Manipulation/selection
     LazyFrame.take_every
     LazyFrame.unique
     LazyFrame.unnest
-    LazyFrame.with_column
     LazyFrame.with_columns
     LazyFrame.with_context
     LazyFrame.with_row_count

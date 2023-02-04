@@ -4,7 +4,6 @@ import os
 import subprocess
 import sys
 import typing
-import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
@@ -55,6 +54,7 @@ from polars.utils import (
     _process_null_values,
     _timedelta_to_pl_duration,
     normalise_filepath,
+    redirect,
 )
 
 try:
@@ -98,6 +98,7 @@ def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
     return LazyFrame._from_pyldf(ldf)
 
 
+@redirect({"with_column": "with_columns"})
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -2673,39 +2674,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             other = [other]
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
-
-    def with_column(self: LDF, column: pli.Series | pli.Expr) -> LDF:
-        """
-        Return a new LazyFrame with the column added, if new, or replaced.
-
-        Notes
-        -----
-        Creating a new LazyFrame using this method does not create a new copy of
-        existing data.
-
-        .. deprecated:: 0.15.14
-            `with_column` will be removed in favor of the more generic `with_columns`
-            in version 0.17.0.
-
-        Parameters
-        ----------
-        column
-            Expression that evaluates to column or a Series to use.
-
-        """
-        warnings.warn(
-            "`with_column` has been deprecated in favor of `with_columns`."
-            " This method will be removed in version 0.17.0",
-            category=DeprecationWarning,
-            stacklevel=2,
-        )
-
-        if not isinstance(column, (pli.Expr, pli.Series)):
-            raise TypeError(
-                "`with_column` expects a single Expr or Series. "
-                "Consider using `with_columns` if you need multiple columns."
-            )
-        return self.with_columns([column])
 
     def drop(self: LDF, columns: str | list[str]) -> LDF:
         """

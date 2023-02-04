@@ -6,7 +6,6 @@ import os
 import random
 import sys
 import typing
-import warnings
 from collections.abc import Sized
 from datetime import timedelta
 from io import BytesIO, IOBase, StringIO
@@ -153,7 +152,12 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
     return DataFrame._from_pydf(df)
 
 
-@redirect({"iterrows": "iter_rows"})
+@redirect(
+    {
+        "iterrows": "iter_rows",
+        "with_column": "with_columns",
+    }
+)
 class DataFrame:
     """
     Two-dimensional data structure representing data as a table with rows and columns.
@@ -4393,33 +4397,6 @@ class DataFrame:
             return self._from_pydf(out)
         else:
             return self._from_pydf(pli.wrap_s(out).to_frame()._df)
-
-    def with_column(self, column: pli.Series | pli.Expr) -> DataFrame:
-        """
-        Return a new DataFrame with the column added, if new, or replaced.
-
-        Notes
-        -----
-        Creating a new DataFrame using this method does not create a new copy of
-        existing data.
-
-        .. deprecated:: 0.15.14
-            `with_column` will be removed in favor of the more generic `with_columns`
-            in version 0.17.0.
-
-        Parameters
-        ----------
-        column
-            Series, where the name of the Series refers to the column in the DataFrame.
-
-        """
-        warnings.warn(
-            "`with_column` has been deprecated in favor of `with_columns`."
-            " This method will be removed in version 0.17.0",
-            category=DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.lazy().with_columns(column).collect(no_optimization=True)
 
     def hstack(
         self: DF,
