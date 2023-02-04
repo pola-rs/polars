@@ -1092,7 +1092,7 @@ def test_csv_quoted_missing() -> None:
 
 def test_csv_write_tz_aware() -> None:
     df = pl.DataFrame({"times": datetime(2021, 1, 1)}).with_columns(
-        pl.col("times").dt.with_time_zone("Europe/Zurich")
+        pl.col("times").dt.cast_time_zone("UTC").dt.with_time_zone("Europe/Zurich")
     )
     assert df.write_csv() == "times\n2021-01-01 01:00:00 CET\n"
 

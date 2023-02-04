@@ -841,7 +841,7 @@ def test_upsample() -> None:
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.with_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.cast_time_zone("UTC"))
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
@@ -872,9 +872,49 @@ def test_upsample() -> None:
             ],
             "test2": [0, 0, 0, 2, 1, 1, 3],
         }
-    ).with_columns(pl.col("time").dt.with_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.cast_time_zone("UTC"))
 
     assert_frame_equal(up, expected)
+
+
+@pytest.mark.parametrize(
+    ("time_zone", "tzinfo"),
+    [
+        (None, None),
+        ("+01:00", timezone(timedelta(hours=1))),
+        ("Pacific/Rarotonga", zoneinfo.ZoneInfo("Pacific/Rarotonga")),
+    ],
+)
+def test_upsample_time_zones(
+    time_zone: str | None, tzinfo: timezone | zoneinfo.ZoneInfo | None
+) -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.date_range(
+                low=datetime(2021, 12, 16),
+                high=datetime(2021, 12, 16, 3),
+                interval="30m",
+            ),
+            "groups": ["a", "a", "a", "b", "b", "a", "a"],
+            "values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 12, 16, 0, 0),
+                datetime(2021, 12, 16, 1, 0),
+                datetime(2021, 12, 16, 2, 0),
+                datetime(2021, 12, 16, 3, 0),
+            ],
+            "groups": ["a", "a", "b", "a"],
+            "values": [1.0, 3.0, 5.0, 7.0],
+        }
+    )
+    df = df.with_columns(pl.col("time").dt.cast_time_zone(time_zone))
+    expected = expected.with_columns(pl.col("time").dt.cast_time_zone(time_zone))
+    result = df.upsample(time_column="time", every="60m").fill_null(strategy="forward")
+    assert_frame_equal(result, expected)
 
 
 def test_microseconds_accuracy() -> None:
@@ -1854,7 +1894,7 @@ def test_supertype_timezones_4174() -> None:
         }
     ).with_columns(
         [
-            pl.col("dt").dt.with_time_zone("Europe/London").suffix("_London"),
+            pl.col("dt").dt.cast_time_zone("Europe/London").suffix("_London"),
         ]
     )
 
@@ -2041,10 +2081,7 @@ def test_invalid_date_parsing_4898() -> None:
 def test_cast_timezone() -> None:
     ny = zoneinfo.ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
-        pl.col("a")
-        .dt.with_time_zone("UTC")
-        .dt.cast_time_zone("America/New_York")
-        .alias("b")
+        pl.col("a").dt.cast_time_zone("America/New_York").alias("b")
     ).to_dict(False) == {
         "a": [datetime(2022, 9, 25, 14, 0)],
         "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
@@ -2081,24 +2118,24 @@ def test_cast_timezone_from_to(
     assert result == expected
 
 
-def test_with_time_zone_none() -> None:
-    brussels = pl.Series("dt", [datetime(2001, 1, 1)]).dt.with_time_zone(
-        tz="Europe/Brussels"
-    )
-    result = brussels.dt.with_time_zone(None)
-    assert result.dtype == pl.Datetime("us", None)
-    assert result.item() == datetime(2001, 1, 1, 0, 0)
-
-
 def test_with_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):
-        ts.dt.with_time_zone("foo")
+        ts.dt.cast_time_zone("UTC").dt.with_time_zone("foo")
+
+
+def test_with_time_zone_on_tz_naive() -> None:
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    with pytest.raises(
+        ComputeError,
+        match="Cannot call with_time_zone on tz-naive. Set a time zone first with tz_localize",
+    ):
+        ts.dt.with_time_zone("Africa/Bamako")
 
 
 def test_with_time_zone_fixed_offset() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    result = ts.dt.with_time_zone("+00:00")
+    result = ts.dt.cast_time_zone("+00:00")
     assert result.dtype == pl.Datetime("us", "+00:00")
     assert result.item() == datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
 
@@ -2241,7 +2278,7 @@ def test_tz_localize_from_utc(time_zone: str) -> None:
 
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.with_time_zone("Europe/Brussels")
+    tz_aware = tz_naive.dt.cast_time_zone("UTC").dt.with_time_zone("Europe/Brussels")
     result = tz_aware.dt.cast_time_zone(None).item()
     assert result == datetime(2020, 1, 1, 4)
 
@@ -2587,7 +2624,9 @@ def test_cast_time_to_duration() -> None:
 def test_tz_aware_day_weekday() -> None:
     start = datetime(2001, 1, 1)
     stop = datetime(2001, 1, 9)
-    df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
+    df = pl.DataFrame(
+        {"date": pl.date_range(start, stop, timedelta(days=3), time_zone="UTC")}
+    )
 
     df = df.with_columns(
         [

@@ -72,7 +72,7 @@ impl DatetimeChunked {
         #[cfg(feature = "timezones")]
         if let Some(tz) = self.time_zone() {
             return out
-                .with_time_zone(Some("UTC".to_string()))?
+                .with_time_zone("UTC".to_string())?
                 .cast_time_zone(Some(tz));
         }
         Ok(out)
@@ -255,15 +255,14 @@ impl DatetimeChunked {
     }
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
-    pub fn set_time_zone(&mut self, tz: Option<TimeZone>) -> PolarsResult<()> {
-        if tz.is_some() {
-            #[cfg(feature = "timezones")]
-            validate_time_zone(tz.as_ref().unwrap().to_string())?;
-        }
-        self.2 = Some(Datetime(self.time_unit(), tz));
+    #[cfg(feature = "timezones")]
+    pub fn set_time_zone(&mut self, tz: TimeZone) -> PolarsResult<()> {
+        validate_time_zone(tz.to_string())?;
+        self.2 = Some(Datetime(self.time_unit(), Some(tz)));
         Ok(())
     }
-    pub fn with_time_zone(mut self, tz: Option<TimeZone>) -> PolarsResult<Self> {
+    #[cfg(feature = "timezones")]
+    pub fn with_time_zone(mut self, tz: TimeZone) -> PolarsResult<Self> {
         self.set_time_zone(tz)?;
         Ok(self)
     }
