@@ -970,9 +970,9 @@ def test_ufunc_expr_not_first() -> None:
     df = pl.DataFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
     out = df.select(
         [
-            np.power(cast(Any, 2.0), pl.col("a")).alias("power"),
+            np.power(cast(Any, 2.0), pl.col("a")).alias("power"),  # type: ignore[call-overload]
             (2.0 / pl.col("a")).alias("divide_scalar"),
-            (np.array([2, 2, 2]) / pl.col("a")).alias("divide_array")
+            (np.array([2, 2, 2]) / pl.col("a")).alias("divide_array"),
         ]
     )
     expected = pl.DataFrame(
