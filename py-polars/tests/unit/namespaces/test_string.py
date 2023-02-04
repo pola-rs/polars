@@ -1,14 +1,9 @@
-from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import cast
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
-from polars.testing import assert_series_equal
-
-if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_str_slice() -> None:
@@ -22,6 +17,12 @@ def test_str_concat() -> None:
     result = s.str.concat()
     expected = pl.Series(["1-null-2"])
     assert_series_equal(result, expected)
+
+
+def test_str_concat2() -> None:
+    df = pl.DataFrame({"foo": [1, None, 2]})
+    df = df.select(pl.col("foo").str.concat("-"))
+    assert cast(str, df.item()) == "1-null-2"
 
 
 def test_str_lengths() -> None:
@@ -102,6 +103,16 @@ def test_str_parse_int() -> None:
     )
 
 
+def test_str_parse_int_df() -> None:
+    df = pl.DataFrame({"bin": ["110", "101", "010"], "hex": ["fa1e", "ff00", "cafe"]})
+    out = df.with_columns(
+        [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
+    )
+
+    expected = pl.DataFrame({"bin": [6, 5, 2], "hex": [64030, 65280, 51966]})
+    assert out.frame_equal(expected)
+
+
 def test_str_strip() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series(["hello", "world"])
@@ -149,22 +160,6 @@ def test_str_strip_whitespace() -> None:
 
     expected = pl.Series("a", ["trailing", "leading", "both"])
     assert_series_equal(s.str.strip(), expected)
-
-
-def test_str_strptime() -> None:
-    s = pl.Series(["2020-01-01", "2020-02-02"])
-    expected = pl.Series([date(2020, 1, 1), date(2020, 2, 2)])
-    assert_series_equal(s.str.strptime(pl.Date, "%Y-%m-%d"), expected)
-
-    s = pl.Series(["2020-01-01 00:00:00", "2020-02-02 03:20:10"])
-    expected = pl.Series(
-        [datetime(2020, 1, 1, 0, 0, 0), datetime(2020, 2, 2, 3, 20, 10)]
-    )
-    assert_series_equal(s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"), expected)
-
-    s = pl.Series(["00:00:00", "03:20:10"])
-    expected = pl.Series([0, 12010000000000], dtype=pl.Time)
-    assert_series_equal(s.str.strptime(pl.Time, "%H:%M:%S"), expected)
 
 
 def test_str_split() -> None:
@@ -459,61 +454,109 @@ def test_starts_ends_with() -> None:
     }
 
 
-def test_strptime_precision() -> None:
-    s = pl.Series(
-        "date", ["2022-09-12 21:54:36.789321456", "2022-09-13 12:34:56.987456321"]
+def test_json_path_match_type_4905() -> None:
+    df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
+    assert df.filter(
+        pl.col("json_val").str.json_path_match("$.a").is_in(["hello"])
+    ).to_dict(False) == {"json_val": ['{"a":"hello"}']}
+
+
+def test_length_vs_nchars() -> None:
+    df = pl.DataFrame({"s": ["café", "東京"]}).with_columns(
+        [
+            pl.col("s").str.lengths().alias("length"),
+            pl.col("s").str.n_chars().alias("nchars"),
+        ]
     )
-    ds = s.str.strptime(pl.Datetime)
-    assert ds.cast(pl.Date) != None  # noqa: E711  (note: *deliberately* testing "!=")
-    assert getattr(ds.dtype, "tu", None) == "us"
+    assert df.rows() == [("café", 5, 4), ("東京", 6, 2)]
 
-    time_units: list[TimeUnit] = ["ms", "us", "ns"]
-    suffixes = ["%.3f", "%.6f", "%.9f"]
-    test_data = zip(
-        time_units,
-        suffixes,
-        (
-            [789000000, 987000000],
-            [789321000, 987456000],
-            [789321456, 987456321],
-        ),
+
+def test_decode_strict() -> None:
+    df = pl.DataFrame(
+        {"strings": ["0IbQvTc3", "0J%2FQldCf0JA%3D", "0J%2FRgNC%2B0YHRgtC%2B"]}
     )
-    for precision, suffix, expected_values in test_data:
-        ds = s.str.strptime(pl.Datetime(precision), f"%Y-%m-%d %H:%M:%S{suffix}")
-        assert getattr(ds.dtype, "tu", None) == precision
-        assert ds.dt.nanosecond().to_list() == expected_values
+    assert df.select(pl.col("strings").str.decode("base64", strict=False)).to_dict(
+        False
+    ) == {"strings": [b"\xd0\x86\xd0\xbd77", None, None]}
+    with pytest.raises(pl.ComputeError):
+        df.select(pl.col("strings").str.decode("base64", strict=True))
 
 
-@pytest.mark.parametrize(
-    ("unit", "expected"),
-    [("ms", "123000000"), ("us", "123456000"), ("ns", "123456789")],
-)
-@pytest.mark.parametrize("fmt", ["%Y-%m-%d %H:%M:%S.%f", None])
-def test_strptime_precision_with_time_unit(
-    unit: TimeUnit, expected: str, fmt: str
-) -> None:
-    ser = pl.Series(["2020-01-01 00:00:00.123456789"])
-    result = ser.str.strptime(pl.Datetime(unit), fmt=fmt).dt.strftime("%f")[0]
-    assert result == expected
+def test_wildcard_expansion() -> None:
+    # one function requires wildcard expansion the other need
+    # this tests the nested behavior
+    # see: #2867
 
-
-def test_date_parse_omit_day() -> None:
-    df = pl.DataFrame({"month": ["2022-01"]})
-    assert df.select(pl.col("month").str.strptime(pl.Date, fmt="%Y-%m")).item() == date(
-        2022, 1, 1
-    )
+    df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
     assert df.select(
-        pl.col("month").str.strptime(pl.Datetime, fmt="%Y-%m")
-    ).item() == datetime(2022, 1, 1)
+        pl.concat_str(pl.all()).str.to_lowercase()
+    ).to_series().to_list() == ["xs", "yo", "zs"]
 
 
-@pytest.mark.parametrize("fmt", ["%Y-%m-%dT%H:%M:%S", None])
-def test_utc_with_tz_naive(fmt: str | None) -> None:
-    with pytest.raises(
-        ComputeError,
-        match=(
-            r"^Cannot use 'utc=True' with tz-naive data. "
-            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\).$"
-        ),
-    ):
-        pl.Series(["2020-01-01 00:00:00"]).str.strptime(pl.Datetime, fmt, utc=True)
+def test_split() -> None:
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
+    out = df.select([pl.col("x").str.split("_")])
+
+    expected = pl.DataFrame(
+        [
+            {"x": ["a", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c", "c", "c"]},
+        ]
+    )
+
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.split("_").to_frame(), expected)
+
+    out = df.select([pl.col("x").str.split("_", inclusive=True)])
+
+    expected = pl.DataFrame(
+        [
+            {"x": ["a_", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c_", "c_", "c"]},
+        ]
+    )
+
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
+
+
+def test_split_exact() -> None:
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c"]})
+    out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=False)]).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c"],
+            "field_1": ["a", None, None, "c"],
+            "field_2": pl.Series([None, None, None, None], dtype=pl.Utf8),
+        }
+    )
+
+    assert_frame_equal(out, expected)
+    out2 = df["x"].str.split_exact("_", 2, inclusive=False).to_frame().unnest("x")
+    assert_frame_equal(out2, expected)
+
+    out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
+
+    expected = pl.DataFrame(
+        {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
+    )
+    assert_frame_equal(out, expected)
+    assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
+    assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
+
+
+def test_splitn() -> None:
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
+    out = df.select([pl.col("x").str.splitn("_", 2)]).unnest("x")
+
+    expected = pl.DataFrame(
+        {"field_0": ["a", None, "b", "c"], "field_1": ["a", None, None, "c_c"]}
+    )
+
+    assert_frame_equal(out, expected)
+    assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)

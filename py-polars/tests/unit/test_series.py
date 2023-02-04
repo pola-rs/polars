@@ -2275,3 +2275,9 @@ def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])
     assert (s.shift() == s).null_count() == 0
     assert (s.shift() != s).null_count() == 0
+
+
+def test_min_max_agg_on_str() -> None:
+    strings = ["b", "a", "x"]
+    s = pl.Series(strings)
+    assert (s.min(), s.max()) == ("a", "x")
