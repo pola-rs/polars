@@ -85,6 +85,8 @@ impl_polars_datatype!(Int64Type, Int64, i64);
 impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
+#[cfg(feature = "dtype-i128")]
+impl_polars_datatype!(DecimalType, Unknown, i128);
 impl_polars_datatype!(DatetimeType, Unknown, i64);
 impl_polars_datatype!(DurationType, Unknown, i64);
 impl_polars_datatype!(CategoricalType, Unknown, u32);
