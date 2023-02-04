@@ -8,6 +8,7 @@ use arrow::io::parquet::read::ParquetError;
 use arrow::io::parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
+use polars_core::POOL;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -257,39 +258,41 @@ fn create_serializer<'a>(
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
 ) -> Result<RowGroupIter<'a, ArrowError>, ArrowError> {
-    let columns = batch
-        .columns()
-        .par_iter()
-        .zip(fields)
-        .zip(encodings)
-        .flat_map(move |((array, type_), encoding)| {
-            let encoded_columns =
-                array_to_columns(array, type_.clone(), options, encoding).unwrap();
+    let columns = POOL.install(|| {
+        batch
+            .columns()
+            .par_iter()
+            .zip(fields)
+            .zip(encodings)
+            .flat_map(move |((array, type_), encoding)| {
+                let encoded_columns =
+                    array_to_columns(array, type_.clone(), options, encoding).unwrap();
 
-            encoded_columns
-                .into_iter()
-                .map(|encoded_pages| {
-                    // iterator over pages
-                    let pages = DynStreamingIterator::new(
-                        Compressor::new_from_vec(
-                            encoded_pages.map(|result| {
-                                result.map_err(|e| {
-                                    ParquetError::FeatureNotSupported(format!(
-                                        "reraised in polars: {e}",
-                                    ))
-                                })
-                            }),
-                            options.compression,
-                            vec![],
-                        )
-                        .map_err(|e| ArrowError::External(format!("{e}"), Box::new(e))),
-                    );
+                encoded_columns
+                    .into_iter()
+                    .map(|encoded_pages| {
+                        // iterator over pages
+                        let pages = DynStreamingIterator::new(
+                            Compressor::new_from_vec(
+                                encoded_pages.map(|result| {
+                                    result.map_err(|e| {
+                                        ParquetError::FeatureNotSupported(format!(
+                                            "reraised in polars: {e}",
+                                        ))
+                                    })
+                                }),
+                                options.compression,
+                                vec![],
+                            )
+                            .map_err(|e| ArrowError::External(format!("{e}"), Box::new(e))),
+                        );
 
-                    Ok(pages)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+                        Ok(pages)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
 
     let row_group = DynIter::new(columns.into_iter());
 

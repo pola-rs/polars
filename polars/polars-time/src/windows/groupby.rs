@@ -423,23 +423,25 @@ pub fn groupby_values(
             // ------t---
             // [------]
             if offset.duration_ns() < period.duration_ns() * 2 {
-                let vals = thread_offsets
-                    .par_iter()
-                    .copied()
-                    .map(|(base_offset, len)| {
-                        let upper_bound = base_offset + len;
-                        let iter = groupby_values_iter_full_lookbehind(
-                            period,
-                            offset,
-                            &time[..upper_bound],
-                            closed_window,
-                            tu,
-                            base_offset,
-                        );
-                        iter.map(|(offset, len)| [offset as IdxSize, len])
-                            .collect_trusted::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
+                let vals = POOL.install(|| {
+                    thread_offsets
+                        .par_iter()
+                        .copied()
+                        .map(|(base_offset, len)| {
+                            let upper_bound = base_offset + len;
+                            let iter = groupby_values_iter_full_lookbehind(
+                                period,
+                                offset,
+                                &time[..upper_bound],
+                                closed_window,
+                                tu,
+                                base_offset,
+                            );
+                            iter.map(|(offset, len)| [offset as IdxSize, len])
+                                .collect_trusted::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                });
                 flatten(&vals, Some(time.len()))
             }
             // window is completely behind t and t itself is not a member
@@ -463,25 +465,27 @@ pub fn groupby_values(
             iter.map(|(offset, len)| [offset, len]).collect_trusted()
         }
     } else {
-        let vals = thread_offsets
-            .par_iter()
-            .copied()
-            .map(|(base_offset, len)| {
-                let lower_bound = base_offset;
-                let upper_bound = base_offset + len;
-                let iter = groupby_values_iter_full_lookahead(
-                    period,
-                    offset,
-                    time,
-                    closed_window,
-                    tu,
-                    lower_bound,
-                    Some(upper_bound),
-                );
-                iter.map(|(offset, len)| [offset as IdxSize, len])
-                    .collect_trusted::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+        let vals = POOL.install(|| {
+            thread_offsets
+                .par_iter()
+                .copied()
+                .map(|(base_offset, len)| {
+                    let lower_bound = base_offset;
+                    let upper_bound = base_offset + len;
+                    let iter = groupby_values_iter_full_lookahead(
+                        period,
+                        offset,
+                        time,
+                        closed_window,
+                        tu,
+                        lower_bound,
+                        Some(upper_bound),
+                    );
+                    iter.map(|(offset, len)| [offset as IdxSize, len])
+                        .collect_trusted::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        });
         flatten(&vals, Some(time.len()))
     }
 }

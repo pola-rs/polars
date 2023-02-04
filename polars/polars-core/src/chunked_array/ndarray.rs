@@ -2,6 +2,7 @@ use ndarray::prelude::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
+use crate::POOL;
 
 impl<T> ChunkedArray<T>
 where
@@ -98,32 +99,33 @@ impl DataFrame {
     where
         N: PolarsNumericType,
     {
-        let columns = self
-            .get_columns()
-            .par_iter()
-            .map(|s| {
-                let s = s.cast(&N::get_dtype())?;
-                let s = match s.dtype() {
-                    DataType::Float32 => {
-                        let ca = s.f32().unwrap();
-                        ca.none_to_nan().into_series()
-                    }
-                    DataType::Float64 => {
-                        let ca = s.f64().unwrap();
-                        ca.none_to_nan().into_series()
-                    }
-                    _ => s,
-                };
-                Ok(s.rechunk())
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let columns = POOL.install(|| {
+            self.get_columns()
+                .par_iter()
+                .map(|s| {
+                    let s = s.cast(&N::get_dtype())?;
+                    let s = match s.dtype() {
+                        DataType::Float32 => {
+                            let ca = s.f32().unwrap();
+                            ca.none_to_nan().into_series()
+                        }
+                        DataType::Float64 => {
+                            let ca = s.f64().unwrap();
+                            ca.none_to_nan().into_series()
+                        }
+                        _ => s,
+                    };
+                    Ok(s.rechunk())
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
 
         let shape = self.shape();
         let height = self.height();
         let mut membuf = Vec::with_capacity(shape.0 * shape.1);
         let ptr = membuf.as_ptr() as usize;
 
-        columns.par_iter().enumerate().map(|(col_idx, s)| {
+        POOL.install(||{columns.par_iter().enumerate().map(|(col_idx, s)| {
             if s.null_count() != 0 {
                 return Err(PolarsError::ComputeError(
                     "Creation of ndarray with null values is not supported. Consider using floats and NaNs".into(),
@@ -148,7 +150,7 @@ impl DataFrame {
             }
 
             Ok(())
-        }).collect::<PolarsResult<Vec<_>>>()?;
+        }).collect::<PolarsResult<Vec<_>>>()})?;
 
         // Safety:
         // we have written all data, so we can now safely set length

@@ -116,11 +116,12 @@ impl PhysicalExpr for ApplyExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
-        let mut inputs = self
-            .inputs
-            .par_iter()
-            .map(|e| e.evaluate(df, state))
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let mut inputs = POOL.install(|| {
+            self.inputs
+                .par_iter()
+                .map(|e| e.evaluate(df, state))
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
 
         if self.allow_rename {
             return self.eval_and_flatten(&mut inputs);
@@ -177,21 +178,22 @@ impl PhysicalExpr for ApplyExpr {
                         return Ok(self.finish_apply_groups(ac, ca));
                     }
 
-                    let mut ca: ListChunked = agg
-                        .list()
-                        .unwrap()
-                        .par_iter()
-                        .map(|opt_s| match opt_s {
-                            None => Ok(None),
-                            Some(mut s) => {
-                                if self.pass_name_to_apply {
-                                    s.rename(&name);
+                    let mut ca: ListChunked = POOL.install(|| {
+                        agg.list()
+                            .unwrap()
+                            .par_iter()
+                            .map(|opt_s| match opt_s {
+                                None => Ok(None),
+                                Some(mut s) => {
+                                    if self.pass_name_to_apply {
+                                        s.rename(&name);
+                                    }
+                                    let mut container = [s];
+                                    self.function.call_udf(&mut container)
                                 }
-                                let mut container = [s];
-                                self.function.call_udf(&mut container)
-                            }
-                        })
-                        .collect::<PolarsResult<_>>()?;
+                            })
+                            .collect::<PolarsResult<_>>()
+                    })?;
 
                     ca.rename(&name);
                     Ok(self.finish_apply_groups(ac, ca))
