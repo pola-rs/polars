@@ -5678,10 +5678,11 @@ class DataFrame:
             | PolarsExprType
             | PythonLiteral
             | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
             | None
         ) = None,
-        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
+        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> DataFrame:
         """
         Return a new DataFrame with the columns added (if new), or replaced.
@@ -5695,6 +5696,8 @@ class DataFrame:
         ----------
         exprs
             List of expressions that evaluate to columns.
+        *more_exprs
+            ..
         **named_exprs
             Named column expressions, provided as kwargs.
 
@@ -5801,7 +5804,9 @@ class DataFrame:
 
         """
         return (
-            self.lazy().with_columns(exprs, **named_exprs).collect(no_optimization=True)
+            self.lazy()
+            .with_columns(exprs, *more_exprs, **named_exprs)
+            .collect(no_optimization=True)
         )
 
     @overload

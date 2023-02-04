@@ -2527,7 +2527,7 @@ def test_with_columns() -> None:
             "g": True,
             "h": pl.Series(values=[1, 1, 1, 1], dtype=pl.Int32),
             "i": 3.2,
-            "j": "d",
+            "j": [1, 2, 3, 4],
             "k": pl.Series(values=[None, None, None, None], dtype=pl.Boolean),
             "l": datetime.datetime(2001, 1, 1, 0, 0),
         }
@@ -2542,7 +2542,7 @@ def test_with_columns() -> None:
             pl.lit(True).alias("g"),
             pl.lit(1).alias("h"),
             pl.lit(3.2).alias("i"),
-            pl.lit("d").alias("j"),
+            pl.col("a").alias("j"),
             pl.lit(None).alias("k"),
             pl.lit(datetime.datetime(2001, 1, 1, 0, 0)).alias("l"),
         ]
@@ -2557,7 +2557,7 @@ def test_with_columns() -> None:
         g=True,
         h=1,
         i=3.2,
-        j="d",
+        j="a",  # Note: string interpreted as column name, resolves to `pl.col("a")`
         k=None,
         l=datetime.datetime(2001, 1, 1, 0, 0),
     )
@@ -2571,7 +2571,7 @@ def test_with_columns() -> None:
         g=True,
         h=1,
         i=3.2,
-        j="d",
+        j="a",  # Note: string interpreted as column name, resolves to `pl.col("a")`
         k=None,
         l=datetime.datetime(2001, 1, 1, 0, 0),
     )

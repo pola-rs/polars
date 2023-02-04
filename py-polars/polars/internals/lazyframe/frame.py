@@ -58,7 +58,7 @@ from polars.utils import (
 )
 
 try:
-    from polars.polars import PyExpr, PyLazyFrame
+    from polars.polars import PyLazyFrame
 
     _DOCUMENTING = False
 except ImportError:
@@ -2472,10 +2472,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             | PolarsExprType
             | PythonLiteral
             | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
             | None
         ) = None,
-        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
+        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
         Return a new LazyFrame with the columns added (if new), or replaced.
@@ -2489,6 +2490,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ----------
         exprs
             List of expressions that evaluate to columns.
+        *more_exprs
+            ...
         **named_exprs
             Named column expressions, provided as kwargs.
 
@@ -2598,23 +2601,17 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
 
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
         exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
+        exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
         exprs.extend(
-            pli.expr_to_lit_or_expr(expr, structify=structify, name=name)
+            pli.expr_to_lit_or_expr(
+                expr, structify=structify, name=name, str_to_lit=False
+            )._pyexpr
             for name, expr in named_exprs.items()
         )
-        pyexprs = []
-        for e in exprs:
-            if isinstance(e, PyExpr):
-                pyexprs.append(e)
-            elif isinstance(e, pli.Expr):
-                pyexprs.append(e._pyexpr)
-            elif isinstance(e, pli.Series):
-                pyexprs.append(pli.lit(e)._pyexpr)
-            else:
-                raise ValueError(f"Expected an expression, got {e}")
 
-        return self._from_pyldf(self._ldf.with_columns(pyexprs))
+        return self._from_pyldf(self._ldf.with_columns(exprs))
 
     @typing.no_type_check
     def with_context(self, other: LDF | list[LDF]) -> LDF:
