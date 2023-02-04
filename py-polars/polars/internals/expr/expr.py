@@ -53,7 +53,7 @@ def selection_to_pyexpr_list(
         PolarsExprType
         | PythonLiteral
         | pli.Series
-        | Iterable[PolarsExprType | PythonLiteral | pli.Series]
+        | Iterable[PolarsExprType | PythonLiteral | pli.Series | None]
         | None
     ),
     structify: bool = False,

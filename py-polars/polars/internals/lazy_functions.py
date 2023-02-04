@@ -2252,10 +2252,11 @@ def select(
         | PolarsExprType
         | PythonLiteral
         | pli.Series
-        | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+        | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
         | None
     ) = None,
-    **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
+    *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+    **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
 ) -> pli.DataFrame:
     """
     Run polars expressions without a context.
@@ -2266,6 +2267,9 @@ def select(
     ----------
     exprs
         Expressions to run
+    *more_exprs
+        Additional column expression(s) to select, specified as positional
+        parameters.
     **named_exprs
         Named expressions, provided as kwargs.
 
@@ -2294,7 +2298,7 @@ def select(
     └─────┘
 
     """
-    return pli.DataFrame([]).select(exprs, **named_exprs)
+    return pli.DataFrame().select(exprs, *more_exprs, **named_exprs)
 
 
 @overload

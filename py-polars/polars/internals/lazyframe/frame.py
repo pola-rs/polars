@@ -1562,10 +1562,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             | PolarsExprType
             | PythonLiteral
             | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
             | None
         ) = None,
-        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
+        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
         Select columns from this DataFrame.
@@ -1574,6 +1575,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ----------
         exprs
             Column expression(s) to select.
+        *more_exprs
+            Additional column expression(s) to select, specified as positional
+            parameters.
         **named_exprs
             Named column expressions, provided as kwargs.
 
@@ -1671,11 +1675,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         if exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
-        elif exprs is None:
-            exprs = []
 
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
         exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
+        exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
         exprs.extend(
             pli.expr_to_lit_or_expr(
                 expr, structify=structify, name=name, str_to_lit=False

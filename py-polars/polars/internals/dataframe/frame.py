@@ -5560,10 +5560,11 @@ class DataFrame:
             | PolarsExprType
             | PythonLiteral
             | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
             | None
         ) = None,
-        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
+        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> DF:
         """
         Select columns from this DataFrame.
@@ -5572,6 +5573,9 @@ class DataFrame:
         ----------
         exprs
             Column or columns to select.
+        *more_exprs
+            Additional column expression(s) to select, specified as positional
+            parameters.
         **named_exprs
             Named column expressions, provided as kwargs.
 
@@ -5667,7 +5671,10 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy().select(exprs, **named_exprs).collect(no_optimization=True)._df
+            self.lazy()
+            .select(exprs, *more_exprs, **named_exprs)
+            .collect(no_optimization=True)
+            ._df
         )
 
     def with_columns(
