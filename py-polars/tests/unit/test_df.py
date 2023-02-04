@@ -1744,7 +1744,10 @@ def test_df_schema_unique() -> None:
 
 
 def test_empty_projection() -> None:
-    assert pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([]).shape == (0, 0)
+    empty_df = pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([])
+    assert empty_df.rows() == []
+    assert empty_df.schema == {}
+    assert empty_df.shape == (0, 0)
 
 
 def test_with_column_renamed() -> None:
@@ -2217,9 +2220,12 @@ def test_first_last_expression(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_empty_is_in() -> None:
-    assert pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
+    df_empty_isin = pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
         pl.col("foo").is_in([])
-    ).shape == (0, 1)
+    )
+    assert df_empty_isin.shape == (0, 1)
+    assert df_empty_isin.rows() == []
+    assert df_empty_isin.schema == {"foo": pl.Utf8}
 
 
 def test_groupby_slice_expression_args() -> None:
