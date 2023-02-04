@@ -966,18 +966,20 @@ def test_ufunc() -> None:
 
 
 def test_ufunc_expr_not_first() -> None:
-    """ Check that numpy ufunc expressions also work if the expression is not the first argument"""
+    """Check numpy ufunc expressions also work if expression not the first argument."""
     df = pl.DataFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
     out = df.select(
         [
-            np.power(cast(Any, 2.), pl.col("a")).alias("power"),
-            (2. / pl.col("a")).alias("divide")
+            np.power(cast(Any, 2.0), pl.col("a")).alias("power"),
+            (2.0 / pl.col("a")).alias("divide_scalar"),
+            (np.array([2, 2, 2]) / pl.col("a")).alias("divide_array")
         ]
     )
     expected = pl.DataFrame(
         [
             pl.Series("power", [2**1, 2**2, 2**3], dtype=pl.Float64),
-            pl.Series("divide", [2/1, 2/2, 2/3], dtype=pl.Float64),
+            pl.Series("divide_scalar", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
+            pl.Series("divide_array", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(out, expected)

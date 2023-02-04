@@ -288,8 +288,9 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Expr:
         """Numpy universal functions."""
+
         def function(s: pli.Series) -> pli.Series:  # pragma: no cover
-            args = [inp if not isinstance(inp, Expr) else s for inp in inputs ]
+            args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
             return ufunc(*args, **kwargs)
 
         return self.map(function)
