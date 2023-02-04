@@ -132,6 +132,12 @@ impl DatetimeChunked {
 
     /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
+        #[cfg(feature = "timezones")]
+        use arrow::temporal_conversions::parse_offset;
+        #[cfg(feature = "timezones")]
+        use chrono::TimeZone;
+        #[cfg(feature = "timezones")]
+        use chrono_tz::Tz;
         let conversion_f = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -142,16 +148,19 @@ impl DatetimeChunked {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let fmted = format!("{}", dt.format(fmt));
+        let fmted = match self.time_zone() {
+            #[cfg(feature = "timezones")]
+            Some(_) => {
+                let tz: Tz = "UTC".to_string().parse().unwrap();
+                format!(
+                    "{}",
+                    tz.from_local_datetime(&dt).earliest().unwrap().format(fmt)
+                )
+            }
+            _ => format!("{}", dt.format(fmt)),
+        };
 
-        #[allow(unused_mut)]
-        let mut ca = self.clone();
-        #[cfg(feature = "timezones")]
-        if self.time_zone().is_some() {
-            ca = ca.cast_time_zone(Some("UTC")).unwrap();
-        }
-
-        let mut ca: Utf8Chunked = ca.apply_kernel_cast(&|arr| {
+        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
             let mut mutarr =
                 MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
@@ -161,7 +170,19 @@ impl DatetimeChunked {
                     None => mutarr.push_null(),
                     Some(v) => {
                         buf.clear();
-                        let datefmt = conversion_f(*v).format(fmt);
+                        let converted = conversion_f(*v);
+                        let datefmt = match self.time_zone() {
+                            #[cfg(feature = "timezones")]
+                            Some(tz) => match parse_offset(tz) {
+                                Ok(tz) => tz.from_utc_datetime(&converted).format(fmt),
+                                Err(_) => match tz.parse::<Tz>() {
+                                    Ok(tz) => tz.from_utc_datetime(&converted).format(fmt),
+                                    // self.time_zone was already validated if we got here
+                                    Err(_) => unreachable!(),
+                                },
+                            },
+                            _ => converted.format(fmt),
+                        };
                         write!(buf, "{datefmt}").unwrap();
                         mutarr.push(Some(&buf))
                     }
