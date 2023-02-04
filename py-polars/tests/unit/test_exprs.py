@@ -215,7 +215,7 @@ def test_dtype_col_selection() -> None:
             "n": pl.UInt64,
         },
     )
-    assert set(df.select(pl.col(INTEGER_DTYPES)).columns) == {
+    assert df.select(pl.col(INTEGER_DTYPES)).columns == [
         "e",
         "f",
         "g",
@@ -224,9 +224,9 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
-    }
-    assert set(df.select(pl.col(FLOAT_DTYPES)).columns) == {"i", "j"}
-    assert set(df.select(pl.col(NUMERIC_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j"]
+    assert df.select(pl.col(NUMERIC_DTYPES)).columns == [
         "e",
         "f",
         "g",
@@ -237,8 +237,8 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
-    }
-    assert set(df.select(pl.col(TEMPORAL_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(TEMPORAL_DTYPES)).columns == [
         "a1",
         "a2",
         "a3",
@@ -249,19 +249,19 @@ def test_dtype_col_selection() -> None:
         "d2",
         "d3",
         "d4",
-    }
-    assert set(df.select(pl.col(DATETIME_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(DATETIME_DTYPES)).columns == [
         "a1",
         "a2",
         "a3",
         "a4",
-    }
-    assert set(df.select(pl.col(DURATION_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(DURATION_DTYPES)).columns == [
         "d1",
         "d2",
         "d3",
         "d4",
-    }
+    ]
 
 
 def test_list_eval_expression() -> None:

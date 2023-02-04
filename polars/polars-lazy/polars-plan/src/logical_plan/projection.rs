@@ -208,15 +208,12 @@ fn expand_dtypes(
     dtypes: &[DataType],
     exclude: &[Arc<str>],
 ) -> PolarsResult<()> {
-    for dtype in dtypes {
-        for field in schema.iter_fields().filter(|f| f.data_type() == dtype) {
+    for field in schema.iter_fields() {
+        if dtypes.contains(&field.dtype) {
             let name = field.name();
-
-            // skip excluded names
             if exclude.iter().any(|excl| excl.as_ref() == name.as_str()) {
-                continue;
+                continue; // skip excluded names
             }
-
             let new_expr = expr.clone();
             let new_expr = replace_dtype_with_column(new_expr, Arc::from(name.as_str()));
             let new_expr = rewrite_special_aliases(new_expr)?;
