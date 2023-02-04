@@ -78,7 +78,6 @@ def test_bool_numeric_supertype() -> None:
 
 def test_with_context() -> None:
     df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
-
     df_b = pl.DataFrame({"c": ["foo", "ham"]})
 
     assert (
@@ -95,9 +94,9 @@ def test_from_dicts_nested_nulls() -> None:
     }
 
 
-def test_schema_err() -> None:
+def test_group_schema_err() -> None:
     df = pl.DataFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]}).lazy()
-    with pytest.raises(pl.NotFoundError):
+    with pytest.raises(pl.ColumnNotFoundError):
         df.groupby("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
 
 

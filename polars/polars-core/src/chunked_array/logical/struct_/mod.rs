@@ -147,7 +147,7 @@ impl StructChunked {
         self.fields
             .iter()
             .find(|s| s.name() == name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| PolarsError::StructFieldNotFound(name.to_string().into()))
             .map(|s| s.clone())
     }
 

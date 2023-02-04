@@ -55,22 +55,26 @@ impl Display for ErrString {
 pub enum PolarsError {
     #[error(transparent)]
     ArrowError(Box<ArrowError>),
-    #[error("Invalid operation {0}")]
-    InvalidOperation(ErrString),
-    #[error("Data types don't match: {0}")]
-    SchemaMisMatch(ErrString),
     #[error("Not found: {0}")]
-    NotFound(ErrString),
-    #[error("Lengths don't match: {0}")]
-    ShapeMisMatch(ErrString),
+    ColumnNotFound(ErrString),
     #[error("{0}")]
     ComputeError(ErrString),
-    #[error("Such empty...: {0}")]
-    NoData(ErrString),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
     #[error("DuplicateError: {0}")]
     Duplicate(ErrString),
+    #[error("Invalid operation {0}")]
+    InvalidOperation(ErrString),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("Such empty...: {0}")]
+    NoData(ErrString),
+    #[error("Not found: {0}")]
+    SchemaFieldNotFound(ErrString),
+    #[error("Data types don't match: {0}")]
+    SchemaMisMatch(ErrString),
+    #[error("Lengths don't match: {0}")]
+    ShapeMisMatch(ErrString),
+    #[error("Not found: {0}")]
+    StructFieldNotFound(ErrString),
 }
 
 impl From<ArrowError> for PolarsError {
@@ -105,15 +109,17 @@ impl PolarsError {
     pub fn wrap_msg(&self, func: &dyn Fn(&str) -> String) -> Self {
         use PolarsError::*;
         match self {
-            ComputeError(msg) => ComputeError(func(msg).into()),
             ArrowError(err) => ComputeError(func(&format!("ArrowError: {err}")).into()),
-            InvalidOperation(msg) => InvalidOperation(func(msg).into()),
-            SchemaMisMatch(msg) => SchemaMisMatch(func(msg).into()),
-            NotFound(msg) => NotFound(func(msg).into()),
-            ShapeMisMatch(msg) => ShapeMisMatch(func(msg).into()),
-            NoData(msg) => NoData(func(msg).into()),
-            Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
+            ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
+            ComputeError(msg) => ComputeError(func(msg).into()),
             Duplicate(msg) => Duplicate(func(msg).into()),
+            InvalidOperation(msg) => InvalidOperation(func(msg).into()),
+            Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
+            NoData(msg) => NoData(func(msg).into()),
+            SchemaFieldNotFound(msg) => SchemaFieldNotFound(func(msg).into()),
+            SchemaMisMatch(msg) => SchemaMisMatch(func(msg).into()),
+            ShapeMisMatch(msg) => ShapeMisMatch(func(msg).into()),
+            StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
         }
     }
 }

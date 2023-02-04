@@ -54,8 +54,8 @@ use pyo3::wrap_pyfunction;
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::dataframe::PyDataFrame;
 use crate::error::{
-    ArrowErrorException, ComputeError, DuplicateError, InvalidOperationError, NoDataError,
-    NotFoundError, PyPolarsErr, SchemaError,
+    ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
+    NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::file::{get_either_file, EitherRustPythonFile};
 use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
@@ -600,23 +600,33 @@ fn set_float_fmt(fmt: &str) -> PyResult<()> {
 
 #[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
-    m.add("NotFoundError", py.get_type::<NotFoundError>())
-        .unwrap();
-    m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
-    m.add("ComputeError", py.get_type::<ComputeError>())
-        .unwrap();
-    m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
-        .unwrap();
-    m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
         .unwrap();
-    m.add("DuplicateError", py.get_type::<DuplicateError>())
+    m.add("ColumnNotFoundError", py.get_type::<ColumnNotFoundError>())
         .unwrap();
-    m.add("PanicException", py.get_type::<PanicException>())
+    m.add("ComputeError", py.get_type::<ComputeError>())
+        .unwrap();
+    m.add("DuplicateError", py.get_type::<DuplicateError>())
         .unwrap();
     m.add(
         "InvalidOperationError",
         py.get_type::<InvalidOperationError>(),
+    )
+    .unwrap();
+    m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
+    m.add("PanicException", py.get_type::<PanicException>())
+        .unwrap();
+    m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
+    m.add(
+        "SchemaFieldNotFoundError",
+        py.get_type::<SchemaFieldNotFoundError>(),
+    )
+    .unwrap();
+    m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
+        .unwrap();
+    m.add(
+        "StructFieldNotFoundError",
+        py.get_type::<StructFieldNotFoundError>(),
     )
     .unwrap();
 
