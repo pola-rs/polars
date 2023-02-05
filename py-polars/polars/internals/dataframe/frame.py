@@ -5685,24 +5685,34 @@ class DataFrame:
         **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> DataFrame:
         """
-        Return a new DataFrame with the columns added (if new), or replaced.
+        Add columns to this DataFrame.
 
-        Notes
-        -----
-        Creating a new DataFrame using this method does not create a new copy
-        of existing data.
+        Added columns will replace existing columns with the same name.
 
         Parameters
         ----------
         exprs
-            List of expressions that evaluate to columns.
+            Column or columns to add. Accepts expression input. Strings are parsed
+            as column names, other non-expression inputs are parsed as literals.
         *more_exprs
-            ..
+            Additional columns to add, specified as positional arguments.
         **named_exprs
-            Named column expressions, provided as kwargs.
+            Additional columns to add, specified as keyword arguments. The columns
+            will be renamed to the keyword used.
+
+        Returns
+        -------
+        A new DataFrame with the columns added.
+
+        Notes
+        -----
+        Creating a new DataFrame using this method does not create a new copy of
+        existing data.
 
         Examples
         --------
+        Pass an expression to add it as a new column.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3, 4],
@@ -5710,9 +5720,6 @@ class DataFrame:
         ...         "c": [True, True, False, True],
         ...     }
         ... )
-
-        Passing in a single expression, adding (and naming) a new column:
-
         >>> df.with_columns((pl.col("a") ** 2).alias("a^2"))
         shape: (4, 4)
         ┌─────┬──────┬───────┬──────┐
@@ -5726,23 +5733,22 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
         └─────┴──────┴───────┴──────┘
 
-        We can also override an existing column by giving the expression
-        a name that already exists:
+        Added columns will replace existing columns with the same name.
 
-        >>> df.with_columns((pl.col("a") ** 2).alias("c"))
+        >>> df.with_columns(pl.col("a").cast(pl.Float64))
         shape: (4, 3)
-        ┌─────┬──────┬──────┐
-        │ a   ┆ b    ┆ c    │
-        │ --- ┆ ---  ┆ ---  │
-        │ i64 ┆ f64  ┆ f64  │
-        ╞═════╪══════╪══════╡
-        │ 1   ┆ 0.5  ┆ 1.0  │
-        │ 2   ┆ 4.0  ┆ 4.0  │
-        │ 3   ┆ 10.0 ┆ 9.0  │
-        │ 4   ┆ 13.0 ┆ 16.0 │
-        └─────┴──────┴──────┘
+        ┌─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     │
+        │ --- ┆ ---  ┆ ---   │
+        │ f64 ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╡
+        │ 1.0 ┆ 0.5  ┆ true  │
+        │ 2.0 ┆ 4.0  ┆ true  │
+        │ 3.0 ┆ 10.0 ┆ false │
+        │ 4.0 ┆ 13.0 ┆ true  │
+        └─────┴──────┴───────┘
 
-        Multiple expressions can be passed in as both a list...
+        Multiple columns can be added by passing a list of expressions.
 
         >>> df.with_columns(
         ...     [
@@ -5763,7 +5769,26 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        ...or via kwarg expressions:
+        Multiple columns also can be added using positional arguments instead of a list.
+
+        >>> df.with_columns(
+        ...     (pl.col("a") ** 2).alias("a^2"),
+        ...     (pl.col("b") / 2).alias("b/2"),
+        ...     (pl.col("c").is_not()).alias("not c"),
+        ... )
+        shape: (4, 6)
+        ┌─────┬──────┬───────┬──────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪══════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  ┆ 0.25 ┆ false │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  ┆ 2.0  ┆ false │
+        │ 3   ┆ 10.0 ┆ false ┆ 9.0  ┆ 5.0  ┆ true  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
+        └─────┴──────┴───────┴──────┴──────┴───────┘
+
+        Use keyword arguments to easily name your expression inputs.
 
         >>> df.with_columns(
         ...     ab=pl.col("a") * pl.col("b"),
