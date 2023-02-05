@@ -11,6 +11,7 @@ use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
+use crate::prelude::aexpr::NodeInputs::Single;
 
 #[derive(Clone, Debug)]
 pub enum AAggExpr {
@@ -173,12 +174,96 @@ impl AExpr {
         }
     }
 
-    pub(crate) fn get_input(&self) -> Node {
+    pub(crate) fn copy_inputs(&self, buf: &mut Vec<Node>) {
+        match self.get_input() {
+            NodeInputs::Single(node) => {
+                buf.push(node)
+            },
+            NodeInputs::Many(nodes) => {
+                buf.extend(nodes)
+            },
+            _ => {}
+        }
+    }
+
+    pub(crate) fn get_input(&self) -> NodeInputs {
         use AExpr::*;
+        use NodeInputs::*;
         match self {
-            Alias(input, _) => *input,
-            Cast { expr, .. } => *expr,
-            _ => todo!(),
+            Alias(input, _) => Single(*input),
+            Cast { expr, .. } => Single(*expr),
+            Explode(input) => Single(*input),
+            Column(_) => Leaf,
+            Literal(_) => Leaf,
+            BinaryExpr { left, right, .. } => Many(vec![*left, *right]),
+            Sort { expr, .. } => Single(*expr),
+            Take { expr,.. } => Single(*expr),
+            SortBy { expr, by, ..} => {
+                let mut many = by.clone();
+                many.push(*expr);
+                Many(many)
+            },
+            Filter { input,.. } => Single(*input),
+            Agg(a) => a.get_input(),
+            Ternary { truthy, falsy, predicate } => Many(vec![*truthy, *falsy, *predicate]),
+            AnonymousFunction { input, .. } | Function {input, ..}=> {
+                match input.len() {
+                    1 => Single(input[0]),
+                    _ => Many(input.clone())
+                }
+            },
+            Window { function, order_by, partition_by, .. } => {
+                let mut out = Vec::with_capacity(partition_by.len() + 2);
+                out.push(*function);
+                if let Some(a) = order_by {
+                    out.push(*a);
+                }
+                out.extend(partition_by);
+                Many(out)
+            }
+            Wildcard => panic!("no wildcard expected"),
+            Slice { input, .. } => Single(*input),
+            Count => Leaf,
+            Nth(_) => Leaf
+        }
+    }
+}
+
+impl AAggExpr {
+    pub(crate) fn get_input(&self) -> NodeInputs {
+        use AAggExpr::*;
+        match self {
+            Min { input , ..} => Single(*input),
+            Max { input, .. } => Single(*input),
+            Median(input) => Single(*input),
+            NUnique(input) => Single(*input),
+            First(input) => Single(*input),
+            Last(input) => Single(*input),
+            Mean(input) => Single(*input),
+            List(input) => Single(*input),
+            Quantile { expr, .. } => Single(*expr),
+            Sum(input) => Single(*input),
+            Count(input) => Single(*input),
+            Std(input, _) => Single(*input),
+            Var(input, _) => Single(*input),
+            AggGroups(input) => Single(*input)
+        }
+    }
+
+}
+
+pub(crate) enum NodeInputs {
+    Leaf,
+    Single(Node),
+    Many(Vec<Node>)
+}
+
+impl NodeInputs {
+    pub(crate) fn first(&self) -> Node {
+        match self {
+            Single(node) => *node,
+            NodeInputs::Many(nodes) => nodes[0],
+            NodeInputs::Leaf => panic!(),
         }
     }
 }
