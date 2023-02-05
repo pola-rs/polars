@@ -4,7 +4,6 @@ import os
 import subprocess
 import sys
 import typing
-import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
@@ -55,10 +54,11 @@ from polars.utils import (
     _process_null_values,
     _timedelta_to_pl_duration,
     normalise_filepath,
+    redirect,
 )
 
 try:
-    from polars.polars import PyExpr, PyLazyFrame
+    from polars.polars import PyLazyFrame
 
     _DOCUMENTING = False
 except ImportError:
@@ -98,6 +98,7 @@ def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
     return LazyFrame._from_pyldf(ldf)
 
 
+@redirect({"with_column": "with_columns"})
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -2471,28 +2472,41 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             | PolarsExprType
             | PythonLiteral
             | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series]
+            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
             | None
         ) = None,
-        **named_exprs: PolarsExprType | PythonLiteral | pli.Series | None,
+        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
     ) -> LDF:
         """
-        Return a new LazyFrame with the columns added (if new), or replaced.
+        Add columns to this DataFrame.
 
-        Notes
-        -----
-        Creating a new LazyFrame using this method does not create a new copy
-        of existing data.
+        Added columns will replace existing columns with the same name.
 
         Parameters
         ----------
         exprs
-            List of expressions that evaluate to columns.
+            Column or columns to add. Accepts expression input. Strings are parsed
+            as column names, other non-expression inputs are parsed as literals.
+        *more_exprs
+            Additional columns to add, specified as positional arguments.
         **named_exprs
-            Named column expressions, provided as kwargs.
+            Additional columns to add, specified as keyword arguments. The columns
+            will be renamed to the keyword used.
+
+        Returns
+        -------
+        A new LazyFrame with the columns added.
+
+        Notes
+        -----
+        Creating a new LazyFrame using this method does not create a new copy of
+        existing data.
 
         Examples
         --------
+        Pass an expression to add it as a new column.
+
         >>> ldf = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3, 4],
@@ -2500,9 +2514,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...         "c": [True, True, False, True],
         ...     }
         ... ).lazy()
-
-        Passing in a single expression, adding (and naming) a new column:
-
         >>> ldf.with_columns((pl.col("a") ** 2).alias("a^2")).collect()
         shape: (4, 4)
         ┌─────┬──────┬───────┬──────┐
@@ -2516,23 +2527,22 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 │
         └─────┴──────┴───────┴──────┘
 
-        We can also override an existing column by giving the expression
-        a name that already exists:
+        Added columns will replace existing columns with the same name.
 
-        >>> ldf.with_columns((pl.col("a") ** 2).alias("c")).collect()
+        >>> ldf.with_columns(pl.col("a").cast(pl.Float64)).collect()
         shape: (4, 3)
-        ┌─────┬──────┬──────┐
-        │ a   ┆ b    ┆ c    │
-        │ --- ┆ ---  ┆ ---  │
-        │ i64 ┆ f64  ┆ f64  │
-        ╞═════╪══════╪══════╡
-        │ 1   ┆ 0.5  ┆ 1.0  │
-        │ 2   ┆ 4.0  ┆ 4.0  │
-        │ 3   ┆ 10.0 ┆ 9.0  │
-        │ 4   ┆ 13.0 ┆ 16.0 │
-        └─────┴──────┴──────┘
+        ┌─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     │
+        │ --- ┆ ---  ┆ ---   │
+        │ f64 ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╡
+        │ 1.0 ┆ 0.5  ┆ true  │
+        │ 2.0 ┆ 4.0  ┆ true  │
+        │ 3.0 ┆ 10.0 ┆ false │
+        │ 4.0 ┆ 13.0 ┆ true  │
+        └─────┴──────┴───────┘
 
-        Multiple expressions can be passed in as both a list...
+        Multiple columns can be added by passing a list of expressions.
 
         >>> ldf.with_columns(
         ...     [
@@ -2553,7 +2563,26 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        ...or via kwarg expressions:
+        Multiple columns also can be added using positional arguments instead of a list.
+
+        >>> ldf.with_columns(
+        ...     (pl.col("a") ** 2).alias("a^2"),
+        ...     (pl.col("b") / 2).alias("b/2"),
+        ...     (pl.col("c").is_not()).alias("not c"),
+        ... ).collect()
+        shape: (4, 6)
+        ┌─────┬──────┬───────┬──────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪══════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  ┆ 0.25 ┆ false │
+        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  ┆ 2.0  ┆ false │
+        │ 3   ┆ 10.0 ┆ false ┆ 9.0  ┆ 5.0  ┆ true  │
+        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
+        └─────┴──────┴───────┴──────┴──────┴───────┘
+
+        Use keyword arguments to easily name your expression inputs.
 
         >>> ldf.with_columns(
         ...     ab=pl.col("a") * pl.col("b"),
@@ -2597,23 +2626,17 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
 
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
         exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
+        exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
         exprs.extend(
-            pli.expr_to_lit_or_expr(expr, structify=structify, name=name)
+            pli.expr_to_lit_or_expr(
+                expr, structify=structify, name=name, str_to_lit=False
+            )._pyexpr
             for name, expr in named_exprs.items()
         )
-        pyexprs = []
-        for e in exprs:
-            if isinstance(e, PyExpr):
-                pyexprs.append(e)
-            elif isinstance(e, pli.Expr):
-                pyexprs.append(e._pyexpr)
-            elif isinstance(e, pli.Series):
-                pyexprs.append(pli.lit(e)._pyexpr)
-            else:
-                raise ValueError(f"Expected an expression, got {e}")
 
-        return self._from_pyldf(self._ldf.with_columns(pyexprs))
+        return self._from_pyldf(self._ldf.with_columns(exprs))
 
     @typing.no_type_check
     def with_context(self, other: LDF | list[LDF]) -> LDF:
@@ -2673,39 +2696,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             other = [other]
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
-
-    def with_column(self: LDF, column: pli.Series | pli.Expr) -> LDF:
-        """
-        Return a new LazyFrame with the column added, if new, or replaced.
-
-        Notes
-        -----
-        Creating a new LazyFrame using this method does not create a new copy of
-        existing data.
-
-        .. deprecated:: 0.15.14
-            `with_column` will be removed in favor of the more generic `with_columns`
-            in version 0.17.0.
-
-        Parameters
-        ----------
-        column
-            Expression that evaluates to column or a Series to use.
-
-        """
-        warnings.warn(
-            "`with_column` has been deprecated in favor of `with_columns`."
-            " This method will be removed in version 0.17.0",
-            category=DeprecationWarning,
-            stacklevel=2,
-        )
-
-        if not isinstance(column, (pli.Expr, pli.Series)):
-            raise TypeError(
-                "`with_column` expects a single Expr or Series. "
-                "Consider using `with_columns` if you need multiple columns."
-            )
-        return self.with_columns([column])
 
     def drop(self: LDF, columns: str | list[str]) -> LDF:
         """
