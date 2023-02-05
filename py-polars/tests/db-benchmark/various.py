@@ -24,9 +24,15 @@ assert np.isclose(
     ],
     mean,
 )
-assert np.isclose(
-    df.with_columns(pl.col("value").cast(pl.Int32)).get_column("value").mean(), mean
-)
+
+if (
+    calculated_mean := df.with_columns(pl.col("value").cast(pl.Int32))
+    .get_column("value")
+    .mean()
+):
+    assert np.isclose(calculated_mean, mean)
+else:
+    raise AssertionError("mean is None")
 
 # https://github.com/pola-rs/polars/issues/2850
 df = pl.DataFrame(
