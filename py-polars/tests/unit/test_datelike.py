@@ -10,9 +10,10 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
+
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, PolarsTemporalType
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, PanicException
 from polars.testing import (
     assert_frame_equal,
     assert_series_equal,
@@ -476,6 +477,13 @@ def test_date_range() -> None:
     assert result.dtype.tu == "ns"  # type: ignore[union-attr]
     assert result.dt.second()[-1] == 59
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
+
+
+def test_range_invalid_unit() -> None:
+    with pytest.raises(PanicException, match="'D' not supported"):
+        pl.date_range(
+            low=datetime(2021, 12, 16), high=datetime(2021, 12, 16, 3), interval="1D"
+        )
 
 
 def test_date_range_lazy_with_literals() -> None:
