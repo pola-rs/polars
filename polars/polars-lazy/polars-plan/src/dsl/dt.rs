@@ -88,6 +88,7 @@ impl DateLikeNameSpace {
     // This method takes a naive Datetime Series and makes this time zone aware.
     // It does not move the time to another time zone.
     #[cfg(feature = "timezones")]
+    #[deprecated(note = "use cast_time_zone")]
     pub fn tz_localize(self, tz: TimeZone) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TzLocalize(tz)))

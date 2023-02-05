@@ -431,6 +431,7 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 }
 
 #[cfg(feature = "temporal")]
+#[allow(deprecated)] // tz_localize
 impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: TemporalFunction) -> Self {
         use TemporalFunction::*;
