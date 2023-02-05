@@ -71,7 +71,7 @@ class DateTimeNameSpace:
         """
         return pli.wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> date | datetime | timedelta:
+    def median(self) -> date | datetime | timedelta | None:
         """
         Return median as python DateTime.
 
@@ -95,7 +95,7 @@ class DateTimeNameSpace:
         out = int(s.median())
         return _to_python_datetime(out, s.dtype, s.time_unit)
 
-    def mean(self) -> date | datetime:
+    def mean(self) -> date | datetime | None:
         """
         Return mean as python DateTime.
 
