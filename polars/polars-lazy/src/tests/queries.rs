@@ -1590,7 +1590,7 @@ pub fn test_select_by_dtypes() -> PolarsResult<()> {
         .lazy()
         .select([dtype_cols([DataType::Float32, DataType::Utf8])])
         .collect()?;
-    assert_eq!(out.dtypes(), &[DataType::Float32, DataType::Utf8]);
+    assert_eq!(out.dtypes(), &[DataType::Utf8, DataType::Float32]);
 
     Ok(())
 }

@@ -1578,7 +1578,7 @@ def test_select_by_dtype(df: pl.DataFrame) -> None:
     out = df.select(pl.col(pl.Utf8))
     assert out.columns == ["strings", "strings_nulls"]
     out = df.select(pl.col([pl.Utf8, pl.Boolean]))
-    assert out.columns == ["strings", "strings_nulls", "bools", "bools_nulls"]
+    assert out.columns == ["bools", "bools_nulls", "strings", "strings_nulls"]
     out = df.select(pl.col(INTEGER_DTYPES))
     assert out.columns == ["int", "int_nulls"]
 
