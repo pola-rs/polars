@@ -76,7 +76,7 @@ impl DateLikeNameSpace {
                     Ok(Some(ca.into_series()))
                 }
                 _ => Err(PolarsError::ComputeError(
-                    "Cannot call with_time_zone on tz-naive. Set a time zone first with tz_localize".into()
+                    "Cannot call with_time_zone on tz-naive. Set a time zone first with cast_time_zone".into()
                 )),
             },
             GetOutput::same_type(),
