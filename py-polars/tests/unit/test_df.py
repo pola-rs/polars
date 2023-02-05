@@ -2832,7 +2832,7 @@ def test_floordiv_truediv(divop: Callable[..., Any]) -> None:
             assert divop(elem1, elem2) == df_div[i][j]
 
 
-def test_glimpse() -> None:
+def test_glimpse(capsys: Any) -> None:
     df = pl.DataFrame(
         {
             "a": [1.0, 2.8, 3.0],
@@ -2854,7 +2854,7 @@ def test_glimpse() -> None:
             "k": [["A", "a"], ["B", "b"], ["C", "c"]],
         }
     )
-    result = df.glimpse()
+    result = df.glimpse(return_as_string=True)
 
     expected = textwrap.dedent(
         """\
@@ -2874,6 +2874,11 @@ def test_glimpse() -> None:
         """
     )
     assert result == expected
+
+    # the default is to print to the console
+    df.glimpse(return_as_string=False)
+    # remove the last newline on the capsys
+    assert capsys.readouterr().out[:-1] == expected
 
 
 def test_item() -> None:
