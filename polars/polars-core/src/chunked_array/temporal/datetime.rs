@@ -158,6 +158,20 @@ impl DatetimeChunked {
             }
             _ => format!("{}", dt.format(fmt)),
         };
+        let datefmt_func: Box<dyn Fn(_) -> _> = match self.time_zone() {
+            #[cfg(feature = "timezones")]
+            Some(time_zone) => Box::new(|ndt: NaiveDateTime| {
+                match parse_offset(time_zone) {
+                    Ok(time_zone) => time_zone.from_utc_datetime(&ndt).format(fmt),
+                    Err(_) => match time_zone.parse::<Tz>() {
+                        Ok(time_zone) => time_zone.from_utc_datetime(&ndt).format(fmt),
+                        // self.time_zone was already validated if we got here
+                        Err(_) => unreachable!(),
+                    },
+                }
+            }),
+            _ => Box::new(|ndt: NaiveDateTime| ndt.format(fmt)),
+        };
 
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
@@ -170,18 +184,7 @@ impl DatetimeChunked {
                     Some(v) => {
                         buf.clear();
                         let converted = conversion_f(*v);
-                        let datefmt = match self.time_zone() {
-                            #[cfg(feature = "timezones")]
-                            Some(tz) => match parse_offset(tz) {
-                                Ok(tz) => tz.from_utc_datetime(&converted).format(fmt),
-                                Err(_) => match tz.parse::<Tz>() {
-                                    Ok(tz) => tz.from_utc_datetime(&converted).format(fmt),
-                                    // self.time_zone was already validated if we got here
-                                    Err(_) => unreachable!(),
-                                },
-                            },
-                            _ => converted.format(fmt),
-                        };
+                        let datefmt = datefmt_func(converted);
                         write!(buf, "{datefmt}").unwrap();
                         mutarr.push(Some(&buf))
                     }
