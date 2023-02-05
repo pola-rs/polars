@@ -965,6 +965,26 @@ def test_ufunc() -> None:
     assert out.dtypes == expected.dtypes
 
 
+def test_ufunc_expr_not_first() -> None:
+    """Check numpy ufunc expressions also work if expression not the first argument."""
+    df = pl.DataFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
+    out = df.select(
+        [
+            np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
+            (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
+            (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
+        ]
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series("power", [2**1, 2**2, 2**3], dtype=pl.Float64),
+            pl.Series("divide_scalar", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
+            pl.Series("divide_array", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
+        ]
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_clip() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     assert df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
