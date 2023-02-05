@@ -25,10 +25,7 @@ pub fn date_range_impl(
 
     #[cfg(feature = "timezones")]
     if let Some(tz) = _tz {
-        out = out
-            .with_time_zone("UTC".to_string())?
-            .cast_time_zone(Some(tz))
-            .unwrap()
+        out = out.cast_time_zone(Some(tz)).unwrap()
     }
     let s = if start > stop {
         IsSorted::Descending

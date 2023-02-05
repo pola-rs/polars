@@ -52,10 +52,9 @@ pub(crate) fn columns_to_projection(
     use ahash::AHashMap;
 
     let err = |column: &str| {
-        let valid_fields: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
-        PolarsError::NotFound(
-            format!("Unable to get field named \"{column}\". Valid fields: {valid_fields:?}",)
-                .into(),
+        let valid_columns: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
+        PolarsError::ColumnNotFound(
+            format!("Unable to find \"{column}\". Valid columns: {valid_columns:?}",).into(),
         )
     };
 

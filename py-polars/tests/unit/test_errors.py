@@ -46,10 +46,17 @@ def test_error_on_invalid_by_in_asof_join() -> None:
         df1.join_asof(df2, on="b", by=["a", "c"])
 
 
+def test_error_on_invalid_struct_field() -> None:
+    with pytest.raises(pl.StructFieldNotFoundError):
+        pl.struct(
+            [pl.Series("a", [1, 2]), pl.Series("b", ["a", "b"])], eager=True
+        ).struct.field("z")
+
+
 def test_not_found_error() -> None:
     csv = "a,b,c\n2,1,1"
     df = pl.read_csv(io.StringIO(csv))
-    with pytest.raises(pl.NotFoundError):
+    with pytest.raises(pl.ColumnNotFoundError):
         df.select("d")
 
 
@@ -112,7 +119,7 @@ def test_projection_update_schema_missing_column() -> None:
 def test_not_found_on_rename() -> None:
     df = pl.DataFrame({"exists": [1, 2, 3]})
 
-    with pytest.raises(pl.NotFoundError):
+    with pytest.raises(pl.SchemaFieldNotFoundError):
         df.rename(
             {
                 "does_not_exist": "exists",
