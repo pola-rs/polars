@@ -801,5 +801,10 @@ def maybe_cast(
 
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):
-        el = py_type(el)  # type: ignore[call-arg]
+        try:
+            el = py_type(el)  # type: ignore[call-arg]
+        except Exception:
+            raise ValueError(
+                f"Cannot convert Python type {type(el)} to {dtype}"
+            ) from None
     return el

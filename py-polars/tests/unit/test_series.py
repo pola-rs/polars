@@ -340,7 +340,7 @@ def test_arithmetic(s: pl.Series) -> None:
         2 % a
     with pytest.raises(ValueError):
         2**a
-    with pytest.raises(TypeError):  # https://github.com/pola-rs/polars/issues/6617
+    with pytest.raises(ValueError):
         +a
     a = pl.Series("a", [""])
     with pytest.raises(ValueError):
