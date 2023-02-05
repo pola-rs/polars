@@ -10,7 +10,6 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, PolarsTemporalType
 from polars.exceptions import ComputeError, PanicException

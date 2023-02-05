@@ -135,7 +135,7 @@ impl DatetimeChunked {
         #[cfg(feature = "timezones")]
         use arrow::temporal_conversions::parse_offset;
         #[cfg(feature = "timezones")]
-        use chrono::TimeZone;
+        use chrono::{TimeZone, Utc};
         #[cfg(feature = "timezones")]
         use chrono_tz::Tz;
         let conversion_f = match self.time_unit() {
@@ -151,10 +151,9 @@ impl DatetimeChunked {
         let fmted = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(_) => {
-                let tz: Tz = "UTC".to_string().parse().unwrap();
                 format!(
                     "{}",
-                    tz.from_local_datetime(&dt).earliest().unwrap().format(fmt)
+                    Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
                 )
             }
             _ => format!("{}", dt.format(fmt)),
