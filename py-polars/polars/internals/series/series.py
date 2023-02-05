@@ -1194,7 +1194,7 @@ class Series:
             {"statistic": list(stats.keys()), "value": list(stats.values())}
         )
 
-    def sum(self) -> int | float | None:
+    def sum(self) -> int | float:
         """
         Reduce this Series to the sum value.
 
@@ -1225,7 +1225,7 @@ class Series:
         """
         return self._s.mean()
 
-    def product(self) -> int | float | None:
+    def product(self) -> int | float:
         """Reduce this Series to the product value."""
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 

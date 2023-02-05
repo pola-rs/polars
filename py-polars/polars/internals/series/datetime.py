@@ -92,8 +92,9 @@ class DateTimeNameSpace:
 
         """
         s = pli.wrap_s(self._s)
-        out = int(s.median())
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        if out := s.median():
+            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+        return None
 
     def mean(self) -> date | datetime | None:
         """
@@ -116,8 +117,9 @@ class DateTimeNameSpace:
 
         """
         s = pli.wrap_s(self._s)
-        out = int(s.mean())
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        if out := s.mean():
+            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+        return None
 
     def strftime(self, fmt: str) -> pli.Series:
         """
