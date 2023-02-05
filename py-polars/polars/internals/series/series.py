@@ -1194,7 +1194,7 @@ class Series:
             {"statistic": list(stats.keys()), "value": list(stats.values())}
         )
 
-    def sum(self) -> int | float:
+    def sum(self) -> int | float | None:
         """
         Reduce this Series to the sum value.
 
@@ -1212,7 +1212,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> int | float:
+    def mean(self) -> int | float | None:
         """
         Reduce this Series to the mean value.
 
@@ -1225,11 +1225,11 @@ class Series:
         """
         return self._s.mean()
 
-    def product(self) -> int | float:
+    def product(self) -> int | float | None:
         """Reduce this Series to the product value."""
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
-    def min(self) -> int | float | date | datetime | timedelta | str:
+    def min(self) -> int | float | date | datetime | timedelta | str | None:
         """
         Get the minimal value in this Series.
 
@@ -1242,7 +1242,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> int | float | date | datetime | timedelta | str:
+    def max(self) -> int | float | date | datetime | timedelta | str | None:
         """
         Get the maximum value in this Series.
 
@@ -1319,7 +1319,7 @@ class Series:
             return None
         return self.to_frame().select(pli.col(self.name).var(ddof)).to_series()[0]
 
-    def median(self) -> float:
+    def median(self) -> float | None:
         """
         Get the median of this Series.
 
@@ -1334,7 +1334,7 @@ class Series:
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
-    ) -> float:
+    ) -> float | None:
         """
         Get the quantile value of this Series.
 
