@@ -148,29 +148,26 @@ impl DatetimeChunked {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let fmted = match self.time_zone() {
+
+        let datefmt_func: Box<dyn Fn(_) -> _>;
+        let fmted: String;
+        match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(_) => {
-                format!(
-                    "{}",
-                    Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
-                )
-            }
-            _ => format!("{}", dt.format(fmt)),
-        };
-        let datefmt_func: Box<dyn Fn(_) -> _> = match self.time_zone() {
-            #[cfg(feature = "timezones")]
-            Some(time_zone) => Box::new(|ndt: NaiveDateTime| {
-                match parse_offset(time_zone) {
+            Some(time_zone) => {
+                datefmt_func = Box::new(|ndt: NaiveDateTime| match parse_offset(time_zone) {
                     Ok(time_zone) => time_zone.from_utc_datetime(&ndt).format(fmt),
                     Err(_) => match time_zone.parse::<Tz>() {
                         Ok(time_zone) => time_zone.from_utc_datetime(&ndt).format(fmt),
                         // self.time_zone was already validated if we got here
                         Err(_) => unreachable!(),
                     },
-                }
-            }),
-            _ => Box::new(|ndt: NaiveDateTime| ndt.format(fmt)),
+                });
+                fmted = format!("{}", Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt));
+            },
+            _ => {
+                datefmt_func = Box::new(|ndt: NaiveDateTime| ndt.format(fmt));
+                fmted = format!("{}", dt.format(fmt));
+            }
         };
 
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
