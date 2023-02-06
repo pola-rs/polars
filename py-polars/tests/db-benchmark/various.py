@@ -25,11 +25,11 @@ assert np.isclose(
     mean,
 )
 
-if (
-    calculated_mean := df.with_columns(pl.col("value").cast(pl.Int32))
-    .get_column("value")
-    .mean()
-):
+calculated_mean = (
+    df.with_columns(pl.col("value").cast(pl.Int32)).get_column("value").mean()
+)
+
+if calculated_mean is not None:
     assert np.isclose(calculated_mean, mean)
 else:
     raise AssertionError("mean is None")
