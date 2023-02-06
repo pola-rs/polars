@@ -169,11 +169,6 @@ impl DatetimeChunked {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-
-        // Calling .unwrap() as self.time_zone() has already been validated if we got here
-        let datefmt_func = |ndt: NaiveDateTime| {
-            format_naive_datetime(self.time_zone().as_deref(), ndt, fmt).unwrap()
-        };
         let fmted = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(_) => format!(
@@ -181,6 +176,11 @@ impl DatetimeChunked {
                 Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
             ),
             _ => format!("{}", dt.format(fmt)),
+        };
+
+        let datefmt_func = |ndt: NaiveDateTime| {
+            // Calling .unwrap() as self.time_zone() has already been validated if we got here
+            format_naive_datetime(self.time_zone().as_deref(), ndt, fmt).unwrap()
         };
 
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
