@@ -2,6 +2,8 @@ use std::fmt::Write;
 
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset;
+#[cfg(feature = "timezones")]
+use chrono::FixedOffset;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
@@ -31,24 +33,64 @@ fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
     }
 }
 
-fn format_naive_datetime<'a>(
-    time_zone: Option<&str>,
-    ndt: NaiveDateTime,
-    fmt: &'a str,
-) -> PolarsResult<DelayedFormat<StrftimeItems<'a>>> {
-    match time_zone {
-        #[cfg(feature = "timezones")]
-        Some(time_zone) => match parse_offset(time_zone) {
-            Ok(time_zone) => Ok(time_zone.from_utc_datetime(&ndt).format(fmt)),
-            Err(_) => match time_zone.parse::<Tz>() {
-                Ok(time_zone) => Ok(time_zone.from_utc_datetime(&ndt).format(fmt)),
-                Err(_) => Err(PolarsError::ComputeError(
-                    format!("Could not parse timezone: '{time_zone}'").into(),
-                )),
-            },
-        },
-        _ => Ok(ndt.format(fmt)),
+#[cfg(feature = "timezones")]
+fn myfuncfo(tz: FixedOffset, arr: &PrimitiveArray<i64>, fmt: &str, fmted: &str, conversion_f: fn(i64) -> NaiveDateTime) -> ArrayRef{
+    let mut buf = String::new();
+    let mut mutarr =
+        MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+    for opt in arr.into_iter() {
+        match opt {
+            None => mutarr.push_null(),
+            Some(v) => {
+                buf.clear();
+                let converted = conversion_f(*v);
+                let datefmt = tz.from_utc_datetime(&converted).format(fmt);
+                write!(buf, "{datefmt}").unwrap();
+                mutarr.push(Some(&buf))
+            }
+        }
     }
+    let arr: Utf8Array<i64> = mutarr.into();
+    Box::new(arr)
+}
+#[cfg(feature = "timezones")]
+fn myfunctz(tz: Tz, arr: &PrimitiveArray<i64>, fmt: &str, fmted: &str, conversion_f: fn(i64) -> NaiveDateTime) -> ArrayRef{
+    let mut buf = String::new();
+    let mut mutarr =
+        MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+    for opt in arr.into_iter() {
+        match opt {
+            None => mutarr.push_null(),
+            Some(v) => {
+                buf.clear();
+                let converted = conversion_f(*v);
+                let datefmt = tz.from_utc_datetime(&converted).format(fmt);
+                write!(buf, "{datefmt}").unwrap();
+                mutarr.push(Some(&buf))
+            }
+        }
+    }
+    let arr: Utf8Array<i64> = mutarr.into();
+    Box::new(arr)
+}
+fn myfuncnv(arr: &PrimitiveArray<i64>, fmt: &str, fmted: &str, conversion_f: fn(i64) -> NaiveDateTime) -> ArrayRef{
+    let mut buf = String::new();
+    let mut mutarr =
+        MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+    for opt in arr.into_iter() {
+        match opt {
+            None => mutarr.push_null(),
+            Some(v) => {
+                buf.clear();
+                let converted = conversion_f(*v);
+                let datefmt = converted.format(fmt);
+                write!(buf, "{datefmt}").unwrap();
+                mutarr.push(Some(&buf))
+            }
+        }
+    }
+    let arr: Utf8Array<i64> = mutarr.into();
+    Box::new(arr)
 }
 
 impl DatetimeChunked {
@@ -178,32 +220,44 @@ impl DatetimeChunked {
             _ => format!("{}", dt.format(fmt)),
         };
 
-        let datefmt_func = |ndt: NaiveDateTime| {
-            // Calling .unwrap() as self.time_zone() has already been validated if we got here
-            format_naive_datetime(self.time_zone().as_deref(), ndt, fmt).unwrap()
+        let mut ca: Utf8Chunked = match self.time_zone() {
+            #[cfg(feature = "timezones")]
+            Some(time_zone) => match parse_offset(time_zone) {
+                Ok(time_zone) => {
+                    self.apply_kernel_cast(&|arr| myfuncfo(time_zone, arr, fmt, &fmted, conversion_f))
+                }
+                Err(_) => match time_zone.parse::<Tz>() {
+                    Ok(time_zone) => {
+                        self.apply_kernel_cast(&|arr| myfunctz(time_zone, arr, fmt, &fmted, conversion_f))
+                    }
+                    Err(_) => unreachable!()
+                },
+            }
+            _ => {
+                self.apply_kernel_cast(&|arr| myfuncnv(arr, fmt, &fmted, conversion_f))
+            }
         };
 
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
-            let mut buf = String::new();
-            let mut mutarr =
-                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+        // let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
+        //     let mut buf = String::new();
+        //     let mut mutarr =
+        //         MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+        //     for opt in arr.into_iter() {
+        //         match opt {
+        //             None => mutarr.push_null(),
+        //             Some(v) => {
+        //                 buf.clear();
+        //                 let converted = conversion_f(*v);
+        //                 let datefmt = converted.format(fmt);
+        //                 write!(buf, "{datefmt}").unwrap();
+        //                 mutarr.push(Some(&buf))
+        //             }
+        //         }
+        //     }
 
-            for opt in arr.into_iter() {
-                match opt {
-                    None => mutarr.push_null(),
-                    Some(v) => {
-                        buf.clear();
-                        let converted = conversion_f(*v);
-                        let datefmt = datefmt_func(converted);
-                        write!(buf, "{datefmt}").unwrap();
-                        mutarr.push(Some(&buf))
-                    }
-                }
-            }
-
-            let arr: Utf8Array<i64> = mutarr.into();
-            Box::new(arr)
-        });
+        //     let arr: Utf8Array<i64> = mutarr.into();
+        //     Box::new(arr)
+        // });
         ca.rename(self.name());
         ca
     }
