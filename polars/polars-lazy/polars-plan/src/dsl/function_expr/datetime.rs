@@ -143,6 +143,7 @@ pub(super) fn cast_timezone(s: &Series, tz: Option<&str>) -> PolarsResult<Series
 }
 
 #[cfg(feature = "timezones")]
+#[deprecated(note = "use cast_time_zone")]
 pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
     let ca = s.datetime()?.clone();
     match (ca.time_zone(), tz) {

@@ -1060,6 +1060,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
+    #[allow(deprecated)]
     pub fn dt_tz_localize(&self, tz: String) -> PyExpr {
         self.inner.clone().dt().tz_localize(tz).into()
     }
