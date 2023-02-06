@@ -1,8 +1,15 @@
 use std::fmt::Write;
 
+#[cfg(feature = "timezones")]
+use arrow::temporal_conversions::parse_offset;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
+use chrono::format::{DelayedFormat, StrftimeItems};
+#[cfg(feature = "timezones")]
+use chrono::TimeZone as TimeZoneTrait;
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
 use polars_arrow::kernels::cast_timezone;
 
@@ -13,8 +20,6 @@ use crate::prelude::*;
 
 #[cfg(feature = "timezones")]
 fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
-    use arrow::temporal_conversions::parse_offset;
-    use chrono_tz::Tz;
     match parse_offset(&tz) {
         Ok(_) => Ok(()),
         Err(_) => match tz.parse::<Tz>() {
@@ -23,6 +28,26 @@ fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
                 format!("Could not parse timezone: '{tz}'").into(),
             )),
         },
+    }
+}
+
+fn format_naive_datetime<'a>(
+    time_zone: Option<&str>,
+    ndt: NaiveDateTime,
+    fmt: &'a str,
+) -> PolarsResult<DelayedFormat<StrftimeItems<'a>>> {
+    match time_zone {
+        #[cfg(feature = "timezones")]
+        Some(time_zone) => match parse_offset(time_zone) {
+            Ok(time_zone) => Ok(time_zone.from_utc_datetime(&ndt).format(fmt)),
+            Err(_) => match time_zone.parse::<Tz>() {
+                Ok(time_zone) => Ok(time_zone.from_utc_datetime(&ndt).format(fmt)),
+                Err(_) => Err(PolarsError::ComputeError(
+                    format!("Could not parse timezone: '{time_zone}'").into(),
+                )),
+            },
+        },
+        _ => Ok(ndt.format(fmt)),
     }
 }
 
@@ -133,11 +158,7 @@ impl DatetimeChunked {
     /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
         #[cfg(feature = "timezones")]
-        use arrow::temporal_conversions::parse_offset;
-        #[cfg(feature = "timezones")]
-        use chrono::{TimeZone, Utc};
-        #[cfg(feature = "timezones")]
-        use chrono_tz::Tz;
+        use chrono::Utc;
         let conversion_f = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -149,25 +170,17 @@ impl DatetimeChunked {
             .and_hms_opt(0, 0, 0)
             .unwrap();
 
-        let datefmt_func: Box<dyn Fn(_) -> _>;
-        let fmted: String;
-        match self.time_zone() {
+        // Calling .unwrap() as self.time_zone() has already been validated if we got here
+        let datefmt_func = |ndt: NaiveDateTime| {
+            format_naive_datetime(self.time_zone().as_deref(), ndt, fmt).unwrap()
+        };
+        let fmted = match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(time_zone) => {
-                datefmt_func = Box::new(|ndt: NaiveDateTime| match parse_offset(time_zone) {
-                    Ok(time_zone) => time_zone.from_utc_datetime(&ndt).format(fmt),
-                    Err(_) => match time_zone.parse::<Tz>() {
-                        Ok(time_zone) => time_zone.from_utc_datetime(&ndt).format(fmt),
-                        // self.time_zone was already validated if we got here
-                        Err(_) => unreachable!(),
-                    },
-                });
-                fmted = format!("{}", Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt));
-            },
-            _ => {
-                datefmt_func = Box::new(|ndt: NaiveDateTime| ndt.format(fmt));
-                fmted = format!("{}", dt.format(fmt));
-            }
+            Some(_) => format!(
+                "{}",
+                Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
+            ),
+            _ => format!("{}", dt.format(fmt)),
         };
 
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
