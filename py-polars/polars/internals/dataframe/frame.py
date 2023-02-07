@@ -1952,8 +1952,10 @@ class DataFrame:
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
         date_as_object
             Cast dates to objects. If ``False``, convert to ``datetime64[ns]`` dtype.
+        deduplicate_objects
+            defaults to False and will be send :meth:`pyarrow.Table.to_pandas`.
         kwargs
-            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+            Arguments will be send to :meth:`pyarrow.Table.to_pandas`.
 
         Returns
         -------
@@ -1974,6 +1976,7 @@ class DataFrame:
         <class 'pandas.core.frame.DataFrame'>
 
         """
+        kwargs.setdefault("deduplicate_objects", False)
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
