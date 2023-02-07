@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
@@ -277,23 +278,27 @@ def test_weekday() -> None:
     assert s.cast(pl.Date).dt.weekday()[0] == 1
 
 
-def test_median() -> None:
-    result = pl.date_range(
-        datetime(1969, 12, 31), datetime(1970, 1, 2), "1d"
-    ).dt.median()
-    assert result == datetime(1970, 1, 1)
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([datetime(1969, 12, 31), datetime(1970, 1, 2)], datetime(1970, 1, 1)),
+        ([None, None], None),
+    ],
+    ids=["datetime_dates", "Nones"],
+)
+def test_median(values: list[datetime | None], expected: datetime | None) -> None:
+    result = pl.Series(values).cast(pl.Datetime).dt.median()
+    assert result == expected
 
 
-def test_mean() -> None:
-    result = pl.date_range(datetime(1969, 12, 31), datetime(1970, 1, 2), "1d").dt.mean()
-    assert result == datetime(1970, 1, 1)
-
-
-def test_median_return_none() -> None:
-    result = pl.Series([None, None]).cast(pl.Datetime).median()
-    assert result is None
-
-
-def test_mean_return_none() -> None:
-    result = pl.Series([None, None]).cast(pl.Datetime).mean()
-    assert result is None
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([datetime(1969, 12, 31), datetime(1970, 1, 2)], datetime(1970, 1, 1)),
+        ([None, None], None),
+    ],
+    ids=["datetime_dates", "Nones"],
+)
+def test_mean(values: list[datetime | None], expected: datetime | None) -> None:
+    result = pl.Series(values).cast(pl.Datetime).dt.median()
+    assert result == expected
