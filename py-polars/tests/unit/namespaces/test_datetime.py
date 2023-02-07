@@ -287,3 +287,13 @@ def test_median() -> None:
 def test_mean() -> None:
     result = pl.date_range(datetime(1969, 12, 31), datetime(1970, 1, 2), "1d").dt.mean()
     assert result == datetime(1970, 1, 1)
+
+
+def test_median_return_none() -> None:
+    result = pl.Series([None, None]).cast(pl.Datetime).median()
+    assert result is None
+
+
+def test_mean_return_none() -> None:
+    result = pl.Series([None, None]).cast(pl.Datetime).mean()
+    assert result is None
