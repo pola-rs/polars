@@ -71,7 +71,7 @@ class DateTimeNameSpace:
         """
         return pli.wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> date | datetime | timedelta:
+    def median(self) -> date | datetime | timedelta | None:
         """
         Return median as python DateTime.
 
@@ -92,10 +92,12 @@ class DateTimeNameSpace:
 
         """
         s = pli.wrap_s(self._s)
-        out = int(s.median())
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        out = s.median()
+        if out is not None:
+            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+        return None
 
-    def mean(self) -> date | datetime:
+    def mean(self) -> date | datetime | None:
         """
         Return mean as python DateTime.
 
@@ -116,8 +118,10 @@ class DateTimeNameSpace:
 
         """
         s = pli.wrap_s(self._s)
-        out = int(s.mean())
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        out = s.mean()
+        if out is not None:
+            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+        return None
 
     def strftime(self, fmt: str) -> pli.Series:
         """

@@ -707,7 +707,7 @@ def mean(column: pli.Series) -> float:
     ...
 
 
-def mean(column: str | pli.Series) -> pli.Expr | float:
+def mean(column: str | pli.Series) -> pli.Expr | float | None:
     """
     Get the mean value.
 
@@ -775,7 +775,7 @@ def median(column: pli.Series) -> float | int:
     ...
 
 
-def median(column: str | pli.Series) -> pli.Expr | float | int:
+def median(column: str | pli.Series) -> pli.Expr | float | int | None:
     """
     Get the median value.
 
