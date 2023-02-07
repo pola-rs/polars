@@ -275,3 +275,13 @@ def test_weekday() -> None:
         assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 1
 
     assert s.cast(pl.Date).dt.weekday()[0] == 1
+
+
+def test_median() -> None:
+    result = pl.date_range(datetime(1969, 12, 31), datetime(1970, 1, 2), "1d").dt.median()
+    assert result == datetime(1970, 1, 1)
+
+
+def test_mean() -> None:
+    result = pl.date_range(datetime(1969, 12, 31), datetime(1970, 1, 2), "1d").dt.mean()
+    assert result == datetime(1970, 1, 1)
