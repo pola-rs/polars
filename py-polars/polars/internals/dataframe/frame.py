@@ -6924,7 +6924,7 @@ class DataFrame:
             for offset in range(0, self.height, buffer_size):
                 zerocopy_slice = self.slice(offset, buffer_size)
                 if load_pyarrow_dicts:
-                    yield from zerocopy_slice.to_arrow().to_batches()[0].to_pylist()
+                    yield from zerocopy_slice.to_arrow().to_pylist()
                 else:
                     rows_chunk = zerocopy_slice.rows(named=False)
                     if named:
