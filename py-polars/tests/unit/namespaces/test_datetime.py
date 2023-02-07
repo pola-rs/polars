@@ -278,7 +278,9 @@ def test_weekday() -> None:
 
 
 def test_median() -> None:
-    result = pl.date_range(datetime(1969, 12, 31), datetime(1970, 1, 2), "1d").dt.median()
+    result = pl.date_range(
+        datetime(1969, 12, 31), datetime(1970, 1, 2), "1d"
+    ).dt.median()
     assert result == datetime(1970, 1, 1)
 
 
