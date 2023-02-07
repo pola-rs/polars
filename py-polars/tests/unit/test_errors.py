@@ -119,12 +119,12 @@ def test_projection_update_schema_missing_column() -> None:
 def test_not_found_on_rename() -> None:
     df = pl.DataFrame({"exists": [1, 2, 3]})
 
-    with pytest.raises(pl.SchemaFieldNotFoundError):
-        df.rename(
-            {
-                "does_not_exist": "exists",
-            }
-        )
+    err_type = (pl.SchemaFieldNotFoundError, pl.ColumnNotFoundError)
+    with pytest.raises(err_type):
+        df.rename({"does_not_exist": "exists"})
+
+    with pytest.raises(err_type):
+        df.select(pl.col("does_not_exist").alias("new_name"))
 
 
 @typing.no_type_check

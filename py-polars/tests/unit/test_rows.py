@@ -110,3 +110,19 @@ def test_iter_rows() -> None:
 
         with pytest.raises(StopIteration):
             next(it_named)
+
+    # test over chunked frame
+    df = pl.concat(
+        [
+            pl.DataFrame({"id": [0, 1], "values": ["a", "b"]}),
+            pl.DataFrame({"id": [2, 3], "values": ["c", "d"]}),
+        ],
+        rechunk=False,
+    )
+    assert df.n_chunks() == 2
+    assert df.to_dicts() == [
+        {"id": 0, "values": "a"},
+        {"id": 1, "values": "b"},
+        {"id": 2, "values": "c"},
+        {"id": 3, "values": "d"},
+    ]
