@@ -3,14 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import polars.internals as pli
-from polars.datatypes import (
-    Boolean,
-    Categorical,
-    DataTypeClass,
-    Float32,
-    Float64,
-    dtype_to_py_type,
-)
+from polars.datatypes import Boolean, Categorical, Float32, Float64, dtype_to_py_type
 from polars.exceptions import InvalidAssert, PanicException
 from polars.utils import deprecated_alias
 
@@ -379,11 +372,8 @@ def raise_assert_detail(
 
 def is_categorical_dtype(data_type: Any) -> bool:
     """Check if the input is a polars Categorical dtype."""
-    return (
-        type(data_type) is DataTypeClass
-        and issubclass(data_type, Categorical)
-        or isinstance(data_type, Categorical)
-    )
+    # TODO: Normalize?
+    return isinstance(data_type, Categorical)
 
 
 def assert_frame_equal_local_categoricals(

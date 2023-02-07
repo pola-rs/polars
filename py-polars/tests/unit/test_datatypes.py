@@ -9,17 +9,6 @@ import polars as pl
 from polars import datatypes
 
 
-def test_dtype_init_equivalence() -> None:
-    # check "DataType.__new__" behaviour for all datatypes
-    all_datatypes = {
-        dtype
-        for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
-        if isinstance(dtype, datatypes.DataTypeClass)
-    }
-    for dtype in all_datatypes:
-        assert dtype == dtype()
-
-
 def test_dtype_temporal_units() -> None:
     # check (in)equality behaviour of temporal types that take units
     for tu in datatypes.DTYPE_TEMPORAL_UNITS:
@@ -42,7 +31,7 @@ def test_dtype_temporal_units() -> None:
 
 
 def test_get_idx_type() -> None:
-    assert datatypes.get_idx_type() == datatypes.UInt32
+    assert datatypes.get_idx_type() == pl.UInt32
 
 
 def test_dtypes_picklable() -> None:

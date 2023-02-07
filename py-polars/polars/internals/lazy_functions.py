@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
+from inspect import isclass
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     DataType,
-    DataTypeClass,
     Date,
     Datetime,
     Duration,
@@ -196,8 +196,9 @@ def col(
     if isinstance(name, pli.Series):
         name = name.to_list()
 
-    if isinstance(name, DataTypeClass):
-        name = [name]
+    # TODO: Normalize here
+    if isclass(name) and issubclass(name, DataType):
+        name = name()
 
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))
