@@ -716,6 +716,7 @@ impl PyExpr {
         self.clone().inner.str().rjust(width, fillchar).into()
     }
 
+    #[cfg(feature = "strings")]
     #[pyo3(signature = (pat, literal, strict))]
     pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
         match literal {
