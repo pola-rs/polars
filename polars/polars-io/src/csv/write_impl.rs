@@ -98,24 +98,17 @@ fn write_anyvalue(
                 TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
                 TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
             };
-            match tz {
+            let formatted = match tz {
                 Some(tz) => match tz.parse::<Tz>() {
-                    Ok(parsed_tz) => write!(
-                        f,
-                        "{}",
-                        parsed_tz.from_utc_datetime(&ndt).format(datetime_format)
-                    ),
+                    Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
                     Err(_) => match temporal_conversions::parse_offset(tz) {
-                        Ok(parsed_tz) => write!(
-                            f,
-                            "{}",
-                            parsed_tz.from_utc_datetime(&ndt).format(datetime_format)
-                        ),
+                        Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
                         Err(_) => unreachable!(),
                     },
                 },
-                _ => write!(f, "{}", ndt.format(datetime_format)),
-            }
+                _ => ndt.format(datetime_format),
+            };
+            write!(f, "{}", formatted)
         }
         #[cfg(feature = "dtype-time")]
         AnyValue::Time(v) => {
