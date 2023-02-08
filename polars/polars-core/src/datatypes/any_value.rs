@@ -400,7 +400,7 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(0)
                 }
             }
-            dt => panic!("dtype {dt:?} not implemented"),
+            dt => panic!("Cannot extract numeric value from {dt:?}"),
         }
     }
 

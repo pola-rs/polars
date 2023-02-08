@@ -447,12 +447,11 @@ impl PyDataFrame {
         if let Some(schema) = &schema_overwrite {
             schema_columns.extend(schema.0.iter_names().map(|n| n.to_string()))
         }
-        let infer_schema_length = std::cmp::max(infer_schema_length.unwrap_or(50), 1);
         let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
 
         let mut pydf = Self::finish_from_rows(
             rows,
-            Some(infer_schema_length),
+            infer_schema_length,
             schema_overwrite.map(|wrap| wrap.0),
         )?;
 
