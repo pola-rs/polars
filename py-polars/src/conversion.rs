@@ -773,9 +773,10 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
 
 pub(crate) fn dicts_to_rows(
     records: &PyAny,
-    infer_schema_len: usize,
+    infer_schema_len: Option<usize>,
     schema_columns: PlIndexSet<String>,
 ) -> PyResult<(Vec<Row>, Vec<String>)> {
+    let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
     let (dicts, len) = get_pyseq(records)?;
 
     let key_names = {
@@ -783,7 +784,7 @@ pub(crate) fn dicts_to_rows(
             schema_columns
         } else {
             let mut inferred_keys = PlIndexSet::new();
-            for d in dicts.iter()?.take(infer_schema_len) {
+            for d in dicts.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
                 let d = d?;
                 let d = d.downcast::<PyDict>()?;
                 let keys = d.keys();

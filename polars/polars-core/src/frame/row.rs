@@ -311,7 +311,11 @@ pub fn rows_to_schema_supertypes(
         .into_iter()
         .enumerate()
         .map(|(i, types_set)| {
-            let dtype = types_set_to_dtype(types_set)?;
+            let dtype = if types_set.is_empty() {
+                DataType::Unknown
+            } else {
+                types_set_to_dtype(types_set)?
+            };
             Ok(Field::new(format!("column_{i}").as_ref(), dtype))
         })
         .collect::<PolarsResult<_>>()
