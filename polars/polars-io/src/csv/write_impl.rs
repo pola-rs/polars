@@ -100,9 +100,17 @@ fn write_anyvalue(
             };
             match tz {
                 Some(tz) => match tz.parse::<Tz>() {
-                    Ok(parsed_tz) => write!(f, "{}", parsed_tz.from_utc_datetime(&ndt).format(datetime_format)),
+                    Ok(parsed_tz) => write!(
+                        f,
+                        "{}",
+                        parsed_tz.from_utc_datetime(&ndt).format(datetime_format)
+                    ),
                     Err(_) => match temporal_conversions::parse_offset(tz) {
-                        Ok(parsed_tz) => write!(f, "{}", parsed_tz.from_utc_datetime(&ndt).format(datetime_format)),
+                        Ok(parsed_tz) => write!(
+                            f,
+                            "{}",
+                            parsed_tz.from_utc_datetime(&ndt).format(datetime_format)
+                        ),
                         Err(_) => unreachable!(),
                     },
                 },
