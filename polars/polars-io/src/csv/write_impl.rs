@@ -49,7 +49,12 @@ fn fast_float_write<N: ToLexical>(f: &mut Vec<u8>, n: N, write_size: usize) -> s
     Ok(())
 }
 
-fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) {
+fn write_anyvalue(
+    f: &mut Vec<u8>,
+    value: AnyValue,
+    options: &SerializeOptions,
+    datetime_format: &str,
+) {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),
         AnyValue::Int8(v) => write!(f, "{v}"),
@@ -91,10 +96,7 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
                 TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
             };
             match tz {
-                None => match &options.datetime_format {
-                    None => write!(f, "{ndt}"),
-                    Some(fmt) => write!(f, "{}", ndt.format(fmt)),
-                },
+                None => write!(f, "{}", ndt.format(datetime_format)),
                 Some(tz) => {
                     write!(f, "{}", PlTzAware::new(ndt, tz))
                 }
@@ -201,6 +203,7 @@ pub(crate) fn write<W: Write>(
             options.datetime_format = Some("%FT%H:%M:%S.%3f".to_string());
         }
     }
+    let datetime_format: &str = options.datetime_format.as_ref().unwrap();
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();
@@ -242,7 +245,7 @@ pub(crate) fn write<W: Write>(
                 for col in &mut col_iters {
                     match col.next() {
                         Some(value) => {
-                            write_anyvalue(&mut write_buffer, value, options);
+                            write_anyvalue(&mut write_buffer, value, options, datetime_format);
                         }
                         None => {
                             finished = true;
