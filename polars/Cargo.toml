@@ -289,6 +289,7 @@ docs-selection = [
   "arg_where",
   "propagate_nans",
   "coalesce",
+  "dynamic_groupby",
 ]
 
 bench = [
