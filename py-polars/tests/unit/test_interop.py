@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from datetime import datetime
 from typing import Any, cast, no_type_check
 
@@ -598,3 +599,22 @@ def test_from_pandas_null_struct_6412() -> None:
     ]
     df_pandas = pd.DataFrame(data)
     assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}
+
+
+@typing.no_type_check
+def test_from_pyarrow_map() -> None:
+    pa_table = pa.table(
+        [[1, 2], [[("a", "something")], [("a", "else"), ("b", "another key")]]],
+        schema=pa.schema(
+            [("idx", pa.int16()), ("mapping", pa.map_(pa.string(), pa.string()))]
+        ),
+    )
+
+    df = pl.from_arrow(pa_table)
+    assert df.to_dict(False) == {
+        "idx": [1, 2],
+        "mapping": [
+            [{"key": "a", "value": "something"}],
+            [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
+        ],
+    }
