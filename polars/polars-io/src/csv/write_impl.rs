@@ -203,7 +203,7 @@ pub(crate) fn write<W: Write>(
             options.datetime_format = Some("%FT%H:%M:%S.%3f".to_string());
         }
     }
-    let datetime_format: &str = &options.datetime_format.as_ref().unwrap();
+    let datetime_format: &str = options.datetime_format.as_ref().unwrap();
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();
