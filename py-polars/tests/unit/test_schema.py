@@ -336,5 +336,8 @@ def test_rename_schema_order_6660() -> None:
 
 
 def test_from_dicts_all_cols_6716() -> None:
-    dicts = [{"a": None} for i in range(50)] + [{"a": "crash"}]
+    dicts = [{"a": None} for _ in range(20)] + [{"a": "crash"}]
+
+    with pytest.raises(pl.PanicException, match="Cannot extract numeric value from"):
+        pl.from_dicts(dicts, infer_schema_length=20)
     assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.Utf8]

@@ -57,7 +57,8 @@ impl PyDataFrame {
         crate::object::register_object_builder();
 
         let schema =
-            rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
+            rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
+                .map_err(PyPolarsErr::from)?;
         // replace inferred nulls with boolean
         let fields = schema.iter_fields().map(|mut fld| match fld.data_type() {
             DataType::Null => {
@@ -464,7 +465,7 @@ impl PyDataFrame {
             });
         let length = names.len();
         if names.into_iter().collect::<PlHashSet<_>>().len() != length {
-            let err = PolarsError::SchemaMisMatch("duplicate column names found".into());
+            let err = PolarsError::Duplicate("duplicate column names found".into());
             Err(PyPolarsErr::Polars(err))?;
         }
 

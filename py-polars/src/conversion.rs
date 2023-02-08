@@ -776,6 +776,7 @@ pub(crate) fn dicts_to_rows(
     infer_schema_len: Option<usize>,
     schema_columns: PlIndexSet<String>,
 ) -> PyResult<(Vec<Row>, Vec<String>)> {
+    let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
     let (dicts, len) = get_pyseq(records)?;
 
     let key_names = {
