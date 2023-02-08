@@ -2025,6 +2025,24 @@ def test_tz_aware_strftime() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("time_zone", "directive", "expected"),
+    [
+        ("Pacific/Pohnpei", "%z", "+1100"),
+        ("Pacific/Pohnpei", "%Z", "+11"),
+        ("+01:00", "%z", "+0100"),
+        ("+01:00", "%Z", "+01:00"),
+    ],
+)
+def test_tz_aware_with_timezone_directive(
+    time_zone: str, directive: str, expected: str
+) -> None:
+    tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
+    tz_aware = tz_naive.dt.cast_time_zone(time_zone)
+    result = tz_aware.dt.strftime(directive).item()
+    assert result == expected
+
+
 def test_tz_aware_filter_lit() -> None:
     start = datetime(1970, 1, 1)
     stop = datetime(1970, 1, 1, 7)

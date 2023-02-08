@@ -1,8 +1,17 @@
 use std::fmt::Write;
 
+#[cfg(feature = "timezones")]
+use arrow::temporal_conversions::parse_offset;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
+use chrono::format::{DelayedFormat, StrftimeItems};
+#[cfg(feature = "timezones")]
+use chrono::FixedOffset;
+#[cfg(feature = "timezones")]
+use chrono::TimeZone as TimeZoneTrait;
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
 use polars_arrow::kernels::cast_timezone;
 
@@ -13,8 +22,6 @@ use crate::prelude::*;
 
 #[cfg(feature = "timezones")]
 fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
-    use arrow::temporal_conversions::parse_offset;
-    use chrono_tz::Tz;
     match parse_offset(&tz) {
         Ok(_) => Ok(()),
         Err(_) => match tz.parse::<Tz>() {
@@ -24,6 +31,62 @@ fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
             )),
         },
     }
+}
+
+fn apply_datefmt_f<'a>(
+    arr: &PrimitiveArray<i64>,
+    fmted: &'a str,
+    conversion_f: fn(i64) -> NaiveDateTime,
+    datefmt_f: impl Fn(NaiveDateTime) -> DelayedFormat<StrftimeItems<'a>>,
+) -> ArrayRef {
+    let mut buf = String::new();
+    let mut mutarr = MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+    for opt in arr.into_iter() {
+        match opt {
+            None => mutarr.push_null(),
+            Some(v) => {
+                buf.clear();
+                let converted = conversion_f(*v);
+                let datefmt = datefmt_f(converted);
+                write!(buf, "{datefmt}").unwrap();
+                mutarr.push(Some(&buf))
+            }
+        }
+    }
+    let arr: Utf8Array<i64> = mutarr.into();
+    Box::new(arr)
+}
+
+#[cfg(feature = "timezones")]
+fn format_fixed_offset(
+    tz: FixedOffset,
+    arr: &PrimitiveArray<i64>,
+    fmt: &str,
+    fmted: &str,
+    conversion_f: fn(i64) -> NaiveDateTime,
+) -> ArrayRef {
+    let datefmt_f = |ndt| tz.from_utc_datetime(&ndt).format(fmt);
+    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
+}
+#[cfg(feature = "timezones")]
+fn format_tz(
+    tz: Tz,
+    arr: &PrimitiveArray<i64>,
+    fmt: &str,
+    fmted: &str,
+    conversion_f: fn(i64) -> NaiveDateTime,
+) -> ArrayRef {
+    let datefmt_f = |ndt| tz.from_utc_datetime(&ndt).format(fmt);
+    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
+}
+fn format_naive(
+    arr: &PrimitiveArray<i64>,
+    fmt: &str,
+    fmted: &str,
+    conversion_f: fn(i64) -> NaiveDateTime,
+) -> ArrayRef {
+    let datefmt_f = |ndt: NaiveDateTime| ndt.format(fmt);
+    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
 }
 
 impl DatetimeChunked {
@@ -132,6 +195,8 @@ impl DatetimeChunked {
 
     /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
+        #[cfg(feature = "timezones")]
+        use chrono::Utc;
         let conversion_f = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -142,35 +207,30 @@ impl DatetimeChunked {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let fmted = format!("{}", dt.format(fmt));
+        let fmted = match self.time_zone() {
+            #[cfg(feature = "timezones")]
+            Some(_) => format!(
+                "{}",
+                Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
+            ),
+            _ => format!("{}", dt.format(fmt)),
+        };
 
-        #[allow(unused_mut)]
-        let mut ca = self.clone();
-        #[cfg(feature = "timezones")]
-        if self.time_zone().is_some() {
-            ca = ca.cast_time_zone(Some("UTC")).unwrap();
-        }
-
-        let mut ca: Utf8Chunked = ca.apply_kernel_cast(&|arr| {
-            let mut buf = String::new();
-            let mut mutarr =
-                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
-
-            for opt in arr.into_iter() {
-                match opt {
-                    None => mutarr.push_null(),
-                    Some(v) => {
-                        buf.clear();
-                        let datefmt = conversion_f(*v).format(fmt);
-                        write!(buf, "{datefmt}").unwrap();
-                        mutarr.push(Some(&buf))
-                    }
-                }
-            }
-
-            let arr: Utf8Array<i64> = mutarr.into();
-            Box::new(arr)
-        });
+        let mut ca: Utf8Chunked = match self.time_zone() {
+            #[cfg(feature = "timezones")]
+            Some(time_zone) => match parse_offset(time_zone) {
+                Ok(time_zone) => self.apply_kernel_cast(&|arr| {
+                    format_fixed_offset(time_zone, arr, fmt, &fmted, conversion_f)
+                }),
+                Err(_) => match time_zone.parse::<Tz>() {
+                    Ok(time_zone) => self.apply_kernel_cast(&|arr| {
+                        format_tz(time_zone, arr, fmt, &fmted, conversion_f)
+                    }),
+                    Err(_) => unreachable!(),
+                },
+            },
+            _ => self.apply_kernel_cast(&|arr| format_naive(arr, fmt, &fmted, conversion_f)),
+        };
         ca.rename(self.name());
         ca
     }
