@@ -81,5 +81,6 @@ create_exception!(exceptions, StructFieldNotFoundError, PyException);
 macro_rules! raise_err(
     ($msg:expr, $err:ident) => {{
         Err(PolarsError::$err($msg.into())).map_err(PyPolarsErr::from)?;
+        unreachable!()
     }}
 );
