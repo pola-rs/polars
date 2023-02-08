@@ -4,9 +4,9 @@ mod hstack;
 mod joins;
 mod melt;
 mod projection;
+mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
-mod rename;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
@@ -758,24 +758,33 @@ impl ProjectionPushDown {
             } => {
                 let lp = MapFunction {
                     input,
-                    function: function.clone()
+                    function: function.clone(),
                 };
 
-                match function {
-                    FunctionNode::Rename {existing, new, swapping} => {
-                        process_rename(
-                            &mut acc_projections,
-                            &mut projected_names,
-                            expr_arena,
-                            existing,
-                            new,
-                            *swapping
-                        )?;
-                        self.pushdown_and_assign(input, acc_projections, projected_names, projections_seen, lp_arena, expr_arena)?;
-                        return Ok(lp)
-                    },
-                    _ => {}
-                };
+                if let FunctionNode::Rename {
+                    existing,
+                    new,
+                    swapping,
+                } = function
+                {
+                    process_rename(
+                        &mut acc_projections,
+                        &mut projected_names,
+                        expr_arena,
+                        existing,
+                        new,
+                        *swapping,
+                    )?;
+                    self.pushdown_and_assign(
+                        input,
+                        acc_projections,
+                        projected_names,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                    return Ok(lp);
+                }
 
                 let MapFunction {ref function, ..} = lp else { unreachable!() };
 
@@ -827,7 +836,6 @@ impl ProjectionPushDown {
                         expr_arena,
                     )
                 }
-
             }
             lp @ Union { .. } => {
                 self.has_joins_or_unions = true;

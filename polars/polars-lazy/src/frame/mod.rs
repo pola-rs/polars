@@ -279,8 +279,7 @@ impl LazyFrame {
         let mut existing_vec = Vec::with_capacity(cap);
         let mut new_vec = Vec::with_capacity(cap);
 
-        for (existing, new) in iter
-            .zip(new.into_iter()) {
+        for (existing, new) in iter.zip(new.into_iter()) {
             let existing = existing.as_ref();
             let new = new.as_ref();
 
@@ -288,18 +287,35 @@ impl LazyFrame {
                 existing_vec.push(existing.to_string());
                 new_vec.push(new.to_string());
             }
-
         }
 
         // a column gets swapped
         let schema = &*self.schema().unwrap();
         let swapping = new_vec.iter().any(|name| schema.get(name).is_some());
 
-        self.map_private(FunctionNode::Rename {
-            existing: existing_vec.into(),
-            new: new_vec.into(),
-            swapping
-        })
+        let mut opt_not_found = None;
+        existing_vec.iter().for_each(|name| {
+            let invalid = schema.get(name).is_none();
+
+            if invalid && opt_not_found.is_none() {
+                opt_not_found = Some(name)
+            }
+        });
+
+        if let Some(name) = opt_not_found {
+            let lp = self
+                .clone()
+                .get_plan_builder()
+                .add_err(PolarsError::SchemaFieldNotFound(name.to_string().into()))
+                .build();
+            Self::from_logical_plan(lp, self.opt_state)
+        } else {
+            self.map_private(FunctionNode::Rename {
+                existing: existing_vec.into(),
+                new: new_vec.into(),
+                swapping,
+            })
+        }
     }
 
     /// Removes columns from the DataFrame.

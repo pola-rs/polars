@@ -268,31 +268,20 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
 ) -> Node {
     let mut leaves = aexpr_to_leaf_nodes_iter(node, arena);
 
-    if leaves.any(|node| {
-        match arena.get(node) {
-            AExpr::Column(name) if &**name == current => {
-                true
-            }
-            _ => false
-        }
-    }) {
+    if leaves.any(|node| matches!(arena.get(node), AExpr::Column(name) if &**name == current)) {
         // we convert to expression as we cannot easily copy the aexpr.
         let mut new_expr = node_to_expr(node, arena);
-        new_expr.mutate().apply(|e| {
-            match e {
-                Expr::Column(name) if &**name == current => {
-                    *name = Arc::from(new_name);
-                    true
-                }
-                _ => true
-
+        new_expr.mutate().apply(|e| match e {
+            Expr::Column(name) if &**name == current => {
+                *name = Arc::from(new_name);
+                true
             }
+            _ => true,
         });
         to_aexpr(new_expr, arena)
     } else {
         node
     }
-
 }
 
 /// Rename the root of the expression from `current` to `new` and assign to new node in arena.

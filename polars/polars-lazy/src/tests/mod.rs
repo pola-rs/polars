@@ -153,18 +153,18 @@ pub(crate) fn get_df() -> DataFrame {
 
 #[test]
 fn test_foo() -> PolarsResult<()> {
-
     let df: DataFrame = df!["a" => [1],
         "b" => [2],
         "c" => [2]
     ]?;
 
-    let out = df.lazy()
+    let out = df
+        .lazy()
         .rename(["a", "b"], ["a", "b"])
-        .select([col("a"), col("b")]).collect()?;
+        .select([col("a"), col("b")])
+        .collect()?;
 
     dbg!(out);
 
     Ok(())
-
 }

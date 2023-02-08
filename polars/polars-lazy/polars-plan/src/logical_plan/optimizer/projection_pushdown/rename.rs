@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+
 use super::*;
 
 fn iter_and_update_nodes(
@@ -6,7 +7,7 @@ fn iter_and_update_nodes(
     new: &str,
     acc_projections: &mut [Node],
     expr_arena: &mut Arena<AExpr>,
-    processed: &mut BTreeSet<usize>
+    processed: &mut BTreeSet<usize>,
 ) {
     for node in acc_projections.iter_mut() {
         if !processed.contains(&node.0) {
@@ -26,7 +27,7 @@ pub(super) fn process_rename(
     expr_arena: &mut Arena<AExpr>,
     existing: &[String],
     new: &[String],
-    swapping: bool
+    swapping: bool,
 ) -> PolarsResult<()> {
     let mut processed = BTreeSet::new();
     if swapping {
@@ -41,10 +42,12 @@ pub(super) fn process_rename(
                 // this must leave projected names intact, as we only swap
                 if has_both {
                     iter_and_update_nodes(
-                        existing, new,
+                        existing,
+                        new,
                         acc_projections,
                         expr_arena,
-                        &mut processed);
+                        &mut processed,
+                    );
                 }
                 // simple new name path
                 // this must add and remove names
@@ -53,10 +56,12 @@ pub(super) fn process_rename(
                     let name: Arc<str> = Arc::from(existing.as_str());
                     projected_names.insert(name);
                     iter_and_update_nodes(
-                        existing, new,
+                        existing,
+                        new,
                         acc_projections,
                         expr_arena,
-                        &mut processed);
+                        &mut processed,
+                    );
                 }
             }
         }
@@ -65,11 +70,7 @@ pub(super) fn process_rename(
             if projected_names.remove(new.as_str()) {
                 let name: Arc<str> = Arc::from(existing.as_str());
                 projected_names.insert(name);
-                iter_and_update_nodes(
-                    existing, new,
-                    acc_projections,
-                    expr_arena,
-                    &mut processed);
+                iter_and_update_nodes(existing, new, acc_projections, expr_arena, &mut processed);
             }
         }
     }
