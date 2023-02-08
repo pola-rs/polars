@@ -141,12 +141,12 @@ impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
 
 impl<'a> FromPyObject<'a> for Wrap<BinaryChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = BinaryChunkedBuilder::new("", len, len * 25);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
-            match item.extract::<&str>() {
+            match item.extract::<&[u8]>() {
                 Ok(val) => builder.append_value(val),
                 Err(_) => builder.append_null(),
             }

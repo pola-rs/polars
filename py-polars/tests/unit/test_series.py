@@ -1851,8 +1851,18 @@ def test_is_between_datetime() -> None:
 )
 @pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
 def test_trigonometric(f: str) -> None:
-    s = pl.Series("a", [0.0, math.pi])
-    expected = pl.Series("a", getattr(np, f)(s.to_numpy()))
+    s = pl.Series("a", [0.0, math.pi, None, math.nan])
+    expected = (
+        pl.Series("a", getattr(np, f)(s.to_numpy()))
+        .to_frame()
+        .with_columns(
+            pl.when(s.is_null())  # type: ignore[arg-type]
+            .then(None)
+            .otherwise(pl.col("a"))
+            .alias("a")
+        )
+        .to_series()
+    )
     result = getattr(s, f)()
     assert_series_equal(result, expected)
 
