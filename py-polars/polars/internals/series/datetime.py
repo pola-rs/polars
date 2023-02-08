@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import _to_python_datetime
+from polars.utils import _to_python_datetime, redirect
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
     from polars.polars import PySeries
 
 
+@redirect({"tz_localize": "cast_time_zone"})
 @expr_dispatch
 class DateTimeNameSpace:
     """Series.dt namespace."""
@@ -1017,35 +1017,6 @@ class DateTimeNameSpace:
         ]
 
         """
-
-    def tz_localize(self, tz: str) -> pli.Series:
-        """
-        Localize tz-naive Datetime Series to tz-aware Datetime Series.
-
-        This method takes a naive Datetime Series and makes this time zone aware.
-        It does not move the time to another time zone.
-
-        .. deprecated:: 0.16.3
-            `with_column` will be removed in favor of the more generic `with_columns`
-            in version 0.18.0.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-        """
-        warnings.warn(
-            "`tz_localize` has been deprecated in favor of `cast_time_zone`."
-            " This method will be removed in version 0.18.0",
-            category=DeprecationWarning,
-            stacklevel=2,
-        )
-        return (
-            pli.wrap_s(self._s)
-            .to_frame()
-            .select(pli.col(self._s.name()).dt.tz_localize(tz))
-            .to_series()
-        )
 
     def days(self) -> pli.Series:
         """
