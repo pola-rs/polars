@@ -266,96 +266,6 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
-    fn rename_impl_swapping(self, existing: Vec<String>, new: Vec<String>) -> Self {
-        assert_eq!(new.len(), existing.len());
-
-        let existing2 = existing.clone();
-        let new2 = new.clone();
-        let udf_schema = move |old_schema: &Schema| {
-            let mut new_schema = old_schema.clone();
-
-            // schema after renaming
-            for (old, new) in existing2.iter().zip(new2.iter()) {
-                let dtype = old_schema.try_get(old)?;
-                if new_schema.with_column(new.clone(), dtype.clone()).is_none() {
-                    new_schema.remove(old);
-                }
-            }
-            Ok(Arc::new(new_schema))
-        };
-
-        self.map(
-            move |mut df: DataFrame| {
-                let positions = existing
-                    .iter()
-                    .map(|old| df.try_find_idx_by_name(old))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-
-                for (pos, name) in positions.iter().zip(new.iter()) {
-                    df.get_columns_mut()[*pos].rename(name);
-                }
-                // recreate dataframe so we check duplicates
-                let columns = std::mem::take(df.get_columns_mut());
-                DataFrame::new(columns)
-            },
-            // Don't allow optimizations. Swapping names are opaque to the optimizer
-            AllowedOptimizations {
-                projection_pushdown: false,
-                predicate_pushdown: false,
-                streaming: true,
-                ..Default::default()
-            },
-            Some(Arc::new(udf_schema)),
-            Some("RENAME_SWAPPING"),
-        )
-    }
-
-    fn rename_impl(self, existing: Vec<String>, new: Vec<String>) -> Self {
-        let existing2 = existing.clone();
-        let new2 = new.clone();
-        let udf_schema = move |s: &Schema| {
-            let mut new_schema = s.clone();
-            for (old, new) in existing2.iter().zip(&new2) {
-                let _ = new_schema.rename(old, new.clone());
-            }
-            Ok(Arc::new(new_schema))
-        };
-
-        self.with_columns(
-            existing
-                .iter()
-                .zip(&new)
-                .map(|(old, new)| col(old).alias(new.as_ref()))
-                .collect::<Vec<_>>(),
-        )
-        .map(
-            move |mut df: DataFrame| {
-                let cols = df.get_columns_mut();
-                let mut removed_count = 0;
-                for (existing, new) in existing.iter().zip(new.iter()) {
-                    let idx_a = cols.iter().position(|s| s.name() == existing.as_str());
-                    let idx_b = cols.iter().position(|s| s.name() == new.as_str());
-
-                    match (idx_a, idx_b) {
-                        (Some(idx_a), Some(idx_b)) => {
-                            cols.swap(idx_a, idx_b);
-                        }
-                        // renamed columns are removed by predicate pushdown
-                        _ => {
-                            removed_count += 1;
-                            continue;
-                        }
-                    }
-                }
-                cols.truncate(cols.len() - (existing.len() - removed_count));
-                Ok(df)
-            },
-            Default::default(),
-            Some(Arc::new(udf_schema)),
-            Some("RENAME"),
-        )
-    }
-
     /// Rename columns in the DataFrame.
     pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
     where
@@ -364,38 +274,48 @@ impl LazyFrame {
         T: AsRef<str>,
         S: AsRef<str>,
     {
-        // We dispatch to 2 implementations.
-        // 1 is swapping eg. rename a -> b and b -> a
-        // 2 is non-swapping eg. rename a -> new_name
-        // the latter allows predicate pushdown.
-        let existing = existing
-            .into_iter()
-            .map(|a| a.as_ref().to_string())
-            .collect::<Vec<_>>();
-        let new = new
-            .into_iter()
-            .map(|a| a.as_ref().to_string())
-            .collect::<Vec<_>>();
+        let iter = existing.into_iter();
+        let cap = iter.size_hint().0;
+        let mut existing_vec = Vec::with_capacity(cap);
+        let mut new_vec = Vec::with_capacity(cap);
 
-        fn inner(lf: LazyFrame, existing: Vec<String>, new: Vec<String>) -> LazyFrame {
-            // remove mappings that map to themselves.
-            let (existing, new): (Vec<_>, Vec<_>) = existing
-                .into_iter()
-                .zip(new)
-                .flat_map(|(a, b)| if a == b { None } else { Some((a, b)) })
-                .unzip();
+        for (existing, new) in iter.zip(new.into_iter()) {
+            let existing = existing.as_ref();
+            let new = new.as_ref();
 
-            // todo! make delayed
-            let schema = &*lf.schema().unwrap();
-            // a column gets swapped
-            if new.iter().any(|name| schema.get(name).is_some()) {
-                lf.rename_impl_swapping(existing, new)
-            } else {
-                lf.rename_impl(existing, new)
+            if new != existing {
+                existing_vec.push(existing.to_string());
+                new_vec.push(new.to_string());
             }
         }
 
-        inner(self, existing, new)
+        // a column gets swapped
+        let schema = &*self.schema().unwrap();
+        let swapping = new_vec.iter().any(|name| schema.get(name).is_some());
+
+        let mut opt_not_found = None;
+        existing_vec.iter().for_each(|name| {
+            let invalid = schema.get(name).is_none();
+
+            if invalid && opt_not_found.is_none() {
+                opt_not_found = Some(name)
+            }
+        });
+
+        if let Some(name) = opt_not_found {
+            let lp = self
+                .clone()
+                .get_plan_builder()
+                .add_err(PolarsError::SchemaFieldNotFound(name.to_string().into()))
+                .build();
+            Self::from_logical_plan(lp, self.opt_state)
+        } else {
+            self.map_private(FunctionNode::Rename {
+                existing: existing_vec.into(),
+                new: new_vec.into(),
+                swapping,
+            })
+        }
     }
 
     /// Removes columns from the DataFrame.

@@ -1,3 +1,5 @@
+mod keys;
+mod rename;
 mod utils;
 
 use polars_core::datatypes::PlHashMap;
@@ -7,6 +9,7 @@ use utils::*;
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::{optimizer, Context};
+use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{aexprs_to_schema, check_input_node, has_aexpr};
 
 #[derive(Default)]
@@ -516,7 +519,25 @@ impl PredicatePushDown {
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd()
                 {
-                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+                    match function {
+                        FunctionNode::Rename {
+                            existing,
+                            new,
+                            ..
+                        } => {
+                            let local_predicates = process_rename(&mut acc_predicates,
+                             expr_arena,
+                                existing,
+                                new,
+                            )?;
+                            let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                            Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                        }, _ => {
+                            self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+                        }
+                    }
+
+
                 } else {
                     self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 }
