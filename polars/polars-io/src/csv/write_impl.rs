@@ -108,7 +108,7 @@ fn write_anyvalue(
                 },
                 _ => ndt.format(datetime_format),
             };
-            write!(f, "{}", formatted)
+            write!(f, "{formatted}")
         }
         #[cfg(feature = "dtype-time")]
         AnyValue::Time(v) => {
