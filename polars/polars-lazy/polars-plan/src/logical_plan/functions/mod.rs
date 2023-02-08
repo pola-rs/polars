@@ -59,7 +59,9 @@ pub enum FunctionNode {
     },
     Rename{
         existing: Arc<Vec<String>>,
-        new: Arc<Vec<String>>
+        new: Arc<Vec<String>>,
+        // A column name gets swapped with an existing column
+        swapping: bool
     }
 }
 
@@ -70,7 +72,7 @@ impl PartialEq for FunctionNode {
             (FastProjection { columns: l }, FastProjection { columns: r }) => l == r,
             (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
-            (Rename {existing: existing_l, new: new_l}, Rename {existing: existing_r, new: new_r}) => {
+            (Rename {existing: existing_l, new: new_l, ..}, Rename {existing: existing_r, new: new_r, ..}) => {
                 existing_l == existing_r && new_l == new_r
             }
             _ => false,
@@ -149,7 +151,7 @@ impl FunctionNode {
             }
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
-            Rename {existing, new} => {
+            Rename {existing, new, ..} => {
                 rename::rename_schema(input_schema, existing, new)
             }
         }
@@ -188,7 +190,7 @@ impl FunctionNode {
     fn update_pushdown_expression(&self, mut ae: Node, arena: &mut Arena<AExpr>) -> Node {
         use FunctionNode::*;
         match self {
-            Rename {existing, new} => {
+            Rename {existing, new, ..} => {
                 for (existing, new) in existing.iter().zip(new.iter()) {
                     ae = rename_matching_aexpr_leaf_names(ae, arena, existing, new)                    ;
                 }
@@ -233,7 +235,7 @@ impl FunctionNode {
                     Arc::get_mut(function).unwrap().call_udf(df)
                 }
             },
-            Rename {existing, new} => {
+            Rename {existing, new, ..} => {
                 rename::rename_impl(df, existing, new)
             }
         }

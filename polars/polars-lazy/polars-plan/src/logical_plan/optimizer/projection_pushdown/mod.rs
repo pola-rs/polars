@@ -6,6 +6,7 @@ mod melt;
 mod projection;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
+mod rename;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
@@ -20,6 +21,7 @@ use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::melt::process_melt;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
+use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::{
     aexpr_assign_renamed_leaf, aexpr_to_leaf_names, aexpr_to_leaf_nodes, check_input_node,
@@ -756,8 +758,27 @@ impl ProjectionPushDown {
             } => {
                 let lp = MapFunction {
                     input,
-                    function: function.clone(),
+                    function: function.clone()
                 };
+
+                match function {
+                    FunctionNode::Rename {existing, new, swapping} => {
+                        process_rename(
+                            &mut acc_projections,
+                            &mut projected_names,
+                            expr_arena,
+                            existing,
+                            new,
+                            *swapping
+                        )?;
+                        self.pushdown_and_assign(input, acc_projections, projected_names, projections_seen, lp_arena, expr_arena)?;
+                        return Ok(lp)
+                    },
+                    _ => {}
+                };
+
+                let MapFunction {ref function, ..} = lp else { unreachable!() };
+
                 if function.allow_projection_pd() && !acc_projections.is_empty() {
                     let original_acc_projection_len = acc_projections.len();
 
@@ -806,6 +827,7 @@ impl ProjectionPushDown {
                         expr_arena,
                     )
                 }
+
             }
             lp @ Union { .. } => {
                 self.has_joins_or_unions = true;

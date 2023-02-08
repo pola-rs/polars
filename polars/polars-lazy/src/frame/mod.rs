@@ -274,18 +274,31 @@ impl LazyFrame {
         T: AsRef<str>,
         S: AsRef<str>,
     {
-        let existing = existing
-            .into_iter()
-            .map(|a| a.as_ref().to_string())
-            .collect::<Vec<_>>();
-        let new = new
-            .into_iter()
-            .map(|a| a.as_ref().to_string())
-            .collect::<Vec<_>>();
+        let iter = existing.into_iter();
+        let cap = iter.size_hint().0;
+        let mut existing_vec = Vec::with_capacity(cap);
+        let mut new_vec = Vec::with_capacity(cap);
+
+        for (existing, new) in iter
+            .zip(new.into_iter()) {
+            let existing = existing.as_ref();
+            let new = new.as_ref();
+
+            if new != existing {
+                existing_vec.push(existing.to_string());
+                new_vec.push(new.to_string());
+            }
+
+        }
+
+        // a column gets swapped
+        let schema = &*self.schema().unwrap();
+        let swapping = new_vec.iter().any(|name| schema.get(name).is_some());
 
         self.map_private(FunctionNode::Rename {
-            existing: existing.into(),
-            new: new.into()
+            existing: existing_vec.into(),
+            new: new_vec.into(),
+            swapping
         })
     }
 

@@ -516,6 +516,8 @@ impl PredicatePushDown {
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd()
                 {
+                    
+
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 } else {
                     self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)

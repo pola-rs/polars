@@ -258,15 +258,17 @@ pub(crate) fn rename_aexpr_leaf_names(
     to_aexpr(new_expr, arena)
 }
 
+/// If the leaf names match `current`, the node will be replaced
+/// with a renamed expression.
 pub(crate) fn rename_matching_aexpr_leaf_names(
     node: Node,
     arena: &mut Arena<AExpr>,
     current: &str,
     new_name: &str,
 ) -> Node {
-    let mut leafs = aexpr_to_leaf_nodes_iter(node, arena);
+    let mut leaves = aexpr_to_leaf_nodes_iter(node, arena);
 
-    if leafs.any(|node| {
+    if leaves.any(|node| {
         match arena.get(node) {
             AExpr::Column(name) if &**name == current => {
                 true
