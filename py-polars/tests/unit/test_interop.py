@@ -84,6 +84,10 @@ def test_to_numpy() -> None:
     test_series_to_numpy("float64", [21.7, 21.8, 21], pl.Float64, np.float64)
 
     test_series_to_numpy("str", ["string1", "string2", "string3"], pl.Utf8, np.object_)
+    # without pyarrow
+    arr = pl.Series(["a", "b", None]).to_numpy(use_pyarrow=False)
+    assert arr.dtype == np.dtype("O")
+    assert list(arr) == ["a", "b", None]
 
 
 def test_from_pandas() -> None:

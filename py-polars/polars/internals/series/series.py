@@ -2729,17 +2729,16 @@ class Series:
         return SeriesView(array, self)
 
     def to_numpy(
-        self, *args: Any, zero_copy_only: bool = False, writable: bool = False
+        self,
+        *args: Any,
+        zero_copy_only: bool = False,
+        writable: bool = False,
+        use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
-
-        Notes
-        -----
-        If you are attempting to convert Utf8 to an array you'll need to install
-        `pyarrow`.
 
         Examples
         --------
@@ -2763,6 +2762,8 @@ class Series:
             the resulting array is not writable (Arrow data is immutable).
             By setting this to True, a copy of the array is made to ensure
             it is writable.
+        use_pyarrow
+            Use pyarrow for the conversion to numpy.
         kwargs
             kwargs will be sent to pyarrow.Array.to_numpy
 
@@ -2777,7 +2778,7 @@ class Series:
                 tp = f"datetime64[{self.time_unit}]"
             return arr.astype(tp)
 
-        if _PYARROW_AVAILABLE and not self.is_datelike():
+        if use_pyarrow and _PYARROW_AVAILABLE and not self.is_datelike():
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
@@ -2785,8 +2786,11 @@ class Series:
             if not self.has_validity():
                 if self.is_datelike():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
-                else:
+                elif self.is_numeric():
                     np_array = self.view(ignore_nulls=True)
+                else:
+                    np_array = self._s.to_numpy()
+
             elif self.is_datelike():
                 np_array = convert_to_date(self._s.to_numpy())
             else:
