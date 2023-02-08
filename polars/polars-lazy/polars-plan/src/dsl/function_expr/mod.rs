@@ -150,7 +150,11 @@ impl Display for FunctionExpr {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => "rolling_skew",
             ShiftAndFill { .. } => "shift_and_fill",
-            Nan(_) => "nan",
+            Nan(func) => match func {
+                NanFunction::IsNan => "is_nan",
+                NanFunction::IsNotNan => "is_not_nan",
+                NanFunction::DropNans => "drop_nans",
+            },
             #[cfg(feature = "round_series")]
             Clip { min, max } => match (min, max) {
                 (Some(_), Some(_)) => "clip",
