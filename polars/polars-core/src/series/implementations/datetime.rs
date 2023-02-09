@@ -161,7 +161,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
     fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::ComputeError(
-            "cannot do division on logical".into(),
+            "Cannot divide Series of dtype: 'Datetime'.".into(),
         ))
     }
     fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {

@@ -242,6 +242,8 @@ fn get_truediv_field(
     let out_type = match left_field.data_type() {
         Float32 => Float32,
         dt if dt.is_numeric() => Float64,
+        #[cfg(feature = "dtype-duration")]
+        Duration(_) => Float64,
         // we don't know what to do here, best return the dtype
         dt => dt.clone(),
     };
