@@ -302,10 +302,6 @@ impl<'a> LazyCsvReader<'a> {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     let mut builder = self.clone();
                     builder.path = path;
-                    if builder.skip_rows > 0 {
-                        builder.skip_rows = 0;
-                        builder.n_rows = None;
-                    }
                     // do no rechunk yet.
                     builder.rechunk = false;
                     builder.finish_impl()
@@ -314,16 +310,6 @@ impl<'a> LazyCsvReader<'a> {
             // set to false, as the csv parser has full thread utilization
             concat_impl(&lfs, self.rechunk, false, true)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
-                .map(|lf| {
-                    if self.skip_rows != 0 || self.n_rows.is_some() {
-                        lf.slice(
-                            self.skip_rows as i64,
-                            self.n_rows.unwrap_or(usize::MAX) as IdxSize,
-                        )
-                    } else {
-                        lf
-                    }
-                })
         } else {
             self.finish_impl()
         }
