@@ -16,7 +16,6 @@ from typing import (
     Iterable,
     Sequence,
     TypeVar,
-    cast,
     overload,
 )
 
@@ -45,10 +44,8 @@ else:
 
 # note: reversed views don't match as instances of MappingView
 if sys.version_info >= (3, 11):
-    _reverse_mapping_views = tuple(
-        type(reversed(cast(Reversible[Any], view)))
-        for view in ({}.keys(), {}.values(), {}.items())
-    )
+    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
+    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 
 if TYPE_CHECKING:
