@@ -441,16 +441,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Get min index
-    fn arg_min(&self) -> Option<usize> {
-        None
-    }
-
-    /// Get max index
-    fn arg_max(&self) -> Option<usize> {
-        None
-    }
-
     /// Get a mask of the null values.
     fn is_null(&self) -> BooleanChunked {
         invalid_operation_panic!(self)

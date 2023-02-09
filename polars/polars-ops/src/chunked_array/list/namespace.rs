@@ -13,6 +13,7 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
+use crate::series::ArgAgg;
 
 fn cast_rhs(
     other: &mut [Series],
