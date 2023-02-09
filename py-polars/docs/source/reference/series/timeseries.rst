@@ -40,7 +40,6 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.strftime
     Series.dt.timestamp
     Series.dt.truncate
-    Series.dt.tz_localize
     Series.dt.week
     Series.dt.weekday
     Series.dt.with_time_unit
