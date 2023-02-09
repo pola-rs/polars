@@ -446,8 +446,53 @@ def test_no_rechunk() -> None:
 def test_cat_to_pandas() -> None:
     df = pl.DataFrame({"a": ["best", "test"]})
     df = df.with_columns(pl.all().cast(pl.Categorical))
-    out = df.to_pandas()
-    assert "category" in str(out["a"].dtype)
+    pd_out = df.to_pandas()
+    assert "category" in str(pd_out["a"].dtype)
+
+    try:
+        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+        assert pd_pa_out["a"].dtype.type == pa.DictionaryType
+    except ModuleNotFoundError:
+        # Skip test if Pandas 1.5.x is not installed.
+        pass
+
+
+def test_to_pandas() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [6, None, 8], "c": ["a", "b", "c"], "d": [None, "e", "f"]}
+    )
+    df = df.with_columns(
+        [
+            pl.col("c").cast(pl.Categorical).alias("e"),
+            pl.col("d").cast(pl.Categorical).alias("f"),
+        ]
+    )
+    pd_out = df.to_pandas()
+    pd_out_dtypes_expected = [
+        np.int64,
+        np.float64,
+        np.object_,
+        np.object_,
+        pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
+        pd.CategoricalDtype(categories=["e", "f"], ordered=False),
+    ]
+    assert pd_out.dtypes.to_list() == pd_out_dtypes_expected
+
+    try:
+        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+        pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
+        pd_pa_dtypes_names_expected = [
+            "int64[pyarrow]",
+            "int64[pyarrow]",
+            "large_string[pyarrow]",
+            "large_string[pyarrow]",
+            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
+            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
+        ]
+        assert pd_pa_dtypes_names == pd_pa_dtypes_names_expected
+    except ModuleNotFoundError:
+        # Skip test if Pandas 1.5.x is not installed.
+        pass
 
 
 def test_numpy_to_lit() -> None:
