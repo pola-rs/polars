@@ -592,6 +592,13 @@ def test_date_range_lazy_with_expressions(
     }
 
 
+def test_date_range_invalid_time_zone() -> None:
+    with pytest.raises(ComputeError, match="Could not parse time zone foo"):
+        pl.date_range(
+            datetime(2001, 1, 1), datetime(2001, 1, 3), interval="1d", time_zone="foo"
+        )
+
+
 @pytest.mark.parametrize(
     ("one", "two"),
     [
