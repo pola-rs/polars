@@ -1873,21 +1873,40 @@ def test_ewm_mean() -> None:
     s = pl.Series([2, 5, 3])
 
     expected = pl.Series([2.0, 4.0, 3.4285714285714284])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True), expected)
+    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=True), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([2.0, 3.8, 3.421053])
-    assert_series_equal(s.ewm_mean(com=2.0, adjust=True), expected)
+    assert_series_equal(s.ewm_mean(com=2.0, adjust=True, ignore_nulls=True), expected)
+    assert_series_equal(s.ewm_mean(com=2.0, adjust=True, ignore_nulls=False), expected)
 
     expected = pl.Series([2.0, 3.5, 3.25])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=False), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
+    )
 
     s = pl.Series([2, 3, 5, 7, 4])
 
     expected = pl.Series([None, 2.666667, 4.0, 5.6, 4.774194])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=2), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([None, None, 4.0, 5.6, 4.774194])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=3), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=False), expected
+    )
 
     s = pl.Series([None, 1.0, 5.0, 7.0, None, 2.0, 5.0, 4])
 
@@ -1903,10 +1922,32 @@ def test_ewm_mean() -> None:
             4.174603174603175,
         ],
     )
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=1), expected)
+    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=True), expected)
+    expected = pl.Series(
+        [
+            None,
+            1.0,
+            3.666666666666667,
+            5.571428571428571,
+            5.571428571428571,
+            3.08695652173913,
+            4.2,
+            4.092436974789916,
+        ]
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.5, 4.25, 4.125])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=False, min_periods=1), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
+    )
+
+    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0])
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
+    )
 
 
 def test_ewm_mean_leading_nulls() -> None:
@@ -1934,21 +1975,31 @@ def test_ewm_mean_min_periods() -> None:
     series = pl.Series([1.0, None, 2.0, None, 3.0])
 
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
-    assert ewm_mean.to_list() == [
-        1.0,
-        1.0,
-        1.6666666666666665,
-        1.6666666666666665,
-        2.4285714285714284,
-    ]
+    assert_series_equal(
+        ewm_mean,
+        pl.Series(
+            [
+                1.0,
+                1.0,
+                1.6666666666666665,
+                1.6666666666666665,
+                2.4285714285714284,
+            ]
+        ),
+    )
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
-    assert ewm_mean.to_list() == [
-        None,
-        None,
-        1.6666666666666665,
-        1.6666666666666665,
-        2.4285714285714284,
-    ]
+    assert_series_equal(
+        ewm_mean,
+        pl.Series(
+            [
+                None,
+                None,
+                1.6666666666666665,
+                1.6666666666666665,
+                2.4285714285714284,
+            ]
+        ),
+    )
 
 
 def test_ewm_std_var() -> None:
