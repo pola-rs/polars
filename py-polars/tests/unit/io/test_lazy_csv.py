@@ -100,3 +100,26 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
 def test_scan_slice_streaming(foods_file_path: Path) -> None:
     df = pl.scan_csv(foods_file_path).head(5).collect(streaming=True)
     assert df.shape == (5, 4)
+
+
+def test_glob_skip_rows() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        for i in range(2):
+            file_path = Path(temp_dir) / f"test_{i}.csv"
+            with open(file_path, "w") as f:
+                f.write(
+                    f"""
+metadata goes here
+file number {i}
+foo,bar,baz
+1,2,3
+4,5,6
+7,8,9
+        """
+                )
+        file_path = Path(temp_dir) / "*.csv"
+        assert pl.read_csv(file_path, skip_rows=2).to_dict(False) == {
+            "foo": [1, 4, 7, 1, 4, 7],
+            "bar": [2, 5, 8, 2, 5, 8],
+            "baz": [3, 6, 9, 3, 6, 9],
+        }
