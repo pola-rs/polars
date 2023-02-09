@@ -121,8 +121,9 @@ where
     /// # Safety
     /// The lifetime will be bound to the lifetime of the slice.
     /// This will not be checked by the borrowchecker.
-    pub unsafe fn borrowed_from_slice(name: &str, values: &[T::Native]) -> Self {
-        let arr = Box::new(PrimitiveArray::borrowed_from_slice(values));
+    pub unsafe fn mmap_slice(name: &str, values: &[T::Native]) -> Self {
+        let arr = arrow::ffi::mmap::slice(values);
+        let arr = Box::new(arr);
         let mut out = ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
