@@ -223,11 +223,10 @@ impl DataFrame {
     pub fn new<S: IntoSeries>(columns: Vec<S>) -> PolarsResult<Self> {
         let mut first_len = None;
 
-        let shape_err = |s: &[Series]| {
+        let shape_err = |&first_name, &first_len, &name, &len| {
             let msg = format!(
-                "Could not create a new DataFrame from Series. \
-            The Series have different lengths. \
-            Got {s:?}",
+                "Could not create a new DataFrame from Series. The Series have different lengths: \
+                found length {first_len:?} for Series named {first_name:?} and length {len:?} for Series named {name:?}."
             );
             Err(PolarsError::ShapeMisMatch(msg.into()))
         };
@@ -240,15 +239,22 @@ impl DataFrame {
             let mut names = PlHashSet::with_capacity(series_cols.len());
 
             for s in &series_cols {
+                let name = s.name();
+
                 match first_len {
                     Some(len) => {
                         if s.len() != len {
-                            return shape_err(&series_cols);
+                            let first_series = &series_cols.first().unwrap();
+                            return shape_err(
+                                &first_series.name(),
+                                &first_series.len(),
+                                &name,
+                                &s.len(),
+                            );
                         }
                     }
                     None => first_len = Some(s.len()),
                 }
-                let name = s.name();
 
                 if names.contains(name) {
                     _duplicate_err(name)?
@@ -261,22 +267,29 @@ impl DataFrame {
             drop(names);
             series_cols
         } else {
-            let mut series_cols = Vec::with_capacity(columns.len());
+            let mut series_cols: Vec<Series> = Vec::with_capacity(columns.len());
             let mut names = PlHashSet::with_capacity(columns.len());
 
             // check for series length equality and convert into series in one pass
             for s in columns {
                 let series = s.into_series();
+                // we have aliasing borrows so we must allocate a string
+                let name = series.name().to_string();
+
                 match first_len {
                     Some(len) => {
                         if series.len() != len {
-                            return shape_err(&series_cols);
+                            let first_series = &series_cols.first().unwrap();
+                            return shape_err(
+                                &first_series.name(),
+                                &first_series.len(),
+                                &name.as_str(),
+                                &series.len(),
+                            );
                         }
                     }
                     None => first_len = Some(series.len()),
                 }
-                // we have aliasing borrows so we must allocate a string
-                let name = series.name().to_string();
 
                 if names.contains(&name) {
                     _duplicate_err(&name)?
