@@ -563,7 +563,7 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, tu))]
+    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, tu, tz))]
     #[allow(clippy::too_many_arguments)]
     pub fn str_parse_datetime(
         &self,
@@ -574,6 +574,7 @@ impl PyExpr {
         tz_aware: bool,
         utc: bool,
         tu: Option<Wrap<TimeUnit>>,
+        tz: Option<TimeZone>,
     ) -> PyExpr {
         let result_tu = match (&fmt, tu) {
             (_, Some(tu)) => tu.0,
@@ -596,7 +597,7 @@ impl PyExpr {
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(result_tu, None),
+                date_dtype: DataType::Datetime(result_tu, tz),
                 fmt,
                 strict,
                 exact,

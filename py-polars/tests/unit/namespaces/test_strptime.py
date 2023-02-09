@@ -89,7 +89,7 @@ def test_utc_with_tz_naive(fmt: str | None) -> None:
         ComputeError,
         match=(
             r"^Cannot use 'utc=True' with tz-naive data. "
-            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\).$"
+            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\)`.$"
         ),
     ):
         pl.Series(["2020-01-01 00:00:00"]).str.strptime(pl.Datetime, fmt, utc=True)

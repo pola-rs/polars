@@ -1719,6 +1719,40 @@ def test_cast_timezone_from_to(
     assert result == expected
 
 
+def test_strptime_with_tz() -> None:
+    result = (
+        pl.Series(["2020-01-01 03:00:00"])
+        .str.strptime(pl.Datetime("us", "Africa/Monrovia"))
+        .item()
+    )
+    assert result == datetime(2020, 1, 1, 3, tzinfo=ZoneInfo(key="Africa/Monrovia"))
+
+
+@pytest.mark.parametrize(
+    ("tu", "tz"),
+    [
+        ("us", "Europe/London"),
+        ("ms", None),
+        ("ns", "+01:00"),
+    ],
+)
+def test_strptime_empty(tu: TimeUnit, tz: str | None) -> None:
+    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(tu, tz))
+    assert ts.dtype == pl.Datetime(tu, tz)
+
+
+def test_strptime_with_invalid_tz() -> None:
+    with pytest.raises(ComputeError, match="Could not parse time zone foo"):
+        pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
+    with pytest.raises(
+        ComputeError,
+        match="Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime.",
+    ):
+        pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
+            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z", tz_aware=True
+        )
+
+
 def test_with_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):

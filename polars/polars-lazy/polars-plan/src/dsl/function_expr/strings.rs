@@ -332,7 +332,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
     #[cfg(feature = "timezones")]
     if !tz_aware && options.utc {
         return Err(PolarsError::ComputeError(
-            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC').".into(),
+            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC')`.".into(),
         ));
     }
     let ca = s.utf8()?;
@@ -346,7 +346,12 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                 ca.as_date_not_exact(options.fmt.as_deref())?.into_series()
             }
         }
-        DataType::Datetime(tu, _) => {
+        DataType::Datetime(tu, tz) => {
+            if tz.is_some() && tz_aware {
+                return Err(PolarsError::ComputeError(
+                    "Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime.".into(),
+                ));
+            }
             if options.exact {
                 ca.as_datetime(
                     options.fmt.as_deref(),
@@ -354,10 +359,11 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                     options.cache,
                     tz_aware,
                     options.utc,
+                    tz.as_ref(),
                 )?
                 .into_series()
             } else {
-                ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
+                ca.as_datetime_not_exact(options.fmt.as_deref(), *tu, tz.as_ref())?
                     .into_series()
             }
         }

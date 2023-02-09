@@ -108,9 +108,17 @@ class ExprStringNameSpace:
             return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
+            tz = datatype.tz  # type: ignore[union-attr]
             dtcol = pli.wrap_expr(
                 self._pyexpr.str_parse_datetime(
-                    fmt, strict, exact, cache, tz_aware, utc, tu
+                    fmt,
+                    strict,
+                    exact,
+                    cache,
+                    tz_aware,
+                    utc,
+                    tu,
+                    tz,
                 )
             )
             return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
