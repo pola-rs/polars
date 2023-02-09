@@ -239,6 +239,13 @@ impl PySeries {
     }
 
     #[staticmethod]
+    pub fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
+        let mut s = val.0.into_series();
+        s.rename(name);
+        PySeries::new(s)
+    }
+
+    #[staticmethod]
     pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {

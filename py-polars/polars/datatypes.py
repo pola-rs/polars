@@ -23,6 +23,7 @@ from typing import (
     overload,
 )
 
+from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
 try:
@@ -580,22 +581,19 @@ class _DataTypeMappings:
 
     @property
     @cache
-    def NUMPY_CHAR_CODE_TO_DTYPE(self) -> SchemaDict:
-        # Note: Windows behaves differently from other platforms as C long
-        # is only 32-bit on Windows, while it is 64-bit on other platforms.
-        # See: https://numpy.org/doc/stable/reference/arrays.scalars.html
+    def NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE(self) -> dict[tuple[str, int], PolarsDataType]:
         return {
-            "b": Int8,
-            "h": Int16,
-            "i": Int32,
-            ("q" if sys.platform == "win32" else "l"): Int64,
-            "B": UInt8,
-            "H": UInt16,
-            "I": UInt32,
-            ("Q" if sys.platform == "win32" else "L"): UInt64,
-            "f": Float32,
-            "d": Float64,
-            "?": Boolean,
+            # (np.dtype().kind, np.dtype().itemsize)
+            ("i", 1): Int8,
+            ("i", 2): Int16,
+            ("i", 4): Int32,
+            ("i", 8): Int64,
+            ("u", 1): UInt8,
+            ("u", 2): UInt16,
+            ("u", 4): UInt32,
+            ("u", 8): UInt64,
+            ("f", 4): Float32,
+            ("f", 8): Float64,
         }
 
     @property
@@ -773,14 +771,22 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
         ) from None
 
 
-def supported_numpy_char_code(dtype: str) -> bool:
-    return dtype in DataTypeMappings.NUMPY_CHAR_CODE_TO_DTYPE
+def supported_numpy_char_code(dtype_char: str) -> bool:
+    dtype = np.dtype(dtype_char)
+    return (
+        dtype.kind,
+        dtype.itemsize,
+    ) in DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE
 
 
-def numpy_char_code_to_dtype(dtype: str) -> PolarsDataType:
+def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
     """Convert a numpy character dtype to a Polars dtype."""
+    dtype = np.dtype(dtype_char)
+
     try:
-        return DataTypeMappings.NUMPY_CHAR_CODE_TO_DTYPE[dtype]
+        return DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE[
+            (dtype.kind, dtype.itemsize)
+        ]
     except KeyError:  # pragma: no cover
         raise ValueError(
             f"Cannot parse numpy data type {dtype} into Polars data type."

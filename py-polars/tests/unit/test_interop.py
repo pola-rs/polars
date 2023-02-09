@@ -28,6 +28,8 @@ def test_df_from_numpy() -> None:
             "float16": np.array([21.7, 21.8, 21], dtype=np.float16),
             "float32": np.array([21.7, 21.8, 21], dtype=np.float32),
             "float64": np.array([21.7, 21.8, 21], dtype=np.float64),
+            "intc": np.array([1, 3, 2], dtype=np.intc),
+            "uintc": np.array([1, 3, 2], dtype=np.uintc),
             "str": np.array(["string1", "string2", "string3"], dtype=np.str_),
             "bytes": np.array(
                 ["byte_string1", "byte_string2", "byte_string3"], dtype=np.bytes_
@@ -47,8 +49,10 @@ def test_df_from_numpy() -> None:
         pl.datatypes.Float32,
         pl.datatypes.Float32,
         pl.datatypes.Float64,
+        pl.datatypes.Int32,
+        pl.datatypes.UInt32,
         pl.datatypes.Utf8,
-        pl.datatypes.Object,
+        pl.datatypes.Binary,
     ]
     assert out == df.dtypes
 
