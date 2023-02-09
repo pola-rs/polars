@@ -14,7 +14,6 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.dependencies import zoneinfo
 from polars.internals.construction import iterable_to_pydf
 from polars.testing import (
     assert_frame_equal,
@@ -25,6 +24,13 @@ from polars.testing.parametric import columns
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy, UniqueKeepStrategy
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+else:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_version() -> None:
@@ -2759,7 +2765,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_us = "America/New_York"
     tz_europe = "Europe/Amsterdam"
 
-    dtm = datetime(2022, 10, 12, 12, 30, tzinfo=zoneinfo.ZoneInfo("UTC"))
+    dtm = datetime(2022, 10, 12, 12, 30, tzinfo=ZoneInfo("UTC"))
     for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
         for type_overrides in (
             {
@@ -2782,8 +2788,8 @@ def test_init_datetimes_with_timezone() -> None:
             assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
             assert df.rows() == [
                 (
-                    datetime(2022, 10, 12, 8, 30, tzinfo=zoneinfo.ZoneInfo(tz_us)),
-                    datetime(2022, 10, 12, 14, 30, tzinfo=zoneinfo.ZoneInfo(tz_europe)),
+                    datetime(2022, 10, 12, 8, 30, tzinfo=ZoneInfo(tz_us)),
+                    datetime(2022, 10, 12, 14, 30, tzinfo=ZoneInfo(tz_europe)),
                 )
             ]
 
@@ -2805,8 +2811,8 @@ def test_init_physical_with_timezone() -> None:
         assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
         assert df.rows() == [
             (
-                datetime(2022, 10, 12, 16, 30, tzinfo=zoneinfo.ZoneInfo(tz_uae)),
-                datetime(2022, 10, 12, 21, 30, tzinfo=zoneinfo.ZoneInfo(tz_asia)),
+                datetime(2022, 10, 12, 16, 30, tzinfo=ZoneInfo(tz_uae)),
+                datetime(2022, 10, 12, 21, 30, tzinfo=ZoneInfo(tz_asia)),
             )
         ]
 
