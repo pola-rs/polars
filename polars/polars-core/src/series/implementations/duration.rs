@@ -188,9 +188,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         ))
     }
     fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::ComputeError(
-            "cannot do division on logical".into(),
-        ))
+        self.0.deref().divide(_rhs.to_physical_repr().as_ref())
     }
     fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::ComputeError(

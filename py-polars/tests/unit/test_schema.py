@@ -341,3 +341,15 @@ def test_from_dicts_all_cols_6716() -> None:
     with pytest.raises(pl.PanicException, match="Cannot extract numeric value from"):
         pl.from_dicts(dicts, infer_schema_length=20)
     assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.Utf8]
+
+
+def test_duration_divison_schema() -> None:
+    df = pl.DataFrame({"a": [1]})
+    q = (
+        df.lazy()
+        .with_columns(pl.col("a").cast(pl.Duration))
+        .select(pl.col("a") / pl.col("a"))
+    )
+
+    assert q.schema == {"a": pl.Float64}
+    assert q.collect().to_dict(False) == {"a": [1.0]}

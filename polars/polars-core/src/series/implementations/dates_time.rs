@@ -161,12 +161,12 @@ macro_rules! impl_dyn_series {
             }
             fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
                 Err(PolarsError::ComputeError(
-                    "cannot do division on logical".into(),
+                    "Cannot divide Series of dtype: 'Date/Time'.".into(),
                 ))
             }
             fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
                 Err(PolarsError::ComputeError(
-                    "cannot do remainder operation on logical".into(),
+                    "Cannot do remainder operation on Series of dtype: 'Date/Time'.".into(),
                 ))
             }
             fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
