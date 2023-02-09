@@ -721,18 +721,6 @@ pub trait IsIn {
     }
 }
 
-/// Argmin/ Argmax
-pub trait ArgAgg {
-    /// Get the index of the minimal value
-    fn arg_min(&self) -> Option<usize> {
-        None
-    }
-    /// Get the index of the maximal value
-    fn arg_max(&self) -> Option<usize> {
-        None
-    }
-}
-
 /// Repeat the values `n` times.
 #[cfg(feature = "repeat_by")]
 pub trait RepeatBy {

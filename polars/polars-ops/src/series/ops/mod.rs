@@ -1,3 +1,4 @@
+mod arg_min_max;
 #[cfg(feature = "round_series")]
 mod floor_divide;
 #[cfg(feature = "is_first")]
@@ -10,6 +11,7 @@ mod rolling;
 mod search_sorted;
 mod various;
 
+pub use arg_min_max::ArgAgg;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;
 #[cfg(feature = "is_first")]

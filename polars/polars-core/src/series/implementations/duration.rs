@@ -403,14 +403,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.arg_unique()
     }
 
-    fn arg_min(&self) -> Option<usize> {
-        self.0.arg_min()
-    }
-
-    fn arg_max(&self) -> Option<usize> {
-        self.0.arg_max()
-    }
-
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
