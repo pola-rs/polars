@@ -37,6 +37,13 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
+# This code block is due to a typing issue with backports.zoneinfo package:
+# https://github.com/pganssle/zoneinfo/issues/125
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    from backports.zoneinfo._zoneinfo import ZoneInfo
+
 if sys.version_info >= (3, 10):
     from typing import ParamSpec, TypeGuard
 else:
@@ -46,7 +53,6 @@ else:
 if sys.version_info >= (3, 11):
     _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
-
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import SizeUnit, TimeUnit
@@ -286,7 +292,7 @@ def _to_python_datetime(
                     "Install polars[timezone] to handle datetimes with timezones."
                 )
 
-            utc = zoneinfo.ZoneInfo("UTC")
+            utc = ZoneInfo("UTC")
             if tu == "ns":
                 # nanoseconds to seconds
                 dt = datetime.fromtimestamp(0, tz=utc) + timedelta(
@@ -326,7 +332,7 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
 def _localize(dt: datetime, tz: str) -> datetime:
     # zone info installation should already be checked
     try:
-        tzinfo = zoneinfo.ZoneInfo(tz)
+        tzinfo = ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
         tzinfo = _parse_fixed_tz_offset(tz)  # type: ignore[assignment]
