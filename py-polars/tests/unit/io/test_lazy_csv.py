@@ -103,7 +103,6 @@ def test_scan_slice_streaming(foods_file_path: Path) -> None:
 
 
 def test_glob_skip_rows() -> None:
-
     with tempfile.TemporaryDirectory() as temp_dir:
         for i in range(2):
             file_path = Path(temp_dir) / f"test_{i}.csv"
