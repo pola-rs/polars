@@ -46,16 +46,16 @@ test: venv build  ## Run fast unittests
 
 .PHONY: doctest
 doctest: venv build  ## Run doctests
-	$(VENV_BIN)/python tests/docs/run_doc_examples.py
+	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: test-all
 test-all: venv build  ## Run all tests
 	$(VENV_BIN)/pytest -n auto -m "slow or not slow"
-	$(VENV_BIN)/python tests/docs/run_doc_examples.py
+	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: coverage
 coverage: venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto -m "slow or not slow"
+	$(VENV_BIN)/pytest --cov -n auto -m "not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts

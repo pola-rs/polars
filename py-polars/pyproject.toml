@@ -95,31 +95,6 @@ module = ["polars.*"]
 # thin wrapper around the PyO3 api to start with.
 warn_return_any = false
 
-[tool.pytest.ini_options]
-addopts = [
-  "--import-mode=importlib",
-  "-m not slow and not hypothesis", # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-]
-markers = [
-  "slow: Tests with a longer than average runtime.",
-]
-
-[tool.coverage.run]
-source = ["polars"]
-branch = true
-
-[tool.coverage.report]
-fail_under = 85
-skip_covered = true
-show_missing = true
-exclude_lines = [
-  "pragma: no cover",
-  "@overload",
-  "except ImportError",
-  "if TYPE_CHECKING:",
-  "from typing_extensions import ",
-]
-
 [tool.ruff]
 target-version = "py37"
 line-length = 88
@@ -178,7 +153,31 @@ ban-relative-imports = "all"
 
 [tool.ruff.per-file-ignores]
 "polars/datatypes.py" = ["B019"]
-"tests/*/*.py" = ["D100", "D103"]
-"tests/docs/run_doc_examples.py" = ["D101", "D102", "D103"]
-"tests/parametric/__init__.py" = ["D104"]
-"tests/slow/__init__.py" = ["D104"]
+"tests/**/*.py" = ["D100", "D103"]
+
+[tool.pytest.ini_options]
+addopts = [
+  "--import-mode=importlib",
+  # Default to running fast tests only. To run ALL tests, run: pytest -m ""
+  "-m not slow and not hypothesis and not benchmark",
+]
+markers = [
+  "slow: Tests with a longer than average runtime.",
+  "benchmark: Tests that should be run on a Polars release build.",
+]
+
+[tool.coverage.run]
+source = ["polars"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+skip_covered = true
+show_missing = true
+exclude_lines = [
+  "pragma: no cover",
+  "@overload",
+  "except ImportError",
+  "if TYPE_CHECKING:",
+  "from typing_extensions import ",
+]
