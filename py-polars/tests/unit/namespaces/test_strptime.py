@@ -12,9 +12,11 @@ from polars.internals.type_aliases import TimeUnit
 from polars.testing import assert_series_equal
 
 if sys.version_info >= (3, 9):
-    import zoneinfo
+    from zoneinfo import ZoneInfo
 else:
-    from backports import zoneinfo
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_str_strptime() -> None:
@@ -327,12 +329,8 @@ def test_tz_aware_strptime(ts: str, fmt: str, expected: datetime) -> None:
 def test_crossing_dst(fmt: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     result = pl.Series(ts).str.strptime(pl.Datetime, fmt, utc=True)
-    assert result[0] == datetime(
-        2021, 3, 27, 22, 59, 59, tzinfo=zoneinfo.ZoneInfo(key="UTC")
-    )
-    assert result[1] == datetime(
-        2021, 3, 28, 21, 59, 59, tzinfo=zoneinfo.ZoneInfo(key="UTC")
-    )
+    assert result[0] == datetime(2021, 3, 27, 22, 59, 59, tzinfo=ZoneInfo(key="UTC"))
+    assert result[1] == datetime(2021, 3, 28, 21, 59, 59, tzinfo=ZoneInfo(key="UTC"))
 
 
 @pytest.mark.parametrize("fmt", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
