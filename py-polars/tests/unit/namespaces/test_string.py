@@ -375,12 +375,12 @@ def test_replace_all() -> None:
             df["text"].str.replace_all("*", "")
 
     assert (
-        pl.Series([r"(.)(\?)(\?)"]).str.replace_all("\?", "$0", literal=True)[0]
+        pl.Series([r"(.)(\?)(\?)"]).str.replace_all("\\?", "$0", literal=True)[0]
         == "(.)($0)($0)"
     )
     assert (
-        pl.Series([r"(.)(\?)(\?)"]).str.replace_all("\?", "$0", literal=False)[0]
-        == "(.)(\?)(\?)"
+        pl.Series([r"(.)(\?)(\?)"]).str.replace_all("\\?", "$0", literal=False)[0]
+        == "(.)(\\?)(\\?)"
     )
 
 

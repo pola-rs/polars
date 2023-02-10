@@ -469,3 +469,39 @@ def test_ewm_with_multiple_chunks() -> None:
         ]
     )
     assert ewm_std.null_count().sum(axis=1)[0] == 4
+
+
+def test_map_dict() -> None:
+    country_code_dict = {
+        "CA": "Canada",
+        "DE": "Germany",
+        "FR": "France",
+        None: "Not specified",
+    }
+    df = pl.DataFrame(
+        {
+            "country_code": ["FR", None, "ES", "DE"],
+        }
+    ).with_row_count()
+
+    assert (
+        df.with_columns(
+            pl.col("country_code")
+            .map_dict(country_code_dict, default=pl.col("country_code"))
+            .alias("remapped")
+        )
+    ).to_dict(False) == {
+        "row_nr": [0, 1, 2, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", "ES", "Germany"],
+    }
+
+    assert (
+        df.with_columns(
+            pl.col("country_code").map_dict(country_code_dict).alias("remapped")
+        )
+    ).to_dict(False) == {
+        "row_nr": [0, 1, 2, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", None, "Germany"],
+    }
