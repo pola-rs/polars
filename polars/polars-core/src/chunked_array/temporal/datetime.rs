@@ -386,20 +386,6 @@ impl DatetimeChunked {
             )),
         }
     }
-    #[deprecated(note = "use convert_time_zone")]
-    #[cfg(feature = "timezones")]
-    pub fn with_time_zone(mut self, tz: TimeZone) -> PolarsResult<Self> {
-        match self.time_zone() {
-            Some(_) => {
-                self.set_time_zone(tz)?;
-                Ok(self)
-            }
-            _ => Err(PolarsError::ComputeError(
-                "Cannot call with_time_zone on tz-naive. Set a time zone first with replace_time_zone"
-                    .into(),
-            )),
-        }
-    }
 }
 
 #[cfg(test)]

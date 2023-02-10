@@ -241,14 +241,6 @@ impl DateLikeNameSpace {
                 tz,
             )))
     }
-    #[deprecated(note = "use replace_time_zone")]
-    #[cfg(feature = "timezones")]
-    pub fn cast_time_zone(self, tz: Option<TimeZone>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
-                tz,
-            )))
-    }
 
     pub fn combine(self, time: Expr, tu: TimeUnit) -> Expr {
         self.0.map_many_private(
