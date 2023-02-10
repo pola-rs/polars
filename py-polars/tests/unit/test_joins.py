@@ -768,3 +768,18 @@ def test_semi_join_projection_pushdown_6455() -> None:
         "id": [1, 2],
         "value": [2, 4],
     }
+
+
+def test_update() -> None:
+    df = pl.DataFrame({"A": [1, 2, 3, 4], "B": [400, 500, 600, 700]})
+
+    new_df = pl.DataFrame({"B": [4, None, 6], "C": [7, 8, 9]})
+
+    assert df.update(new_df).to_dict(False) == {
+        "A": [1, 2, 3, 4],
+        "B": [4, 500, 6, 700],
+    }
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df2 = pl.DataFrame({"a": [2, 3], "b": [8, 9]})
+
+    assert df1.update(df2, on="a").to_dict(False) == {"a": [1, 2, 3], "b": [4, 8, 9]}

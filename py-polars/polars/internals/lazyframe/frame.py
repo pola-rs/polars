@@ -3982,3 +3982,120 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
+
+    def update(
+        self, other: LazyFrame, on: None | str | Sequence[str] = None, how: str = "left"
+    ) -> LazyFrame:
+        """
+        Update the values in this `LazyFrame` with the non-null values in `other`.
+
+        Notes
+        -----
+        This is syntactic sugar for a left/inner join + coalesce
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        Parameters
+        ----------
+        other
+            LazyFrame that will be used to update the values
+        on
+            Column names that will be joined on.
+            If none given the row count is used.
+        how : {'left', 'inner'}
+            'Left' will keep the left table rows as is.
+            'Inner' will remove rows that are not found in other
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1, 2, 3, 4],
+        ...         "B": [400, 500, 600, 700],
+        ...     }
+        ... )
+        >>> df
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 400 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 600 │
+        │ 4   ┆ 700 │
+        └─────┴─────┘
+        >>> new_df = pl.DataFrame(
+        ...     {
+        ...         "B": [4, None, 6],
+        ...         "C": [7, 8, 9],
+        ...     }
+        ... )
+        >>> new_df
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ B    ┆ C   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 4    ┆ 7   │
+        │ null ┆ 8   │
+        │ 6    ┆ 9   │
+        └──────┴─────┘
+        >>> df.update(new_df)
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 6   │
+        │ 4   ┆ 700 │
+        └─────┴─────┘
+
+        """
+        row_count_used = False
+        if on is None:
+            row_count_used = True
+            row_count_name = "__POLARS_ROW_COUNT"
+            self = self.with_row_count(row_count_name)
+            other = other.with_row_count(row_count_name)
+            on = row_count_name
+
+        if isinstance(on, str):
+            on = [on]
+
+        union_names = set(self.columns) & set(other.columns)
+
+        for name in on:
+            if name not in union_names:
+                raise ValueError(f"Join column {name} not found.")
+
+        right_added_names = union_names - set(on)
+
+        # no need to join if only join columns are in other
+        if len(right_added_names) == 0:
+            return self
+        tmp_name = "__POLARS_RIGHT"
+
+        result = (
+            self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)  # type: ignore[arg-type]
+            .with_columns(
+                [
+                    pli.coalesce([column_name + tmp_name, pli.col(column_name)]).alias(
+                        column_name
+                    )
+                    for column_name in right_added_names
+                ]
+            )
+            .drop([name + tmp_name for name in right_added_names])
+        )
+        if row_count_used:
+            result = result.drop(row_count_name)
+        return result

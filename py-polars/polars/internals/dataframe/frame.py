@@ -7331,6 +7331,85 @@ class DataFrame:
             ._df
         )
 
+    def update(
+        self, other: DataFrame, on: None | str | Sequence[str] = None, how: str = "left"
+    ) -> DataFrame:
+        """
+        Update the values in this `DataFrame` with the non-null values in `other`.
+
+        Notes
+        -----
+        This is syntactic sugar for a left/inner join + coalesce
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        Parameters
+        ----------
+        other
+            DataFrame that will be used to update the values
+        on
+            Column names that will be joined on.
+            If none given the row count is used.
+        how : {'left', 'inner'}
+            'Left' will keep the left table rows as is.
+            'Inner' will remove rows that are not found in other
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1, 2, 3, 4],
+        ...         "B": [400, 500, 600, 700],
+        ...     }
+        ... )
+        >>> df
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 400 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 600 │
+        │ 4   ┆ 700 │
+        └─────┴─────┘
+        >>> new_df = pl.DataFrame(
+        ...     {
+        ...         "B": [4, None, 6],
+        ...         "C": [7, 8, 9],
+        ...     }
+        ... )
+        >>> new_df
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ B    ┆ C   │
+        │ ---  ┆ --- │
+        │ i64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 4    ┆ 7   │
+        │ null ┆ 8   │
+        │ 6    ┆ 9   │
+        └──────┴─────┘
+        >>> df.update(new_df)
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 6   │
+        │ 4   ┆ 700 │
+        └─────┴─────┘
+
+        """
+        return self.lazy().update(other.lazy(), on, how).collect(no_optimization=True)
+
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> pli.Series:
     # if not a series create singleton series such that it will broadcast
