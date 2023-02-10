@@ -725,24 +725,31 @@ def test_multiple_columns_drop() -> None:
 
 
 def test_concat() -> None:
-    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    df1 = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    df2 = pl.concat([df1, df1])
 
-    df2 = pl.concat([df, df])
     assert df2.shape == (6, 3)
     assert df2.n_chunks() == 1  # the default is to rechunk
+    assert df2.rows() == df1.rows() + df1.rows()
+    assert pl.concat([df1, df1], rechunk=False).n_chunks() == 2
 
-    assert pl.concat([df, df], rechunk=False).n_chunks() == 2
+    # concat from generator of frames
+    df3 = pl.concat(items=(df1 for _ in range(2)))
+    assert_frame_equal(df2, df3)
 
-    # check if a remains unchanged
-    a = pl.from_records(((1, 2), (1, 2)))
-    _ = pl.concat([a, a, a])
-    assert a.shape == (2, 2)
+    # check that df4 is not modified following concat of itself
+    df4 = pl.from_records(((1, 2), (1, 2)))
+    _ = pl.concat([df4, df4, df4])
 
+    assert df4.shape == (2, 2)
+    assert df4.rows() == [(1, 1), (2, 2)]
+
+    # misc error conditions
     with pytest.raises(ValueError):
         _ = pl.concat([])
 
     with pytest.raises(ValueError):
-        pl.concat([df, df], how="rubbish")  # type: ignore[call-overload]
+        pl.concat([df1, df1], how="rubbish")  # type: ignore[call-overload]
 
 
 def test_arg_where() -> None:
