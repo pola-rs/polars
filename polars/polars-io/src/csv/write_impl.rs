@@ -1,9 +1,9 @@
 use std::io::Write;
 
 use arrow::temporal_conversions;
-#[cfg(feature = "dtype-datetime")]
+#[cfg(feature = "timezones")]
 use chrono::TimeZone;
-#[cfg(feature = "dtype-datetime")]
+#[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
@@ -99,6 +99,7 @@ fn write_anyvalue(
                 TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
             };
             let formatted = match tz {
+                #[cfg(feature = "timezones")]
                 Some(tz) => match tz.parse::<Tz>() {
                     Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
                     Err(_) => match temporal_conversions::parse_offset(tz) {
@@ -106,6 +107,10 @@ fn write_anyvalue(
                         Err(_) => unreachable!(),
                     },
                 },
+                #[cfg(not(feature = "timezones"))]
+                Some(_) => {
+                    panic!("activate 'timezones' feature");
+                }
                 _ => ndt.format(datetime_format),
             };
             write!(f, "{formatted}")

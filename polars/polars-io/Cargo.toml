@@ -28,8 +28,11 @@ dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-core/temporal",
   "polars-time/dtype-datetime",
-  "chrono-tz",
   "chrono",
+]
+timezones = [
+  "chrono-tz",
+  "dtype-datetime",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]
