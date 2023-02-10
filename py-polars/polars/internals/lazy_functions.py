@@ -1127,7 +1127,7 @@ def lit(
         tu = "us"
         e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
         if value.tzinfo is not None:
-            return e.dt.cast_time_zone(str(value.tzinfo))
+            return e.dt.replace_time_zone(str(value.tzinfo))
         else:
             return e
 

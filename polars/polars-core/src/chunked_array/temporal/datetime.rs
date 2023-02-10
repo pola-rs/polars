@@ -13,7 +13,7 @@ use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
-use polars_arrow::kernels::cast_timezone;
+use polars_arrow::kernels::replace_timezone;
 
 use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
@@ -128,27 +128,27 @@ impl DatetimeChunked {
         let mut ca = self.clone();
         #[cfg(feature = "timezones")]
         if self.time_zone().is_some() {
-            ca = self.cast_time_zone(Some("UTC"))?
+            ca = self.replace_time_zone(Some("UTC"))?
         }
         let out = func(ca)?;
 
         #[cfg(feature = "timezones")]
         if let Some(tz) = self.time_zone() {
             return out
-                .with_time_zone("UTC".to_string())?
-                .cast_time_zone(Some(tz));
+                .convert_time_zone("UTC".to_string())?
+                .replace_time_zone(Some(tz));
         }
         Ok(out)
     }
 
     #[cfg(feature = "timezones")]
-    pub fn cast_time_zone(&self, tz: Option<&str>) -> PolarsResult<DatetimeChunked> {
+    pub fn replace_time_zone(&self, tz: Option<&str>) -> PolarsResult<DatetimeChunked> {
         match (self.time_zone(), tz) {
             (Some(from), Some(to)) => {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(cast_timezone(
+                        Ok(replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             to.to_string(),
@@ -163,7 +163,7 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(cast_timezone(
+                        Ok(replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             "UTC".to_string(),
@@ -178,7 +178,7 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(cast_timezone(
+                        Ok(replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             to.to_string(),
@@ -322,14 +322,14 @@ impl DatetimeChunked {
         Ok(())
     }
     #[cfg(feature = "timezones")]
-    pub fn with_time_zone(mut self, tz: TimeZone) -> PolarsResult<Self> {
+    pub fn convert_time_zone(mut self, tz: TimeZone) -> PolarsResult<Self> {
         match self.time_zone() {
             Some(_) => {
                 self.set_time_zone(tz)?;
                 Ok(self)
             }
             _ => Err(PolarsError::ComputeError(
-                "Cannot call with_time_zone on tz-naive. Set a time zone first with cast_time_zone"
+                "Cannot call convert_time_zone on tz-naive. Set a time zone first with replace_time_zone"
                     .into(),
             )),
         }

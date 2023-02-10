@@ -11,7 +11,13 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
 
 
-@redirect({"tz_localize": "cast_time_zone"})
+@redirect(
+    {
+        "tz_localize": "replace_time_zone",
+        "with_time_zone": "convert_time_zone",
+        "cast_time_zone": "replace_time_zone",
+    }
+)
 class ExprDateTimeNameSpace:
     """Namespace for datetime related expressions."""
 
@@ -1154,7 +1160,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    def with_time_zone(self, tz: str) -> pli.Expr:
+    def convert_time_zone(self, tz: str) -> pli.Expr:
         """
         Convert to given time zone for a Series of type Datetime.
 
@@ -1180,7 +1186,7 @@ class ExprDateTimeNameSpace:
         ...     [
         ...         pl.col("date"),
         ...         pl.col("date")
-        ...         .dt.with_time_zone(tz="Europe/London")
+        ...         .dt.convert_time_zone(tz="Europe/London")
         ...         .alias("London"),
         ...     ]
         ... )
@@ -1195,14 +1201,14 @@ class ExprDateTimeNameSpace:
         │ 2020-05-01 00:00:00 UTC ┆ 2020-05-01 01:00:00 BST     │
         └─────────────────────────┴─────────────────────────────┘
         """
-        return pli.wrap_expr(self._pyexpr.dt_with_time_zone(tz))
+        return pli.wrap_expr(self._pyexpr.dt_convert_time_zone(tz))
 
-    def cast_time_zone(self, tz: str | None) -> pli.Expr:
+    def replace_time_zone(self, tz: str | None) -> pli.Expr:
         """
-        Cast time zone for a Series of type Datetime.
+        Replace time zone for a Series of type Datetime.
 
-        Different from ``with_time_zone``, this will also modify
-        the underlying timestamp,
+        Different from ``convert_time_zone``, this will also modify
+        the underlying timestamp and will ignore the original time zone.
 
         Parameters
         ----------
@@ -1219,14 +1225,14 @@ class ExprDateTimeNameSpace:
         ...             datetime(2020, 7, 1),
         ...             "1mo",
         ...             time_zone="UTC",
-        ...         ).dt.with_time_zone(tz="Europe/London"),
+        ...         ).dt.convert_time_zone(tz="Europe/London"),
         ...     }
         ... )
         >>> df.select(
         ...     [
         ...         pl.col("london_timezone"),
         ...         pl.col("london_timezone")
-        ...         .dt.cast_time_zone(tz="Europe/Amsterdam")
+        ...         .dt.replace_time_zone(tz="Europe/Amsterdam")
         ...         .alias("London_to_Amsterdam"),
         ...     ]
         ... )
@@ -1244,7 +1250,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────────┴────────────────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.dt_cast_time_zone(tz))
+        return pli.wrap_expr(self._pyexpr.dt_replace_time_zone(tz))
 
     def days(self) -> pli.Expr:
         """

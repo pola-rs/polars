@@ -12,7 +12,13 @@ if TYPE_CHECKING:
     from polars.polars import PySeries
 
 
-@redirect({"tz_localize": "cast_time_zone"})
+@redirect(
+    {
+        "tz_localize": "replace_time_zone",
+        "with_time_zone": "convert_time_zone",
+        "cast_time_zone": "replace_time_zone",
+    }
+)
 @expr_dispatch
 class DateTimeNameSpace:
     """Series.dt namespace."""
@@ -911,7 +917,7 @@ class DateTimeNameSpace:
 
         """
 
-    def with_time_zone(self, tz: str) -> pli.Series:
+    def convert_time_zone(self, tz: str) -> pli.Series:
         """
         Convert to given time zone for a Series of type Datetime.
 
@@ -934,7 +940,7 @@ class DateTimeNameSpace:
                 2020-04-01 00:00:00 UTC
                 2020-05-01 00:00:00 UTC
         ]
-        >>> date = date.dt.with_time_zone(tz="Europe/London").alias("London")
+        >>> date = date.dt.convert_time_zone(tz="Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
@@ -945,12 +951,12 @@ class DateTimeNameSpace:
         ]
         """
 
-    def cast_time_zone(self, tz: str | None) -> pli.Series:
+    def replace_time_zone(self, tz: str | None) -> pli.Series:
         """
-        Cast time zone for a Series of type Datetime.
+        Replace time zone for a Series of type Datetime.
 
-        Different from ``with_time_zone``, this will also modify
-        the underlying timestamp.
+        Different from ``convert_time_zone``, this will also modify
+        the underlying timestamp and will ignore the original time zone.
 
         Parameters
         ----------
@@ -979,7 +985,7 @@ class DateTimeNameSpace:
                 1585699200
                 1588291200
         ]
-        >>> date = date.dt.with_time_zone(tz="Europe/London").alias("London")
+        >>> date = date.dt.convert_time_zone(tz="Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
@@ -988,7 +994,7 @@ class DateTimeNameSpace:
             2020-04-01 01:00:00 BST
             2020-05-01 01:00:00 BST
         ]
-        >>> # Timestamps have not changed after with_time_zone
+        >>> # Timestamps have not changed after convert_time_zone
         >>> date.dt.epoch(tu="s")
         shape: (3,)
         Series: 'London' [i64]
@@ -997,7 +1003,7 @@ class DateTimeNameSpace:
                 1585699200
                 1588291200
         ]
-        >>> date = date.dt.cast_time_zone(tz="America/New_York").alias("NYC")
+        >>> date = date.dt.replace_time_zone(tz="America/New_York").alias("NYC")
         >>> date
         shape: (3,)
         Series: 'NYC' [datetime[μs, America/New_York]]
@@ -1006,7 +1012,7 @@ class DateTimeNameSpace:
             2020-04-01 01:00:00 EDT
             2020-05-01 01:00:00 EDT
         ]
-        >>> # Timestamps have changed after cast_time_zone
+        >>> # Timestamps have changed after replace_time_zone
         >>> date.dt.epoch(tu="s")
         shape: (3,)
         Series: 'NYC' [i64]

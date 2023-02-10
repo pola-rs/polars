@@ -162,7 +162,7 @@ fn upsample_single_impl(
                             *tu,
                             Some(&"UTC".to_string()),
                         )?
-                        .with_time_zone(tz.clone())?
+                        .convert_time_zone(tz.clone())?
                         .into_series()
                         .into_frame(),
                         _ => date_range_impl(

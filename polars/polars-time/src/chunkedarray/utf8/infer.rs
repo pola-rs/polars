@@ -259,7 +259,7 @@ pub(crate) fn to_datetime(
                 ca.set_time_unit(tu);
                 match tz {
                     #[cfg(feature = "timezones")]
-                    Some(tz) => Ok(ca.cast_time_zone(Some(tz))?),
+                    Some(tz) => Ok(ca.replace_time_zone(Some(tz))?),
                     _ => Ok(ca),
                 }
             })?

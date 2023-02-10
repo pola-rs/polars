@@ -332,7 +332,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
     #[cfg(feature = "timezones")]
     if !tz_aware && options.utc {
         return Err(PolarsError::ComputeError(
-            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.with_time_zone('UTC')`.".into(),
+            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.convert_time_zone('UTC')`.".into(),
         ));
     }
     let ca = s.utf8()?;

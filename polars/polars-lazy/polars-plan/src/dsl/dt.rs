@@ -67,7 +67,7 @@ impl DateLikeNameSpace {
 
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
     #[cfg(feature = "timezones")]
-    pub fn with_time_zone(self, tz: TimeZone) -> Expr {
+    pub fn convert_time_zone(self, tz: TimeZone) -> Expr {
         self.0.map(
             move |s| match s.dtype() {
                 DataType::Datetime(_, Some(_)) => {
@@ -76,7 +76,7 @@ impl DateLikeNameSpace {
                     Ok(Some(ca.into_series()))
                 }
                 _ => Err(PolarsError::ComputeError(
-                    "Cannot call with_time_zone on tz-naive. Set a time zone first with cast_time_zone".into()
+                    "Cannot call convert_time_zone on tz-naive. Set a time zone first with replace_time_zone".into()
                 )),
             },
             GetOutput::same_type(),
@@ -88,7 +88,7 @@ impl DateLikeNameSpace {
     // This method takes a naive Datetime Series and makes this time zone aware.
     // It does not move the time to another time zone.
     #[cfg(feature = "timezones")]
-    #[deprecated(note = "use cast_time_zone")]
+    #[deprecated(note = "use replace_time_zone")]
     pub fn tz_localize(self, tz: TimeZone) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TzLocalize(tz)))
@@ -218,7 +218,7 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn cast_time_zone(self, tz: Option<TimeZone>) -> Expr {
+    pub fn replace_time_zone(self, tz: Option<TimeZone>) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
                 tz,

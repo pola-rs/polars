@@ -89,7 +89,7 @@ def test_utc_with_tz_naive(fmt: str | None) -> None:
         ComputeError,
         match=(
             r"^Cannot use 'utc=True' with tz-naive data. "
-            r"Parse the data as naive, and then use `.dt.with_time_zone\('UTC'\)`.$"
+            r"Parse the data as naive, and then use `.dt.convert_time_zone\('UTC'\)`.$"
         ),
     ):
         pl.Series(["2020-01-01 00:00:00"]).str.strptime(pl.Datetime, fmt, utc=True)
@@ -291,12 +291,12 @@ def test_invalid_date_parsing_4898() -> None:
     ).to_list() == [date(2022, 9, 18), None]
 
 
-def test_cast_timezone_invalid_timezone() -> None:
+def test_replace_timezone_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.strptime(
         pl.Datetime, "%Y-%m-%d %H:%M:%S%z"
     )
     with pytest.raises(ComputeError, match=r"Could not parse time zone foo"):
-        ts.dt.cast_time_zone("foo")
+        ts.dt.replace_time_zone("foo")
 
 
 @pytest.mark.parametrize(
