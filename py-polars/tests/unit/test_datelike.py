@@ -1687,7 +1687,7 @@ def test_iso_year() -> None:
     assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
 
 
-def test_cast_timezone() -> None:
+def test_replace_timezone() -> None:
     ny = ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
         pl.col("a").dt.replace_time_zone("America/New_York").alias("b")
@@ -1707,7 +1707,7 @@ def test_cast_timezone() -> None:
 )
 @pytest.mark.parametrize("from_tz", ["Asia/Seoul", "-01:00", None])
 @pytest.mark.parametrize("tu", ["ms", "us", "ns"])
-def test_cast_timezone_from_to(
+def test_replace_timezone_from_to(
     from_tz: str,
     to_tz: str,
     tzinfo: timezone | ZoneInfo,

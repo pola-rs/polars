@@ -13,7 +13,7 @@ use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
-use polars_arrow::kernels::cast_timezone;
+use polars_arrow::kernels::replace_timezone;
 
 use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
@@ -148,7 +148,7 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(cast_timezone(
+                        Ok(replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             to.to_string(),
@@ -163,7 +163,7 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(cast_timezone(
+                        Ok(replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             "UTC".to_string(),
@@ -178,59 +178,7 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(cast_timezone(
-                            arr,
-                            self.time_unit().to_arrow(),
-                            to.to_string(),
-                            "UTC".to_string(),
-                        )?)
-                    })
-                    .collect::<PolarsResult<_>>()?;
-                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
-                Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
-            }
-            (None, None) => Ok(self.clone()),
-        }
-    }
-    #[deprecated(note = "use replace_time_zone")]
-    #[cfg(feature = "timezones")]
-    pub fn cast_time_zone(&self, tz: Option<&str>) -> PolarsResult<DatetimeChunked> {
-        match (self.time_zone(), tz) {
-            (Some(from), Some(to)) => {
-                let chunks = self
-                    .downcast_iter()
-                    .map(|arr| {
-                        Ok(cast_timezone(
-                            arr,
-                            self.time_unit().to_arrow(),
-                            to.to_string(),
-                            from.to_string(),
-                        )?)
-                    })
-                    .collect::<PolarsResult<_>>()?;
-                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
-                Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
-            }
-            (Some(from), None) => {
-                let chunks = self
-                    .downcast_iter()
-                    .map(|arr| {
-                        Ok(cast_timezone(
-                            arr,
-                            self.time_unit().to_arrow(),
-                            "UTC".to_string(),
-                            from.to_string(),
-                        )?)
-                    })
-                    .collect::<PolarsResult<_>>()?;
-                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
-                Ok(out.into_datetime(self.time_unit(), None))
-            }
-            (None, Some(to)) => {
-                let chunks = self
-                    .downcast_iter()
-                    .map(|arr| {
-                        Ok(cast_timezone(
+                        Ok(replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             to.to_string(),

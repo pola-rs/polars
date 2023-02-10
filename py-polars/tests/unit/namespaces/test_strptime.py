@@ -291,7 +291,7 @@ def test_invalid_date_parsing_4898() -> None:
     ).to_list() == [date(2022, 9, 18), None]
 
 
-def test_cast_timezone_invalid_timezone() -> None:
+def test_replace_timezone_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.strptime(
         pl.Datetime, "%Y-%m-%d %H:%M:%S%z"
     )

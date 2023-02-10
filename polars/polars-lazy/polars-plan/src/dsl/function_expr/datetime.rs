@@ -59,7 +59,7 @@ impl Display for TemporalFunction {
             Truncate(..) => "truncate",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
-            CastTimezone(_) => "cast_timezone",
+            CastTimezone(_) => "replace_timezone",
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),

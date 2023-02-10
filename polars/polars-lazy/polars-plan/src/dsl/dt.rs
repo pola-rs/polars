@@ -82,23 +82,6 @@ impl DateLikeNameSpace {
             GetOutput::same_type(),
         )
     }
-    #[deprecated(note = "use convert_time_zone")]
-    #[cfg(feature = "timezones")]
-    pub fn with_time_zone(self, tz: TimeZone) -> Expr {
-        self.0.map(
-            move |s| match s.dtype() {
-                DataType::Datetime(_, Some(_)) => {
-                    let mut ca = s.datetime().unwrap().clone();
-                    ca.set_time_zone(tz.clone())?;
-                    Ok(Some(ca.into_series()))
-                }
-                _ => Err(PolarsError::ComputeError(
-                    "Cannot call convert_time_zone on tz-naive. Set a time zone first with replace_time_zone".into()
-                )),
-            },
-            GetOutput::same_type(),
-        )
-    }
 
     /// Localize tz-naive Datetime Series to tz-aware Datetime Series.
     //
