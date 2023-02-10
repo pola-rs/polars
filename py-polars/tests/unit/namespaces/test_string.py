@@ -299,6 +299,13 @@ def test_replace() -> None:
         (r"^\(", "[", True, ["* * text", "(with) special\n * chars **etc...?$"]),
         (r"t$", "an", False, ["* * texan", "(with) special\n * chars **etc...?$"]),
         (r"t$", "an", True, ["* * text", "(with) special\n * chars **etc...?$"]),
+        (r"(with) special", "$1", True, ["* * text", "$1\n * chars **etc...?$"]),
+        (
+            r"\((with)\) special",
+            ":$1:",
+            False,
+            ["* * text", ":with:\n * chars **etc...?$"],
+        ),
     ):
         # series
         assert (
@@ -315,23 +322,38 @@ def test_replace() -> None:
             )["text"].to_list()
         )
 
+    assert pl.Series(["."]).str.replace(".", "$0", literal=True)[0] == "$0"
+    assert pl.Series(["(.)(?)"]).str.replace(".", "$1", literal=True)[0] == "($1)(?)"
+
 
 def test_replace_all() -> None:
     df = pl.DataFrame(
-        data=[(1, "* * text"), (2, "(with) special * chars **etc...?$")],
+        data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
         schema=["idx", "text"],
         orient="row",
     )
     for pattern, replacement, as_literal, expected in (
-        (r"\*", "-", False, ["- - text", "(with) special - chars --etc...?$"]),
-        (r"*", "-", True, ["- - text", "(with) special - chars --etc...?$"]),
+        (r"\*", "-", False, ["- - text", "(with) special\n - chars --etc...?$"]),
+        (r"*", "-", True, ["- - text", "(with) special\n - chars --etc...?$"]),
         (r"\W", "", False, ["text", "withspecialcharsetc"]),
-        (r".?$", "", True, ["* * text", "(with) special * chars **etc.."]),
+        (r".?$", "", True, ["* * text", "(with) special\n * chars **etc.."]),
+        (
+            r"(with) special",
+            "$1",
+            True,
+            ["* * text", "$1\n * chars **etc...?$"],
+        ),
+        (
+            r"\((with)\) special",
+            ":$1:",
+            False,
+            ["* * text", ":with:\n * chars **etc...?$"],
+        ),
         (
             r"(\b)[\w\s]{2,}(\b)",
             "$1(blah)$3",
             False,
-            ["* * (blah)", "((blah)) (blah) * (blah) **(blah)...?$"],
+            ["* * (blah)", "((blah)) (blah)\n * (blah) **(blah)...?$"],
         ),
     ):
         # series
@@ -351,6 +373,15 @@ def test_replace_all() -> None:
         # invalid regex (but valid literal - requires "literal=True")
         with pytest.raises(pl.ComputeError):
             df["text"].str.replace_all("*", "")
+
+    assert (
+        pl.Series([r"(.)(\?)(\?)"]).str.replace_all("\?", "$0", literal=True)[0]
+        == "(.)($0)($0)"
+    )
+    assert (
+        pl.Series([r"(.)(\?)(\?)"]).str.replace_all("\?", "$0", literal=False)[0]
+        == "(.)(\?)(\?)"
+    )
 
 
 def test_replace_expressions() -> None:

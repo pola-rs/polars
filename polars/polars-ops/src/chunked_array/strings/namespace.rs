@@ -8,7 +8,7 @@ use polars_arrow::export::arrow::compute::substring::substring;
 use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
 use polars_core::export::num::Num;
-use polars_core::export::regex::{escape, Regex};
+use polars_core::export::regex::{escape, NoExpand, Regex};
 
 use super::*;
 #[cfg(feature = "string_encoding")]
@@ -207,8 +207,8 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Replace the leftmost regex-matched (sub)string with another string; take
     /// fast-path for small (<= 32 chars) strings (otherwise regex faster).
     fn replace<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
-        let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
-        let ca = self.as_utf8();
+        let lit = !(pat.chars().any(|c| c.is_ascii_punctuation())
+            | val.chars().any(|c| c.is_ascii_punctuation()));
         let reg = Regex::new(pat)?;
         let f = |s: &'a str| {
             if lit && (s.len() <= 32) {
@@ -217,25 +217,36 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                 reg.replace(s, val)
             }
         };
+        let ca = self.as_utf8();
         Ok(ca.apply(f))
     }
 
     /// Replace the leftmost literal (sub)string with another string
-    fn replace_literal(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
-        self.replace(escape(pat).as_str(), val)
+    fn replace_literal<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
+        let reg = Regex::new(escape(pat).as_str())?;
+        let f = |s: &'a str| {
+            if s.len() <= 32 {
+                Cow::Owned(s.replacen(pat, val, 1))
+            } else {
+                reg.replace(s, NoExpand(val))
+            }
+        };
+        let ca = self.as_utf8();
+        Ok(ca.apply(f))
     }
 
     /// Replace all regex-matched (sub)strings with another string
     fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
-        let f = |s| reg.replace_all(s, val);
-        Ok(ca.apply(f))
+        Ok(ca.apply(|s| reg.replace_all(s, val)))
     }
 
     /// Replace all matching literal (sub)strings with another string
     fn replace_literal_all(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
-        self.replace_all(escape(pat).as_str(), val)
+        let ca = self.as_utf8();
+        let reg = Regex::new(escape(pat).as_str())?;
+        Ok(ca.apply(|s| reg.replace_all(s, NoExpand(val))))
     }
 
     /// Extract the nth capture group from pattern
