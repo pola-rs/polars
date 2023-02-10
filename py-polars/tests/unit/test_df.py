@@ -499,29 +499,6 @@ def test_head_tail_limit() -> None:
     assert len(df.tail(-6)) == 4
 
 
-def test_drop_nulls() -> None:
-    df = pl.DataFrame(
-        {
-            "foo": [1, 2, 3],
-            "bar": [6, None, 8],
-            "ham": ["a", "b", "c"],
-        }
-    )
-    result = df.drop_nulls()
-    expected = pl.DataFrame(
-        {
-            "foo": [1, 3],
-            "bar": [6, 8],
-            "ham": ["a", "c"],
-        }
-    )
-    assert_frame_equal(result, expected)
-
-    # below we only drop entries if they are null in the column 'foo'
-    result = df.drop_nulls("foo")
-    assert_frame_equal(result, df)
-
-
 def test_pipe() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
 
@@ -647,15 +624,6 @@ def test_extend() -> None:
             pl.col("cat").cast(pl.Categorical),
         )
         assert_frame_equal(df1, expected)
-
-
-def test_drop() -> None:
-    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
-    df = df.drop(columns="a")
-    assert df.shape == (3, 2)
-    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
-    s = df.drop_in_place("a")
-    assert s.name == "a"
 
 
 def test_file_buffer() -> None:

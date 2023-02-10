@@ -266,6 +266,34 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
+    /// Check the if the `names` are available in the `schema`, if not
+    /// return a `LogicalPlan` that raises an `Error`.
+    fn check_names(&self, names: &[String], schema: Option<&SchemaRef>) -> Option<Self> {
+        let schema = schema
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned(self.schema().unwrap()));
+
+        let mut opt_not_found = None;
+        names.iter().for_each(|name| {
+            let invalid = schema.get(name).is_none();
+
+            if invalid && opt_not_found.is_none() {
+                opt_not_found = Some(name)
+            }
+        });
+
+        if let Some(name) = opt_not_found {
+            let lp = self
+                .clone()
+                .get_plan_builder()
+                .add_err(PolarsError::SchemaFieldNotFound(name.to_string().into()))
+                .build();
+            Some(Self::from_logical_plan(lp, self.opt_state))
+        } else {
+            None
+        }
+    }
+
     /// Rename columns in the DataFrame.
     pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
     where
@@ -290,25 +318,11 @@ impl LazyFrame {
         }
 
         // a column gets swapped
-        let schema = &*self.schema().unwrap();
+        let schema = &self.schema().unwrap();
         let swapping = new_vec.iter().any(|name| schema.get(name).is_some());
 
-        let mut opt_not_found = None;
-        existing_vec.iter().for_each(|name| {
-            let invalid = schema.get(name).is_none();
-
-            if invalid && opt_not_found.is_none() {
-                opt_not_found = Some(name)
-            }
-        });
-
-        if let Some(name) = opt_not_found {
-            let lp = self
-                .clone()
-                .get_plan_builder()
-                .add_err(PolarsError::SchemaFieldNotFound(name.to_string().into()))
-                .build();
-            Self::from_logical_plan(lp, self.opt_state)
+        if let Some(lp) = self.check_names(&existing_vec, Some(schema)) {
+            lp
         } else {
             self.map_private(FunctionNode::Rename {
                 existing: existing_vec.into(),
@@ -330,12 +344,18 @@ impl LazyFrame {
             .into_iter()
             .map(|name| name.as_ref().to_string())
             .collect();
-        self.drop_columns_impl(&columns)
+        self.drop_columns_impl(columns)
     }
 
     #[allow(clippy::ptr_arg)]
-    fn drop_columns_impl(self, columns: &Vec<String>) -> Self {
-        self.select_local(vec![col("*").exclude(columns)])
+    fn drop_columns_impl(self, columns: Vec<String>) -> Self {
+        if let Some(lp) = self.check_names(&columns, None) {
+            lp
+        } else {
+            self.map_private(FunctionNode::Drop {
+                names: columns.into(),
+            })
+        }
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
