@@ -784,6 +784,18 @@ def test_from_records_nullable_structs() -> None:
             ],
         }
 
+    # check initialisation without any records
+    df = pl.DataFrame(schema=schema)
+    dict_schema = dict(schema)
+
+    assert df.to_dict(False) == {"id": [], "items": []}
+    assert df.schema == dict_schema
+
+    s = pl.Series("items", dtype=dict_schema["items"])
+    assert s.to_frame().to_dict(False) == {"items": []}
+    assert s.dtype == dict_schema["items"]
+    assert s.to_list() == []
+
 
 def test_from_categorical_in_struct_defined_by_schema() -> None:
     df = pl.DataFrame(
