@@ -273,13 +273,13 @@ def _interval_granularity(interval: str) -> str:
 def date_range(
     low: pli.Expr,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -288,13 +288,13 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: pli.Expr,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -303,13 +303,13 @@ def date_range(
 def date_range(
     low: date | datetime | str,
     high: date | datetime | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Series:
     ...
 
@@ -318,13 +318,13 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[True],
-    closed: ClosedInterval = "both",
+    closed: ClosedInterval = ...,
     name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -332,7 +332,7 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = "1d",
     *,
     lazy: bool = False,
     closed: ClosedInterval = "both",
