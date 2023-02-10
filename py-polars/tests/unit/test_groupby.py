@@ -279,6 +279,43 @@ def test_groupby_rolling_negative_offset_3914() -> None:
     ]
 
 
+def test_groupby_rolling_nonnegative_offset() -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.date_range(datetime(2021, 1, 11), datetime(2021, 1, 17), "1d"),
+            "val": range(1, 8),
+        }
+    )
+    assert df.groupby_rolling(
+        index_column="time", period="2d", offset="1d", closed="right"
+    ).agg(pl.col("val").alias("matches"))["matches"].to_list() == [
+        [3, 4],
+        [4, 5],
+        [5, 6],
+        [6, 7],
+        [7],
+        [],
+        [],
+    ]
+
+    df = pl.DataFrame(
+        {
+            "ints": range(1, 8),
+        }
+    )
+    assert df.groupby_rolling(
+        index_column="ints", period="2i", offset="1i", closed="right"
+    ).agg([pl.col("ints").alias("matches")])["matches"].to_list() == [
+        [3, 4],
+        [4, 5],
+        [5, 6],
+        [6, 7],
+        [7],
+        [],
+        [],
+    ]
+
+
 def test_groupby_signed_transmutes() -> None:
     df = pl.DataFrame({"foo": [-1, -2, -3, -4, -5], "bar": [500, 600, 700, 800, 900]})
 

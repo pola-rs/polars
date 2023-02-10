@@ -304,7 +304,10 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
         let b = Bounds::new(lower, upper);
 
         for &t in &time[lagging_offset..] {
-            if b.is_member(t, closed_window) || lagging_offset == i {
+            if b.is_member(t, closed_window)
+                || b.is_future(t, closed_window)
+                || lagging_offset == (time.len() - 1)
+            {
                 break;
             }
             lagging_offset += 1;
@@ -351,6 +354,12 @@ pub(crate) fn groupby_values_iter_full_lookahead(
             let upper = add(&period, lower);
 
             let b = Bounds::new(lower, upper);
+
+            // skip times that precede our Bounds
+            i += time[i..]
+                .iter()
+                .position(|v| b.is_member(*v, closed_window))
+                .unwrap_or((time.len() - 1) - i);
 
             debug_assert!(i < time.len());
             let slice = unsafe { time.get_unchecked(i..) };
