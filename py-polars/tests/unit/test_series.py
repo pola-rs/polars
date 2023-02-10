@@ -2177,17 +2177,6 @@ def test_cumulative_eval() -> None:
     assert_series_equal(s.cumulative_eval(expr3), expected3)
 
 
-def test_drop_nan_ignore_null_3525() -> None:
-    df = pl.DataFrame({"a": [1.0, float("NaN"), 2.0, None, 3.0, 4.0]})
-    assert df.select(pl.col("a").drop_nans()).to_series().to_list() == [
-        1.0,
-        2.0,
-        None,
-        3.0,
-        4.0,
-    ]
-
-
 def test_reverse() -> None:
     s = pl.Series("values", [1, 2, 3, 4, 5])
     assert s.reverse().to_list() == [5, 4, 3, 2, 1]

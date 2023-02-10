@@ -1,3 +1,4 @@
+mod drop;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 mod rename;
@@ -63,6 +64,9 @@ pub enum FunctionNode {
         // A column name gets swapped with an existing column
         swapping: bool,
     },
+    Drop {
+        names: Arc<Vec<String>>,
+    },
 }
 
 impl PartialEq for FunctionNode {
@@ -84,6 +88,7 @@ impl PartialEq for FunctionNode {
                     ..
                 },
             ) => existing_l == existing_r && new_l == new_r,
+            (Drop { names: l }, Drop { names: r }) => l == r,
             _ => false,
         }
     }
@@ -97,7 +102,11 @@ impl FunctionNode {
             Rechunk | Pipeline { .. } => false,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
-            DropNulls { .. } | FastProjection { .. } | Unnest { .. } | Rename { .. } => true,
+            DropNulls { .. }
+            | FastProjection { .. }
+            | Unnest { .. }
+            | Rename { .. }
+            | Drop { .. } => true,
             Opaque { streamable, .. } => *streamable,
         }
     }
@@ -161,6 +170,7 @@ impl FunctionNode {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
+            Drop { names } => drop::drop_schema(input_schema, names),
         }
     }
 
@@ -168,9 +178,12 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
-            FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } | Rename { .. } => {
-                true
-            }
+            FastProjection { .. }
+            | DropNulls { .. }
+            | Rechunk
+            | Unnest { .. }
+            | Rename { .. }
+            | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             Pipeline { .. } => unimplemented!(),
@@ -181,9 +194,12 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
-            FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } | Rename { .. } => {
-                true
-            }
+            FastProjection { .. }
+            | DropNulls { .. }
+            | Rechunk
+            | Unnest { .. }
+            | Rename { .. }
+            | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             Pipeline { .. } => unimplemented!(),
@@ -234,6 +250,7 @@ impl FunctionNode {
                 }
             }
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
+            Drop { names } => drop::drop_impl(df, names),
         }
     }
 }
@@ -278,6 +295,7 @@ impl Display for FunctionNode {
                 }
             }
             Rename { .. } => write!(f, "RENAME"),
+            Drop { .. } => write!(f, "DROP"),
         }
     }
 }

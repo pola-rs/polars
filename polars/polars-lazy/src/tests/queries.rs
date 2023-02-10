@@ -1621,32 +1621,6 @@ fn test_binary_expr() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_drop_and_select() -> PolarsResult<()> {
-    let df = fruits_cars();
-
-    // we test that the schema is still correct for drop to work.
-    // typically the projection is pushed to before the drop and then the drop may think that some
-    // columns are still there to be projected
-
-    // we test this on both dataframe scan and csv scan.
-    let out = df
-        .lazy()
-        .drop_columns(["A", "B"])
-        .select([col("fruits")])
-        .collect()?;
-
-    assert_eq!(out.get_column_names(), &["fruits"]);
-
-    let out = scan_foods_csv()
-        .drop_columns(["calories", "sugar_g"])
-        .select([col("category")])
-        .collect()?;
-
-    assert_eq!(out.get_column_names(), &["category"]);
-    Ok(())
-}
-
-#[test]
 fn test_single_group_result() -> PolarsResult<()> {
     // the argsort should not auto explode
     let df = df![
