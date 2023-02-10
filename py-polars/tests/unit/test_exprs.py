@@ -505,3 +505,18 @@ def test_map_dict() -> None:
         "country_code": ["FR", None, "ES", "DE"],
         "remapped": ["France", "Not specified", None, "Germany"],
     }
+
+    assert (
+        df.with_columns(
+            pl.struct(pl.col(["country_code", "row_nr"]))  # type: ignore[union-attr]
+            .map_dict(
+                country_code_dict,
+                default=pl.col("row_nr").cast(pl.Utf8),
+            )
+            .alias("remapped")
+        )
+    ).to_dict(False) == {
+        "row_nr": [0, 1, 2, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", "2", "Germany"],
+    }

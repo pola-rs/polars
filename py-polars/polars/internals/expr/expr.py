@@ -11,6 +11,7 @@ from polars import internals as pli
 from polars.datatypes import (
     DataType,
     PolarsDataType,
+    Struct,
     UInt32,
     is_polars_dtype,
     py_type_to_dtype,
@@ -6105,20 +6106,46 @@ class Expr:
         │ 3      ┆ DE           ┆ Germany       │
         └────────┴──────────────┴───────────────┘
 
+        If you need to access different columns to set a default value for values that
+        couldn't be mapped, a struct needs to be constructed, with in the first field
+        the column that you want to remap and the rest of the fields the other columns
+        you use in the default expression.
+        >>> df.with_columns(
+        ...     pl.struct(pl.col(["country_code", "row_nr"])).map_dict(
+        ...         remapping=country_code_dict,
+        ...         default=pl.col("row_nr").cast(pl.Utf8),
+        ...     )
+        ... )
+        shape: (4, 2)
+        ┌────────┬───────────────┐
+        │ row_nr ┆ country_code  │
+        │ ---    ┆ ---           │
+        │ u32    ┆ str           │
+        ╞════════╪═══════════════╡
+        │ 0      ┆ France        │
+        │ 1      ┆ Not specified │
+        │ 2      ┆ 2             │
+        │ 3      ┆ Germany       │
+        └────────┴───────────────┘
+
         """
 
-        # use two functions to save unneeded work.
-        # this factors out allocations and branches.
+        # Use two functions to save unneeded work.
+        # This factors out allocations and branches.
         def inner_with_default(s: pli.Series) -> pli.Series:
-            column = s.name
+            # Convert Series to:
+            #   - multicolumn DataFrame, if Series is a Struct.
+            #   - one column DataFrame in other cases.
+            df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
+
+            column = df.columns[0]
             remap_key_column = f"__POLARS_REMAP_KEY_{column}"
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
 
             return (
                 (
-                    s.to_frame()
-                    .lazy()
+                    df.lazy()
                     .join(
                         pli.DataFrame(
                             [
@@ -6134,11 +6161,11 @@ class Expr:
                         left_on=column,
                         right_on=remap_key_column,
                     )
-                    .with_columns(
+                    .select(
                         pli.when(pli.col(is_remapped_column).is_not_null())
                         .then(pli.col(remap_value_column))
                         .otherwise(default)
-                        .alias(s.name)
+                        .alias(column)
                     )
                 )
                 .collect(no_optimization=True)
