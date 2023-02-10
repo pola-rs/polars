@@ -259,6 +259,7 @@ pub trait Utf8Methods: AsUtf8 {
         &self,
         fmt: Option<&str>,
         tu: TimeUnit,
+        tz: Option<&TimeZone>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
@@ -303,7 +304,11 @@ pub trait Utf8Methods: AsUtf8 {
             })
             .collect_trusted();
         ca.rename(utf8_ca.name());
-        Ok(ca.into_datetime(tu, None))
+        match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => ca.into_datetime(tu, None).cast_time_zone(Some(tz)),
+            _ => Ok(ca.into_datetime(tu, None)),
+        }
     }
 
     #[cfg(feature = "dtype-date")]
@@ -390,11 +395,12 @@ pub trait Utf8Methods: AsUtf8 {
         cache: bool,
         tz_aware: bool,
         _utc: bool,
+        tz: Option<&TimeZone>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => return infer::to_datetime(utf8_ca, tu),
+            None => return infer::to_datetime(utf8_ca, tu, tz),
         };
         let fmt = self::strptime::compile_fmt(fmt);
         let cache = cache && utf8_ca.len() > 50;
@@ -522,7 +528,11 @@ pub trait Utf8Methods: AsUtf8 {
                         .collect_trusted()
                 };
             ca.rename(utf8_ca.name());
-            Ok(ca.into_datetime(tu, None))
+            match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => ca.into_datetime(tu, None).cast_time_zone(Some(tz)),
+                _ => Ok(ca.into_datetime(tu, None)),
+            }
         }
     }
 }

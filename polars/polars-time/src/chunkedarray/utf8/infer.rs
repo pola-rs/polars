@@ -230,9 +230,13 @@ fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
 }
 
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn to_datetime(ca: &Utf8Chunked, tu: TimeUnit) -> PolarsResult<DatetimeChunked> {
+pub(crate) fn to_datetime(
+    ca: &Utf8Chunked,
+    tu: TimeUnit,
+    tz: Option<&TimeZone>,
+) -> PolarsResult<DatetimeChunked> {
     match ca.first_non_null() {
-        None => Ok(Int64Chunked::full_null(ca.name(), ca.len()).into_datetime(tu, None)),
+        None => Ok(Int64Chunked::full_null(ca.name(), ca.len()).into_datetime(tu, tz.cloned())),
         Some(idx) => {
             let subset = ca.slice(idx as i64, ca.len());
             let pattern = subset
@@ -253,8 +257,12 @@ pub(crate) fn to_datetime(ca: &Utf8Chunked, tu: TimeUnit) -> PolarsResult<Dateti
             infer.coerce_utf8(ca).datetime().map(|ca| {
                 let mut ca = ca.clone();
                 ca.set_time_unit(tu);
-                ca
-            })
+                match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => Ok(ca.cast_time_zone(Some(tz))?),
+                    _ => Ok(ca),
+                }
+            })?
         }
     }
 }
