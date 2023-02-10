@@ -452,13 +452,20 @@ impl DataFrame {
         let mut chunk_lenghts = self.columns.iter().map(|s| s.chunk_lengths());
         match chunk_lenghts.next() {
             None => false,
-            Some(first_chunk_lengths) => {
+            Some(first_column_chunk_lengths) => {
                 // Fast Path for single Chunk Series
-                if first_chunk_lengths.len() == 1 {
+                if first_column_chunk_lengths.len() == 1 {
                     return chunk_lenghts.any(|cl| cl.len() != 1);
                 }
+                // Always rechunk if we have more chunks than rows.
+                // except when we have an empty df containing a single chunk
+                let height = self.height();
+                let n_chunks = first_column_chunk_lengths.len();
+                if n_chunks > height && !(height == 0 && n_chunks == 1) {
+                    return true;
+                }
                 // Slow Path for multi Chunk series
-                let v: Vec<_> = first_chunk_lengths.collect();
+                let v: Vec<_> = first_column_chunk_lengths.collect();
                 for cl in chunk_lenghts {
                     if cl.enumerate().any(|(idx, el)| Some(&el) != v.get(idx)) {
                         return true;
