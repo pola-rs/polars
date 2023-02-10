@@ -204,33 +204,20 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         out
     }
 
-    /// Replace the leftmost regex-matched (sub)string with another string; take
-    /// fast-path for small (<= 32 chars) strings (otherwise regex faster).
+    /// Replace the leftmost regex-matched (sub)string with another string
     fn replace<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
-        let lit = !(pat.chars().any(|c| c.is_ascii_punctuation())
-            | val.chars().any(|c| c.is_ascii_punctuation()));
         let reg = Regex::new(pat)?;
-        let f = |s: &'a str| {
-            if lit && (s.len() <= 32) {
-                Cow::Owned(s.replacen(pat, val, 1))
-            } else {
-                reg.replace(s, val)
-            }
-        };
+        let f = |s: &'a str| reg.replace(s, val);
         let ca = self.as_utf8();
         Ok(ca.apply(f))
     }
 
     /// Replace the leftmost literal (sub)string with another string
     fn replace_literal<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
+        // note: benchmarking shows that using the regex engine for literal
+        // replacement is faster than str::replacen in almost all cases
         let reg = Regex::new(escape(pat).as_str())?;
-        let f = |s: &'a str| {
-            if s.len() <= 32 {
-                Cow::Owned(s.replacen(pat, val, 1))
-            } else {
-                reg.replace(s, NoExpand(val))
-            }
-        };
+        let f = |s: &'a str| reg.replace(s, NoExpand(val));
         let ca = self.as_utf8();
         Ok(ca.apply(f))
     }
