@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import _to_python_datetime, redirect
+from polars.utils import _to_python_datetime, deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
@@ -917,13 +917,14 @@ class DateTimeNameSpace:
 
         """
 
-    def convert_time_zone(self, tz: str) -> pli.Series:
+    @deprecated_alias(tz="time_zone")
+    def convert_time_zone(self, time_zone: str) -> pli.Series:
         """
         Convert to given time zone for a Series of type Datetime.
 
         Parameters
         ----------
-        tz
+        time_zone
             Time zone for the `Datetime` Series.
 
         Examples
@@ -950,8 +951,15 @@ class DateTimeNameSpace:
             2020-05-01 01:00:00 BST
         ]
         """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).dt.convert_time_zone(time_zone))
+            .to_series()
+        )
 
-    def replace_time_zone(self, tz: str | None) -> pli.Series:
+    @deprecated_alias(tz="time_zone")
+    def replace_time_zone(self, time_zone: str | None) -> pli.Series:
         """
         Replace time zone for a Series of type Datetime.
 
@@ -960,7 +968,7 @@ class DateTimeNameSpace:
 
         Parameters
         ----------
-        tz
+        time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
 
         Examples
@@ -1023,6 +1031,12 @@ class DateTimeNameSpace:
         ]
 
         """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).dt.replace_time_zone(time_zone))
+            .to_series()
+        )
 
     def days(self) -> pli.Series:
         """

@@ -142,8 +142,8 @@ impl DatetimeChunked {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(&self, tz: Option<&str>) -> PolarsResult<DatetimeChunked> {
-        match (self.time_zone(), tz) {
+    pub fn replace_time_zone(&self, time_zone: Option<&str>) -> PolarsResult<DatetimeChunked> {
+        match (self.time_zone(), time_zone) {
             (Some(from), Some(to)) => {
                 let chunks = self
                     .downcast_iter()
@@ -316,16 +316,16 @@ impl DatetimeChunked {
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
     #[cfg(feature = "timezones")]
-    pub fn set_time_zone(&mut self, tz: TimeZone) -> PolarsResult<()> {
-        validate_time_zone(tz.to_string())?;
-        self.2 = Some(Datetime(self.time_unit(), Some(tz)));
+    pub fn set_time_zone(&mut self, time_zone: TimeZone) -> PolarsResult<()> {
+        validate_time_zone(time_zone.to_string())?;
+        self.2 = Some(Datetime(self.time_unit(), Some(time_zone)));
         Ok(())
     }
     #[cfg(feature = "timezones")]
-    pub fn convert_time_zone(mut self, tz: TimeZone) -> PolarsResult<Self> {
+    pub fn convert_time_zone(mut self, time_zone: TimeZone) -> PolarsResult<Self> {
         match self.time_zone() {
             Some(_) => {
-                self.set_time_zone(tz)?;
+                self.set_time_zone(time_zone)?;
                 Ok(self)
             }
             _ => Err(PolarsError::ComputeError(

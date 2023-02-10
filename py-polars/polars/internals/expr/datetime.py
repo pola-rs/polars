@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
-from polars.utils import _timedelta_to_pl_duration, redirect
+from polars.utils import _timedelta_to_pl_duration, deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
@@ -1160,13 +1160,14 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    def convert_time_zone(self, tz: str) -> pli.Expr:
+    @deprecated_alias(tz="time_zone")
+    def convert_time_zone(self, time_zone: str) -> pli.Expr:
         """
         Convert to given time zone for a Series of type Datetime.
 
         Parameters
         ----------
-        tz
+        time_zone
             Time zone for the `Datetime` Series.
 
         Examples
@@ -1201,9 +1202,10 @@ class ExprDateTimeNameSpace:
         │ 2020-05-01 00:00:00 UTC ┆ 2020-05-01 01:00:00 BST     │
         └─────────────────────────┴─────────────────────────────┘
         """
-        return pli.wrap_expr(self._pyexpr.dt_convert_time_zone(tz))
+        return pli.wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
-    def replace_time_zone(self, tz: str | None) -> pli.Expr:
+    @deprecated_alias(tz="time_zone")
+    def replace_time_zone(self, time_zone: str | None) -> pli.Expr:
         """
         Replace time zone for a Series of type Datetime.
 
@@ -1212,7 +1214,7 @@ class ExprDateTimeNameSpace:
 
         Parameters
         ----------
-        tz
+        time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
 
         Examples
@@ -1250,7 +1252,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────────┴────────────────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.dt_replace_time_zone(tz))
+        return pli.wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone))
 
     def days(self) -> pli.Expr:
         """

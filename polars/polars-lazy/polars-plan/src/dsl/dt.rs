@@ -67,12 +67,12 @@ impl DateLikeNameSpace {
 
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
     #[cfg(feature = "timezones")]
-    pub fn convert_time_zone(self, tz: TimeZone) -> Expr {
+    pub fn convert_time_zone(self, time_zone: TimeZone) -> Expr {
         self.0.map(
             move |s| match s.dtype() {
                 DataType::Datetime(_, Some(_)) => {
                     let mut ca = s.datetime().unwrap().clone();
-                    ca.set_time_zone(tz.clone())?;
+                    ca.set_time_zone(time_zone.clone())?;
                     Ok(Some(ca.into_series()))
                 }
                 _ => Err(PolarsError::ComputeError(
@@ -218,10 +218,10 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(self, tz: Option<TimeZone>) -> Expr {
+    pub fn replace_time_zone(self, time_zone: Option<TimeZone>) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
-                tz,
+                time_zone,
             )))
     }
 
