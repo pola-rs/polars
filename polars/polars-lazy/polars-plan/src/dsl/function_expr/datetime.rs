@@ -137,9 +137,9 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
     }
 }
 #[cfg(feature = "timezones")]
-pub(super) fn replace_timezone(s: &Series, tz: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn replace_timezone(s: &Series, time_zone: Option<&str>) -> PolarsResult<Series> {
     let ca = s.datetime()?;
-    ca.replace_time_zone(tz).map(|ca| ca.into_series())
+    ca.replace_time_zone(time_zone).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "timezones")]
