@@ -4035,7 +4035,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...         "C": [7, 8, 9],
         ...     }
         ... )
-        >>> df
+        >>> new_df
         shape: (3, 2)
         ┌──────┬─────┐
         │ B    ┆ C   │
