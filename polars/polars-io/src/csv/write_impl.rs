@@ -1,10 +1,13 @@
 use std::io::Write;
 
 use arrow::temporal_conversions;
+#[cfg(feature = "timezones")]
+use chrono::TimeZone;
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
 use polars_core::error::PolarsError::ComputeError;
-use polars_core::fmt::PlTzAware;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -95,12 +98,22 @@ fn write_anyvalue(
                 TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
                 TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
             };
-            match tz {
-                None => write!(f, "{}", ndt.format(datetime_format)),
-                Some(tz) => {
-                    write!(f, "{}", PlTzAware::new(ndt, tz))
+            let formatted = match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => match tz.parse::<Tz>() {
+                    Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
+                    Err(_) => match temporal_conversions::parse_offset(tz) {
+                        Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
+                        Err(_) => unreachable!(),
+                    },
+                },
+                #[cfg(not(feature = "timezones"))]
+                Some(_) => {
+                    panic!("activate 'timezones' feature");
                 }
-            }
+                _ => ndt.format(datetime_format),
+            };
+            write!(f, "{formatted}")
         }
         #[cfg(feature = "dtype-time")]
         AnyValue::Time(v) => {
@@ -186,24 +199,36 @@ pub(crate) fn write<W: Write>(
     if options.datetime_format.is_none() {
         for col in df.get_columns() {
             match col.dtype() {
-                DataType::Datetime(TimeUnit::Microseconds, _)
+                DataType::Datetime(TimeUnit::Milliseconds, tz)
+                    // lowest precision; only set if it's not been inferred yet
                     if options.datetime_format.is_none() =>
                 {
-                    options.datetime_format = Some("%FT%H:%M:%S.%6f".to_string());
+                    options.datetime_format = match tz{
+                        Some(_) => Some("%FT%H:%M:%S.%3f%z".to_string()),
+                        None => Some("%FT%H:%M:%S.%3f".to_string()),
+                    };
                 }
-                DataType::Datetime(TimeUnit::Nanoseconds, _) => {
-                    options.datetime_format = Some("%FT%H:%M:%S.%9f".to_string());
+                DataType::Datetime(TimeUnit::Microseconds, tz) => {
+                    options.datetime_format = match tz{
+                        Some(_) => Some("%FT%H:%M:%S.%6f%z".to_string()),
+                        None => Some("%FT%H:%M:%S.%6f".to_string()),
+                    };
+                }
+                DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
+                    options.datetime_format = match tz {
+                        Some(_) => Some("%FT%H:%M:%S.%9f%z".to_string()),
+                        None => Some("%FT%H:%M:%S.%9f".to_string()),
+                    };
                     break; // highest precision; no need to check further
                 }
                 _ => {}
             }
         }
-        // if still not set, no cols require higher precision than "ms" (or no datetime cols)
-        if options.datetime_format.is_none() {
-            options.datetime_format = Some("%FT%H:%M:%S.%3f".to_string());
-        }
     }
-    let datetime_format: &str = options.datetime_format.as_ref().unwrap();
+    let datetime_format: &str = match &options.datetime_format {
+        Some(datetime_format) => datetime_format,
+        None => "%FT%H:%M:%S.%9f",
+    };
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();

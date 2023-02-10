@@ -24,7 +24,16 @@ decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
-dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal", "polars-time/dtype-datetime"]
+dtype-datetime = [
+  "polars-core/dtype-datetime",
+  "polars-core/temporal",
+  "polars-time/dtype-datetime",
+  "chrono",
+]
+timezones = [
+  "chrono-tz",
+  "dtype-datetime",
+]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]
 dtype-binary = ["polars-core/dtype-binary"]
@@ -46,6 +55,8 @@ anyhow.workspace = true
 arrow.workspace = true
 async-trait = { version = "0.1.59", optional = true }
 bytes = "1.3.0"
+chrono = { version = "0.4.23", optional = true }
+chrono-tz = { version = "0.8.1", optional = true }
 dirs = "4.0"
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { version = "0.3.25", optional = true }

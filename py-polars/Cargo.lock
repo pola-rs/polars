@@ -1621,6 +1621,8 @@ dependencies = [
  "anyhow",
  "arrow2",
  "bytes",
+ "chrono",
+ "chrono-tz 0.8.1",
  "dirs",
  "flate2",
  "lexical",

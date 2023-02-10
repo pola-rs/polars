@@ -6,7 +6,7 @@ import sys
 import tempfile
 import textwrap
 import zlib
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -861,6 +861,24 @@ def test_datetime_format(fmt: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
+    ("fmt", "expected"),
+    [
+        (None, "dt\n2022-01-02T00:00:00.000000+0000\n"),
+        ("%F %T%.3f%z", "dt\n2022-01-02 00:00:00.000+0000\n"),
+        ("%Y%z", "dt\n2022+0000\n"),
+        ("%m%z", "dt\n01+0000\n"),
+        ("%m$%d%z", "dt\n01$02+0000\n"),
+        ("%R%z", "dt\n00:00+0000\n"),
+    ],
+)
+@pytest.mark.parametrize("tzinfo", [timezone.utc, timezone(timedelta(hours=0))])
+def test_datetime_format_tz_aware(fmt: str, expected: str, tzinfo: timezone) -> None:
+    df = pl.DataFrame({"dt": [datetime(2022, 1, 2, tzinfo=tzinfo)]})
+    csv = df.write_csv(datetime_format=fmt)
+    assert csv == expected
+
+
+@pytest.mark.parametrize(
     ("tu1", "tu2", "expected"),
     [
         (
@@ -1094,7 +1112,7 @@ def test_csv_write_tz_aware() -> None:
     df = pl.DataFrame({"times": datetime(2021, 1, 1)}).with_columns(
         pl.col("times").dt.cast_time_zone("UTC").dt.with_time_zone("Europe/Zurich")
     )
-    assert df.write_csv() == "times\n2021-01-01 01:00:00 CET\n"
+    assert df.write_csv() == "times\n2021-01-01T01:00:00.000000+0100\n"
 
 
 def test_csv_statistics_offset() -> None:
