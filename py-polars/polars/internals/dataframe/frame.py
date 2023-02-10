@@ -1936,21 +1936,24 @@ class DataFrame:
         else:
             return out
 
-    def to_pandas(
-        self, *args: Any, date_as_object: bool = False, **kwargs: Any
+    def to_pandas(  # noqa: D417
+        self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
     ) -> pd.DataFrame:
         """
         Cast to a pandas DataFrame.
 
         This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
-        This operation clones data.
+        This operation clones data, unless `use_pyarrow_extension_array=True`.
 
         Parameters
         ----------
-        args
-            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
-        date_as_object
-            Cast dates to objects. If ``False``, convert to ``datetime64[ns]`` dtype.
+        use_pyarrow_extension_array
+            Use PyArrow backed-extension arrays instead of numpy arrays for each
+            column of the pandas DataFrame. This allows zero copy operations and
+            preservation of nulls values.
+            Further operations on this pandas DataFrame, might trigger conversion
+            to NumPy arrays if that operation is not supported by pyarrow compute
+            functions.
         kwargs
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
 
@@ -1961,21 +1964,77 @@ class DataFrame:
         Examples
         --------
         >>> import pandas
-        >>> df = pl.DataFrame(
+        >>> df1 = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, 7, 8],
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> pandas_df = df.to_pandas()
-        >>> type(pandas_df)
+        >>> pandas_df1 = df1.to_pandas()
+        >>> type(pandas_df1)
         <class 'pandas.core.frame.DataFrame'>
+        >>> pandas_df1.dtypes
+        foo     int64
+        bar     int64
+        ham    object
+        dtype: object
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, None],
+        ...         "bar": [6, None, 8],
+        ...         "ham": [None, "b", "c"],
+        ...     }
+        ... )
+        >>> pandas_df2 = df2.to_pandas()
+        >>> pandas_df2
+           foo  bar   ham
+        0  1.0  6.0  None
+        1  2.0  NaN     b
+        2  NaN  8.0     c
+        >>> pandas_df2.dtypes
+        foo    float64
+        bar    float64
+        ham     object
+        dtype: object
+        >>> pandas_df2_pa = df2.to_pandas(
+        ...     use_pyarrow_extension_array=True
+        ... )  # doctest: +SKIP
+        >>> pandas_df2_pa  # doctest: +SKIP
+            foo   bar   ham
+        0     1     6  <NA>
+        1     2  <NA>     b
+        2  <NA>     8     c
+        >>> pandas_df2_pa.dtypes  # doctest: +SKIP
+        foo           int64[pyarrow]
+        bar           int64[pyarrow]
+        ham    large_string[pyarrow]
+        dtype: object
 
         """
+        if use_pyarrow_extension_array:
+            pandas_version_major, pandas_version_minor = (
+                int(x) for x in pd.__version__.split(".")[0:2]
+            )
+            if pandas_version_major == 0 or (
+                pandas_version_major == 1 and pandas_version_minor < 5
+            ):
+                raise ModuleNotFoundError(
+                    f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
+                )
+
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
-        return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
+        return (
+            tbl.to_pandas(
+                self_destruct=True,
+                split_blocks=True,
+                types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
+                **kwargs,
+            )
+            if use_pyarrow_extension_array
+            else tbl.to_pandas(**kwargs)
+        )
 
     def to_series(self, index: int = 0) -> pli.Series:
         """
