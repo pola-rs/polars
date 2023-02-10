@@ -38,6 +38,8 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
     columns: I2,
     agg_expr: Expr,
     sort_columns: bool,
+    // used as separator/delimiter in generated column names.
+    separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
@@ -56,6 +58,7 @@ where
         columns,
         PivotAgg::Expr(Arc::new(PivotExpr(expr))),
         sort_columns,
+        separator,
     )
 }
 
@@ -66,6 +69,8 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     columns: I2,
     agg_expr: Expr,
     sort_columns: bool,
+    // used as separator/delimiter in generated column names.
+    separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
@@ -84,5 +89,6 @@ where
         columns,
         PivotAgg::Expr(Arc::new(PivotExpr(expr))),
         sort_columns,
+        separator,
     )
 }

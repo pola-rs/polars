@@ -9,6 +9,8 @@ mod log;
 mod rolling;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
+#[cfg(feature = "to_dummies")]
+mod to_dummies;
 mod various;
 
 pub use arg_min_max::ArgAgg;
@@ -23,6 +25,8 @@ use polars_core::prelude::*;
 pub use rolling::*;
 #[cfg(feature = "search_sorted")]
 pub use search_sorted::*;
+#[cfg(feature = "to_dummies")]
+pub use to_dummies::*;
 pub use various::*;
 
 pub trait SeriesSealed {

@@ -73,17 +73,25 @@ pub trait DataFrameOps: IntoDf {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self) -> PolarsResult<DataFrame> {
-        self._to_dummies(None)
+    fn to_dummies(&self, separator: Option<&str>) -> PolarsResult<DataFrame> {
+        self._to_dummies(None, separator)
     }
 
     #[cfg(feature = "to_dummies")]
-    fn columns_to_dummies(&self, columns: Vec<&str>) -> PolarsResult<DataFrame> {
-        self._to_dummies(Some(columns))
+    fn columns_to_dummies(
+        &self,
+        columns: Vec<&str>,
+        separator: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
+        self._to_dummies(Some(columns), separator)
     }
 
     #[cfg(feature = "to_dummies")]
-    fn _to_dummies(&self, columns: Option<Vec<&str>>) -> PolarsResult<DataFrame> {
+    fn _to_dummies(
+        &self,
+        columns: Option<Vec<&str>>,
+        separator: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
         let df = self.to_df();
 
         let set: PlHashSet<&str> =
@@ -93,7 +101,7 @@ pub trait DataFrameOps: IntoDf {
             df.get_columns()
                 .par_iter()
                 .map(|s| match set.contains(s.name()) {
-                    true => s.to_ops().to_dummies(),
+                    true => s.to_dummies(separator),
                     false => Ok(s.clone().into_frame()),
                 })
                 .collect::<PolarsResult<Vec<_>>>()

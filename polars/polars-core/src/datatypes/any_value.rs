@@ -569,6 +569,24 @@ impl<'a> AnyValue<'a> {
         };
         Ok(av)
     }
+
+    /// Get a reference to the `&str` contained within [`AnyValue`].
+    pub fn get_str(&self) -> Option<&str> {
+        match self {
+            AnyValue::Utf8(s) => Some(s),
+            AnyValue::Utf8Owned(s) => Some(s),
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::Categorical(idx, rev, arr) => {
+                let s = if arr.is_null() {
+                    rev.get(*idx)
+                } else {
+                    unsafe { arr.deref_unchecked().value(*idx as usize) }
+                };
+                Some(s)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl<'a> From<AnyValue<'a>> for Option<i64> {

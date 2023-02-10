@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def get_dummies(
-    df: pli.DataFrame, *, columns: list[str] | None = None
+    df: pli.DataFrame, *, columns: list[str] | None = None, separator: str = "_"
 ) -> pli.DataFrame:
     """
     Convert categorical variables into dummy/indicator variables.
@@ -45,6 +45,8 @@ def get_dummies(
     columns
         A subset of columns to convert to dummy variables. ``None`` means
         "all columns".
+    separator
+        Separator/delimiter used when generating column names.
 
     Examples
     --------
@@ -67,7 +69,7 @@ def get_dummies(
     └───────┴───────┴───────┴───────┴───────┴───────┘
 
     """
-    return df.to_dummies(columns=columns)
+    return df.to_dummies(columns=columns, separator=separator)
 
 
 @overload

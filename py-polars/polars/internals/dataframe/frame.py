@@ -5020,6 +5020,7 @@ class DataFrame:
         aggregate_fn: PivotAgg | pli.Expr = "first",
         maintain_order: bool = True,
         sort_columns: bool = False,
+        separator: str = "_",
     ) -> Self:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
@@ -5039,6 +5040,8 @@ class DataFrame:
             Sort the grouped keys so that the output order is predictable.
         sort_columns
             Sort the transposed columns by name. Default is by order of discovery.
+        separator
+            Used as separator/delimiter in generated column names.
 
         Returns
         -------
@@ -5102,6 +5105,7 @@ class DataFrame:
                 aggregate_fn._pyexpr,
                 maintain_order,
                 sort_columns,
+                separator,
             )
         )
 
@@ -6344,7 +6348,9 @@ class DataFrame:
         """
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
-    def to_dummies(self, *, columns: Sequence[str] | None = None) -> Self:
+    def to_dummies(
+        self, *, columns: Sequence[str] | None = None, separator: str = "_"
+    ) -> Self:
         """
         Get one hot encoded dummy variables.
 
@@ -6353,6 +6359,8 @@ class DataFrame:
         columns:
             A subset of columns to convert to dummy variables. ``None`` means
             "all columns".
+        separator
+            Separator/delimiter used when generating column names.
 
         Examples
         --------
@@ -6377,7 +6385,7 @@ class DataFrame:
         """
         if isinstance(columns, str):
             columns = [columns]
-        return self._from_pydf(self._df.to_dummies(columns))
+        return self._from_pydf(self._df.to_dummies(columns, separator))
 
     def unique(
         self,

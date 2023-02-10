@@ -132,13 +132,13 @@ def test_pivot_multiple_values_column_names_5116() -> None:
             "c2": ["C", "C", "D", "D"] * 2,
         }
     )
-    result = df.pivot(values=["x1", "x2"], index="c1", columns="c2")
+    result = df.pivot(values=["x1", "x2"], index="c1", columns="c2", separator="|")
     expected = {
         "c1": ["A", "B"],
-        "x1_C": [1, 2],
-        "x1_D": [3, 4],
-        "x2_C": [8, 7],
-        "x2_D": [6, 5],
+        "x1|C": [1, 2],
+        "x1|D": [3, 4],
+        "x2|C": [8, 7],
+        "x2|D": [6, 5],
     }
     assert result.to_dict(False) == expected
 

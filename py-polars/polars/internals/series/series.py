@@ -1354,9 +1354,14 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    def to_dummies(self) -> pli.DataFrame:
+    def to_dummies(self, separator: str = "_") -> pli.DataFrame:
         """
         Get dummy variables.
+
+        Parameters
+        ----------
+        separator
+            Separator/delimiter used when generating column names.
 
         Examples
         --------
@@ -1374,7 +1379,7 @@ class Series:
         └─────┴─────┴─────┘
 
         """
-        return pli.wrap_df(self._s.to_dummies())
+        return pli.wrap_df(self._s.to_dummies(separator))
 
     def value_counts(self, sort: bool = False) -> pli.DataFrame:
         """
