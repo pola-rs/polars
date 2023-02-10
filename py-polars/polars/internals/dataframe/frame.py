@@ -5544,7 +5544,9 @@ class DataFrame:
                 false
                 true
         ]
+
         This mask can be used to visualize the duplicated lines like this:
+
         >>> df.filter(df.is_duplicated())
         shape: (2, 2)
         ┌─────┬─────┐
@@ -5579,7 +5581,9 @@ class DataFrame:
                 true
                 false
         ]
+
         This mask can be used to visualize the unique lines like this:
+
         >>> df.filter(df.is_unique())
         shape: (2, 2)
         ┌─────┬─────┐
