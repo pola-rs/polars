@@ -1160,7 +1160,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    @deprecated_alias(tz='time_zone')
+    @deprecated_alias(tz="time_zone")
     def convert_time_zone(self, time_zone: str) -> pli.Expr:
         """
         Convert to given time zone for a Series of type Datetime.
