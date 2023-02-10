@@ -1120,6 +1120,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
+    #[allow(clippy::too_many_arguments)]
     pub fn pivot_expr(
         &self,
         values: Vec<String>,
@@ -1128,6 +1129,7 @@ impl PyDataFrame {
         aggregate_expr: PyExpr,
         maintain_order: bool,
         sort_columns: bool,
+        separator: Option<&str>,
     ) -> PyResult<Self> {
         let fun = match maintain_order {
             true => pivot_stable,
@@ -1140,6 +1142,7 @@ impl PyDataFrame {
             columns,
             aggregate_expr.inner,
             sort_columns,
+            separator,
         )
         .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
@@ -1244,12 +1247,16 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn to_dummies(&self, columns: Option<Vec<String>>) -> PyResult<Self> {
+    pub fn to_dummies(
+        &self,
+        columns: Option<Vec<String>>,
+        separator: Option<&str>,
+    ) -> PyResult<Self> {
         let df = match columns {
             Some(cols) => self
                 .df
-                .columns_to_dummies(cols.iter().map(|x| x as &str).collect()),
-            None => self.df.to_dummies(),
+                .columns_to_dummies(cols.iter().map(|x| x as &str).collect(), separator),
+            None => self.df.to_dummies(separator),
         }
         .map_err(PyPolarsErr::from)?;
         Ok(df.into())

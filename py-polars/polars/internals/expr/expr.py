@@ -6013,6 +6013,7 @@ class Expr:
     def map_dict(
         self,
         remapping: dict[Any, Any],
+        *,
         default: Any = None,
     ) -> Expr:
         """

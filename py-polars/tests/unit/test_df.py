@@ -772,12 +772,12 @@ def test_get_dummies() -> None:
     expected = pl.DataFrame(
         {
             "i": [1, 2, 3],
-            "category_cat": [0, 1, 1],
-            "category_dog": [1, 0, 0],
+            "category|cat": [0, 1, 1],
+            "category|dog": [1, 0, 0],
         },
-        schema={"i": pl.Int32, "category_cat": pl.UInt8, "category_dog": pl.UInt8},
+        schema={"i": pl.Int32, "category|cat": pl.UInt8, "category|dog": pl.UInt8},
     )
-    result = pl.get_dummies(df, columns=["category"])
+    result = pl.get_dummies(df, columns=["category"], separator="|")
     assert_frame_equal(result, expected)
 
 
