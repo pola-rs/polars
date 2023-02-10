@@ -6009,6 +6009,176 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shrink_dtype())
 
+    def map_dict(
+        self,
+        remapping: dict[Any, Any],
+        default: Any = None,
+    ) -> Expr:
+        """
+        Replace values in column according to remapping dictionary.
+
+        Parameters
+        ----------
+        remapping
+            Mapping dictionary to use for remapping the values.
+        default
+            Value to use when original value was not found in remapping dictionary.
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        Examples
+        --------
+        >>> country_code_dict = {
+        ...     "CA": "Canada",
+        ...     "DE": "Germany",
+        ...     "FR": "France",
+        ...     None: "Not specified",
+        ... }
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "country_code": ["FR", None, "ES", "DE"],
+        ...     }
+        ... ).with_row_count()
+        >>> df
+        shape: (4, 2)
+        ┌────────┬──────────────┐
+        │ row_nr ┆ country_code │
+        │ ---    ┆ ---          │
+        │ u32    ┆ str          │
+        ╞════════╪══════════════╡
+        │ 0      ┆ FR           │
+        │ 1      ┆ null         │
+        │ 2      ┆ ES           │
+        │ 3      ┆ DE           │
+        └────────┴──────────────┘
+        >>> df.with_columns(
+        ...     pl.col("country_code").map_dict(country_code_dict).alias("remapped")
+        ... )
+        shape: (4, 3)
+        ┌────────┬──────────────┬───────────────┐
+        │ row_nr ┆ country_code ┆ remapped      │
+        │ ---    ┆ ---          ┆ ---           │
+        │ u32    ┆ str          ┆ str           │
+        ╞════════╪══════════════╪═══════════════╡
+        │ 0      ┆ FR           ┆ France        │
+        │ 1      ┆ null         ┆ Not specified │
+        │ 2      ┆ ES           ┆ null          │
+        │ 3      ┆ DE           ┆ Germany       │
+        └────────┴──────────────┴───────────────┘
+
+        Set a default value for values that couldn't be mapped.
+        >>> df.with_columns(
+        ...     pl.col("country_code")
+        ...     .map_dict(country_code_dict, default="unknown")
+        ...     .alias("remapped")
+        ... )
+        shape: (4, 3)
+        ┌────────┬──────────────┬───────────────┐
+        │ row_nr ┆ country_code ┆ remapped      │
+        │ ---    ┆ ---          ┆ ---           │
+        │ u32    ┆ str          ┆ str           │
+        ╞════════╪══════════════╪═══════════════╡
+        │ 0      ┆ FR           ┆ France        │
+        │ 1      ┆ null         ┆ Not specified │
+        │ 2      ┆ ES           ┆ unknown       │
+        │ 3      ┆ DE           ┆ Germany       │
+        └────────┴──────────────┴───────────────┘
+
+        Keep the original value for values that couldn't be mapped.
+        >>> df.with_columns(
+        ...     pl.col("country_code")
+        ...     .map_dict(country_code_dict, default=pl.col("country_code"))
+        ...     .alias("remapped")
+        ... )
+        shape: (4, 3)
+        ┌────────┬──────────────┬───────────────┐
+        │ row_nr ┆ country_code ┆ remapped      │
+        │ ---    ┆ ---          ┆ ---           │
+        │ u32    ┆ str          ┆ str           │
+        ╞════════╪══════════════╪═══════════════╡
+        │ 0      ┆ FR           ┆ France        │
+        │ 1      ┆ null         ┆ Not specified │
+        │ 2      ┆ ES           ┆ ES            │
+        │ 3      ┆ DE           ┆ Germany       │
+        └────────┴──────────────┴───────────────┘
+
+        """
+
+        # use two functions to save unneeded work.
+        # this factors out allocations and branches.
+        def inner_with_default(s: pli.Series) -> pli.Series:
+            column = s.name
+            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
+            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
+            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
+
+            return (
+                (
+                    s.to_frame()
+                    .lazy()
+                    .join(
+                        pli.DataFrame(
+                            [
+                                pli.Series(remap_key_column, list(remapping.keys())),
+                                pli.Series(
+                                    remap_value_column, list(remapping.values())
+                                ),
+                            ]
+                        )
+                        .lazy()
+                        .with_columns(pli.lit(True).alias(is_remapped_column)),
+                        how="left",
+                        left_on=column,
+                        right_on=remap_key_column,
+                    )
+                    .with_columns(
+                        pli.when(pli.col(is_remapped_column).is_not_null())
+                        .then(pli.col(remap_value_column))
+                        .otherwise(default)
+                        .alias(s.name)
+                    )
+                )
+                .collect(no_optimization=True)
+                .to_series()
+            )
+
+        def inner(s: pli.Series) -> pli.Series:
+            column = s.name
+            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
+            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
+            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
+
+            return (
+                (
+                    s.to_frame()
+                    .lazy()
+                    .join(
+                        pli.DataFrame(
+                            [
+                                pli.Series(remap_key_column, list(remapping.keys())),
+                                pli.Series(
+                                    remap_value_column, list(remapping.values())
+                                ),
+                            ]
+                        )
+                        .lazy()
+                        .with_columns(pli.lit(True).alias(is_remapped_column)),
+                        how="left",
+                        left_on=column,
+                        right_on=remap_key_column,
+                    )
+                )
+                .collect(no_optimization=True)
+                .to_series(1)
+            )
+
+        func = inner_with_default if default is not None else inner
+
+        return self.map(func)
+
     @property
     def arr(self) -> ExprListNameSpace:
         """
