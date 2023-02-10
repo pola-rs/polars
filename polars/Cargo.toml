@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.26.1"
+version.workspace = true
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 keywords = ["dataframe", "query-engine", "arrow"]
@@ -297,16 +297,17 @@ bench = [
 ]
 
 [dependencies]
-polars-algo = { version = "0.26.1", path = "./polars-algo", optional = true }
-polars-core = { version = "0.26.1", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.26.1", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.26.1", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-ops = { version = "0.26.1", path = "./polars-ops" }
+polars-algo = { version = "0.27.1", path = "./polars-algo", optional = true }
+polars-core = { version = "0.27.1", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.27.1", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.27.1", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-ops = { version = "0.27.1", path = "./polars-ops" }
 polars-sql = { version = "0.2", path = "./polars-sql", default-features = false, optional = true }
-polars-time = { version = "0.26.1", path = "./polars-time", default-features = false, optional = true }
+polars-time = { version = "0.27.1", path = "./polars-time", default-features = false, optional = true }
 
 # enable js feature for getrandom to work in wasm
 [target.'cfg(target_family = "wasm")'.dependencies.getrandom]
+version = "0.2"
 features = ["js"]
 
 [dev-dependencies]
