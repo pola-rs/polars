@@ -168,9 +168,13 @@ fn value_to_dtype(val: &Value) -> DataType {
         Value::Static(StaticNode::F64(_)) => DataType::Float64,
         Value::Static(StaticNode::Null) => DataType::Null,
         Value::Array(arr) => {
-            let dtype = value_to_dtype(&arr[0]);
+            let inner_type = if let Some(val) = arr.first() {
+                value_to_dtype(val)
+            } else {
+                DataType::Unknown
+            };
 
-            DataType::List(Box::new(dtype))
+            DataType::List(Box::new(inner_type))
         }
         #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
