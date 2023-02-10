@@ -953,10 +953,10 @@ class DateTimeNameSpace:
 
     def replace_time_zone(self, tz: str | None) -> pli.Series:
         """
-        Cast time zone for a Series of type Datetime.
+        Replace time zone for a Series of type Datetime.
 
         Different from ``convert_time_zone``, this will also modify
-        the underlying timestamp.
+        the underlying timestamp and will ignore the original time zone.
 
         Parameters
         ----------
