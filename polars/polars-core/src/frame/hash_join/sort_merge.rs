@@ -188,6 +188,10 @@ pub fn _sort_or_hash_inner(
     s_right: &Series,
     verbose: bool,
 ) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    // We check if keys are sorted.
+    // - If they are we can do a sorted merge join
+    // If one of the keys is not, it can still be faster to sort that key and use
+    // the `arg_sort` indices to revert the sort once the join keys are determined.
     let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
     let size_factor_lhs = s_left.len() as f32 / s_right.len() as f32;
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
@@ -247,7 +251,8 @@ pub fn _sort_or_hash_inner(
                 });
             });
 
-            ((left, right), true)
+            // set sorted to `false` as we reverse sorted the left key.
+            ((left, right), false)
         }
         _ => s_left.hash_join_inner(s_right),
     }
