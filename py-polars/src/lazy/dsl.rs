@@ -1047,8 +1047,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_with_time_zone(&self, tz: TimeZone) -> PyExpr {
-        self.inner.clone().dt().with_time_zone(tz).into()
+    pub fn dt_convert_time_zone(&self, tz: TimeZone) -> PyExpr {
+        self.inner.clone().dt().convert_time_zone(tz).into()
     }
 
     pub fn dt_cast_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
@@ -1056,8 +1056,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_cast_time_zone(&self, tz: Option<String>) -> PyExpr {
-        self.inner.clone().dt().cast_time_zone(tz).into()
+    pub fn dt_replace_time_zone(&self, tz: Option<String>) -> PyExpr {
+        self.inner.clone().dt().replace_time_zone(tz).into()
     }
 
     #[cfg(feature = "timezones")]

@@ -306,7 +306,7 @@ pub trait Utf8Methods: AsUtf8 {
         ca.rename(utf8_ca.name());
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => ca.into_datetime(tu, None).cast_time_zone(Some(tz)),
+            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -530,7 +530,7 @@ pub trait Utf8Methods: AsUtf8 {
             ca.rename(utf8_ca.name());
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => ca.into_datetime(tu, None).cast_time_zone(Some(tz)),
+                Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
                 _ => Ok(ca.into_datetime(tu, None)),
             }
         }

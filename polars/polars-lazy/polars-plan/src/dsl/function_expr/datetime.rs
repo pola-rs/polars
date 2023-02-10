@@ -139,19 +139,19 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
 #[cfg(feature = "timezones")]
 pub(super) fn cast_timezone(s: &Series, tz: Option<&str>) -> PolarsResult<Series> {
     let ca = s.datetime()?;
-    ca.cast_time_zone(tz).map(|ca| ca.into_series())
+    ca.replace_time_zone(tz).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "timezones")]
-#[deprecated(note = "use cast_time_zone")]
+#[deprecated(note = "use replace_time_zone")]
 pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
     let ca = s.datetime()?.clone();
     match (ca.time_zone(), tz) {
         (Some(old_tz), _) if !old_tz.is_empty() => {
-            Err(PolarsError::ComputeError("Cannot localize a tz-aware datetime. Consider using 'dt.with_time_zone' or 'dt.cast_time_zone'".into()))
+            Err(PolarsError::ComputeError("Cannot localize a tz-aware datetime. Consider using 'dt.convert_time_zone' or 'dt.replace_time_zone'".into()))
         },
         (_, _) => {
-            Ok(ca.cast_time_zone(Some(tz))?.into_series())
+            Ok(ca.replace_time_zone(Some(tz))?.into_series())
         }
     }
 }
