@@ -128,10 +128,10 @@ impl PySeries {
 
     #[staticmethod]
     pub fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
             if item.is_none() {
                 builder.append_null()
@@ -160,10 +160,10 @@ where
     ChunkedArray<T>: IntoSeries,
     T::Native: FromPyObject<'a>,
 {
-    let (seq, len) = get_pyseq(obj)?;
+    let len = obj.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name, len);
 
-    for res in seq.iter()? {
+    for res in obj.iter()? {
         let item = res?;
 
         if item.is_none() {
