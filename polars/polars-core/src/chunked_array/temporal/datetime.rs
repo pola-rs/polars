@@ -210,26 +210,21 @@ impl DatetimeChunked {
         let mut fmted = String::new();
         match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(_) => match write!(
+            Some(_) => write!(
                 fmted,
                 "{}",
                 Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
-            ) {
-                Ok(_) => (),
-                Err(_) => {
-                    return Err(PolarsError::ComputeError(
-                        format!("Cannot format DateTime with format '{fmt}'.").into(),
-                    ));
-                }
-            },
-            _ => match write!(fmted, "{}", dt.format(fmt)) {
-                Ok(_) => (),
-                Err(_) => {
-                    return Err(PolarsError::ComputeError(
-                        format!("Cannot format NaiveDateTime with format '{fmt}'.").into(),
-                    ));
-                }
-            },
+            )
+            .map_err(|_| {
+                PolarsError::ComputeError(
+                    format!("Cannot format DateTime with format '{fmt}'.").into(),
+                )
+            })?,
+            _ => write!(fmted, "{}", dt.format(fmt)).map_err(|_| {
+                PolarsError::ComputeError(
+                    format!("Cannot format NaiveDateTime with format '{fmt}'.").into(),
+                )
+            })?,
         };
         let fmted = fmted; // discard mut
 
