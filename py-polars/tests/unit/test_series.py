@@ -1539,7 +1539,12 @@ def test_comparisons_float_series_to_int() -> None:
 
 def test_comparisons_bool_series_to_int() -> None:
     srs_bool = pl.Series([True, False])
-    # todo: do we want this to work?
+
+    # (native bool comparison should work...)
+    for t, f in ((True, False), (False, True)):
+        assert list(srs_bool == t) == list(srs_bool != f) == [t, f]
+
+    # TODO: do we want this to work?
     assert_series_equal(srs_bool / 1, pl.Series([True, False], dtype=Float64))
     match = (
         r"cannot do arithmetic with series of dtype: Boolean"
@@ -1557,14 +1562,16 @@ def test_comparisons_bool_series_to_int() -> None:
         srs_bool % 2
     with pytest.raises(ValueError, match=match):
         srs_bool * 1
-    with pytest.raises(
-        TypeError, match=r"'<' not supported between instances of 'Series' and 'int'"
-    ):
-        srs_bool < 2  # noqa: B015
-    with pytest.raises(
-        TypeError, match=r"'>' not supported between instances of 'Series' and 'int'"
-    ):
-        srs_bool > 2  # noqa: B015
+
+    from operator import ge, gt, le, lt
+
+    for op in (ge, gt, le, lt):
+        for scalar in (0, 1.0, True, False):
+            with pytest.raises(
+                TypeError,
+                match=r"'\W{1,2}' not supported .* 'Series' and '(int|bool|float)'",
+            ):
+                op(srs_bool, scalar)
 
 
 def test_abs() -> None:
