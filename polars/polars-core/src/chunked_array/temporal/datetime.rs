@@ -210,7 +210,11 @@ impl DatetimeChunked {
         let mut fmted = String::new();
         match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(_) => match write!(fmted, "{}", Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)) {
+            Some(_) => match write!(
+                fmted,
+                "{}",
+                Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
+            ) {
                 Ok(_) => (),
                 Err(_) => {
                     return Err(PolarsError::ComputeError(
