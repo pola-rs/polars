@@ -430,22 +430,29 @@ class Series:
         return self.__xor__(other)
 
     def _comp(self, other: Any, op: ComparisonOperator) -> Series:
+        # special edge-case; boolean broadcast series (eq/neq) is its own result
+        if self.dtype == Boolean and isinstance(other, bool) and op in ("eq", "neq"):
+            if (other is True and op == "eq") or (other is False and op == "neq"):
+                return self.clone()
+            elif (other is False and op == "eq") or (other is True and op == "neq"):
+                return ~self
+
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return wrap_s(f(ts))
-        if isinstance(other, time) and self.dtype == Time:
+        elif isinstance(other, time) and self.dtype == Time:
             d = _time_to_pl_time(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return wrap_s(f(d))
-        if isinstance(other, date) and self.dtype == Date:
+        elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return wrap_s(f(d))
-        if self.dtype == Categorical and not isinstance(other, Series):
+        elif self.dtype == Categorical and not isinstance(other, Series):
             other = Series([other])
 
         if isinstance(other, Sequence) and not isinstance(other, str):
