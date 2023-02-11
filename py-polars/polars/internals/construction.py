@@ -356,23 +356,20 @@ def sequence_to_pyseries(
                     )
 
             # recursively call Series constructor for nested types
-            if nested_dtype == list:
-                return sequence_to_pyseries(
-                    name=name,
-                    values=[
-                        sequence_to_pyseries(name, seq, dtype=None, strict=strict)
-                        for seq in values
-                    ],
-                    dtype=None,
-                    strict=strict,
-                )
-            elif nested_dtype == Struct:
+            if nested_dtype in (list, List, Struct):
                 s = sequence_to_pyseries(
                     name=name,
                     values=[
-                        pli.Series(values=v, dtype=nested_dtype)  # type: ignore[arg-type]
+                        pli.Series(
+                            values=v,
+                            dtype=nested_dtype,  # type: ignore[arg-type]
+                            strict=strict,
+                            nan_to_null=nan_to_null,
+                        )
                         for v in (values or [None])
                     ],
+                    nan_to_null=nan_to_null,
+                    strict=strict,
                 )
                 return s if values else pli.Series._from_pyseries(s)[:0]._s
 
@@ -388,7 +385,7 @@ def sequence_to_pyseries(
                     for lst in values:
                         for vl in lst:
                             equal_to_inner = type(vl) == nested_dtype
-                            if not equal_to_inner or count > 50:
+                            if not equal_to_inner or count > N_INFER_DEFAULT:
                                 break
                             count += 1
                     if equal_to_inner:
