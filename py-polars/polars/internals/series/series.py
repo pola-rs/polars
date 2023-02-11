@@ -563,7 +563,7 @@ class Series:
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if not isinstance(other, pli.Expr):
             other = pli.lit(other)
-        return self.to_frame().select(pli.lit(self) // other).to_series()
+        return self.to_frame().select(pli.col(self.name) // other).to_series()
 
     def __invert__(self) -> Series:
         if self.dtype == Boolean:

@@ -51,7 +51,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
 use pyo3::wrap_pyfunction;
 
-use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
+use crate::conversion::{get_df, get_lf, get_series, Wrap};
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
@@ -305,8 +305,7 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
     use polars_core::error::PolarsResult;
     use polars_core::utils::rayon::prelude::*;
 
-    let (seq, _len) = get_pyseq(dfs)?;
-    let mut iter = seq.iter()?;
+    let mut iter = dfs.iter()?;
     let first = iter.next().unwrap()?;
 
     let first_rdf = get_df(first)?;
@@ -343,8 +342,8 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
-fn concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
-    let (seq, len) = get_pyseq(lfs)?;
+fn concat_lf(seq: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+    let len = seq.len()?;
     let mut lfs = Vec::with_capacity(len);
 
     for res in seq.iter()? {
@@ -359,8 +358,7 @@ fn concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame
 
 #[pyfunction]
 fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
-    let (seq, _len) = get_pyseq(dfs)?;
-    let iter = seq.iter()?;
+    let iter = dfs.iter()?;
 
     let dfs = iter
         .map(|item| {
@@ -375,8 +373,7 @@ fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 
 #[pyfunction]
 fn py_diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
-    let (seq, _len) = get_pyseq(lfs)?;
-    let iter = seq.iter()?;
+    let iter = lfs.iter()?;
 
     let lfs = iter
         .map(|item| {
@@ -392,8 +389,7 @@ fn py_diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyL
 
 #[pyfunction]
 fn py_hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
-    let (seq, _len) = get_pyseq(dfs)?;
-    let iter = seq.iter()?;
+    let iter = dfs.iter()?;
 
     let dfs = iter
         .map(|item| {
@@ -408,8 +404,7 @@ fn py_hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 
 #[pyfunction]
 fn concat_series(series: &PyAny) -> PyResult<PySeries> {
-    let (seq, _len) = get_pyseq(series)?;
-    let mut iter = seq.iter()?;
+    let mut iter = series.iter()?;
     let first = iter.next().unwrap()?;
 
     let mut s = get_series(first)?;
