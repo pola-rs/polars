@@ -231,7 +231,7 @@ impl DatetimeChunked {
                 }
             },
         };
-        let fmted = fmted;
+        let fmted = fmted; // discard mut
 
         let mut ca: Utf8Chunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
