@@ -89,7 +89,7 @@ fn test_err_no_found() {
 
     assert!(matches!(
         df.lazy().filter(col("nope").gt(lit(2))).collect(),
-        Err(PolarsError::NotFound(_))
+        Err(PolarsError::ColumnNotFound(_))
     ));
 }
 

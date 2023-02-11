@@ -65,10 +65,10 @@ jobs:
           maturin develop
 
       - name: Run tests and report coverage
-        run: pytest --cov -n auto -m "slow or not slow"
+        run: pytest --cov -n auto -m "not benchmark"
 
       - name: Run doctests
-        run: python tests/docs/run_doc_examples.py
+        run: python tests/docs/run_doctest.py
 
       - name: Check import without optional dependencies
         run: |
@@ -129,7 +129,7 @@ jobs:
           pip install target/wheels/polars-*.whl
 
       - name: Run tests
-        run: pytest -n auto -m "slow or not slow"
+        run: pytest -n auto -m "not benchmark"
 
       - name: Check import without optional dependencies
         run: |

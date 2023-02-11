@@ -128,10 +128,10 @@ impl PySeries {
 
     #[staticmethod]
     pub fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
             if item.is_none() {
                 builder.append_null()
@@ -160,10 +160,10 @@ where
     ChunkedArray<T>: IntoSeries,
     T::Native: FromPyObject<'a>,
 {
-    let (seq, len) = get_pyseq(obj)?;
+    let len = obj.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name, len);
 
-    for res in seq.iter()? {
+    for res in obj.iter()? {
         let item = res?;
 
         if item.is_none() {
@@ -233,6 +233,13 @@ impl PySeries {
 
     #[staticmethod]
     pub fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
+        let mut s = val.0.into_series();
+        s.rename(name);
+        PySeries::new(s)
+    }
+
+    #[staticmethod]
+    pub fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
         let mut s = val.0.into_series();
         s.rename(name);
         PySeries::new(s)
@@ -324,35 +331,6 @@ impl PySeries {
     #[staticmethod]
     pub fn new_list(name: &str, seq: &PyAny, dtype: Wrap<DataType>) -> PyResult<Self> {
         py_seq_to_list(name, seq, &dtype.0).map(|s| s.into())
-    }
-
-    /// Should only be called for Series with null types.
-    /// This will cast to floats so that `None = np.nan`
-    pub fn to_numpy(&self, py: Python) -> PyObject {
-        let s = &self.series;
-        if s.bit_repr_is_large() {
-            let s = s.cast(&DataType::Float64).unwrap();
-            let ca = s.f64().unwrap();
-            let np_arr = PyArray1::from_iter(
-                py,
-                ca.into_iter().map(|opt_v| match opt_v {
-                    Some(v) => v,
-                    None => f64::NAN,
-                }),
-            );
-            np_arr.into_py(py)
-        } else {
-            let s = s.cast(&DataType::Float32).unwrap();
-            let ca = s.f32().unwrap();
-            let np_arr = PyArray1::from_iter(
-                py,
-                ca.into_iter().map(|opt_v| match opt_v {
-                    Some(v) => v,
-                    None => f32::NAN,
-                }),
-            );
-            np_arr.into_py(py)
-        }
     }
 
     pub fn estimated_size(&self) -> usize {
@@ -1024,8 +1002,8 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn to_dummies(&self) -> PyResult<PyDataFrame> {
-        let df = self.series.to_dummies().map_err(PyPolarsErr::from)?;
+    pub fn to_dummies(&self, sep: Option<&str>) -> PyResult<PyDataFrame> {
+        let df = self.series.to_dummies(sep).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 

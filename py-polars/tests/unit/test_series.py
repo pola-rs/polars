@@ -340,7 +340,7 @@ def test_arithmetic(s: pl.Series) -> None:
         2 % a
     with pytest.raises(ValueError):
         2**a
-    with pytest.raises(TypeError):  # https://github.com/pola-rs/polars/issues/6617
+    with pytest.raises(ValueError):
         +a
     a = pl.Series("a", [""])
     with pytest.raises(ValueError):
@@ -470,11 +470,21 @@ def test_to_pandas() -> None:
         assert b.isnull().sum() == 1
 
         if a.dtype == pl.List:
-            vals = [(None if x is None else x.tolist()) for x in b]
+            vals_b = [(None if x is None else x.tolist()) for x in b]
         else:
-            vals = b.replace({np.nan: None}).values.tolist()  # type: ignore[union-attr]
+            vals_b = b.replace({np.nan: None}).values.tolist()  # type: ignore[union-attr]
 
-        assert vals == test_data
+        assert vals_b == test_data
+
+        try:
+            c = a.to_pandas(use_pyarrow_extension_array=True)
+            assert a.name == c.name
+            assert c.isnull().sum() == 1
+            vals_c = [None if x is pd.NA else x for x in c.tolist()]
+            assert vals_c == test_data
+        except ModuleNotFoundError:
+            # Skip test if Pandas 1.5.x is not installed.
+            pass
 
 
 def test_to_python() -> None:
@@ -1115,12 +1125,6 @@ def test_slice() -> None:
         assert s[py_slice].to_list() == s.to_list()[py_slice]
 
 
-def test_str_slice() -> None:
-    df = pl.DataFrame({"a": ["foobar", "barfoo"]})
-    assert df["a"].str.slice(-3).to_list() == ["bar", "foo"]
-    assert df.select([pl.col("a").str.slice(2, 4)])["a"].to_list() == ["obar", "rfoo"]
-
-
 def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
     out = df.select([pl.arange(0, pl.col("a").count() * 10)])
@@ -1183,24 +1187,6 @@ def test_mode() -> None:
 
     df = pl.DataFrame([s])
     assert df.select([pl.col("a").mode()])["a"].to_list() == [1]
-
-
-def test_jsonpath_single() -> None:
-    s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
-    expected = pl.Series(["1", None, "2", "2.1", "true"])
-    assert_series_equal(s.str.json_path_match("$.a"), expected)
-
-
-def test_extract_regex() -> None:
-    s = pl.Series(
-        [
-            "http://vote.com/ballon_dor?candidate=messi&ref=polars",
-            "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
-            "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
-        ]
-    )
-    expected = pl.Series(["messi", None, "ronaldo"])
-    assert_series_equal(s.str.extract(r"candidate=(\w+)", 1), expected)
 
 
 def test_rank() -> None:
@@ -1553,7 +1539,12 @@ def test_comparisons_float_series_to_int() -> None:
 
 def test_comparisons_bool_series_to_int() -> None:
     srs_bool = pl.Series([True, False])
-    # todo: do we want this to work?
+
+    # (native bool comparison should work...)
+    for t, f in ((True, False), (False, True)):
+        assert list(srs_bool == t) == list(srs_bool != f) == [t, f]
+
+    # TODO: do we want this to work?
     assert_series_equal(srs_bool / 1, pl.Series([True, False], dtype=Float64))
     match = (
         r"cannot do arithmetic with series of dtype: Boolean"
@@ -1571,14 +1562,16 @@ def test_comparisons_bool_series_to_int() -> None:
         srs_bool % 2
     with pytest.raises(ValueError, match=match):
         srs_bool * 1
-    with pytest.raises(
-        TypeError, match=r"'<' not supported between instances of 'Series' and 'int'"
-    ):
-        srs_bool < 2  # noqa: B015
-    with pytest.raises(
-        TypeError, match=r"'>' not supported between instances of 'Series' and 'int'"
-    ):
-        srs_bool > 2  # noqa: B015
+
+    from operator import ge, gt, le, lt
+
+    for op in (ge, gt, le, lt):
+        for scalar in (0, 1.0, True, False):
+            with pytest.raises(
+                TypeError,
+                match=r"'\W{1,2}' not supported .* 'Series' and '(int|bool|float)'",
+            ):
+                op(srs_bool, scalar)
 
 
 def test_abs() -> None:
@@ -1657,17 +1650,20 @@ def test_arg_min_and_arg_max() -> None:
     assert s.arg_max() == 0
 
     s = pl.Series([None, True, False, True])
-    assert s.arg_min() == 2
+    assert s.arg_min() == 0
     assert s.arg_max() == 1
     s = pl.Series([None, None], dtype=pl.Boolean)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
+    assert s.arg_min() == 0
+    assert s.arg_max() == 0
     s = pl.Series([True, True])
     assert s.arg_min() == 0
     assert s.arg_max() == 0
     s = pl.Series([False, False])
     assert s.arg_min() == 0
     assert s.arg_max() == 0
+    s = pl.Series(["a", "c", "b"])
+    assert s.arg_min() == 0
+    assert s.arg_max() == 1
 
 
 def test_is_null_is_not_null() -> None:
@@ -1750,207 +1746,6 @@ def test_shrink_to_fit() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
     sf = s.shrink_to_fit(in_place=False)
     assert s is not sf
-
-
-def test_str_concat() -> None:
-    s = pl.Series(["1", None, "2"])
-    result = s.str.concat()
-    expected = pl.Series(["1-null-2"])
-    assert_series_equal(result, expected)
-
-
-def test_str_lengths() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    expected = pl.Series([5, None, 3, 6], dtype=UInt32)
-    assert_series_equal(s.str.lengths(), expected)
-
-
-def test_str_n_chars() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    expected = pl.Series([4, None, 3, 2], dtype=UInt32)
-    assert_series_equal(s.str.n_chars(), expected)
-
-
-def test_str_contains() -> None:
-    s = pl.Series(["messi", "ronaldo", "ibrahimovic"])
-    expected = pl.Series([True, False, False])
-    assert_series_equal(s.str.contains("mes"), expected)
-
-
-def test_str_encode() -> None:
-    s = pl.Series(["foo", "bar", None])
-    hex_encoded = pl.Series(["666f6f", "626172", None])
-    base64_encoded = pl.Series(["Zm9v", "YmFy", None])
-    assert_series_equal(s.str.encode("hex"), hex_encoded)
-    assert_series_equal(s.str.encode("base64"), base64_encoded)
-    with pytest.raises(ValueError):
-        s.str.encode("utf8")  # type: ignore[arg-type]
-
-
-def test_str_decode() -> None:
-    hex_encoded = pl.Series(["666f6f", "626172", None])
-    base64_encoded = pl.Series(["Zm9v", "YmFy", None])
-    expected = pl.Series([b"foo", b"bar", None])
-
-    assert_series_equal(hex_encoded.str.decode("hex"), expected)
-    assert_series_equal(base64_encoded.str.decode("base64"), expected)
-
-
-def test_str_decode_exception() -> None:
-    s = pl.Series(["not a valid", "626172", None])
-    with pytest.raises(Exception):
-        s.str.decode(encoding="hex")
-    with pytest.raises(Exception):
-        s.str.decode(encoding="base64")
-    with pytest.raises(ValueError):
-        s.str.decode("utf8")  # type: ignore[arg-type]
-
-
-def test_str_replace_str_replace_all() -> None:
-    s = pl.Series(["hello", "world", "test", "root"])
-    expected = pl.Series(["hell0", "w0rld", "test", "r0ot"])
-    assert_series_equal(s.str.replace("o", "0"), expected)
-
-    expected = pl.Series(["hell0", "w0rld", "test", "r00t"])
-    assert_series_equal(s.str.replace_all("o", "0"), expected)
-
-
-def test_str_to_lowercase() -> None:
-    s = pl.Series(["Hello", "WORLD"])
-    expected = pl.Series(["hello", "world"])
-    assert_series_equal(s.str.to_lowercase(), expected)
-
-
-def test_str_to_uppercase() -> None:
-    s = pl.Series(["Hello", "WORLD"])
-    expected = pl.Series(["HELLO", "WORLD"])
-    assert_series_equal(s.str.to_uppercase(), expected)
-
-
-def test_str_parse_int() -> None:
-    bin = pl.Series(["110", "101", "010"])
-    assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(Int32))
-
-    hex = pl.Series(["fa1e", "ff00", "cafe"])
-    assert_series_equal(
-        hex.str.parse_int(16), pl.Series([64030, 65280, 51966]).cast(Int32)
-    )
-
-
-def test_str_strip() -> None:
-    s = pl.Series([" hello ", "world\t "])
-    expected = pl.Series(["hello", "world"])
-    assert_series_equal(s.str.strip(), expected)
-
-    expected = pl.Series(["hello", "worl"])
-    assert_series_equal(s.str.strip().str.strip("d"), expected)
-
-    expected = pl.Series(["ell", "rld\t"])
-    assert_series_equal(s.str.strip(" hwo"), expected)
-
-
-def test_str_lstrip() -> None:
-    s = pl.Series([" hello ", "\t world"])
-    expected = pl.Series(["hello ", "world"])
-    assert_series_equal(s.str.lstrip(), expected)
-
-    expected = pl.Series(["ello ", "world"])
-    assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
-
-    expected = pl.Series(["ello ", "\t world"])
-    assert_series_equal(s.str.lstrip("hw "), expected)
-
-
-def test_str_rstrip() -> None:
-    s = pl.Series([" hello ", "world\t "])
-    expected = pl.Series([" hello", "world"])
-    assert_series_equal(s.str.rstrip(), expected)
-
-    expected = pl.Series([" hell", "world"])
-    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
-
-    expected = pl.Series([" he", "wor"])
-    assert_series_equal(s.str.rstrip("odl \t"), expected)
-
-
-def test_str_strip_whitespace() -> None:
-    s = pl.Series("a", ["trailing  ", "  leading", "  both  "])
-
-    expected = pl.Series("a", ["trailing", "  leading", "  both"])
-    assert_series_equal(s.str.rstrip(), expected)
-
-    expected = pl.Series("a", ["trailing  ", "leading", "both  "])
-    assert_series_equal(s.str.lstrip(), expected)
-
-    expected = pl.Series("a", ["trailing", "leading", "both"])
-    assert_series_equal(s.str.strip(), expected)
-
-
-def test_str_strptime() -> None:
-    s = pl.Series(["2020-01-01", "2020-02-02"])
-    expected = pl.Series([date(2020, 1, 1), date(2020, 2, 2)])
-    assert_series_equal(s.str.strptime(pl.Date, "%Y-%m-%d"), expected)
-
-    s = pl.Series(["2020-01-01 00:00:00", "2020-02-02 03:20:10"])
-    expected = pl.Series(
-        [datetime(2020, 1, 1, 0, 0, 0), datetime(2020, 2, 2, 3, 20, 10)]
-    )
-    assert_series_equal(s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S"), expected)
-
-    s = pl.Series(["00:00:00", "03:20:10"])
-    expected = pl.Series([0, 12010000000000], dtype=pl.Time)
-    assert_series_equal(s.str.strptime(pl.Time, "%H:%M:%S"), expected)
-
-
-def test_dt_strftime() -> None:
-    s = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
-    assert s.dtype == pl.Date
-    expected = pl.Series("a", ["1997-05-19", "2024-10-04", "2052-02-20"])
-    assert_series_equal(s.dt.strftime("%F"), expected)
-
-
-def test_dt_year_month_week_day_ordinal_day() -> None:
-    s = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
-
-    assert_series_equal(s.dt.year(), pl.Series("a", [1997, 2024, 2052], dtype=Int32))
-
-    assert_series_equal(s.dt.month(), pl.Series("a", [5, 10, 2], dtype=UInt32))
-    assert_series_equal(s.dt.weekday(), pl.Series("a", [1, 5, 2], dtype=UInt32))
-    assert_series_equal(s.dt.week(), pl.Series("a", [21, 40, 8], dtype=UInt32))
-    assert_series_equal(s.dt.day(), pl.Series("a", [19, 4, 20], dtype=UInt32))
-    assert_series_equal(
-        s.dt.ordinal_day(), pl.Series("a", [139, 278, 51], dtype=UInt32)
-    )
-
-    assert s.dt.median() == date(2024, 10, 4)
-    assert s.dt.mean() == date(2024, 10, 4)
-
-
-def test_dt_datetimes() -> None:
-    s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
-    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
-
-    # hours, minutes, seconds, milliseconds, microseconds, and nanoseconds
-    assert_series_equal(s.dt.hour(), pl.Series("", [0, 3], dtype=UInt32))
-    assert_series_equal(s.dt.minute(), pl.Series("", [0, 20], dtype=UInt32))
-    assert_series_equal(s.dt.second(), pl.Series("", [0, 10], dtype=UInt32))
-    assert_series_equal(s.dt.millisecond(), pl.Series("", [0, 987], dtype=UInt32))
-    assert_series_equal(s.dt.microsecond(), pl.Series("", [0, 987654], dtype=UInt32))
-    assert_series_equal(s.dt.nanosecond(), pl.Series("", [0, 987654321], dtype=UInt32))
-
-    # epoch methods
-    assert_series_equal(s.dt.epoch(tu="d"), pl.Series("", [18262, 18294], dtype=Int32))
-    assert_series_equal(
-        s.dt.epoch(tu="s"), pl.Series("", [1_577_836_800, 1_580_613_610], dtype=Int64)
-    )
-    assert_series_equal(
-        s.dt.epoch(tu="ms"),
-        pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=Int64),
-    )
-    # fractional seconds
-    assert_series_equal(
-        s.dt.second(fractional=True), pl.Series("", [0.0, 10.987654321], dtype=Float64)
-    )
 
 
 @pytest.mark.parametrize("unit", ["ns", "us", "ms"])
@@ -2076,8 +1871,18 @@ def test_is_between_datetime() -> None:
 )
 @pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
 def test_trigonometric(f: str) -> None:
-    s = pl.Series("a", [0.0, math.pi])
-    expected = pl.Series("a", getattr(np, f)(s.to_numpy()))
+    s = pl.Series("a", [0.0, math.pi, None, math.nan])
+    expected = (
+        pl.Series("a", getattr(np, f)(s.to_numpy()))
+        .to_frame()
+        .with_columns(
+            pl.when(s.is_null())  # type: ignore[arg-type]
+            .then(None)
+            .otherwise(pl.col("a"))
+            .alias("a")
+        )
+        .to_series()
+    )
     result = getattr(s, f)()
     assert_series_equal(result, expected)
 
@@ -2098,21 +1903,40 @@ def test_ewm_mean() -> None:
     s = pl.Series([2, 5, 3])
 
     expected = pl.Series([2.0, 4.0, 3.4285714285714284])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True), expected)
+    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=True), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([2.0, 3.8, 3.421053])
-    assert_series_equal(s.ewm_mean(com=2.0, adjust=True), expected)
+    assert_series_equal(s.ewm_mean(com=2.0, adjust=True, ignore_nulls=True), expected)
+    assert_series_equal(s.ewm_mean(com=2.0, adjust=True, ignore_nulls=False), expected)
 
     expected = pl.Series([2.0, 3.5, 3.25])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=False), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
+    )
 
     s = pl.Series([2, 3, 5, 7, 4])
 
     expected = pl.Series([None, 2.666667, 4.0, 5.6, 4.774194])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=2), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([None, None, 4.0, 5.6, 4.774194])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=3), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=False), expected
+    )
 
     s = pl.Series([None, 1.0, 5.0, 7.0, None, 2.0, 5.0, 4])
 
@@ -2128,10 +1952,32 @@ def test_ewm_mean() -> None:
             4.174603174603175,
         ],
     )
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=1), expected)
+    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=True), expected)
+    expected = pl.Series(
+        [
+            None,
+            1.0,
+            3.666666666666667,
+            5.571428571428571,
+            5.571428571428571,
+            3.08695652173913,
+            4.2,
+            4.092436974789916,
+        ]
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.5, 4.25, 4.125])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=False, min_periods=1), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
+    )
+
+    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0])
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
+    )
 
 
 def test_ewm_mean_leading_nulls() -> None:
@@ -2159,21 +2005,31 @@ def test_ewm_mean_min_periods() -> None:
     series = pl.Series([1.0, None, 2.0, None, 3.0])
 
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
-    assert ewm_mean.to_list() == [
-        1.0,
-        1.0,
-        1.6666666666666665,
-        1.6666666666666665,
-        2.4285714285714284,
-    ]
+    assert_series_equal(
+        ewm_mean,
+        pl.Series(
+            [
+                1.0,
+                1.0,
+                1.6666666666666665,
+                1.6666666666666665,
+                2.4285714285714284,
+            ]
+        ),
+    )
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
-    assert ewm_mean.to_list() == [
-        None,
-        None,
-        1.6666666666666665,
-        1.6666666666666665,
-        2.4285714285714284,
-    ]
+    assert_series_equal(
+        ewm_mean,
+        pl.Series(
+            [
+                None,
+                None,
+                1.6666666666666665,
+                1.6666666666666665,
+                2.4285714285714284,
+            ]
+        ),
+    )
 
 
 def test_ewm_std_var() -> None:
@@ -2280,49 +2136,9 @@ def test_duration_arithmetic() -> None:
         assert_series_equal(df1["d_offset"], df2["d_offset"])
 
 
-def test_duration_extract_times() -> None:
-    a = pl.Series("a", [datetime(2021, 1, 1)])
-    b = pl.Series("b", [datetime(2021, 1, 2)])
-
-    duration = b - a
-    expected = pl.Series("b", [1])
-    assert_series_equal(duration.dt.days(), expected)
-
-    expected = pl.Series("b", [24])
-    assert_series_equal(duration.dt.hours(), expected)
-
-    expected = pl.Series("b", [3600 * 24])
-    assert_series_equal(duration.dt.seconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e3)])
-    assert_series_equal(duration.dt.milliseconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e6)])
-    assert_series_equal(duration.dt.microseconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e9)])
-    assert_series_equal(duration.dt.nanoseconds(), expected)
-
-
 def test_mean_overflow() -> None:
     arr = np.array([255] * (1 << 17), dtype="int16")
     assert arr.mean() == 255.0
-
-
-def test_str_split() -> None:
-    a = pl.Series("a", ["a, b", "a", "ab,c,de"])
-    for out in [a.str.split(","), pl.select(pl.lit(a).str.split(",")).to_series()]:
-        assert out[0].to_list() == ["a", " b"]
-        assert out[1].to_list() == ["a"]
-        assert out[2].to_list() == ["ab", "c", "de"]
-
-    for out in [
-        a.str.split(",", inclusive=True),
-        pl.select(pl.lit(a).str.split(",", inclusive=True)).to_series(),
-    ]:
-        assert out[0].to_list() == ["a,", " b"]
-        assert out[1].to_list() == ["a"]
-        assert out[2].to_list() == ["ab,", "c,", "de"]
 
 
 def test_sign() -> None:
@@ -2366,17 +2182,6 @@ def test_cumulative_eval() -> None:
     expr3 = expr1 - expr2
     expected3 = pl.Series("values", [0.0, -3.0, -8.0, -15.0, -24.0])
     assert_series_equal(s.cumulative_eval(expr3), expected3)
-
-
-def test_drop_nan_ignore_null_3525() -> None:
-    df = pl.DataFrame({"a": [1.0, float("NaN"), 2.0, None, 3.0, 4.0]})
-    assert df.select(pl.col("a").drop_nans()).to_series().to_list() == [
-        1.0,
-        2.0,
-        None,
-        3.0,
-        4.0,
-    ]
 
 
 def test_reverse() -> None:
@@ -2534,3 +2339,15 @@ def test_ptr() -> None:
 
     ptr2 = s2.rechunk()._get_ptr()
     assert ptr != ptr2
+
+
+def test_null_comparisons() -> None:
+    s = pl.Series("s", [None, "str", "a"])
+    assert (s.shift() == s).null_count() == 0
+    assert (s.shift() != s).null_count() == 0
+
+
+def test_min_max_agg_on_str() -> None:
+    strings = ["b", "a", "x"]
+    s = pl.Series(strings)
+    assert (s.min(), s.max()) == ("a", "x")

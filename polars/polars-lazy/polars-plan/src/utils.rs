@@ -258,17 +258,43 @@ pub(crate) fn rename_aexpr_leaf_names(
     to_aexpr(new_expr, arena)
 }
 
-/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
-/// Returns `Node` on first successful rename.
-pub(crate) fn aexpr_assign_renamed_root(
+/// If the leaf names match `current`, the node will be replaced
+/// with a renamed expression.
+pub(crate) fn rename_matching_aexpr_leaf_names(
     node: Node,
     arena: &mut Arena<AExpr>,
     current: &str,
     new_name: &str,
 ) -> Node {
-    let roots = aexpr_to_leaf_nodes(node, arena);
+    let mut leaves = aexpr_to_leaf_nodes_iter(node, arena);
 
-    for node in roots {
+    if leaves.any(|node| matches!(arena.get(node), AExpr::Column(name) if &**name == current)) {
+        // we convert to expression as we cannot easily copy the aexpr.
+        let mut new_expr = node_to_expr(node, arena);
+        new_expr.mutate().apply(|e| match e {
+            Expr::Column(name) if &**name == current => {
+                *name = Arc::from(new_name);
+                true
+            }
+            _ => true,
+        });
+        to_aexpr(new_expr, arena)
+    } else {
+        node
+    }
+}
+
+/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
+/// Returns `Node` on first successful rename.
+pub(crate) fn aexpr_assign_renamed_leaf(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    current: &str,
+    new_name: &str,
+) -> Node {
+    let leafs = aexpr_to_leaf_nodes_iter(node, arena);
+
+    for node in leafs {
         match arena.get(node) {
             AExpr::Column(name) if &**name == current => {
                 return arena.add(AExpr::Column(Arc::from(new_name)))

@@ -118,8 +118,12 @@ impl ListNameSpace {
 
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr) -> Expr {
-        self.0
-            .map_many_private(FunctionExpr::ListExpr(ListFunction::Get), &[index], false)
+        self.0.apply_many_private(
+            FunctionExpr::ListExpr(ListFunction::Get),
+            &[index],
+            false,
+            false,
+        )
     }
 
     /// Get items in every sublist by multiple indexes.
@@ -129,9 +133,10 @@ impl ListNameSpace {
     /// This behavior is more expensive than defaulting to returing an `Error`.
     #[cfg(feature = "list_take")]
     pub fn take(self, index: Expr, null_on_oob: bool) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::ListExpr(ListFunction::Take(null_on_oob)),
             &[index],
+            false,
             false,
         )
     }
@@ -152,7 +157,7 @@ impl ListNameSpace {
     pub fn join(self, separator: &str) -> Expr {
         let separator = separator.to_string();
         self.0
-            .map(
+            .apply(
                 move |s| {
                     s.list()?
                         .lst_join(&separator)
@@ -206,9 +211,10 @@ impl ListNameSpace {
 
     /// Slice every sublist.
     pub fn slice(self, offset: Expr, length: Expr) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::ListExpr(ListFunction::Slice),
             &[offset, length],
+            false,
             false,
         )
     }

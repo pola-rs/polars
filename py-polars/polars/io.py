@@ -1355,8 +1355,6 @@ def scan_delta(
     >>> pl.scan_delta(table_path).collect()  # doctest: +SKIP
 
     Use the `pyarrow_options` parameter to read only certain partitions.
-    Note: This should be preferred over using an equivalent `.filter()` on the resulting
-    dataframe, as this avoids reading the data at all.
 
     >>> pl.scan_delta(  # doctest: +SKIP
     ...     table_path,
@@ -1517,7 +1515,6 @@ def read_delta(
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
         Keyword arguments while converting a Delta lake Table to pyarrow table.
-        Use this parameter when filtering on partitioned columns.
 
     Returns
     -------

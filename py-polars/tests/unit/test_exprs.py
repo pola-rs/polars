@@ -141,86 +141,6 @@ def test_unique_stable() -> None:
     assert_series_equal(s.unique(maintain_order=True), expected)
 
 
-def test_wildcard_expansion() -> None:
-    # one function requires wildcard expansion the other need
-    # this tests the nested behavior
-    # see: #2867
-
-    df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
-    assert df.select(
-        pl.concat_str(pl.all()).str.to_lowercase()
-    ).to_series().to_list() == ["xs", "yo", "zs"]
-
-
-def test_split() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
-    out = df.select([pl.col("x").str.split("_")])
-
-    expected = pl.DataFrame(
-        [
-            {"x": ["a", "a"]},
-            {"x": None},
-            {"x": ["b"]},
-            {"x": ["c", "c", "c"]},
-        ]
-    )
-
-    assert_frame_equal(out, expected)
-    assert_frame_equal(df["x"].str.split("_").to_frame(), expected)
-
-    out = df.select([pl.col("x").str.split("_", inclusive=True)])
-
-    expected = pl.DataFrame(
-        [
-            {"x": ["a_", "a"]},
-            {"x": None},
-            {"x": ["b"]},
-            {"x": ["c_", "c_", "c"]},
-        ]
-    )
-
-    assert_frame_equal(out, expected)
-    assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
-
-
-def test_split_exact() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c"]})
-    out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=False)]).unnest("x")
-
-    expected = pl.DataFrame(
-        {
-            "field_0": ["a", None, "b", "c"],
-            "field_1": ["a", None, None, "c"],
-            "field_2": pl.Series([None, None, None, None], dtype=pl.Utf8),
-        }
-    )
-
-    assert_frame_equal(out, expected)
-    out2 = df["x"].str.split_exact("_", 2, inclusive=False).to_frame().unnest("x")
-    assert_frame_equal(out2, expected)
-
-    out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
-
-    expected = pl.DataFrame(
-        {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
-    )
-    assert_frame_equal(out, expected)
-    assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
-    assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
-
-
-def test_splitn() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
-    out = df.select([pl.col("x").str.splitn("_", 2)]).unnest("x")
-
-    expected = pl.DataFrame(
-        {"field_0": ["a", None, "b", "c"], "field_1": ["a", None, None, "c_c"]}
-    )
-
-    assert_frame_equal(out, expected)
-    assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
-
-
 def test_unique_and_drop_stability() -> None:
     # see: 2898
     # the original cause was that we wrote:
@@ -295,7 +215,7 @@ def test_dtype_col_selection() -> None:
             "n": pl.UInt64,
         },
     )
-    assert set(df.select(pl.col(INTEGER_DTYPES)).columns) == {
+    assert df.select(pl.col(INTEGER_DTYPES)).columns == [
         "e",
         "f",
         "g",
@@ -304,9 +224,9 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
-    }
-    assert set(df.select(pl.col(FLOAT_DTYPES)).columns) == {"i", "j"}
-    assert set(df.select(pl.col(NUMERIC_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j"]
+    assert df.select(pl.col(NUMERIC_DTYPES)).columns == [
         "e",
         "f",
         "g",
@@ -317,8 +237,8 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
-    }
-    assert set(df.select(pl.col(TEMPORAL_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(TEMPORAL_DTYPES)).columns == [
         "a1",
         "a2",
         "a3",
@@ -329,19 +249,19 @@ def test_dtype_col_selection() -> None:
         "d2",
         "d3",
         "d4",
-    }
-    assert set(df.select(pl.col(DATETIME_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(DATETIME_DTYPES)).columns == [
         "a1",
         "a2",
         "a3",
         "a4",
-    }
-    assert set(df.select(pl.col(DURATION_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(DURATION_DTYPES)).columns == [
         "d1",
         "d2",
         "d3",
         "d4",
-    }
+    ]
 
 
 def test_list_eval_expression() -> None:
@@ -511,17 +431,6 @@ def test_abs_expr() -> None:
     assert out["x"].to_list() == [1, 0, 1]
 
 
-def test_str_parse_int() -> None:
-    df = pl.DataFrame({"bin": ["110", "101", "010"], "hex": ["fa1e", "ff00", "cafe"]})
-    out = df.with_columns(
-        [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
-    )
-
-    expected = pl.DataFrame({"bin": [6, 5, 2], "hex": [64030, 65280, 51966]})
-
-    assert out.frame_equal(expected)
-
-
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
@@ -560,3 +469,54 @@ def test_ewm_with_multiple_chunks() -> None:
         ]
     )
     assert ewm_std.null_count().sum(axis=1)[0] == 4
+
+
+def test_map_dict() -> None:
+    country_code_dict = {
+        "CA": "Canada",
+        "DE": "Germany",
+        "FR": "France",
+        None: "Not specified",
+    }
+    df = pl.DataFrame(
+        {
+            "country_code": ["FR", None, "ES", "DE"],
+        }
+    ).with_row_count()
+
+    assert (
+        df.with_columns(
+            pl.col("country_code")
+            .map_dict(country_code_dict, default=pl.col("country_code"))
+            .alias("remapped")
+        )
+    ).to_dict(False) == {
+        "row_nr": [0, 1, 2, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", "ES", "Germany"],
+    }
+
+    assert (
+        df.with_columns(
+            pl.col("country_code").map_dict(country_code_dict).alias("remapped")
+        )
+    ).to_dict(False) == {
+        "row_nr": [0, 1, 2, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", None, "Germany"],
+    }
+
+    assert (
+        df.with_columns(
+            pl.struct(pl.col(["country_code", "row_nr"]))  # type: ignore[union-attr]
+            .map_dict(
+                country_code_dict,
+                default=pl.col("row_nr").cast(pl.Utf8),
+            )
+            .alias("remapped")
+        )
+    ).to_dict(False) == {
+        "row_nr": [0, 1, 2, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", "2", "Germany"],
+    }

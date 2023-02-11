@@ -83,3 +83,9 @@ def test_write_ndjson_with_trailing_newline() -> None:
 
     expected = pl.DataFrame({"Column1": ["Value1"]})
     assert_frame_equal(df, expected)
+
+
+def test_read_ndjson_empty_array() -> None:
+    assert pl.read_ndjson(io.StringIO("""{"foo": {"bar": []}}""")).to_dict(False) == {
+        "foo": [{"": None}]
+    }

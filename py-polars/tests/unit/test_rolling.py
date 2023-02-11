@@ -392,7 +392,7 @@ def test_dynamic_groupby_timezone_awareness() -> None:
                 timedelta(days=1),
                 time_unit="ns",
                 name="datetime",
-            ).dt.cast_time_zone("UTC"),
+            ).dt.replace_time_zone("UTC"),
             pl.Series("value", pl.arange(1, 11, eager=True)),
         )
     )

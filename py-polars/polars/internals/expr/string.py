@@ -47,7 +47,7 @@ class ExprStringNameSpace:
             for specification. Example: ``"%y-%m-%d"``.
             Note that the ``Z`` suffix for "Zulu time" in ISO8601 formats is not (yet!)
             fully supported: you should first try ``"%+"`` and if that fails, insert a
-            ``Z`` in your ``fmt`` string and then use ``dt.with_time_zone``.
+            ``Z`` in your ``fmt`` string and then use ``dt.convert_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -108,9 +108,17 @@ class ExprStringNameSpace:
             return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
+            tz = datatype.tz  # type: ignore[union-attr]
             dtcol = pli.wrap_expr(
                 self._pyexpr.str_parse_datetime(
-                    fmt, strict, exact, cache, tz_aware, utc, tu
+                    fmt,
+                    strict,
+                    exact,
+                    cache,
+                    tz_aware,
+                    utc,
+                    tu,
+                    tz,
                 )
             )
             return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)

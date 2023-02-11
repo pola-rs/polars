@@ -263,6 +263,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     df = pl.DataFrame({"a": np.arange(5, dtype=np.int64).reshape(1, -1)})
     assert df.dtypes == [pl.List(pl.Int64)]
     assert df.shape == (1, 1)
+
     df = pl.DataFrame({"a": np.arange(10, dtype=np.int64).reshape(2, -1)})
     assert df.dtypes == [pl.List(pl.Int64)]
     assert df.shape == (2, 1)
@@ -351,8 +352,15 @@ def test_init_series() -> None:
     assert df.rows() == [(1,), (2,), (3,)]
     assert df.schema == {"a": pl.UInt32}
 
-    # nested list
-    assert pl.Series([[[2, 2]]]).dtype == pl.List(pl.List(pl.Int64))
+    # nested list, with/without explicit dtype
+    s1 = pl.Series([[[2, 2]]])
+    assert s1.dtype == pl.List(pl.List(pl.Int64))
+
+    s2 = pl.Series([[[2, 2]]], dtype=pl.List(pl.List(pl.UInt8)))
+    assert s2.dtype == pl.List(pl.List(pl.UInt8))
+
+    s3 = pl.Series(dtype=pl.List(pl.List(pl.UInt8)))
+    assert s3.dtype == pl.List(pl.List(pl.UInt8))
 
     # numpy data containing NaN values
     s0 = pl.Series("n", [1.0, 2.5, float("nan")])
@@ -783,6 +791,18 @@ def test_from_records_nullable_structs() -> None:
                 [{"item_id": 100, "description": "hi"}],
             ],
         }
+
+    # check initialisation without any records
+    df = pl.DataFrame(schema=schema)
+    dict_schema = dict(schema)
+
+    assert df.to_dict(False) == {"id": [], "items": []}
+    assert df.schema == dict_schema
+
+    s = pl.Series("items", dtype=dict_schema["items"])
+    assert s.to_frame().to_dict(False) == {"items": []}
+    assert s.dtype == dict_schema["items"]
+    assert s.to_list() == []
 
 
 def test_from_categorical_in_struct_defined_by_schema() -> None:

@@ -88,6 +88,7 @@ def _set_numpy_to_constructor() -> None:
         np.uint32: PySeries.new_u32,
         np.uint64: PySeries.new_u64,
         np.str_: PySeries.new_str,
+        np.bytes_: PySeries.new_binary,
         np.bool_: PySeries.new_bool,
         np.datetime64: PySeries.new_i64,
     }
@@ -97,7 +98,15 @@ def numpy_values_and_dtype(
     values: np.ndarray[Any, Any]
 ) -> tuple[np.ndarray[Any, Any], type]:
     """Return numpy values and their associated dtype, adjusting if required."""
-    dtype = values.dtype.type
+    # Create new dtype object from dtype base name so architecture specific
+    # dtypes (np.longlong np.ulonglong np.intc np.uintc np.longdouble, ...)
+    # get converted to their normalized dtype (np.int*, np.uint*, np.float*).
+    dtype = (
+        np.dtype(values.dtype.base.name).type
+        if values.dtype.kind in ("i", "u", "f")
+        else values.dtype.type
+    )
+
     if dtype == np.float16:
         values = values.astype(np.float32)
         dtype = values.dtype.type

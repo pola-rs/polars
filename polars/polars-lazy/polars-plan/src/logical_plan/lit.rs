@@ -76,6 +76,7 @@ impl LiteralValue {
             Int64(v) => AnyValue::Int64(*v),
             Float32(v) => AnyValue::Float32(*v),
             Float64(v) => AnyValue::Float64(*v),
+            Utf8(v) => AnyValue::Utf8(v),
             _ => return None,
         };
         Some(av)

@@ -707,7 +707,7 @@ def mean(column: pli.Series) -> float:
     ...
 
 
-def mean(column: str | pli.Series) -> pli.Expr | float:
+def mean(column: str | pli.Series) -> pli.Expr | float | None:
     """
     Get the mean value.
 
@@ -775,7 +775,7 @@ def median(column: pli.Series) -> float | int:
     ...
 
 
-def median(column: str | pli.Series) -> pli.Expr | float | int:
+def median(column: str | pli.Series) -> pli.Expr | float | int | None:
     """
     Get the median value.
 
@@ -1127,7 +1127,7 @@ def lit(
         tu = "us"
         e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
         if value.tzinfo is not None:
-            return e.dt.cast_time_zone(str(value.tzinfo))
+            return e.dt.replace_time_zone(str(value.tzinfo))
         else:
             return e
 

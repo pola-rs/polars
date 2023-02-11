@@ -68,6 +68,7 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
     columns: I2,
     agg_fn: PivotAgg,
     sort_columns: bool,
+    separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
@@ -97,6 +98,7 @@ where
         agg_fn,
         sort_columns,
         false,
+        separator,
     )
 }
 
@@ -112,6 +114,7 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     columns: I2,
     agg_fn: PivotAgg,
     sort_columns: bool,
+    separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
@@ -142,9 +145,11 @@ where
         agg_fn,
         sort_columns,
         true,
+        separator,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pivot_impl(
     pivot_df: &DataFrame,
     // these columns will be aggregated in the nested groupby
@@ -158,7 +163,10 @@ fn pivot_impl(
     agg_fn: PivotAgg,
     sort_columns: bool,
     stable: bool,
+    // used as separator/delimiter in generated column names.
+    separator: Option<&str>,
 ) -> PolarsResult<DataFrame> {
+    let sep = separator.unwrap_or("_");
     if index.is_empty() {
         return Err(PolarsError::ComputeError(
             "index cannot be zero length".into(),
@@ -216,7 +224,7 @@ fn pivot_impl(
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
                 let mut headers = headers.utf8().unwrap().clone();
                 if values.len() > 1 {
-                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}_{v}")))
+                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}{sep}{v}")))
                 }
 
                 let n_cols = headers.len();
@@ -272,20 +280,4 @@ fn pivot_impl(
     });
     out?;
     Ok(DataFrame::new_no_checks(final_cols))
-}
-
-// Takes a `DataFrame` that only consists of the column aggregates that are pivoted by
-// the values in `columns`
-fn finish_logical_type(column: &mut Series, dtype: &DataType) {
-    *column = match dtype {
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(Some(rev_map)) => {
-            let ca = column.u32().unwrap();
-            unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(ca.clone(), rev_map.clone())
-            }
-            .into_series()
-        }
-        _ => column.cast(dtype).unwrap(),
-    };
 }

@@ -145,7 +145,6 @@ impl PySeries {
                 } else {
                     let msg = "Cannot take pointer boolean buffer as it is not perfectly aligned.";
                     raise_err!(msg, ComputeError);
-                    Ok(0)
                 }
             }
             dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -155,7 +154,51 @@ impl PySeries {
             _ => {
                 let msg = "Cannot take pointer of nested type";
                 raise_err!(msg, ComputeError);
-                Ok(0)
+            }
+        }
+    }
+
+    /// For numeric types, this should only be called for Series with null types.
+    /// This will cast to floats so that `None = np.nan`
+    pub fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
+        let s = &self.series;
+        match s.dtype() {
+            DataType::Utf8 => {
+                let ca = s.utf8().unwrap();
+
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                Ok(np_arr.into_py(py))
+            }
+            dt if dt.is_numeric() => {
+                if s.bit_repr_is_large() {
+                    let s = s.cast(&DataType::Float64).unwrap();
+                    let ca = s.f64().unwrap();
+                    let np_arr = PyArray1::from_iter(
+                        py,
+                        ca.into_iter().map(|opt_v| match opt_v {
+                            Some(v) => v,
+                            None => f64::NAN,
+                        }),
+                    );
+                    Ok(np_arr.into_py(py))
+                } else {
+                    let s = s.cast(&DataType::Float32).unwrap();
+                    let ca = s.f32().unwrap();
+                    let np_arr = PyArray1::from_iter(
+                        py,
+                        ca.into_iter().map(|opt_v| match opt_v {
+                            Some(v) => v,
+                            None => f32::NAN,
+                        }),
+                    );
+                    Ok(np_arr.into_py(py))
+                }
+            }
+            dt => {
+                raise_err!(
+                    format!("'to_numpy' not supported for dtype: {dt:?}"),
+                    ComputeError
+                );
             }
         }
     }

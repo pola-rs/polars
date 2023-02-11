@@ -60,7 +60,7 @@ fn convert_to_timestamp<T1: TimeZone, T2: TimeZone>(
 }
 
 #[cfg(feature = "timezones")]
-pub fn cast_timezone(
+pub fn replace_timezone(
     arr: &PrimitiveArray<i64>,
     tu: TimeUnit,
     from: String,

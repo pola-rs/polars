@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
     feature = "dtype-time"
 ))]
 use arrow::temporal_conversions::*;
+#[cfg(feature = "dtype-datetime")]
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
@@ -758,12 +759,8 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             }
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev, arr) => {
-                let s = if arr.is_null() {
-                    rev.get(*idx)
-                } else {
-                    unsafe { arr.deref_unchecked().value(*idx as usize) }
-                };
+            AnyValue::Categorical(_, _, _) => {
+                let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             }
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
@@ -785,16 +782,19 @@ impl Display for AnyValue<'_> {
 
 /// Utility struct to format a timezone aware datetime.
 #[allow(dead_code)]
+#[cfg(feature = "dtype-datetime")]
 pub struct PlTzAware<'a> {
     ndt: NaiveDateTime,
     tz: &'a str,
 }
+#[cfg(feature = "dtype-datetime")]
 impl<'a> PlTzAware<'a> {
     pub fn new(ndt: NaiveDateTime, tz: &'a str) -> Self {
         Self { ndt, tz }
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
 impl Display for PlTzAware<'_> {
     #[allow(unused_variables)]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

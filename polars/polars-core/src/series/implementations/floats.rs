@@ -331,14 +331,6 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
-            fn arg_min(&self) -> Option<usize> {
-                ArgAgg::arg_min(&self.0)
-            }
-
-            fn arg_max(&self) -> Option<usize> {
-                ArgAgg::arg_max(&self.0)
-            }
-
             fn is_null(&self) -> BooleanChunked {
                 self.0.is_null()
             }

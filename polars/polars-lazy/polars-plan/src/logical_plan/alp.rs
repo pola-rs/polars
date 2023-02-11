@@ -237,6 +237,7 @@ impl ALogicalPlan {
             Melt { schema, .. } => schema,
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
+
                 return match input_schema {
                     Cow::Owned(schema) => {
                         Cow::Owned(function.schema(&schema).unwrap().into_owned())

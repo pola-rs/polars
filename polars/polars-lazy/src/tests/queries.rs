@@ -1590,7 +1590,7 @@ pub fn test_select_by_dtypes() -> PolarsResult<()> {
         .lazy()
         .select([dtype_cols([DataType::Float32, DataType::Utf8])])
         .collect()?;
-    assert_eq!(out.dtypes(), &[DataType::Float32, DataType::Utf8]);
+    assert_eq!(out.dtypes(), &[DataType::Utf8, DataType::Float32]);
 
     Ok(())
 }
@@ -1617,32 +1617,6 @@ fn test_binary_expr() -> PolarsResult<()> {
             * col("nrs").sum()])
         .collect()?;
     assert_eq!(out.dtypes(), &[DataType::Float64]);
-    Ok(())
-}
-
-#[test]
-fn test_drop_and_select() -> PolarsResult<()> {
-    let df = fruits_cars();
-
-    // we test that the schema is still correct for drop to work.
-    // typically the projection is pushed to before the drop and then the drop may think that some
-    // columns are still there to be projected
-
-    // we test this on both dataframe scan and csv scan.
-    let out = df
-        .lazy()
-        .drop_columns(["A", "B"])
-        .select([col("fruits")])
-        .collect()?;
-
-    assert_eq!(out.get_column_names(), &["fruits"]);
-
-    let out = scan_foods_csv()
-        .drop_columns(["calories", "sugar_g"])
-        .select([col("category")])
-        .collect()?;
-
-    assert_eq!(out.get_column_names(), &["category"]);
     Ok(())
 }
 

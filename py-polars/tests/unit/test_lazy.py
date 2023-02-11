@@ -549,18 +549,6 @@ def test_sort() -> None:
     )
 
 
-def test_drop_nulls() -> None:
-    df = pl.DataFrame({"nrs": [None, 1, 2, 3, None, 4, 5, None]})
-    assert df.select(col("nrs").drop_nulls()).to_dict(as_series=False) == {
-        "nrs": [1, 2, 3, 4, 5]
-    }
-
-    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8], "ham": ["a", "b", "c"]})
-    expected = pl.DataFrame({"foo": [1, 3], "bar": [6, 8], "ham": ["a", "c"]})
-    result = df.lazy().drop_nulls().collect()
-    assert_frame_equal(result, expected)
-
-
 def test_all_expr() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert_frame_equal(df.select([pl.all()]), df)
@@ -965,6 +953,26 @@ def test_ufunc() -> None:
     assert out.dtypes == expected.dtypes
 
 
+def test_ufunc_expr_not_first() -> None:
+    """Check numpy ufunc expressions also work if expression not the first argument."""
+    df = pl.DataFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
+    out = df.select(
+        [
+            np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
+            (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
+            (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
+        ]
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series("power", [2**1, 2**2, 2**3], dtype=pl.Float64),
+            pl.Series("divide_scalar", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
+            pl.Series("divide_array", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
+        ]
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_clip() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     assert df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
@@ -1017,14 +1025,6 @@ def test_rename() -> None:
     lf = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     out = lf.rename({"a": "foo", "b": "bar"}).collect()
     assert out.columns == ["foo", "bar", "c"]
-
-
-def test_drop_columns() -> None:
-    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop(["a", "b"])
-    assert out.columns == ["c"]
-
-    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop("a")
-    assert out.columns == ["b", "c"]
 
 
 def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
@@ -1087,12 +1087,6 @@ def test_join_suffix() -> None:
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
     out = df_left.lazy().join(df_right.lazy(), on="a", suffix="_bar").collect()
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
-
-
-def test_str_concat() -> None:
-    df = pl.DataFrame({"foo": [1, None, 2]})
-    df = df.select(pl.col("foo").str.concat("-"))
-    assert cast(str, df.item()) == "1-null-2"
 
 
 @pytest.mark.parametrize("no_optimization", [False, True])

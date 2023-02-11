@@ -186,7 +186,7 @@ impl DataFrame {
     /// Get the index of the column.
     fn check_name_to_idx(&self, name: &str) -> PolarsResult<usize> {
         self.find_idx_by_name(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()))
     }
 
     fn check_already_present(&self, name: &str) -> PolarsResult<()> {
@@ -223,11 +223,10 @@ impl DataFrame {
     pub fn new<S: IntoSeries>(columns: Vec<S>) -> PolarsResult<Self> {
         let mut first_len = None;
 
-        let shape_err = |s: &[Series]| {
+        let shape_err = |&first_name, &first_len, &name, &len| {
             let msg = format!(
-                "Could not create a new DataFrame from Series. \
-            The Series have different lengths. \
-            Got {s:?}",
+                "Could not create a new DataFrame from Series. The Series have different lengths: \
+                found length {first_len:?} for Series named {first_name:?} and length {len:?} for Series named {name:?}."
             );
             Err(PolarsError::ShapeMisMatch(msg.into()))
         };
@@ -240,15 +239,22 @@ impl DataFrame {
             let mut names = PlHashSet::with_capacity(series_cols.len());
 
             for s in &series_cols {
+                let name = s.name();
+
                 match first_len {
                     Some(len) => {
                         if s.len() != len {
-                            return shape_err(&series_cols);
+                            let first_series = &series_cols.first().unwrap();
+                            return shape_err(
+                                &first_series.name(),
+                                &first_series.len(),
+                                &name,
+                                &s.len(),
+                            );
                         }
                     }
                     None => first_len = Some(s.len()),
                 }
-                let name = s.name();
 
                 if names.contains(name) {
                     _duplicate_err(name)?
@@ -261,22 +267,29 @@ impl DataFrame {
             drop(names);
             series_cols
         } else {
-            let mut series_cols = Vec::with_capacity(columns.len());
+            let mut series_cols: Vec<Series> = Vec::with_capacity(columns.len());
             let mut names = PlHashSet::with_capacity(columns.len());
 
             // check for series length equality and convert into series in one pass
             for s in columns {
                 let series = s.into_series();
+                // we have aliasing borrows so we must allocate a string
+                let name = series.name().to_string();
+
                 match first_len {
                     Some(len) => {
                         if series.len() != len {
-                            return shape_err(&series_cols);
+                            let first_series = &series_cols.first().unwrap();
+                            return shape_err(
+                                &first_series.name(),
+                                &first_series.len(),
+                                &name.as_str(),
+                                &series.len(),
+                            );
                         }
                     }
                     None => first_len = Some(series.len()),
                 }
-                // we have aliasing borrows so we must allocate a string
-                let name = series.name().to_string();
 
                 if names.contains(&name) {
                     _duplicate_err(&name)?
@@ -439,13 +452,20 @@ impl DataFrame {
         let mut chunk_lenghts = self.columns.iter().map(|s| s.chunk_lengths());
         match chunk_lenghts.next() {
             None => false,
-            Some(first_chunk_lengths) => {
+            Some(first_column_chunk_lengths) => {
                 // Fast Path for single Chunk Series
-                if first_chunk_lengths.len() == 1 {
+                if first_column_chunk_lengths.len() == 1 {
                     return chunk_lenghts.any(|cl| cl.len() != 1);
                 }
+                // Always rechunk if we have more chunks than rows.
+                // except when we have an empty df containing a single chunk
+                let height = self.height();
+                let n_chunks = first_column_chunk_lengths.len();
+                if n_chunks > height && !(height == 0 && n_chunks == 1) {
+                    return true;
+                }
                 // Slow Path for multi Chunk series
-                let v: Vec<_> = first_chunk_lengths.collect();
+                let v: Vec<_> = first_column_chunk_lengths.collect();
                 for cl in chunk_lenghts {
                     if cl.enumerate().any(|(idx, el)| Some(&el) != v.get(idx)) {
                         return true;
@@ -1338,7 +1358,7 @@ impl DataFrame {
     /// Get column index of a `Series` by name.
     pub fn try_find_idx_by_name(&self, name: &str) -> PolarsResult<usize> {
         self.find_idx_by_name(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()))
     }
 
     /// Select a single column by name.
@@ -1357,7 +1377,7 @@ impl DataFrame {
     pub fn column(&self, name: &str) -> PolarsResult<&Series> {
         let idx = self
             .find_idx_by_name(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))?;
+            .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()))?;
         Ok(self.select_at_idx(idx).unwrap())
     }
 
@@ -1478,7 +1498,7 @@ impl DataFrame {
                 .map(|name| {
                     let idx = *name_to_idx
                         .get(name.as_str())
-                        .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))?;
+                        .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()))?;
                     Ok(self
                         .select_at_idx(idx)
                         .unwrap()
@@ -1506,7 +1526,7 @@ impl DataFrame {
                 .map(|name| {
                     let idx = *name_to_idx
                         .get(name.as_str())
-                        .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))?;
+                        .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()))?;
                     Ok(self.select_at_idx(idx).unwrap().clone())
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
@@ -1745,7 +1765,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> PolarsResult<&mut Self> {
         self.select_mut(column)
-            .ok_or_else(|| PolarsError::NotFound(column.to_string().into()))
+            .ok_or_else(|| PolarsError::ColumnNotFound(column.to_string().into()))
             .map(|s| s.rename(name))?;
 
         let unique_names: AHashSet<&str, ahash::RandomState> =
@@ -2197,7 +2217,7 @@ impl DataFrame {
     {
         let idx = self
             .find_idx_by_name(column)
-            .ok_or_else(|| PolarsError::NotFound(column.to_string().into()))?;
+            .ok_or_else(|| PolarsError::ColumnNotFound(column.to_string().into()))?;
         self.try_apply_at_idx(idx, f)
     }
 
@@ -3332,7 +3352,7 @@ impl DataFrame {
             for col in cols {
                 let _ = schema
                     .get(&col)
-                    .ok_or_else(|| PolarsError::NotFound(col.into()))?;
+                    .ok_or_else(|| PolarsError::ColumnNotFound(col.into()))?;
             }
         }
         DataFrame::new(new_cols)

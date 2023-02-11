@@ -493,7 +493,7 @@ where
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
             Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
         } else {
-            Err(PolarsError::ComputeError("cannot take slice".into()))
+            Err(PolarsError::ComputeError("no_slice".into()))
         }
     }
 

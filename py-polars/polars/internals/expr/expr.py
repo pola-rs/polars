@@ -11,6 +11,7 @@ from polars import internals as pli
 from polars.datatypes import (
     DataType,
     PolarsDataType,
+    Struct,
     UInt32,
     is_polars_dtype,
     py_type_to_dtype,
@@ -288,10 +289,10 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Expr:
         """Numpy universal functions."""
-        args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
         def function(s: pli.Series) -> pli.Series:  # pragma: no cover
-            return ufunc(s, *args, **kwargs)
+            args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
+            return ufunc(*args, **kwargs)
 
         return self.map(function)
 
@@ -5424,6 +5425,7 @@ class Expr:
         alpha: float | None = None,
         adjust: bool = True,
         min_periods: int = 1,
+        ignore_nulls: bool = True,
     ) -> Expr:
         r"""
         Exponentially-weighted moving average.
@@ -5463,6 +5465,24 @@ class Expr:
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                  positions.
+                  For example, the weights of :math:`x_0` and :math:`x_2` used in
+                  calculating the final weighted average of
+                  [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+
+                - When ``ignore_nulls=True``, weights are based
+                  on relative positions. For example, the weights of
+                  :math:`x_0` and :math:`x_2` used in calculating the final weighted
+                  average of [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
+                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
+
 
         Examples
         --------
@@ -5481,7 +5501,9 @@ class Expr:
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
-        return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
+        return wrap_expr(
+            self._pyexpr.ewm_mean(alpha, adjust, min_periods, ignore_nulls)
+        )
 
     def ewm_std(
         self,
@@ -5492,6 +5514,7 @@ class Expr:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
+        ignore_nulls: bool = True,
     ) -> Expr:
         r"""
         Exponentially-weighted moving standard deviation.
@@ -5534,6 +5557,23 @@ class Expr:
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                  positions.
+                  For example, the weights of :math:`x_0` and :math:`x_2` used in
+                  calculating the final weighted average of
+                  [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+
+                - When ``ignore_nulls=True``, weights are based
+                  on relative positions. For example, the weights of
+                  :math:`x_0` and :math:`x_2` used in calculating the final weighted
+                  average of [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
+                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
         Examples
         --------
@@ -5552,7 +5592,9 @@ class Expr:
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
-        return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, bias, min_periods))
+        return wrap_expr(
+            self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
+        )
 
     def ewm_var(
         self,
@@ -5563,6 +5605,7 @@ class Expr:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
+        ignore_nulls: bool = True,
     ) -> Expr:
         r"""
         Exponentially-weighted moving variance.
@@ -5605,6 +5648,23 @@ class Expr:
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                  positions.
+                  For example, the weights of :math:`x_0` and :math:`x_2` used in
+                  calculating the final weighted average of
+                  [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+
+                - When ``ignore_nulls=True``, weights are based
+                  on relative positions. For example, the weights of
+                  :math:`x_0` and :math:`x_2` used in calculating the final weighted
+                  average of [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
+                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
         Examples
         --------
@@ -5623,7 +5683,9 @@ class Expr:
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
-        return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, bias, min_periods))
+        return wrap_expr(
+            self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
+        )
 
     def extend_constant(self, value: PythonLiteral | None, n: int) -> Expr:
         """
@@ -5947,6 +6009,203 @@ class Expr:
 
         """
         return wrap_expr(self._pyexpr.shrink_dtype())
+
+    def map_dict(
+        self,
+        remapping: dict[Any, Any],
+        *,
+        default: Any = None,
+    ) -> Expr:
+        """
+        Replace values in column according to remapping dictionary.
+
+        Parameters
+        ----------
+        remapping
+            Mapping dictionary to use for remapping the values.
+        default
+            Value to use when original value was not found in remapping dictionary.
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        Examples
+        --------
+        >>> country_code_dict = {
+        ...     "CA": "Canada",
+        ...     "DE": "Germany",
+        ...     "FR": "France",
+        ...     None: "Not specified",
+        ... }
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "country_code": ["FR", None, "ES", "DE"],
+        ...     }
+        ... ).with_row_count()
+        >>> df
+        shape: (4, 2)
+        ┌────────┬──────────────┐
+        │ row_nr ┆ country_code │
+        │ ---    ┆ ---          │
+        │ u32    ┆ str          │
+        ╞════════╪══════════════╡
+        │ 0      ┆ FR           │
+        │ 1      ┆ null         │
+        │ 2      ┆ ES           │
+        │ 3      ┆ DE           │
+        └────────┴──────────────┘
+        >>> df.with_columns(
+        ...     pl.col("country_code").map_dict(country_code_dict).alias("remapped")
+        ... )
+        shape: (4, 3)
+        ┌────────┬──────────────┬───────────────┐
+        │ row_nr ┆ country_code ┆ remapped      │
+        │ ---    ┆ ---          ┆ ---           │
+        │ u32    ┆ str          ┆ str           │
+        ╞════════╪══════════════╪═══════════════╡
+        │ 0      ┆ FR           ┆ France        │
+        │ 1      ┆ null         ┆ Not specified │
+        │ 2      ┆ ES           ┆ null          │
+        │ 3      ┆ DE           ┆ Germany       │
+        └────────┴──────────────┴───────────────┘
+
+        Set a default value for values that couldn't be mapped.
+        >>> df.with_columns(
+        ...     pl.col("country_code")
+        ...     .map_dict(country_code_dict, default="unknown")
+        ...     .alias("remapped")
+        ... )
+        shape: (4, 3)
+        ┌────────┬──────────────┬───────────────┐
+        │ row_nr ┆ country_code ┆ remapped      │
+        │ ---    ┆ ---          ┆ ---           │
+        │ u32    ┆ str          ┆ str           │
+        ╞════════╪══════════════╪═══════════════╡
+        │ 0      ┆ FR           ┆ France        │
+        │ 1      ┆ null         ┆ Not specified │
+        │ 2      ┆ ES           ┆ unknown       │
+        │ 3      ┆ DE           ┆ Germany       │
+        └────────┴──────────────┴───────────────┘
+
+        Keep the original value for values that couldn't be mapped.
+        >>> df.with_columns(
+        ...     pl.col("country_code")
+        ...     .map_dict(country_code_dict, default=pl.col("country_code"))
+        ...     .alias("remapped")
+        ... )
+        shape: (4, 3)
+        ┌────────┬──────────────┬───────────────┐
+        │ row_nr ┆ country_code ┆ remapped      │
+        │ ---    ┆ ---          ┆ ---           │
+        │ u32    ┆ str          ┆ str           │
+        ╞════════╪══════════════╪═══════════════╡
+        │ 0      ┆ FR           ┆ France        │
+        │ 1      ┆ null         ┆ Not specified │
+        │ 2      ┆ ES           ┆ ES            │
+        │ 3      ┆ DE           ┆ Germany       │
+        └────────┴──────────────┴───────────────┘
+
+        If you need to access different columns to set a default value for values that
+        couldn't be mapped, a struct needs to be constructed, with in the first field
+        the column that you want to remap and the rest of the fields the other columns
+        you use in the default expression.
+        >>> df.with_columns(
+        ...     pl.struct(pl.col(["country_code", "row_nr"])).map_dict(
+        ...         remapping=country_code_dict,
+        ...         default=pl.col("row_nr").cast(pl.Utf8),
+        ...     )
+        ... )
+        shape: (4, 2)
+        ┌────────┬───────────────┐
+        │ row_nr ┆ country_code  │
+        │ ---    ┆ ---           │
+        │ u32    ┆ str           │
+        ╞════════╪═══════════════╡
+        │ 0      ┆ France        │
+        │ 1      ┆ Not specified │
+        │ 2      ┆ 2             │
+        │ 3      ┆ Germany       │
+        └────────┴───────────────┘
+
+        """
+
+        # Use two functions to save unneeded work.
+        # This factors out allocations and branches.
+        def inner_with_default(s: pli.Series) -> pli.Series:
+            # Convert Series to:
+            #   - multicolumn DataFrame, if Series is a Struct.
+            #   - one column DataFrame in other cases.
+            df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
+
+            column = df.columns[0]
+            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
+            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
+            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
+
+            return (
+                (
+                    df.lazy()
+                    .join(
+                        pli.DataFrame(
+                            [
+                                pli.Series(remap_key_column, list(remapping.keys())),
+                                pli.Series(
+                                    remap_value_column, list(remapping.values())
+                                ),
+                            ]
+                        )
+                        .lazy()
+                        .with_columns(pli.lit(True).alias(is_remapped_column)),
+                        how="left",
+                        left_on=column,
+                        right_on=remap_key_column,
+                    )
+                    .select(
+                        pli.when(pli.col(is_remapped_column).is_not_null())
+                        .then(pli.col(remap_value_column))
+                        .otherwise(default)
+                        .alias(column)
+                    )
+                )
+                .collect(no_optimization=True)
+                .to_series()
+            )
+
+        def inner(s: pli.Series) -> pli.Series:
+            column = s.name
+            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
+            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
+            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
+
+            return (
+                (
+                    s.to_frame()
+                    .lazy()
+                    .join(
+                        pli.DataFrame(
+                            [
+                                pli.Series(remap_key_column, list(remapping.keys())),
+                                pli.Series(
+                                    remap_value_column, list(remapping.values())
+                                ),
+                            ]
+                        )
+                        .lazy()
+                        .with_columns(pli.lit(True).alias(is_remapped_column)),
+                        how="left",
+                        left_on=column,
+                        right_on=remap_key_column,
+                    )
+                )
+                .collect(no_optimization=True)
+                .to_series(1)
+            )
+
+        func = inner_with_default if default is not None else inner
+
+        return self.map(func)
 
     @property
     def arr(self) -> ExprListNameSpace:

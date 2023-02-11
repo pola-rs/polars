@@ -14,9 +14,7 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-# Used to type any type or subclass of LazyFrame.
-# Used to indicate when LazyFrame methods return the same type as self,
-# including sub-classes.
+# A type variable used to refer to a polars.LazyFrame or any subclass of it
 LDF = TypeVar("LDF", bound="pli.LazyFrame")
 
 

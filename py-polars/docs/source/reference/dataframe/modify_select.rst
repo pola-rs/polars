@@ -59,8 +59,8 @@ Manipulation/selection
     DataFrame.unique
     DataFrame.unnest
     DataFrame.unstack
+    DataFrame.update
     DataFrame.upsample
     DataFrame.vstack
-    DataFrame.with_column
     DataFrame.with_columns
     DataFrame.with_row_count

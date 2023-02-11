@@ -1,4 +1,13 @@
-# type: ignore
+"""
+Contains code for running the H2O AI database benchmark.
+
+First, run the R script to generate a dataset with set characteristics.
+Then run this script to get the runtime of certain queries.
+
+See:
+https://h2oai.github.io/db-benchmark/
+
+"""
 
 import sys
 import time
@@ -9,7 +18,7 @@ import polars as pl
 
 print(pl.__version__)
 
-x = pl.read_csv(
+df = pl.read_csv(
     "G1_1e7_1e2_5_0.csv",
     dtypes={
         "id4": pl.Int32,
@@ -23,8 +32,8 @@ x = pl.read_csv(
 ON_STRINGS = sys.argv.pop() == "on_strings"
 
 if not ON_STRINGS:
-    x = x.with_columns([pl.col(["id1", "id2", "id3"]).cast(pl.Categorical)])
-df = x.clone()
+    df = df.with_columns([pl.col(["id1", "id2", "id3"]).cast(pl.Categorical)])
+df = df.clone()
 x = df.lazy()
 
 t00 = time.time()
@@ -310,6 +319,8 @@ print(out)
 assert out["id6"].to_list() == [2137755425]
 assert np.isclose(out["v3"].to_list(), 4.7040828499563754e8).all()
 
-if not ON_STRINGS and total_time > 12:
-    print("query took longer than 12s, may be noise")
+# Fail or pass the benchmark based on runtime. Used in the Benchmark CI workflow.
+threshold = 18 if ON_STRINGS else 12
+if total_time > threshold:
+    print(f"query took longer than {threshold}s, may be noise")
     exit(1)

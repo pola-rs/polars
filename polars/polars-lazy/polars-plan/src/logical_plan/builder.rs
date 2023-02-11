@@ -385,6 +385,14 @@ impl LogicalPlanBuilder {
         .into()
     }
 
+    pub fn add_err(self, err: PolarsError) -> Self {
+        LogicalPlan::Error {
+            input: Box::new(self.0),
+            err: err.into(),
+        }
+        .into()
+    }
+
     pub fn with_context(self, contexts: Vec<LogicalPlan>) -> Self {
         let mut schema = try_delayed!(self.0.schema(), &self.0, into)
             .as_ref()
@@ -502,7 +510,7 @@ impl LogicalPlanBuilder {
                 let dtype = try_delayed!(
                     current_schema
                         .get(name)
-                        .ok_or_else(|| PolarsError::NotFound(name.to_string().into())),
+                        .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
                     self.0,
                     into
                 );

@@ -117,7 +117,7 @@ Create a new git branch from the `master` branch in your local repository, and s
 The Rust codebase is located in the `polars` directory, while the Python codebase is located in the `py-polars` directory.
 Both directories contain a `Makefile` with helpful commands. Most notably:
 
-- `make test` to run the test suite
+- `make test` to run the test suite (see the [test suite docs](/py-polars/tests/README.md) for more info)
 - `make pre-commit` to run autoformatting and linting
 
 Note that your work cannot be merged if these checks fail!

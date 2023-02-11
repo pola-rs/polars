@@ -8,14 +8,16 @@ Exceptions
     :nosignatures:
 
     ArrowError
+    ColumnNotFoundError
     ComputeError
     DuplicateError
     InvalidOperationError
     NoDataError
-    NotFoundError
     NoRowsReturned
     PanicException
     RowsException
     SchemaError
+    SchemaFieldNotFoundError
     ShapeError
+    StructFieldNotFoundError
     TooManyRowsReturned

@@ -105,8 +105,8 @@ fn run_partitions(
                 columns.extend_from_slice(&agg_columns);
 
                 DataFrame::new(columns)
-            })
-    }).collect()
+            }).collect()
+    })
 }
 
 fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResult<usize> {
