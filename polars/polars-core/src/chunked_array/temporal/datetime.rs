@@ -207,34 +207,30 @@ impl DatetimeChunked {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let fmted = match self.time_zone() {
+        let mut fmted = String::new();
+        match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(_) => {
-                match std::panic::catch_unwind(|| {
-                    format!(
-                        "{}",
-                        Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
-                    )
-                }) {
-                    Ok(res) => res,
-                    Err(_) => {
-                        // working around https://github.com/chronotope/chrono/issues/47
-                        return Err(PolarsError::ComputeError(
-                            format!("Cannot format DateTime with format '{fmt}'.").into(),
-                        ));
-                    }
-                }
-            }
-            _ => match std::panic::catch_unwind(|| format!("{}", dt.format(fmt))) {
-                Ok(res) => res,
+            Some(_) => match fmted.write_fmt(format_args!(
+                "{}",
+                Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
+            )) {
+                Ok(_) => (),
                 Err(_) => {
-                    // working around https://github.com/chronotope/chrono/issues/47
+                    return Err(PolarsError::ComputeError(
+                        format!("Cannot format DateTime with format '{fmt}'.").into(),
+                    ));
+                }
+            },
+            _ => match fmted.write_fmt(format_args!("{}", dt.format(fmt))) {
+                Ok(_) => (),
+                Err(_) => {
                     return Err(PolarsError::ComputeError(
                         format!("Cannot format NaiveDateTime with format '{fmt}'.").into(),
                     ));
                 }
             },
         };
+        let fmted = fmted;
 
         let mut ca: Utf8Chunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
