@@ -65,12 +65,6 @@ impl<T> From<T> for Wrap<T> {
     }
 }
 
-pub(crate) fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
-    let seq = <PySequence as PyTryFrom>::try_from(obj)?;
-    let len = seq.len()?;
-    Ok((seq, len))
-}
-
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
 pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
     let pydf = obj.getattr("_df")?;
@@ -93,10 +87,10 @@ where
     T::Native: FromPyObject<'a>,
 {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = PrimitiveChunkedBuilder::new("", len);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
             match item.extract::<T::Native>() {
                 Ok(val) => builder.append_value(val),
@@ -109,10 +103,10 @@ where
 
 impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = BooleanChunkedBuilder::new("", len);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
             match item.extract::<bool>() {
                 Ok(val) => builder.append_value(val),
@@ -777,14 +771,14 @@ pub(crate) fn dicts_to_rows(
     schema_columns: PlIndexSet<String>,
 ) -> PyResult<(Vec<Row>, Vec<String>)> {
     let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
-    let (dicts, len) = get_pyseq(records)?;
+    let len = records.len()?;
 
     let key_names = {
         if !schema_columns.is_empty() {
             schema_columns
         } else {
             let mut inferred_keys = PlIndexSet::new();
-            for d in dicts.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
+            for d in records.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
                 let d = d?;
                 let d = d.downcast::<PyDict>()?;
                 let keys = d.keys();
@@ -798,7 +792,7 @@ pub(crate) fn dicts_to_rows(
     };
     let mut rows = Vec::with_capacity(len);
 
-    for d in dicts.iter()? {
+    for d in records.iter()? {
         let d = d?;
         let d = d.downcast::<PyDict>()?;
 
