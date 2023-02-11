@@ -2274,10 +2274,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
         └─────────────────────┴────────────┴──────┘
 
-
         """
         if not isinstance(other, LazyFrame):
-            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(other)}")
+            raise TypeError(
+                f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
+            )
 
         if isinstance(on, str):
             left_on = on
@@ -2432,7 +2433,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         if not isinstance(other, LazyFrame):
-            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(other)}")
+            raise TypeError(
+                f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
+            )
 
         if how == "cross":
             return self._from_pyldf(

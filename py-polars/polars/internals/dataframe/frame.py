@@ -4227,6 +4227,11 @@ class DataFrame:
         └─────────────────────┴────────────┴──────┘
 
         """
+        if not isinstance(other, DataFrame):
+            raise TypeError(
+                f"Expected 'other' join table to be a DataFrame, not a {type(other).__name__}"
+            )
+
         return (
             self.lazy()
             .join_asof(
@@ -4358,6 +4363,11 @@ class DataFrame:
         For joining on columns with categorical data, see ``pl.StringCache()``.
 
         """
+        if not isinstance(other, DataFrame):
+            raise TypeError(
+                f"Expected 'other' join table to be a DataFrame, not a {type(other).__name__}"
+            )
+
         return (
             self.lazy()
             .join(
