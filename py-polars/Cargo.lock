@@ -1558,7 +1558,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "getrandom",
  "polars-core",
@@ -1572,7 +1572,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "arrow2",
  "chrono",
@@ -1585,7 +1585,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1615,7 +1615,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1645,7 +1645,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1664,7 +1664,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "arrow2",
  "base64 0.21.0",
@@ -1680,7 +1680,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "crossbeam-channel",
  "enum_dispatch",
@@ -1698,7 +1698,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "ahash",
  "once_cell",
@@ -1716,7 +1716,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "chrono",
  "chrono-tz 0.8.1",
@@ -1746,7 +1746,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.26.1"
+version = "0.27.1"
 dependencies = [
  "once_cell",
  "rayon",
@@ -1776,7 +1776,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.16.2"
+version = "0.16.3"
 dependencies = [
  "ahash",
  "bincode",
