@@ -113,4 +113,8 @@ impl<'a> Iterator for FlatIter<'a> {
             Some(Some(self.item))
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
 }

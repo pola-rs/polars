@@ -105,3 +105,70 @@ fn test_apply_groups_empty() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+/// This test is for an expr whose input has already been aggregated
+/// single input case
+fn test_agg_max_exprs_single() -> PolarsResult<()> {
+    let df = df![
+        "rf" => ["App", "App", "Gg", "App"],
+        "x" => ["Hey", "There", "Ante", "R"],
+    ]
+    .unwrap();
+    let grp = df.lazy().groupby_stable([col("rf")]);
+    let e = max_exprs(&[aggregated_flat()]);
+    let lf = grp.agg([e]);
+
+    let res = lf.collect()?;
+    let expected = df![
+        "rf" => ["App", "Gg"],
+        "max" => [1.0, 1.0]
+    ]?;
+    assert_eq!(res, expected);
+
+    fn aggregated_flat() -> Expr {
+        apply_multiple(
+            move |_| {
+                dbg!("Inside apply_multiple");
+                Ok(Some(Series::new("res", [1.])))
+            },
+            &[col("x")],
+            GetOutput::from_type(DataType::Float64),
+            true,
+        )
+    }
+
+    Ok(())
+}
+
+#[test]
+/// This test is for an expr whose input has already been aggregated
+/// double input case
+fn test_agg_max_exprs_double() -> PolarsResult<()> {
+    let df = df![
+        "rf" => ["App", "App", "Gg", "App"],
+        "x" => ["Hey", "There", "Ante", "R"],
+    ]
+    .unwrap();
+    let grp = df.lazy().groupby_stable([col("rf")]);
+    let e = max_exprs(&[aggregated_flat(), aggregated_flat()]);
+    let lf = grp.agg([e]);
+
+    let res = lf.collect()?;
+    let expected = df![
+        "rf" => ["App", "Gg"],
+        "max" => [1.0, 1.0]
+    ]?;
+    assert_eq!(res, expected);
+
+    fn aggregated_flat() -> Expr {
+        apply_multiple(
+            move |_| Ok(Some(Series::new("res", [1.]))),
+            &[col("x")],
+            GetOutput::from_type(DataType::Float64),
+            true,
+        )
+    }
+
+    Ok(())
+}

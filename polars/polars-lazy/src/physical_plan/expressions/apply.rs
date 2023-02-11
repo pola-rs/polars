@@ -153,11 +153,7 @@ impl PhysicalExpr for ApplyExpr {
                     let s = ac.series();
 
                     if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
-                        let msg = format!(
-                            "Cannot aggregate {:?}. The column is already aggregated.",
-                            self.expr
-                        );
-                        return Err(expression_err!(msg, self.expr, ComputeError));
+                        return Ok(ac);
                     }
 
                     let name = s.name().to_string();
@@ -167,7 +163,7 @@ impl PhysicalExpr for ApplyExpr {
                     if agg.len() == 0 {
                         // create input for the function to determine the output dtype
                         // see #3946
-                        let agg = agg.list().unwrap();
+                        let agg = agg.list()?;
                         let input_dtype = agg.inner_dtype();
 
                         let input = Series::full_null("", 0, &input_dtype);
@@ -178,8 +174,7 @@ impl PhysicalExpr for ApplyExpr {
                     }
 
                     let mut ca: ListChunked = agg
-                        .list()
-                        .unwrap()
+                        .list()?
                         .par_iter()
                         .map(|opt_s| match opt_s {
                             None => Ok(None),
@@ -272,6 +267,7 @@ impl PhysicalExpr for ApplyExpr {
                             .collect::<Vec<_>>();
 
                         // length of the items to iterate over
+                        // problem here - len is 0 even though UnstableSeries is not 0
                         let len = iters[0].size_hint().0;
 
                         if len == 0 {
