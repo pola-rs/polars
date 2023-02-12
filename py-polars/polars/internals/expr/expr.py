@@ -290,6 +290,12 @@ class Expr:
     ) -> Expr:
         """Numpy universal functions."""
 
+        num_expr = sum(isinstance(inp, Expr) for inp in inputs)
+        if num_expr > 1:
+            raise ValueError(
+                f"Numpy ufunc can only be used with one expression, {num_expr} given. Use `pl.reduce` to call numpy functions over multiple expressions."
+            )
+
         def function(s: pli.Series) -> pli.Series:  # pragma: no cover
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
             return ufunc(*args, **kwargs)
