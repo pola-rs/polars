@@ -55,7 +55,7 @@ impl PhysicalExpr for SortByExpr {
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
-                Ok(s_sort_by.argsort(SortOptions {
+                Ok(s_sort_by.arg_sort(SortOptions {
                     descending: reverse[0],
                     ..Default::default()
                 }))
@@ -69,7 +69,7 @@ impl PhysicalExpr for SortByExpr {
                     .map(|e| e.evaluate(df, state))
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                s_sort_by[0].argsort_multiple(&s_sort_by[1..], &reverse)
+                s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &reverse)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
@@ -124,7 +124,7 @@ impl PhysicalExpr for SortByExpr {
                             invalid.store(true, Ordering::Relaxed);
                             None
                         } else {
-                            let idx = s_sort_by.argsort(SortOptions {
+                            let idx = s_sort_by.arg_sort(SortOptions {
                                 descending,
                                 ..Default::default()
                             });
@@ -168,7 +168,7 @@ impl PhysicalExpr for SortByExpr {
                                         .take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
                                 };
 
-                                let sorted_idx = group.argsort(SortOptions {
+                                let sorted_idx = group.arg_sort(SortOptions {
                                     descending: reverse[0],
                                     ..Default::default()
                                 });
@@ -176,7 +176,7 @@ impl PhysicalExpr for SortByExpr {
                             }
                             GroupsIndicator::Slice([first, len]) => {
                                 let group = sort_by_s.slice(first as i64, len as usize);
-                                let sorted_idx = group.argsort(SortOptions {
+                                let sorted_idx = group.arg_sort(SortOptions {
                                     descending: reverse[0],
                                     ..Default::default()
                                 });
@@ -229,7 +229,7 @@ impl PhysicalExpr for SortByExpr {
                                     .collect::<Vec<_>>();
 
                                 let sorted_idx =
-                                    groups[0].argsort_multiple(&groups[1..], &reverse).unwrap();
+                                    groups[0].arg_sort_multiple(&groups[1..], &reverse).unwrap();
                                 map_sorted_indices_to_group_idx(&sorted_idx, idx)
                             }
                             GroupsIndicator::Slice([first, len]) => {
@@ -238,7 +238,7 @@ impl PhysicalExpr for SortByExpr {
                                     .map(|s| s.slice(first as i64, len as usize))
                                     .collect::<Vec<_>>();
                                 let sorted_idx =
-                                    groups[0].argsort_multiple(&groups[1..], &reverse).unwrap();
+                                    groups[0].arg_sort_multiple(&groups[1..], &reverse).unwrap();
                                 map_sorted_indices_to_group_slice(&sorted_idx, first)
                             }
                         };

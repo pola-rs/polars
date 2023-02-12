@@ -1634,14 +1634,14 @@ def test_take_every() -> None:
     assert_series_equal(s.take_every(2), pl.Series("a", [1, 3]))
 
 
-def test_argsort() -> None:
+def test_arg_sort() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
     expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
 
-    assert_series_equal(s.argsort(), expected)
+    assert_series_equal(s.arg_sort(), expected)
 
     expected_reverse = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    assert_series_equal(s.argsort(True), expected_reverse)
+    assert_series_equal(s.arg_sort(True), expected_reverse)
 
 
 def test_arg_min_and_arg_max() -> None:

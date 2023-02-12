@@ -30,6 +30,7 @@ from polars.internals.io import (
 from polars.internals.lazy_functions import (
     all,
     arange,
+    arg_sort_by,
     arg_where,
     argsort_by,
     coalesce,
@@ -55,6 +56,7 @@ __all__ = [
     "all",
     "arange",
     "arg_where",
+    "arg_sort_by",
     "argsort_by",
     "BatchedCsvReader",
     "coalesce",

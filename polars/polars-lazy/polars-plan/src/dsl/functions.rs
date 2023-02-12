@@ -233,10 +233,10 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
+pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
     let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
-        polars_core::functions::argsort_by(by, &reverse).map(|ca| Some(ca.into_series()))
+        polars_core::functions::arg_sort_by(by, &reverse).map(|ca| Some(ca.into_series()))
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
@@ -246,7 +246,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            fmt_str: "argsort_by",
+            fmt_str: "arg_sort_by",
             ..Default::default()
         },
     }

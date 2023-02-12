@@ -44,7 +44,7 @@ def test_expanding_sum() -> None:
     ].to_list() == [2.1, 4.7, 6.8]
 
 
-def test_argsort_argument_expansion() -> None:
+def test_arg_sort_argument_expansion() -> None:
     df = pl.DataFrame(
         {
             "col1": [1, 2, 3],

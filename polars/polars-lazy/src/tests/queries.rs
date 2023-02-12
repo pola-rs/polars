@@ -1015,7 +1015,7 @@ fn test_groupby_cumsum() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_argsort_multiple() -> PolarsResult<()> {
+fn test_arg_sort_multiple() -> PolarsResult<()> {
     let df = df![
         "int" => [1, 2, 3, 1, 2],
         "flt" => [3.0, 2.0, 1.0, 2.0, 1.0],
@@ -1025,7 +1025,7 @@ fn test_argsort_multiple() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([argsort_by([col("int"), col("flt")], &[true, false])])
+        .select([arg_sort_by([col("int"), col("flt")], &[true, false])])
         .collect()?;
 
     assert_eq!(
@@ -1040,7 +1040,7 @@ fn test_argsort_multiple() -> PolarsResult<()> {
     // check if this runs
     let _out = df
         .lazy()
-        .select([argsort_by([col("str"), col("flt")], &[true, false])])
+        .select([arg_sort_by([col("str"), col("flt")], &[true, false])])
         .collect()?;
     Ok(())
 }
@@ -1622,7 +1622,7 @@ fn test_binary_expr() -> PolarsResult<()> {
 
 #[test]
 fn test_single_group_result() -> PolarsResult<()> {
-    // the argsort should not auto explode
+    // the arg_sort should not auto explode
     let df = df![
         "a" => [1, 2],
         "b" => [1, 1]

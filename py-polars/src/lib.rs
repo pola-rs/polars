@@ -205,12 +205,12 @@ fn cov(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
 }
 
 #[pyfunction]
-fn argsort_by(by: Vec<dsl::PyExpr>, reverse: Vec<bool>) -> dsl::PyExpr {
+fn arg_sort_by(by: Vec<dsl::PyExpr>, reverse: Vec<bool>) -> dsl::PyExpr {
     let by = by
         .into_iter()
         .map(|e| e.inner)
         .collect::<Vec<polars_rs::lazy::dsl::Expr>>();
-    polars_rs::lazy::dsl::argsort_by(by, &reverse).into()
+    polars_rs::lazy::dsl::arg_sort_by(by, &reverse).into()
 }
 
 #[pyfunction]
@@ -656,7 +656,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(arange)).unwrap();
     m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(argsort_by)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(arg_sort_by)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
     m.add_wrapped(wrap_pyfunction!(version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
