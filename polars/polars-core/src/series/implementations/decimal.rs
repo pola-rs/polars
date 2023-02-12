@@ -9,6 +9,14 @@ unsafe impl IntoSeries for DecimalChunked {
 
 impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {}
 
+impl SeriesWrap<DecimalChunked> {
+    fn apply_logical<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {
+        f(&self.0)
+            .into_decimal(self.0.precision(), self.0.scale())
+            .into_series()
+    }
+}
+
 impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.field.as_ref())
@@ -33,9 +41,37 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        let ca = self.0.slice(offset, length);
-        ca.into_decimal(self.0.precision(), self.0.scale())
-            .into_series()
+        self.apply_logical(|ca| ca.slice(offset, length))
+    }
+
+    fn append(&mut self, other: &Series) -> PolarsResult<()> {
+        if self.0.dtype() == other.dtype() {
+            self.0.append(other.as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot append Series; data types don't match".into(),
+            ))
+        }
+    }
+
+    fn extend(&mut self, other: &Series) -> PolarsResult<()> {
+        if self.0.dtype() == other.dtype() {
+            self.0.extend(other.as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot extend Series; data types don't match".into(),
+            ))
+        }
+    }
+
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
+        Ok(self
+            .0
+            .filter(filter)?
+            .into_decimal(self.0.precision(), self.0.scale())
+            .into_series())
     }
 
     #[cfg(feature = "chunked_ids")]
@@ -47,9 +83,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        let ca = self.0.deref().take_opt_chunked_unchecked(by);
-        ca.into_decimal(self.0.precision(), self.0.scale())
-            .into_series()
+        self.apply_logical(|ca| ca.take_opt_chunked_unchecked(by))
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
@@ -139,9 +173,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn reverse(&self) -> Series {
-        self.0
-            .reverse()
-            .into_decimal(self.0.precision(), self.0.scale())
-            .into_series()
+        self.apply_logical(|ca| ca.reverse())
+    }
+
+    fn shift(&self, periods: i64) -> Series {
+        self.apply_logical(|ca| ca.shift(periods))
     }
 }

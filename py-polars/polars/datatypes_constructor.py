@@ -15,6 +15,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Null,
     Object,
     PolarsDataType,
     Time,
@@ -24,7 +25,6 @@ from polars.datatypes import (
     UInt64,
     Utf8,
     _base_type,
-    Null,
 )
 from polars.dependencies import numpy as np
 

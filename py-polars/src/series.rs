@@ -251,7 +251,6 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-
     #[staticmethod]
     pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]

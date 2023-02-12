@@ -269,19 +269,13 @@ pub trait SeriesTrait:
     fn slice(&self, _offset: i64, _length: usize) -> Series;
 
     #[doc(hidden)]
-    fn append(&mut self, _other: &Series) -> PolarsResult<()> {
-        invalid_operation_panic!(self)
-    }
+    fn append(&mut self, _other: &Series) -> PolarsResult<()>;
 
     #[doc(hidden)]
-    fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
-        invalid_operation_panic!(self)
-    }
+    fn extend(&mut self, _other: &Series) -> PolarsResult<()>;
 
     /// Filter by boolean mask. This operation clones data.
-    fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
-    }
+    fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series>;
 
     #[doc(hidden)]
     #[cfg(feature = "chunked_ids")]
@@ -476,9 +470,7 @@ pub trait SeriesTrait:
     /// }
     /// example();
     /// ```
-    fn shift(&self, _periods: i64) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn shift(&self, _periods: i64) -> Series;
 
     /// Get the sum of the Series as a new Series of length 1.
     ///
