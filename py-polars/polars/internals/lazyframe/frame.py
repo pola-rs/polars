@@ -1725,6 +1725,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┘
 
         Note that the following syntax does NOT work:
+
         >>> ldf.groupby("a")["b"].sum().collect()
         Traceback (most recent call last):
         ...

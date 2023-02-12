@@ -487,18 +487,27 @@ class Series:
         return self._comp(other, "lt_eq")
 
     def le(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series <= other``."""
         return self.__le__(other)
 
+    def lt(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series < other``."""
+        return self.__lt__(other)
+
     def eq(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series == other``."""
         return self.__eq__(other)
 
     def ne(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series != other``."""
         return self.__ne__(other)
 
-    def lt(self, other: Any) -> Series:
-        return self.__lt__(other)
+    def ge(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series >= other``."""
+        return self.__ge__(other)
 
     def gt(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series > other``."""
         return self.__gt__(other)
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
