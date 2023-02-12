@@ -129,4 +129,19 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn has_validity(&self) -> bool {
         self.0.has_validity()
     }
+
+    fn is_null(&self) -> BooleanChunked {
+        self.0.is_null()
+    }
+
+    fn is_not_null(&self) -> BooleanChunked {
+        self.0.is_not_null()
+    }
+
+    fn reverse(&self) -> Series {
+        self.0
+            .reverse()
+            .into_decimal(self.0.precision(), self.0.scale())
+            .into_series()
+    }
 }

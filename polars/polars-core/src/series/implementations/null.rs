@@ -142,6 +142,18 @@ impl SeriesTrait for NullChunked {
     fn slice(&self, _offset: i64, length: usize) -> Series {
         NullChunked::new(self.name(), length).into_series()
     }
+
+    fn is_null(&self) -> BooleanChunked {
+        BooleanChunked::full(self.name(), true, self.len())
+    }
+
+    fn is_not_null(&self) -> BooleanChunked {
+        BooleanChunked::full(self.name(), false, self.len())
+    }
+
+    fn reverse(&self) -> Series {
+        self.clone().into_series()
+    }
 }
 
 unsafe impl IntoSeries for NullChunked {
