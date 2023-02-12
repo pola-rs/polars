@@ -194,7 +194,7 @@ impl DatetimeChunked {
     }
 
     /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
+    pub fn strftime(&self, fmt: &str) -> PolarsResult<Utf8Chunked> {
         #[cfg(feature = "timezones")]
         use chrono::Utc;
         let conversion_f = match self.time_unit() {
@@ -207,14 +207,26 @@ impl DatetimeChunked {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let fmted = match self.time_zone() {
+        let mut fmted = String::new();
+        match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(_) => format!(
+            Some(_) => write!(
+                fmted,
                 "{}",
                 Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
-            ),
-            _ => format!("{}", dt.format(fmt)),
+            )
+            .map_err(|_| {
+                PolarsError::ComputeError(
+                    format!("Cannot format DateTime with format '{fmt}'.").into(),
+                )
+            })?,
+            _ => write!(fmted, "{}", dt.format(fmt)).map_err(|_| {
+                PolarsError::ComputeError(
+                    format!("Cannot format NaiveDateTime with format '{fmt}'.").into(),
+                )
+            })?,
         };
+        let fmted = fmted; // discard mut
 
         let mut ca: Utf8Chunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
@@ -232,7 +244,7 @@ impl DatetimeChunked {
             _ => self.apply_kernel_cast(&|arr| format_naive(arr, fmt, &fmted, conversion_f)),
         };
         ca.rename(self.name());
-        ca
+        Ok(ca)
     }
 
     /// Construct a new [`DatetimeChunked`] from an iterator over [`NaiveDateTime`].
