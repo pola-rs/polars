@@ -56,7 +56,7 @@ fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,
     options: &SerializeOptions,
-    datetime_format: &str,
+    datetime_format: Option<&str>,
 ) {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),
@@ -93,6 +93,8 @@ fn write_anyvalue(
         }
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(v, tu, tz) => {
+            // If this is a datetime, then datetime_format was either set or inferred.
+            let datetime_format = datetime_format.unwrap();
             let ndt = match tu {
                 TimeUnit::Nanoseconds => temporal_conversions::timestamp_ns_to_datetime(v),
                 TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
@@ -195,41 +197,6 @@ pub(crate) fn write<W: Write>(
         .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
     let delimiter = char::from(options.delimiter);
 
-    // if datetime format not specified, infer the maximum required precision
-    if options.datetime_format.is_none() {
-        for col in df.get_columns() {
-            match col.dtype() {
-                DataType::Datetime(TimeUnit::Milliseconds, tz)
-                    // lowest precision; only set if it's not been inferred yet
-                    if options.datetime_format.is_none() =>
-                {
-                    options.datetime_format = match tz{
-                        Some(_) => Some("%FT%H:%M:%S.%3f%z".to_string()),
-                        None => Some("%FT%H:%M:%S.%3f".to_string()),
-                    };
-                }
-                DataType::Datetime(TimeUnit::Microseconds, tz) => {
-                    options.datetime_format = match tz{
-                        Some(_) => Some("%FT%H:%M:%S.%6f%z".to_string()),
-                        None => Some("%FT%H:%M:%S.%6f".to_string()),
-                    };
-                }
-                DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
-                    options.datetime_format = match tz {
-                        Some(_) => Some("%FT%H:%M:%S.%9f%z".to_string()),
-                        None => Some("%FT%H:%M:%S.%9f".to_string()),
-                    };
-                    break; // highest precision; no need to check further
-                }
-                _ => {}
-            }
-        }
-    }
-    let datetime_format: &str = match &options.datetime_format {
-        Some(datetime_format) => datetime_format,
-        None => "%FT%H:%M:%S.%9f",
-    };
-
     let len = df.height();
     let n_threads = POOL.current_num_threads();
     let total_rows_per_pool_iter = n_threads * chunk_size;
@@ -265,9 +232,28 @@ pub(crate) fn write<W: Write>(
 
             let last_ptr = &col_iters[col_iters.len() - 1] as *const SeriesIter;
             let mut finished = false;
-            // loop rows
             while !finished {
+                // loop cols
                 for col in &mut col_iters {
+                    let datetime_format = match &options.datetime_format {
+                        Some(datetime_format) => Some(datetime_format.as_str()),
+                        None => match col.dtype {
+                            DataType::Datetime(TimeUnit::Milliseconds, tz) => match tz {
+                                Some(_) => Some("%FT%H:%M:%S.%3f%z"),
+                                None => Some("%FT%H:%M:%S.%3f"),
+                            },
+                            DataType::Datetime(TimeUnit::Microseconds, tz) => match tz {
+                                Some(_) => Some("%FT%H:%M:%S.%6f%z"),
+                                None => Some("%FT%H:%M:%S.%6f"),
+                            },
+                            DataType::Datetime(TimeUnit::Nanoseconds, tz) => match tz {
+                                Some(_) => Some("%FT%H:%M:%S.%9f%z"),
+                                None => Some("%FT%H:%M:%S.%9f"),
+                            },
+                            _ => None,
+                        },
+                    };
+                    // loop rows
                     match col.next() {
                         Some(value) => {
                             write_anyvalue(&mut write_buffer, value, options, datetime_format);

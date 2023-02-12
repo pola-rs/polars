@@ -144,7 +144,7 @@ impl Series {
 
 pub struct SeriesIter<'a> {
     arr: &'a dyn Array,
-    dtype: &'a DataType,
+    pub dtype: &'a DataType,
     idx: usize,
     len: usize,
 }

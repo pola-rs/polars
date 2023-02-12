@@ -889,16 +889,16 @@ def test_datetime_format_tz_aware(fmt: str, expected: str, tzinfo: timezone) -> 
         (
             "ns",
             "us",
-            "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n",
+            "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000\n",
         ),
         (
             "ns",
             "ms",
-            "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n",
+            "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123\n",
         ),
         ("us", "us", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
-        ("us", "ms", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
-        ("ms", "us", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
+        ("us", "ms", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123\n"),
+        ("ms", "us", "x,y\n2022-09-04T10:30:45.123,2022-09-04T10:30:45.123000\n"),
         ("ms", "ms", "x,y\n2022-09-04T10:30:45.123,2022-09-04T10:30:45.123\n"),
     ],
 )
@@ -916,6 +916,18 @@ def test_datetime_format_inferred_precision(
         ],
     )
     assert expected == df.write_csv()
+
+
+def test_inferred_datetime_format_mixed() -> None:
+    ts = pl.date_range(datetime(2000, 1, 1), datetime(2000, 1, 2))
+    df = pl.DataFrame({"naive": ts, "aware": ts.dt.replace_time_zone("UTC")})
+    result = df.write_csv()
+    expected = (
+        "naive,aware\n"
+        "2000-01-01T00:00:00.000000,2000-01-01T00:00:00.000000+0000\n"
+        "2000-01-02T00:00:00.000000,2000-01-02T00:00:00.000000+0000\n"
+    )
+    assert result == expected
 
 
 @pytest.mark.parametrize(
