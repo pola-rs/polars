@@ -1705,19 +1705,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> ldf = pl.DataFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
         ...         "b": [1, 2, 3, 4, 5, 6],
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... ).lazy()
-
-        The following does NOT work:
-        # df.groupby("a")["b"].sum().collect()
-        #                ^^^^ TypeError: 'LazyGroupBy' object is not subscriptable
-        instead, use .agg():
-        >>> df.groupby(by="a", maintain_order=True).agg(pl.col("b").sum()).collect()
+        >>> ldf.groupby(by="a", maintain_order=True).agg(pl.col("b").sum()).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1728,6 +1723,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ b   ┆ 11  │
         │ c   ┆ 6   │
         └─────┴─────┘
+
+        Note that the following syntax does NOT work:
+        >>> ldf.groupby("a")["b"].sum().collect()
+        Traceback (most recent call last):
+        ...
+        TypeError: 'LazyGroupBy' object is not subscriptable
 
         """
         pyexprs_by = selection_to_pyexpr_list(by)

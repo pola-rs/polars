@@ -83,9 +83,9 @@ class ExprStructNameSpace:
         ...     pl.col("my_struct").struct.rename_fields(["INT", "STR", "BOOL", "LIST"])
         ... )
 
-        Does NOT work anymore:
-        # df.select(pl.col("my_struct").struct.field("int"))
-        #               PanicException: int not found ^^^
+        Note that the following syntax no longer works:
+        >>> df.select(pl.col("my_struct").struct.field("int"))  # doctest: +SKIP
+        StructFieldNotFoundError: int
 
         >>> df.select(pl.col("my_struct").struct.field("INT"))
         shape: (2, 1)
