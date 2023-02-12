@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use crate::prelude::*;
 
 fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArray<T> {
@@ -7,13 +9,26 @@ fn any_values_to_primitive<T: PolarsNumericType>(avs: &[AnyValue]) -> ChunkedArr
 }
 
 fn any_values_to_utf8(avs: &[AnyValue]) -> Utf8Chunked {
-    avs.iter()
-        .map(|av| match av {
-            AnyValue::Utf8(s) => Some(*s),
-            AnyValue::Utf8Owned(s) => Some(&**s),
-            _ => None,
-        })
-        .collect_trusted()
+    let mut builder = Utf8ChunkedBuilder::new("", avs.len(), avs.len() * 10);
+
+    // amortize allocations
+    let mut owned = String::new();
+
+    for av in avs {
+        match av {
+            AnyValue::Utf8(s) => builder.append_value(s),
+            AnyValue::Utf8Owned(s) => builder.append_value(s),
+            AnyValue::Null => builder.append_null(),
+            #[cfg(feature = "dtype-binary")]
+            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => builder.append_null(),
+            av => {
+                owned.clear();
+                write!(owned, "{av}").unwrap();
+                builder.append_value(&owned);
+            }
+        }
+    }
+    builder.finish()
 }
 
 #[cfg(feature = "dtype-binary")]
@@ -174,7 +189,13 @@ impl Series {
                             _ => field_avs.push(AnyValue::Null),
                         }
                     }
-                    series_fields.push(Series::new(field.name(), &field_avs))
+                    // if the inferred dtype is null, we let auto inference work
+                    let s = if matches!(field.dtype, DataType::Null) {
+                        Series::new(field.name(), &field_avs)
+                    } else {
+                        Series::from_any_values_and_dtype(field.name(), &field_avs, &field.dtype)?
+                    };
+                    series_fields.push(s)
                 }
                 return Ok(StructChunked::new(name, &series_fields)
                     .unwrap()

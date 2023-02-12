@@ -108,8 +108,8 @@ impl Buffer<'_> {
                 buf.append_option(v);
                 Ok(())
             }
-            All(_, buf) => {
-                let av = deserialize_all(value);
+            All(dtype, buf) => {
+                let av = deserialize_all(value, dtype)?;
                 buf.push(av);
                 Ok(())
             }
@@ -162,37 +162,8 @@ where
     })
 }
 
-#[cfg(feature = "dtype-struct")]
-fn value_to_dtype(val: &Value) -> DataType {
-    match val {
-        Value::Static(StaticNode::Bool(_)) => DataType::Boolean,
-        Value::Static(StaticNode::I64(_)) => DataType::Int64,
-        Value::Static(StaticNode::U64(_)) => DataType::UInt64,
-        Value::Static(StaticNode::F64(_)) => DataType::Float64,
-        Value::Static(StaticNode::Null) => DataType::Null,
-        Value::Array(arr) => {
-            let inner_type = if let Some(val) = arr.first() {
-                value_to_dtype(val)
-            } else {
-                DataType::Unknown
-            };
-
-            DataType::List(Box::new(inner_type))
-        }
-        #[cfg(feature = "dtype-struct")]
-        Value::Object(doc) => {
-            let fields = doc.iter().map(|(key, value)| {
-                let dtype = value_to_dtype(value);
-                Field::new(key, dtype)
-            });
-            DataType::Struct(fields.collect())
-        }
-        _ => DataType::Utf8,
-    }
-}
-
-fn deserialize_all<'a>(json: &Value) -> AnyValue<'a> {
-    match json {
+fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<'a>> {
+    let out = match json {
         Value::Static(StaticNode::Bool(b)) => AnyValue::Boolean(*b),
         Value::Static(StaticNode::I64(i)) => AnyValue::Int64(*i),
         Value::Static(StaticNode::U64(u)) => AnyValue::UInt64(*u),
@@ -200,25 +171,42 @@ fn deserialize_all<'a>(json: &Value) -> AnyValue<'a> {
         Value::Static(StaticNode::Null) => AnyValue::Null,
         Value::String(s) => AnyValue::Utf8Owned(s.as_ref().into()),
         Value::Array(arr) => {
-            let vals: Vec<AnyValue> = arr.iter().map(deserialize_all).collect();
-
-            let s = Series::new("", vals);
+            let inner_dtype = dtype.inner_dtype().ok_or_else(|| {
+                PolarsError::ComputeError(
+                    format!("Expected List/Array in json value got: {dtype}").into(),
+                )
+            })?;
+            let vals: Vec<AnyValue> = arr
+                .iter()
+                .map(|val| deserialize_all(val, inner_dtype))
+                .collect::<PolarsResult<_>>()?;
+            let s = Series::from_any_values_and_dtype("", &vals, inner_dtype)?;
             AnyValue::List(s)
         }
         #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
-            let vals: (Vec<AnyValue>, Vec<Field>) = doc
-                .iter()
-                .map(|(key, value)| {
-                    let dt = value_to_dtype(value);
-                    let fld = Field::new(key, dt);
-                    let av: AnyValue<'a> = deserialize_all(value);
-                    (av, fld)
-                })
-                .unzip();
-            AnyValue::StructOwned(Box::new(vals))
+            if let DataType::Struct(fields) = dtype {
+                let document = &**doc;
+
+                let vals = fields
+                    .iter()
+                    .map(|field| {
+                        if let Some(value) = document.get(field.name.as_str()) {
+                            deserialize_all(value, &field.dtype)
+                        } else {
+                            Ok(AnyValue::Null)
+                        }
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                AnyValue::StructOwned(Box::new((vals, fields.clone())))
+            } else {
+                return Err(PolarsError::ComputeError(
+                    format!("Expected: {dtype} but got object instead.").into(),
+                ));
+            }
         }
         #[cfg(not(feature = "dtype-struct"))]
         val => AnyValue::Utf8Owned(format!("{:#?}", val).into()),
-    }
+    };
+    Ok(out)
 }
