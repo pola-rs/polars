@@ -1,3 +1,4 @@
 black==23.1.0
 blackdoc==0.3.7
+mypy==1.0.0
 ruff==0.0.237
