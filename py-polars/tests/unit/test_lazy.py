@@ -984,7 +984,7 @@ def test_ufunc_multiple_expr() -> None:
     with pytest.raises(
         ValueError, match="Numpy ufunc can only be used with one expression, 2 given"
     ):
-        df.select(np.arctan2(pl.col("a"), pl.col("b")))
+        df.select(np.arctan2(pl.col("a"), pl.col("b")))  # type: ignore[call-overload]
 
 
 def test_clip() -> None:
