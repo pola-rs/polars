@@ -1258,7 +1258,7 @@ def cumsum(
     │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
     └─────┴─────┴─────┴───────────┘
 
-    """  # noqa E501
+    """  # noqa: W505
     if isinstance(column, pli.Series):
         return column.cumsum()
     elif isinstance(column, str):
@@ -1542,7 +1542,7 @@ def cumfold(
     If you simply want the first encountered expression as accumulator,
     consider using ``cumreduce``.
 
-    """  # noqa E501
+    """  # noqa: W505
     # in case of pl.col("*")
     acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
     if isinstance(exprs, pli.Expr):
@@ -1569,7 +1569,7 @@ def cumreduce(
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
 
-    """  # noqa E501
+    """  # noqa: W505
     # in case of pl.col("*")
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]
