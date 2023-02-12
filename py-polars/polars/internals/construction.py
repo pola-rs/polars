@@ -469,7 +469,7 @@ def sequence_to_pyseries(
 
 @deprecated_alias(nan_to_none="nan_to_null")
 def _pandas_series_to_arrow(
-    values: pd.Series | pd.DatetimeIndex,
+    values: pd.Series[Any] | pd.DatetimeIndex,
     nan_to_null: bool = True,
     min_len: int | None = None,
 ) -> pa.Array:
@@ -512,7 +512,7 @@ def _pandas_series_to_arrow(
 
 @deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pyseries(
-    name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
+    name: str, values: pd.Series[Any] | pd.DatetimeIndex, nan_to_null: bool = True
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]

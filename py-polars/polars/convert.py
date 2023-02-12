@@ -400,7 +400,7 @@ def from_pandas(
 
 @overload
 def from_pandas(
-    df: pd.Series | pd.DatetimeIndex,
+    df: pd.Series[Any] | pd.DatetimeIndex,
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
@@ -410,7 +410,7 @@ def from_pandas(
 
 @deprecated_alias(nan_to_none="nan_to_null")
 def from_pandas(
-    df: pd.DataFrame | pd.Series | pd.DatetimeIndex,
+    df: pd.DataFrame | pd.Series[Any] | pd.DatetimeIndex,
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
