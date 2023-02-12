@@ -99,7 +99,7 @@ impl ChunkFull<&Series> for ListChunked {
 
 impl ChunkFullNull for ListChunked {
     fn full_null(name: &str, length: usize) -> ListChunked {
-        ListChunked::full_null_with_dtype(name, length, &DataType::Boolean)
+        ListChunked::full_null_with_dtype(name, length, &DataType::Null)
     }
 }
 

@@ -96,3 +96,10 @@ def test_ndjson_nested_null() -> None:
     assert pl.read_ndjson(io.StringIO(payload)).to_dict(False) == {
         "foo": [{"bar": [{"": None}]}]
     }
+
+
+def test_ndjson_nested_utf8_int() -> None:
+    ndjson = """{"Accumulables":[{"Value":32395888},{"Value":"539454"}]}"""
+    assert pl.read_ndjson(io.StringIO(ndjson)).to_dict(False) == {
+        "Accumulables": [[{"Value": "32395888"}, {"Value": "539454"}]]
+    }
