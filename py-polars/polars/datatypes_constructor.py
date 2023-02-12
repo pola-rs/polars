@@ -23,7 +23,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
-    _base_type,
+    _base_type, Null,
 )
 from polars.dependencies import numpy as np
 
@@ -57,6 +57,7 @@ if not _DOCUMENTING:
         Utf8: PySeries.new_str,
         Object: PySeries.new_object,
         Categorical: PySeries.new_str,
+        Null: PySeries.new_null
     }
 
 

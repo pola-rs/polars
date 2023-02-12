@@ -120,6 +120,28 @@ impl SeriesTrait for NullChunked {
     fn null_count(&self) -> usize {
         self.len()
     }
+
+    fn new_from_index(&self, _index: usize, length: usize) -> Series {
+        NullChunked::new(self.name(), length).into_series()
+    }
+
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+        if index < self.len() {
+            Ok(AnyValue::Null)
+        } else {
+            Err(PolarsError::ComputeError(
+                format!(
+                    "index {index} is out of bounds on series of length {}",
+                    self.len()
+                )
+                .into(),
+            ))
+        }
+    }
+
+    fn slice(&self, _offset: i64, length: usize) -> Series {
+        NullChunked::new(self.name(), length).into_series()
+    }
 }
 
 unsafe impl IntoSeries for NullChunked {

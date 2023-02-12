@@ -266,9 +266,7 @@ pub trait SeriesTrait:
     ///
     /// When offset is negative the offset is counted from the
     /// end of the array
-    fn slice(&self, _offset: i64, _length: usize) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn slice(&self, _offset: i64, _length: usize) -> Series;
 
     #[doc(hidden)]
     fn append(&mut self, _other: &Series) -> PolarsResult<()> {
@@ -373,17 +371,13 @@ pub trait SeriesTrait:
     /// let s2 = s.new_from_index(2, 4);
     /// assert_eq!(Vec::from(s2.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
     /// ```
-    fn new_from_index(&self, _index: usize, _length: usize) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
     fn cast(&self, _data_type: &DataType) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, _index: usize) -> PolarsResult<AnyValue> {
-        invalid_operation_panic!(self)
-    }
+    fn get(&self, _index: usize) -> PolarsResult<AnyValue>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
