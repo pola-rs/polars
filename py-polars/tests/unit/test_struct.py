@@ -797,4 +797,4 @@ def test_struct_null_cast() -> None:
         .lazy()
         .select([pl.lit(None, dtype=pl.Null).cast(dtype, strict=True)])
         .collect()
-    ).to_dict(False) == {"": [{"a": None, "b": None, "c": None}]}
+    ).to_dict(False) == {"literal": [{"a": None, "b": None, "c": None}]}

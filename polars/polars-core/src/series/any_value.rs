@@ -195,11 +195,7 @@ impl Series {
                 }
                 return Ok(builder.to_series());
             }
-            DataType::Null => {
-                // TODO!
-                // use null dtype here and fix tests
-                Series::full_null(name, av.len(), &DataType::Int32)
-            }
+            DataType::Null => Series::full_null(name, av.len(), &DataType::Null),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let ca = if let Some(single_av) = av.first() {

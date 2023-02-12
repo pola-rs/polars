@@ -87,7 +87,7 @@ impl Series {
             Struct(_) => Series::try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap(),
             #[cfg(feature = "object")]
             Object(_) => todo!(),
-            Null => panic!("null type not supported"),
+            Null => new_null(name, &chunks),
             Unknown => panic!("uh oh, somehow we don't know the dtype?"),
             #[allow(unreachable_patterns)]
             _ => unreachable!(),
@@ -225,14 +225,7 @@ impl Series {
                     ArrowTimeUnit::Nanosecond => s,
                 })
             }
-            ArrowDataType::Null => {
-                // we don't support null types yet so we use a small digit type filled with nulls
-                let len = chunks.iter().fold(0, |acc, array| acc + array.len());
-                #[cfg(feature = "dtype-i8")]
-                return Ok(Int8Chunked::full_null(name, len).into_series());
-                #[cfg(not(feature = "dtype-i8"))]
-                Ok(UInt32Chunked::full_null(name, len).into_series())
-            }
+            ArrowDataType::Null => Ok(new_null(name, &chunks)),
             #[cfg(not(feature = "dtype-categorical"))]
             ArrowDataType::Dictionary(_, _, _) => {
                 panic!("activate dtype-categorical to convert dictionary arrays")
@@ -557,6 +550,11 @@ unsafe impl IntoSeries for Series {
     fn into_series(self) -> Series {
         self
     }
+}
+
+fn new_null(name: &str, chunks: &[ArrayRef]) -> Series {
+    let len = chunks.iter().map(|arr| arr.len()).sum();
+    Series::new_null(name, len)
 }
 
 #[cfg(test)]

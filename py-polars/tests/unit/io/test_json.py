@@ -89,3 +89,10 @@ def test_read_ndjson_empty_array() -> None:
     assert pl.read_ndjson(io.StringIO("""{"foo": {"bar": []}}""")).to_dict(False) == {
         "foo": [{"": None}]
     }
+
+
+def test_ndjson_nested_null() -> None:
+    payload = """{"foo":{"bar":[{}]}}"""
+    assert pl.read_ndjson(io.StringIO(payload)).to_dict(False) == {
+        "foo": [{"bar": [{"": None}]}]
+    }

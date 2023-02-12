@@ -9,7 +9,15 @@ unsafe impl IntoSeries for DecimalChunked {
 
 impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {}
 
-impl private::PrivateSeries for SeriesWrap<DecimalChunked> {}
+impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
+    fn _field(&self) -> Cow<Field> {
+        Cow::Borrowed(self.0.field.as_ref())
+    }
+
+    fn _dtype(&self) -> &DataType {
+        &self.0.field.dtype
+    }
+}
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn rename(&mut self, name: &str) {
@@ -85,5 +93,23 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         let ca = self.0.deref().take_opt_chunked_unchecked(by);
         ca.into_decimal(self.0.precision(), self.0.scale())
             .into_series()
+    }
+
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+
+    fn rechunk(&self) -> Series {
+        let ca = self.0.rechunk();
+        ca.into_decimal(self.0.precision(), self.0.scale())
+            .into_series()
+    }
+
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.0.cast(data_type)
+    }
+
+    fn null_count(&self) -> usize {
+        self.0.null_count()
     }
 }

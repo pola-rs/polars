@@ -69,13 +69,9 @@ pub(crate) mod private {
         }
 
         /// Get field (used in schema)
-        fn _field(&self) -> Cow<Field> {
-            invalid_operation_panic!(self)
-        }
+        fn _field(&self) -> Cow<Field>;
 
-        fn _dtype(&self) -> &DataType {
-            unimplemented!()
-        }
+        fn _dtype(&self) -> &DataType;
 
         fn compute_len(&mut self) {
             unimplemented!()
@@ -236,9 +232,7 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
     /// Name of series.
-    fn name(&self) -> &str {
-        invalid_operation_panic!(self)
-    }
+    fn name(&self) -> &str;
 
     /// Get field (used in schema)
     fn field(&self) -> Cow<Field> {
@@ -343,9 +337,7 @@ pub trait SeriesTrait:
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
-    fn rechunk(&self) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn rechunk(&self) -> Series;
 
     /// Take every nth value as a new Series
     fn take_every(&self, n: usize) -> Series;
@@ -385,9 +377,7 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    fn cast(&self, _data_type: &DataType) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
-    }
+    fn cast(&self, _data_type: &DataType) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
@@ -418,9 +408,7 @@ pub trait SeriesTrait:
     }
 
     /// Count the null values.
-    fn null_count(&self) -> usize {
-        invalid_operation_panic!(self)
-    }
+    fn null_count(&self) -> usize;
 
     /// Return if any the chunks in this `[ChunkedArray]` have a validity bitmap.
     /// no bitmap means no null values.
