@@ -84,6 +84,7 @@ class ExprStructNameSpace:
         ... )
 
         Note that the following syntax no longer works:
+
         >>> df.select(pl.col("my_struct").struct.field("int"))  # doctest: +SKIP
         StructFieldNotFoundError: int
 

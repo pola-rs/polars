@@ -1306,6 +1306,7 @@ class Expr:
         └─────┴───────────┘
 
         Null values are excluded, but can also be filled by calling ``forward_fill``.
+
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
         ...     [
@@ -1437,6 +1438,7 @@ class Expr:
         └─────┴───────────┘
 
         Null values are excluded, but can also be filled by calling ``forward_fill``.
+
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
         ...     [
@@ -6056,6 +6058,7 @@ class Expr:
         │ 2      ┆ ES           │
         │ 3      ┆ DE           │
         └────────┴──────────────┘
+
         >>> df.with_columns(
         ...     pl.col("country_code").map_dict(country_code_dict).alias("remapped")
         ... )
@@ -6072,6 +6075,7 @@ class Expr:
         └────────┴──────────────┴───────────────┘
 
         Set a default value for values that couldn't be mapped.
+
         >>> df.with_columns(
         ...     pl.col("country_code")
         ...     .map_dict(country_code_dict, default="unknown")
@@ -6090,6 +6094,7 @@ class Expr:
         └────────┴──────────────┴───────────────┘
 
         Keep the original value for values that couldn't be mapped.
+
         >>> df.with_columns(
         ...     pl.col("country_code")
         ...     .map_dict(country_code_dict, default=pl.col("country_code"))
@@ -6111,6 +6116,7 @@ class Expr:
         couldn't be mapped, a struct needs to be constructed, with in the first field
         the column that you want to remap and the rest of the fields the other columns
         you use in the default expression.
+
         >>> df.with_columns(
         ...     pl.struct(pl.col(["country_code", "row_nr"])).map_dict(
         ...         remapping=country_code_dict,
