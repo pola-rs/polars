@@ -13,6 +13,7 @@ from typing import (
     Callable,
     ForwardRef,
     Iterator,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -20,6 +21,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    get_args,
     overload,
 )
 
@@ -33,17 +35,6 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
-
-
-if sys.version_info >= (3, 8):
-    from typing import Literal, get_args
-else:
-    from typing_extensions import Literal
-
-    # pass-through (only impact is that under 3.7 we'll end-up doing
-    # standard inference for dataclass fields with an option/union)
-    def get_args(tp: Any) -> Any:
-        return tp
 
 
 OptionType = type(Optional[type])

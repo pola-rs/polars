@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -63,11 +63,6 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -1910,7 +1905,7 @@ def duration(
     │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.002 ┆                     │
     └────────────┴────────────┴─────────────────────┴──────────────┴─────────────────────┘
 
-    """  # noqa: W505
+    """
     if hours is not None:
         hours = pli.expr_to_lit_or_expr(hours, str_to_lit=False)._pyexpr
     if minutes is not None:

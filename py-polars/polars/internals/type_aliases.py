@@ -3,13 +3,9 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from typing import Literal
 
 from polars import internals as pli
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if sys.version_info >= (3, 10):
     from typing import TypeAlias

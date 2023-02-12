@@ -2,13 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from types import TracebackType
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+from typing import Literal
 
 try:
     from polars.polars import set_float_fmt as _set_float_fmt
