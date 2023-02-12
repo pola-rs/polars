@@ -183,6 +183,8 @@ impl FunctionExpr {
             Nan(n) => n.get_field(fields),
             #[cfg(feature = "round_series")]
             Clip { .. } => same_type(),
+            ClipMin { .. } => same_type(),
+            ClipMax { .. } => same_type(),
             ListExpr(l) => {
                 use ListFunction::*;
                 match l {

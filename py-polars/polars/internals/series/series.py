@@ -4630,7 +4630,7 @@ class Series:
 
         """
 
-    def clip_min(self, min_val: int | float) -> Series:
+    def clip_min(self, min_val: int | float | pli.Expr) -> Series:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -4646,7 +4646,7 @@ class Series:
 
         """
 
-    def clip_max(self, max_val: int | float) -> Series:
+    def clip_max(self, max_val: int | float | pli.Expr) -> Series:
         """
         Clip (limit) the values in an array to a `max` boundary.
 

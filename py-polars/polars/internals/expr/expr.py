@@ -4836,7 +4836,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Expr:
+    def clip(self, min_val: int | float | Expr, max_val: int | float | Expr) -> Expr:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -4869,9 +4869,11 @@ class Expr:
         └──────┴─────────────┘
 
         """
+        min_val = pli.expr_to_lit_or_expr(min_val, str_to_lit=True)._pyexpr
+        max_val = pli.expr_to_lit_or_expr(max_val, str_to_lit=True)._pyexpr
         return wrap_expr(self._pyexpr.clip(min_val, max_val))
 
-    def clip_min(self, min_val: int | float) -> Expr:
+    def clip_min(self, min_val: int | float | Expr) -> Expr:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -4902,9 +4904,10 @@ class Expr:
         └──────┴─────────────┘
 
         """
+        min_val = pli.expr_to_lit_or_expr(min_val, str_to_lit=True)._pyexpr
         return wrap_expr(self._pyexpr.clip_min(min_val))
 
-    def clip_max(self, max_val: int | float) -> Expr:
+    def clip_max(self, max_val: int | float | Expr) -> Expr:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -4935,6 +4938,7 @@ class Expr:
         └──────┴─────────────┘
 
         """
+        max_val = pli.expr_to_lit_or_expr(max_val, str_to_lit=True)._pyexpr
         return wrap_expr(self._pyexpr.clip_max(max_val))
 
     def lower_bound(self) -> Expr:

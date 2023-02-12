@@ -92,10 +92,9 @@ pub enum FunctionExpr {
     },
     Nan(NanFunction),
     #[cfg(feature = "round_series")]
-    Clip {
-        min: Option<AnyValue<'static>>,
-        max: Option<AnyValue<'static>>,
-    },
+    Clip,
+    ClipMin,
+    ClipMax,
     ListExpr(ListFunction),
     #[cfg(feature = "dtype-struct")]
     StructExpr(StructFunction),
@@ -156,12 +155,9 @@ impl Display for FunctionExpr {
                 NanFunction::DropNans => "drop_nans",
             },
             #[cfg(feature = "round_series")]
-            Clip { min, max } => match (min, max) {
-                (Some(_), Some(_)) => "clip",
-                (None, Some(_)) => "clip_max",
-                (Some(_), None) => "clip_min",
-                _ => unreachable!(),
-            },
+            Clip { .. } => "clip",
+            ClipMin { .. } => "clip_min",
+            ClipMax { .. } => "clip_max",
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
             StructExpr(func) => return write!(f, "{func}"),
@@ -319,8 +315,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             Nan(n) => n.into(),
             #[cfg(feature = "round_series")]
-            Clip { min, max } => {
-                map_owned!(clip::clip, min.clone(), max.clone())
+            Clip { .. } => {
+                map_as_slice!(clip::clip)
+            }
+            ClipMin { .. } => {
+                map_as_slice!(clip::clip_min)
+            }
+            ClipMax { .. } => {
+                map_as_slice!(clip::clip_max)
             }
             ListExpr(lf) => {
                 use ListFunction::*;
