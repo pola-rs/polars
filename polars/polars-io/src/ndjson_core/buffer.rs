@@ -4,7 +4,9 @@ use arrow::types::NativeType;
 use num::traits::NumCast;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::utf8::Pattern;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
 
@@ -142,6 +144,7 @@ fn deserialize_number<T: NativeType + NumCast>(value: &Value) -> Option<T> {
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
 fn deserialize_datetime<T>(value: &Value) -> Option<T::Native>
 where
     T: PolarsNumericType,

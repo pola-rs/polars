@@ -69,13 +69,9 @@ pub(crate) mod private {
         }
 
         /// Get field (used in schema)
-        fn _field(&self) -> Cow<Field> {
-            invalid_operation_panic!(self)
-        }
+        fn _field(&self) -> Cow<Field>;
 
-        fn _dtype(&self) -> &DataType {
-            unimplemented!()
-        }
+        fn _dtype(&self) -> &DataType;
 
         fn compute_len(&mut self) {
             unimplemented!()
@@ -236,9 +232,7 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
     /// Name of series.
-    fn name(&self) -> &str {
-        invalid_operation_panic!(self)
-    }
+    fn name(&self) -> &str;
 
     /// Get field (used in schema)
     fn field(&self) -> Cow<Field> {
@@ -272,24 +266,16 @@ pub trait SeriesTrait:
     ///
     /// When offset is negative the offset is counted from the
     /// end of the array
-    fn slice(&self, _offset: i64, _length: usize) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn slice(&self, _offset: i64, _length: usize) -> Series;
 
     #[doc(hidden)]
-    fn append(&mut self, _other: &Series) -> PolarsResult<()> {
-        invalid_operation_panic!(self)
-    }
+    fn append(&mut self, _other: &Series) -> PolarsResult<()>;
 
     #[doc(hidden)]
-    fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
-        invalid_operation_panic!(self)
-    }
+    fn extend(&mut self, _other: &Series) -> PolarsResult<()>;
 
     /// Filter by boolean mask. This operation clones data.
-    fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
-    }
+    fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series>;
 
     #[doc(hidden)]
     #[cfg(feature = "chunked_ids")]
@@ -343,9 +329,7 @@ pub trait SeriesTrait:
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
-    fn rechunk(&self) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn rechunk(&self) -> Series;
 
     /// Take every nth value as a new Series
     fn take_every(&self, n: usize) -> Series;
@@ -381,19 +365,13 @@ pub trait SeriesTrait:
     /// let s2 = s.new_from_index(2, 4);
     /// assert_eq!(Vec::from(s2.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
     /// ```
-    fn new_from_index(&self, _index: usize, _length: usize) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
-    fn cast(&self, _data_type: &DataType) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
-    }
+    fn cast(&self, _data_type: &DataType) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, _index: usize) -> PolarsResult<AnyValue> {
-        invalid_operation_panic!(self)
-    }
+    fn get(&self, _index: usize) -> PolarsResult<AnyValue>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
@@ -418,9 +396,7 @@ pub trait SeriesTrait:
     }
 
     /// Count the null values.
-    fn null_count(&self) -> usize {
-        invalid_operation_panic!(self)
-    }
+    fn null_count(&self) -> usize;
 
     /// Return if any the chunks in this `[ChunkedArray]` have a validity bitmap.
     /// no bitmap means no null values.
@@ -442,14 +418,10 @@ pub trait SeriesTrait:
     }
 
     /// Get a mask of the null values.
-    fn is_null(&self) -> BooleanChunked {
-        invalid_operation_panic!(self)
-    }
+    fn is_null(&self) -> BooleanChunked;
 
     /// Get a mask of the non-null values.
-    fn is_not_null(&self) -> BooleanChunked {
-        invalid_operation_panic!(self)
-    }
+    fn is_not_null(&self) -> BooleanChunked;
 
     /// Get a mask of all the unique values.
     fn is_unique(&self) -> PolarsResult<BooleanChunked> {
@@ -462,9 +434,7 @@ pub trait SeriesTrait:
     }
 
     /// return a Series in reversed order
-    fn reverse(&self) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn reverse(&self) -> Series;
 
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
@@ -500,9 +470,7 @@ pub trait SeriesTrait:
     /// }
     /// example();
     /// ```
-    fn shift(&self, _periods: i64) -> Series {
-        invalid_operation_panic!(self)
-    }
+    fn shift(&self, _periods: i64) -> Series;
 
     /// Get the sum of the Series as a new Series of length 1.
     ///

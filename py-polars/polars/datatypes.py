@@ -577,6 +577,8 @@ class _DataTypeMappings:
             Time: time,
             Binary: bytes,
             List: list,
+            # don't really know what type could be used in python
+            Null: None,  # type: ignore[dict-item]
         }
 
     @property

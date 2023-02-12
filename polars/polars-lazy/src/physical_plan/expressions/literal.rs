@@ -21,24 +21,25 @@ impl PhysicalExpr for LiteralExpr {
         Some(&self.1)
     }
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
+        const NAME: &str = "literal";
         use LiteralValue::*;
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
-            Int8(v) => Int8Chunked::full("literal", *v, 1).into_series(),
+            Int8(v) => Int8Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-i16")]
-            Int16(v) => Int16Chunked::full("literal", *v, 1).into_series(),
-            Int32(v) => Int32Chunked::full("literal", *v, 1).into_series(),
-            Int64(v) => Int64Chunked::full("literal", *v, 1).into_series(),
+            Int16(v) => Int16Chunked::full(NAME, *v, 1).into_series(),
+            Int32(v) => Int32Chunked::full(NAME, *v, 1).into_series(),
+            Int64(v) => Int64Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-u8")]
-            UInt8(v) => UInt8Chunked::full("literal", *v, 1).into_series(),
+            UInt8(v) => UInt8Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-u16")]
-            UInt16(v) => UInt16Chunked::full("literal", *v, 1).into_series(),
-            UInt32(v) => UInt32Chunked::full("literal", *v, 1).into_series(),
-            UInt64(v) => UInt64Chunked::full("literal", *v, 1).into_series(),
-            Float32(v) => Float32Chunked::full("literal", *v, 1).into_series(),
-            Float64(v) => Float64Chunked::full("literal", *v, 1).into_series(),
-            Boolean(v) => BooleanChunked::full("literal", *v, 1).into_series(),
-            Null => BooleanChunked::new("literal", &[None]).into_series(),
+            UInt16(v) => UInt16Chunked::full(NAME, *v, 1).into_series(),
+            UInt32(v) => UInt32Chunked::full(NAME, *v, 1).into_series(),
+            UInt64(v) => UInt64Chunked::full(NAME, *v, 1).into_series(),
+            Float32(v) => Float32Chunked::full(NAME, *v, 1).into_series(),
+            Float64(v) => Float64Chunked::full(NAME, *v, 1).into_series(),
+            Boolean(v) => BooleanChunked::full(NAME, *v, 1).into_series(),
+            Null => polars_core::prelude::Series::new_null(NAME, 1),
             Range {
                 low,
                 high,
@@ -73,9 +74,9 @@ impl PhysicalExpr for LiteralExpr {
                     ));
                 }
             },
-            Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
+            Utf8(v) => Utf8Chunked::full(NAME, v, 1).into_series(),
             #[cfg(feature = "dtype-binary")]
-            Binary(v) => BinaryChunked::full("literal", v, 1).into_series(),
+            Binary(v) => BinaryChunked::full(NAME, v, 1).into_series(),
             #[cfg(feature = "temporal")]
             DateTime(ndt, tu) => {
                 use polars_core::chunked_array::temporal::conversion::*;
@@ -84,7 +85,7 @@ impl PhysicalExpr for LiteralExpr {
                     TimeUnit::Microseconds => datetime_to_timestamp_us(*ndt),
                     TimeUnit::Milliseconds => datetime_to_timestamp_ms(*ndt),
                 };
-                Int64Chunked::full("literal", timestamp, 1)
+                Int64Chunked::full(NAME, timestamp, 1)
                     .into_datetime(*tu, None)
                     .into_series()
             }
@@ -113,7 +114,7 @@ impl PhysicalExpr for LiteralExpr {
                         }
                     }
                 };
-                Int64Chunked::full("literal", duration, 1)
+                Int64Chunked::full(NAME, duration, 1)
                     .into_duration(*tu)
                     .into_series()
             }

@@ -15,6 +15,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Null,
     Object,
     PolarsDataType,
     Time,
@@ -57,6 +58,7 @@ if not _DOCUMENTING:
         Utf8: PySeries.new_str,
         Object: PySeries.new_object,
         Categorical: PySeries.new_str,
+        Null: PySeries.new_null,
     }
 
 

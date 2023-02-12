@@ -2509,7 +2509,7 @@ def test_with_columns() -> None:
             "h": pl.Series(values=[1, 1, 1, 1], dtype=pl.Int32),
             "i": 3.2,
             "j": [1, 2, 3, 4],
-            "k": pl.Series(values=[None, None, None, None], dtype=pl.Boolean),
+            "k": pl.Series(values=[None, None, None, None], dtype=pl.Null),
             "l": datetime.datetime(2001, 1, 1, 0, 0),
         }
     )

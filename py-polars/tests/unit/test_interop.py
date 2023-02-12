@@ -549,7 +549,7 @@ def test_from_empty_arrow() -> None:
     tbl = pa.Table.from_pandas(df1)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b", "__index_level_0__"]
-    assert out.dtypes == [pl.Float64, pl.Int8]
+    assert out.dtypes == [pl.Float64, pl.Null]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b"]
@@ -567,7 +567,7 @@ def test_from_null_column() -> None:
 
     assert df.shape == (2, 1)
     assert df.columns == ["n/a"]
-    assert dtype_to_py_type(df.dtypes[0]) == int
+    assert dtype_to_py_type(df.dtypes[0]) is None
 
 
 def test_to_pandas_series() -> None:

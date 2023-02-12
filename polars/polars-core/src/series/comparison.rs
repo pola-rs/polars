@@ -132,7 +132,6 @@ impl ChunkCompare<&Series> for Series {
     /// Create a boolean mask by checking for equality.
     fn equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
-        #[cfg(feature = "dtype-categorical")]
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
@@ -173,6 +172,7 @@ impl ChunkCompare<&Series> for Series {
                     return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
                 }
             }
+            (Null, Null, _, _) => BooleanChunked::full(self.name(), true, self.len()),
             _ => {
                 impl_compare!(self, rhs, equal)
             }
@@ -184,7 +184,6 @@ impl ChunkCompare<&Series> for Series {
     /// Create a boolean mask by checking for inequality.
     fn not_equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
-        #[cfg(feature = "dtype-categorical")]
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
@@ -225,6 +224,7 @@ impl ChunkCompare<&Series> for Series {
                     return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
                 }
             }
+            (Null, Null, _, _) => BooleanChunked::full(self.name(), false, self.len()),
             _ => {
                 impl_compare!(self, rhs, not_equal)
             }

@@ -246,6 +246,12 @@ impl PySeries {
     }
 
     #[staticmethod]
+    pub fn new_null(name: &str, val: &PyAny, _strict: bool) -> PyResult<Self> {
+        let s = Series::new_null(name, val.len()?);
+        Ok(PySeries::new(s))
+    }
+
+    #[staticmethod]
     pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
