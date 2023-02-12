@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import os
-import typing
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -568,8 +567,6 @@ class Series:
 
         return self.cast(Float64) / other
 
-    # python 3.7 is not happy. Remove this when we finally ditch that
-    @typing.no_type_check
     def __floordiv__(self, other: Any) -> Series:
         if self.is_datelike():
             raise ValueError("first cast to integer before dividing datelike dtypes")

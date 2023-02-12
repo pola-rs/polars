@@ -1,4 +1,3 @@
-import sys
 from typing import Any
 
 import pandas as pd
@@ -57,10 +56,6 @@ def test_from_dataframe() -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.xfail(
-    sys.version_info < (3, 8),
-    reason="Pandas does not implement the protocol on Python 3.7",
-)
 def test_from_dataframe_pandas() -> None:
     data = {"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]}
 
@@ -71,10 +66,6 @@ def test_from_dataframe_pandas() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.xfail(
-    sys.version_info < (3, 8),
-    reason="Pandas does not implement the protocol on Python 3.7",
-)
 def test_from_dataframe_allow_copy() -> None:
     # Zero copy only allowed when input is already a Polars dataframe
     df = pl.DataFrame({"a": [1, 2]})
