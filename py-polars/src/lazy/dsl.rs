@@ -1457,12 +1457,7 @@ impl PyExpr {
     }
 
     pub fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
-        self.inner
-            .clone()
-            .rolling_apply_float(window_size, move |ca| {
-                ca.clone().into_series().skew(bias).unwrap()
-            })
-            .into()
+        self.inner.clone().rolling_skew(window_size, bias).into()
     }
 
     pub fn lower_bound(&self) -> Self {

@@ -187,6 +187,13 @@ impl GetOutput {
         }))
     }
 
+    pub fn float_type() -> Self {
+        Self::map_dtype(|dt| match dt {
+            DataType::Float32 => DataType::Float32,
+            _ => DataType::Float64,
+        })
+    }
+
     pub fn super_type() -> Self {
         Self::map_dtypes(|dtypes| {
             let mut st = dtypes[0].clone();

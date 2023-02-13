@@ -1389,6 +1389,7 @@ impl Expr {
         rolling_fn: Arc<
             dyn (Fn(&Series, RollingOptionsImpl) -> PolarsResult<Series>) + Send + Sync,
         >,
+        output_type: GetOutput,
     ) -> Expr {
         if let Some(ref by) = options.by {
             self.apply_many(
@@ -1427,7 +1428,7 @@ impl Expr {
                     rolling_fn(s, options).map(Some)
                 },
                 &[col(by)],
-                GetOutput::same_type(),
+                output_type,
             )
             .with_fmt(expr_name_by)
         } else {
@@ -1437,7 +1438,7 @@ impl Expr {
 
             self.apply(
                 move |s| rolling_fn(&s, options.clone().into()).map(Some),
-                GetOutput::same_type(),
+                output_type,
             )
             .with_fmt(expr_name)
         }
@@ -1452,6 +1453,7 @@ impl Expr {
             "rolling_min",
             "rolling_min_by",
             Arc::new(|s, options| s.rolling_min(options)),
+            GetOutput::same_type(),
         )
     }
 
@@ -1464,6 +1466,7 @@ impl Expr {
             "rolling_max",
             "rolling_max_by",
             Arc::new(|s, options| s.rolling_max(options)),
+            GetOutput::same_type(),
         )
     }
 
@@ -1476,6 +1479,7 @@ impl Expr {
             "rolling_mean",
             "rolling_mean_by",
             Arc::new(|s, options| s.rolling_mean(options)),
+            GetOutput::float_type(),
         )
     }
 
@@ -1488,6 +1492,7 @@ impl Expr {
             "rolling_sum",
             "rolling_sum_by",
             Arc::new(|s, options| s.rolling_sum(options)),
+            GetOutput::same_type(),
         )
     }
 
@@ -1500,6 +1505,7 @@ impl Expr {
             "rolling_median",
             "rolling_median_by",
             Arc::new(|s, options| s.rolling_median(options)),
+            GetOutput::same_type(),
         )
     }
 
@@ -1517,6 +1523,7 @@ impl Expr {
             "rolling_quantile",
             "rolling_quantile_by",
             Arc::new(move |s, options| s.rolling_quantile(quantile, interpolation, options)),
+            GetOutput::float_type(),
         )
     }
 
@@ -1528,6 +1535,7 @@ impl Expr {
             "rolling_var",
             "rolling_var_by",
             Arc::new(|s, options| s.rolling_var(options)),
+            GetOutput::float_type(),
         )
     }
 
@@ -1539,6 +1547,7 @@ impl Expr {
             "rolling_std",
             "rolling_std_by",
             Arc::new(|s, options| s.rolling_std(options)),
+            GetOutput::float_type(),
         )
     }
 
