@@ -27,13 +27,13 @@ def foods_file_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.csv"
 
 
-@pytest.mark.skip("Needs fix: https://github.com/pola-rs/polars/issues/6474")
 def test_quoted_date() -> None:
     csv = textwrap.dedent(
-        """a,b
-    "2022-01-01",1
-    "2022-01-02",2
-    """
+        """\
+        a,b
+        "2022-01-01",1
+        "2022-01-02",2
+        """
     )
     result = pl.read_csv(csv.encode(), parse_dates=True)
     expected = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2)], "b": [1, 2]})
