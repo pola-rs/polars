@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    deprecate_nonkeyword_arguments,
 )
 
 if TYPE_CHECKING:
@@ -74,3 +76,24 @@ def test_estimated_size() -> None:
 
     with pytest.raises(ValueError):
         s.estimated_size("milkshake")  # type: ignore[arg-type]
+
+
+class Foo:
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"])
+    def bar(self, baz: str, ham: str | None = None, foobar: str | None = None) -> None:
+        ...
+
+
+def test_deprecate_nonkeyword_arguments_method_signature() -> None:
+    # Note the added star indicating keyword-only arguments after 'baz'
+    expected = "(self, baz: 'str', *, ham: 'str | None' = None, foobar: 'str | None' = None) -> 'None'"
+    assert str(inspect.signature(Foo.bar)) == expected
+
+
+def test_deprecate_nonkeyword_arguments_method_warning() -> None:
+    msg = (
+        r"All arguments of Foo\.bar except for \'baz\' will be keyword-only in the next breaking release."
+        r" Use keyword arguments to silence this message."
+    )
+    with pytest.deprecated_call(match=msg):
+        Foo().bar("qux", "quox")
