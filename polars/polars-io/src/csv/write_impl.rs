@@ -198,7 +198,6 @@ pub(crate) fn write<W: Write>(
     let delimiter = char::from(options.delimiter);
 
     let mut formats: Vec<Option<&str>> = vec![];
-    let n_columns = df.shape().1;
     if options.datetime_format.is_none() {
         for col in df.get_columns() {
             match col.dtype() {
@@ -226,6 +225,7 @@ pub(crate) fn write<W: Write>(
     }
 
     let len = df.height();
+    let n_columns = df.width();
     let n_threads = POOL.current_num_threads();
     let total_rows_per_pool_iter = n_threads * chunk_size;
     let any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
@@ -261,9 +261,8 @@ pub(crate) fn write<W: Write>(
             let last_ptr = &col_iters[col_iters.len() - 1] as *const SeriesIter;
             let mut finished = false;
             // loop rows
-            let mut i = 0;
             while !finished {
-                for col in &mut col_iters {
+                for (i, col) in &mut col_iters.iter_mut().enumerate() {
                     let datetime_format = match &options.datetime_format {
                         Some(datetime_format) => Some(datetime_format.as_str()),
                         None => unsafe { *formats.get_unchecked(i % n_columns) },
@@ -281,7 +280,6 @@ pub(crate) fn write<W: Write>(
                     if current_ptr != last_ptr {
                         write!(&mut write_buffer, "{delimiter}").unwrap()
                     }
-                    i += 1;
                 }
                 if !finished {
                     writeln!(&mut write_buffer).unwrap();
