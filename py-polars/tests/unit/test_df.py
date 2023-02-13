@@ -1049,23 +1049,23 @@ def test_to_numpy() -> None:
     assert df.to_numpy().shape == (3, 2)
 
 
-def test_argsort_by(df: pl.DataFrame) -> None:
+def test_arg_sort_by(df: pl.DataFrame) -> None:
     idx_df = df.select(
-        pl.argsort_by(["int_nulls", "floats"], reverse=[False, True]).alias("idx")
+        pl.arg_sort_by(["int_nulls", "floats"], reverse=[False, True]).alias("idx")
     )
     assert (idx_df["idx"] == [1, 0, 2]).all()
 
     idx_df = df.select(
-        pl.argsort_by(["int_nulls", "floats"], reverse=False).alias("idx")
+        pl.arg_sort_by(["int_nulls", "floats"], reverse=False).alias("idx")
     )
     assert (idx_df["idx"] == [1, 0, 2]).all()
 
     df = pl.DataFrame({"x": [0, 0, 0, 1, 1, 2], "y": [9, 9, 8, 7, 6, 6]})
     for expr, expected in (
-        (pl.argsort_by(["x", "y"]), [2, 0, 1, 4, 3, 5]),
-        (pl.argsort_by(["x", "y"], reverse=[True, True]), [5, 3, 4, 0, 1, 2]),
-        (pl.argsort_by(["x", "y"], reverse=[True, False]), [5, 4, 3, 2, 0, 1]),
-        (pl.argsort_by(["x", "y"], reverse=[False, True]), [0, 1, 2, 3, 4, 5]),
+        (pl.arg_sort_by(["x", "y"]), [2, 0, 1, 4, 3, 5]),
+        (pl.arg_sort_by(["x", "y"], reverse=[True, True]), [5, 3, 4, 0, 1, 2]),
+        (pl.arg_sort_by(["x", "y"], reverse=[True, False]), [5, 4, 3, 2, 0, 1]),
+        (pl.arg_sort_by(["x", "y"], reverse=[False, True]), [0, 1, 2, 3, 4, 5]),
     ):
         assert (df.select(expr.alias("idx"))["idx"] == expected).all()
 

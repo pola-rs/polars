@@ -295,7 +295,7 @@ def test_groupby_signed_transmutes() -> None:
         }
 
 
-def test_argsort_sort_by_groups_update__4360() -> None:
+def test_arg_sort_sort_by_groups_update__4360() -> None:
     df = pl.DataFrame(
         {
             "group": ["a"] * 3 + ["b"] * 3 + ["c"] * 3,
@@ -305,11 +305,11 @@ def test_argsort_sort_by_groups_update__4360() -> None:
     )
 
     out = df.with_columns(
-        pl.col("col2").arg_sort().over("group").alias("col2_argsort")
+        pl.col("col2").arg_sort().over("group").alias("col2_arg_sort")
     ).with_columns(
         [
             pl.col("col1")
-            .sort_by(pl.col("col2_argsort"))
+            .sort_by(pl.col("col2_arg_sort"))
             .over("group")
             .alias("result_a"),
             pl.col("col1")

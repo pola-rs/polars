@@ -178,9 +178,9 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
         #[cfg(feature = "sort_multiple")]
-        fn argsort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> PolarsResult<IdxCa> {
+        fn arg_sort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> PolarsResult<IdxCa> {
             Err(PolarsError::InvalidOperation(
-                "argsort_multiple is not implemented for this Series".into(),
+                "arg_sort_multiple is not implemented for this Series".into(),
             ))
         }
     }
@@ -391,7 +391,7 @@ pub trait SeriesTrait:
 
     /// Retrieve the indexes needed for a sort.
     #[allow(unused)]
-    fn argsort(&self, options: SortOptions) -> IdxCa {
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
         invalid_operation_panic!(self)
     }
 

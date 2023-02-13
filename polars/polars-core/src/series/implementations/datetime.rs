@@ -173,8 +173,8 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.group_tuples(multithreaded, sorted)
     }
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.deref().argsort_multiple(by, reverse)
+    fn arg_sort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+        self.0.deref().arg_sort_multiple(by, reverse)
     }
 }
 
@@ -371,8 +371,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        self.0.argsort(options)
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
     }
 
     fn null_count(&self) -> usize {

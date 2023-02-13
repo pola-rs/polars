@@ -76,6 +76,7 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
+    deprecate_nonkeyword_arguments,
     deprecated_alias,
     handle_projection_columns,
     is_bool_sequence,
@@ -4251,6 +4252,12 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of DataFrame.join except for 'other', 'on', and 'how' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this message."
+        )
+    )
     def join(
         self,
         other: DataFrame,

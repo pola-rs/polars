@@ -710,8 +710,31 @@ impl PySeries {
                         let ca = series.binary().unwrap();
                         return Wrap(ca).to_object(py);
                     }
-                    DataType::Null | DataType::Unknown => {
-                        panic!("to_list not implemented for null/unknown")
+                    DataType::Null => {
+                        let null: Option<u8> = None;
+                        let n = series.len();
+                        let iter = std::iter::repeat(null).take(n);
+                        use std::iter::{Repeat, Take};
+                        struct NullIter {
+                            iter: Take<Repeat<Option<u8>>>,
+                            n: usize,
+                        }
+                        impl Iterator for NullIter {
+                            type Item = Option<u8>;
+
+                            fn next(&mut self) -> Option<Self::Item> {
+                                self.iter.next()
+                            }
+                            fn size_hint(&self) -> (usize, Option<usize>) {
+                                (self.n, Some(self.n))
+                            }
+                        }
+                        impl ExactSizeIterator for NullIter {}
+
+                        PyList::new(py, NullIter { iter, n })
+                    }
+                    DataType::Unknown => {
+                        panic!("to_list not implemented for unknown")
                     }
                 };
                 pylist.to_object(py)

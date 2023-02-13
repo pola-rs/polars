@@ -3,8 +3,8 @@ use rayon::ThreadPool;
 
 use crate::IdxSize;
 
-/// This is a perfect sort particularly useful for an argsort of an argsort
-/// The second argsort sorts indices from `0` to `len` so can be just assigned to the
+/// This is a perfect sort particularly useful for an arg_sort of an arg_sort
+/// The second arg_sort sorts indices from `0` to `len` so can be just assigned to the
 /// new index location.
 ///
 /// Besides that we know that all indices are unique and thus not alias so we can parallelize.

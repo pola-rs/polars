@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import os
 import sys
 import warnings
@@ -452,6 +453,89 @@ def _rename_kwargs(
                 stacklevel=3,
             )
             kwargs[new] = kwargs.pop(alias)
+
+
+def deprecate_nonkeyword_arguments(
+    allowed_args: list[str] | None = None,
+    message: str | None = None,
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Decorator to deprecate the use of non-keyword arguments of a function.
+
+    Parameters
+    ----------
+    allowed_args
+        The names of some first arguments of the decorated function that are allowed to
+        be given as positional arguments. Should include "self" when decorating class
+        methods. If set to None (default), equal to all arguments that do not have a
+        default value.
+    message
+        Optionally overwrite the default warning message.
+    """
+
+    def decorate(fn: Callable[P, T]) -> Callable[P, T]:
+        old_sig = inspect.signature(fn)
+
+        if allowed_args is not None:
+            allow_args = allowed_args
+        else:
+            allow_args = [
+                p.name
+                for p in old_sig.parameters.values()
+                if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                and p.default is p.empty
+            ]
+
+        new_params = [
+            p.replace(kind=p.KEYWORD_ONLY)
+            if (
+                p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                and p.name not in allow_args
+            )
+            else p
+            for p in old_sig.parameters.values()
+        ]
+        new_params.sort(key=lambda p: p.kind)
+
+        new_sig = old_sig.replace(parameters=new_params)
+
+        num_allowed_args = len(allow_args)
+        if message is None:
+            msg_format = (
+                f"All arguments of {fn.__qualname__}{{except_args}} will be keyword-only in the next breaking release."
+                " Use keyword arguments to silence this message."
+            )
+            msg = msg_format.format(except_args=_format_argument_list(allow_args))
+        else:
+            msg = message
+
+        @functools.wraps(fn)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            if len(args) > num_allowed_args:
+                warnings.warn(msg, DeprecationWarning, stacklevel=2)
+            return fn(*args, **kwargs)
+
+        wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorate
+
+
+def _format_argument_list(allowed_args: list[str]) -> str:
+    """
+    Format allowed arguments list for use in the warning message of
+    ``deprecate_nonkeyword_arguments``.
+    """  # noqa: D205
+    if "self" in allowed_args:
+        allowed_args.remove("self")
+    if not allowed_args:
+        return ""
+    elif len(allowed_args) == 1:
+        return f" except for {allowed_args[0]!r}"
+    else:
+        last = allowed_args[-1]
+        args = ", ".join([f"{x!r}" for x in allowed_args[:-1]])
+        return f" except for {args} and {last!r}"
 
 
 # when building docs (with Sphinx) we need access to the functions

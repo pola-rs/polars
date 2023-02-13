@@ -43,13 +43,13 @@ enum MapStrategy {
     Explode,
     // will be exploded by subsequent `.flatten()` call
     ExplodeLater,
-    // Use an argsort to map the values back
+    // Use an arg_sort to map the values back
     Map,
     Nothing,
 }
 
 impl WindowExpr {
-    fn map_list_agg_by_argsort(
+    fn map_list_agg_by_arg_sort(
         &self,
         out_column: Series,
         flattened: Series,
@@ -65,7 +65,7 @@ impl WindowExpr {
         // that saves an allocation
         let mut take_idx = vec![];
 
-        // groups are not changed, we can map by doing a standard argsort.
+        // groups are not changed, we can map by doing a standard arg_sort.
         if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
             let mut iter = 0..flattened.len() as IdxSize;
             match ac.groups().as_ref() {
@@ -81,7 +81,7 @@ impl WindowExpr {
                 }
             }
         }
-        // groups are changed, we use the new group indexes as arguments of the argsort
+        // groups are changed, we use the new group indexes as arguments of the arg_sort
         // and sort by the old indexes
         else {
             let mut original_idx = Vec::with_capacity(out_column.len());
@@ -127,7 +127,7 @@ impl WindowExpr {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn map_by_argsort(
+    fn map_by_arg_sort(
         &self,
         df: &DataFrame,
         out_column: Series,
@@ -138,10 +138,10 @@ impl WindowExpr {
         state: &ExecutionState,
         cache_key: &str,
     ) -> PolarsResult<Series> {
-        // we use an argsort to map the values back
+        // we use an arg_sort to map the values back
 
         // This is a bit more complicated because the final group tuples may differ from the original
-        // so we use the original indices as idx values to argsort the original column
+        // so we use the original indices as idx values to arg_sort the original column
         //
         // The example below shows the naive version without group tuple mapping
 
@@ -156,11 +156,11 @@ impl WindowExpr {
         //
         // [0, 2, 3, 1]
         //
-        // argsort
+        // arg_sort
         //
         // [0, 3, 1, 2]
         //
-        // take by argsorted indexes and voila groups mapped
+        // take by arg_sorted indexes and voila groups mapped
         // [0, 1, 2, 3]
 
         if flattened.len() != df.height() {
@@ -199,7 +199,7 @@ impl WindowExpr {
                 Err(expression_err!(msg, self.expr, ComputeError))
             };
         }
-        self.map_list_agg_by_argsort(out_column, flattened, ac, gb, state, cache_key)
+        self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb, state, cache_key)
     }
 
     fn run_aggregation<'a>(
@@ -536,7 +536,7 @@ impl PhysicalExpr for WindowExpr {
                 let ac = unsafe {
                     std::mem::transmute::<AggregationContext<'_>, AggregationContext<'static>>(ac)
                 };
-                self.map_by_argsort(
+                self.map_by_arg_sort(
                     df,
                     out_column,
                     flattened,
@@ -551,7 +551,7 @@ impl PhysicalExpr for WindowExpr {
                 let out_column = ac.aggregated();
                 // we try to flatten/extend the array by repeating the aggregated value n times
                 // where n is the number of members in that group. That way we can try to reuse
-                // the same map by argsort logic as done for listed aggregations
+                // the same map by arg_sort logic as done for listed aggregations
                 match (
                     &ac.update_groups,
                     set_by_groups(&out_column, &ac.groups, df.height()),

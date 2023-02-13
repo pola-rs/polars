@@ -10,7 +10,7 @@ fn reverse_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) ->
     compare_fn_nan_max(&b.1, &a.1)
 }
 
-pub(super) fn argsort<I, J, T>(
+pub(super) fn arg_sort<I, J, T>(
     name: &str,
     iters: I,
     options: SortOptions,
@@ -56,7 +56,7 @@ where
         vals.extend(iter);
     }
 
-    argsort_branch(
+    arg_sort_branch(
         vals.as_mut_slice(),
         reverse,
         default_order,

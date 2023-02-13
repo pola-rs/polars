@@ -4551,6 +4551,9 @@ class Expr:
 
         Alias for :func:`Expr.arg_sort`.
 
+        .. deprecated:: 0.16.5
+            `Expr.argsort` will be removed in favour of `Expr.arg_sort`.
+
         Parameters
         ----------
         reverse
@@ -4583,6 +4586,11 @@ class Expr:
         └─────┘
 
         """
+        warnings.warn(
+            "`Expr.argsort()` is deprecated in favor of `Expr.arg_sort()`",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.arg_sort(reverse, nulls_last)
 
     def rank(self, method: RankMethod = "average", reverse: bool = False) -> Expr:

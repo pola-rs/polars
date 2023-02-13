@@ -13,7 +13,7 @@ use num::{Float, NumCast, ToPrimitive};
 use polars_arrow::prelude::ValueSize;
 
 #[cfg(feature = "sort_multiple")]
-use crate::chunked_array::ops::sort::prepare_argsort;
+use crate::chunked_array::ops::sort::prepare_arg_sort;
 use crate::prelude::*;
 use crate::utils::coalesce_nulls;
 #[cfg(feature = "diagonal_concat")]
@@ -99,7 +99,7 @@ where
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn argsort_by(by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+pub fn arg_sort_by(by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
     if by.len() != reverse.len() {
         return Err(PolarsError::ComputeError(
             format!(
@@ -110,8 +110,8 @@ pub fn argsort_by(by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
             .into(),
         ));
     }
-    let (first, by, reverse) = prepare_argsort(by.to_vec(), reverse.to_vec()).unwrap();
-    first.argsort_multiple(&by, &reverse)
+    let (first, by, reverse) = prepare_arg_sort(by.to_vec(), reverse.to_vec()).unwrap();
+    first.arg_sort_multiple(&by, &reverse)
 }
 
 // utility to be able to also add literals to concat_str function
