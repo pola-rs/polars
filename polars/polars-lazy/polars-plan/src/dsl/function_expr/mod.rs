@@ -117,6 +117,8 @@ pub enum FunctionExpr {
     Diff(usize, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
+    #[cfg(feature = "dot_product")]
+    Dot,
 }
 
 impl Display for FunctionExpr {
@@ -180,6 +182,8 @@ impl Display for FunctionExpr {
             Diff(_, _) => "diff",
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
+            #[cfg(feature = "dot_product")]
+            Dot => "dot",
         };
         write!(f, "{s}")
     }
@@ -360,6 +364,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "interpolate")]
             Interpolate(method) => {
                 map!(dispatch::interpolate, method)
+            }
+            #[cfg(feature = "dot_product")]
+            Dot => {
+                map_as_slice!(dispatch::dot_impl)
             }
         }
     }

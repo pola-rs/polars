@@ -1277,10 +1277,7 @@ impl Expr {
 
     #[cfg(feature = "dot_product")]
     fn dot_impl(self, other: Expr) -> Expr {
-        let function = |s: &mut [Series]| Ok(Some((&s[0] * &s[1]).sum_as_series()));
-
-        self.apply_many(function, &[other], GetOutput::same_type())
-            .with_fmt("dot")
+        self.apply_many_private(FunctionExpr::Dot, &[other], true, true)
     }
 
     #[cfg(feature = "dot_product")]

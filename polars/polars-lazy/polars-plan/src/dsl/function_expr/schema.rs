@@ -269,6 +269,14 @@ impl FunctionExpr {
                     }
                 })
             }
+            #[cfg(feature = "dot_product")]
+            Dot => map_dtype(&|dt| {
+                use DataType::*;
+                match dt {
+                    Int8 | Int16 | UInt16 | UInt8 => Int64,
+                    _ => dt.clone(),
+                }
+            }),
         }
     }
 }

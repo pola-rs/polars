@@ -39,3 +39,7 @@ pub(super) fn diff(s: &Series, n: usize, null_behavior: NullBehavior) -> PolarsR
 pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResult<Series> {
     Ok(polars_ops::prelude::interpolate(s, method))
 }
+#[cfg(feature = "dot_product")]
+pub(super) fn dot_impl(s: &[Series]) -> PolarsResult<Series> {
+    Ok((&s[0] * &s[1]).sum_as_series())
+}
