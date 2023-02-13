@@ -104,7 +104,8 @@ def test_groupby_iteration() -> None:
 
 
 def bad_agg_parameters() -> list[Any]:
-    return [[("b", "sum")], [("b", ["sum"])], {"b": "sum"}, {"b": ["sum"]}]
+    """Currently, IntoExpr and Iterable[IntoExpr] are supported."""
+    return [[("b", "sum")], [("b", ["sum"])], str, "b".join]
 
 
 def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:

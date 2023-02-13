@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Callable, Generic, Sequence, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, Iterable, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import SchemaDict
 from polars.internals import selection_to_pyexpr_list
-from polars.utils import is_expr_sequence
 
 try:
     from polars.polars import PyLazyGroupBy
@@ -13,6 +12,11 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
+
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import IntoExpr
+
 
 # Used to type any type or subclass of LazyFrame.
 # Used to indicate when LazyFrame methods return the same type as self,
@@ -27,14 +31,16 @@ class LazyGroupBy(Generic[LDF]):
         self.lgb = lgb
         self._lazyframe_class = lazyframe_class
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> LDF:
+    def agg(self, aggs: IntoExpr | Iterable[IntoExpr]) -> LDF:
         """
         Describe the aggregation that need to be done on a group.
 
         Parameters
         ----------
         aggs
-            Single / multiple aggregation expression(s).
+            Single expression or `Iterable` of expressions.
+            In addition to `pl.Expr`, some objects convertible to expressions
+            are supported (for example, `str` that indicates a column).
 
         Examples
         --------
@@ -50,10 +56,6 @@ class LazyGroupBy(Generic[LDF]):
         ... )  # doctest: +SKIP
 
         """
-        if not (isinstance(aggs, pli.Expr) or is_expr_sequence(aggs)):
-            msg = f"expected 'Expr | Sequence[Expr]', got '{type(aggs)}'"
-            raise TypeError(msg)
-
         pyexprs = selection_to_pyexpr_list(aggs)
         return self._lazyframe_class._from_pyldf(self.lgb.agg(pyexprs))
 
