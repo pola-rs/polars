@@ -3815,6 +3815,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             self._ldf.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @deprecate_nonkeyword_arguments()
     def map(
         self,
         f: Callable[[pli.DataFrame], pli.DataFrame],
