@@ -2357,6 +2357,7 @@ def struct(
     ...
 
 
+@deprecate_nonkeyword_arguments()
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
