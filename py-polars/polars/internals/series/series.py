@@ -1967,6 +1967,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments()
     def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
@@ -1993,6 +1994,14 @@ class Series:
         ]
 
         """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(
+                pli.col(self._s.name()).arg_sort(reverse=reverse, nulls_last=nulls_last)
+            )
+            .to_series()
+        )
 
     def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """

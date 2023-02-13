@@ -1808,6 +1808,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.top_k(k, reverse))
 
+    @deprecate_nonkeyword_arguments()
     def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Expr:
         """
         Get the index values that would sort this column.
