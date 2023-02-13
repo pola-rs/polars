@@ -4255,7 +4255,7 @@ class DataFrame:
     @deprecate_nonkeyword_arguments(
         message=(
             "All arguments of DataFrame.join except for 'other', 'on', and 'how' will be keyword-only in the next breaking release."
-            " Use keyword arguments to silence this message."
+            " Use keyword arguments to silence this warning."
         )
     )
     def join(
@@ -6428,6 +6428,12 @@ class DataFrame:
             columns = [columns]
         return self._from_pydf(self._df.to_dummies(columns, separator))
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of DataFrame.unique except for 'subset' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def unique(
         self,
         maintain_order: bool = True,

@@ -503,7 +503,7 @@ def deprecate_nonkeyword_arguments(
         if message is None:
             msg_format = (
                 f"All arguments of {fn.__qualname__}{{except_args}} will be keyword-only in the next breaking release."
-                " Use keyword arguments to silence this message."
+                " Use keyword arguments to silence this warning."
             )
             msg = msg_format.format(except_args=_format_argument_list(allow_args))
         else:

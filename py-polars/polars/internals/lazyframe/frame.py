@@ -2329,7 +2329,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     @deprecate_nonkeyword_arguments(
         message=(
             "All arguments of LazyFrame.join except for 'other', 'on', and 'how' will be keyword-only in the next breaking release."
-            " Use keyword arguments to silence this message."
+            " Use keyword arguments to silence this warning."
         )
     )
     def join(
@@ -3590,6 +3590,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         columns = pli.selection_to_pyexpr_list(columns)
         return self._from_pyldf(self._ldf.explode(columns))
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of LazyFrame.unique except for 'subset' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def unique(
         self,
         maintain_order: bool = True,
