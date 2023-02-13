@@ -3035,7 +3035,7 @@ class Expr:
             return_dtype = py_type_to_dtype(return_dtype)
         return wrap_expr(self._pyexpr.map(f, return_dtype, agg_list))
 
-    @deprecate_nonkeyword_arguments(allowed_args=["exprs", "f", "return_dtype"])
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
     def apply(
         self,
         f: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
