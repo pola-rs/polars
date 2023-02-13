@@ -22,6 +22,7 @@ from typing import (
     Union,
     overload,
 )
+from typing import List as ListType
 
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
@@ -80,8 +81,8 @@ PythonDataType: TypeAlias = Union[
     Type[time],
     Type[datetime],
     Type[timedelta],
-    Type[list],
-    Type[tuple],  # type: ignore[type-arg]
+    Type[ListType[Any]],
+    Type[Tuple[Any, ...]],
     Type[bytes],
     Type[Decimal],
 ]
