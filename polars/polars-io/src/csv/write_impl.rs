@@ -191,6 +191,12 @@ pub(crate) fn write<W: Write>(
             return Err(ComputeError(format!("CSV format does not support nested data. Consider using a different data format. Got: '{}'", s.dtype()).into()));
         }
     }
+
+    // check that the double quote is valid utf8
+    std::str::from_utf8(&[options.quote, options.quote])
+        .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
+    let delimiter = char::from(options.delimiter);
+
     let mut formats: Vec<Option<&str>> = vec![];
     let n_columns = df.shape().1;
     if options.datetime_format.is_none() {
@@ -218,11 +224,6 @@ pub(crate) fn write<W: Write>(
             }
         }
     }
-
-    // check that the double quote is valid utf8
-    std::str::from_utf8(&[options.quote, options.quote])
-        .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
-    let delimiter = char::from(options.delimiter);
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();
