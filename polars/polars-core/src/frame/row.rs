@@ -298,7 +298,7 @@ pub fn rows_to_schema_supertypes(
     // no of rows to use to infer dtype
     let max_infer = infer_schema_length.unwrap_or(rows.len());
 
-    if rows.len() == 0 {
+    if rows.is_empty() {
         return PolarsResult::Err(PolarsError::NoData("No rows. Cannot infer schema.".into()));
     }
     let mut dtypes: Vec<PlIndexSet<DataType>> = vec![PlIndexSet::new(); rows[0].0.len()];
