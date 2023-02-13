@@ -2816,7 +2816,7 @@ class Series:
                     np_array = self._s.to_numpy()
 
             elif self.is_datelike():
-                np_array = convert_to_date(self._s.to_numpy())
+                np_array = convert_to_date(self.to_physical()._s.to_numpy())
             else:
                 np_array = self._s.to_numpy()
 
