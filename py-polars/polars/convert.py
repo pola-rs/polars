@@ -502,7 +502,7 @@ def from_dataframe(df: Any, allow_copy: bool = True) -> DataFrame:
     https://data-apis.org/dataframe-protocol/latest/index.html
 
     Zero-copy conversions currently cannot be guaranteed and will throw a
-    ``NotImplementedError``.
+    ``RuntimeError``.
 
     Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
     efficient method of conversion.
@@ -520,11 +520,8 @@ def from_dataframe(df: Any, allow_copy: bool = True) -> DataFrame:
             "pyarrow>=11.0.0 is required for converting a dataframe interchange object"
             " to a Polars dataframe."
         )
-    if not allow_copy:
-        raise NotImplementedError(
-            "Polars cannot guarantee zero-copy conversion from dataframe interchange"
-            " objects at this time."
-        )
+
+    import pyarrow.interchange  # noqa: F401
 
     pa_table = pa.interchange.from_dataframe(df, allow_copy=allow_copy)
     return from_arrow(pa_table, rechunk=allow_copy)  # type: ignore[return-value]

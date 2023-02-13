@@ -549,7 +549,7 @@ def test_from_empty_arrow() -> None:
     tbl = pa.Table.from_pandas(df1)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b", "__index_level_0__"]
-    assert out.dtypes == [pl.Float64, pl.Int8]
+    assert out.dtypes == [pl.Float64, pl.Null]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b"]
@@ -567,7 +567,7 @@ def test_from_null_column() -> None:
 
     assert df.shape == (2, 1)
     assert df.columns == ["n/a"]
-    assert dtype_to_py_type(df.dtypes[0]) == int
+    assert dtype_to_py_type(df.dtypes[0]) is None
 
 
 def test_to_pandas_series() -> None:
@@ -671,3 +671,26 @@ def test_from_pyarrow_map() -> None:
             [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
         ],
     }
+
+
+def test_to_numpy_datelike() -> None:
+    s = pl.Series(
+        "dt",
+        [
+            datetime(2022, 7, 5, 10, 30, 45, 123456),
+            None,
+            datetime(2023, 2, 5, 15, 22, 30, 987654),
+        ],
+    )
+    assert str(s.to_numpy()) == str(
+        np.array(
+            ["2022-07-05T10:30:45.123456", "NaT", "2023-02-05T15:22:30.987654"],
+            dtype="datetime64[us]",
+        )
+    )
+    assert str(s.drop_nulls().to_numpy()) == str(
+        np.array(
+            ["2022-07-05T10:30:45.123456", "2023-02-05T15:22:30.987654"],
+            dtype="datetime64[us]",
+        )
+    )

@@ -75,6 +75,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _is_generator,
     _time_to_pl_time,
+    deprecate_nonkeyword_arguments,
     deprecated_alias,
     is_int_sequence,
     range_to_series,
@@ -430,22 +431,29 @@ class Series:
         return self.__xor__(other)
 
     def _comp(self, other: Any, op: ComparisonOperator) -> Series:
+        # special edge-case; boolean broadcast series (eq/neq) is its own result
+        if self.dtype == Boolean and isinstance(other, bool) and op in ("eq", "neq"):
+            if (other is True and op == "eq") or (other is False and op == "neq"):
+                return self.clone()
+            elif (other is False and op == "eq") or (other is True and op == "neq"):
+                return ~self
+
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return wrap_s(f(ts))
-        if isinstance(other, time) and self.dtype == Time:
+        elif isinstance(other, time) and self.dtype == Time:
             d = _time_to_pl_time(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return wrap_s(f(d))
-        if isinstance(other, date) and self.dtype == Date:
+        elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return wrap_s(f(d))
-        if self.dtype == Categorical and not isinstance(other, Series):
+        elif self.dtype == Categorical and not isinstance(other, Series):
             other = Series([other])
 
         if isinstance(other, Sequence) and not isinstance(other, str):
@@ -480,18 +488,27 @@ class Series:
         return self._comp(other, "lt_eq")
 
     def le(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series <= other``."""
         return self.__le__(other)
 
+    def lt(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series < other``."""
+        return self.__lt__(other)
+
     def eq(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series == other``."""
         return self.__eq__(other)
 
     def ne(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series != other``."""
         return self.__ne__(other)
 
-    def lt(self, other: Any) -> Series:
-        return self.__lt__(other)
+    def ge(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series >= other``."""
+        return self.__ge__(other)
 
     def gt(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series > other``."""
         return self.__gt__(other)
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
@@ -556,7 +573,7 @@ class Series:
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if not isinstance(other, pli.Expr):
             other = pli.lit(other)
-        return self.to_frame().select(pli.lit(self) // other).to_series()
+        return self.to_frame().select(pli.col(self.name) // other).to_series()
 
     def __invert__(self) -> Series:
         if self.dtype == Boolean:
@@ -1354,6 +1371,7 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
+    @deprecate_nonkeyword_arguments()
     def to_dummies(self, separator: str = "_") -> pli.DataFrame:
         """
         Get dummy variables.
@@ -1949,6 +1967,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments()
     def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
@@ -1975,12 +1994,23 @@ class Series:
         ]
 
         """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(
+                pli.col(self._s.name()).arg_sort(reverse=reverse, nulls_last=nulls_last)
+            )
+            .to_series()
+        )
 
     def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
 
         Alias for :func:`Series.arg_sort`.
+
+        .. deprecated:: 0.16.5
+             `Series.argsort` will be removed in favour of `Series.arg_sort`.
 
         Parameters
         ----------
@@ -2797,7 +2827,7 @@ class Series:
                     np_array = self._s.to_numpy()
 
             elif self.is_datelike():
-                np_array = convert_to_date(self._s.to_numpy())
+                np_array = convert_to_date(self.to_physical()._s.to_numpy())
             else:
                 np_array = self._s.to_numpy()
 
@@ -3517,6 +3547,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "func", "return_dtype"])
     def apply(
         self,
         func: Callable[[Any], Any],

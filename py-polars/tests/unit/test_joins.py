@@ -783,3 +783,18 @@ def test_update() -> None:
     df2 = pl.DataFrame({"a": [2, 3], "b": [8, 9]})
 
     assert df1.update(df2, on="a").to_dict(False) == {"a": [1, 2, 3], "b": [4, 8, 9]}
+
+
+@typing.no_type_check
+def test_join_frame_consistency() -> None:
+    df = pl.DataFrame({"A": [1, 2, 3]})
+    ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
+
+    with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
+        _ = ldf.join(df, on="A")
+    with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
+        _ = df.join(ldf, on="A")
+    with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
+        _ = ldf.join_asof(df, on="A")
+    with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
+        _ = df.join_asof(ldf, on="A")

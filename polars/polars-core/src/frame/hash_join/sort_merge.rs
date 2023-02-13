@@ -168,8 +168,8 @@ fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> 
 }
 
 #[cfg(feature = "performant")]
-fn create_reverse_map_from_argsort(mut argsort: IdxCa) -> Vec<IdxSize> {
-    let arr = argsort.chunks.pop().unwrap();
+fn create_reverse_map_from_arg_sort(mut arg_sort: IdxCa) -> Vec<IdxSize> {
+    let arr = arg_sort.chunks.pop().unwrap();
     primitive_to_vec::<IdxSize>(arr).unwrap()
 }
 
@@ -210,14 +210,14 @@ pub fn _sort_or_hash_inner(
                 eprintln!("right key will be reverse sorted in inner join operation.")
             }
 
-            let sort_idx = s_right.argsort(SortOptions {
+            let sort_idx = s_right.arg_sort(SortOptions {
                 descending: false,
                 nulls_last: false,
                 multithreaded: true,
             });
             let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
             let ids = par_sorted_merge_inner(s_left, &s_right);
-            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+            let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
 
             let (left, mut right) = ids;
 
@@ -234,14 +234,14 @@ pub fn _sort_or_hash_inner(
                 eprintln!("left key will be reverse sorted in inner join operation.")
             }
 
-            let sort_idx = s_left.argsort(SortOptions {
+            let sort_idx = s_left.arg_sort(SortOptions {
                 descending: false,
                 nulls_last: false,
                 multithreaded: true,
             });
             let s_left = unsafe { s_left.take_unchecked(&sort_idx).unwrap() };
             let ids = par_sorted_merge_inner(&s_left, s_right);
-            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+            let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
 
             let (mut left, right) = ids;
 
@@ -284,7 +284,7 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
                 eprintln!("right key will be reverse sorted in left join operation.")
             }
 
-            let sort_idx = s_right.argsort(SortOptions {
+            let sort_idx = s_right.arg_sort(SortOptions {
                 descending: false,
                 nulls_last: false,
                 multithreaded: true,
@@ -292,7 +292,7 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
             let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
 
             let ids = par_sorted_merge_left(s_left, &s_right);
-            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+            let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
             let (left, mut right) = ids;
 
             POOL.install(|| {

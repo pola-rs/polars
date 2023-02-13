@@ -778,7 +778,7 @@ where
                     return None;
                 }
                 let take = { ca.take_unchecked(idx.into()) };
-                take.var_as_series(ddof).unpack::<T>().unwrap().get(0)
+                take.var(ddof)
             }),
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
@@ -822,7 +822,7 @@ where
                     return None;
                 }
                 let take = { ca.take_unchecked(idx.into()) };
-                take.std_as_series(ddof).unpack::<T>().unwrap().get(0)
+                take.std(ddof)
             }),
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
@@ -866,18 +866,18 @@ where
     ) -> Series {
         let ca = &self.0;
         let invalid_quantile = !(0.0..=1.0).contains(&quantile);
+        if invalid_quantile {
+            return Series::full_null(self.name(), groups.len(), self.dtype());
+        }
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
                 debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() | invalid_quantile {
+                if idx.is_empty() {
                     return None;
                 }
                 let take = { ca.take_unchecked(idx.into()) };
-                take.quantile_as_series(quantile, interpol)
-                    .unwrap() // checked with invalid quantile check
-                    .unpack::<T>()
-                    .unwrap()
-                    .get(0)
+                // checked with invalid quantile check
+                take.quantile(quantile, interpol).unwrap_unchecked()
             }),
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
@@ -911,7 +911,7 @@ where
                                 // unwrap checked with invalid quantile check
                                 arr_group
                                     .quantile(quantile, interpol)
-                                    .unwrap()
+                                    .unwrap_unchecked()
                                     .map(|flt| NumCast::from(flt).unwrap())
                             }
                         }
@@ -929,7 +929,7 @@ where
                     return None;
                 }
                 let take = { ca.take_unchecked(idx.into()) };
-                take.median_as_series().unpack::<T>().unwrap().get(0)
+                take.median()
             }),
             GroupsProxy::Slice { .. } => {
                 self.agg_quantile(groups, 0.5, QuantileInterpolOptions::Linear)
@@ -1032,10 +1032,7 @@ where
                     return None;
                 }
                 let take = { self.take_unchecked(idx.into()) };
-                take.var_as_series(ddof)
-                    .unpack::<Float64Type>()
-                    .unwrap()
-                    .get(0)
+                take.var(ddof)
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -1068,10 +1065,7 @@ where
                     return None;
                 }
                 let take = { self.take_unchecked(idx.into()) };
-                take.std_as_series(ddof)
-                    .unpack::<Float64Type>()
-                    .unwrap()
-                    .get(0)
+                take.std(ddof)
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -1103,6 +1097,10 @@ where
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> Series {
+        let invalid_quantile = !(0.0..=1.0).contains(&quantile);
+        if invalid_quantile {
+            return Series::full_null(self.name(), groups.len(), self.dtype());
+        }
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                 debug_assert!(idx.len() <= self.len());
@@ -1110,11 +1108,7 @@ where
                     return None;
                 }
                 let take = self.take_unchecked(idx.into());
-                take.quantile_as_series(quantile, interpol)
-                    .unwrap()
-                    .unpack::<Float64Type>()
-                    .unwrap()
-                    .get(0)
+                take.quantile(quantile, interpol).unwrap_unchecked() // checked with invalid quantile check
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -1147,10 +1141,7 @@ where
                     return None;
                 }
                 let take = self.take_unchecked(idx.into());
-                take.median_as_series()
-                    .unpack::<Float64Type>()
-                    .unwrap()
-                    .get(0)
+                take.median()
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,

@@ -84,20 +84,14 @@ def test_join_lazy_on_df() -> None:
     df_right = pl.DataFrame({"Id": [1, 3], "Tags": ["xxx", "yyy"]})
 
     with pytest.raises(
-        ValueError,
-        match=(
-            "Expected a `LazyFrame` as join table, got"
-            " <class 'polars.internals.dataframe.frame.DataFrame'>"
-        ),
+        TypeError,
+        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
     ):
         df_left.lazy().join(df_right, on="Id")
 
     with pytest.raises(
-        ValueError,
-        match=(
-            "Expected a `LazyFrame` as join table, got"
-            " <class 'polars.internals.dataframe.frame.DataFrame'>"
-        ),
+        TypeError,
+        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
     ):
         df_left.lazy().join_asof(df_right, on="Id")
 

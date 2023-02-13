@@ -76,6 +76,7 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
+    deprecate_nonkeyword_arguments,
     deprecated_alias,
     handle_projection_columns,
     is_bool_sequence,
@@ -4104,6 +4105,7 @@ class DataFrame:
             self._df.upsample(by, time_column, every, offset, maintain_order)
         )
 
+    @deprecate_nonkeyword_arguments()
     def join_asof(
         self,
         other: DataFrame,
@@ -4227,6 +4229,11 @@ class DataFrame:
         └─────────────────────┴────────────┴──────┘
 
         """
+        if not isinstance(other, DataFrame):
+            raise TypeError(
+                f"Expected 'other' join table to be a DataFrame, not a {type(other).__name__}"
+            )
+
         return (
             self.lazy()
             .join_asof(
@@ -4246,6 +4253,12 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of DataFrame.join except for 'other', 'on', and 'how' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def join(
         self,
         other: DataFrame,
@@ -4358,6 +4371,11 @@ class DataFrame:
         For joining on columns with categorical data, see ``pl.StringCache()``.
 
         """
+        if not isinstance(other, DataFrame):
+            raise TypeError(
+                f"Expected 'other' join table to be a DataFrame, not a {type(other).__name__}"
+            )
+
         return (
             self.lazy()
             .join(
@@ -4371,6 +4389,7 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
     def apply(
         self,
         f: Callable[[tuple[Any, ...]], Any],
@@ -5012,6 +5031,9 @@ class DataFrame:
         """
         return self.lazy().explode(columns).collect(no_optimization=True)
 
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self", "values", "index", "columns", "aggregate_fn"]
+    )
     def pivot(
         self,
         values: Sequence[str] | str,
@@ -5545,6 +5567,18 @@ class DataFrame:
                 true
         ]
 
+        This mask can be used to visualize the duplicated lines like this:
+
+        >>> df.filter(df.is_duplicated())
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ x   │
+        │ 1   ┆ x   │
+        └─────┴─────┘
         """
         return pli.wrap_s(self._df.is_duplicated())
 
@@ -5570,6 +5604,18 @@ class DataFrame:
                 false
         ]
 
+        This mask can be used to visualize the unique lines like this:
+
+        >>> df.filter(df.is_unique())
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 2   ┆ y   │
+        │ 3   ┆ z   │
+        └─────┴─────┘
         """
         return pli.wrap_s(self._df.is_unique())
 
@@ -6349,7 +6395,7 @@ class DataFrame:
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
     def to_dummies(
-        self, *, columns: Sequence[str] | None = None, separator: str = "_"
+        self, columns: Sequence[str] | None = None, *, separator: str = "_"
     ) -> Self:
         """
         Get one hot encoded dummy variables.
@@ -6387,6 +6433,12 @@ class DataFrame:
             columns = [columns]
         return self._from_pydf(self._df.to_dummies(columns, separator))
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of DataFrame.unique except for 'subset' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def unique(
         self,
         maintain_order: bool = True,

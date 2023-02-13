@@ -66,10 +66,10 @@ def test_sort_by_exprs() -> None:
     assert out.to_list() == [1, -1, 2, -2]
 
 
-def test_argsort_nulls() -> None:
+def test_arg_sort_nulls() -> None:
     a = pl.Series("a", [1.0, 2.0, 3.0, None, None])
-    assert a.argsort(nulls_last=True).to_list() == [0, 1, 2, 4, 3]
-    assert a.argsort(nulls_last=False).to_list() == [3, 4, 0, 1, 2]
+    assert a.arg_sort(nulls_last=True).to_list() == [0, 1, 2, 4, 3]
+    assert a.arg_sort(nulls_last=False).to_list() == [3, 4, 0, 1, 2]
 
     assert a.to_frame().sort(by="a", nulls_last=False).to_series().to_list() == [
         None,
@@ -87,17 +87,17 @@ def test_argsort_nulls() -> None:
     ]
 
 
-def test_argsort_window_functions() -> None:
+def test_arg_sort_window_functions() -> None:
     df = pl.DataFrame({"Id": [1, 1, 2, 2, 3, 3], "Age": [1, 2, 3, 4, 5, 6]})
     out = df.select(
         [
             pl.col("Age").arg_sort().over("Id").alias("arg_sort"),
-            pl.argsort_by("Age").over("Id").alias("argsort_by"),
+            pl.arg_sort_by("Age").over("Id").alias("arg_sort_by"),
         ]
     )
 
     assert (
-        out["arg_sort"].to_list() == out["argsort_by"].to_list() == [0, 1, 0, 1, 0, 1]
+        out["arg_sort"].to_list() == out["arg_sort_by"].to_list() == [0, 1, 0, 1, 0, 1]
     )
 
 
@@ -214,7 +214,7 @@ def test_sorted_fast_paths() -> None:
     assert rev.sort().to_list() == [None, 1, 2, 3]
 
 
-def test_argsort_rank_nans() -> None:
+def test_arg_sort_rank_nans() -> None:
     assert (
         pl.DataFrame(
             {
@@ -224,11 +224,11 @@ def test_argsort_rank_nans() -> None:
         .with_columns(
             [
                 pl.col("val").rank().alias("rank"),
-                pl.col("val").argsort().alias("argsort"),
+                pl.col("val").arg_sort().alias("arg_sort"),
             ]
         )
-        .select(["rank", "argsort"])
-    ).to_dict(False) == {"rank": [1.0, 2.0], "argsort": [0, 1]}
+        .select(["rank", "arg_sort"])
+    ).to_dict(False) == {"rank": [1.0, 2.0], "arg_sort": [0, 1]}
 
 
 def test_top_k() -> None:

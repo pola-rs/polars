@@ -973,6 +973,20 @@ def test_ufunc_expr_not_first() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_ufunc_multiple_expr() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [1, 2, 3], dtype=pl.Float64),
+            pl.Series("b", [4, 5, 6], dtype=pl.Float64),
+        ]
+    )
+
+    with pytest.raises(
+        ValueError, match="Numpy ufunc can only be used with one expression, 2 given"
+    ):
+        df.select(np.arctan2(pl.col("a"), pl.col("b")))  # type: ignore[call-overload]
+
+
 def test_clip() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     assert df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]

@@ -53,6 +53,7 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
+    deprecate_nonkeyword_arguments,
     normalise_filepath,
     redirect,
 )
@@ -1705,19 +1706,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> ldf = pl.DataFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
         ...         "b": [1, 2, 3, 4, 5, 6],
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... ).lazy()
-
-        The following does NOT work:
-        # df.groupby("a")["b"].sum().collect()
-        #                ^^^^ TypeError: 'LazyGroupBy' object is not subscriptable
-        instead, use .agg():
-        >>> df.groupby(by="a", maintain_order=True).agg(pl.col("b").sum()).collect()
+        >>> ldf.groupby(by="a", maintain_order=True).agg(pl.col("b").sum()).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1728,6 +1724,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ b   ┆ 11  │
         │ c   ┆ 6   │
         └─────┴─────┘
+
+        Note that the following syntax does NOT work:
+
+        >>> ldf.groupby("a")["b"].sum().collect()
+        Traceback (most recent call last):
+        ...
+        TypeError: 'LazyGroupBy' object is not subscriptable
 
         """
         pyexprs_by = selection_to_pyexpr_list(by)
@@ -2152,6 +2155,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
+    @deprecate_nonkeyword_arguments()
     def join_asof(
         self,
         other: LazyFrame,
@@ -2274,10 +2278,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
         └─────────────────────┴────────────┴──────┘
 
-
         """
         if not isinstance(other, LazyFrame):
-            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(other)}")
+            raise TypeError(
+                f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
+            )
 
         if isinstance(on, str):
             left_on = on
@@ -2322,6 +2327,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             )
         )
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of LazyFrame.join except for 'other', 'on', and 'how' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def join(
         self,
         other: LazyFrame,
@@ -2432,7 +2443,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         if not isinstance(other, LazyFrame):
-            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(other)}")
+            raise TypeError(
+                f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
+            )
 
         if how == "cross":
             return self._from_pyldf(
@@ -3578,6 +3591,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         columns = pli.selection_to_pyexpr_list(columns)
         return self._from_pyldf(self._ldf.explode(columns))
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of LazyFrame.unique except for 'subset' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def unique(
         self,
         maintain_order: bool = True,
@@ -3796,6 +3815,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             self._ldf.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @deprecate_nonkeyword_arguments()
     def map(
         self,
         f: Callable[[pli.DataFrame], pli.DataFrame],

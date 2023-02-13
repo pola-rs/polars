@@ -1996,6 +1996,16 @@ def test_tz_aware_truncate() -> None:
     }
 
 
+def test_strftime_invalid_format() -> None:
+    tz_naive = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    with pytest.raises(
+        ComputeError, match="Cannot format NaiveDateTime with format '%z'"
+    ):
+        tz_naive.dt.strftime("%z")
+    with pytest.raises(ComputeError, match="Cannot format DateTime with format '%q'"):
+        tz_naive.dt.replace_time_zone("UTC").dt.strftime("%q")
+
+
 def test_tz_aware_strftime() -> None:
     df = pl.DataFrame(
         {

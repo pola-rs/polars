@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
@@ -28,12 +29,13 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    deprecate_nonkeyword_arguments,
 )
 
 try:
     from polars.polars import arange as pyarange
+    from polars.polars import arg_sort_by as py_arg_sort_by
     from polars.polars import arg_where as py_arg_where
-    from polars.polars import argsort_by as pyargsort_by
     from polars.polars import as_struct as _as_struct
     from polars.polars import coalesce_exprs as _coalesce_exprs
     from polars.polars import col as pycol
@@ -79,13 +81,15 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: str
-    | Sequence[str]
-    | Sequence[PolarsDataType]
-    | set[PolarsDataType]
-    | frozenset[PolarsDataType]
-    | pli.Series
-    | PolarsDataType,
+    name: (
+        str
+        | Sequence[str]
+        | Sequence[PolarsDataType]
+        | set[PolarsDataType]
+        | frozenset[PolarsDataType]
+        | pli.Series
+        | PolarsDataType
+    ),
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
@@ -1258,7 +1262,7 @@ def cumsum(
     │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
     └─────┴─────┴─────┴───────────┘
 
-    """  # noqa E501
+    """  # noqa: W505
     if isinstance(column, pli.Series):
         return column.cumsum()
     elif isinstance(column, str):
@@ -1410,6 +1414,7 @@ def map(
     )
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["exprs", "f", "return_dtype"])
 def apply(
     exprs: Sequence[str | pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series | Any],
@@ -1513,6 +1518,7 @@ def reduce(
     return pli.wrap_expr(pyreduce(f, exprs))
 
 
+@deprecate_nonkeyword_arguments()
 def cumfold(
     acc: IntoExpr,
     f: Callable[[pli.Series, pli.Series], pli.Series],
@@ -1542,7 +1548,7 @@ def cumfold(
     If you simply want the first encountered expression as accumulator,
     consider using ``cumreduce``.
 
-    """  # noqa E501
+    """  # noqa: W505
     # in case of pl.col("*")
     acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
     if isinstance(exprs, pli.Expr):
@@ -1569,7 +1575,7 @@ def cumreduce(
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
 
-    """  # noqa E501
+    """  # noqa: W505
     # in case of pl.col("*")
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]
@@ -1832,7 +1838,8 @@ def arange(
         )
 
 
-def argsort_by(
+@deprecate_nonkeyword_arguments()
+def arg_sort_by(
     exprs: pli.Expr | str | Sequence[pli.Expr | str],
     reverse: Sequence[bool] | bool = False,
 ) -> pli.Expr:
@@ -1856,7 +1863,37 @@ def argsort_by(
     if isinstance(reverse, bool):
         reverse = [reverse] * len(exprs)
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyargsort_by(exprs, reverse))
+    return pli.wrap_expr(py_arg_sort_by(exprs, reverse))
+
+
+def argsort_by(
+    exprs: pli.Expr | str | Sequence[pli.Expr | str],
+    reverse: Sequence[bool] | bool = False,
+) -> pli.Expr:
+    """
+    Find the indexes that would sort the columns.
+
+    Argsort by multiple columns. The first column will be used for the ordering.
+    If there are duplicates in the first column, the second column will be used to
+    determine the ordering and so on.
+
+    .. deprecated:: 0.16.5
+        `argsort_by` will be removed in favour of `arg_sort_by`.
+
+    Parameters
+    ----------
+    exprs
+        Columns use to determine the ordering.
+    reverse
+        Default is ascending.
+
+    """
+    warnings.warn(
+        "`argsort_by()` is deprecated in favor of `arg_sort_by()`",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return pli.arg_sort_by(exprs, reverse)
 
 
 def duration(
@@ -2027,6 +2064,7 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
+@deprecate_nonkeyword_arguments()
 def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
     """
     Horizontally concat Utf8 Series in linear time. Non-Utf8 columns are cast to Utf8.
@@ -2324,6 +2362,7 @@ def struct(
     ...
 
 
+@deprecate_nonkeyword_arguments()
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,

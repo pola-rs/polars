@@ -300,7 +300,7 @@ def sequence_to_pyseries(
     # flat data
     if (
         dtype is not None
-        and dtype not in (Struct, Unknown)
+        and dtype not in (List, Struct, Unknown)
         and is_polars_dtype(dtype)
         and (python_dtype is None)
     ):
@@ -355,17 +355,23 @@ def sequence_to_pyseries(
                         type(nested_value) if nested_value is not None else float
                     )
 
-            # recursively call Series constructor
-            if nested_dtype == list:
-                return sequence_to_pyseries(
+            # recursively call Series constructor for nested types
+            if nested_dtype in (list, List, Struct):
+                s = sequence_to_pyseries(
                     name=name,
                     values=[
-                        sequence_to_pyseries(name, seq, dtype=None, strict=strict)
-                        for seq in values
+                        pli.Series(
+                            values=v,
+                            dtype=nested_dtype,  # type: ignore[arg-type]
+                            strict=strict,
+                            nan_to_null=nan_to_null,
+                        )
+                        for v in (values or [None])
                     ],
-                    dtype=None,
+                    nan_to_null=nan_to_null,
                     strict=strict,
                 )
+                return s if values else pli.Series._from_pyseries(s)[:0]._s
 
             # logs will show a panic if we infer wrong dtype and it's hard to error
             # from the rust side. to reduce the likelihood of this happening we
@@ -379,14 +385,14 @@ def sequence_to_pyseries(
                     for lst in values:
                         for vl in lst:
                             equal_to_inner = type(vl) == nested_dtype
-                            if not equal_to_inner or count > 50:
+                            if not equal_to_inner or count > N_INFER_DEFAULT:
                                 break
                             count += 1
                     if equal_to_inner:
                         dtype = py_type_to_dtype(nested_dtype)
                         with suppress(BaseException):
                             return PySeries.new_list(name, values, dtype)
-                # pass; we create an object if we get here
+                # pass; give up and create via "new_object" if we get here
             else:
                 try:
                     if is_polars_dtype(nested_dtype):
@@ -698,7 +704,7 @@ def dict_to_pydf(
     if not column_names:
         column_names = list(data)
 
-    if _NUMPY_AVAILABLE:
+    if data and _NUMPY_AVAILABLE:
         # if there are 3 or more numpy arrays of sufficient size, we multi-thread:
         count_numpy = sum(
             int(

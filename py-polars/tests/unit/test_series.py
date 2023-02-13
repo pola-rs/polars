@@ -1539,7 +1539,12 @@ def test_comparisons_float_series_to_int() -> None:
 
 def test_comparisons_bool_series_to_int() -> None:
     srs_bool = pl.Series([True, False])
-    # todo: do we want this to work?
+
+    # (native bool comparison should work...)
+    for t, f in ((True, False), (False, True)):
+        assert list(srs_bool == t) == list(srs_bool != f) == [t, f]
+
+    # TODO: do we want this to work?
     assert_series_equal(srs_bool / 1, pl.Series([True, False], dtype=Float64))
     match = (
         r"cannot do arithmetic with series of dtype: Boolean"
@@ -1557,14 +1562,16 @@ def test_comparisons_bool_series_to_int() -> None:
         srs_bool % 2
     with pytest.raises(ValueError, match=match):
         srs_bool * 1
-    with pytest.raises(
-        TypeError, match=r"'<' not supported between instances of 'Series' and 'int'"
-    ):
-        srs_bool < 2  # noqa: B015
-    with pytest.raises(
-        TypeError, match=r"'>' not supported between instances of 'Series' and 'int'"
-    ):
-        srs_bool > 2  # noqa: B015
+
+    from operator import ge, gt, le, lt
+
+    for op in (ge, gt, le, lt):
+        for scalar in (0, 1.0, True, False):
+            with pytest.raises(
+                TypeError,
+                match=r"'\W{1,2}' not supported .* 'Series' and '(int|bool|float)'",
+            ):
+                op(srs_bool, scalar)
 
 
 def test_abs() -> None:
@@ -1627,14 +1634,14 @@ def test_take_every() -> None:
     assert_series_equal(s.take_every(2), pl.Series("a", [1, 3]))
 
 
-def test_argsort() -> None:
+def test_arg_sort() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
     expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
 
-    assert_series_equal(s.argsort(), expected)
+    assert_series_equal(s.arg_sort(), expected)
 
     expected_reverse = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    assert_series_equal(s.argsort(True), expected_reverse)
+    assert_series_equal(s.arg_sort(True), expected_reverse)
 
 
 def test_arg_min_and_arg_max() -> None:
