@@ -6390,7 +6390,7 @@ class DataFrame:
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
     def to_dummies(
-        self, *, columns: Sequence[str] | None = None, separator: str = "_"
+        self, columns: Sequence[str] | None = None, *, separator: str = "_"
     ) -> Self:
         """
         Get one hot encoded dummy variables.

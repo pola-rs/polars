@@ -75,6 +75,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _is_generator,
     _time_to_pl_time,
+    deprecate_nonkeyword_arguments,
     deprecated_alias,
     is_int_sequence,
     range_to_series,
@@ -1370,6 +1371,7 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
+    @deprecate_nonkeyword_arguments()
     def to_dummies(self, separator: str = "_") -> pli.DataFrame:
         """
         Get dummy variables.
