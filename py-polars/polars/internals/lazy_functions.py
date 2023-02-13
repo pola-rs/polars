@@ -1516,6 +1516,7 @@ def reduce(
     return pli.wrap_expr(pyreduce(f, exprs))
 
 
+@deprecate_nonkeyword_arguments()
 def cumfold(
     acc: IntoExpr,
     f: Callable[[pli.Series, pli.Series], pli.Series],
