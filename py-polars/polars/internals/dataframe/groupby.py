@@ -9,6 +9,7 @@ from polars.utils import _timedelta_to_pl_duration, is_str_sequence
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         ClosedInterval,
+        IntoExpr,
         RollingInterpolationMethod,
         StartBy,
     )
