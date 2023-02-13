@@ -293,7 +293,7 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
 
     let mut lagging_offset = 0;
     let mut last = i64::MIN;
-    time.iter().enumerate().map(move |(i, lower)| {
+    time.iter().map(move |lower| {
         if *lower < last {
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
