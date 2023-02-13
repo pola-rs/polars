@@ -2343,3 +2343,28 @@ def test_infer_iso8601(iso8601_format: str) -> None:
         assert parsed.dt.nanosecond().item() == 123456000
     if "%3f" in iso8601_format:
         assert parsed.dt.nanosecond().item() == 123000000
+
+def test_groupby_dynamic() -> None:
+    import warnings
+    dts = [
+        datetime(2021, 12, 31, 0, 0, 0),
+        datetime(2022, 1, 1, 0, 0, 1),
+        datetime(2022, 3, 31, 0, 0, 1),
+        datetime(2022, 4, 1, 0, 0, 1),
+    ]
+    df = (
+        pl.DataFrame({
+            "dt": dts
+        })
+    )
+    out = (
+        df
+        .groupby_dynamic(
+            "dt",
+            every="1q"
+        )
+        .agg(
+            pl.col("dt").agg_groups().alias("grouped_indices")
+        )
+    )
+    warnings.warn(str(out))
