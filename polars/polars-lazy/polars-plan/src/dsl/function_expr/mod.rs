@@ -2,7 +2,6 @@
 mod arg_where;
 #[cfg(feature = "dtype-binary")]
 mod binary;
-#[cfg(feature = "round_series")]
 mod clip;
 #[cfg(feature = "temporal")]
 mod datetime;
@@ -314,7 +313,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
             Nan(n) => n.into(),
-            #[cfg(feature = "round_series")]
             Clip { .. } => {
                 map_as_slice!(clip::clip)
             }
