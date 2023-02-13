@@ -808,9 +808,9 @@ class DynamicGroupBy(Generic[DF]):
         by: str | pli.Expr | Sequence[str | pli.Expr] | None,
         start_by: StartBy,
     ):
+        every = _timedelta_to_pl_duration(every)
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
-        every = _timedelta_to_pl_duration(every)
 
         self.df = df
         self.time_column = index_column
