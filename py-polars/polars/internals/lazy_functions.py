@@ -80,13 +80,15 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: str
-    | Sequence[str]
-    | Sequence[PolarsDataType]
-    | set[PolarsDataType]
-    | frozenset[PolarsDataType]
-    | pli.Series
-    | PolarsDataType,
+    name: (
+        str
+        | Sequence[str]
+        | Sequence[PolarsDataType]
+        | set[PolarsDataType]
+        | frozenset[PolarsDataType]
+        | pli.Series
+        | PolarsDataType
+    ),
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
