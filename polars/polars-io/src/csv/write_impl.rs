@@ -197,35 +197,31 @@ pub(crate) fn write<W: Write>(
         .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
     let delimiter = char::from(options.delimiter);
 
-    let mut formats: Vec<Option<&str>> = vec![];
-    if options.datetime_format.is_none() {
-        for col in df.get_columns() {
-            match col.dtype() {
-                DataType::Datetime(TimeUnit::Milliseconds, tz) => {
-                    formats.push(match tz {
+    let formats: Option<Vec<Option<&str>>> = match &options.datetime_format {
+        None => Some(
+            df.get_columns()
+                .iter()
+                .map(|col| match col.dtype() {
+                    DataType::Datetime(TimeUnit::Milliseconds, tz) => match tz {
                         Some(_) => Some("%FT%H:%M:%S.%3f%z"),
                         None => Some("%FT%H:%M:%S.%3f"),
-                    });
-                }
-                DataType::Datetime(TimeUnit::Microseconds, tz) => {
-                    formats.push(match tz {
+                    },
+                    DataType::Datetime(TimeUnit::Microseconds, tz) => match tz {
                         Some(_) => Some("%FT%H:%M:%S.%6f%z"),
                         None => Some("%FT%H:%M:%S.%6f"),
-                    });
-                }
-                DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
-                    formats.push(match tz {
+                    },
+                    DataType::Datetime(TimeUnit::Nanoseconds, tz) => match tz {
                         Some(_) => Some("%FT%H:%M:%S.%9f%z"),
                         None => Some("%FT%H:%M:%S.%9f"),
-                    });
-                }
-                _ => formats.push(None),
-            }
-        }
-    }
+                    },
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        ),
+        Some(_) => None,
+    };
 
     let len = df.height();
-    let n_columns = df.width();
     let n_threads = POOL.current_num_threads();
     let total_rows_per_pool_iter = n_threads * chunk_size;
     let any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
@@ -265,7 +261,7 @@ pub(crate) fn write<W: Write>(
                 for (i, col) in &mut col_iters.iter_mut().enumerate() {
                     let datetime_format = match &options.datetime_format {
                         Some(datetime_format) => Some(datetime_format.as_str()),
-                        None => unsafe { *formats.get_unchecked(i % n_columns) },
+                        None => unsafe { *formats.as_ref().unwrap().get_unchecked(i) },
                     };
                     match col.next() {
                         Some(value) => {
