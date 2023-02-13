@@ -54,7 +54,7 @@ pub(super) use self::trigonometry::TrigonometricFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
     NullCount,
     Pow,
@@ -119,6 +119,11 @@ pub enum FunctionExpr {
     Interpolate(InterpolationMethod),
     #[cfg(feature = "dot_product")]
     Dot,
+    #[cfg(feature = "log")]
+    Entropy {
+        base: f64,
+        normalize: bool,
+    },
 }
 
 impl Display for FunctionExpr {
@@ -184,6 +189,8 @@ impl Display for FunctionExpr {
             Interpolate(_) => "interpolate",
             #[cfg(feature = "dot_product")]
             Dot => "dot",
+            #[cfg(feature = "log")]
+            Entropy { .. } => "entropy",
         };
         write!(f, "{s}")
     }
@@ -369,6 +376,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Dot => {
                 map_as_slice!(dispatch::dot_impl)
             }
+            #[cfg(feature = "log")]
+            Entropy { base, normalize } => map!(dispatch::entropy, base, normalize),
         }
     }
 }

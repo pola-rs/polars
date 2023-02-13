@@ -33,7 +33,7 @@ impl FunctionExpr {
             Ok(fld)
         };
 
-        #[cfg(any(feature = "rolling_window", feature = "trigonometry"))]
+        #[cfg(any(feature = "rolling_window", feature = "trigonometry", feature = "log"))]
         // set float supertype
         let float_dtype = || {
             map_dtype(&|dtype| match dtype {
@@ -277,6 +277,8 @@ impl FunctionExpr {
                     _ => dt.clone(),
                 }
             }),
+            #[cfg(feature = "log")]
+            Entropy { .. } => float_dtype(),
         }
     }
 }

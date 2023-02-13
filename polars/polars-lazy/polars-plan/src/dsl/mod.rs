@@ -1987,21 +1987,7 @@ impl Expr {
     /// Compute the entropy as `-sum(pk * log(pk)`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
-        self.apply(
-            move |s| Ok(Some(Series::new(s.name(), [s.entropy(base, normalize)]))),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_function_options(|mut options| {
-            options.fmt_str = "entropy";
-            options.auto_explode = true;
-            options
-        })
+        self.apply_private(FunctionExpr::Entropy { base, normalize })
     }
     /// Get the null count of the column/group
     pub fn null_count(self) -> Expr {
