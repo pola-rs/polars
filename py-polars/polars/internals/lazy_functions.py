@@ -1412,6 +1412,7 @@ def map(
     )
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["exprs", "f", "return_dtype"])
 def apply(
     exprs: Sequence[str | pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series | Any],

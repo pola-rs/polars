@@ -3538,6 +3538,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "func", "return_dtype"])
     def apply(
         self,
         func: Callable[[Any], Any],

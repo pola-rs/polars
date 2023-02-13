@@ -4389,6 +4389,7 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
+    @deprecate_nonkeyword_arguments(allowed_args=["exprs", "f", "return_dtype"])
     def apply(
         self,
         f: Callable[[tuple[Any, ...]], Any],
