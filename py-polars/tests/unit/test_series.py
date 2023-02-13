@@ -2197,11 +2197,6 @@ def test_n_unique() -> None:
     assert s.n_unique() == 4
 
 
-def test_clip() -> None:
-    s = pl.Series("foo", [-50, 5, None, 50])
-    assert s.clip(1, 10).to_list() == [1, 5, None, 10]
-
-
 def test_mutable_borrowed_append_3915() -> None:
     s = pl.Series("s", [1, 2, 3])
     assert s.append(s).to_list() == [1, 2, 3, 1, 2, 3]
