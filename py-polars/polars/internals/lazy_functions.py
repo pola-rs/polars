@@ -29,6 +29,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    deprecate_nonkeyword_arguments,
 )
 
 try:
@@ -2058,6 +2059,7 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
+@deprecate_nonkeyword_arguments()
 def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
     """
     Horizontally concat Utf8 Series in linear time. Non-Utf8 columns are cast to Utf8.
