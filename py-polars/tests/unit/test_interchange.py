@@ -81,10 +81,14 @@ def test_from_dataframe_allow_copy() -> None:
     result = pl.from_dataframe(df, allow_copy=True)
     assert_frame_equal(result, df)
 
+    df1_pandas = pd.DataFrame({"a": [1, 2]})
+    result_from_pandas = pl.from_dataframe(df1_pandas, allow_copy=False)
+    assert_frame_equal(result_from_pandas, df)
+
     # Zero copy cannot be guaranteed for other inputs at this time
-    df_pandas = pd.DataFrame({"a": [1, 2]})
-    with pytest.raises(NotImplementedError):
-        pl.from_dataframe(df_pandas, allow_copy=False)
+    df2_pandas = pd.DataFrame({"a": ["A", "B"]})
+    with pytest.raises(RuntimeError):
+        pl.from_dataframe(df2_pandas, allow_copy=False)
 
 
 def test_from_dataframe_invalid_type() -> None:
