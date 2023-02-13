@@ -57,6 +57,10 @@ pub enum LiteralValue {
 }
 
 impl LiteralValue {
+    pub(crate) fn is_float(&self) -> bool {
+        matches!(self, LiteralValue::Float32(_) | LiteralValue::Float64(_))
+    }
+
     pub fn to_anyvalue(&self) -> Option<AnyValue> {
         use LiteralValue::*;
         let av = match self {

@@ -353,3 +353,13 @@ def test_duration_divison_schema() -> None:
 
     assert q.schema == {"a": pl.Float64}
     assert q.collect().to_dict(False) == {"a": [1.0]}
+
+
+def test_int_operator_stability() -> None:
+    for dt in pl.datatypes.INTEGER_DTYPES:
+        s = pl.Series(values=[10], dtype=dt)
+        assert pl.select(pl.lit(s) // 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) + 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) - 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) * 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
