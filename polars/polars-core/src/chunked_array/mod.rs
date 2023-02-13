@@ -496,6 +496,16 @@ where
             Err(PolarsError::ComputeError("no_slice".into()))
         }
     }
+    /// Contiguous mutable slice
+    pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
+        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
+            // Safety, we will not swap the PrimitiveArray.
+            let arr = unsafe { self.downcast_iter_mut().next().unwrap() };
+            arr.get_mut_values()
+        } else {
+            None
+        }
+    }
 
     /// Get slices of the underlying arrow data.
     /// NOTE: null values should be taken into account by the user of these slices as they are handled

@@ -19,35 +19,42 @@ fn quantile_idx(
     length: usize,
     null_count: usize,
     interpol: QuantileInterpolOptions,
-) -> (i64, f64, i64) {
+) -> (usize, f64, usize) {
     let mut base_idx = match interpol {
         QuantileInterpolOptions::Nearest => {
-            (((length - null_count) as f64) * quantile + null_count as f64) as i64
+            (((length - null_count) as f64) * quantile + null_count as f64) as usize
         }
         QuantileInterpolOptions::Lower
         | QuantileInterpolOptions::Midpoint
         | QuantileInterpolOptions::Linear => {
-            (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
+            (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as usize
         }
         QuantileInterpolOptions::Higher => {
-            (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as i64
+            (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as usize
         }
     };
 
-    base_idx = base_idx.clamp(0, (length - 1) as i64);
+    base_idx = base_idx.clamp(0, length - 1);
     let float_idx = ((length - null_count) as f64 - 1.0) * quantile + null_count as f64;
-    let top_idx = f64::ceil(float_idx) as i64;
+    let top_idx = f64::ceil(float_idx) as usize;
 
     (base_idx, float_idx, top_idx)
 }
 
 /// helper
-fn linear_interpol<T: Float>(bounds: &[Option<T>], idx: i64, float_idx: f64) -> Option<T> {
-    if bounds[0] == bounds[1] {
-        Some(bounds[0].unwrap())
+fn linear_interpol<T: Float>(lower: T, upper: T, idx: usize, float_idx: f64) -> T {
+    if lower == upper {
+        lower
     } else {
         let proportion: T = T::from(float_idx).unwrap() - T::from(idx).unwrap();
-        Some(proportion * (bounds[1].unwrap() - bounds[0].unwrap()) + bounds[0].unwrap())
+        proportion * (upper - lower) + lower
+    }
+}
+fn midpoint_interpol<T: Float>(lower: T, upper: T) -> T {
+    if lower == upper {
+        lower
+    } else {
+        (lower + upper) / (T::one() + T::one())
     }
 }
 
@@ -77,8 +84,50 @@ impl Sortable for Float64Chunked {
     }
 }
 
+fn quantile_slice<T: ToPrimitive + Ord>(
+    vals: &mut [T],
+    quantile: f64,
+    interpol: QuantileInterpolOptions,
+) -> PolarsResult<Option<f64>> {
+    if !(0.0..=1.0).contains(&quantile) {
+        return Err(PolarsError::ComputeError(
+            "quantile should be between 0.0 and 1.0".into(),
+        ));
+    }
+    if vals.is_empty() {
+        return Ok(None);
+    }
+    let (idx, float_idx, top_idx) = quantile_idx(quantile, vals.len(), 0, interpol);
+
+    let (_lhs, lower, rhs) = vals.select_nth_unstable(idx);
+    if idx == top_idx {
+        Ok(lower.to_f64())
+    } else {
+        match interpol {
+            QuantileInterpolOptions::Midpoint => {
+                let (_, upper, _) = rhs.select_nth_unstable(0);
+                Ok(Some(midpoint_interpol(
+                    lower.to_f64().unwrap(),
+                    upper.to_f64().unwrap(),
+                )))
+            }
+            QuantileInterpolOptions::Linear => {
+                let (_, upper, _) = rhs.select_nth_unstable(0);
+                Ok(linear_interpol(
+                    lower.to_f64().unwrap(),
+                    upper.to_f64().unwrap(),
+                    idx,
+                    float_idx,
+                )
+                .to_f64())
+            }
+            _ => Ok(lower.to_f64()),
+        }
+    }
+}
+
 fn generic_quantile<T>(
-    ca: &ChunkedArray<T>,
+    ca: ChunkedArray<T>,
     quantile: f64,
     interpol: QuantileInterpolOptions,
 ) -> PolarsResult<Option<f64>>
@@ -100,53 +149,28 @@ where
     }
 
     let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
+    let sorted = ca.sort();
+    let lower = sorted.get(idx).map(|v| v.to_f64().unwrap());
 
     let opt = match interpol {
         QuantileInterpolOptions::Midpoint => {
             if top_idx == idx {
-                ca.sort()
-                    .slice(idx, 1)
-                    .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
-                    .into_iter()
-                    .next()
-                    .flatten()
+                lower
             } else {
-                let bounds: Vec<Option<f64>> = ca
-                    .sort()
-                    .slice(idx, 2)
-                    .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
-                    .into_iter()
-                    .collect();
-
-                Some((bounds[0].unwrap() + bounds[1].unwrap()) / 2.0f64)
+                let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
+                midpoint_interpol(lower.unwrap(), upper.unwrap()).to_f64()
             }
         }
         QuantileInterpolOptions::Linear => {
             if top_idx == idx {
-                ca.sort()
-                    .slice(idx, 1)
-                    .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
-                    .into_iter()
-                    .next()
-                    .flatten()
+                lower
             } else {
-                let bounds: Vec<Option<f64>> = ca
-                    .sort()
-                    .slice(idx, 2)
-                    .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
-                    .into_iter()
-                    .collect();
+                let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
 
-                linear_interpol(&bounds, idx, float_idx)
+                linear_interpol(lower.unwrap(), upper.unwrap(), idx, float_idx).to_f64()
             }
         }
-        _ => ca
-            .sort()
-            .slice(idx, 1)
-            .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
-            .into_iter()
-            .next()
-            .flatten(),
+        _ => lower,
     };
     Ok(opt)
 }
@@ -155,20 +179,46 @@ impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Ord,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
 {
     fn quantile(
         &self,
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Option<f64>> {
-        generic_quantile(self, quantile, interpol)
+        if let Ok(slice) = self.cont_slice() {
+            let mut owned = slice.to_vec();
+            quantile_slice(&mut owned, quantile, interpol)
+        } else {
+            generic_quantile(self.clone(), quantile, interpol)
+        }
     }
 
     fn median(&self) -> Option<f64> {
         self.quantile(0.5, QuantileInterpolOptions::Linear).unwrap() // unwrap fine since quantile in range
+    }
+}
+
+// Version of quantile/median that don't need a memcpy
+impl<T> ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Ord,
+{
+    pub(crate) fn quantile_faster(
+        mut self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f64>> {
+        if let Some(slice) = self.cont_slice_mut() {
+            quantile_slice(slice, quantile, interpol)
+        } else {
+            self.quantile(quantile, interpol)
+        }
+    }
+
+    pub(crate) fn median_faster(self) -> Option<f64> {
+        self.quantile_faster(0.5, QuantileInterpolOptions::Linear)
+            .unwrap()
     }
 }
 
@@ -178,7 +228,7 @@ impl ChunkQuantile<f32> for Float32Chunked {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Option<f32>> {
-        generic_quantile(self, quantile, interpol).map(|v| v.map(|v| v as f32))
+        generic_quantile(self.clone(), quantile, interpol).map(|v| v.map(|v| v as f32))
     }
 
     fn median(&self) -> Option<f32> {
@@ -192,7 +242,7 @@ impl ChunkQuantile<f64> for Float64Chunked {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Option<f64>> {
-        generic_quantile(self, quantile, interpol)
+        generic_quantile(self.clone(), quantile, interpol)
     }
 
     fn median(&self) -> Option<f64> {

@@ -1108,7 +1108,7 @@ where
                     return None;
                 }
                 let take = self.take_unchecked(idx.into());
-                take.quantile(quantile, interpol).unwrap_unchecked() // checked with invalid quantile check
+                take.quantile_faster(quantile, interpol).unwrap_unchecked() // checked with invalid quantile check
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -1125,7 +1125,7 @@ where
                             1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.quantile(quantile, interpol).unwrap()
+                                arr_group.quantile_faster(quantile, interpol).unwrap()
                             }
                         }
                     })
@@ -1141,7 +1141,7 @@ where
                     return None;
                 }
                 let take = self.take_unchecked(idx.into());
-                take.median()
+                take.median_faster()
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -1158,7 +1158,7 @@ where
                             1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.median()
+                                arr_group.median_faster()
                             }
                         }
                     })
