@@ -2155,6 +2155,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
+    @deprecate_nonkeyword_arguments()
     def join_asof(
         self,
         other: LazyFrame,

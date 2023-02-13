@@ -4105,6 +4105,7 @@ class DataFrame:
             self._df.upsample(by, time_column, every, offset, maintain_order)
         )
 
+    @deprecate_nonkeyword_arguments()
     def join_asof(
         self,
         other: DataFrame,
