@@ -2344,6 +2344,7 @@ def test_infer_iso8601(iso8601_format: str) -> None:
     if "%3f" in iso8601_format:
         assert parsed.dt.nanosecond().item() == 123000000
 
+
 def test_groupby_dynamic() -> None:
     import warnings
     dts = [
