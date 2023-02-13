@@ -29,6 +29,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
+    deprecate_nonkeyword_arguments,
 )
 
 try:
@@ -1413,6 +1414,7 @@ def map(
     )
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["exprs", "f", "return_dtype"])
 def apply(
     exprs: Sequence[str | pli.Expr],
     f: Callable[[Sequence[pli.Series]], pli.Series | Any],
@@ -1516,6 +1518,7 @@ def reduce(
     return pli.wrap_expr(pyreduce(f, exprs))
 
 
+@deprecate_nonkeyword_arguments()
 def cumfold(
     acc: IntoExpr,
     f: Callable[[pli.Series, pli.Series], pli.Series],
@@ -1835,6 +1838,7 @@ def arange(
         )
 
 
+@deprecate_nonkeyword_arguments()
 def arg_sort_by(
     exprs: pli.Expr | str | Sequence[pli.Expr | str],
     reverse: Sequence[bool] | bool = False,
@@ -2060,6 +2064,7 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
+@deprecate_nonkeyword_arguments()
 def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
     """
     Horizontally concat Utf8 Series in linear time. Non-Utf8 columns are cast to Utf8.
@@ -2357,6 +2362,7 @@ def struct(
     ...
 
 
+@deprecate_nonkeyword_arguments()
 def struct(
     exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,

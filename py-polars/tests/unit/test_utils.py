@@ -93,7 +93,7 @@ def test_deprecate_nonkeyword_arguments_method_signature() -> None:
 def test_deprecate_nonkeyword_arguments_method_warning() -> None:
     msg = (
         r"All arguments of Foo\.bar except for \'baz\' will be keyword-only in the next breaking release."
-        r" Use keyword arguments to silence this message."
+        r" Use keyword arguments to silence this warning."
     )
     with pytest.deprecated_call(match=msg):
         Foo().bar("qux", "quox")

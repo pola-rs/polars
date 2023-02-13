@@ -26,7 +26,11 @@ from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
 from polars.internals.type_aliases import PolarsExprType, PythonLiteral
-from polars.utils import _timedelta_to_pl_duration, sphinx_accessor
+from polars.utils import (
+    _timedelta_to_pl_duration,
+    deprecate_nonkeyword_arguments,
+    sphinx_accessor,
+)
 
 try:
     from polars.polars import PyExpr
@@ -1804,6 +1808,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.top_k(k, reverse))
 
+    @deprecate_nonkeyword_arguments()
     def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Expr:
         """
         Get the index values that would sort this column.
@@ -2980,6 +2985,7 @@ class Expr:
         """
         return self.filter(predicate)
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
     def map(
         self,
         f: Callable[[pli.Series], pli.Series | Any],
@@ -3029,6 +3035,7 @@ class Expr:
             return_dtype = py_type_to_dtype(return_dtype)
         return wrap_expr(self._pyexpr.map(f, return_dtype, agg_list))
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
     def apply(
         self,
         f: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],

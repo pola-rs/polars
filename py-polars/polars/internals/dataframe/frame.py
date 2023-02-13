@@ -4105,6 +4105,7 @@ class DataFrame:
             self._df.upsample(by, time_column, every, offset, maintain_order)
         )
 
+    @deprecate_nonkeyword_arguments()
     def join_asof(
         self,
         other: DataFrame,
@@ -4255,7 +4256,7 @@ class DataFrame:
     @deprecate_nonkeyword_arguments(
         message=(
             "All arguments of DataFrame.join except for 'other', 'on', and 'how' will be keyword-only in the next breaking release."
-            " Use keyword arguments to silence this message."
+            " Use keyword arguments to silence this warning."
         )
     )
     def join(
@@ -4388,6 +4389,7 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
     def apply(
         self,
         f: Callable[[tuple[Any, ...]], Any],
@@ -5029,6 +5031,9 @@ class DataFrame:
         """
         return self.lazy().explode(columns).collect(no_optimization=True)
 
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self", "values", "index", "columns", "aggregate_fn"]
+    )
     def pivot(
         self,
         values: Sequence[str] | str,
@@ -6390,7 +6395,7 @@ class DataFrame:
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
     def to_dummies(
-        self, *, columns: Sequence[str] | None = None, separator: str = "_"
+        self, columns: Sequence[str] | None = None, *, separator: str = "_"
     ) -> Self:
         """
         Get one hot encoded dummy variables.
@@ -6428,6 +6433,12 @@ class DataFrame:
             columns = [columns]
         return self._from_pydf(self._df.to_dummies(columns, separator))
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of DataFrame.unique except for 'subset' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def unique(
         self,
         maintain_order: bool = True,

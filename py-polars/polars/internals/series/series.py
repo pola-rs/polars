@@ -75,6 +75,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _is_generator,
     _time_to_pl_time,
+    deprecate_nonkeyword_arguments,
     deprecated_alias,
     is_int_sequence,
     range_to_series,
@@ -1370,6 +1371,7 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
+    @deprecate_nonkeyword_arguments()
     def to_dummies(self, separator: str = "_") -> pli.DataFrame:
         """
         Get dummy variables.
@@ -1965,6 +1967,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments()
     def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
@@ -1991,6 +1994,14 @@ class Series:
         ]
 
         """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(
+                pli.col(self._s.name()).arg_sort(reverse=reverse, nulls_last=nulls_last)
+            )
+            .to_series()
+        )
 
     def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """
@@ -3536,6 +3547,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "func", "return_dtype"])
     def apply(
         self,
         func: Callable[[Any], Any],
