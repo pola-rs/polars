@@ -1997,6 +1997,10 @@ impl Expr {
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.apply_private(FunctionExpr::Entropy { base, normalize })
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
     }
     /// Get the null count of the column/group
     pub fn null_count(self) -> Expr {
