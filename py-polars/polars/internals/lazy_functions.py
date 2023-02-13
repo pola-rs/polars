@@ -1836,6 +1836,7 @@ def arange(
         )
 
 
+@deprecate_nonkeyword_arguments()
 def arg_sort_by(
     exprs: pli.Expr | str | Sequence[pli.Expr | str],
     reverse: Sequence[bool] | bool = False,
