@@ -374,7 +374,6 @@ impl<'a> AnyValue<'a> {
     pub fn extract<T: NumCast>(&self) -> Option<T> {
         use AnyValue::*;
         match self {
-            Null => None,
             Int8(v) => NumCast::from(*v),
             Int16(v) => NumCast::from(*v),
             Int32(v) => NumCast::from(*v),
@@ -400,7 +399,7 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(0)
                 }
             }
-            dt => panic!("Cannot extract numeric value from {dt:?}"),
+            _ => None,
         }
     }
 
