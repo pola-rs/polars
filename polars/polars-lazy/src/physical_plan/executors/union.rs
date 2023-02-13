@@ -74,26 +74,49 @@ impl Executor for UnionExec {
                 println!("UNION: union is run in parallel")
             }
 
-            // we don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
-            // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
-            // within bounds
-            let out = POOL.install(|| {
-                inputs
-                    .chunks_mut(POOL.current_num_threads() * 3)
-                    .map(|chunk| {
-                        chunk
-                            .into_par_iter()
-                            .enumerate()
-                            .map(|(idx, input)| {
-                                let mut input = std::mem::take(input);
-                                let mut state = state.split();
-                                state.branch_idx += idx;
-                                input.execute(&mut state)
-                            })
-                            .collect::<PolarsResult<Vec<_>>>()
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()
-            });
+            // #[cfg(not(target = "async"))]
+            // // we don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
+            // // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
+            // // within bounds
+            // let out = POOL.install(|| {
+            //     inputs
+            //         .chunks_mut(POOL.current_num_threads() * 3)
+            //         .map(|chunk| {
+            //             chunk
+            //                 .into_par_iter()
+            //                 .enumerate()
+            //                 .map(|(idx, input)| {
+            //                     let mut input = std::mem::take(input);
+            //                     let mut state = state.split();
+            //                     state.branch_idx += idx;
+            //                     input.execute(&mut state)
+            //                 })
+            //                 .collect::<PolarsResult<Vec<_>>>()
+            //         })
+            //         .collect::<PolarsResult<Vec<_>>>()
+            // });
+            let out = {
+                use futures::{stream, StreamExt, TryStreamExt};
+                use tokio::runtime::Runtime;
+
+                let rt = Runtime::new().unwrap();
+                rt.block_on(async {
+                    stream::iter(inputs.chunks_mut(3))
+                        .then(|chunk| async {
+                            stream::iter(chunk.into_iter().enumerate())
+                                .then(|(idx, input)| {
+                                    let mut input = std::mem::take(input);
+                                    let mut state = state.split();
+                                    state.branch_idx += idx;
+                                    input.async_execute(&mut state)
+                                })
+                                .try_collect::<Vec<_>>()
+                                .await
+                        })
+                        .try_collect::<Vec<_>>()
+                        .await
+                })
+            };
 
             concat_df(out?.iter().flat_map(|dfs| dfs.iter()))
         }

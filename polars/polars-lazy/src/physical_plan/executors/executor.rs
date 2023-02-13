@@ -1,3 +1,5 @@
+use futures::future::BoxFuture;
+
 use super::*;
 
 // Executor are the executors of the physical plan and produce DataFrames. They
@@ -9,6 +11,13 @@ use super::*;
 /// physical plan until the last executor is evaluated.
 pub trait Executor: Send {
     fn execute(&mut self, cache: &mut ExecutionState) -> PolarsResult<DataFrame>;
+
+    fn async_execute(
+        &mut self,
+        cache: &mut ExecutionState,
+    ) -> BoxFuture<'static, PolarsResult<DataFrame>> {
+        Box::pin(futures::future::ready(self.execute(cache)))
+    }
 }
 
 pub struct Dummy {}

@@ -15,6 +15,8 @@ serde_json = "1"
 [dependencies]
 ahash.workspace = true
 bitflags.workspace = true
+futures = { version = "0.3.25" }
+tokio = { version = "1.22.0", features = ["rt-multi-thread", "net"] }
 glob = "0.3"
 polars-arrow = { version = "0.27.2", path = "../polars-arrow" }
 polars-core = { version = "0.27.2", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
