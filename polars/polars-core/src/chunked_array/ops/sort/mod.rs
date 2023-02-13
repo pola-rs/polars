@@ -1,6 +1,6 @@
-mod argsort;
+mod arg_sort;
 #[cfg(feature = "sort_multiple")]
-mod argsort_multiple;
+mod arg_sort_multiple;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 
@@ -19,7 +19,7 @@ use rayon::prelude::*;
 
 use crate::prelude::compare_inner::PartialOrdInner;
 #[cfg(feature = "sort_multiple")]
-use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_impl};
+use crate::prelude::sort::arg_sort_multiple::{arg_sort_multiple_impl, args_validate};
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
@@ -75,12 +75,12 @@ fn sort_branch<T, Fd, Fr>(
 }
 
 #[cfg(feature = "private")]
-pub fn argsort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], reverse: bool, parallel: bool)
+pub fn arg_sort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], reverse: bool, parallel: bool)
 where
     T: PartialOrd + Send + IsFloat,
     Idx: PartialOrd + Send,
 {
-    argsort_branch(
+    arg_sort_branch(
         slice,
         reverse,
         |(_, a), (_, b)| compare_fn_nan_max(a, b),
@@ -89,7 +89,7 @@ where
     );
 }
 
-pub fn argsort_branch<T, Fd, Fr>(
+pub fn arg_sort_branch<T, Fd, Fr>(
     slice: &mut [T],
     reverse: bool,
     default_order_fn: Fd,
@@ -259,7 +259,7 @@ where
     }
 }
 
-fn argsort_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> IdxCa
+fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> IdxCa
 where
     T: PolarsNumericType,
 {
@@ -277,7 +277,7 @@ where
             vals.extend_trusted_len(iter);
         });
 
-        argsort_no_nulls(vals.as_mut_slice(), reverse, options.multithreaded);
+        arg_sort_no_nulls(vals.as_mut_slice(), reverse, options.multithreaded);
 
         let out: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut out = out.into_inner();
@@ -287,12 +287,12 @@ where
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.iter().map(|opt| opt.copied()));
-        argsort::argsort(ca.name(), iter, options, ca.null_count(), ca.len())
+        arg_sort::arg_sort(ca.name(), iter, options, ca.null_count(), ca.len())
     }
 }
 
 #[cfg(feature = "sort_multiple")]
-fn argsort_multiple_numeric<T: PolarsNumericType>(
+fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
     other: &[Series],
     reverse: &[bool],
@@ -308,7 +308,7 @@ fn argsort_multiple_numeric<T: PolarsNumericType>(
         })
         .collect_trusted();
 
-    argsort_multiple_impl(vals, other, reverse)
+    arg_sort_multiple_impl(vals, other, reverse)
 }
 
 impl<T> ChunkSort<T> for ChunkedArray<T>
@@ -327,8 +327,8 @@ where
         })
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        argsort_numeric(self, options)
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort_numeric(self, options)
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -336,8 +336,8 @@ where
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        argsort_multiple_numeric(self, other, reverse)
+    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, other, reverse)
     }
 }
 
@@ -353,8 +353,8 @@ impl ChunkSort<Float32Type> for Float32Chunked {
         })
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        argsort_numeric(self, options)
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort_numeric(self, options)
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -362,8 +362,8 @@ impl ChunkSort<Float32Type> for Float32Chunked {
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        argsort_multiple_numeric(self, other, reverse)
+    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, other, reverse)
     }
 }
 
@@ -379,8 +379,8 @@ impl ChunkSort<Float64Type> for Float64Chunked {
         })
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        argsort_numeric(self, options)
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort_numeric(self, options)
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -388,8 +388,8 @@ impl ChunkSort<Float64Type> for Float64Chunked {
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        argsort_multiple_numeric(self, other, reverse)
+    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, other, reverse)
     }
 }
 
@@ -515,8 +515,8 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         })
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        argsort::argsort(
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort::arg_sort(
             self.name(),
             self.downcast_iter().map(|arr| arr.iter()),
             options,
@@ -534,7 +534,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
     ///
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
         args_validate(self, other, reverse)?;
 
         let mut count: IdxSize = 0;
@@ -546,7 +546,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 (i, v)
             })
             .collect_trusted();
-        argsort_multiple_impl(vals, other, reverse)
+        arg_sort_multiple_impl(vals, other, reverse)
     }
 }
 
@@ -653,8 +653,8 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         })
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        argsort::argsort(
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort::arg_sort(
             self.name(),
             self.downcast_iter().map(|arr| arr.iter()),
             options,
@@ -672,7 +672,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
     ///
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
         args_validate(self, other, reverse)?;
 
         let mut count: IdxSize = 0;
@@ -684,7 +684,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 (i, v)
             })
             .collect_trusted();
-        argsort_multiple_impl(vals, other, reverse)
+        arg_sort_multiple_impl(vals, other, reverse)
     }
 }
 
@@ -716,8 +716,8 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         })
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        argsort::argsort(
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort::arg_sort(
             self.name(),
             self.downcast_iter().map(|arr| arr.iter()),
             options,
@@ -728,7 +728,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 }
 
 #[cfg(feature = "sort_multiple")]
-pub(crate) fn prepare_argsort(
+pub(crate) fn prepare_arg_sort(
     columns: Vec<Series>,
     mut reverse: Vec<bool>,
 ) -> PolarsResult<(Series, Vec<Series>, Vec<bool>)> {
@@ -771,7 +771,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_argsort() {
+    fn test_arg_sort() {
         let a = Int32Chunked::new(
             "a",
             &[
@@ -785,7 +785,7 @@ mod test {
                 Some(1), // 7
             ],
         );
-        let idx = a.argsort(SortOptions {
+        let idx = a.arg_sort(SortOptions {
             descending: false,
             ..Default::default()
         });
@@ -794,7 +794,7 @@ mod test {
         let expected = [2, 4, 0, 3, 7, 6, 5, 1];
         assert_eq!(idx, expected);
 
-        let idx = a.argsort(SortOptions {
+        let idx = a.arg_sort(SortOptions {
             descending: true,
             ..Default::default()
         });
@@ -860,7 +860,7 @@ mod test {
     #[test]
     #[cfg(feature = "sort_multiple")]
     #[cfg_attr(miri, ignore)]
-    fn test_argsort_multiple() -> PolarsResult<()> {
+    fn test_arg_sort_multiple() -> PolarsResult<()> {
         let a = Int32Chunked::new("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
         let b = Int64Chunked::new("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
         let c = Utf8Chunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);

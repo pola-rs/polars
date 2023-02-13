@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "sort_multiple")]
-use crate::prelude::sort::prepare_argsort;
+use crate::prelude::sort::prepare_arg_sort;
 use crate::series::IsSorted;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
@@ -1834,13 +1834,13 @@ impl DataFrame {
 
                     return Ok(out.into_frame());
                 }
-                s.argsort(options)
+                s.arg_sort(options)
             }
             _ => {
                 #[cfg(feature = "sort_multiple")]
                 {
-                    let (first, by_column, reverse) = prepare_argsort(by_column, reverse)?;
-                    first.argsort_multiple(&by_column, &reverse)?
+                    let (first, by_column, reverse) = prepare_arg_sort(by_column, reverse)?;
+                    first.arg_sort_multiple(&by_column, &reverse)?
                 }
                 #[cfg(not(feature = "sort_multiple"))]
                 {

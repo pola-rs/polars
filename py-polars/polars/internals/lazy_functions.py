@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
@@ -32,8 +33,8 @@ from polars.utils import (
 
 try:
     from polars.polars import arange as pyarange
+    from polars.polars import arg_sort_by as py_arg_sort_by
     from polars.polars import arg_where as py_arg_where
-    from polars.polars import argsort_by as pyargsort_by
     from polars.polars import as_struct as _as_struct
     from polars.polars import coalesce_exprs as _coalesce_exprs
     from polars.polars import col as pycol
@@ -1832,7 +1833,7 @@ def arange(
         )
 
 
-def argsort_by(
+def arg_sort_by(
     exprs: pli.Expr | str | Sequence[pli.Expr | str],
     reverse: Sequence[bool] | bool = False,
 ) -> pli.Expr:
@@ -1856,7 +1857,37 @@ def argsort_by(
     if isinstance(reverse, bool):
         reverse = [reverse] * len(exprs)
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyargsort_by(exprs, reverse))
+    return pli.wrap_expr(py_arg_sort_by(exprs, reverse))
+
+
+def argsort_by(
+    exprs: pli.Expr | str | Sequence[pli.Expr | str],
+    reverse: Sequence[bool] | bool = False,
+) -> pli.Expr:
+    """
+    Find the indexes that would sort the columns.
+
+    Argsort by multiple columns. The first column will be used for the ordering.
+    If there are duplicates in the first column, the second column will be used to
+    determine the ordering and so on.
+
+    .. deprecated:: 0.16.5
+        `argsort_by` will be removed in favour of `arg_sort_by`.
+
+    Parameters
+    ----------
+    exprs
+        Columns use to determine the ordering.
+    reverse
+        Default is ascending.
+
+    """
+    warnings.warn(
+        "`argsort_by()` is deprecated in favor of `arg_sort_by()`",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return pli.arg_sort_by(exprs, reverse)
 
 
 def duration(

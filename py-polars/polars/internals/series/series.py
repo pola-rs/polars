@@ -1998,6 +1998,9 @@ class Series:
 
         Alias for :func:`Series.arg_sort`.
 
+        .. deprecated:: 0.16.5
+             `Series.argsort` will be removed in favour of `Series.arg_sort`.
+
         Parameters
         ----------
         reverse

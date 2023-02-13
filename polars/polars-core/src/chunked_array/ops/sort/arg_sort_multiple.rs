@@ -25,7 +25,7 @@ pub(crate) fn args_validate<T: PolarsDataType>(
     Ok(())
 }
 
-pub(crate) fn argsort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
+pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
     mut vals: Vec<(IdxSize, T)>,
     other: &[Series],
     reverse: &[bool],
