@@ -345,6 +345,11 @@ def test_from_dicts_all_cols_6716() -> None:
     assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.Utf8]
 
 
+def test_from_dicts_empty() -> None:
+    with pytest.raises(pl.NoDataError, match="No rows. Cannot infer schema."):
+        pl.from_dicts([])
+
+
 def test_duration_divison_schema() -> None:
     df = pl.DataFrame({"a": [1]})
     q = (
