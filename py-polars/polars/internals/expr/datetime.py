@@ -56,7 +56,6 @@ class ExprDateTimeNameSpace:
         - 1h  # 1 hour
         - 1d  # 1 day
         - 1w  # 1 calendar week
-        - 1w  # 1 quarter
         - 1mo # 1 calendar month
         - 1y  # 1 calendar year
 
@@ -174,7 +173,6 @@ class ExprDateTimeNameSpace:
         1h   # 1 hour
         1d   # 1 day
         1w   # 1 calendar week
-        1q   # 1 quarter
         1mo  # 1 calendar month
         1y   # 1 calendar year
 
