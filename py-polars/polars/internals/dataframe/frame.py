@@ -5031,6 +5031,9 @@ class DataFrame:
         """
         return self.lazy().explode(columns).collect(no_optimization=True)
 
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self", "values", "index", "columns", "aggregate_fn"]
+    )
     def pivot(
         self,
         values: Sequence[str] | str,
