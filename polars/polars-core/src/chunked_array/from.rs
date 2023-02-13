@@ -71,24 +71,6 @@ where
     }
 }
 
-// A hack to save compiler bloat for null arrays
-impl Int32Chunked {
-    pub(crate) fn new_null(name: &str, len: usize) -> Self {
-        let arr = arrow::array::new_null_array(ArrowDataType::Null, len);
-        let field = Arc::new(Field::new(name, DataType::Null));
-        let chunks = vec![arr as ArrayRef];
-        let mut out = ChunkedArray {
-            field,
-            chunks,
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-        };
-        out.compute_len();
-        out
-    }
-}
-
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -121,8 +103,9 @@ where
     /// # Safety
     /// The lifetime will be bound to the lifetime of the slice.
     /// This will not be checked by the borrowchecker.
-    pub unsafe fn borrowed_from_slice(name: &str, values: &[T::Native]) -> Self {
-        let arr = Box::new(PrimitiveArray::borrowed_from_slice(values));
+    pub unsafe fn mmap_slice(name: &str, values: &[T::Native]) -> Self {
+        let arr = arrow::ffi::mmap::slice(values);
+        let arr = Box::new(arr);
         let mut out = ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],

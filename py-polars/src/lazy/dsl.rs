@@ -563,7 +563,7 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, tu))]
+    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, tu, tz))]
     #[allow(clippy::too_many_arguments)]
     pub fn str_parse_datetime(
         &self,
@@ -574,6 +574,7 @@ impl PyExpr {
         tz_aware: bool,
         utc: bool,
         tu: Option<Wrap<TimeUnit>>,
+        tz: Option<TimeZone>,
     ) -> PyExpr {
         let result_tu = match (&fmt, tu) {
             (_, Some(tu)) => tu.0,
@@ -596,7 +597,7 @@ impl PyExpr {
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(result_tu, None),
+                date_dtype: DataType::Datetime(result_tu, tz),
                 fmt,
                 strict,
                 exact,
@@ -1046,8 +1047,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_with_time_zone(&self, tz: TimeZone) -> PyExpr {
-        self.inner.clone().dt().with_time_zone(tz).into()
+    pub fn dt_convert_time_zone(&self, tz: TimeZone) -> PyExpr {
+        self.inner.clone().dt().convert_time_zone(tz).into()
     }
 
     pub fn dt_cast_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
@@ -1055,8 +1056,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_cast_time_zone(&self, tz: Option<String>) -> PyExpr {
-        self.inner.clone().dt().cast_time_zone(tz).into()
+    pub fn dt_replace_time_zone(&self, tz: Option<String>) -> PyExpr {
+        self.inner.clone().dt().replace_time_zone(tz).into()
     }
 
     #[cfg(feature = "timezones")]
@@ -1674,30 +1675,53 @@ impl PyExpr {
             .into()
     }
 
-    pub fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize) -> Self {
+    pub fn ewm_mean(
+        &self,
+        alpha: f64,
+        adjust: bool,
+        min_periods: usize,
+        ignore_nulls: bool,
+    ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias: false,
             min_periods,
+            ignore_nulls,
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    pub fn ewm_std(&self, alpha: f64, adjust: bool, bias: bool, min_periods: usize) -> Self {
+    pub fn ewm_std(
+        &self,
+        alpha: f64,
+        adjust: bool,
+        bias: bool,
+        min_periods: usize,
+        ignore_nulls: bool,
+    ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
             min_periods,
+            ignore_nulls,
         };
         self.inner.clone().ewm_std(options).into()
     }
-    pub fn ewm_var(&self, alpha: f64, adjust: bool, bias: bool, min_periods: usize) -> Self {
+    pub fn ewm_var(
+        &self,
+        alpha: f64,
+        adjust: bool,
+        bias: bool,
+        min_periods: usize,
+        ignore_nulls: bool,
+    ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
             min_periods,
+            ignore_nulls,
         };
         self.inner.clone().ewm_var(options).into()
     }

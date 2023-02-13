@@ -11,10 +11,13 @@ mod categorical;
 mod dates_time;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
+#[cfg(feature = "dtype-i128")]
+mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
 mod floats;
 mod list;
+mod null;
 #[cfg(feature = "object")]
 mod object;
 #[cfg(feature = "dtype-struct")]
@@ -417,14 +420,6 @@ macro_rules! impl_dyn_series {
 
             fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 ChunkUnique::arg_unique(&self.0)
-            }
-
-            fn arg_min(&self) -> Option<usize> {
-                ArgAgg::arg_min(&self.0)
-            }
-
-            fn arg_max(&self) -> Option<usize> {
-                ArgAgg::arg_max(&self.0)
             }
 
             fn is_null(&self) -> BooleanChunked {

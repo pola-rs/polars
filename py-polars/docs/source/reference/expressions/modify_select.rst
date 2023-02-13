@@ -30,6 +30,7 @@ Manipulation/selection
     Expr.interpolate
     Expr.limit
     Expr.lower_bound
+    Expr.map_dict
     Expr.rechunk
     Expr.reinterpret
     Expr.repeat_by

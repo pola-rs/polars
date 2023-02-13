@@ -84,20 +84,14 @@ def test_join_lazy_on_df() -> None:
     df_right = pl.DataFrame({"Id": [1, 3], "Tags": ["xxx", "yyy"]})
 
     with pytest.raises(
-        ValueError,
-        match=(
-            "Expected a `LazyFrame` as join table, got"
-            " <class 'polars.internals.dataframe.frame.DataFrame'>"
-        ),
+        TypeError,
+        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
     ):
         df_left.lazy().join(df_right, on="Id")
 
     with pytest.raises(
-        ValueError,
-        match=(
-            "Expected a `LazyFrame` as join table, got"
-            " <class 'polars.internals.dataframe.frame.DataFrame'>"
-        ),
+        TypeError,
+        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
     ):
         df_left.lazy().join_asof(df_right, on="Id")
 
@@ -119,12 +113,12 @@ def test_projection_update_schema_missing_column() -> None:
 def test_not_found_on_rename() -> None:
     df = pl.DataFrame({"exists": [1, 2, 3]})
 
-    with pytest.raises(pl.SchemaFieldNotFoundError):
-        df.rename(
-            {
-                "does_not_exist": "exists",
-            }
-        )
+    err_type = (pl.SchemaFieldNotFoundError, pl.ColumnNotFoundError)
+    with pytest.raises(err_type):
+        df.rename({"does_not_exist": "exists"})
+
+    with pytest.raises(err_type):
+        df.select(pl.col("does_not_exist").alias("new_name"))
 
 
 @typing.no_type_check

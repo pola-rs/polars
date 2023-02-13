@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
@@ -275,3 +276,29 @@ def test_weekday() -> None:
         assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 1
 
     assert s.cast(pl.Date).dt.weekday()[0] == 1
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([datetime(1969, 12, 31), datetime(1970, 1, 2)], datetime(1970, 1, 1)),
+        ([None, None], None),
+    ],
+    ids=["datetime_dates", "Nones"],
+)
+def test_median(values: list[datetime | None], expected: datetime | None) -> None:
+    result = pl.Series(values).cast(pl.Datetime).dt.median()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([datetime(1969, 12, 31), datetime(1970, 1, 2)], datetime(1970, 1, 1)),
+        ([None, None], None),
+    ],
+    ids=["datetime_dates", "Nones"],
+)
+def test_mean(values: list[datetime | None], expected: datetime | None) -> None:
+    result = pl.Series(values).cast(pl.Datetime).dt.median()
+    assert result == expected

@@ -254,7 +254,7 @@ pub(super) fn process_join(
             if name.contains(suffix.as_ref()) && schema_after_join.get(&name).is_none() {
                 let new_name = &name.as_ref()[..name.len() - suffix.len()];
 
-                let renamed = aexpr_assign_renamed_root(*proj, expr_arena, &name, new_name);
+                let renamed = aexpr_assign_renamed_leaf(*proj, expr_arena, &name, new_name);
 
                 let aliased = expr_arena.add(AExpr::Alias(renamed, name));
                 *proj = aliased;

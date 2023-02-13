@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Sequence, overload
+from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64, PolarsDataType
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def get_dummies(
-    df: pli.DataFrame, *, columns: list[str] | None = None
+    df: pli.DataFrame, *, columns: list[str] | None = None, separator: str = "_"
 ) -> pli.DataFrame:
     """
     Convert categorical variables into dummy/indicator variables.
@@ -45,6 +45,8 @@ def get_dummies(
     columns
         A subset of columns to convert to dummy variables. ``None`` means
         "all columns".
+    separator
+        Separator/delimiter used when generating column names.
 
     Examples
     --------
@@ -67,12 +69,12 @@ def get_dummies(
     └───────┴───────┴───────┴───────┴───────┴───────┘
 
     """
-    return df.to_dummies(columns=columns)
+    return df.to_dummies(columns=columns, separator=separator)
 
 
 @overload
 def concat(
-    items: Sequence[pli.DataFrame],
+    items: Iterable[pli.DataFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
@@ -82,7 +84,7 @@ def concat(
 
 @overload
 def concat(
-    items: Sequence[pli.Series],
+    items: Iterable[pli.Series],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
@@ -92,7 +94,7 @@ def concat(
 
 @overload
 def concat(
-    items: Sequence[pli.LazyFrame],
+    items: Iterable[pli.LazyFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
@@ -102,7 +104,7 @@ def concat(
 
 @overload
 def concat(
-    items: Sequence[pli.Expr],
+    items: Iterable[pli.Expr],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
@@ -112,10 +114,10 @@ def concat(
 
 def concat(
     items: (
-        Sequence[pli.DataFrame]
-        | Sequence[pli.Series]
-        | Sequence[pli.LazyFrame]
-        | Sequence[pli.Expr]
+        Iterable[pli.DataFrame]
+        | Iterable[pli.Series]
+        | Iterable[pli.LazyFrame]
+        | Iterable[pli.Expr]
     ),
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
@@ -217,18 +219,21 @@ def concat(
     └─────┴──────┴──────┘
 
     """
-    if not len(items) > 0:
+    # unpack/standardise (offers simple support for generator input)
+    elems = list(items)
+
+    if not len(elems) > 0:
         raise ValueError("cannot concat empty list")
 
     out: pli.Series | pli.DataFrame | pli.LazyFrame | pli.Expr
-    first = items[0]
+    first = elems[0]
     if isinstance(first, pli.DataFrame):
         if how == "vertical":
-            out = pli.wrap_df(_concat_df(items))
+            out = pli.wrap_df(_concat_df(elems))
         elif how == "diagonal":
-            out = pli.wrap_df(_diag_concat_df(items))
+            out = pli.wrap_df(_diag_concat_df(elems))
         elif how == "horizontal":
-            out = pli.wrap_df(_hor_concat_df(items))
+            out = pli.wrap_df(_hor_concat_df(elems))
         else:
             raise ValueError(
                 f"how must be one of {{'vertical', 'diagonal', 'horizontal'}}, "
@@ -236,18 +241,18 @@ def concat(
             )
     elif isinstance(first, pli.LazyFrame):
         if how == "vertical":
-            return pli.wrap_ldf(_concat_lf(items, rechunk, parallel))
+            return pli.wrap_ldf(_concat_lf(elems, rechunk, parallel))
         if how == "diagonal":
-            return pli.wrap_ldf(_diag_concat_lf(items, rechunk, parallel))
+            return pli.wrap_ldf(_diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
                 "Lazy only allows {{'vertical', 'diagonal'}} concat strategy."
             )
     elif isinstance(first, pli.Series):
-        out = pli.wrap_s(_concat_series(items))
+        out = pli.wrap_s(_concat_series(elems))
     elif isinstance(first, pli.Expr):
         out = first
-        for e in items[1:]:
+        for e in elems[1:]:
             out = out.append(e)  # type: ignore[arg-type]
     else:
         raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
@@ -273,13 +278,13 @@ def _interval_granularity(interval: str) -> str:
 def date_range(
     low: pli.Expr,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -288,13 +293,13 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: pli.Expr,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -303,13 +308,13 @@ def date_range(
 def date_range(
     low: date | datetime | str,
     high: date | datetime | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Series:
     ...
 
@@ -318,13 +323,13 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[True],
-    closed: ClosedInterval = "both",
+    closed: ClosedInterval = ...,
     name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -332,7 +337,7 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = "1d",
     *,
     lazy: bool = False,
     closed: ClosedInterval = "both",

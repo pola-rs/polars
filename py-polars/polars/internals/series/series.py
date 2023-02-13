@@ -430,22 +430,29 @@ class Series:
         return self.__xor__(other)
 
     def _comp(self, other: Any, op: ComparisonOperator) -> Series:
+        # special edge-case; boolean broadcast series (eq/neq) is its own result
+        if self.dtype == Boolean and isinstance(other, bool) and op in ("eq", "neq"):
+            if (other is True and op == "eq") or (other is False and op == "neq"):
+                return self.clone()
+            elif (other is False and op == "eq") or (other is True and op == "neq"):
+                return ~self
+
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return wrap_s(f(ts))
-        if isinstance(other, time) and self.dtype == Time:
+        elif isinstance(other, time) and self.dtype == Time:
             d = _time_to_pl_time(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return wrap_s(f(d))
-        if isinstance(other, date) and self.dtype == Date:
+        elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return wrap_s(f(d))
-        if self.dtype == Categorical and not isinstance(other, Series):
+        elif self.dtype == Categorical and not isinstance(other, Series):
             other = Series([other])
 
         if isinstance(other, Sequence) and not isinstance(other, str):
@@ -480,18 +487,27 @@ class Series:
         return self._comp(other, "lt_eq")
 
     def le(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series <= other``."""
         return self.__le__(other)
 
+    def lt(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series < other``."""
+        return self.__lt__(other)
+
     def eq(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series == other``."""
         return self.__eq__(other)
 
     def ne(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series != other``."""
         return self.__ne__(other)
 
-    def lt(self, other: Any) -> Series:
-        return self.__lt__(other)
+    def ge(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series >= other``."""
+        return self.__ge__(other)
 
     def gt(self, other: Any) -> Series:
+        """Method equivalent of operator expression ``series > other``."""
         return self.__gt__(other)
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
@@ -556,7 +572,7 @@ class Series:
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if not isinstance(other, pli.Expr):
             other = pli.lit(other)
-        return self.to_frame().select(pli.lit(self) // other).to_series()
+        return self.to_frame().select(pli.col(self.name) // other).to_series()
 
     def __invert__(self) -> Series:
         if self.dtype == Boolean:
@@ -1212,7 +1228,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> int | float:
+    def mean(self) -> int | float | None:
         """
         Reduce this Series to the mean value.
 
@@ -1229,7 +1245,7 @@ class Series:
         """Reduce this Series to the product value."""
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
-    def min(self) -> int | float | date | datetime | timedelta | str:
+    def min(self) -> int | float | date | datetime | timedelta | str | None:
         """
         Get the minimal value in this Series.
 
@@ -1242,7 +1258,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> int | float | date | datetime | timedelta | str:
+    def max(self) -> int | float | date | datetime | timedelta | str | None:
         """
         Get the maximum value in this Series.
 
@@ -1319,7 +1335,7 @@ class Series:
             return None
         return self.to_frame().select(pli.col(self.name).var(ddof)).to_series()[0]
 
-    def median(self) -> float:
+    def median(self) -> float | None:
         """
         Get the median of this Series.
 
@@ -1334,7 +1350,7 @@ class Series:
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
-    ) -> float:
+    ) -> float | None:
         """
         Get the quantile value of this Series.
 
@@ -1354,9 +1370,14 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    def to_dummies(self) -> pli.DataFrame:
+    def to_dummies(self, separator: str = "_") -> pli.DataFrame:
         """
         Get dummy variables.
+
+        Parameters
+        ----------
+        separator
+            Separator/delimiter used when generating column names.
 
         Examples
         --------
@@ -1374,7 +1395,7 @@ class Series:
         └─────┴─────┴─────┘
 
         """
-        return pli.wrap_df(self._s.to_dummies())
+        return pli.wrap_df(self._s.to_dummies(separator))
 
     def value_counts(self, sort: bool = False) -> pli.DataFrame:
         """
@@ -2729,17 +2750,16 @@ class Series:
         return SeriesView(array, self)
 
     def to_numpy(
-        self, *args: Any, zero_copy_only: bool = False, writable: bool = False
+        self,
+        *args: Any,
+        zero_copy_only: bool = False,
+        writable: bool = False,
+        use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
-
-        Notes
-        -----
-        If you are attempting to convert Utf8 to an array you'll need to install
-        `pyarrow`.
 
         Examples
         --------
@@ -2763,6 +2783,8 @@ class Series:
             the resulting array is not writable (Arrow data is immutable).
             By setting this to True, a copy of the array is made to ensure
             it is writable.
+        use_pyarrow
+            Use pyarrow for the conversion to numpy.
         kwargs
             kwargs will be sent to pyarrow.Array.to_numpy
 
@@ -2777,7 +2799,7 @@ class Series:
                 tp = f"datetime64[{self.time_unit}]"
             return arr.astype(tp)
 
-        if _PYARROW_AVAILABLE and not self.is_datelike():
+        if use_pyarrow and _PYARROW_AVAILABLE and not self.is_datelike():
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
@@ -2785,8 +2807,11 @@ class Series:
             if not self.has_validity():
                 if self.is_datelike():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
-                else:
+                elif self.is_numeric():
                     np_array = self.view(ignore_nulls=True)
+                else:
+                    np_array = self._s.to_numpy()
+
             elif self.is_datelike():
                 np_array = convert_to_date(self._s.to_numpy())
             else:
@@ -2818,21 +2843,77 @@ class Series:
         """
         return self._s.to_arrow()
 
-    def to_pandas(self) -> pd.Series:
+    def to_pandas(  # noqa: D417
+        self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
+    ) -> pd.Series:
         """
         Convert this Series to a pandas Series.
 
+        This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
+        This operation clones data, unless `use_pyarrow_extension_array=True`.
+
+        Parameters
+        ----------
+        use_pyarrow_extension_array
+            Further operations on this Pandas series, might trigger conversion to numpy.
+            Use PyArrow backed-extension array instead of numpy array for pandas
+            Series. This allows zero copy operations and preservation of nulls
+            values.
+            Further operations on this pandas Series, might trigger conversion
+            to NumPy arrays if that operation is not supported by pyarrow compute
+            functions.
+        kwargs
+            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.to_pandas()
+        >>> s1 = pl.Series("a", [1, 2, 3])
+        >>> s1.to_pandas()
         0    1
         1    2
         2    3
         Name: a, dtype: int64
+        >>> s1.to_pandas(use_pyarrow_extension_array=True)  # doctest: +SKIP
+        0    1
+        1    2
+        2    3
+        Name: a, dtype: int64[pyarrow]
+        >>> s2 = pl.Series("b", [1, 2, None, 4])
+        >>> s2.to_pandas()
+        0    1.0
+        1    2.0
+        2    NaN
+        3    4.0
+        Name: b, dtype: float64
+        >>> s2.to_pandas(use_pyarrow_extension_array=True)  # doctest: +SKIP
+        0       1
+        1       2
+        2    <NA>
+        3       4
+        Name: b, dtype: int64[pyarrow]
 
         """
-        pd_series = self.to_arrow().to_pandas()
+        if use_pyarrow_extension_array:
+            pandas_version_major, pandas_version_minor = (
+                int(x) for x in pd.__version__.split(".")[0:2]
+            )
+            if pandas_version_major == 0 or (
+                pandas_version_major == 1 and pandas_version_minor < 5
+            ):
+                raise ModuleNotFoundError(
+                    f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
+                )
+
+        pd_series = (
+            self.to_arrow().to_pandas(
+                self_destruct=True,
+                split_blocks=True,
+                types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
+                **kwargs,
+            )
+            if use_pyarrow_extension_array
+            else self.to_arrow().to_pandas(**kwargs)
+        )
         pd_series.name = self.name
         return pd_series
 
@@ -4632,6 +4713,7 @@ class Series:
         alpha: float | None = None,
         adjust: bool = True,
         min_periods: int = 1,
+        ignore_nulls: bool = True,
     ) -> Series:
         r"""
         Exponentially-weighted moving average.
@@ -4671,6 +4753,23 @@ class Series:
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                  positions.
+                  For example, the weights of :math:`x_0` and :math:`x_2` used in
+                  calculating the final weighted average of
+                  [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+
+                - When ``ignore_nulls=True``, weights are based
+                  on relative positions. For example, the weights of
+                  :math:`x_0` and :math:`x_2` used in calculating the final weighted
+                  average of [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
+                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
         """
 
@@ -4683,6 +4782,7 @@ class Series:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
+        ignore_nulls: bool = True,
     ) -> Series:
         r"""
         Exponentially-weighted moving standard deviation.
@@ -4725,6 +4825,23 @@ class Series:
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                  positions.
+                  For example, the weights of :math:`x_0` and :math:`x_2` used in
+                  calculating the final weighted average of
+                  [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+
+                - When ``ignore_nulls=True``, weights are based
+                  on relative positions. For example, the weights of
+                  :math:`x_0` and :math:`x_2` used in calculating the final weighted
+                  average of [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
+                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
         Examples
         --------
@@ -4749,6 +4866,7 @@ class Series:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
+        ignore_nulls: bool = True,
     ) -> Series:
         r"""
         Exponentially-weighted moving variance.
@@ -4791,6 +4909,23 @@ class Series:
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                  positions.
+                  For example, the weights of :math:`x_0` and :math:`x_2` used in
+                  calculating the final weighted average of
+                  [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+
+                - When ``ignore_nulls=True``, weights are based
+                  on relative positions. For example, the weights of
+                  :math:`x_0` and :math:`x_2` used in calculating the final weighted
+                  average of [:math:`x_0`, None, :math:`x_2`] are
+                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
+                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
         Examples
         --------

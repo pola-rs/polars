@@ -13,14 +13,9 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-
 if TYPE_CHECKING:
     from polars.internals.type_aliases import IntoExpr
 
-
-# Used to type any type or subclass of LazyFrame.
-# Used to indicate when LazyFrame methods return the same type as self,
-# including sub-classes.
 LDF = TypeVar("LDF", bound="pli.LazyFrame")
 
 

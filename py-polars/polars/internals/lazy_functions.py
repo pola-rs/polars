@@ -707,7 +707,7 @@ def mean(column: pli.Series) -> float:
     ...
 
 
-def mean(column: str | pli.Series) -> pli.Expr | float:
+def mean(column: str | pli.Series) -> pli.Expr | float | None:
     """
     Get the mean value.
 
@@ -775,7 +775,7 @@ def median(column: pli.Series) -> float | int:
     ...
 
 
-def median(column: str | pli.Series) -> pli.Expr | float | int:
+def median(column: str | pli.Series) -> pli.Expr | float | int | None:
     """
     Get the median value.
 
@@ -1127,7 +1127,7 @@ def lit(
         tu = "us"
         e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
         if value.tzinfo is not None:
-            return e.dt.cast_time_zone(str(value.tzinfo))
+            return e.dt.replace_time_zone(str(value.tzinfo))
         else:
             return e
 
@@ -1258,7 +1258,7 @@ def cumsum(
     │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
     └─────┴─────┴─────┴───────────┘
 
-    """  # noqa E501
+    """  # noqa: W505
     if isinstance(column, pli.Series):
         return column.cumsum()
     elif isinstance(column, str):
@@ -1542,7 +1542,7 @@ def cumfold(
     If you simply want the first encountered expression as accumulator,
     consider using ``cumreduce``.
 
-    """  # noqa E501
+    """  # noqa: W505
     # in case of pl.col("*")
     acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
     if isinstance(exprs, pli.Expr):
@@ -1569,7 +1569,7 @@ def cumreduce(
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
 
-    """  # noqa E501
+    """  # noqa: W505
     # in case of pl.col("*")
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]

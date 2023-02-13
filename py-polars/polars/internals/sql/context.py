@@ -14,7 +14,7 @@ class SQLContext:
 
     Warnings
     --------
-    This feature is experimental and my change without it being
+    This feature is experimental and may change without it being
     considered a breaking change.
 
     """

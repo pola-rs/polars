@@ -23,9 +23,11 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
 
 if sys.version_info >= (3, 9):
-    import zoneinfo
+    from zoneinfo import ZoneInfo
 else:
-    from backports import zoneinfo
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_fill_null() -> None:
@@ -592,6 +594,13 @@ def test_date_range_lazy_with_expressions(
     }
 
 
+def test_date_range_invalid_time_zone() -> None:
+    with pytest.raises(ComputeError, match="Could not parse time zone foo"):
+        pl.date_range(
+            datetime(2001, 1, 1), datetime(2001, 1, 3), interval="1d", time_zone="foo"
+        )
+
+
 @pytest.mark.parametrize(
     ("one", "two"),
     [
@@ -768,7 +777,7 @@ def test_upsample() -> None:
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.cast_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.replace_time_zone("UTC"))
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
@@ -799,7 +808,7 @@ def test_upsample() -> None:
             ],
             "test2": [0, 0, 0, 2, 1, 1, 3],
         }
-    ).with_columns(pl.col("time").dt.cast_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.replace_time_zone("UTC"))
 
     assert_frame_equal(up, expected)
 
@@ -809,11 +818,11 @@ def test_upsample() -> None:
     [
         (None, None),
         ("+01:00", timezone(timedelta(hours=1))),
-        ("Pacific/Rarotonga", zoneinfo.ZoneInfo("Pacific/Rarotonga")),
+        ("Pacific/Rarotonga", ZoneInfo("Pacific/Rarotonga")),
     ],
 )
 def test_upsample_time_zones(
-    time_zone: str | None, tzinfo: timezone | zoneinfo.ZoneInfo | None
+    time_zone: str | None, tzinfo: timezone | ZoneInfo | None
 ) -> None:
     df = pl.DataFrame(
         {
@@ -838,8 +847,8 @@ def test_upsample_time_zones(
             "values": [1.0, 3.0, 5.0, 7.0],
         }
     )
-    df = df.with_columns(pl.col("time").dt.cast_time_zone(time_zone))
-    expected = expected.with_columns(pl.col("time").dt.cast_time_zone(time_zone))
+    df = df.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    expected = expected.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
     result = df.upsample(time_column="time", every="60m").fill_null(strategy="forward")
     assert_frame_equal(result, expected)
 
@@ -874,7 +883,7 @@ def test_read_utc_times_parquet() -> None:
     df.to_parquet(f)
     f.seek(0)
     df_in = pl.read_parquet(f)
-    tz = zoneinfo.ZoneInfo("UTC")
+    tz = ZoneInfo("UTC")
     assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0, tzinfo=tz)
 
 
@@ -1589,7 +1598,7 @@ def test_supertype_timezones_4174() -> None:
         {
             "dt": pl.date_range(datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"),
         }
-    ).with_columns(pl.col("dt").dt.cast_time_zone("Europe/London").suffix("_London"))
+    ).with_columns(pl.col("dt").dt.replace_time_zone("Europe/London").suffix("_London"))
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
@@ -1598,7 +1607,7 @@ def test_supertype_timezones_4174() -> None:
 
 @pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
 def test_from_dict_tu_consistency() -> None:
-    tz = zoneinfo.ZoneInfo("PRC")
+    tz = ZoneInfo("PRC")
     dt = datetime(2020, 8, 1, 12, 0, 0, tzinfo=tz)
     from_dict = pl.from_dict({"dt": [dt]})
     from_dicts = pl.from_dicts([{"dt": dt}])
@@ -1678,10 +1687,10 @@ def test_iso_year() -> None:
     assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
 
 
-def test_cast_timezone() -> None:
-    ny = zoneinfo.ZoneInfo("America/New_York")
+def test_replace_timezone() -> None:
+    ny = ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
-        pl.col("a").dt.cast_time_zone("America/New_York").alias("b")
+        pl.col("a").dt.replace_time_zone("America/New_York").alias("b")
     ).to_dict(False) == {
         "a": [datetime(2022, 9, 25, 14, 0)],
         "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
@@ -1692,50 +1701,82 @@ def test_cast_timezone() -> None:
     ("to_tz", "tzinfo"),
     [
         ("+01:00", timezone(timedelta(seconds=3600))),
-        ("America/Barbados", zoneinfo.ZoneInfo(key="America/Barbados")),
+        ("America/Barbados", ZoneInfo(key="America/Barbados")),
         (None, None),
     ],
 )
 @pytest.mark.parametrize("from_tz", ["Asia/Seoul", "-01:00", None])
 @pytest.mark.parametrize("tu", ["ms", "us", "ns"])
-def test_cast_timezone_from_to(
+def test_replace_timezone_from_to(
     from_tz: str,
     to_tz: str,
-    tzinfo: timezone | zoneinfo.ZoneInfo,
+    tzinfo: timezone | ZoneInfo,
     tu: TimeUnit,
 ) -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(tu))
-    result = ts.dt.cast_time_zone(from_tz).dt.cast_time_zone(to_tz).item()
+    result = ts.dt.replace_time_zone(from_tz).dt.replace_time_zone(to_tz).item()
     expected = datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo)
     assert result == expected
 
 
-def test_with_time_zone_invalid() -> None:
+def test_strptime_with_tz() -> None:
+    result = (
+        pl.Series(["2020-01-01 03:00:00"])
+        .str.strptime(pl.Datetime("us", "Africa/Monrovia"))
+        .item()
+    )
+    assert result == datetime(2020, 1, 1, 3, tzinfo=ZoneInfo(key="Africa/Monrovia"))
+
+
+@pytest.mark.parametrize(
+    ("tu", "tz"),
+    [
+        ("us", "Europe/London"),
+        ("ms", None),
+        ("ns", "+01:00"),
+    ],
+)
+def test_strptime_empty(tu: TimeUnit, tz: str | None) -> None:
+    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(tu, tz))
+    assert ts.dtype == pl.Datetime(tu, tz)
+
+
+def test_strptime_with_invalid_tz() -> None:
+    with pytest.raises(ComputeError, match="Could not parse time zone foo"):
+        pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
+    with pytest.raises(
+        ComputeError,
+        match="Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime.",
+    ):
+        pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
+            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z", tz_aware=True
+        )
+
+
+def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):
-        ts.dt.cast_time_zone("UTC").dt.with_time_zone("foo")
+        ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 
-def test_with_time_zone_on_tz_naive() -> None:
+def test_convert_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(
         ComputeError,
-        match="Cannot call with_time_zone on tz-naive. Set a time zone first with cast_time_zone",
+        match="Cannot call convert_time_zone on tz-naive. Set a time zone first with replace_time_zone",
     ):
-        ts.dt.with_time_zone("Africa/Bamako")
+        ts.dt.convert_time_zone("Africa/Bamako")
 
 
-def test_with_time_zone_fixed_offset() -> None:
+def test_convert_time_zone_fixed_offset() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    result = ts.dt.cast_time_zone("+00:00")
+    result = ts.dt.replace_time_zone("+00:00")
     assert result.dtype == pl.Datetime("us", "+00:00")
     assert result.item() == datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
 
 
 def test_tz_aware_get_idx_5010() -> None:
-    when = int(
-        datetime(2022, 1, 1, 12, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai")).timestamp()
-    )
+    when = int(datetime(2022, 1, 1, 12, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp())
     a = pa.array([when]).cast(pa.timestamp("s", tz="Asia/Shanghai"))
     assert int(pl.from_arrow(a)[0].timestamp()) == when  # type: ignore[union-attr]
 
@@ -1749,7 +1790,7 @@ def test_tz_datetime_duration_arithm_5221() -> None:
         data={"run_datetime": run_datetimes},
         schema=[("run_datetime", pl.Datetime(time_zone="UTC"))],
     )
-    utc = zoneinfo.ZoneInfo("UTC")
+    utc = ZoneInfo("UTC")
     assert out.to_dict(False) == {
         "run_datetime": [
             datetime(2022, 1, 1, 0, 0, tzinfo=utc),
@@ -1759,24 +1800,24 @@ def test_tz_datetime_duration_arithm_5221() -> None:
 
 
 def test_auto_infer_time_zone() -> None:
-    dt = datetime(2022, 10, 17, 10, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai"))
+    dt = datetime(2022, 10, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
     s = pl.Series([dt])
     assert s.dtype == pl.Datetime("us", "Asia/Shanghai")
     assert s[0] == dt
 
 
 def test_timezone_aware_date_range() -> None:
-    low = datetime(2022, 10, 17, 10, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai"))
-    high = datetime(2022, 11, 17, 10, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai"))
+    low = datetime(2022, 10, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    high = datetime(2022, 11, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
 
     assert pl.date_range(low, high, interval=timedelta(days=5)).to_list() == [
-        datetime(2022, 10, 17, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 10, 22, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 10, 27, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 1, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 6, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 11, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 16, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 10, 17, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 10, 22, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 10, 27, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 11, 1, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 11, 6, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 11, 11, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 11, 16, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
     ]
 
     with pytest.raises(
@@ -1826,7 +1867,7 @@ def test_logical_nested_take() -> None:
     }
 
 
-def test_cast_time_zone_from_naive() -> None:
+def test_replace_time_zone_from_naive() -> None:
     df = pl.DataFrame(
         {
             "date": pl.Series(["2022-01-01", "2022-01-02"]).str.strptime(
@@ -1836,42 +1877,34 @@ def test_cast_time_zone_from_naive() -> None:
     )
 
     assert df.select(
-        pl.col("date").cast(pl.Datetime).dt.cast_time_zone("America/New_York")
+        pl.col("date").cast(pl.Datetime).dt.replace_time_zone("America/New_York")
     ).to_dict(False) == {
         "date": [
-            datetime(
-                2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 1, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 1, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
         ]
     }
 
 
 @pytest.mark.parametrize("time_zone", ["UTC", "Africa/Abidjan"])
-def test_tz_localize_from_utc(time_zone: str) -> None:
-    ts_utc = (
-        pl.Series(["2018-10-28"]).str.strptime(pl.Datetime).dt.cast_time_zone(time_zone)
+def test_tz_localize_from_tz_aware(time_zone: str) -> None:
+    tz_aware = (
+        pl.Series(["2018-10-28"])
+        .str.strptime(pl.Datetime)
+        .dt.replace_time_zone(time_zone)
     )
-    err_msg = (
-        "^Cannot localize a tz-aware datetime. Consider using "
-        "'dt.with_time_zone' or 'dt.cast_time_zone'$"
-    )
-    deprecation_msg = (
-        "`tz_localize` has been deprecated in favor of `cast_time_zone`."
-        " This method will be removed in version 0.18.0"
-    )
-    with pytest.raises(ComputeError, match=err_msg), pytest.warns(
-        DeprecationWarning, match=deprecation_msg
-    ):
-        ts_utc.dt.tz_localize("America/Maceio")
+    deprecation_msg = "please use `.replace_time_zone` instead"
+    with pytest.warns(DeprecationWarning, match=deprecation_msg):
+        # ignoring as this is being redirected and will be removed anyway
+        tz_aware.dt.tz_localize("America/Maceio")  # type: ignore[attr-defined]
 
 
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.cast_time_zone("UTC").dt.with_time_zone("Europe/Brussels")
-    result = tz_aware.dt.cast_time_zone(None).item()
+    tz_aware = tz_naive.dt.replace_time_zone("UTC").dt.convert_time_zone(
+        "Europe/Brussels"
+    )
+    result = tz_aware.dt.replace_time_zone(None).item()
     assert result == datetime(2020, 1, 1, 4)
 
 
@@ -1880,57 +1913,29 @@ def test_tz_aware_truncate() -> None:
         {
             "dt": pl.date_range(
                 low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="12h"
-            ).dt.cast_time_zone("America/New_York")
+            ).dt.replace_time_zone("America/New_York")
         }
     )
     assert test.with_columns(pl.col("dt").dt.truncate("1d").alias("trunced")).to_dict(
         False
     ) == {
         "dt": [
-            datetime(
-                2022, 11, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 1, 12, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 2, 12, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 3, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 3, 12, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 4, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
+            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 1, 12, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 2, 12, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 3, 12, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
         ],
         "trunced": [
-            datetime(
-                2022, 11, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 3, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 3, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 4, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
+            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
         ],
     }
 
@@ -1944,8 +1949,8 @@ def test_tz_aware_truncate() -> None:
             )
         }
     ).lazy()
-    lf = lf.with_columns(pl.col("naive").dt.cast_time_zone("UTC").alias("UTC"))
-    lf = lf.with_columns(pl.col("UTC").dt.with_time_zone("US/Central").alias("CST"))
+    lf = lf.with_columns(pl.col("naive").dt.replace_time_zone("UTC").alias("UTC"))
+    lf = lf.with_columns(pl.col("UTC").dt.convert_time_zone("US/Central").alias("CST"))
     lf = lf.with_columns(pl.col("CST").dt.truncate("1d").alias("CST truncated"))
     assert lf.collect().to_dict(False) == {
         "naive": [
@@ -1959,36 +1964,46 @@ def test_tz_aware_truncate() -> None:
             datetime(2022, 1, 1, 6, 0),
         ],
         "UTC": [
-            datetime(2021, 12, 31, 23, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 1, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 2, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 3, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 4, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 5, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
-            datetime(2022, 1, 1, 6, 0, tzinfo=zoneinfo.ZoneInfo(key="UTC")),
+            datetime(2021, 12, 31, 23, 0, tzinfo=ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 1, 0, tzinfo=ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 2, 0, tzinfo=ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 3, 0, tzinfo=ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 4, 0, tzinfo=ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 5, 0, tzinfo=ZoneInfo(key="UTC")),
+            datetime(2022, 1, 1, 6, 0, tzinfo=ZoneInfo(key="UTC")),
         ],
         "CST": [
-            datetime(2021, 12, 31, 17, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 18, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 19, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 20, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 21, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 22, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 23, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 17, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 18, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 19, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 20, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 21, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 22, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 23, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
         ],
         "CST truncated": [
-            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2021, 12, 31, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
-            datetime(2022, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2021, 12, 31, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
+            datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Central")),
         ],
     }
+
+
+def test_strftime_invalid_format() -> None:
+    tz_naive = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    with pytest.raises(
+        ComputeError, match="Cannot format NaiveDateTime with format '%z'"
+    ):
+        tz_naive.dt.strftime("%z")
+    with pytest.raises(ComputeError, match="Cannot format DateTime with format '%q'"):
+        tz_naive.dt.replace_time_zone("UTC").dt.strftime("%q")
 
 
 def test_tz_aware_strftime() -> None:
@@ -1996,25 +2011,17 @@ def test_tz_aware_strftime() -> None:
         {
             "dt": pl.date_range(
                 low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="24h"
-            ).dt.cast_time_zone("America/New_York")
+            ).dt.replace_time_zone("America/New_York")
         }
     )
     assert df.with_columns(pl.col("dt").dt.strftime("%c").alias("fmt")).to_dict(
         False
     ) == {
         "dt": [
-            datetime(
-                2022, 11, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 2, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 3, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                2022, 11, 4, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
+            datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 3, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
         ],
         "fmt": [
             "Tue Nov  1 00:00:00 2022",
@@ -2025,14 +2032,34 @@ def test_tz_aware_strftime() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("time_zone", "directive", "expected"),
+    [
+        ("Pacific/Pohnpei", "%z", "+1100"),
+        ("Pacific/Pohnpei", "%Z", "+11"),
+        ("+01:00", "%z", "+0100"),
+        ("+01:00", "%Z", "+01:00"),
+    ],
+)
+def test_tz_aware_with_timezone_directive(
+    time_zone: str, directive: str, expected: str
+) -> None:
+    tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
+    tz_aware = tz_naive.dt.replace_time_zone(time_zone)
+    result = tz_aware.dt.strftime(directive).item()
+    assert result == expected
+
+
 def test_tz_aware_filter_lit() -> None:
     start = datetime(1970, 1, 1)
     stop = datetime(1970, 1, 1, 7)
-    dt = datetime(1970, 1, 1, 6, tzinfo=zoneinfo.ZoneInfo("America/New_York"))
+    dt = datetime(1970, 1, 1, 6, tzinfo=ZoneInfo("America/New_York"))
 
     assert (
         pl.DataFrame({"date": pl.date_range(start, stop, "1h")})
-        .with_columns(pl.col("date").dt.cast_time_zone("America/New_York").alias("nyc"))
+        .with_columns(
+            pl.col("date").dt.replace_time_zone("America/New_York").alias("nyc")
+        )
         .filter(pl.col("nyc") < dt)
     ).to_dict(False) == {
         "date": [
@@ -2044,24 +2071,12 @@ def test_tz_aware_filter_lit() -> None:
             datetime(1970, 1, 1, 5, 0),
         ],
         "nyc": [
-            datetime(
-                1970, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                1970, 1, 1, 1, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                1970, 1, 1, 2, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                1970, 1, 1, 3, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                1970, 1, 1, 4, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
-            datetime(
-                1970, 1, 1, 5, 0, tzinfo=zoneinfo.ZoneInfo(key="America/New_York")
-            ),
+            datetime(1970, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(1970, 1, 1, 1, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(1970, 1, 1, 2, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(1970, 1, 1, 3, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(1970, 1, 1, 4, 0, tzinfo=ZoneInfo(key="America/New_York")),
+            datetime(1970, 1, 1, 5, 0, tzinfo=ZoneInfo(key="America/New_York")),
         ],
     }
 
@@ -2196,8 +2211,8 @@ def test_tz_aware_day_weekday() -> None:
 
     df = df.with_columns(
         [
-            pl.col("date").dt.with_time_zone("Asia/Tokyo").alias("tyo_date"),
-            pl.col("date").dt.with_time_zone("America/New_York").alias("ny_date"),
+            pl.col("date").dt.convert_time_zone("Asia/Tokyo").alias("tyo_date"),
+            pl.col("date").dt.convert_time_zone("America/New_York").alias("ny_date"),
         ]
     )
 

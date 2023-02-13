@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from datetime import datetime
 from typing import Any, cast, no_type_check
 
@@ -27,6 +28,8 @@ def test_df_from_numpy() -> None:
             "float16": np.array([21.7, 21.8, 21], dtype=np.float16),
             "float32": np.array([21.7, 21.8, 21], dtype=np.float32),
             "float64": np.array([21.7, 21.8, 21], dtype=np.float64),
+            "intc": np.array([1, 3, 2], dtype=np.intc),
+            "uintc": np.array([1, 3, 2], dtype=np.uintc),
             "str": np.array(["string1", "string2", "string3"], dtype=np.str_),
             "bytes": np.array(
                 ["byte_string1", "byte_string2", "byte_string3"], dtype=np.bytes_
@@ -46,8 +49,10 @@ def test_df_from_numpy() -> None:
         pl.datatypes.Float32,
         pl.datatypes.Float32,
         pl.datatypes.Float64,
+        pl.datatypes.Int32,
+        pl.datatypes.UInt32,
         pl.datatypes.Utf8,
-        pl.datatypes.Object,
+        pl.datatypes.Binary,
     ]
     assert out == df.dtypes
 
@@ -83,6 +88,10 @@ def test_to_numpy() -> None:
     test_series_to_numpy("float64", [21.7, 21.8, 21], pl.Float64, np.float64)
 
     test_series_to_numpy("str", ["string1", "string2", "string3"], pl.Utf8, np.object_)
+    # without pyarrow
+    arr = pl.Series(["a", "b", None]).to_numpy(use_pyarrow=False)
+    assert arr.dtype == np.dtype("O")
+    assert list(arr) == ["a", "b", None]
 
 
 def test_from_pandas() -> None:
@@ -437,8 +446,53 @@ def test_no_rechunk() -> None:
 def test_cat_to_pandas() -> None:
     df = pl.DataFrame({"a": ["best", "test"]})
     df = df.with_columns(pl.all().cast(pl.Categorical))
-    out = df.to_pandas()
-    assert "category" in str(out["a"].dtype)
+    pd_out = df.to_pandas()
+    assert "category" in str(pd_out["a"].dtype)
+
+    try:
+        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+        assert pd_pa_out["a"].dtype.type == pa.DictionaryType
+    except ModuleNotFoundError:
+        # Skip test if Pandas 1.5.x is not installed.
+        pass
+
+
+def test_to_pandas() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [6, None, 8], "c": ["a", "b", "c"], "d": [None, "e", "f"]}
+    )
+    df = df.with_columns(
+        [
+            pl.col("c").cast(pl.Categorical).alias("e"),
+            pl.col("d").cast(pl.Categorical).alias("f"),
+        ]
+    )
+    pd_out = df.to_pandas()
+    pd_out_dtypes_expected = [
+        np.int64,
+        np.float64,
+        np.object_,
+        np.object_,
+        pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
+        pd.CategoricalDtype(categories=["e", "f"], ordered=False),
+    ]
+    assert pd_out.dtypes.to_list() == pd_out_dtypes_expected
+
+    try:
+        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+        pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
+        pd_pa_dtypes_names_expected = [
+            "int64[pyarrow]",
+            "int64[pyarrow]",
+            "large_string[pyarrow]",
+            "large_string[pyarrow]",
+            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
+            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
+        ]
+        assert pd_pa_dtypes_names == pd_pa_dtypes_names_expected
+    except ModuleNotFoundError:
+        # Skip test if Pandas 1.5.x is not installed.
+        pass
 
 
 def test_numpy_to_lit() -> None:
@@ -495,7 +549,7 @@ def test_from_empty_arrow() -> None:
     tbl = pa.Table.from_pandas(df1)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b", "__index_level_0__"]
-    assert out.dtypes == [pl.Float64, pl.Int8]
+    assert out.dtypes == [pl.Float64, pl.Null]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b"]
@@ -513,7 +567,7 @@ def test_from_null_column() -> None:
 
     assert df.shape == (2, 1)
     assert df.columns == ["n/a"]
-    assert dtype_to_py_type(df.dtypes[0]) == int
+    assert dtype_to_py_type(df.dtypes[0]) is None
 
 
 def test_to_pandas_series() -> None:
@@ -598,3 +652,22 @@ def test_from_pandas_null_struct_6412() -> None:
     ]
     df_pandas = pd.DataFrame(data)
     assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}
+
+
+@typing.no_type_check
+def test_from_pyarrow_map() -> None:
+    pa_table = pa.table(
+        [[1, 2], [[("a", "something")], [("a", "else"), ("b", "another key")]]],
+        schema=pa.schema(
+            [("idx", pa.int16()), ("mapping", pa.map_(pa.string(), pa.string()))]
+        ),
+    )
+
+    df = pl.from_arrow(pa_table)
+    assert df.to_dict(False) == {
+        "idx": [1, 2],
+        "mapping": [
+            [{"key": "a", "value": "something"}],
+            [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
+        ],
+    }

@@ -83,3 +83,23 @@ def test_write_ndjson_with_trailing_newline() -> None:
 
     expected = pl.DataFrame({"Column1": ["Value1"]})
     assert_frame_equal(df, expected)
+
+
+def test_read_ndjson_empty_array() -> None:
+    assert pl.read_ndjson(io.StringIO("""{"foo": {"bar": []}}""")).to_dict(False) == {
+        "foo": [{"": None}]
+    }
+
+
+def test_ndjson_nested_null() -> None:
+    payload = """{"foo":{"bar":[{}]}}"""
+    assert pl.read_ndjson(io.StringIO(payload)).to_dict(False) == {
+        "foo": [{"bar": [{"": None}]}]
+    }
+
+
+def test_ndjson_nested_utf8_int() -> None:
+    ndjson = """{"Accumulables":[{"Value":32395888},{"Value":"539454"}]}"""
+    assert pl.read_ndjson(io.StringIO(ndjson)).to_dict(False) == {
+        "Accumulables": [[{"Value": "32395888"}, {"Value": "539454"}]]
+    }

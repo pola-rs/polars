@@ -698,3 +698,25 @@ def test_list_eval_all_null() -> None:
     assert df.select(pl.col("bar").arr.eval(pl.element())).to_dict(False) == {
         "bar": [None, None, None]
     }
+
+
+def test_list_function_group_awareness() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [100, 103, 105, 106, 105, 104, 103, 106, 100, 102],
+            "group": [0, 0, 1, 1, 1, 1, 1, 1, 2, 2],
+        }
+    )
+
+    assert df.groupby("group").agg(
+        [
+            pl.col("a").list().arr.get(0).alias("get"),
+            pl.col("a").list().arr.take([0]).alias("take"),
+            pl.col("a").list().arr.slice(0, 3).alias("slice"),
+        ]
+    ).sort("group").to_dict(False) == {
+        "group": [0, 1, 2],
+        "get": [[100], [105], [100]],
+        "take": [[[100]], [[105]], [[100]]],
+        "slice": [[[100, 103]], [[105, 106, 105]], [[100, 102]]],
+    }

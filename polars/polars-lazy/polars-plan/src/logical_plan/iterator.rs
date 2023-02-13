@@ -97,7 +97,7 @@ macro_rules! push_expr {
 impl Expr {
     /// Expr::mutate().apply(fn())
     pub fn mutate(&mut self) -> ExprMut {
-        let mut stack = Vec::with_capacity(8);
+        let mut stack = Vec::with_capacity(4);
         stack.push(self);
         ExprMut { stack }
     }
@@ -151,7 +151,7 @@ impl<'a> IntoIterator for &'a Expr {
     type IntoIter = ExprIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut stack = Vec::with_capacity(8);
+        let mut stack = Vec::with_capacity(4);
         stack.push(self);
         ExprIter { stack }
     }
@@ -282,7 +282,7 @@ pub trait ArenaExprIter<'a> {
 
 impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
     fn iter(&self, root: Node) -> AExprIter<'a> {
-        let mut stack = Vec::with_capacity(8);
+        let mut stack = Vec::with_capacity(4);
         stack.push(root);
         AExprIter {
             stack,

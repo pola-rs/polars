@@ -470,11 +470,21 @@ def test_to_pandas() -> None:
         assert b.isnull().sum() == 1
 
         if a.dtype == pl.List:
-            vals = [(None if x is None else x.tolist()) for x in b]
+            vals_b = [(None if x is None else x.tolist()) for x in b]
         else:
-            vals = b.replace({np.nan: None}).values.tolist()  # type: ignore[union-attr]
+            vals_b = b.replace({np.nan: None}).values.tolist()  # type: ignore[union-attr]
 
-        assert vals == test_data
+        assert vals_b == test_data
+
+        try:
+            c = a.to_pandas(use_pyarrow_extension_array=True)
+            assert a.name == c.name
+            assert c.isnull().sum() == 1
+            vals_c = [None if x is pd.NA else x for x in c.tolist()]
+            assert vals_c == test_data
+        except ModuleNotFoundError:
+            # Skip test if Pandas 1.5.x is not installed.
+            pass
 
 
 def test_to_python() -> None:
@@ -1529,7 +1539,12 @@ def test_comparisons_float_series_to_int() -> None:
 
 def test_comparisons_bool_series_to_int() -> None:
     srs_bool = pl.Series([True, False])
-    # todo: do we want this to work?
+
+    # (native bool comparison should work...)
+    for t, f in ((True, False), (False, True)):
+        assert list(srs_bool == t) == list(srs_bool != f) == [t, f]
+
+    # TODO: do we want this to work?
     assert_series_equal(srs_bool / 1, pl.Series([True, False], dtype=Float64))
     match = (
         r"cannot do arithmetic with series of dtype: Boolean"
@@ -1547,14 +1562,16 @@ def test_comparisons_bool_series_to_int() -> None:
         srs_bool % 2
     with pytest.raises(ValueError, match=match):
         srs_bool * 1
-    with pytest.raises(
-        TypeError, match=r"'<' not supported between instances of 'Series' and 'int'"
-    ):
-        srs_bool < 2  # noqa: B015
-    with pytest.raises(
-        TypeError, match=r"'>' not supported between instances of 'Series' and 'int'"
-    ):
-        srs_bool > 2  # noqa: B015
+
+    from operator import ge, gt, le, lt
+
+    for op in (ge, gt, le, lt):
+        for scalar in (0, 1.0, True, False):
+            with pytest.raises(
+                TypeError,
+                match=r"'\W{1,2}' not supported .* 'Series' and '(int|bool|float)'",
+            ):
+                op(srs_bool, scalar)
 
 
 def test_abs() -> None:
@@ -1633,17 +1650,20 @@ def test_arg_min_and_arg_max() -> None:
     assert s.arg_max() == 0
 
     s = pl.Series([None, True, False, True])
-    assert s.arg_min() == 2
+    assert s.arg_min() == 0
     assert s.arg_max() == 1
     s = pl.Series([None, None], dtype=pl.Boolean)
-    assert s.arg_min() is None
-    assert s.arg_max() is None
+    assert s.arg_min() == 0
+    assert s.arg_max() == 0
     s = pl.Series([True, True])
     assert s.arg_min() == 0
     assert s.arg_max() == 0
     s = pl.Series([False, False])
     assert s.arg_min() == 0
     assert s.arg_max() == 0
+    s = pl.Series(["a", "c", "b"])
+    assert s.arg_min() == 0
+    assert s.arg_max() == 1
 
 
 def test_is_null_is_not_null() -> None:
@@ -1851,8 +1871,18 @@ def test_is_between_datetime() -> None:
 )
 @pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
 def test_trigonometric(f: str) -> None:
-    s = pl.Series("a", [0.0, math.pi])
-    expected = pl.Series("a", getattr(np, f)(s.to_numpy()))
+    s = pl.Series("a", [0.0, math.pi, None, math.nan])
+    expected = (
+        pl.Series("a", getattr(np, f)(s.to_numpy()))
+        .to_frame()
+        .with_columns(
+            pl.when(s.is_null())  # type: ignore[arg-type]
+            .then(None)
+            .otherwise(pl.col("a"))
+            .alias("a")
+        )
+        .to_series()
+    )
     result = getattr(s, f)()
     assert_series_equal(result, expected)
 
@@ -1873,21 +1903,40 @@ def test_ewm_mean() -> None:
     s = pl.Series([2, 5, 3])
 
     expected = pl.Series([2.0, 4.0, 3.4285714285714284])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True), expected)
+    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=True), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([2.0, 3.8, 3.421053])
-    assert_series_equal(s.ewm_mean(com=2.0, adjust=True), expected)
+    assert_series_equal(s.ewm_mean(com=2.0, adjust=True, ignore_nulls=True), expected)
+    assert_series_equal(s.ewm_mean(com=2.0, adjust=True, ignore_nulls=False), expected)
 
     expected = pl.Series([2.0, 3.5, 3.25])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=False), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
+    )
 
     s = pl.Series([2, 3, 5, 7, 4])
 
     expected = pl.Series([None, 2.666667, 4.0, 5.6, 4.774194])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=2), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([None, None, 4.0, 5.6, 4.774194])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=3), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=True), expected
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=False), expected
+    )
 
     s = pl.Series([None, 1.0, 5.0, 7.0, None, 2.0, 5.0, 4])
 
@@ -1903,10 +1952,32 @@ def test_ewm_mean() -> None:
             4.174603174603175,
         ],
     )
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, min_periods=1), expected)
+    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=True), expected)
+    expected = pl.Series(
+        [
+            None,
+            1.0,
+            3.666666666666667,
+            5.571428571428571,
+            5.571428571428571,
+            3.08695652173913,
+            4.2,
+            4.092436974789916,
+        ]
+    )
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
+    )
 
     expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.5, 4.25, 4.125])
-    assert_series_equal(s.ewm_mean(alpha=0.5, adjust=False, min_periods=1), expected)
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
+    )
+
+    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0])
+    assert_series_equal(
+        s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
+    )
 
 
 def test_ewm_mean_leading_nulls() -> None:
@@ -1934,21 +2005,31 @@ def test_ewm_mean_min_periods() -> None:
     series = pl.Series([1.0, None, 2.0, None, 3.0])
 
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
-    assert ewm_mean.to_list() == [
-        1.0,
-        1.0,
-        1.6666666666666665,
-        1.6666666666666665,
-        2.4285714285714284,
-    ]
+    assert_series_equal(
+        ewm_mean,
+        pl.Series(
+            [
+                1.0,
+                1.0,
+                1.6666666666666665,
+                1.6666666666666665,
+                2.4285714285714284,
+            ]
+        ),
+    )
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
-    assert ewm_mean.to_list() == [
-        None,
-        None,
-        1.6666666666666665,
-        1.6666666666666665,
-        2.4285714285714284,
-    ]
+    assert_series_equal(
+        ewm_mean,
+        pl.Series(
+            [
+                None,
+                None,
+                1.6666666666666665,
+                1.6666666666666665,
+                2.4285714285714284,
+            ]
+        ),
+    )
 
 
 def test_ewm_std_var() -> None:
@@ -2101,17 +2182,6 @@ def test_cumulative_eval() -> None:
     expr3 = expr1 - expr2
     expected3 = pl.Series("values", [0.0, -3.0, -8.0, -15.0, -24.0])
     assert_series_equal(s.cumulative_eval(expr3), expected3)
-
-
-def test_drop_nan_ignore_null_3525() -> None:
-    df = pl.DataFrame({"a": [1.0, float("NaN"), 2.0, None, 3.0, 4.0]})
-    assert df.select(pl.col("a").drop_nans()).to_series().to_list() == [
-        1.0,
-        2.0,
-        None,
-        3.0,
-        4.0,
-    ]
 
 
 def test_reverse() -> None:

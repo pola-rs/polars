@@ -31,7 +31,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
                     AnyValue::Utf8Owned(s) => s.as_str(),
                     _ => unreachable!(),
                 };
-                Some(val.to_string())
+                Some(format!("'{val}'"))
             } else if matches!(dtype, DataType::Boolean) {
                 if let AnyValue::Boolean(val) = av {
                     // python bools are capitalized

@@ -188,9 +188,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         ))
     }
     fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::ComputeError(
-            "cannot do division on logical".into(),
-        ))
+        self.0.deref().divide(_rhs.to_physical_repr().as_ref())
     }
     fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::ComputeError(
@@ -401,14 +399,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.arg_unique()
-    }
-
-    fn arg_min(&self) -> Option<usize> {
-        self.0.arg_min()
-    }
-
-    fn arg_max(&self) -> Option<usize> {
-        self.0.arg_max()
     }
 
     fn is_null(&self) -> BooleanChunked {

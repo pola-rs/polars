@@ -324,7 +324,9 @@ pub trait TemporalMethods: AsSeries {
             #[cfg(feature = "dtype-date")]
             DataType::Date => s.date().map(|ca| ca.strftime(fmt).into_series()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Datetime(_, _) => {
+                s.datetime().map(|ca| Ok(ca.strftime(fmt)?.into_series()))?
+            }
             #[cfg(feature = "dtype-time")]
             DataType::Time => s.time().map(|ca| ca.strftime(fmt).into_series()),
             _ => Err(PolarsError::InvalidOperation(

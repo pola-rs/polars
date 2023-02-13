@@ -357,13 +357,13 @@ impl DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
+            // left join tuples are always in ascending order
             let sorted = if left_join || sorted {
                 IsSorted::Ascending
             } else {
                 IsSorted::Not
             };
 
-            // left join tuples are always in ascending order
             self._take_unchecked_slice2(join_tuples, true, sorted)
         }
     }

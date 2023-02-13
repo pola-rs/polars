@@ -549,18 +549,6 @@ def test_sort() -> None:
     )
 
 
-def test_drop_nulls() -> None:
-    df = pl.DataFrame({"nrs": [None, 1, 2, 3, None, 4, 5, None]})
-    assert df.select(col("nrs").drop_nulls()).to_dict(as_series=False) == {
-        "nrs": [1, 2, 3, 4, 5]
-    }
-
-    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8], "ham": ["a", "b", "c"]})
-    expected = pl.DataFrame({"foo": [1, 3], "bar": [6, 8], "ham": ["a", "c"]})
-    result = df.lazy().drop_nulls().collect()
-    assert_frame_equal(result, expected)
-
-
 def test_all_expr() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert_frame_equal(df.select([pl.all()]), df)
@@ -985,6 +973,20 @@ def test_ufunc_expr_not_first() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_ufunc_multiple_expr() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [1, 2, 3], dtype=pl.Float64),
+            pl.Series("b", [4, 5, 6], dtype=pl.Float64),
+        ]
+    )
+
+    with pytest.raises(
+        ValueError, match="Numpy ufunc can only be used with one expression, 2 given"
+    ):
+        df.select(np.arctan2(pl.col("a"), pl.col("b")))  # type: ignore[call-overload]
+
+
 def test_clip() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     assert df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
@@ -1037,14 +1039,6 @@ def test_rename() -> None:
     lf = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     out = lf.rename({"a": "foo", "b": "bar"}).collect()
     assert out.columns == ["foo", "bar", "c"]
-
-
-def test_drop_columns() -> None:
-    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop(["a", "b"])
-    assert out.columns == ["c"]
-
-    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop("a")
-    assert out.columns == ["b", "c"]
 
 
 def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:

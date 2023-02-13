@@ -14,8 +14,7 @@ if TYPE_CHECKING:
     )
     from polars.polars import PyDataFrame
 
-# A type variable used to refer to a polars.DataFrame or any subclass of it.
-# Used to annotate DataFrame methods which returns the same type as self.
+# A type variable used to refer to a polars.DataFrame or any subclass of it
 DF = TypeVar("DF", bound="pli.DataFrame")
 
 

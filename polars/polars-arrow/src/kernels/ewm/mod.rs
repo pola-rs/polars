@@ -11,6 +11,7 @@ pub struct EWMOptions {
     pub adjust: bool,
     pub bias: bool,
     pub min_periods: usize,
+    pub ignore_nulls: bool,
 }
 
 impl Default for EWMOptions {
@@ -20,6 +21,7 @@ impl Default for EWMOptions {
             adjust: true,
             bias: false,
             min_periods: 1,
+            ignore_nulls: true,
         }
     }
 }
@@ -38,16 +40,37 @@ impl EWMOptions {
         self.alpha = 2.0 / (span as f64 + 1.0);
         self
     }
-
     pub fn and_half_life(mut self, half_life: f64) -> Self {
         assert!(half_life > 0.0);
         self.alpha = 1.0 - ((-2.0f64).ln() / half_life).exp();
         self
     }
-
     pub fn and_com(mut self, com: f64) -> Self {
         assert!(com > 0.0);
         self.alpha = 1.0 / (1.0 + com);
         self
     }
+    pub fn and_ignore_nulls(mut self, ignore_nulls: bool) -> Self {
+        self.ignore_nulls = ignore_nulls;
+        self
+    }
 }
+
+#[cfg(test)]
+macro_rules! assert_allclose {
+    ($xs:expr, $ys:expr, $tol:expr) => {
+        assert!($xs
+            .iter()
+            .zip($ys.iter())
+            .map(|(x, z)| {
+                match (x, z) {
+                    (Some(a), Some(b)) => (a - b).abs() < $tol,
+                    (None, None) => true,
+                    _ => false,
+                }
+            })
+            .fold(true, |acc, b| acc && b));
+    };
+}
+#[cfg(test)]
+pub(crate) use assert_allclose;

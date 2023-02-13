@@ -14,7 +14,6 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.dependencies import zoneinfo
 from polars.internals.construction import iterable_to_pydf
 from polars.testing import (
     assert_frame_equal,
@@ -25,6 +24,13 @@ from polars.testing.parametric import columns
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import JoinStrategy, UniqueKeepStrategy
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+else:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_version() -> None:
@@ -493,29 +499,6 @@ def test_head_tail_limit() -> None:
     assert len(df.tail(-6)) == 4
 
 
-def test_drop_nulls() -> None:
-    df = pl.DataFrame(
-        {
-            "foo": [1, 2, 3],
-            "bar": [6, None, 8],
-            "ham": ["a", "b", "c"],
-        }
-    )
-    result = df.drop_nulls()
-    expected = pl.DataFrame(
-        {
-            "foo": [1, 3],
-            "bar": [6, 8],
-            "ham": ["a", "c"],
-        }
-    )
-    assert_frame_equal(result, expected)
-
-    # below we only drop entries if they are null in the column 'foo'
-    result = df.drop_nulls("foo")
-    assert_frame_equal(result, df)
-
-
 def test_pipe() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
 
@@ -643,15 +626,6 @@ def test_extend() -> None:
         assert_frame_equal(df1, expected)
 
 
-def test_drop() -> None:
-    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
-    df = df.drop(columns="a")
-    assert df.shape == (3, 2)
-    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
-    s = df.drop_in_place("a")
-    assert s.name == "a"
-
-
 def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
@@ -751,24 +725,31 @@ def test_multiple_columns_drop() -> None:
 
 
 def test_concat() -> None:
-    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    df1 = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    df2 = pl.concat([df1, df1])
 
-    df2 = pl.concat([df, df])
     assert df2.shape == (6, 3)
     assert df2.n_chunks() == 1  # the default is to rechunk
+    assert df2.rows() == df1.rows() + df1.rows()
+    assert pl.concat([df1, df1], rechunk=False).n_chunks() == 2
 
-    assert pl.concat([df, df], rechunk=False).n_chunks() == 2
+    # concat from generator of frames
+    df3 = pl.concat(items=(df1 for _ in range(2)))
+    assert_frame_equal(df2, df3)
 
-    # check if a remains unchanged
-    a = pl.from_records(((1, 2), (1, 2)))
-    _ = pl.concat([a, a, a])
-    assert a.shape == (2, 2)
+    # check that df4 is not modified following concat of itself
+    df4 = pl.from_records(((1, 2), (1, 2)))
+    _ = pl.concat([df4, df4, df4])
 
+    assert df4.shape == (2, 2)
+    assert df4.rows() == [(1, 1), (2, 2)]
+
+    # misc error conditions
     with pytest.raises(ValueError):
         _ = pl.concat([])
 
     with pytest.raises(ValueError):
-        pl.concat([df, df], how="rubbish")  # type: ignore[call-overload]
+        pl.concat([df1, df1], how="rubbish")  # type: ignore[call-overload]
 
 
 def test_arg_where() -> None:
@@ -791,12 +772,12 @@ def test_get_dummies() -> None:
     expected = pl.DataFrame(
         {
             "i": [1, 2, 3],
-            "category_cat": [0, 1, 1],
-            "category_dog": [1, 0, 0],
+            "category|cat": [0, 1, 1],
+            "category|dog": [1, 0, 0],
         },
-        schema={"i": pl.Int32, "category_cat": pl.UInt8, "category_dog": pl.UInt8},
+        schema={"i": pl.Int32, "category|cat": pl.UInt8, "category|dog": pl.UInt8},
     )
-    result = pl.get_dummies(df, columns=["category"])
+    result = pl.get_dummies(df, columns=["category"], separator="|")
     assert_frame_equal(result, expected)
 
 
@@ -2528,7 +2509,7 @@ def test_with_columns() -> None:
             "h": pl.Series(values=[1, 1, 1, 1], dtype=pl.Int32),
             "i": 3.2,
             "j": [1, 2, 3, 4],
-            "k": pl.Series(values=[None, None, None, None], dtype=pl.Boolean),
+            "k": pl.Series(values=[None, None, None, None], dtype=pl.Null),
             "l": datetime.datetime(2001, 1, 1, 0, 0),
         }
     )
@@ -2759,7 +2740,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_us = "America/New_York"
     tz_europe = "Europe/Amsterdam"
 
-    dtm = datetime(2022, 10, 12, 12, 30, tzinfo=zoneinfo.ZoneInfo("UTC"))
+    dtm = datetime(2022, 10, 12, 12, 30, tzinfo=ZoneInfo("UTC"))
     for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
         for type_overrides in (
             {
@@ -2782,8 +2763,8 @@ def test_init_datetimes_with_timezone() -> None:
             assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
             assert df.rows() == [
                 (
-                    datetime(2022, 10, 12, 8, 30, tzinfo=zoneinfo.ZoneInfo(tz_us)),
-                    datetime(2022, 10, 12, 14, 30, tzinfo=zoneinfo.ZoneInfo(tz_europe)),
+                    datetime(2022, 10, 12, 8, 30, tzinfo=ZoneInfo(tz_us)),
+                    datetime(2022, 10, 12, 14, 30, tzinfo=ZoneInfo(tz_europe)),
                 )
             ]
 
@@ -2805,8 +2786,8 @@ def test_init_physical_with_timezone() -> None:
         assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
         assert df.rows() == [
             (
-                datetime(2022, 10, 12, 16, 30, tzinfo=zoneinfo.ZoneInfo(tz_uae)),
-                datetime(2022, 10, 12, 21, 30, tzinfo=zoneinfo.ZoneInfo(tz_asia)),
+                datetime(2022, 10, 12, 16, 30, tzinfo=ZoneInfo(tz_uae)),
+                datetime(2022, 10, 12, 21, 30, tzinfo=ZoneInfo(tz_asia)),
             )
         ]
 

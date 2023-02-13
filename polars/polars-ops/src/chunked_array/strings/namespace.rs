@@ -8,7 +8,7 @@ use polars_arrow::export::arrow::compute::substring::substring;
 use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
 use polars_core::export::num::Num;
-use polars_core::export::regex::{escape, Regex};
+use polars_core::export::regex::{escape, NoExpand, Regex};
 
 use super::*;
 #[cfg(feature = "string_encoding")]
@@ -159,19 +159,11 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         ca.apply(f)
     }
 
-    /// Check if strings contain a regex pattern; take literal fast-path if
-    /// no special chars and strlen <= 96 chars (otherwise regex faster).
+    /// Check if strings contain a regex pattern.
     fn contains(&self, pat: &str) -> PolarsResult<BooleanChunked> {
-        let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
-        let f = |s: &str| {
-            if lit && (s.len() <= 96) {
-                s.contains(pat)
-            } else {
-                reg.is_match(s)
-            }
-        };
+        let f = |s: &str| reg.is_match(s);
         let mut out: BooleanChunked = if !ca.has_validity() {
             ca.into_no_null_iter().map(f).collect()
         } else {
@@ -183,6 +175,9 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Check if strings contain a given literal
     fn contains_literal(&self, lit: &str) -> PolarsResult<BooleanChunked> {
+        // note: benchmarking shows that the regex engine is actually
+        // faster at finding literal matches than str::contains.
+        // ref: https://github.com/pola-rs/polars/pull/6811
         self.contains(escape(lit).as_str())
     }
 
@@ -204,38 +199,37 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         out
     }
 
-    /// Replace the leftmost regex-matched (sub)string with another string; take
-    /// fast-path for small (<= 32 chars) strings (otherwise regex faster).
+    /// Replace the leftmost regex-matched (sub)string with another string
     fn replace<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
-        let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
-        let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
-        let f = |s: &'a str| {
-            if lit && (s.len() <= 32) {
-                Cow::Owned(s.replacen(pat, val, 1))
-            } else {
-                reg.replace(s, val)
-            }
-        };
+        let f = |s: &'a str| reg.replace(s, val);
+        let ca = self.as_utf8();
         Ok(ca.apply(f))
     }
 
     /// Replace the leftmost literal (sub)string with another string
-    fn replace_literal(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
-        self.replace(escape(pat).as_str(), val)
+    fn replace_literal<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
+        // note: benchmarking shows that using the regex engine for literal
+        // replacement is faster than str::replacen in almost all cases.
+        // ref: https://github.com/pola-rs/polars/pull/6777
+        let reg = Regex::new(escape(pat).as_str())?;
+        let f = |s: &'a str| reg.replace(s, NoExpand(val));
+        let ca = self.as_utf8();
+        Ok(ca.apply(f))
     }
 
     /// Replace all regex-matched (sub)strings with another string
     fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
-        let f = |s| reg.replace_all(s, val);
-        Ok(ca.apply(f))
+        Ok(ca.apply(|s| reg.replace_all(s, val)))
     }
 
     /// Replace all matching literal (sub)strings with another string
     fn replace_literal_all(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
-        self.replace_all(escape(pat).as_str(), val)
+        let ca = self.as_utf8();
+        let reg = Regex::new(escape(pat).as_str())?;
+        Ok(ca.apply(|s| reg.replace_all(s, NoExpand(val))))
     }
 
     /// Extract the nth capture group from pattern

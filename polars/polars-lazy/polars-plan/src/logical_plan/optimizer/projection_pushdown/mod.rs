@@ -4,6 +4,7 @@ mod hstack;
 mod joins;
 mod melt;
 mod projection;
+mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
@@ -20,9 +21,10 @@ use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::melt::process_melt;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
+use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::{
-    aexpr_assign_renamed_root, aexpr_to_leaf_names, aexpr_to_leaf_nodes, check_input_node,
+    aexpr_assign_renamed_leaf, aexpr_to_leaf_names, aexpr_to_leaf_nodes, check_input_node,
     expr_is_projected_upstream,
 };
 
@@ -758,6 +760,34 @@ impl ProjectionPushDown {
                     input,
                     function: function.clone(),
                 };
+
+                if let FunctionNode::Rename {
+                    existing,
+                    new,
+                    swapping,
+                } = function
+                {
+                    process_rename(
+                        &mut acc_projections,
+                        &mut projected_names,
+                        expr_arena,
+                        existing,
+                        new,
+                        *swapping,
+                    )?;
+                    self.pushdown_and_assign(
+                        input,
+                        acc_projections,
+                        projected_names,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                    return Ok(lp);
+                }
+
+                let MapFunction {ref function, ..} = lp else { unreachable!() };
+
                 if function.allow_projection_pd() && !acc_projections.is_empty() {
                     let original_acc_projection_len = acc_projections.len();
 
