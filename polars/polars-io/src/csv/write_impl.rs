@@ -191,6 +191,33 @@ pub(crate) fn write<W: Write>(
             return Err(ComputeError(format!("CSV format does not support nested data. Consider using a different data format. Got: '{}'", s.dtype()).into()));
         }
     }
+    let mut formats: Vec<Option<&str>> = vec![];
+    let n_columns = df.shape().1;
+    if options.datetime_format.is_none() {
+        for col in df.get_columns() {
+            match col.dtype() {
+                DataType::Datetime(TimeUnit::Milliseconds, tz) => {
+                    formats.push(match tz {
+                        Some(_) => Some("%FT%H:%M:%S.%3f%z"),
+                        None => Some("%FT%H:%M:%S.%3f"),
+                    });
+                }
+                DataType::Datetime(TimeUnit::Microseconds, tz) => {
+                    formats.push(match tz {
+                        Some(_) => Some("%FT%H:%M:%S.%6f%z"),
+                        None => Some("%FT%H:%M:%S.%6f"),
+                    });
+                }
+                DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
+                    formats.push(match tz {
+                        Some(_) => Some("%FT%H:%M:%S.%9f%z"),
+                        None => Some("%FT%H:%M:%S.%9f"),
+                    });
+                }
+                _ => formats.push(None),
+            }
+        }
+    }
 
     // check that the double quote is valid utf8
     std::str::from_utf8(&[options.quote, options.quote])
@@ -232,28 +259,14 @@ pub(crate) fn write<W: Write>(
 
             let last_ptr = &col_iters[col_iters.len() - 1] as *const SeriesIter;
             let mut finished = false;
+            // loop rows
+            let mut i = 0;
             while !finished {
-                // loop cols
                 for col in &mut col_iters {
                     let datetime_format = match &options.datetime_format {
                         Some(datetime_format) => Some(datetime_format.as_str()),
-                        None => match col.dtype {
-                            DataType::Datetime(TimeUnit::Milliseconds, tz) => match tz {
-                                Some(_) => Some("%FT%H:%M:%S.%3f%z"),
-                                None => Some("%FT%H:%M:%S.%3f"),
-                            },
-                            DataType::Datetime(TimeUnit::Microseconds, tz) => match tz {
-                                Some(_) => Some("%FT%H:%M:%S.%6f%z"),
-                                None => Some("%FT%H:%M:%S.%6f"),
-                            },
-                            DataType::Datetime(TimeUnit::Nanoseconds, tz) => match tz {
-                                Some(_) => Some("%FT%H:%M:%S.%9f%z"),
-                                None => Some("%FT%H:%M:%S.%9f"),
-                            },
-                            _ => None,
-                        },
+                        None => unsafe { *formats.get_unchecked(i % n_columns) },
                     };
-                    // loop rows
                     match col.next() {
                         Some(value) => {
                             write_anyvalue(&mut write_buffer, value, options, datetime_format);
@@ -267,6 +280,7 @@ pub(crate) fn write<W: Write>(
                     if current_ptr != last_ptr {
                         write!(&mut write_buffer, "{delimiter}").unwrap()
                     }
+                    i += 1;
                 }
                 if !finished {
                     writeln!(&mut write_buffer).unwrap();
