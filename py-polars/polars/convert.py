@@ -394,6 +394,7 @@ def from_pandas(
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
+    *,
     include_index: bool = False,
 ) -> DataFrame:
     ...
@@ -405,6 +406,7 @@ def from_pandas(
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
+    *,
     include_index: bool = False,
 ) -> Series:
     ...
@@ -416,6 +418,7 @@ def from_pandas(
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
+    *,
     include_index: bool = False,
 ) -> DataFrame | Series:
     """
