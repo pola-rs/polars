@@ -175,6 +175,7 @@ def test_csv_missing_utf8_is_empty_string() -> None:
         (None, None, None, None, None, None, None),
     ]
 
+    f.seek(0)
     df = pl.read_csv(
         f,
         null_values=["na", r"\N"],
@@ -369,6 +370,7 @@ def test_read_csv_encoding() -> None:
         bytesio = io.BytesIO(bts)
 
         for use_pyarrow in (False, True):
+            bytesio.seek(0)
             for file in [file_path, file_str, bts, bytesio]:
                 assert_series_equal(
                     pl.read_csv(
@@ -981,6 +983,7 @@ def test_skip_rows_different_field_len() -> None:
         )
     )
     for empty_string, missing_value in ((True, ""), (False, None)):
+        csv.seek(0)
         assert pl.read_csv(
             csv, skip_rows_after_header=2, missing_utf8_is_empty_string=empty_string
         ).to_dict(False) == {
