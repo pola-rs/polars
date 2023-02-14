@@ -96,11 +96,11 @@ def _prepare_file_arg(
             return BytesIO(file)
 
     if isinstance(file, StringIO):
-        return BytesIO(file.getvalue().encode("utf8"))
+        return BytesIO(file.read().encode("utf8"))
 
     if isinstance(file, BytesIO):
         if has_non_utf8_non_utf8_lossy_encoding:
-            return BytesIO(file.getvalue().decode(encoding_str).encode("utf8"))
+            return BytesIO(file.read().decode(encoding_str).encode("utf8"))
         return managed_file(file)
 
     if isinstance(file, Path):
