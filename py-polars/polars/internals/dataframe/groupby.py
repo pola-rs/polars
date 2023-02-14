@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING, Callable, Generic, Iterator, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Generic,
+    Iterable,
+    Iterator,
+    Sequence,
+    TypeVar,
+)
 
 import polars.internals as pli
 from polars.utils import _timedelta_to_pl_duration, is_str_sequence
@@ -9,6 +17,7 @@ from polars.utils import _timedelta_to_pl_duration, is_str_sequence
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         ClosedInterval,
+        IntoExpr,
         RollingInterpolationMethod,
         StartBy,
     )
@@ -206,7 +215,7 @@ class GroupBy(Generic[DF]):
 
         return self._dataframe_class._from_pydf(self._df.groupby_apply(by, f))
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
+    def agg(self, aggs: IntoExpr | Iterable[IntoExpr]) -> pli.DataFrame:
         """
         Use multiple aggregations on columns.
 
@@ -215,7 +224,9 @@ class GroupBy(Generic[DF]):
         Parameters
         ----------
         aggs
-            Single / multiple aggregation expression(s).
+            Single expression or `Iterable` of expressions.
+            In addition to `pl.Expr`, some objects convertible to expressions
+            are supported (for example, `str` that indicates a column).
 
         Returns
         -------

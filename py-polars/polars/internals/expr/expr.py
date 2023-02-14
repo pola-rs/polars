@@ -44,6 +44,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
+        IntoExpr,
         NullBehavior,
         RankMethod,
         RollingInterpolationMethod,
@@ -54,13 +55,7 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 
 def selection_to_pyexpr_list(
-    exprs: (
-        PolarsExprType
-        | PythonLiteral
-        | pli.Series
-        | Iterable[PolarsExprType | PythonLiteral | pli.Series | None]
-        | None
-    ),
+    exprs: IntoExpr | Iterable[IntoExpr],
     structify: bool = False,
 ) -> list[PyExpr]:
     if exprs is None:
@@ -83,13 +78,7 @@ def expr_output_name(expr: pli.Expr) -> str | None:
 
 
 def expr_to_lit_or_expr(
-    expr: (
-        PolarsExprType
-        | PythonLiteral
-        | pli.Series
-        | Iterable[PolarsExprType | PythonLiteral | pli.Series]
-        | None
-    ),
+    expr: IntoExpr | Iterable[IntoExpr],
     str_to_lit: bool = True,
     structify: bool = False,
     name: str | None = None,
@@ -129,7 +118,7 @@ def expr_to_lit_or_expr(
     elif isinstance(expr, (pli.WhenThen, pli.WhenThenThen)):
         expr = expr.otherwise(None)  # implicitly add the null branch.
     elif not isinstance(expr, Expr):
-        raise ValueError(
+        raise TypeError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
             " pl.lit or pl.col"
         )
