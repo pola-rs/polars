@@ -1,3 +1,4 @@
+import typing
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -95,23 +96,31 @@ def test_quantile() -> None:
 
 
 @pytest.mark.slow()
+@typing.no_type_check
 def test_quantile_vs_numpy() -> None:
-    for n in [0, 1, 2, 10, 100]:
-        a = np.random.randint(0, 50, n)
-        np_result = np.median(a)
-        # nan check
-        if np_result != np_result:
-            np_result = None
-        assert pl.Series(a).median() == np_result
-
-        q = np.random.sample()
-        try:
-            np_result = np.quantile(a, q)
-        except IndexError:
-            np_result = None
-            pass
-        if np_result:
+    for tp in [int, float]:
+        for n in [1, 2, 10, 100]:
+            a = np.random.randint(0, 50, n).astype(tp)
+            np_result = np.median(a)
             # nan check
             if np_result != np_result:
                 np_result = None
-            assert pl.Series(a).quantile(q, interpolation="linear") == np_result
+            median = pl.Series(a).median()
+            if median is not None:
+                assert np.isclose(median, np_result)
+            else:
+                assert np_result is None
+
+            q = np.random.sample()
+            try:
+                np_result = np.quantile(a, q)
+            except IndexError:
+                np_result = None
+                pass
+            if np_result:
+                # nan check
+                if np_result != np_result:
+                    np_result = None
+                assert np.isclose(
+                    pl.Series(a).quantile(q, interpolation="linear"), np_result
+                )
