@@ -25,7 +25,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.internals.type_aliases import PolarsExprType, PythonLiteral
+from polars.internals.type_aliases import PythonLiteral
 from polars.utils import (
     _timedelta_to_pl_duration,
     deprecate_nonkeyword_arguments,

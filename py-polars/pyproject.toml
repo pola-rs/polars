@@ -157,6 +157,8 @@ ban-relative-imports = "all"
 
 [tool.pytest.ini_options]
 addopts = [
+  "--strict-config",
+  "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
   "-m not slow and not hypothesis and not benchmark",
@@ -165,6 +167,7 @@ markers = [
   "slow: Tests with a longer than average runtime.",
   "benchmark: Tests that should be run on a Polars release build.",
 ]
+filterwarnings = "error" # Fail on warnings
 
 [tool.coverage.run]
 source = ["polars"]
