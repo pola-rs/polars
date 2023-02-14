@@ -326,7 +326,7 @@ impl<'a> CoreReader<'a> {
                     // we don't pass expected fields
                     // as we want to skip all rows
                     // no matter the no. of fields
-                    _ => next_line_position(bytes, None, self.delimiter, self.quote_char, eol_char),
+                    _ => next_line_position(bytes, None, None, self.delimiter, self.quote_char, eol_char),
                 }
                 .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
 
@@ -386,6 +386,7 @@ impl<'a> CoreReader<'a> {
                     if let Some(pos) = next_line_position(
                         &bytes[n_bytes..],
                         Some(self.schema.len()),
+                        None,
                         self.delimiter,
                         self.quote_char,
                         self.eol_char,
@@ -423,6 +424,7 @@ impl<'a> CoreReader<'a> {
                 bytes,
                 n_file_chunks,
                 self.schema.len(),
+                self.schema.as_ref(),
                 self.delimiter,
                 self.quote_char,
                 self.eol_char,

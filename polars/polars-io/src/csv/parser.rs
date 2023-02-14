@@ -3,6 +3,7 @@ use polars_core::prelude::*;
 
 use super::buffer::*;
 use crate::csv::read::NullValuesCompiled;
+use crate::csv::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core
@@ -28,6 +29,7 @@ pub(crate) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
 pub(crate) fn next_line_position(
     mut input: &[u8],
     mut expected_fields: Option<usize>,
+    schema: Option<&Schema>,
     delimiter: u8,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -53,22 +55,62 @@ pub(crate) fn next_line_position(
         }
         debug_assert!(pos <= input.len());
         let new_input = unsafe { input.get_unchecked(pos..) };
-        let line = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char).next();
+        let mut line_iter = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char);
+        let line = line_iter.next();
 
         let count_fields =
             |line: &[u8]| SplitFields::new(line, delimiter, quote_char, eol_char).count();
 
         match (line, expected_fields) {
             // count the fields, and determine if they are equal to what we expect from the schema
-            (Some(line), Some(expected_fields)) if { count_fields(line) == expected_fields } => {
-                return Some(total_pos + pos)
-            }
-            (Some(_), Some(_)) => {
-                debug_assert!(pos < input.len());
-                unsafe {
-                    input = input.get_unchecked(pos + 1..);
+            (Some(line), Some(expected_fields)) => {
+                let mut valid = count_fields(line) == expected_fields;
+
+                // check 5 lines on schema
+                if let (Some(schema), true) = (schema, valid) {
+                    for line in (&mut line_iter).take(5) {
+                        let mut field_iter = SplitFields::new(line, delimiter, quote_char, eol_char);
+                        for dtype in schema.iter_dtypes() {
+                            if let Some((field, _)) = field_iter.next() {
+                                if field.is_empty() || field == b"\"\"" {
+                                    continue
+                                }
+                                use DataType::*;
+                                let matches = match dtype {
+                                    Boolean => {
+                                        BOOLEAN_RE.is_match(std::str::from_utf8(field).unwrap())
+                                    }
+                                    Float32 | Float64 => {
+                                        FLOAT_RE.is_match(std::str::from_utf8(field).unwrap())
+                                    }
+                                    dt if dt.is_integer() => {
+                                        INTEGER_RE.is_match(std::str::from_utf8(field).unwrap())
+                                    }
+                                    _ => true
+                                };
+                                if !matches {
+                                    valid = false;
+                                    break;
+                                }
+                            }
+                            // not enough fields
+                            else {
+                                valid = false;
+                                break;
+                            }
+                        }
+                    }
                 }
-                total_pos += pos + 1;
+                if valid && !line_iter.is_finished() {
+                    dbg!(&std::str::from_utf8(&input[..total_pos + pos]));
+                    return Some(total_pos + pos)
+                } else {
+                    debug_assert!(pos < input.len());
+                    unsafe {
+                        input = input.get_unchecked(pos + 1..);
+                    }
+                    total_pos += pos + 1;
+                }
             }
             // don't count the fields
             (Some(_), None) => return Some(total_pos + pos),
@@ -170,6 +212,7 @@ pub(crate) fn get_line_stats(
         let pos = next_line_position(
             bytes_trunc,
             Some(expected_fields),
+            None,
             delimiter,
             quote_char,
             eol_char,
@@ -217,6 +260,10 @@ impl<'a> SplitLines<'a> {
             quote_char,
             end_line_char,
         }
+    }
+
+    pub(crate) fn is_finished(&self) -> bool {
+        self.v.is_empty()
     }
 }
 
