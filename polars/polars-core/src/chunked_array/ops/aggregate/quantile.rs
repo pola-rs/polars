@@ -1,3 +1,4 @@
+use polars_arrow::floats::{f32_to_ordablef32, f64_to_ordablef64};
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 use super::*;
@@ -84,6 +85,7 @@ impl Sortable for Float64Chunked {
     }
 }
 
+// Uses quickselect instead of sorting all data
 fn quantile_slice<T: ToPrimitive + Ord>(
     vals: &mut [T],
     quantile: f64,
@@ -185,7 +187,8 @@ where
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Option<f64>> {
-        if let Ok(slice) = self.cont_slice() {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_flag()) {
             let mut owned = slice.to_vec();
             quantile_slice(&mut owned, quantile, interpol)
         } else {
@@ -209,7 +212,9 @@ where
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Option<f64>> {
-        if let Some(slice) = self.cont_slice_mut() {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        let is_sorted = self.is_sorted_flag();
+        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
             quantile_slice(slice, quantile, interpol)
         } else {
             self.quantile(quantile, interpol)
@@ -228,7 +233,15 @@ impl ChunkQuantile<f32> for Float32Chunked {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Option<f32>> {
-        generic_quantile(self.clone(), quantile, interpol).map(|v| v.map(|v| v as f32))
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        let out = if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_flag()) {
+            let mut owned = slice.to_vec();
+            let owned = f32_to_ordablef32(&mut owned);
+            quantile_slice(owned, quantile, interpol)
+        } else {
+            generic_quantile(self.clone(), quantile, interpol)
+        };
+        out.map(|v| v.map(|v| v as f32))
     }
 
     fn median(&self) -> Option<f32> {
@@ -242,11 +255,62 @@ impl ChunkQuantile<f64> for Float64Chunked {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Option<f64>> {
-        generic_quantile(self.clone(), quantile, interpol)
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_flag()) {
+            let mut owned = slice.to_vec();
+            let owned = f64_to_ordablef64(&mut owned);
+            quantile_slice(owned, quantile, interpol)
+        } else {
+            generic_quantile(self.clone(), quantile, interpol)
+        }
     }
 
     fn median(&self) -> Option<f64> {
         self.quantile(0.5, QuantileInterpolOptions::Linear).unwrap() // unwrap fine since quantile in range
+    }
+}
+
+impl Float64Chunked {
+    pub(crate) fn quantile_faster(
+        mut self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f64>> {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        let is_sorted = self.is_sorted_flag();
+        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
+            let slice = f64_to_ordablef64(slice);
+            quantile_slice(slice, quantile, interpol)
+        } else {
+            self.quantile(quantile, interpol)
+        }
+    }
+
+    pub(crate) fn median_faster(self) -> Option<f64> {
+        self.quantile_faster(0.5, QuantileInterpolOptions::Linear)
+            .unwrap()
+    }
+}
+
+impl Float32Chunked {
+    pub(crate) fn quantile_faster(
+        mut self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f32>> {
+        // in case of sorted data, the sort is free, so don't take quickselect route
+        let is_sorted = self.is_sorted_flag();
+        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
+            let slice = f32_to_ordablef32(slice);
+            quantile_slice(slice, quantile, interpol).map(|v| v.map(|v| v as f32))
+        } else {
+            self.quantile(quantile, interpol)
+        }
+    }
+
+    pub(crate) fn median_faster(self) -> Option<f32> {
+        self.quantile_faster(0.5, QuantileInterpolOptions::Linear)
+            .unwrap()
     }
 }
 
