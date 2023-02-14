@@ -520,6 +520,9 @@ where
         }),
         GroupsProxy::Slice { groups, .. } => {
             if _use_rolling_kernels(groups, ca.chunks()) {
+                // this cast is a no-op for floats
+                let s = ca.cast(&K::get_dtype()).unwrap();
+                let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -538,6 +541,8 @@ where
                         offset_iter,
                     ),
                 };
+                // the rolling kernels works on the dtype, this is not yet the float
+                // output type we need.
                 ChunkedArray::<K>::from_chunks("", vec![arr]).into_series()
             } else {
                 _agg_helper_slice::<K, _>(groups, |[first, len]| {
