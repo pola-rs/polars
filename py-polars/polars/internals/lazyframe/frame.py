@@ -1705,36 +1705,79 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         *more_by
             Additional columns to group by, specified as positional arguments.
         maintain_order
-            Make sure that the order of the groups remain consistent. This is more
-            expensive than a default groupby.
+            Ensure that the order of the groups is consistent with the input data.
+            This is slower than a default groupby.
 
         Examples
         --------
+        Group by one column and call ``agg`` to compute the grouped sum of another
+        column.
+
         >>> ldf = pl.DataFrame(
         ...     {
-        ...         "a": ["a", "b", "a", "b", "b", "c"],
-        ...         "b": [1, 2, 3, 4, 5, 6],
-        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...         "b": [1, 2, 1, 3, 3],
+        ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... ).lazy()
-        >>> ldf.groupby("a", maintain_order=True).agg(pl.col("b").sum()).collect()
+        >>> ldf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
         │ str ┆ i64 │
         ╞═════╪═════╡
-        │ a   ┆ 4   │
-        │ b   ┆ 11  │
-        │ c   ┆ 6   │
+        │ a   ┆ 2   │
+        │ b   ┆ 5   │
+        │ c   ┆ 3   │
         └─────┴─────┘
 
-        Note that the following syntax does NOT work:
+        Set ``maintain_order=True`` to ensure the order of the groups is consistent with
+        the input.
 
-        >>> ldf.groupby("a")["b"].sum().collect()
-        Traceback (most recent call last):
-        ...
-        TypeError: 'LazyGroupBy' object is not subscriptable
+        >>> ldf.groupby("a", maintain_order=True).agg(pl.col("c")).collect()
+        shape: (3, 2)
+        ┌─────┬───────────┐
+        │ a   ┆ c         │
+        │ --- ┆ ---       │
+        │ str ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ a   ┆ [5, 3]    │
+        │ b   ┆ [4, 2]    │
+        │ c   ┆ [1]       │
+        └─────┴───────────┘
+
+        Group by multiple columns by passing a list of column names.
+
+        >>> ldf.groupby(["a", "b"]).agg(pl.max("c")).collect()  # doctest: +SKIP
+        shape: (4, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 5   │
+        │ b   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 2   │
+        │ c   ┆ 3   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        Or use positional arguments to group by multiple columns in the same way.
+        Expressions are also accepted.
+
+        >>> ldf.groupby("a", pl.col("b") // 2).agg(
+        ...     pl.col("c").mean()
+        ... ).collect()  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ f64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 0   ┆ 4.0 │
+        │ b   ┆ 1   ┆ 3.0 │
+        │ c   ┆ 1   ┆ 1.0 │
+        └─────┴─────┴─────┘
 
         """
         exprs = selection_to_pyexpr_list(by)
