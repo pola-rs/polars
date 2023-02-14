@@ -53,6 +53,7 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     _timedelta_to_pl_duration,
+    deprecate_nonkeyword_arguments,
     normalise_filepath,
     redirect,
 )
@@ -2154,6 +2155,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
+    @deprecate_nonkeyword_arguments()
     def join_asof(
         self,
         other: LazyFrame,
@@ -2325,6 +2327,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             )
         )
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of LazyFrame.join except for 'other', 'on', and 'how' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def join(
         self,
         other: LazyFrame,
@@ -3583,6 +3591,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         columns = pli.selection_to_pyexpr_list(columns)
         return self._from_pyldf(self._ldf.explode(columns))
 
+    @deprecate_nonkeyword_arguments(
+        message=(
+            "All arguments of LazyFrame.unique except for 'subset' will be keyword-only in the next breaking release."
+            " Use keyword arguments to silence this warning."
+        )
+    )
     def unique(
         self,
         maintain_order: bool = True,
@@ -3801,6 +3815,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             self._ldf.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @deprecate_nonkeyword_arguments()
     def map(
         self,
         f: Callable[[pli.DataFrame], pli.DataFrame],

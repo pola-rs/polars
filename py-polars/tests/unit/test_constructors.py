@@ -97,6 +97,12 @@ def test_init_dict() -> None:
     assert df.schema == dfe.schema
     assert len(dfe) == 0
 
+    # empty nested objects
+    for empty_val in [None, "", {}, []]:  # type: ignore[var-annotated]
+        test = [{"field": {"sub_field": empty_val, "sub_field_2": 2}}]
+        df = pl.DataFrame(test, schema={"field": pl.Object})
+        assert df.to_dict(False)["field"][0] == test[0]["field"]
+
 
 def test_init_dataclasses_and_namedtuple() -> None:
     from dataclasses import dataclass

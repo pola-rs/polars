@@ -338,9 +338,16 @@ def test_rename_schema_order_6660() -> None:
 def test_from_dicts_all_cols_6716() -> None:
     dicts = [{"a": None} for _ in range(20)] + [{"a": "crash"}]
 
-    with pytest.raises(pl.PanicException, match="Cannot extract numeric value from"):
+    with pytest.raises(
+        pl.ComputeError, match="make sure that all rows have the same schema"
+    ):
         pl.from_dicts(dicts, infer_schema_length=20)
     assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.Utf8]
+
+
+def test_from_dicts_empty() -> None:
+    with pytest.raises(pl.NoDataError, match="No rows. Cannot infer schema."):
+        pl.from_dicts([])
 
 
 def test_duration_divison_schema() -> None:
@@ -353,3 +360,13 @@ def test_duration_divison_schema() -> None:
 
     assert q.schema == {"a": pl.Float64}
     assert q.collect().to_dict(False) == {"a": [1.0]}
+
+
+def test_int_operator_stability() -> None:
+    for dt in pl.datatypes.INTEGER_DTYPES:
+        s = pl.Series(values=[10], dtype=dt)
+        assert pl.select(pl.lit(s) // 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) + 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) - 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) * 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]

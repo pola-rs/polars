@@ -50,7 +50,7 @@ use polars_plan::logical_plan::{
     ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
 };
 
-use crate::dsl::{argsort_by, pearson_corr};
+use crate::dsl::{arg_sort_by, pearson_corr};
 use crate::prelude::*;
 
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
@@ -149,4 +149,22 @@ pub(crate) fn get_df() -> DataFrame {
         .finish()
         .unwrap();
     df
+}
+
+#[test]
+fn test_foo() {
+    let df: DataFrame = df![
+        "a" => [1u64]
+    ]
+    .unwrap();
+
+    let s = df.column("a").unwrap().clone();
+
+    let df = df
+        .lazy()
+        .select([lit(s).floor_div(lit(1i64))])
+        .collect()
+        .unwrap();
+
+    dbg!(df);
 }

@@ -22,6 +22,136 @@ macro_rules! unpack {
     }};
 }
 
+// `dtype_other` comes from a column
+// so we shrink literal so it fits into that column dtype.
+fn shrink_literal(dtype_other: &DataType, literal: &LiteralValue) -> Option<DataType> {
+    match (dtype_other, literal) {
+        (DataType::UInt64, LiteralValue::Int64(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt64);
+            }
+        }
+        (DataType::UInt64, LiteralValue::Int32(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt64);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::UInt64, LiteralValue::Int16(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt64);
+            }
+        }
+        #[cfg(feature = "dtype-i8")]
+        (DataType::UInt64, LiteralValue::Int8(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt64);
+            }
+        }
+        (DataType::UInt32, LiteralValue::Int64(v)) => {
+            if *v > 0 && *v < u32::MAX as i64 {
+                return Some(DataType::UInt32);
+            }
+        }
+        (DataType::UInt32, LiteralValue::Int32(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt32);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::UInt32, LiteralValue::Int16(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt32);
+            }
+        }
+        #[cfg(feature = "dtype-i8")]
+        (DataType::UInt32, LiteralValue::Int8(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt32);
+            }
+        }
+        (DataType::UInt16, LiteralValue::Int64(v)) => {
+            if *v > 0 && *v < u16::MAX as i64 {
+                return Some(DataType::UInt16);
+            }
+        }
+        (DataType::UInt16, LiteralValue::Int32(v)) => {
+            if *v > 0 && *v < u16::MAX as i32 {
+                return Some(DataType::UInt16);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::UInt16, LiteralValue::Int16(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt16);
+            }
+        }
+        #[cfg(feature = "dtype-i8")]
+        (DataType::UInt16, LiteralValue::Int8(v)) => {
+            if *v > 0 {
+                return Some(DataType::UInt16);
+            }
+        }
+        (DataType::UInt8, LiteralValue::Int64(v)) => {
+            if *v > 0 && *v < u8::MAX as i64 {
+                return Some(DataType::UInt8);
+            }
+        }
+        (DataType::UInt8, LiteralValue::Int32(v)) => {
+            if *v > 0 && *v < u8::MAX as i32 {
+                return Some(DataType::UInt8);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::UInt8, LiteralValue::Int16(v)) => {
+            if *v > 0 && *v < u8::MAX as i16 {
+                return Some(DataType::UInt8);
+            }
+        }
+        #[cfg(feature = "dtype-i8")]
+        (DataType::UInt8, LiteralValue::Int8(v)) => {
+            if *v > 0 && *v < u8::MAX as i8 {
+                return Some(DataType::UInt8);
+            }
+        }
+        (DataType::Int32, LiteralValue::Int64(v)) => {
+            if *v <= i32::MAX as i64 {
+                return Some(DataType::Int32);
+            }
+        }
+        (DataType::Int16, LiteralValue::Int64(v)) => {
+            if *v <= i16::MAX as i64 {
+                return Some(DataType::Int16);
+            }
+        }
+        (DataType::Int16, LiteralValue::Int32(v)) => {
+            if *v <= i16::MAX as i32 {
+                return Some(DataType::Int16);
+            }
+        }
+        (DataType::Int8, LiteralValue::Int64(v)) => {
+            if *v <= i8::MAX as i64 {
+                return Some(DataType::Int8);
+            }
+        }
+        (DataType::Int8, LiteralValue::Int32(v)) => {
+            if *v <= i8::MAX as i32 {
+                return Some(DataType::Int8);
+            }
+        }
+        #[cfg(feature = "dtype-i16")]
+        (DataType::Int8, LiteralValue::Int16(v)) => {
+            if *v <= i8::MAX as i16 {
+                return Some(DataType::Int8);
+            }
+        }
+        _ => {
+            // the rest is done by supertypes.
+        }
+    }
+    None
+}
+
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
 fn modify_supertype(
@@ -34,34 +164,46 @@ fn modify_supertype(
     // only interesting on numerical types
     // other types will always use the supertype.
     if type_left.is_numeric() && type_right.is_numeric() {
+        use AExpr::*;
         match (left, right) {
             // don't let the literal f64 coerce the f32 column
-            (AExpr::Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)), _) if matches!(type_right, DataType::Float32) => {
-                st = DataType::Float32
-            }
-            (_, AExpr::Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_))) if matches!(type_left, DataType::Float32) => {
-                st = DataType::Float32
-            }
-
-            // do nothing and use supertype
-            (AExpr::Literal(_), AExpr::Literal(_))
+            (
+                Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
+                _,
+            ) if matches!(type_right, DataType::Float32) => st = DataType::Float32,
+            (
+                _,
+                Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
+            ) if matches!(type_left, DataType::Float32) => st = DataType::Float32,
             // always make sure that we cast to floats if one of the operands is float
-            // and the left type is integer
-            |(AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)), _)
-            |(_, AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)))
-            => {}
+            (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {}
+
+            // TODO: see if we can activate this for columns as well.
+            // shrink the literal value if it fits in the column dtype
+            (Literal(LiteralValue::Series(_)), Literal(lv)) => {
+                if let Some(dtype) = shrink_literal(type_left, lv) {
+                    st = dtype;
+                }
+            }
+            // shrink the literal value if it fits in the column dtype
+            (Literal(lv), Literal(LiteralValue::Series(_))) => {
+                if let Some(dtype) = shrink_literal(type_right, lv) {
+                    st = dtype;
+                }
+            }
+            // do nothing and use supertype
+            (Literal(_), Literal(_)) => {}
 
             // cast literal to right type if they fit in the range
-            (AExpr::Literal(value), _) => {
+            (Literal(value), _) => {
                 if let Some(lit_val) = value.to_anyvalue() {
-                   if type_right.value_within_range(lit_val) {
-                       st = type_right.clone();
-                   }
+                    if type_right.value_within_range(lit_val) {
+                        st = type_right.clone();
+                    }
                 }
             }
             // cast literal to left type
-            (_, AExpr::Literal(value)) => {
-
+            (_, Literal(value)) => {
                 if let Some(lit_val) = value.to_anyvalue() {
                     if type_left.value_within_range(lit_val) {
                         st = type_left.clone();

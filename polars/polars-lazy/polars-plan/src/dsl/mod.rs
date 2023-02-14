@@ -3,6 +3,7 @@
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
+mod arithmetic;
 #[cfg(feature = "dtype-binary")]
 pub mod binary;
 #[cfg(feature = "temporal")]
@@ -23,7 +24,6 @@ pub mod string;
 mod struct_;
 
 use std::fmt::Debug;
-use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
 pub use expr::*;
@@ -541,7 +541,7 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(Some(s.argsort(sort_options).into_series())),
+            move |s: Series| Ok(Some(s.arg_sort(sort_options).into_series())),
             GetOutput::from_type(IDX_DTYPE),
             options,
         )
@@ -1186,188 +1186,6 @@ impl Expr {
         binary_expr(self, Operator::Or, expr.into())
     }
 
-    /// Raise expression to the power `exponent`
-    pub fn pow<E: Into<Expr>>(self, exponent: E) -> Self {
-        Expr::Function {
-            input: vec![self, exponent.into()],
-            function: FunctionExpr::Pow,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the sine of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn sin(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Sin),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the cosine of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn cos(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Cos),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the tangent of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn tan(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Tan),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the inverse sine of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn arcsin(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSin),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the inverse cosine of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn arccos(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCos),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the inverse tangent of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn arctan(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTan),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the hyperbolic sine of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn sinh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Sinh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the hyperbolic cosine of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn cosh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Cosh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the hyperbolic tangent of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn tanh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Tanh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the inverse hyperbolic sine of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn arcsinh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSinh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the inverse hyperbolic cosine of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn arccosh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCosh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the inverse hyperbolic tangent of the given expression
-    #[cfg(feature = "trigonometry")]
-    pub fn arctanh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTanh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "arctanh",
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Compute the sign of the given expression
-    #[cfg(feature = "sign")]
-    pub fn sign(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Sign,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
-    }
-
     /// Filter a single column
     /// Should be used in aggregation context. If you want to filter on a DataFrame level, use
     /// [LazyFrame::filter](LazyFrame::filter)
@@ -1459,10 +1277,7 @@ impl Expr {
 
     #[cfg(feature = "dot_product")]
     fn dot_impl(self, other: Expr) -> Expr {
-        let function = |s: &mut [Series]| Ok(Some((&s[0] * &s[1]).sum_as_series()));
-
-        self.apply_many(function, &[other], GetOutput::same_type())
-            .with_fmt("dot")
+        self.apply_many_private(FunctionExpr::Dot, &[other], true, true)
     }
 
     #[cfg(feature = "dot_product")]
@@ -1574,6 +1389,7 @@ impl Expr {
         rolling_fn: Arc<
             dyn (Fn(&Series, RollingOptionsImpl) -> PolarsResult<Series>) + Send + Sync,
         >,
+        output_type: GetOutput,
     ) -> Expr {
         if let Some(ref by) = options.by {
             self.apply_many(
@@ -1612,7 +1428,7 @@ impl Expr {
                     rolling_fn(s, options).map(Some)
                 },
                 &[col(by)],
-                GetOutput::same_type(),
+                output_type,
             )
             .with_fmt(expr_name_by)
         } else {
@@ -1622,7 +1438,7 @@ impl Expr {
 
             self.apply(
                 move |s| rolling_fn(&s, options.clone().into()).map(Some),
-                GetOutput::same_type(),
+                output_type,
             )
             .with_fmt(expr_name)
         }
@@ -1637,6 +1453,7 @@ impl Expr {
             "rolling_min",
             "rolling_min_by",
             Arc::new(|s, options| s.rolling_min(options)),
+            GetOutput::same_type(),
         )
     }
 
@@ -1649,6 +1466,7 @@ impl Expr {
             "rolling_max",
             "rolling_max_by",
             Arc::new(|s, options| s.rolling_max(options)),
+            GetOutput::same_type(),
         )
     }
 
@@ -1661,6 +1479,7 @@ impl Expr {
             "rolling_mean",
             "rolling_mean_by",
             Arc::new(|s, options| s.rolling_mean(options)),
+            GetOutput::float_type(),
         )
     }
 
@@ -1673,6 +1492,7 @@ impl Expr {
             "rolling_sum",
             "rolling_sum_by",
             Arc::new(|s, options| s.rolling_sum(options)),
+            GetOutput::same_type(),
         )
     }
 
@@ -1685,6 +1505,7 @@ impl Expr {
             "rolling_median",
             "rolling_median_by",
             Arc::new(|s, options| s.rolling_median(options)),
+            GetOutput::same_type(),
         )
     }
 
@@ -1702,6 +1523,7 @@ impl Expr {
             "rolling_quantile",
             "rolling_quantile_by",
             Arc::new(move |s, options| s.rolling_quantile(quantile, interpolation, options)),
+            GetOutput::float_type(),
         )
     }
 
@@ -1713,6 +1535,7 @@ impl Expr {
             "rolling_var",
             "rolling_var_by",
             Arc::new(|s, options| s.rolling_var(options)),
+            GetOutput::float_type(),
         )
     }
 
@@ -1724,6 +1547,7 @@ impl Expr {
             "rolling_std",
             "rolling_std_by",
             Arc::new(|s, options| s.rolling_std(options)),
+            GetOutput::float_type(),
         )
     }
 
@@ -2172,21 +1996,11 @@ impl Expr {
     /// Compute the entropy as `-sum(pk * log(pk)`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
-        self.apply(
-            move |s| Ok(Some(Series::new(s.name(), [s.entropy(base, normalize)]))),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_function_options(|mut options| {
-            options.fmt_str = "entropy";
-            options.auto_explode = true;
-            options
-        })
+        self.apply_private(FunctionExpr::Entropy { base, normalize })
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
     }
     /// Get the null count of the column/group
     pub fn null_count(self) -> Expr {
@@ -2246,47 +2060,6 @@ impl Expr {
     #[cfg(feature = "meta")]
     pub fn meta(self) -> meta::MetaNameSpace {
         meta::MetaNameSpace(self)
-    }
-}
-
-// Arithmetic ops
-impl Add for Expr {
-    type Output = Expr;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        binary_expr(self, Operator::Plus, rhs)
-    }
-}
-
-impl Sub for Expr {
-    type Output = Expr;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        binary_expr(self, Operator::Minus, rhs)
-    }
-}
-
-impl Div for Expr {
-    type Output = Expr;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        binary_expr(self, Operator::Divide, rhs)
-    }
-}
-
-impl Mul for Expr {
-    type Output = Expr;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        binary_expr(self, Operator::Multiply, rhs)
-    }
-}
-
-impl Rem for Expr {
-    type Output = Expr;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        binary_expr(self, Operator::Modulus, rhs)
     }
 }
 

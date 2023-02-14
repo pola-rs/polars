@@ -57,7 +57,7 @@ impl CategoricalChunked {
                         .zip(self.iter_str())
                         .collect_trusted::<Vec<_>>();
 
-                    argsort_branch(
+                    arg_sort_branch(
                         vals.as_mut_slice(),
                         options.descending,
                         |(_, a), (_, b)| order_default_null(a, b),
@@ -103,10 +103,10 @@ impl CategoricalChunked {
     }
 
     /// Retrieve the indexes needed to sort this array.
-    pub fn argsort(&self, options: SortOptions) -> IdxCa {
+    pub fn arg_sort(&self, options: SortOptions) -> IdxCa {
         if self.use_lexical_sort() {
             let iters = [self.iter_str()];
-            argsort::argsort(
+            arg_sort::arg_sort(
                 self.name(),
                 iters,
                 options,
@@ -114,13 +114,13 @@ impl CategoricalChunked {
                 self.len(),
             )
         } else {
-            self.logical().argsort(options)
+            self.logical().arg_sort(options)
         }
     }
 
     /// Retrieve the indexes need to sort this and the other arrays.
     #[cfg(feature = "sort_multiple")]
-    pub(crate) fn argsort_multiple(
+    pub(crate) fn arg_sort_multiple(
         &self,
         other: &[Series],
         reverse: &[bool],
@@ -137,9 +137,9 @@ impl CategoricalChunked {
                 })
                 .collect_trusted();
 
-            argsort_multiple_impl(vals, other, reverse)
+            arg_sort_multiple_impl(vals, other, reverse)
         } else {
-            self.logical().argsort_multiple(other, reverse)
+            self.logical().arg_sort_multiple(other, reverse)
         }
     }
 }
@@ -173,7 +173,7 @@ mod test {
             let out = ca.sort(false);
             assert_order(&out, init);
 
-            let out = ca_lexical.argsort(SortOptions {
+            let out = ca_lexical.arg_sort(SortOptions {
                 descending: false,
                 ..Default::default()
             });

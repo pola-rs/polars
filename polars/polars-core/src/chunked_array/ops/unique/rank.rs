@@ -55,7 +55,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
         let arr = nulls.downcast_iter().next().unwrap();
         let validity = arr.values();
         // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
-        // TODO: Need to expose nulls_last in argsort to prevent this.
+        // TODO: Need to expose nulls_last in arg_sort to prevent this.
         // Fill using MaxBound/MinBound to give nulls last rank.
         // we will replace them later.
         let null_strategy = if reverse {
@@ -77,7 +77,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
     let len = s.len();
     let null_count = s.null_count();
-    let sort_idx_ca = s.argsort(SortOptions {
+    let sort_idx_ca = s.arg_sort(SortOptions {
         descending: reverse,
         ..Default::default()
     });

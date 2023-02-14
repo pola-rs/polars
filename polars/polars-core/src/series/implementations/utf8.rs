@@ -97,8 +97,8 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     }
 
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.argsort_multiple(by, reverse)
+    fn arg_sort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(by, reverse)
     }
 }
 
@@ -248,8 +248,8 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         ChunkSort::sort_with(&self.0, options).into_series()
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        ChunkSort::argsort(&self.0, options)
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        ChunkSort::arg_sort(&self.0, options)
     }
 
     fn null_count(&self) -> usize {

@@ -17,41 +17,66 @@ class ExprStructNameSpace:
         elif isinstance(item, int):
             return pli.wrap_expr(self._pyexpr.struct_field_by_index(item))
         else:
-            raise ValueError(f"expected type 'int | str', got {type(item)}")
+            raise ValueError(
+                f"expected type 'int | str', got {type(item).__name__} ({item!r})"
+            )
 
     def field(self, name: str) -> pli.Expr:
         """
-        Retrieve one of the fields of this `Struct` as a new Series.
+        Retrieve a ``Struct`` field as a new Series.
 
         Parameters
         ----------
         name
-            Name of the field
+            Name of the struct field to retrieve.
 
         Examples
         --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "int": [1, 2],
-        ...             "str": ["a", "b"],
-        ...             "bool": [True, None],
-        ...             "list": [[1, 2], [3]],
-        ...         }
-        ...     )
-        ...     .to_struct("my_struct")
-        ...     .to_frame()
-        ... )
-        >>> df.select(pl.col("my_struct").struct.field("str"))
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "aaa": [1, 2],
+        ...         "bbb": ["ab", "cd"],
+        ...         "ccc": [True, None],
+        ...         "ddd": [[1, 2], [3]],
+        ...     }
+        ... ).select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+        >>> df
+        shape: (2, 1)
+        ┌──────────────────────┐
+        │ struct_col           │
+        │ ---                  │
+        │ struct[4]            │
+        ╞══════════════════════╡
+        │ {1,"ab",true,[1, 2]} │
+        │ {2,"cd",null,[3]}    │
+        └──────────────────────┘
+
+        Retrieve struct field(s) as Series:
+
+        >>> df.select(pl.col("struct_col").struct.field("bbb"))
         shape: (2, 1)
         ┌─────┐
-        │ str │
+        │ bbb │
         │ --- │
         │ str │
         ╞═════╡
-        │ a   │
-        │ b   │
+        │ ab  │
+        │ cd  │
         └─────┘
+
+        >>> df.select(
+        ...     pl.col("struct_col").struct.field("bbb"),
+        ...     pl.col("struct_col").struct.field("ddd"),
+        ... )
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ bbb ┆ ddd       │
+        │ --- ┆ ---       │
+        │ str ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ ab  ┆ [1, 2]    │
+        │ cd  ┆ [3]       │
+        └─────┴───────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.struct_field_by_name(name))
@@ -63,41 +88,60 @@ class ExprStructNameSpace:
         Parameters
         ----------
         names
-            New names in the order of the struct's fields
+            New names, given in the same order as the struct's fields.
 
         Examples
         --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "int": [1, 2],
-        ...             "str": ["a", "b"],
-        ...             "bool": [True, None],
-        ...             "list": [[1, 2], [3]],
-        ...         }
-        ...     )
-        ...     .to_struct("my_struct")
-        ...     .to_frame()
-        ... )
-        >>> df = df.with_columns(
-        ...     pl.col("my_struct").struct.rename_fields(["INT", "STR", "BOOL", "LIST"])
-        ... )
-
-        Note that the following syntax no longer works:
-
-        >>> df.select(pl.col("my_struct").struct.field("int"))  # doctest: +SKIP
-        StructFieldNotFoundError: int
-
-        >>> df.select(pl.col("my_struct").struct.field("INT"))
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "aaa": [1, 2],
+        ...         "bbb": ["ab", "cd"],
+        ...         "ccc": [True, None],
+        ...         "ddd": [[1, 2], [3]],
+        ...     }
+        ... ).select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+        >>> df
         shape: (2, 1)
-        ┌─────┐
-        │ INT │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 1   │
-        │ 2   │
-        └─────┘
+        ┌──────────────────────┐
+        │ struct_col           │
+        │ ---                  │
+        │ struct[4]            │
+        ╞══════════════════════╡
+        │ {1,"ab",true,[1, 2]} │
+        │ {2,"cd",null,[3]}    │
+        └──────────────────────┘
+
+        >>> df.unnest("struct_col")
+        shape: (2, 4)
+        ┌─────┬─────┬──────┬───────────┐
+        │ aaa ┆ bbb ┆ ccc  ┆ ddd       │
+        │ --- ┆ --- ┆ ---  ┆ ---       │
+        │ i64 ┆ str ┆ bool ┆ list[i64] │
+        ╞═════╪═════╪══════╪═══════════╡
+        │ 1   ┆ ab  ┆ true ┆ [1, 2]    │
+        │ 2   ┆ cd  ┆ null ┆ [3]       │
+        └─────┴─────┴──────┴───────────┘
+
+        Rename fields:
+
+        >>> df = df.select(
+        ...     pl.col("struct_col").struct.rename_fields(["www", "xxx", "yyy", "zzz"])
+        ... )
+        >>> df.unnest("struct_col")
+        shape: (2, 4)
+        ┌─────┬─────┬──────┬───────────┐
+        │ www ┆ xxx ┆ yyy  ┆ zzz       │
+        │ --- ┆ --- ┆ ---  ┆ ---       │
+        │ i64 ┆ str ┆ bool ┆ list[i64] │
+        ╞═════╪═════╪══════╪═══════════╡
+        │ 1   ┆ ab  ┆ true ┆ [1, 2]    │
+        │ 2   ┆ cd  ┆ null ┆ [3]       │
+        └─────┴─────┴──────┴───────────┘
+
+        Following a rename, the previous field names (obviously) cannot be referenced:
+
+        >>> df.select(pl.col("struct_col").struct.field("aaa"))  # doctest: +SKIP
+        StructFieldNotFoundError: aaa
 
         """
         return pli.wrap_expr(self._pyexpr.struct_rename_fields(names))

@@ -671,3 +671,26 @@ def test_from_pyarrow_map() -> None:
             [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
         ],
     }
+
+
+def test_to_numpy_datelike() -> None:
+    s = pl.Series(
+        "dt",
+        [
+            datetime(2022, 7, 5, 10, 30, 45, 123456),
+            None,
+            datetime(2023, 2, 5, 15, 22, 30, 987654),
+        ],
+    )
+    assert str(s.to_numpy()) == str(
+        np.array(
+            ["2022-07-05T10:30:45.123456", "NaT", "2023-02-05T15:22:30.987654"],
+            dtype="datetime64[us]",
+        )
+    )
+    assert str(s.drop_nulls().to_numpy()) == str(
+        np.array(
+            ["2022-07-05T10:30:45.123456", "2023-02-05T15:22:30.987654"],
+            dtype="datetime64[us]",
+        )
+    )
