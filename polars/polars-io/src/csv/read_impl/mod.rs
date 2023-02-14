@@ -326,7 +326,15 @@ impl<'a> CoreReader<'a> {
                     // we don't pass expected fields
                     // as we want to skip all rows
                     // no matter the no. of fields
-                    _ => next_line_position(bytes, None, None, self.delimiter, self.quote_char, eol_char),
+                    _ => next_line_position(
+                        bytes,
+                        None,
+                        None,
+                        self.delimiter,
+                        self.quote_char,
+                        eol_char,
+                        None,
+                    ),
                 }
                 .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
 
@@ -390,6 +398,7 @@ impl<'a> CoreReader<'a> {
                         self.delimiter,
                         self.quote_char,
                         self.eol_char,
+                        self.null_values.as_ref(),
                     ) {
                         bytes = &bytes[..n_bytes + pos]
                     }
@@ -428,6 +437,7 @@ impl<'a> CoreReader<'a> {
                 self.delimiter,
                 self.quote_char,
                 self.eol_char,
+                self.null_values.as_ref(),
             ),
             chunk_size,
             total_rows,
@@ -486,6 +496,9 @@ impl<'a> CoreReader<'a> {
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging, false)?;
+        if logging {
+            eprintln!("CSV parser was able to find {} file chunks and searched for n_threads: {n_threads}.", file_chunks.len())
+        }
         let projection = self.get_projection();
         let str_columns = self.get_string_columns(&projection)?;
 

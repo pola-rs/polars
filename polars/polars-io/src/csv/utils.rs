@@ -14,10 +14,12 @@ use regex::{Regex, RegexBuilder};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use crate::csv::parser::next_line_position_naive;
 use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines};
+use crate::csv::read::NullValuesCompiled;
 use crate::csv::CsvEncoding;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::NullValues;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
     n_chunks: usize,
@@ -26,6 +28,7 @@ pub(crate) fn get_file_chunks(
     delimiter: u8,
     quote_char: Option<u8>,
     eol_char: u8,
+    null_values: Option<&NullValuesCompiled>,
 ) -> Vec<(usize, usize)> {
     let mut last_pos = 0;
     let total_len = bytes.len();
@@ -35,7 +38,6 @@ pub(crate) fn get_file_chunks(
         let search_pos = last_pos + chunk_size;
 
         if search_pos >= bytes.len() {
-            dbg!("bytes reached");
             break;
         }
 
@@ -46,19 +48,17 @@ pub(crate) fn get_file_chunks(
             delimiter,
             quote_char,
             eol_char,
+            null_values,
         ) {
             Some(pos) => search_pos + pos,
             None => {
-                dbg!("no end pos found");
                 break;
             }
         };
-        dbg!("end pos found");
         offsets.push((last_pos, end_pos));
         last_pos = end_pos;
     }
     offsets.push((last_pos, total_len));
-    dbg!(&offsets);
     offsets
 }
 
@@ -539,6 +539,7 @@ fn decompress_impl<R: Read>(
                     delimiter,
                     quote_char,
                     eol_char,
+                    None,
                 ) {
                     Some(pos) => {
                         line_count += 1;
@@ -635,13 +636,36 @@ mod test {
         assert!(FLOAT_RE.is_match("+7e+05"));
     }
 
-    // #[test]
-    // fn test_get_file_chunks() {
-    //     let path = "../../examples/datasets/foods1.csv";
-    //     let s = std::fs::read_to_string(path).unwrap();
-    //     let bytes = s.as_bytes();
-    //     // can be within -1 / +1 bounds.
-    //     assert!((get_file_chunks(bytes, 10, 4, b',', None, b'\n').len() as i32 - 10).abs() <= 1);
-    //     assert!((get_file_chunks(bytes, 8, 4, b',', None, b'\n').len() as i32 - 8).abs() <= 1);
-    // }
+    #[test]
+    fn test_get_file_chunks() {
+        let path = "../../examples/datasets/foods1.csv";
+        let s = std::fs::read_to_string(path).unwrap();
+        let bytes = s.as_bytes();
+
+        let (schema, _, _) = infer_file_schema(
+            &ReaderBytes::Borrowed(bytes),
+            b',',
+            None,
+            true,
+            None,
+            &mut 0,
+            0,
+            None,
+            None,
+            b'\n',
+            None,
+            false,
+        )
+        .unwrap();
+        // can be within -1 / +1 bounds.
+        assert!(
+            (get_file_chunks(bytes, 10, 4, &schema, b',', None, b'\n', None).len() as i32 - 8)
+                .abs()
+                <= 1
+        );
+        assert!(
+            (get_file_chunks(bytes, 8, 4, &schema, b',', None, b'\n', None).len() as i32 - 7).abs()
+                <= 1
+        );
+    }
 }

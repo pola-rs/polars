@@ -22,7 +22,7 @@ pub enum NullValues {
     Named(Vec<(String, String)>),
 }
 
-pub(super) enum NullValuesCompiled {
+pub(crate) enum NullValuesCompiled {
     /// A single value that's used for all columns
     AllColumnsSingle(String),
     // Multiple null values that are null for all columns

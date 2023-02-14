@@ -33,6 +33,7 @@ pub(crate) fn next_line_position(
     delimiter: u8,
     quote_char: Option<u8>,
     eol_char: u8,
+    null_values: Option<&NullValuesCompiled>,
 ) -> Option<usize> {
     let mut total_pos = 0;
     if input.is_empty() {
@@ -64,29 +65,46 @@ pub(crate) fn next_line_position(
         match (line, expected_fields) {
             // count the fields, and determine if they are equal to what we expect from the schema
             (Some(line), Some(expected_fields)) => {
+                // First count the fields of this line
+                // if the number of fields is ok, then we continue
+                // with a schema check on the next lines
+                // That means we check if the string value matches what we expect.
+                // and that the number of values match with what we expect.
                 let mut valid = count_fields(line) == expected_fields;
 
-                // check 5 lines on schema
                 if let (Some(schema), true) = (schema, valid) {
-                    for line in (&mut line_iter).take(5) {
-                        let mut field_iter = SplitFields::new(line, delimiter, quote_char, eol_char);
-                        for dtype in schema.iter_dtypes() {
+                    for line in (&mut line_iter).take(3) {
+                        let mut field_iter =
+                            SplitFields::new(line, delimiter, quote_char, eol_char);
+
+                        for (i, dtype) in schema.iter_dtypes().enumerate() {
                             if let Some((field, _)) = field_iter.next() {
                                 if field.is_empty() || field == b"\"\"" {
-                                    continue
+                                    continue;
+                                }
+                                if let Some(null_values) = null_values {
+                                    // safety:
+                                    // i < schema.len()
+                                    if unsafe { null_values.is_null(field, i) } {
+                                        continue;
+                                    }
                                 }
                                 use DataType::*;
                                 let matches = match dtype {
                                     Boolean => {
-                                        BOOLEAN_RE.is_match(std::str::from_utf8(field).unwrap())
+                                        let s = String::from_utf8_lossy(field);
+                                        BOOLEAN_RE.is_match(s.as_ref())
                                     }
                                     Float32 | Float64 => {
-                                        FLOAT_RE.is_match(std::str::from_utf8(field).unwrap())
+                                        let s = String::from_utf8_lossy(field);
+                                        FLOAT_RE.is_match(s.as_ref())
+                                            || INTEGER_RE.is_match(s.as_ref())
                                     }
                                     dt if dt.is_integer() => {
-                                        INTEGER_RE.is_match(std::str::from_utf8(field).unwrap())
+                                        let s = String::from_utf8_lossy(field);
+                                        INTEGER_RE.is_match(s.as_ref())
                                     }
-                                    _ => true
+                                    _ => true,
                                 };
                                 if !matches {
                                     valid = false;
@@ -102,8 +120,7 @@ pub(crate) fn next_line_position(
                     }
                 }
                 if valid && !line_iter.is_finished() {
-                    dbg!(&std::str::from_utf8(&input[..total_pos + pos]));
-                    return Some(total_pos + pos)
+                    return Some(total_pos + pos);
                 } else {
                     debug_assert!(pos < input.len());
                     unsafe {
@@ -216,6 +233,7 @@ pub(crate) fn get_line_stats(
             delimiter,
             quote_char,
             eol_char,
+            None,
         )?;
         bytes_trunc = &bytes_trunc[pos + 1..];
 
