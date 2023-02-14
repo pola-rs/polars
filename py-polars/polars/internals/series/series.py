@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import sys
 import typing
 from datetime import date, datetime, time, timedelta
 from typing import (
@@ -110,8 +111,10 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
 
-def wrap_s(s: PySeries) -> Series:
-    return Series._from_pyseries(s)
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 
 ArrayLike = Union[
@@ -123,6 +126,10 @@ ArrayLike = Union[
     "pd.Series",
     "pd.DatetimeIndex",
 ]
+
+
+def wrap_s(s: PySeries) -> Series:
+    return Series._from_pyseries(s)
 
 
 @expr_dispatch
@@ -287,19 +294,13 @@ class Series:
             )
 
     @classmethod
-    def _from_pyseries(cls, pyseries: PySeries) -> Series:
+    def _from_pyseries(cls, pyseries: PySeries) -> Self:
         series = cls.__new__(cls)
         series._s = pyseries
         return series
 
     @classmethod
-    def _repeat(
-        cls, name: str, val: int | float | str | bool, n: int, dtype: PolarsDataType
-    ) -> Series:
-        return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
-
-    @classmethod
-    def _from_arrow(cls, name: str, values: pa.Array, rechunk: bool = True) -> Series:
+    def _from_arrow(cls, name: str, values: pa.Array, rechunk: bool = True) -> Self:
         """Construct a Series from an Arrow Array."""
         return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
 
@@ -307,11 +308,17 @@ class Series:
     @deprecated_alias(nan_to_none="nan_to_null")
     def _from_pandas(
         cls, name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
-    ) -> Series:
+    ) -> Self:
         """Construct a Series from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
+
+    @classmethod
+    def _repeat(
+        cls, name: str, val: int | float | str | bool, n: int, dtype: PolarsDataType
+    ) -> Self:
+        return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
 
     def _get_ptr(self) -> int:
         """
