@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import random
+import sys
 import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, cast
@@ -52,6 +53,11 @@ if TYPE_CHECKING:
     )
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 
 def selection_to_pyexpr_list(
@@ -144,7 +150,7 @@ class Expr:
     _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "bin", "struct"}
 
     @classmethod
-    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
+    def _from_pyexpr(cls, pyexpr: PyExpr) -> Self:
         expr = cls.__new__(cls)
         expr._pyexpr = pyexpr
         return expr
