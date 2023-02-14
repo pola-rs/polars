@@ -1087,7 +1087,11 @@ class Series:
         """Compute the exponential, element-wise."""
 
     def drop_nulls(self) -> Series:
-        """Create a new Series that copies data from this Series without null values."""
+        """
+        Drop all null values.
+
+        Creates a new Series that copies data from this Series without null values.
+        """
 
     def drop_nans(self) -> Series:
         """Drop NaN values."""
@@ -1381,7 +1385,7 @@ class Series:
     @deprecate_nonkeyword_arguments()
     def to_dummies(self, separator: str = "_") -> pli.DataFrame:
         """
-        Get dummy variables.
+        Get dummy/indicator variables.
 
         Parameters
         ----------
