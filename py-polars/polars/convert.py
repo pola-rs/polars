@@ -394,6 +394,8 @@ def from_pandas(
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
+    *,
+    include_index: bool = False,
 ) -> DataFrame:
     ...
 
@@ -404,6 +406,8 @@ def from_pandas(
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
+    *,
+    include_index: bool = False,
 ) -> Series:
     ...
 
@@ -414,6 +418,8 @@ def from_pandas(
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
+    *,
+    include_index: bool = False,
 ) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
@@ -432,6 +438,8 @@ def from_pandas(
         If data contains `NaN` values PyArrow will convert the ``NaN`` to ``None``
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
+    include_index : bool, default False
+        Load any non-default pandas indexes as columns.
 
     Returns
     -------
@@ -478,6 +486,7 @@ def from_pandas(
             rechunk=rechunk,
             nan_to_null=nan_to_null,
             schema_overrides=schema_overrides,
+            include_index=include_index,
         )
     else:
         raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")

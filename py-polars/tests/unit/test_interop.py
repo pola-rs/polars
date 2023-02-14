@@ -160,8 +160,8 @@ def test_from_pandas_nan_to_null() -> None:
 
 def test_from_pandas_datetime() -> None:
     ts = datetime(2021, 1, 1, 20, 20, 20, 20)
-    pl_s = pd.Series([ts, ts])
-    tmp = pl.from_pandas(pl_s.to_frame("a"))
+    pd_s = pd.Series([ts, ts])
+    tmp = pl.from_pandas(pd_s.to_frame("a"))
     s = tmp["a"]
     assert s.dt.hour()[0] == 20
     assert s.dt.minute()[0] == 20
@@ -172,9 +172,26 @@ def test_from_pandas_datetime() -> None:
     assert s[0] == datetime(2021, 6, 24, 0, 0)
     assert s[-1] == datetime(2021, 6, 24, 9, 0)
 
-    df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    pl.from_pandas(df)
+
+def test_from_pandas_include_indexes() -> None:
+    data = {
+        "dtm": [datetime(2021, 1, 1), datetime(2021, 1, 2), datetime(2021, 1, 3)],
+        "val": [100, 200, 300],
+        "misc": ["x", "y", "z"],
+    }
+    pd_df = pd.DataFrame(data)
+
+    df = pl.from_pandas(pd_df.set_index(["dtm"]))
+    assert df.to_dict(False) == {"val": [100, 200, 300], "misc": ["x", "y", "z"]}
+
+    df = pl.from_pandas(pd_df.set_index(["dtm", "val"]))
+    assert df.to_dict(False) == {"misc": ["x", "y", "z"]}
+
+    df = pl.from_pandas(pd_df.set_index(["dtm"]), include_index=True)
+    assert df.to_dict(False) == data
+
+    df = pl.from_pandas(pd_df.set_index(["dtm", "val"]), include_index=True)
+    assert df.to_dict(False) == data
 
 
 def test_from_pandas_duplicated_columns() -> None:

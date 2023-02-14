@@ -1229,6 +1229,28 @@ def iterable_to_pydf(
     return (df.rechunk() if n_chunks > 0 else df)._df
 
 
+def pandas_has_default_index(df: pd.DataFrame) -> bool:
+    """Identify if the pandas frame only has a default (or equivalent) index."""
+    from pandas.core.indexes.numeric import IntegerIndex
+    from pandas.core.indexes.range import RangeIndex
+
+    index_cols = df.index.names
+
+    if len(index_cols) > 1:
+        return False  # not default: more than one index
+    elif index_cols not in ([None], [""]):
+        return False  # not default: index is named
+    elif df.index.equals(RangeIndex(start=0, stop=len(df), step=1)):
+        return True  # is default: simple range index
+    else:
+        # finally, is the index _equivalent_ to a default unnamed
+        # integer index with frame data that was previously sorted
+        return (
+            isinstance(df.index, IntegerIndex)
+            and (df.index.sort_values() == np.arange(len(df))).all()
+        )
+
+
 @deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pydf(
     data: pd.DataFrame,
@@ -1236,15 +1258,25 @@ def pandas_to_pydf(
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
     nan_to_null: bool = True,
+    include_index: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
+    arrow_dict = {}
     length = data.shape[0]
-    arrow_dict = {
-        str(col): _pandas_series_to_arrow(
+
+    if include_index and not pandas_has_default_index(data):
+        for idxcol in data.index.names:
+            arrow_dict[str(idxcol)] = _pandas_series_to_arrow(
+                data.index.get_level_values(idxcol),
+                nan_to_null=nan_to_null,
+                min_len=length,
+            )
+
+    for col in data.columns:
+        arrow_dict[str(col)] = _pandas_series_to_arrow(
             data[col], nan_to_null=nan_to_null, min_len=length
         )
-        for col in data.columns
-    }
+
     arrow_table = pa.table(arrow_dict)
     return arrow_to_pydf(
         arrow_table, schema=schema, schema_overrides=schema_overrides, rechunk=rechunk

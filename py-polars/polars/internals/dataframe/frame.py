@@ -610,6 +610,7 @@ class DataFrame:
         schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
         nan_to_null: bool = True,
+        include_index: bool = False,
     ) -> Self:
         """
         Construct a Polars DataFrame from a pandas DataFrame.
@@ -635,6 +636,8 @@ class DataFrame:
             Make sure that all data is in contiguous memory.
         nan_to_null : bool, default True
             If the data contains NaN values they will be converted to null/None.
+        include_index : bool, default False
+            Load any non-default pandas indexes as columns.
 
         Returns
         -------
@@ -648,6 +651,7 @@ class DataFrame:
                 schema_overrides=schema_overrides,
                 rechunk=rechunk,
                 nan_to_null=nan_to_null,
+                include_index=include_index,
             )
         )
 
