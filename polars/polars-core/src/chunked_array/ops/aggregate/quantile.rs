@@ -1,5 +1,6 @@
 use polars_arrow::floats::{f32_to_ordablef32, f64_to_ordablef64};
 use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_utils::slice::Extrema;
 
 use super::*;
 
@@ -99,6 +100,9 @@ fn quantile_slice<T: ToPrimitive + Ord>(
     if vals.is_empty() {
         return Ok(None);
     }
+    if vals.len() == 1 {
+        return Ok(vals[0].to_f64());
+    }
     let (idx, float_idx, top_idx) = quantile_idx(quantile, vals.len(), 0, interpol);
 
     let (_lhs, lower, rhs) = vals.select_nth_unstable(idx);
@@ -107,14 +111,14 @@ fn quantile_slice<T: ToPrimitive + Ord>(
     } else {
         match interpol {
             QuantileInterpolOptions::Midpoint => {
-                let (_, upper, _) = rhs.select_nth_unstable(0);
+                let upper = rhs.min_value().unwrap();
                 Ok(Some(midpoint_interpol(
                     lower.to_f64().unwrap(),
                     upper.to_f64().unwrap(),
                 )))
             }
             QuantileInterpolOptions::Linear => {
-                let (_, upper, _) = rhs.select_nth_unstable(0);
+                let upper = rhs.min_value().unwrap();
                 Ok(linear_interpol(
                     lower.to_f64().unwrap(),
                     upper.to_f64().unwrap(),

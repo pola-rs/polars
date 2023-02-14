@@ -964,18 +964,6 @@ def test_repeat() -> None:
     assert s.len() == 5
 
 
-def test_median() -> None:
-    s = pl.Series([1, 2, 3])
-    assert s.median() == 2
-
-
-def test_quantile() -> None:
-    s = pl.Series([1, 2, 3])
-    assert s.quantile(0.5, "nearest") == 2
-    assert s.quantile(0.5, "lower") == 2
-    assert s.quantile(0.5, "higher") == 2
-
-
 def test_shape() -> None:
     s = pl.Series([1, 2, 3])
     assert s.shape == (3,)

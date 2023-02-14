@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta
 
+import numpy as np
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -77,3 +80,38 @@ def test_list_aggregation_that_filters_all_data_6017() -> None:
 
     assert out.schema == {"col_to_groupby": pl.Int64, "calc": pl.List(pl.Float64)}
     assert out.to_dict(False) == {"col_to_groupby": [2], "calc": [[]]}
+
+
+def test_median() -> None:
+    s = pl.Series([1, 2, 3])
+    assert s.median() == 2
+
+
+def test_quantile() -> None:
+    s = pl.Series([1, 2, 3])
+    assert s.quantile(0.5, "nearest") == 2
+    assert s.quantile(0.5, "lower") == 2
+    assert s.quantile(0.5, "higher") == 2
+
+
+@pytest.mark.slow()
+def test_quantile_vs_numpy() -> None:
+    for n in [0, 1, 2, 10, 100]:
+        a = np.random.randint(0, 50, n)
+        np_result = np.median(a)
+        # nan check
+        if np_result != np_result:
+            np_result = None
+        assert pl.Series(a).median() == np_result
+
+        q = np.random.sample()
+        try:
+            np_result = np.quantile(a, q)
+        except IndexError:
+            np_result = None
+            pass
+        if np_result:
+            # nan check
+            if np_result != np_result:
+                np_result = None
+            assert pl.Series(a).quantile(q, interpolation="linear") == np_result
