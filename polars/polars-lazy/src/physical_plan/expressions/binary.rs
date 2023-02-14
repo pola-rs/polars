@@ -199,7 +199,7 @@ impl PhysicalExpr for BinaryExpr {
 
                                 // Safety:
                                 // we are in bounds
-                                let mut arr = unsafe { arr_l.slice_unchecked(idx, 1) };
+                                let mut arr = unsafe { arr_l.sliced_unchecked(idx, 1) };
                                 us.swap(&mut arr);
 
                                 let l = us.as_ref();
@@ -249,7 +249,7 @@ impl PhysicalExpr for BinaryExpr {
                                 // TODO: optimize this? Its slow.
                                 // Safety:
                                 // we are in bounds
-                                let mut arr = unsafe { arr_r.slice_unchecked(idx, 1) };
+                                let mut arr = unsafe { arr_r.sliced_unchecked(idx, 1) };
                                 us.swap(&mut arr);
                                 let r = us.as_ref();
 

@@ -2410,7 +2410,7 @@ class DataFrame:
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
-        use_pyarrow: bool = _PYARROW_AVAILABLE,
+        use_pyarrow: bool = False,
         pyarrow_options: dict[str, object] | None = None,
     ) -> None:
         """

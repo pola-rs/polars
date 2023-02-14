@@ -12,7 +12,7 @@ pub struct PolarsExtension {
 impl PolarsExtension {
     /// This is very expensive
     pub(crate) unsafe fn arr_to_av(arr: &FixedSizeBinaryArray, i: usize) -> AnyValue {
-        let arr = arr.slice(i, 1);
+        let arr = arr.slice_typed_unchecked(i, 1);
         let pe = Self::new(arr);
         let pe = ManuallyDrop::new(pe);
         pe.get_series("").get(0).unwrap().into_static().unwrap()

@@ -108,7 +108,7 @@ mod inner_mod {
                     } else {
                         // safety:
                         // we are in bounds
-                        let arr_window = unsafe { arr.slice_unchecked(start, size) };
+                        let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
                         // Safety.
                         // ptr is not dropped as we are in scope
@@ -155,7 +155,7 @@ mod inner_mod {
                     } else {
                         // safety:
                         // we are in bounds
-                        let arr_window = unsafe { arr.slice_unchecked(start, size) };
+                        let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
                         // Safety.
                         // ptr is not dropped as we are in scope
@@ -213,7 +213,7 @@ mod inner_mod {
 
             for offset in 0..self.len() + 1 - window_size {
                 debug_assert!(offset + window_size <= arr.len());
-                let arr_window = unsafe { arr.slice_unchecked(offset, window_size) };
+                let arr_window = unsafe { arr.slice_typed_unchecked(offset, window_size) };
                 // the lengths are cached, so we must update them
                 heap_container.length = arr_window.len() as IdxSize;
 
