@@ -81,6 +81,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         CsvEncoding,
         FillNullStrategy,
+        IntoExpr,
         JoinStrategy,
         ParallelStrategy,
         PolarsExprType,
@@ -1689,8 +1690,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def groupby(
         self,
-        by: str | pli.Expr | Sequence[str | pli.Expr],
-        *,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
         maintain_order: bool = False,
     ) -> LazyGroupBy[Self]:
         """
@@ -1699,7 +1700,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         by
-            Column(s) to group by.
+            Column or columns to group by. Accepts expression input. Strings are parsed
+            as column names.
+        *more_by
+            Additional columns to group by, specified as positional arguments.
         maintain_order
             Make sure that the order of the groups remain consistent. This is more
             expensive than a default groupby.
@@ -1713,7 +1717,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... ).lazy()
-        >>> ldf.groupby(by="a", maintain_order=True).agg(pl.col("b").sum()).collect()
+        >>> ldf.groupby("a", maintain_order=True).agg(pl.col("b").sum()).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1733,8 +1737,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         TypeError: 'LazyGroupBy' object is not subscriptable
 
         """
-        pyexprs_by = selection_to_pyexpr_list(by)
-        lgb = self._ldf.groupby(pyexprs_by, maintain_order)
+        exprs = selection_to_pyexpr_list(by)
+        exprs.extend(selection_to_pyexpr_list(more_by))
+        lgb = self._ldf.groupby(exprs, maintain_order)
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_rolling(
@@ -1744,7 +1749,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
     ) -> LazyGroupBy[Self]:
         """
         Create rolling groups based on a time column.
@@ -1863,7 +1868,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
     ) -> LazyGroupBy[Self]:
         """

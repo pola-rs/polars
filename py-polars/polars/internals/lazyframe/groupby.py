@@ -20,7 +20,7 @@ LDF = TypeVar("LDF", bound="pli.LazyFrame")
 
 
 class LazyGroupBy(Generic[LDF]):
-    """Created by `df.lazy().groupby("foo)"`."""
+    """Created by `df.lazy().groupby("foo")`."""
 
     def __init__(self, lgb: PyLazyGroupBy, lazyframe_class: type[LDF]) -> None:
         self.lgb = lgb

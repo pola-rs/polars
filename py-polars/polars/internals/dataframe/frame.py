@@ -120,6 +120,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         CsvEncoding,
         FillNullStrategy,
+        IntoExpr,
         IpcCompression,
         JoinStrategy,
         NullStrategy,
@@ -3552,8 +3553,8 @@ class DataFrame:
 
     def groupby(
         self,
-        by: str | pli.Expr | Sequence[str | pli.Expr],
-        *,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
         maintain_order: bool = False,
     ) -> GroupBy[Self]:
         """
@@ -3562,11 +3563,13 @@ class DataFrame:
         Parameters
         ----------
         by
-            Column(s) to group by.
+            Column or columns to group by. Accepts expression input. Strings are parsed
+            as column names.
+        *more_by
+            Additional columns to group by, specified as positional arguments.
         maintain_order
             Make sure that the order of the groups remain consistent. This is more
-            expensive than a default groupby. Note that this only works in expression
-            aggregations.
+            expensive than a default groupby.
 
         Examples
         --------
@@ -3616,13 +3619,7 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        # Explicitly handle case where user mistakenly calls `groupby("a", "b")`
-        if not isinstance(maintain_order, bool):
-            raise TypeError(
-                f"invalid input for groupby arg `maintain_order`: {maintain_order}."
-            )
-
-        return GroupBy(self._df, by, self.__class__, maintain_order=maintain_order)
+        return GroupBy(self, by, *more_by, maintain_order=maintain_order)
 
     def groupby_rolling(
         self,
@@ -3631,7 +3628,7 @@ class DataFrame:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
     ) -> RollingGroupBy[Self]:
         """
         Create rolling groups based on a time column.
@@ -3740,7 +3737,7 @@ class DataFrame:
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
     ) -> DynamicGroupBy[Self]:
         """

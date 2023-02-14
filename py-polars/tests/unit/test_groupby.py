@@ -64,9 +64,27 @@ def test_groupby() -> None:
     ]
     # assert sorted(df.groupby("b").quantile(0.5).rows()) == ...
 
-    # Invalid input: `by` not specified as a sequence
-    with pytest.raises(TypeError):
-        df.groupby("a", "b")  # type: ignore[arg-type, misc]
+
+def test_groupby_args() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "b", "b", "c"],
+            "b": [1, 2, 3, 4, 5, 6],
+            "c": [6, 5, 4, 3, 2, 1],
+        }
+    )
+
+    # Single column name
+    assert df.groupby("a").agg("b").columns == ["a", "b"]
+    # Column names as list
+    expected = ["a", "b", "c"]
+    assert df.groupby(["a", "b"]).agg("c").columns == expected
+    # Column names as positional arguments
+    assert df.groupby("a", "b").agg("c").columns == expected
+    # With keyword argument
+    assert df.groupby("a", "b", maintain_order=True).agg("c").columns == expected
+    # Mixed
+    assert df.groupby(["a"], "b", maintain_order=True).agg("c").columns == expected
 
 
 def test_groupby_iteration() -> None:
