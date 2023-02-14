@@ -85,8 +85,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a4c5b03335bc1cb0fd9f5297f8fd3bbfd6fb04f3cb0bc7d6c91b7128cb8336a"
+source = "git+https://github.com/ritchie46/arrow2?branch=cast_fixed_size_bin#f510012eb375093c24d596e09f299b81972ff0c4"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1558,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "getrandom",
  "polars-core",
@@ -1572,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "arrow2",
  "chrono",
@@ -1585,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1615,7 +1614,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1645,7 +1644,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1664,7 +1663,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "arrow2",
  "base64 0.21.0",
@@ -1680,7 +1679,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "crossbeam-channel",
  "enum_dispatch",
@@ -1698,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "ahash",
  "once_cell",
@@ -1729,7 +1728,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "chrono",
  "chrono-tz 0.8.1",
@@ -1746,7 +1745,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "once_cell",
  "rayon",

@@ -91,7 +91,7 @@ where
     ) {
         let ca: &ChunkedArray<K::POLARSTYPE> = values.as_ref().as_ref();
         let arr = ca.downcast_iter().next().unwrap();
-        let arr = unsafe { arr.slice_unchecked(offset as usize, length as usize) };
+        let arr = unsafe { arr.slice_typed_unchecked(offset as usize, length as usize) };
         // convince the compiler that K::POLARSTYPE::Native == K
         let arr = unsafe { std::mem::transmute::<PrimitiveArray<_>, PrimitiveArray<K>>(arr) };
         let agg = if self.is_min {

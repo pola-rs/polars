@@ -102,10 +102,10 @@ where
         length: IdxSize,
         values: &Series,
     ) {
-        // we must cast because mean might be a differen dtype
+        // we must cast because mean might be a different dtype
         let arr = unsafe {
             let arr = values.chunks().get_unchecked(0);
-            arr.slice_unchecked(offset as usize, length as usize)
+            arr.sliced_unchecked(offset as usize, length as usize)
         };
         let dtype = K::POLARSTYPE::get_dtype().to_arrow();
         let arr = polars_arrow::compute::cast::cast(arr.as_ref(), &dtype).unwrap();

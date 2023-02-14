@@ -87,7 +87,7 @@ where
         // we must cast because sum output type might be different than input type.
         let arr = unsafe {
             let arr = values.chunks().get_unchecked(0);
-            arr.slice_unchecked(offset as usize, length as usize)
+            arr.sliced_unchecked(offset as usize, length as usize)
         };
         let dtype = K::POLARSTYPE::get_dtype().to_arrow();
         let arr = polars_arrow::compute::cast::cast(arr.as_ref(), &dtype).unwrap();

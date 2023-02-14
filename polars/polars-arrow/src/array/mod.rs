@@ -10,8 +10,10 @@ use crate::utils::CustomIterTools;
 pub mod default_arrays;
 mod get;
 pub mod list;
+pub mod slice;
 
 pub use get::ArrowGetItem;
+pub use slice::*;
 
 pub trait ValueSize {
     /// Useful for a Utf8 or a List to get underlying value size.

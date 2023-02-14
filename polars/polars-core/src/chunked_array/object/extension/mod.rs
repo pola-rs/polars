@@ -99,7 +99,7 @@ pub(crate) fn create_extension<
     // they can be forgotten
     let buf: Buffer<u8> = buf.into();
     let len = buf.len() - n_padding;
-    let buf = buf.slice(n_padding, len);
+    let buf = buf.sliced(n_padding, len);
 
     // ptr to start of T, not to start of padding
     let ptr = buf.as_slice().as_ptr();

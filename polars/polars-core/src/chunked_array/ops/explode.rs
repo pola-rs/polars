@@ -5,7 +5,7 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
-use polars_arrow::prelude::{FromDataUtf8, ValueSize};
+use polars_arrow::prelude::*;
 
 use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::prelude::*;
@@ -179,7 +179,7 @@ impl ExplodeByOffsets for BooleanChunked {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice(start, last - start);
+                    let vals = arr.slice_typed(start, last - start);
 
                     if vals.null_count() == 0 {
                         builder
@@ -194,7 +194,7 @@ impl ExplodeByOffsets for BooleanChunked {
             }
             last = o;
         }
-        let vals = arr.slice(start, last - start);
+        let vals = arr.slice_typed(start, last - start);
         if vals.null_count() == 0 {
             builder
                 .array_builder
@@ -220,7 +220,7 @@ impl ExplodeByOffsets for ListChunked {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice(start, last - start);
+                    let vals = arr.slice_typed(start, last - start);
                     let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
                     for s in &ca {
                         builder.append_opt_series(s.as_ref())
@@ -231,7 +231,7 @@ impl ExplodeByOffsets for ListChunked {
             }
             last = o;
         }
-        let vals = arr.slice(start, last - start);
+        let vals = arr.slice_typed(start, last - start);
         let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
         for s in &ca {
             builder.append_opt_series(s.as_ref())
@@ -242,7 +242,7 @@ impl ExplodeByOffsets for ListChunked {
 impl ExplodeByOffsets for Utf8Chunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
-        let arr = self.downcast_iter().next().unwrap();
+        let arr = self.downcast_iter().next().unwrap().clone();
 
         let cap = ((arr.len() as f32) * 1.5) as usize;
         let bytes_size = self.get_values_size();
@@ -254,7 +254,7 @@ impl ExplodeByOffsets for Utf8Chunked {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice(start, last - start);
+                    let vals = arr.slice_typed(start, last - start);
                     if vals.null_count() == 0 {
                         builder
                             .builder
@@ -268,7 +268,7 @@ impl ExplodeByOffsets for Utf8Chunked {
             }
             last = o;
         }
-        let vals = arr.slice(start, last - start);
+        let vals = arr.slice_typed(start, last - start);
         if vals.null_count() == 0 {
             builder
                 .builder
@@ -296,7 +296,7 @@ impl ExplodeByOffsets for BinaryChunked {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice(start, last - start);
+                    let vals = arr.slice_typed(start, last - start);
                     if vals.null_count() == 0 {
                         builder
                             .builder
@@ -310,7 +310,7 @@ impl ExplodeByOffsets for BinaryChunked {
             }
             last = o;
         }
-        let vals = arr.slice(start, last - start);
+        let vals = arr.slice_typed(start, last - start);
         if vals.null_count() == 0 {
             builder
                 .builder
@@ -393,7 +393,7 @@ impl ChunkExplode for ListChunked {
                 let len = offsets[offsets.len() - 1] as usize - start;
                 // safety:
                 // we are in bounds
-                values = unsafe { values.slice_unchecked(start, len) };
+                values = unsafe { values.sliced_unchecked(start, len) };
             }
             Series::try_from((self.name(), values)).unwrap()
         } else {

@@ -38,7 +38,7 @@ fn slice(
         unsafe {
             // Safety:
             // this function ensures the slices are in bounds
-            new_chunks.push(chunk.slice_unchecked(remaining_offset, take_len));
+            new_chunks.push(chunk.sliced_unchecked(remaining_offset, take_len));
         }
         remaining_length -= take_len;
         remaining_offset = 0;
@@ -47,7 +47,7 @@ fn slice(
         }
     }
     if new_chunks.is_empty() {
-        new_chunks.push(chunks[0].slice(0, 0));
+        new_chunks.push(chunks[0].sliced(0, 0));
     }
     (new_chunks, new_len)
 }
