@@ -46,6 +46,7 @@ use std::path::{Path, PathBuf};
 use arrow::array::new_empty_array;
 use arrow::error::Result as ArrowResult;
 pub use options::*;
+use polars_core::config::verbose;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
@@ -135,7 +136,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .iter()
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
-                if std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1" {
+                if verbose() {
                     eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height() - n)
                 }
                 parsed_dfs.push(df.slice(0, len));

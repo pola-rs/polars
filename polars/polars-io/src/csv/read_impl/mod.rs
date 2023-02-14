@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 pub use batched::*;
 use polars_arrow::array::*;
+use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
@@ -480,7 +481,7 @@ impl<'a> CoreReader<'a> {
         bytes: &[u8],
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
-        let logging = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
+        let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging, false)?;
         let projection = self.get_projection();

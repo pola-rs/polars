@@ -5,7 +5,7 @@ extern crate core;
 pub mod utils;
 pub mod chunked_array;
 pub mod cloud;
-pub(crate) mod config;
+pub mod config;
 pub mod datatypes;
 #[cfg(feature = "docs")]
 pub mod doc;

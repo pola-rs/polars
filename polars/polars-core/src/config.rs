@@ -13,3 +13,7 @@ pub(crate) const FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION: &str =
 pub(crate) const FMT_TABLE_INLINE_COLUMN_DATA_TYPE: &str =
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE";
 pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_CORNERS";
+
+pub fn verbose() -> bool {
+    std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1"
+}
