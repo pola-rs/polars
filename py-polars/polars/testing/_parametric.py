@@ -32,11 +32,13 @@ import polars.internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
+    DataType,
     Date,
     Datetime,
     Duration,
     Float32,
     Float64,
+    FloatType,
     Int8,
     Int16,
     Int32,
@@ -48,6 +50,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    _normalize_polars_dtype,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -82,33 +85,33 @@ MAX_COLS = 8
 # See: https://hypothesis.readthedocs.io/
 # =====================================================================
 
-dtype_strategy_mapping: dict[PolarsDataType, Any] = {
-    Boolean: booleans(),
-    Float32: floats(width=32),
-    Float64: floats(width=64),
-    Int8: integers(min_value=-(2**7), max_value=(2**7) - 1),
-    Int16: integers(min_value=-(2**15), max_value=(2**15) - 1),
-    Int32: integers(min_value=-(2**31), max_value=(2**31) - 1),
-    Int64: integers(min_value=-(2**63), max_value=(2**63) - 1),
-    UInt8: integers(min_value=0, max_value=(2**8) - 1),
-    UInt16: integers(min_value=0, max_value=(2**16) - 1),
-    UInt32: integers(min_value=0, max_value=(2**32) - 1),
-    UInt64: integers(min_value=0, max_value=(2**64) - 1),
+dtype_strategy_mapping: dict[DataType, Any] = {
+    Boolean(): booleans(),
+    Float32(): floats(width=32),
+    Float64(): floats(width=64),
+    Int8(): integers(min_value=-(2**7), max_value=(2**7) - 1),
+    Int16(): integers(min_value=-(2**15), max_value=(2**15) - 1),
+    Int32(): integers(min_value=-(2**31), max_value=(2**31) - 1),
+    Int64(): integers(min_value=-(2**63), max_value=(2**63) - 1),
+    UInt8(): integers(min_value=0, max_value=(2**8) - 1),
+    UInt16(): integers(min_value=0, max_value=(2**16) - 1),
+    UInt32(): integers(min_value=0, max_value=(2**32) - 1),
+    UInt64(): integers(min_value=0, max_value=(2**64) - 1),
     # TODO: when generating text for categorical, ensure there are repeats -
     #  don't want all to be unique.
-    Categorical: text(max_size=10),
-    Utf8: text(max_size=10),
+    Categorical(): text(max_size=10),
+    Utf8(): text(max_size=10),
     # TODO: generate arrow temporal types with different resolution (32/64) to
     #  validate compatibility.
-    Time: times(),
-    Date: dates(),
-    Duration: timedeltas(
+    Time(): times(),
+    Date(): dates(),
+    Duration(): timedeltas(
         min_value=timedelta(microseconds=-(2**63)),
         max_value=timedelta(microseconds=(2**63) - 1),
     ),
     # TODO: confirm datetime min/max limits with different timeunit granularity.
     # TODO: specific strategies for temporal dtypes with timeunits.
-    Datetime: datetimes(min_value=datetime(1970, 1, 1)),
+    Datetime(): datetimes(min_value=datetime(1970, 1, 1)),
     # Datetime("ms")
     # Datetime("us")
     # Datetime("ns")
@@ -154,7 +157,7 @@ class column:
     --------
     >>> from hypothesis.strategies import sampled_from
     >>> from polars.testing.parametric import column
-    >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
+    >>> column(name="unique_small_ints", dtype=pl.UInt8(), unique=True)
     column(name='unique_small_ints', dtype=UInt8, strategy=None, null_probability=None, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
     column(name='ccy', dtype=Utf8, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
@@ -162,7 +165,7 @@ class column:
     """  # noqa: W505
 
     name: str
-    dtype: PolarsDataType | None = None
+    dtype: DataType | None = None
     strategy: SearchStrategy[pli.Series | int] | None = None
     null_probability: float | None = None
     unique: bool = False
@@ -264,6 +267,7 @@ def columns(
     ...     assert_something(df)
 
     """
+
     # create/assign named columns
     if cols is None:
         cols = random.randint(
@@ -287,7 +291,10 @@ def columns(
         raise InvalidArgument(f"{dtype} is not a valid polars datatype")
 
     # init list of named/typed columns
-    return [column(name=nm, dtype=tp, unique=unique) for nm, tp in zip(names, dtypes)]
+    return [
+        column(name=nm, dtype=_normalize_polars_dtype(tp), unique=unique)
+        for nm, tp in zip(names, dtypes)
+    ]
 
 
 @defines_strategy()
@@ -371,7 +378,14 @@ def series(
     ]
 
     """
-    selectable_dtypes = [
+    if dtype is not None:
+        dtype = _normalize_polars_dtype(dtype)
+    if allowed_dtypes is not None:
+        allowed_dtypes = [_normalize_polars_dtype(dtype) for dtype in allowed_dtypes]
+    if excluded_dtypes is not None:
+        excluded_dtypes = [_normalize_polars_dtype(dtype) for dtype in excluded_dtypes]
+
+    selectable_dtypes: list[DataType] = [
         dtype
         for dtype in (allowed_dtypes or strategy_dtypes)
         if dtype not in (excluded_dtypes or ())
@@ -392,7 +406,7 @@ def series(
         else:
             dtype_strategy = strategy
 
-        if series_dtype in (Float32, Float64) and not allow_infinities:
+        if isinstance(series_dtype, FloatType) and not allow_infinities:
             dtype_strategy = dtype_strategy.filter(
                 lambda x: not isinstance(x, float) or isfinite(x)
             )
@@ -558,6 +572,10 @@ def dataframes(
     if isinstance(min_size, int) and min_cols in (0, None):
         min_cols = 1
 
+    if allowed_dtypes is not None:
+        allowed_dtypes = [_normalize_polars_dtype(dtype) for dtype in allowed_dtypes]
+    if excluded_dtypes is not None:
+        excluded_dtypes = [_normalize_polars_dtype(dtype) for dtype in excluded_dtypes]
     selectable_dtypes = [
         dtype
         for dtype in (allowed_dtypes or strategy_dtypes)

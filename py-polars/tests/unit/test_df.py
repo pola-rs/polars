@@ -2168,7 +2168,7 @@ def test_df_broadcast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]}, schema_overrides={"a": pl.UInt8})
     out = df.with_columns(pl.Series("s", [[1, 2]]))
     assert out.shape == (3, 2)
-    assert out.schema == {"a": pl.UInt8, "s": pl.List(pl.Int64)}
+    assert out.schema == {"a": pl.UInt8(), "s": pl.List(pl.Int64)}
     assert out.rows() == [(1, [1, 2]), (2, [1, 2]), (3, [1, 2])]
 
 

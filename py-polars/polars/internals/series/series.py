@@ -23,19 +23,23 @@ from polars.datatypes import (
     Duration,
     Float32,
     Float64,
+    FloatType,
     Int8,
     Int16,
     Int32,
     Int64,
     List,
+    NumericType,
     Object,
     PolarsDataType,
+    TemporalType,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
     Utf8,
+    _normalize_polars_dtype,
     dtype_to_ctype,
     get_idx_type,
     is_polars_dtype,
@@ -334,7 +338,8 @@ class Series:
         Int64
 
         """
-        return self._s.dtype()
+        dtype = self._s.dtype()
+        return _normalize_polars_dtype(dtype)
 
     @property
     def flags(self) -> dict[str, bool]:
@@ -2655,18 +2660,7 @@ class Series:
         True
 
         """
-        return self.dtype in (
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            Float32,
-            Float64,
-        )
+        return isinstance(self.dtype, NumericType)
 
     def is_datelike(self) -> bool:
         """
@@ -2680,7 +2674,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Date, Datetime, Duration, Time)
+        return isinstance(self.dtype, TemporalType)
 
     def is_float(self) -> bool:
         """
@@ -2693,7 +2687,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Float32, Float64)
+        return isinstance(self.dtype, FloatType)
 
     def is_boolean(self) -> bool:
         """
@@ -2706,7 +2700,7 @@ class Series:
         True
 
         """
-        return self.dtype is Boolean
+        return isinstance(self.dtype, Boolean)
 
     def is_utf8(self) -> bool:
         """
@@ -2719,7 +2713,7 @@ class Series:
         True
 
         """
-        return self.dtype is Utf8
+        return isinstance(self.dtype, Utf8)
 
     def view(self, ignore_nulls: bool = False) -> SeriesView:
         """

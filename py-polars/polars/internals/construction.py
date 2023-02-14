@@ -96,10 +96,7 @@ def include_unknowns(
     schema: SchemaDict, cols: Sequence[str]
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
-    return {
-        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
-        for col in cols
-    }
+    return {col: (schema.get(col, Unknown) or Unknown) for col in cols}
 
 
 ################################
@@ -362,7 +359,7 @@ def sequence_to_pyseries(
                     values=[
                         pli.Series(
                             values=v,
-                            dtype=nested_dtype,  # type: ignore[arg-type]
+                            dtype=nested_dtype,
                             strict=strict,
                             nan_to_null=nan_to_null,
                         )
@@ -396,9 +393,7 @@ def sequence_to_pyseries(
             else:
                 try:
                     if is_polars_dtype(nested_dtype):
-                        nested_arrow_dtype = dtype_to_arrow_type(
-                            nested_dtype  # type: ignore[arg-type]
-                        )
+                        nested_arrow_dtype = dtype_to_arrow_type(nested_dtype)
                     else:
                         nested_arrow_dtype = py_type_to_arrow_type(
                             nested_dtype  # type: ignore[arg-type]

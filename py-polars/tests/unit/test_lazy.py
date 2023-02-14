@@ -766,21 +766,21 @@ def test_rolling_apply() -> None:
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 4.358898943540674
-    assert out.dtype is pl.Float64
+    assert isinstance(out.dtype, pl.Float64)
 
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float32)
     out = s.rolling_apply(function=lambda s: s.std(), window_size=3)
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 4.358899116516113
-    assert out.dtype is pl.Float32
+    assert isinstance(out.dtype, pl.Float32)
 
     s = pl.Series("A", [1, 2, 9, 2, 13], dtype=pl.Int32)
     out = s.rolling_apply(function=lambda s: s.sum(), window_size=3)
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 12
-    assert out.dtype is pl.Int32
+    assert isinstance(out.dtype, pl.Int32)
 
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float64)
     out = s.rolling_apply(
@@ -789,7 +789,7 @@ def test_rolling_apply() -> None:
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 14.224392195567912
-    assert out.dtype is pl.Float64
+    assert isinstance(out.dtype, pl.Float64)
 
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float32)
     out = s.rolling_apply(
@@ -798,7 +798,7 @@ def test_rolling_apply() -> None:
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 14.22439193725586
-    assert out.dtype is pl.Float32
+    assert isinstance(out.dtype, pl.Float32)
 
     s = pl.Series("A", [1, 2, 9, None, 13], dtype=pl.Int32)
     out = s.rolling_apply(
@@ -807,7 +807,7 @@ def test_rolling_apply() -> None:
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 32.0
-    assert out.dtype is pl.Float64
+    assert isinstance(out.dtype, pl.Float64)
     s = pl.Series("A", [1, 2, 9, 2, 10])
 
     # compare rolling_apply to specific rolling functions

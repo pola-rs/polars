@@ -9,25 +9,14 @@ import polars as pl
 from polars import datatypes
 
 
-def test_dtype_init_equivalence() -> None:
-    # check "DataType.__new__" behaviour for all datatypes
-    all_datatypes = {
-        dtype
-        for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
-        if isinstance(dtype, datatypes.DataTypeClass)
-    }
-    for dtype in all_datatypes:
-        assert dtype == dtype()
-
-
 def test_dtype_temporal_units() -> None:
     # check (in)equality behaviour of temporal types that take units
     for tu in datatypes.DTYPE_TEMPORAL_UNITS:
         assert pl.Datetime == pl.Datetime(tu)
         assert pl.Duration == pl.Duration(tu)
 
-        assert pl.Datetime(tu) == pl.Datetime()
-        assert pl.Duration(tu) == pl.Duration()
+        assert pl.Datetime(tu) == pl.Datetime
+        assert pl.Duration(tu) == pl.Duration
 
     assert pl.Datetime("ms") != pl.Datetime("ns")
     assert pl.Duration("ns") != pl.Duration("us")
@@ -42,7 +31,7 @@ def test_dtype_temporal_units() -> None:
 
 
 def test_get_idx_type() -> None:
-    assert datatypes.get_idx_type() == datatypes.UInt32
+    assert datatypes.get_idx_type() == pl.UInt32
 
 
 def test_dtypes_picklable() -> None:
@@ -69,20 +58,33 @@ def test_dtypes_hashable() -> None:
 @pytest.mark.parametrize(
     ("dtype", "representation"),
     [
-        (pl.Boolean, "Boolean"),
-        (pl.Datetime, "Datetime"),
+        (pl.Boolean(), "Boolean"),
+        (pl.Datetime(), "Datetime(tu='us', tz=None)"),
         (
             pl.Datetime(time_zone="Europe/Amsterdam"),
             "Datetime(tu='us', tz='Europe/Amsterdam')",
         ),
         (pl.List(pl.Int8), "List(Int8)"),
         (pl.List(pl.Duration(time_unit="ns")), "List(Duration(tu='ns'))"),
-        (pl.Struct, "Struct"),
         (
             pl.Struct({"name": pl.Utf8, "ids": pl.List(pl.UInt32)}),
             "Struct([Field('name', Utf8), Field('ids', List(UInt32))])",
         ),
     ],
 )
-def test_repr(dtype: pl.PolarsDataType, representation: str) -> None:
+def test_repr_datatype_instantiated(dtype: pl.DataType, representation: str) -> None:
+    assert repr(dtype) == representation
+
+
+@pytest.mark.parametrize(
+    ("dtype", "representation"),
+    [
+        (pl.Boolean, "<class 'polars.datatypes.Boolean'>"),
+        (pl.Datetime, "<class 'polars.datatypes.Datetime'>"),
+        (pl.Struct, "<class 'polars.datatypes.Struct'>"),
+    ],
+)
+def test_repr_datatype_uninstantiated(
+    dtype: type[pl.DataType], representation: str
+) -> None:
     assert repr(dtype) == representation

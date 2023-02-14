@@ -24,6 +24,7 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
+    DataType,
     Date,
     Datetime,
     Duration,
@@ -41,6 +42,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    _normalize_polars_dtype,
     py_type_to_dtype,
 )
 from polars.dependencies import pyarrow as pa
@@ -421,10 +423,11 @@ class LazyFrame:
         schema : Returns a {colname:dtype} mapping.
 
         """
-        return self._ldf.dtypes()
+        dtypes = self._ldf.dtypes()
+        return [_normalize_polars_dtype(dtype) for dtype in dtypes]
 
     @property
-    def schema(self) -> SchemaDict:
+    def schema(self) -> dict[str, DataType]:
         """
         Get a dict[column name, DataType].
 
@@ -441,7 +444,7 @@ class LazyFrame:
         {'foo': Int64, 'bar': Float64, 'ham': Utf8}
 
         """
-        return self._ldf.schema()
+        return dict(zip(self.columns, self.dtypes))
 
     @property
     def width(self) -> int:

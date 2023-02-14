@@ -28,17 +28,18 @@ from typing import (
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
-    FLOAT_DTYPES,
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
-    DataTypeClass,
+    DataType,
     Float64,
+    FloatType,
     Int8,
     Int16,
     Int32,
     Int64,
+    IntegralType,
     PolarsDataType,
     SchemaDefinition,
     SchemaDict,
@@ -47,6 +48,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    _normalize_polars_dtype,
     get_idx_type,
     py_type_to_dtype,
 )
@@ -1128,10 +1130,11 @@ class DataFrame:
         schema : Returns a {colname:dtype} mapping.
 
         """
-        return self._df.dtypes()
+        dtypes = self._df.dtypes()
+        return [_normalize_polars_dtype(dtype) for dtype in dtypes]
 
     @property
-    def schema(self) -> SchemaDict:
+    def schema(self) -> dict[str, DataType]:
         """
         Get a dict[column name, DataType].
 
@@ -1254,12 +1257,14 @@ class DataFrame:
             other = DataFrame([s.rename(f"n{i}") for i in range(len(self.columns))])
 
         orig_dtypes = other.dtypes
-        other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
+        other = self._cast_all_from_to(other, IntegralType, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
         df = (
             df  # type: ignore[assignment]
             if not floordiv
-            else df.with_columns([s.floor() for s in df if s.dtype() in FLOAT_DTYPES])
+            else df.with_columns(
+                [s.floor() for s in df if isinstance(s.dtype, FloatType)]
+            )
         )
         if floordiv:
             int_casts = [
@@ -1272,9 +1277,9 @@ class DataFrame:
         return df
 
     def _cast_all_from_to(
-        self, df: DataFrame, from_: frozenset[PolarsDataType], to: PolarsDataType
+        self, df: DataFrame, from_: type[DataType], to: PolarsDataType
     ) -> DataFrame:
-        casts = [s.cast(to).alias(s.name) for s in df if s.dtype() in from_]
+        casts = [s.cast(to).alias(s.name) for s in df if isinstance(s.dtype, from_)]
         return df.with_columns(casts) if casts else df
 
     def __floordiv__(self, other: DataFrame | pli.Series | int | float) -> Self:
@@ -2875,12 +2880,9 @@ class DataFrame:
         # we do not cast long arrays to strings which would be very slow
         max_num_values = min(10, self.height)
 
-        def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
-            dtype_str = (
-                f"<{DataTypeClass._string_repr(dtype)}>"
-                if isinstance(dtype, DataTypeClass)
-                else f"<{dtype._string_repr()}>"
-            )
+        def _parse_column(col_name: str, dtype: DataType) -> tuple[str, str, str]:
+            # TODO: Normalize first?
+            dtype_str = f"<{dtype._string_repr()}>"
             val = self[:max_num_values][col_name].to_list()
             val_str = ", ".join(map(str, val))
             return col_name, dtype_str, val_str

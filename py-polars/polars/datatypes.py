@@ -69,7 +69,7 @@ N_INFER_DEFAULT = 100
 
 # note: defined this way as some types can have instances that
 # act as specialisations (eg: "List" and "List[Int32]")
-PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
+PolarsDataType: TypeAlias = Union[Type["DataType"], "DataType"]
 PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
 
 PythonDataType: TypeAlias = Union[
@@ -122,28 +122,33 @@ def _custom_reconstruct(
     return obj
 
 
-class DataTypeClass(type):
-    """Metaclass for nicely printing DataType classes."""
-
-    def __repr__(cls) -> str:
-        return cls.__name__
-
-    def _string_repr(cls) -> str:
-        return dtype_str_repr(cls)
+def _normalize_polars_dtype(data_type: PolarsDataType) -> DataType:
+    if isclass(data_type) and issubclass(data_type, DataType):
+        return data_type()
+    else:
+        return data_type  # type: ignore[return-value]
 
 
-class DataType(metaclass=DataTypeClass):
+class DataType:
     """Base class for all Polars data types."""
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]
-        # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
-        # still respecting types that take initialisation params (eg: Duration/Datetime)
-        if args or kwargs:
-            return super().__new__(cls)
-        return cls
+    def __eq__(self, other: Any) -> bool:
+        # allow comparing object instances to class
+        if isclass(other) and issubclass(other, DataType):
+            return self.__class__.__name__ == other.__name__
+        elif isinstance(other, DataType):
+            return self.__class__.__name__ == other.__class__.__name__
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash(self.__class__)
 
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
+
+    def __repr__(self) -> str:
+        return self.__class__.__name__
 
     def _string_repr(self) -> str:
         return dtype_str_repr(self)
@@ -159,6 +164,10 @@ class IntegralType(NumericType):
 
 class FractionalType(NumericType):
     """Base class for fractional data types."""
+
+
+class FloatType(FractionalType):
+    """Base class for float data types."""
 
 
 class TemporalType(DataType):
@@ -201,11 +210,11 @@ class UInt64(IntegralType):
     """64-bit unsigned integer type."""
 
 
-class Float32(FractionalType):
+class Float32(FloatType):
     """32-bit floating point type."""
 
 
-class Float64(FractionalType):
+class Float64(FloatType):
     """64-bit floating point type."""
 
 
@@ -218,9 +227,7 @@ class Utf8(DataType):
 
 
 class List(NestedType):
-    inner: PolarsDataType | None = None
-
-    def __init__(self, inner: PolarsDataType | PythonDataType):
+    def __init__(self, inner: PolarsDataType | PythonDataType = Float64):
         """
         Nested list/array type.
 
@@ -243,13 +250,10 @@ class List(NestedType):
         # List[i64] == List[f32] == False
 
         # allow comparing object instances to class
-        if type(other) is DataTypeClass and issubclass(other, List):
+        if isclass(other) and issubclass(other, List):
             return True
-        if isinstance(other, List):
-            if self.inner is None or other.inner is None:
-                return True
-            else:
-                return self.inner == other.inner
+        elif isinstance(other, List):
+            return self.inner == other.inner
         else:
             return False
 
@@ -289,7 +293,7 @@ class Datetime(TemporalType):
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
-        if type(other) is DataTypeClass and issubclass(other, Datetime):
+        if isclass(other) and issubclass(other, Datetime):
             return True
         elif isinstance(other, Datetime):
             return self.tu == other.tu and self.tz == other.tz
@@ -323,7 +327,7 @@ class Duration(TemporalType):
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
-        if type(other) is DataTypeClass and issubclass(other, Duration):
+        if isclass(other) and issubclass(other, Duration):
             return True
         elif isinstance(other, Duration):
             return self.tu == other.tu
@@ -375,7 +379,7 @@ class Field:
 
 
 class Struct(NestedType):
-    def __init__(self, fields: Sequence[Field] | SchemaDict):
+    def __init__(self, fields: Sequence[Field] | SchemaDict | None = None):
         """
         Struct composite type.
 
@@ -385,7 +389,9 @@ class Struct(NestedType):
             The sequence of fields that make up the struct
 
         """
-        if isinstance(fields, Mapping):
+        if fields is None:
+            self.fields = [Field("", Null)]
+        elif isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:
             self.fields = list(fields)
@@ -617,28 +623,26 @@ class _DataTypeMappings:
     @cache
     def DTYPE_TO_ARROW_TYPE(self) -> dict[PolarsDataType, pa.lib.DataType]:
         return {
-            Int8: pa.int8(),
-            Int16: pa.int16(),
-            Int32: pa.int32(),
-            Int64: pa.int64(),
-            UInt8: pa.uint8(),
-            UInt16: pa.uint16(),
-            UInt32: pa.uint32(),
-            UInt64: pa.uint64(),
-            Float32: pa.float32(),
-            Float64: pa.float64(),
-            Boolean: pa.bool_(),
-            Utf8: pa.large_utf8(),
-            Date: pa.date32(),
-            Datetime: pa.timestamp("us"),
+            Int8(): pa.int8(),
+            Int16(): pa.int16(),
+            Int32(): pa.int32(),
+            Int64(): pa.int64(),
+            UInt8(): pa.uint8(),
+            UInt16(): pa.uint16(),
+            UInt32(): pa.uint32(),
+            UInt64(): pa.uint64(),
+            Float32(): pa.float32(),
+            Float64(): pa.float64(),
+            Boolean(): pa.bool_(),
+            Utf8(): pa.large_utf8(),
+            Date(): pa.date32(),
             Datetime("ms"): pa.timestamp("ms"),
             Datetime("us"): pa.timestamp("us"),
             Datetime("ns"): pa.timestamp("ns"),
-            Duration: pa.duration("us"),
             Duration("ms"): pa.duration("ms"),
             Duration("us"): pa.duration("us"),
             Duration("ns"): pa.duration("ns"),
-            Time: pa.time64("us"),
+            Time(): pa.time64("us"),
         }
 
 
@@ -646,7 +650,7 @@ class _DataTypeMappings:
 DataTypeMappings = _DataTypeMappings()
 
 
-def _base_type(dtype: PolarsDataType) -> DataTypeClass:
+def _base_type(dtype: PolarsDataType) -> type[DataType]:
     """Ensure return of the DataType base dtype/class."""
     if isinstance(dtype, DataType):
         return type(dtype)
@@ -693,7 +697,9 @@ def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
             # does not represent a realisable dtype, so ignore by default
             return include_unknown
         else:
-            return isinstance(data_type, (DataType, DataTypeClass))
+            return isinstance(data_type, DataType) or (
+                isclass(data_type) and issubclass(data_type, DataType)
+            )
     except ValueError:
         return False
 
@@ -727,7 +733,7 @@ def py_type_to_dtype(
         )
 
     if is_polars_dtype(data_type):
-        return data_type
+        return _normalize_polars_dtype(data_type)
 
     elif isinstance(data_type, (OptionType, UnionType)):
         # not exhaustive; handles the common "type | None" case, but
@@ -736,7 +742,8 @@ def py_type_to_dtype(
         if len(possible_types) == 1:
             data_type = possible_types[0]
     try:
-        return DataTypeMappings.PY_TYPE_TO_DTYPE[data_type]
+        polars_dtype = DataTypeMappings.PY_TYPE_TO_DTYPE[data_type]
+        return _normalize_polars_dtype(polars_dtype)
     except (KeyError, TypeError):  # pragma: no cover
         if not raise_unmatched:
             return None
@@ -757,16 +764,17 @@ def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
 
 def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
     """Convert a Polars dtype to an Arrow dtype."""
+    dtype = _normalize_polars_dtype(dtype)
     try:
         # special handling for mapping to tz-aware timestamp type.
         # (don't want to include every possible tz string in the lookup)
-        tz = None
-        if dtype == Datetime:
-            dtype, tz = Datetime(dtype.tu), dtype.tz  # type: ignore[union-attr]
-
-        arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
-        if tz:
-            arrow_type = pa.timestamp(dtype.tu or "us", tz)  # type: ignore[union-attr]
+        if isinstance(dtype, Datetime):
+            dtype, tz = Datetime(dtype.tu), dtype.tz
+            arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
+            if tz is not None:
+                arrow_type = pa.timestamp(dtype.tu, tz)
+        else:
+            arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
         return arrow_type
     except KeyError:  # pragma: no cover
         raise ValueError(

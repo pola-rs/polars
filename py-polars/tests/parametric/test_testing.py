@@ -21,7 +21,7 @@ from polars.testing.parametric import (
 )
 
 # TODO: make dtype categories flexible and available from datatypes module
-TEMPORAL_DTYPES = [pl.Datetime, pl.Date, pl.Time, pl.Duration]
+TEMPORAL_DTYPES = [pl.Datetime(), pl.Date(), pl.Time(), pl.Duration()]
 
 
 @given(df=dataframes(), lf=dataframes(lazy=True), srs=series())
