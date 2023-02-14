@@ -119,7 +119,9 @@ class HTMLFormatter:
         self.elements.append(inner)
 
     def render(self) -> list[str]:
-        with Tag(self.elements, "table", {"border": "1", "class": "pl-dataframe"}):
+        with Tag(
+            self.elements, "table", {"border": "1", "class": "dataframe pl-dataframe"}
+        ):
             self.write_header()
             self.write_body()
         return self.elements
