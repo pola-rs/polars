@@ -11,7 +11,12 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, PolarsTemporalType
+from polars.datatypes import (
+    DATETIME_DTYPES,
+    DTYPE_TEMPORAL_UNITS,
+    TEMPORAL_DTYPES,
+    PolarsTemporalType,
+)
 from polars.exceptions import ComputeError, PanicException
 from polars.testing import (
     assert_frame_equal,
@@ -406,7 +411,7 @@ def test_rows() -> None:
     assert rows[0][1] == datetime(1970, 1, 1, 0, 2, 3, 543000)
 
 
-def test_to_numpy() -> None:
+def test_series_to_numpy() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
     s1 = pl.Series(
         "datetime", [datetime(2021, 1, 2, 3, 4, 5), datetime(2021, 2, 3, 4, 5, 6)]
@@ -426,6 +431,10 @@ def test_to_numpy() -> None:
     s3 = pl.Series([timedelta(hours=1), timedelta(hours=-2)])
     out = np.array([3_600_000_000_000, -7_200_000_000_000], dtype="timedelta64[ns]")
     assert (s3.to_numpy() == out).all()
+
+    s4 = pl.Series([time(10, 30, 45), time(23, 59, 59)])
+    out = np.array([time(10, 30, 45), time(23, 59, 59)], dtype="object")
+    assert (s4.to_numpy() == out).all()
 
 
 def test_date_range() -> None:
@@ -2343,3 +2352,13 @@ def test_infer_iso8601(iso8601_format: str) -> None:
         assert parsed.dt.nanosecond().item() == 123456000
     if "%3f" in iso8601_format:
         assert parsed.dt.nanosecond().item() == 123000000
+
+
+def test_series_is_temporal() -> None:
+    for tp in TEMPORAL_DTYPES:
+        s = pl.Series([None], dtype=tp)
+        assert s.is_temporal() is True
+
+    s = pl.Series([datetime(2023, 2, 14, 11, 12, 13)], dtype=pl.Datetime)
+    for tp in (pl.Datetime, [pl.Datetime], [pl.Time, pl.Datetime]):  # type: ignore[assignment]
+        assert s.is_temporal(excluding=tp) is False

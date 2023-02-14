@@ -81,6 +81,7 @@ from polars.utils import (
     is_int_sequence,
     range_to_series,
     range_to_slice,
+    redirect,
     scale_bytes,
     sphinx_accessor,
 )
@@ -132,6 +133,7 @@ def wrap_s(s: PySeries) -> Series:
     return Series._from_pyseries(s)
 
 
+@redirect({"is_datelike": "is_temporal"})
 @expr_dispatch
 class Series:
     """
@@ -564,7 +566,7 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>")
 
     def __truediv__(self, other: Any) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
 
         # this branch is exactly the floordiv function without rounding the floats
@@ -576,7 +578,7 @@ class Series:
     # python 3.7 is not happy. Remove this when we finally ditch that
     @typing.no_type_check
     def __floordiv__(self, other: Any) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if not isinstance(other, pli.Expr):
             other = pli.lit(other)
@@ -596,7 +598,7 @@ class Series:
         ...
 
     def __mul__(self, other: Any) -> Series | pli.DataFrame:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pli.DataFrame):
             return other * self
@@ -604,14 +606,14 @@ class Series:
             return self._arithmetic(other, "mul", "mul_<>")
 
     def __mod__(self, other: Any) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
@@ -626,7 +628,7 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __rtruediv__(self, other: Any) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if self.is_float():
             self.__rfloordiv__(other)
@@ -636,24 +638,24 @@ class Series:
         return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __pow__(self, power: int | float | Series) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
         return self.to_frame().select(pli.col(self.name).pow(power)).to_series()
 
     def __rpow__(self, other: Any) -> Series:
-        if self.is_datelike():
+        if self.is_temporal():
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
@@ -878,7 +880,7 @@ class Series:
             self.set_at_idx(key, value)
             return None
         elif isinstance(value, Sequence) and not isinstance(value, str):
-            if self.is_numeric() or self.is_datelike():
+            if self.is_numeric() or self.is_temporal():
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
             raise ValueError(
@@ -1206,7 +1208,7 @@ class Series:
                 "null_count": self.null_count(),
                 "count": self.len(),
             }
-        elif self.is_datelike():
+        elif self.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
             stats = {
@@ -2690,18 +2692,33 @@ class Series:
             Float64,
         )
 
-    def is_datelike(self) -> bool:
+    def is_temporal(
+        self, excluding: PolarsDataType | Sequence[PolarsDataType] | None = None
+    ) -> bool:
         """
-        Check if this Series datatype is datelike.
+        Check if this Series datatype is temporal.
+
+        Parameters
+        ----------
+        excluding
+            Optionally exclude one or more temporal dtypes from matching.
 
         Examples
         --------
         >>> from datetime import date
         >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-        >>> s.is_datelike()
+        >>> s.is_temporal()
         True
+        >>> s.is_temporal(excluding=[pl.Date])
+        False
 
         """
+        if excluding is not None:
+            if not isinstance(excluding, Sequence):
+                excluding = [excluding]
+            if self.dtype in excluding:
+                return False
+
         return self.dtype in (Date, Datetime, Duration, Time)
 
     def is_float(self) -> bool:
@@ -2824,20 +2841,23 @@ class Series:
                 tp = f"datetime64[{self.time_unit}]"
             return arr.astype(tp)
 
-        if use_pyarrow and _PYARROW_AVAILABLE and not self.is_datelike():
+        if use_pyarrow and _PYARROW_AVAILABLE and not self.is_temporal(excluding=Time):
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
+        elif self.dtype == Time:
+            # note: there is no native numpy "time" dtype
+            return np.array(self.to_list(), dtype="object")
         else:
             if not self.has_validity():
-                if self.is_datelike():
+                if self.is_temporal():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
                 elif self.is_numeric():
                     np_array = self.view(ignore_nulls=True)
                 else:
                     np_array = self._s.to_numpy()
 
-            elif self.is_datelike():
+            elif self.is_temporal():
                 np_array = convert_to_date(self.to_physical()._s.to_numpy())
             else:
                 np_array = self._s.to_numpy()
