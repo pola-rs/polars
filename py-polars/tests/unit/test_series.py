@@ -1641,7 +1641,7 @@ def test_arg_sort() -> None:
     assert_series_equal(s.arg_sort(), expected)
 
     expected_reverse = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    assert_series_equal(s.arg_sort(True), expected_reverse)
+    assert_series_equal(s.arg_sort(reverse=True), expected_reverse)
 
 
 def test_arg_min_and_arg_max() -> None:
