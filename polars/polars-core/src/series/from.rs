@@ -16,6 +16,7 @@ use crate::chunked_array::cast::cast_chunks;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::EXTENSION_NAME;
+use crate::config::verbose;
 use crate::prelude::*;
 
 impl Series {
@@ -362,10 +363,28 @@ impl Series {
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(StructChunked::new_unchecked(name, &fields).into_series())
             }
+            ArrowDataType::FixedSizeBinary(_) => {
+                #[cfg(feature = "dtype-binary")]
+                {
+                    if verbose() {
+                        eprintln!(
+                            "Polars does not support decimal types so the 'Series' are read as Float64"
+                        );
+                    }
+                    let chunks = cast_chunks(&chunks, &DataType::Binary, true)?;
+                    Ok(BinaryChunked::from_chunks(name, chunks).into_series())
+                }
+                #[cfg(not(feature = "dtype-binary"))]
+                {
+                    panic!("activate 'dtype-binary' feature")
+                }
+            }
             ArrowDataType::Decimal(_, _) | ArrowDataType::Decimal256(_, _) => {
-                eprintln!(
-                    "Polars does not support decimal types so the 'Series' are read as Float64"
-                );
+                if verbose() {
+                    eprintln!(
+                        "Polars does not support decimal types so the 'Series' are read as Float64"
+                    );
+                }
                 Ok(Float64Chunked::from_chunks(
                     name,
                     cast_chunks(&chunks, &DataType::Float64, true)?,

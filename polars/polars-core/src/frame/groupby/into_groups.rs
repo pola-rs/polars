@@ -5,6 +5,7 @@ use polars_arrow::prelude::*;
 use polars_utils::{flatten, HashSingle};
 
 use super::*;
+use crate::config::verbose;
 use crate::utils::{_split_offsets, copy_from_slice_unchecked};
 
 /// Used to create the tuples for a groupby operation.
@@ -74,7 +75,7 @@ where
     T::Native: NumCast,
 {
     fn create_groups_from_sorted(&self, multithreaded: bool) -> GroupsSlice {
-        if std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1" {
+        if verbose() {
             eprintln!("groupby keys are sorted; running sorted key fast path");
         }
         let arr = self.downcast_iter().next().unwrap();

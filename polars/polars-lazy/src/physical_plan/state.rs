@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
+use polars_core::config::verbose;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
 use polars_core::prelude::*;
@@ -45,7 +46,7 @@ impl Default for StateFlags {
 
 impl StateFlags {
     fn init() -> Self {
-        let verbose = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
+        let verbose = verbose();
         let mut flags: StateFlags = Default::default();
         if verbose {
             flags |= StateFlags::VERBOSE;
@@ -162,9 +163,8 @@ impl ExecutionState {
     }
 
     pub fn new() -> Self {
-        let verbose = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
         let mut flags: StateFlags = Default::default();
-        if verbose {
+        if verbose() {
             flags |= StateFlags::VERBOSE;
         }
         Self {

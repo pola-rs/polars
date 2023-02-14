@@ -12,6 +12,7 @@ use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
 use polars_core::cloud::CloudOptions;
+use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
@@ -158,7 +159,7 @@ impl FetchRowGroupsFromObjectStore {
         projection: &Option<Vec<usize>>,
     ) -> PolarsResult<Self> {
         let schema = parquet2_read::schema::infer_schema(metadata)?;
-        let logging = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
+        let logging = verbose();
 
         let projection = projection
             .to_owned()

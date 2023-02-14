@@ -2,6 +2,7 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
@@ -388,7 +389,7 @@ pub(crate) fn insert_streaming_nodes(
             if (branches_in_tree - 1) != joins_in_tree {
                 continue;
             }
-            let verbose = std::env::var("POLARS_VERBOSE").is_ok();
+            let is_verbose = verbose();
 
             for branch in tree {
                 // should be reset for every branch
@@ -447,7 +448,7 @@ pub(crate) fn insert_streaming_nodes(
                     lp_arena,
                     expr_arena,
                     to_physical_piped_expr,
-                    verbose,
+                    is_verbose,
                 )?;
                 pipelines.push_back(pipeline);
             }

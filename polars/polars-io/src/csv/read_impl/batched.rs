@@ -1,3 +1,5 @@
+use polars_core::config::verbose;
+
 use super::*;
 use crate::csv::CsvReader;
 use crate::mmap::MmapBytesReader;
@@ -6,7 +8,7 @@ impl<'a> CoreReader<'a> {
     pub fn batched(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
         let mut n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let reader_bytes = self.reader_bytes.take().unwrap();
-        let logging = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
+        let logging = verbose();
         let (file_chunks, chunk_size, _total_rows, starting_point_offset, _bytes) = self
             .determine_file_chunks_and_statistics(&mut n_threads, &reader_bytes, logging, true)?;
         let projection = self.get_projection();
