@@ -1686,63 +1686,74 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
 
+    @deprecate_nonkeyword_arguments()
     def sort(self, reverse: bool = False, nulls_last: bool = False) -> Self:
         """
-        Sort this column. In projection/ selection context the whole column is sorted.
+        Sort this column.
 
-        If used in a groupby context, the groups are sorted.
+        When used in a projection/selection context, the whole column is sorted.
+        When used in a groupby context, the groups are sorted.
 
         Parameters
         ----------
         reverse
-            False -> order from small to large.
-            True -> order from large to small.
+            Sort in descending order.
         nulls_last
-            If True nulls are considered to be larger than any valid value
+            Place null values last.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "group": [
-        ...             "one",
-        ...             "one",
-        ...             "one",
-        ...             "two",
-        ...             "two",
-        ...             "two",
-        ...         ],
+        ...         "a": [1, None, 3, 2],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").sort())
+        shape: (4, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        │ 1    │
+        │ 2    │
+        │ 3    │
+        └──────┘
+        >>> df.select(pl.col("a").sort(reverse=True))
+        shape: (4, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        │ 3    │
+        │ 2    │
+        │ 1    │
+        └──────┘
+        >>> df.select(pl.col("a").sort(nulls_last=True))
+        shape: (4, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        │ 2    │
+        │ 3    │
+        │ null │
+        └──────┘
+
+        When sorting in a groupby context, the groups are sorted.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": ["one", "one", "one", "two", "two", "two"],
+        ...         "value": [1, 98, 2, 3, 99, 4],
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.select(pl.col("value").sort())
-        shape: (6, 1)
-        ┌───────┐
-        │ value │
-        │ ---   │
-        │ i64   │
-        ╞═══════╡
-        │ 1     │
-        │ 2     │
-        │ 3     │
-        │ 4     │
-        │ 98    │
-        │ 99    │
-        └───────┘
-        >>> df.select(pl.col("value").sort())
-        shape: (6, 1)
-        ┌───────┐
-        │ value │
-        │ ---   │
-        │ i64   │
-        ╞═══════╡
-        │ 1     │
-        │ 2     │
-        │ 3     │
-        │ 4     │
-        │ 98    │
-        │ 99    │
-        └───────┘
         >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────┬────────────┐
@@ -1936,61 +1947,116 @@ class Expr:
 
     def sort_by(
         self,
-        by: Expr | str | list[Expr | str],
-        *,
-        reverse: bool | list[bool] = False,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
+        reverse: bool | Sequence[bool] = False,
     ) -> Self:
         """
-        Sort this column by the ordering of another column, or multiple other columns.
+        Sort this column by the ordering of other columns.
 
-        In projection/ selection context the whole column is sorted.
-        If used in a groupby context, the groups are sorted.
+        When used in a projection/selection context, the whole column is sorted.
+        When used in a groupby context, the groups are sorted.
 
         Parameters
         ----------
         by
-            The column(s) used for sorting.
+            Column(s) to sort by. Accepts expression input. Strings are parsed as column
+            names.
+        *more_by
+            Additional columns to sort by, specified as positional arguments.
         reverse
-            False -> order from small to large.
-            True -> order from large to small.
+            Sort in descending order. When sorting by multiple columns, can be specified
+            per column by passing a sequence of booleans.
 
         Examples
         --------
+        Pass a single column name to sort by that column.
+
         >>> df = pl.DataFrame(
         ...     {
-        ...         "group": [
-        ...             "one",
-        ...             "one",
-        ...             "one",
-        ...             "two",
-        ...             "two",
-        ...             "two",
-        ...         ],
-        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...         "group": ["a", "a", "b", "b"],
+        ...         "value1": [1, 3, 4, 2],
+        ...         "value2": [8, 7, 6, 5],
         ...     }
         ... )
-        >>> df.select(pl.col("group").sort_by("value"))
-        shape: (6, 1)
+        >>> df.select(pl.col("group").sort_by("value1"))
+        shape: (4, 1)
         ┌───────┐
         │ group │
         │ ---   │
         │ str   │
         ╞═══════╡
-        │ one   │
-        │ one   │
-        │ two   │
-        │ two   │
-        │ one   │
-        │ two   │
+        │ a     │
+        │ b     │
+        │ a     │
+        │ b     │
         └───────┘
 
+        Sorting by expressions is also supported.
+
+        >>> df.select(pl.col("group").sort_by(pl.col("value1") + pl.col("value2")))
+        shape: (4, 1)
+        ┌───────┐
+        │ group │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ b     │
+        │ a     │
+        │ a     │
+        │ b     │
+        └───────┘
+
+        Sort by multiple columns by passing a list of columns.
+
+        >>> df.select(pl.col("group").sort_by(["value1", "value2"], reverse=True))
+        shape: (4, 1)
+        ┌───────┐
+        │ group │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ b     │
+        │ a     │
+        │ b     │
+        │ a     │
+        └───────┘
+
+        Or use positional arguments to sort by multiple columns in the same way.
+
+        >>> df.select(pl.col("group").sort_by("value1", "value2"))
+        shape: (4, 1)
+        ┌───────┐
+        │ group │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ a     │
+        │ b     │
+        │ a     │
+        │ b     │
+        └───────┘
+
+        When sorting in a groupby context, the groups are sorted.
+
+        >>> df.groupby("group").agg(
+        ...     pl.col("value1").sort_by("value2")
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (2, 2)
+        ┌───────┬───────────┐
+        │ group ┆ value1    │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[i64] │
+        ╞═══════╪═══════════╡
+        │ a     ┆ [3, 1]    │
+        │ b     ┆ [2, 4]    │
+        └───────┴───────────┘
+
         """
-        if not isinstance(by, list):
-            by = [by]
-        if not isinstance(reverse, list):
+        if isinstance(reverse, bool):
             reverse = [reverse]
         by = selection_to_pyexpr_list(by)
-
+        by.extend(pli.selection_to_pyexpr_list(more_by))
         return self._from_pyexpr(self._pyexpr.sort_by(by, reverse))
 
     def take(

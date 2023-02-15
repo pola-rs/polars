@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
+from polars.utils import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
@@ -49,8 +50,41 @@ class ListNameSpace:
     def mean(self) -> pli.Series:
         """Compute the mean value of the arrays in the list."""
 
+    @deprecate_nonkeyword_arguments()
     def sort(self, reverse: bool = False) -> pli.Series:
-        """Sort the arrays in the list."""
+        """
+        Sort the arrays in this column.
+
+        Parameters
+        ----------
+        reverse
+            Sort in descending order.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]])
+        >>> s.arr.sort()
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+                [1, 2, 3]
+                [1, 2, 9]
+        ]
+        >>> s.arr.sort(reverse=True)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+                [3, 2, 1]
+                [9, 2, 1]
+        ]
+
+        """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).arr.sort(reverse=reverse))
+            .to_series()
+        )
 
     def reverse(self) -> pli.Series:
         """Reverse the arrays in the list."""

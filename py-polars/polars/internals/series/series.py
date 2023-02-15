@@ -1921,16 +1921,17 @@ class Series:
 
         """
 
-    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Series:
+    @deprecate_nonkeyword_arguments()
+    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Self:
         """
         Sort this Series.
 
         Parameters
         ----------
         reverse
-            Reverse sort.
+            Sort in descending order.
         in_place
-            Sort in place.
+            Sort in-place.
 
         Examples
         --------
@@ -1959,7 +1960,7 @@ class Series:
             self._s = self._s.sort(reverse)
             return self
         else:
-            return wrap_s(self._s.sort(reverse))
+            return self._from_pyseries(self._s.sort(reverse))
 
     def top_k(self, k: int = 5, reverse: bool = False) -> Series:
         r"""
