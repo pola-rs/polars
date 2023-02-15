@@ -3558,8 +3558,8 @@ class DataFrame:
 
     def groupby(
         self,
-        by: str | pli.Expr | Sequence[str | pli.Expr],
-        *,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
         maintain_order: bool = False,
     ) -> GroupBy[Self]:
         """
@@ -3568,67 +3568,122 @@ class DataFrame:
         Parameters
         ----------
         by
-            Column(s) to group by.
+            Column or columns to group by. Accepts expression input. Strings are parsed
+            as column names.
+        *more_by
+            Additional columns to group by, specified as positional arguments.
         maintain_order
-            Make sure that the order of the groups remain consistent. This is more
-            expensive than a default groupby. Note that this only works in expression
-            aggregations.
+            Ensure that the order of the groups is consistent with the input data.
+            This is slower than a default groupby.
 
         Examples
         --------
-        Below we group by column `"a"`, and we sum column `"b"`.
+        Group by one column and call ``agg`` to compute the grouped sum of another
+        column.
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": ["a", "b", "a", "b", "b", "c"],
-        ...         "b": [1, 2, 3, 4, 5, 6],
-        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...         "b": [1, 2, 1, 3, 3],
+        ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.groupby("a").agg(pl.col("b").sum()).sort(by="a")
+        >>> df.groupby("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
         │ str ┆ i64 │
         ╞═════╪═════╡
-        │ a   ┆ 4   │
-        │ b   ┆ 11  │
-        │ c   ┆ 6   │
+        │ a   ┆ 2   │
+        │ b   ┆ 5   │
+        │ c   ┆ 3   │
         └─────┴─────┘
 
-        We can also loop over the grouped `DataFrame`
+        Set ``maintain_order=True`` to ensure the order of the groups is consistent with
+        the input.
 
-        >>> for sub_df in df.groupby("a"):
-        ...     print(sub_df)  # doctest: +IGNORE_RESULT
-        ...
-        shape: (3, 3)
+        >>> df.groupby("a", maintain_order=True).agg(pl.col("c"))
+        shape: (3, 2)
+        ┌─────┬───────────┐
+        │ a   ┆ c         │
+        │ --- ┆ ---       │
+        │ str ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ a   ┆ [5, 3]    │
+        │ b   ┆ [4, 2]    │
+        │ c   ┆ [1]       │
+        └─────┴───────────┘
+
+        Group by multiple columns by passing a list of column names.
+
+        >>> df.groupby(["a", "b"]).agg(pl.max("c"))  # doctest: +IGNORE_RESULT
+        shape: (4, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
         │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ b   ┆ 2   ┆ 5   │
-        │ b   ┆ 4   ┆ 3   │
-        │ b   ┆ 5   ┆ 2   │
+        │ a   ┆ 1   ┆ 5   │
+        │ b   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 2   │
+        │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘
+
+        Or use positional arguments to group by multiple columns in the same way.
+        Expressions are also accepted.
+
+        >>> df.groupby("a", pl.col("b") // 2).agg(pl.col("c").mean())  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ f64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 0   ┆ 4.0 │
+        │ b   ┆ 1   ┆ 3.0 │
+        │ c   ┆ 1   ┆ 1.0 │
+        └─────┴─────┴─────┘
+
+        The ``GroupBy`` object returned by this method is iterable, returning the name
+        and data of each group.
+
+        >>> for name, data in df.groupby("a"):  # doctest: +SKIP
+        ...     print(name)
+        ...     print(data)
+        ...
+        a
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 1   ┆ 3   │
+        └─────┴─────┴─────┘
+        b
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 2   │
+        └─────┴─────┴─────┘
+        c
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
         │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ c   ┆ 6   ┆ 1   │
+        │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘
 
         """
-        # Explicitly handle case where user mistakenly calls `groupby("a", "b")`
-        if not isinstance(maintain_order, bool):
-            raise TypeError(
-                f"invalid input for groupby arg `maintain_order`: {maintain_order}."
-            )
-
-        return GroupBy(self._df, by, self.__class__, maintain_order=maintain_order)
+        return GroupBy(self, by, *more_by, maintain_order=maintain_order)
 
     def groupby_rolling(
         self,
@@ -3637,7 +3692,7 @@ class DataFrame:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
     ) -> RollingGroupBy[Self]:
         """
         Create rolling groups based on a time column.
@@ -3746,7 +3801,7 @@ class DataFrame:
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
-        by: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
     ) -> DynamicGroupBy[Self]:
         """
