@@ -208,6 +208,7 @@ pub trait DataFrameJoinOps: IntoDf {
                             right_by,
                             options.strategy,
                             options.tolerance,
+                            suffix.as_deref(),
                             slice,
                         ),
                         (None, None) => left_df._join_asof(
