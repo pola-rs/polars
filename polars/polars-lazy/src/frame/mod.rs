@@ -206,13 +206,13 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
-        let reverse = options.descending;
+        let descending = options.descending;
         let nulls_last = options.nulls_last;
 
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], vec![reverse], nulls_last)
+            .sort(vec![col(by_column)], vec![descending], nulls_last)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -234,18 +234,18 @@ impl LazyFrame {
     pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
         self,
         by_exprs: E,
-        reverse: B,
+        descending: B,
         nulls_last: bool,
     ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
-        let reverse = reverse.as_ref().to_vec();
+        let descending = descending.as_ref().to_vec();
         if by_exprs.is_empty() {
             self
         } else {
             let opt_state = self.get_opt_state();
             let lp = self
                 .get_plan_builder()
-                .sort(by_exprs, reverse, nulls_last)
+                .sort(by_exprs, descending, nulls_last)
                 .build();
             Self::from_logical_plan(lp, opt_state)
         }

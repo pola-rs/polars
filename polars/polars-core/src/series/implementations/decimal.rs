@@ -102,7 +102,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
         let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
-        if self.0.is_sorted_flag() && (idx.is_sorted_flag() || idx.is_sorted_reverse_flag()) {
+        if self.0.is_sorted_ascending_flag()
+            && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
+        {
             out.set_sorted_flag(idx.is_sorted_flag2())
         }
 

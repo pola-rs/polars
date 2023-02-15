@@ -89,16 +89,16 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     }
 
     #[cfg(feature = "sort_multiple")]
-    fn arg_sort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(by, reverse)
+    fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(by, descending)
     }
 }
 
 impl SeriesTrait for SeriesWrap<BinaryChunked> {
     fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.is_sorted_flag() {
+        if self.0.is_sorted_ascending_flag() {
             IsSorted::Ascending
-        } else if self.0.is_sorted_reverse_flag() {
+        } else if self.0.is_sorted_descending_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
@@ -194,7 +194,9 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
 
         let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
 
-        if self.0.is_sorted_flag() && (idx.is_sorted_flag() || idx.is_sorted_reverse_flag()) {
+        if self.0.is_sorted_ascending_flag()
+            && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
+        {
             out.set_sorted_flag(idx.is_sorted_flag2())
         }
 

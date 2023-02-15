@@ -237,12 +237,12 @@ def test_ooc_sort(monkeypatch: Any) -> None:
 
     df = s.shuffle().to_frame()
 
-    for reverse in [True, False]:
+    for descending in [True, False]:
         out = (
-            df.lazy().sort("idx", reverse=reverse).collect(streaming=True)
+            df.lazy().sort("idx", descending=descending).collect(streaming=True)
         ).to_series()
 
-        assert_series_equal(out, s.sort(reverse=reverse))
+        assert_series_equal(out, s.sort(descending=descending))
 
 
 def test_streaming_literal_expansion() -> None:

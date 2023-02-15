@@ -26,7 +26,7 @@ pub struct SortSink {
     io_thread: Arc<Mutex<Option<IOThread>>>,
     // location in the dataframe of the columns to sort by
     sort_idx: usize,
-    reverse: bool,
+    descending: bool,
     slice: Option<(i64, usize)>,
     // sampled values so we can find the distribution.
     dist_sample: Vec<AnyValue<'static>>,
@@ -35,7 +35,7 @@ pub struct SortSink {
 impl SortSink {
     pub(crate) fn new(
         sort_idx: usize,
-        reverse: bool,
+        descending: bool,
         schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
@@ -50,7 +50,7 @@ impl SortSink {
             ooc,
             io_thread: Default::default(),
             sort_idx,
-            reverse,
+            descending,
             slice,
             dist_sample: vec![],
         };
@@ -150,7 +150,7 @@ impl Sink for SortSink {
             ooc: self.ooc,
             io_thread: self.io_thread.clone(),
             sort_idx: self.sort_idx,
-            reverse: self.reverse,
+            descending: self.descending,
             dist_sample: vec![],
             slice: self.slice,
         })
@@ -168,15 +168,15 @@ impl Sink for SortSink {
             let io_thread = lock.as_ref().unwrap();
 
             let dist = Series::from_any_values("", &self.dist_sample).unwrap();
-            let dist = dist.sort(self.reverse);
+            let dist = dist.sort(self.descending);
 
             block_thread_until_io_thread_done(io_thread);
 
-            sort_ooc(io_thread, dist, self.sort_idx, self.reverse, self.slice)
+            sort_ooc(io_thread, dist, self.sort_idx, self.descending, self.slice)
         } else {
             let chunks = std::mem::take(&mut self.chunks);
             let df = accumulate_dataframes_vertical_unchecked(chunks);
-            let df = sort_accumulated(df, self.sort_idx, self.reverse, self.slice)?;
+            let df = sort_accumulated(df, self.sort_idx, self.descending, self.slice)?;
             Ok(FinalizedSink::Finished(df))
         }
     }
@@ -193,9 +193,9 @@ impl Sink for SortSink {
 pub(super) fn sort_accumulated(
     df: DataFrame,
     sort_idx: usize,
-    reverse: bool,
+    descending: bool,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
     let sort_column = df.get_columns()[sort_idx].clone();
-    df.sort_impl(vec![sort_column], vec![reverse], false, slice, true)
+    df.sort_impl(vec![sort_column], vec![descending], false, slice, true)
 }

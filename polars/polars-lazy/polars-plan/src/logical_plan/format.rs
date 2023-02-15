@@ -306,8 +306,12 @@ impl fmt::Debug for Expr {
                 true => write!(f, "{expr:?} DESC"),
                 false => write!(f, "{expr:?} ASC"),
             },
-            SortBy { expr, by, reverse } => {
-                write!(f, "SORT {expr:?} BY {by:?} REVERSE ORDERING {reverse:?}",)
+            SortBy {
+                expr,
+                by,
+                descending,
+            } => {
+                write!(f, "SORT {expr:?} BY {by:?} REVERSE ORDERING {descending:?}",)
             }
             Filter { input, by } => {
                 write!(f, "{input:?}\nFILTER WHERE {by:?}")

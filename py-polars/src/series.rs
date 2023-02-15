@@ -113,10 +113,10 @@ impl PySeries {
 
 #[pymethods]
 impl PySeries {
-    pub fn is_sorted_flag(&self) -> bool {
+    pub fn is_sorted_ascending_flag(&self) -> bool {
         matches!(self.series.is_sorted_flag(), IsSorted::Ascending)
     }
-    pub fn is_sorted_reverse_flag(&self) -> bool {
+    pub fn is_sorted_descending_flag(&self) -> bool {
         matches!(self.series.is_sorted_flag(), IsSorted::Descending)
     }
     pub fn can_fast_explode_flag(&self) -> bool {
@@ -434,9 +434,9 @@ impl PySeries {
             .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
-    fn set_sorted_flag(&self, reverse: bool) -> Self {
+    fn set_sorted_flag(&self, descending: bool) -> Self {
         let mut out = self.series.clone();
-        if reverse {
+        if descending {
             out.set_sorted_flag(IsSorted::Descending);
         } else {
             out.set_sorted_flag(IsSorted::Ascending)
@@ -544,8 +544,8 @@ impl PySeries {
         (&self.series % &other.series).into()
     }
 
-    pub fn sort(&mut self, reverse: bool) -> Self {
-        PySeries::new(self.series.sort(reverse))
+    pub fn sort(&mut self, descending: bool) -> Self {
+        PySeries::new(self.series.sort(descending))
     }
 
     pub fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
@@ -1145,10 +1145,10 @@ impl PySeries {
         })
     }
 
-    pub fn is_sorted(&self, reverse: bool) -> bool {
+    pub fn is_sorted(&self, descending: bool) -> bool {
         let options = SortOptions {
-            descending: reverse,
-            nulls_last: reverse,
+            descending,
+            nulls_last: descending,
             multithreaded: true,
         };
         self.series.is_sorted(options)

@@ -235,14 +235,14 @@ impl SQLContext {
 
     fn process_order_by(&self, lf: LazyFrame, ob: &[OrderByExpr]) -> PolarsResult<LazyFrame> {
         let mut by = Vec::with_capacity(ob.len());
-        let mut reverse = Vec::with_capacity(ob.len());
+        let mut descending = Vec::with_capacity(ob.len());
 
         for ob in ob {
             by.push(parse_sql_expr(&ob.expr)?);
             if let Some(false) = ob.asc {
-                reverse.push(true)
+                descending.push(true)
             } else {
-                reverse.push(false)
+                descending.push(false)
             }
 
             if ob.nulls_first.is_some() {
@@ -252,7 +252,7 @@ impl SQLContext {
             }
         }
 
-        Ok(lf.sort_by_exprs(&by, reverse, false))
+        Ok(lf.sort_by_exprs(&by, descending, false))
     }
 
     fn process_groupby(

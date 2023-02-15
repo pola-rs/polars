@@ -60,7 +60,7 @@ where
     Ok(out)
 }
 
-pub fn top_k(s: &Series, k: usize, reverse: bool) -> PolarsResult<Series> {
+pub fn top_k(s: &Series, k: usize, descending: bool) -> PolarsResult<Series> {
     if s.is_empty() {
         return Ok(s.clone());
     }
@@ -70,7 +70,7 @@ pub fn top_k(s: &Series, k: usize, reverse: bool) -> PolarsResult<Series> {
 
     macro_rules! dispatch {
         ($ca:expr) => {{
-            let mult_order = if reverse { -1 } else { 1 };
+            let mult_order = if descending { -1 } else { 1 };
             top_k_impl($ca, k, NumCast::from(mult_order).unwrap()).map(|ca| ca.into_series())
         }};
     }

@@ -51,13 +51,13 @@ class ListNameSpace:
         """Compute the mean value of the arrays in the list."""
 
     @deprecate_nonkeyword_arguments()
-    def sort(self, reverse: bool = False) -> pli.Series:
+    def sort(self, descending: bool = False) -> pli.Series:
         """
         Sort the arrays in this column.
 
         Parameters
         ----------
-        reverse
+        descending
             Sort in descending order.
 
         Examples
@@ -70,7 +70,7 @@ class ListNameSpace:
                 [1, 2, 3]
                 [1, 2, 9]
         ]
-        >>> s.arr.sort(reverse=True)
+        >>> s.arr.sort(descending=True)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -82,7 +82,7 @@ class ListNameSpace:
         return (
             pli.wrap_s(self._s)
             .to_frame()
-            .select(pli.col(self._s.name()).arr.sort(reverse=reverse))
+            .select(pli.col(self._s.name()).arr.sort(descending=descending))
             .to_series()
         )
 

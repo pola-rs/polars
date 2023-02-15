@@ -33,7 +33,7 @@ impl SortExec {
 
         df.sort_impl(
             by_columns,
-            std::mem::take(&mut self.args.reverse),
+            std::mem::take(&mut self.args.descending),
             self.args.nulls_last,
             self.args.slice,
             true,

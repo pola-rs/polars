@@ -39,10 +39,14 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             expr: to_aexpr(*expr, arena),
             options,
         },
-        Expr::SortBy { expr, by, reverse } => AExpr::SortBy {
+        Expr::SortBy {
+            expr,
+            by,
+            descending,
+        } => AExpr::SortBy {
             expr: to_aexpr(*expr, arena),
             by: by.into_iter().map(|e| to_aexpr(e, arena)).collect(),
-            reverse,
+            descending,
         },
         Expr::Filter { input, by } => AExpr::Filter {
             input: to_aexpr(*input, arena),
@@ -475,7 +479,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 idx: Box::new(idx),
             }
         }
-        AExpr::SortBy { expr, by, reverse } => {
+        AExpr::SortBy {
+            expr,
+            by,
+            descending,
+        } => {
             let expr = node_to_expr(expr, expr_arena);
             let by = by
                 .iter()
@@ -484,7 +492,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             Expr::SortBy {
                 expr: Box::new(expr),
                 by,
-                reverse,
+                descending,
             }
         }
         AExpr::Filter { input, by } => {

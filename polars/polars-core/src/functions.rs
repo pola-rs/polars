@@ -99,19 +99,19 @@ where
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn arg_sort_by(by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-    if by.len() != reverse.len() {
+pub fn arg_sort_by(by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+    if by.len() != descending.len() {
         return Err(PolarsError::ComputeError(
             format!(
                 "The amount of ordering booleans: {} does not match amount of Series: {}",
-                reverse.len(),
+                descending.len(),
                 by.len()
             )
             .into(),
         ));
     }
-    let (first, by, reverse) = prepare_arg_sort(by.to_vec(), reverse.to_vec()).unwrap();
-    first.arg_sort_multiple(&by, &reverse)
+    let (first, by, descending) = prepare_arg_sort(by.to_vec(), descending.to_vec()).unwrap();
+    first.arg_sort_multiple(&by, &descending)
 }
 
 // utility to be able to also add literals to concat_str function

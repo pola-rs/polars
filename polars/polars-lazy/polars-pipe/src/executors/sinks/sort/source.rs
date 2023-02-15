@@ -14,7 +14,7 @@ pub struct SortSource {
     files: std::vec::IntoIter<(u32, PathBuf)>,
     n_threads: usize,
     sort_idx: usize,
-    reverse: bool,
+    descending: bool,
     chunk_offset: IdxSize,
     slice: Option<(i64, usize)>,
     finished: bool,
@@ -35,7 +35,7 @@ impl SortSource {
     pub(super) fn new(
         mut files: Vec<(u32, PathBuf)>,
         sort_idx: usize,
-        reverse: bool,
+        descending: bool,
         slice: Option<(i64, usize)>,
         partitions: Series,
     ) -> Self {
@@ -48,7 +48,7 @@ impl SortSource {
             files,
             n_threads,
             sort_idx,
-            reverse,
+            descending,
             chunk_offset: 0,
             slice,
             finished: false,
@@ -154,7 +154,7 @@ impl Source for SortSource {
                 // sort a single partition
                 let current_slice = self.slice;
                 let mut df = match &mut self.slice {
-                    None => sort_accumulated(df, self.sort_idx, self.reverse, None),
+                    None => sort_accumulated(df, self.sort_idx, self.descending, None),
                     Some((offset, len)) => {
                         let df_len = df.height();
                         assert!(*offset >= 0);
@@ -163,7 +163,7 @@ impl Source for SortSource {
                             Ok(df.slice(0, 0))
                         } else {
                             let out =
-                                sort_accumulated(df, self.sort_idx, self.reverse, current_slice);
+                                sort_accumulated(df, self.sort_idx, self.descending, current_slice);
                             *len = len.saturating_sub(df_len);
                             *offset = 0;
                             out

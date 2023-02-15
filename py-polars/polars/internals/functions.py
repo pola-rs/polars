@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64, PolarsDataType
-from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_pl_duration,
+    deprecated_alias,
+)
 
 if sys.version_info >= (3, 10):
     from typing import Literal
@@ -590,7 +594,7 @@ def align_frames(
     *frames: pli.DataFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-    reverse: bool | Sequence[bool] = False,
+    descending: bool | Sequence[bool] = False,
 ) -> list[pli.DataFrame]:
     ...
 
@@ -600,16 +604,17 @@ def align_frames(
     *frames: pli.LazyFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-    reverse: bool | Sequence[bool] = False,
+    descending: bool | Sequence[bool] = False,
 ) -> list[pli.LazyFrame]:
     ...
 
 
+@deprecated_alias(reverse="descending")
 def align_frames(
     *frames: pli.DataFrame | pli.LazyFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-    reverse: bool | Sequence[bool] = False,
+    descending: bool | Sequence[bool] = False,
 ) -> list[pli.DataFrame] | list[pli.LazyFrame]:
     r"""
     Align a sequence of frames using the unique values from one or more columns as a key.
@@ -633,7 +638,7 @@ def align_frames(
     select
         optional post-alignment column select to constrain and/or order
         the columns returned from the newly aligned frames.
-    reverse
+    descending
         sort the alignment column values in descending order; can be a single
         boolean or a list of booleans associated with each column in ``on``.
 
@@ -743,7 +748,7 @@ def align_frames(
     alignment_frame = (
         concat([df.lazy().select(on) for df in frames])
         .unique(maintain_order=False)
-        .sort(by=on, reverse=reverse)
+        .sort(by=on, descending=descending)
     )
     alignment_frame = (
         alignment_frame.collect().lazy() if eager else alignment_frame.cache()
