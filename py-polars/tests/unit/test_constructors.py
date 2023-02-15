@@ -825,3 +825,84 @@ def test_from_categorical_in_struct_defined_by_schema() -> None:
     out = df.unnest("a")
     assert out.schema == {"value": pl.Categorical, "counts": pl.UInt32}
     assert out.to_dict(False) == {"value": ["foo", "bar"], "counts": [1, 2]}
+
+
+def test_nested_schema_construction() -> None:
+    schema = {
+        "node_groups": pl.List(
+            pl.Struct(
+                [
+                    pl.Field("parent_node_group_id", pl.UInt8),
+                    pl.Field(
+                        "nodes",
+                        pl.List(
+                            pl.Struct(
+                                [
+                                    pl.Field("name", pl.Utf8),
+                                    pl.Field(
+                                        "sub_nodes",
+                                        pl.List(
+                                            pl.Struct(
+                                                [
+                                                    pl.Field("internal_id", pl.UInt64),
+                                                    pl.Field("value", pl.UInt32),
+                                                ]
+                                            )
+                                        ),
+                                    ),
+                                ]
+                            )
+                        ),
+                    ),
+                ]
+            )
+        )
+    }
+    df = pl.DataFrame(
+        {
+            "node_groups": [
+                [{"nodes": []}, {"nodes": [{"name": "", "sub_nodes": []}]}],
+            ]
+        },
+        schema=schema,
+    )
+    assert df.schema == schema
+    assert df.to_dict(False) == {
+        "node_groups": [
+            [
+                {"parent_node_group_id": None, "nodes": []},
+                {
+                    "parent_node_group_id": None,
+                    "nodes": [{"name": "", "sub_nodes": []}],
+                },
+            ]
+        ]
+    }
+
+    schema = {
+        "node_groups": pl.List(
+            pl.Struct(
+                [
+                    pl.Field(
+                        "nodes",
+                        pl.List(
+                            pl.Struct(
+                                [pl.Field("name", pl.Utf8), pl.Field("time", pl.UInt32)]
+                            )
+                        ),
+                    )
+                ]
+            )
+        )
+    }
+    df = pl.DataFrame(
+        [
+            {"node_groups": [{"nodes": [{"name": "a", "time": 0}]}]},
+            {"node_groups": [{"nodes": []}]},
+        ],
+        schema=schema,
+    )
+    assert df.schema == schema
+    assert df.to_dict(False) == {
+        "node_groups": [[{"nodes": [{"name": "a", "time": 0}]}], [{"nodes": []}]]
+    }
