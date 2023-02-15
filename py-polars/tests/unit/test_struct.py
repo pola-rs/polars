@@ -798,3 +798,16 @@ def test_struct_null_cast() -> None:
         .select([pl.lit(None, dtype=pl.Null).cast(dtype, strict=True)])
         .collect()
     ).to_dict(False) == {"literal": [{"a": None, "b": None, "c": None}]}
+
+
+def test_nested_struct_in_lists_cast() -> None:
+    assert pl.DataFrame(
+        {
+            "node_groups": [
+                [{"nodes": [{"id": 1, "is_started": True}]}],
+                [{"nodes": []}],
+            ]
+        }
+    ).to_dict(False) == {
+        "node_groups": [[{"nodes": [{"id": 1, "is_started": True}]}], [{"nodes": []}]]
+    }
