@@ -168,8 +168,8 @@ class DataFrame:
     Parameters
     ----------
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
-        Two-dimensional data in various forms. dict must contain Sequences.
-        Sequence may contain Series or other Sequences.
+        Two-dimensional data in various forms; dict input must contain Sequences,
+        Generators, or a ``range``. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 

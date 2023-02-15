@@ -7,8 +7,8 @@ from polars.dependencies import _PYARROW_AVAILABLE
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
+from polars.exceptions import NoDataError
 from polars.internals import DataFrame, Series
-from polars.internals.construction import _unpack_schema, include_unknowns
 from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
@@ -161,15 +161,14 @@ def from_dicts(
     └─────┴─────┴──────┴──────┘
 
     """
-    column_names, schema = _unpack_schema(
-        schema, schema_overrides=schema_overrides, include_overrides_in_columns=True
-    )
-    schema = include_unknowns(schema, column_names or list(schema))
-    return DataFrame._from_dicts(
-        dicts,
-        infer_schema_length,
-        schema=(column_names and schema),
+    if not dicts and not (schema or schema_overrides):
+        raise NoDataError("No rows. Cannot infer schema.")
+
+    return DataFrame(
+        data=dicts,
+        schema=schema,
         schema_overrides=schema_overrides,
+        infer_schema_length=infer_schema_length,
     )
 
 
