@@ -524,22 +524,23 @@ def test_init_records_schema_order() -> None:
     ]
     lookup = {"a": 1, "b": 2, "c": 3, "d": 4, "e": None}
 
-    # ensure field values are loaded according to the declared schema order
-    for _ in range(8):
-        shuffle(data)
-        shuffle(cols)
+    for constructor in (pl.from_dicts, pl.DataFrame):
+        # ensure field values are loaded according to the declared schema order
+        for _ in range(8):
+            shuffle(data)
+            shuffle(cols)
 
-        df = pl.from_dicts(dicts=data, schema=cols)
+            df = constructor(data, schema=cols)  # type: ignore[operator]
+            for col in df.columns:
+                assert all(value in (None, lookup[col]) for value in df[col].to_list())
+
+        # have schema override inferred types, omit some columns, add a new one
+        schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
+        df = constructor(data, schema=schema)  # type: ignore[operator]
+
+        assert df.schema == schema
         for col in df.columns:
             assert all(value in (None, lookup[col]) for value in df[col].to_list())
-
-    # have schema override inferred types, omit some columns, add a new one
-    schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
-    df = pl.from_dicts(dicts=data, schema=schema)
-
-    assert df.schema == schema
-    for col in df.columns:
-        assert all(value in (None, lookup[col]) for value in df[col].to_list())
 
 
 def test_init_only_columns() -> None:

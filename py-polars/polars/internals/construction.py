@@ -789,12 +789,15 @@ def sequence_to_pydf(
         column_names, schema_overrides = _unpack_schema(
             schema, schema_overrides=schema_overrides
         )
-        dtypes = (
-            include_unknowns(schema_overrides, column_names)
+        dicts_schema = (
+            include_unknowns(schema_overrides, column_names or list(schema_overrides))
             if schema_overrides and column_names
             else None
         )
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, dtypes)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
+
+        if column_names and set(column_names).intersection(pydf.columns()):
+            column_names = None
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
                 pydf,
