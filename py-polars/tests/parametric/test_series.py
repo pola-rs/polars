@@ -6,8 +6,10 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import no_type_check
 
+import numpy as np
 from hypothesis import given, settings
 from hypothesis.strategies import booleans, floats, sampled_from
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.internals.expr.expr import _prepare_alpha
@@ -149,3 +151,14 @@ def test_series_timeunits(
     ):
         for ns, us in zip(s2.dt.nanoseconds(), micros):
             assert ns == (us * 1000)
+
+
+@given(
+    s=series(min_size=1, max_size=10, excluded_dtypes=[pl.Categorical]),
+)
+def test_series_to_numpy(
+    s: pl.Series,
+) -> None:
+    if s.dtype != pl.Utf8 or not s.str.contains("\x00").any():
+        np_array = np.array(s.to_list())
+        assert_array_equal(np_array, s.to_numpy())

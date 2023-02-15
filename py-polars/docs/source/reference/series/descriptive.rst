@@ -11,7 +11,6 @@ Descriptive
     Series.estimated_size
     Series.has_validity
     Series.is_boolean
-    Series.is_datelike
     Series.is_duplicated
     Series.is_empty
     Series.is_finite
@@ -25,6 +24,7 @@ Descriptive
     Series.is_null
     Series.is_numeric
     Series.is_sorted
+    Series.is_temporal
     Series.is_unique
     Series.is_utf8
     Series.len
