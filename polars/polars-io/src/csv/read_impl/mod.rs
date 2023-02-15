@@ -408,30 +408,29 @@ impl<'a> CoreReader<'a> {
 
         let chunk_size = std::cmp::min(self.chunk_size, total_rows);
         let n_chunks = total_rows / chunk_size;
-        if logging {
-            eprintln!(
-                "no. of chunks: {n_chunks} processed by: {n_threads} threads at 1 chunk/thread",
-            );
-        }
 
         let n_file_chunks = if streaming { n_chunks } else { *n_threads };
 
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
-        Ok((
-            get_file_chunks(
-                bytes,
-                n_file_chunks,
-                self.schema.len(),
-                self.delimiter,
-                self.quote_char,
-                self.eol_char,
-            ),
-            chunk_size,
-            total_rows,
-            starting_point_offset,
+
+        let chunks = get_file_chunks(
             bytes,
-        ))
+            n_file_chunks,
+            self.schema.len(),
+            self.delimiter,
+            self.quote_char,
+            self.eol_char,
+        );
+
+        if logging {
+            eprintln!(
+                "no. of chunks: {} processed by: {n_threads} threads.",
+                chunks.len()
+            );
+        }
+
+        Ok((chunks, chunk_size, total_rows, starting_point_offset, bytes))
     }
 
     fn get_projection(&mut self) -> Vec<usize> {
