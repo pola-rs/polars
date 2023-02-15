@@ -630,6 +630,7 @@ impl DataFrame {
         right_by: Vec<String>,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
+        suffix: Option<&str>,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<DataFrame> {
         let left_asof = self.column(left_on)?.to_physical_repr();
@@ -697,7 +698,7 @@ impl DataFrame {
             )
         };
 
-        _finish_join(left, right_df, None)
+        _finish_join(left, right_df, suffix)
     }
 
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
@@ -727,7 +728,7 @@ impl DataFrame {
             .map(|s| s.as_ref().to_string())
             .collect();
         self._join_asof_by(
-            other, left_on, right_on, left_by, right_by, strategy, tolerance, None,
+            other, left_on, right_on, left_by, right_by, strategy, tolerance, None, None,
         )
     }
 }
