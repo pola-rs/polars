@@ -178,7 +178,7 @@ pub(crate) fn write<W: Write>(
     writer: &mut W,
     df: &DataFrame,
     chunk_size: usize,
-    options: &mut SerializeOptions,
+    options: &SerializeOptions,
 ) -> PolarsResult<()> {
     for s in df.get_columns() {
         let nested = match s.dtype() {
