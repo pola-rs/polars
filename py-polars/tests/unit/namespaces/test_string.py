@@ -180,6 +180,38 @@ def test_str_split() -> None:
         assert out[2].to_list() == ["ab,", "c,", "de"]
 
 
+def test_json_extract_series() -> None:
+    s = pl.Series(["[1, 2, 3]", None, "[4, 5, 6]"])
+    expected = pl.Series([[1, 2, 3], None, [4, 5, 6]])
+    dtype = pl.List(pl.Int64)
+    assert_series_equal(s.str.json_extract(None), expected)
+    assert_series_equal(s.str.json_extract(dtype), expected)
+
+    s = pl.Series(['{"a": 1, "b": true}', None, '{"a": 2, "b": false}'])
+    expected = pl.Series([{"a": 1, "b": True}, None, {"a": 2, "b": False}])
+    dtype2 = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
+    assert_series_equal(s.str.json_extract(None), expected)
+    assert_series_equal(s.str.json_extract(dtype2), expected)
+
+    expected = pl.Series([{"a": 1}, None, {"a": 2}])
+    dtype2 = pl.Struct([pl.Field("a", pl.Int64)])
+    assert_series_equal(s.str.json_extract(dtype2), expected)
+
+
+def test_json_extract_lazy_expr() -> None:
+    dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
+    ldf = (
+        pl.DataFrame({"json": ['{"a": 1, "b": true}', None, '{"a": 2, "b": false}']})
+        .lazy()
+        .select(pl.col("json").str.json_extract(dtype))
+    )
+    expected = pl.DataFrame(
+        {"json": [{"a": 1, "b": True}, None, {"a": 2, "b": False}]}
+    ).lazy()
+    assert ldf.schema == {"json": dtype}
+    assert_frame_equal(ldf, expected)
+
+
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
     expected = pl.Series(["1", None, "2", "2.1", "true"])

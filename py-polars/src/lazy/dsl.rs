@@ -857,6 +857,29 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> PyExpr {
+        let dtype = dtype.map(|wrap| wrap.0);
+
+        let output_type = match dtype.clone() {
+            Some(dtype) => GetOutput::from_type(dtype),
+            None => GetOutput::from_type(DataType::Unknown),
+        };
+
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.json_extract(dtype.clone()) {
+                Ok(ca) => Ok(Some(ca.into_series())),
+                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
+            }
+        };
+
+        self.clone()
+            .inner
+            .map(function, output_type)
+            .with_fmt("str.json_extract")
+            .into()
+    }
+
     #[cfg(feature = "extract_jsonpath")]
     pub fn str_json_path_match(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {
