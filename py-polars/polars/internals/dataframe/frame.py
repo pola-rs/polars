@@ -102,7 +102,11 @@ else:
 
 if sys.version_info >= (3, 10):
     from typing import Concatenate, ParamSpec, TypeAlias
+
+    from packaging.version import parse as ParseVersion
 else:
+    from distutils.version import LooseVersion as ParseVersion
+
     from typing_extensions import Concatenate, ParamSpec, TypeAlias
 
 if sys.version_info >= (3, 11):
@@ -1944,7 +1948,10 @@ class DataFrame:
             return out
 
     def to_pandas(  # noqa: D417
-        self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
+        self,
+        *args: Any,
+        use_pyarrow_extension_array: bool = False,
+        **kwargs: Any,
     ) -> pd.DataFrame:
         """
         Cast to a pandas DataFrame.
@@ -1955,12 +1962,11 @@ class DataFrame:
         Parameters
         ----------
         use_pyarrow_extension_array
-            Use PyArrow backed-extension arrays instead of numpy arrays for each
-            column of the pandas DataFrame. This allows zero copy operations and
-            preservation of nulls values.
-            Further operations on this pandas DataFrame, might trigger conversion
-            to NumPy arrays if that operation is not supported by pyarrow compute
-            functions.
+            Use PyArrow backed-extension arrays instead of numpy arrays for each column
+            of the pandas DataFrame; this allows zero copy operations and preservation
+            of null values. Subsequent operations on the resulting pandas DataFrame may
+            trigger conversion to NumPy arrays if that operation is not supported by
+            pyarrow compute functions.
         kwargs
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
 
@@ -2020,28 +2026,23 @@ class DataFrame:
 
         """
         if use_pyarrow_extension_array:
-            pandas_version_major, pandas_version_minor = (
-                int(x) for x in pd.__version__.split(".")[0:2]
-            )
-            if pandas_version_major == 0 or (
-                pandas_version_major == 1 and pandas_version_minor < 5
-            ):
+            if ParseVersion(pd.__version__) < ParseVersion("1.5"):
                 raise ModuleNotFoundError(
                     f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
                 )
 
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
-        return (
-            tbl.to_pandas(
+        if use_pyarrow_extension_array:
+            return tbl.to_pandas(
                 self_destruct=True,
                 split_blocks=True,
                 types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
                 **kwargs,
             )
-            if use_pyarrow_extension_array
-            else tbl.to_pandas(**kwargs)
-        )
+
+        date_as_object = kwargs.pop("date_as_object", False)
+        return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
 
     def to_series(self, index: int = 0) -> pli.Series:
         """
