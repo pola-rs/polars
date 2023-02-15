@@ -40,6 +40,14 @@ fn is_datetime_arithmetic(type_left: &DataType, type_right: &DataType, op: Opera
         )
 }
 
+#[cfg(feature = "dtype-struct")]
+fn is_struct_numeric_arithmetic(type_left: &DataType, type_right: &DataType, op: Operator) -> bool {
+    {
+        op.is_arithmetic() && (matches!(type_right, DataType::Struct(_)) && type_left.is_numeric())
+            || (matches!(type_left, DataType::Struct(_)) && type_right.is_numeric())
+    }
+}
+
 fn is_list_arithmetic(type_left: &DataType, type_right: &DataType, op: Operator) -> bool {
     op.is_arithmetic()
         && matches!(
@@ -124,6 +132,55 @@ fn process_list_arithmetic(
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+// Ensure we don't cast to supertype
+// otherwise we will fill a struct with null fields
+fn process_struct_numeric_arithmetic(
+    type_left: DataType,
+    type_right: DataType,
+    node_left: Node,
+    node_right: Node,
+    op: Operator,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Option<AExpr>> {
+    match (&type_left, &type_right) {
+        (DataType::Struct(fields), _) => {
+            if let Some(first) = fields.first() {
+                let new_node_right = expr_arena.add(AExpr::Cast {
+                    expr: node_right,
+                    data_type: DataType::Struct(vec![first.clone()]),
+                    strict: false,
+                });
+                Ok(Some(AExpr::BinaryExpr {
+                    left: node_left,
+                    op,
+                    right: new_node_right,
+                }))
+            } else {
+                Ok(None)
+            }
+        }
+        (_, DataType::Struct(fields)) => {
+            if let Some(first) = fields.first() {
+                let new_node_left = expr_arena.add(AExpr::Cast {
+                    expr: node_left,
+                    data_type: DataType::Struct(vec![first.clone()]),
+                    strict: false,
+                });
+
+                Ok(Some(AExpr::BinaryExpr {
+                    left: new_node_left,
+                    op,
+                    right: node_right,
+                }))
+            } else {
+                Ok(None)
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &Arena<ALogicalPlan>,
@@ -175,6 +232,17 @@ pub(super) fn process_binary(
         return process_list_arithmetic(
             type_left, type_right, node_left, node_right, op, expr_arena,
         );
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    {
+        let is_struct_numeric_arithmetic =
+            is_struct_numeric_arithmetic(&type_left, &type_right, op);
+        if is_struct_numeric_arithmetic {
+            return process_struct_numeric_arithmetic(
+                type_left, type_right, node_left, node_right, op, expr_arena,
+            );
+        }
     }
 
     // All early return paths

@@ -55,6 +55,27 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> PolarsResult<
     cast_impl_inner(name, chunks, dtype, true)
 }
 
+#[cfg(feature = "dtype-struct")]
+fn cast_single_to_struct(
+    name: &str,
+    chunks: &[ArrayRef],
+    fields: &[Field],
+) -> PolarsResult<Series> {
+    let mut new_fields = Vec::with_capacity(fields.len());
+    // cast to first field dtype
+    let mut fields = fields.iter();
+    let fld = fields.next().unwrap();
+    let s = cast_impl_inner(&fld.name, chunks, &fld.dtype, true)?;
+    let length = s.len();
+    new_fields.push(s);
+
+    for fld in fields {
+        new_fields.push(Series::full_null(&fld.name, length, &fld.dtype));
+    }
+
+    Ok(StructChunked::new_unchecked(name, &new_fields).into_series())
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -75,14 +96,7 @@ where
                 }
             }
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => {
-                // cast to first field dtype
-                let fld = &fields[0];
-                let dtype = &fld.dtype;
-                let name = &fld.name;
-                let s = cast_impl_inner(name, &self.chunks, dtype, true)?;
-                Ok(StructChunked::new_unchecked(self.name(), &[s]).into_series())
-            }
+            DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
             _ => cast_impl_inner(self.name(), &self.chunks, data_type, checked).map(|mut s| {
                 // maintain sorted if data types remain signed
                 // this may still fail with overflow?
@@ -123,6 +137,8 @@ impl ChunkCast for Utf8Chunked {
                 let ca = builder.finish();
                 Ok(ca.into_series())
             }
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
             _ => cast_impl(self.name(), &self.chunks, data_type),
         }
     }
@@ -148,7 +164,11 @@ unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
 #[cfg(feature = "dtype-binary")]
 impl ChunkCast for BinaryChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        cast_impl(self.name(), &self.chunks, data_type)
+        match data_type {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
+            _ => cast_impl(self.name(), &self.chunks, data_type),
+        }
     }
 
     fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
@@ -177,12 +197,15 @@ fn boolean_to_utf8(ca: &BooleanChunked) -> Utf8Chunked {
 
 impl ChunkCast for BooleanChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        if matches!(data_type, DataType::Utf8) {
-            let mut ca = boolean_to_utf8(self);
-            ca.rename(self.name());
-            Ok(ca.into_series())
-        } else {
-            cast_impl(self.name(), &self.chunks, data_type)
+        match data_type {
+            DataType::Utf8 => {
+                let mut ca = boolean_to_utf8(self);
+                ca.rename(self.name());
+                Ok(ca.into_series())
+            }
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
+            _ => cast_impl(self.name(), &self.chunks, data_type),
         }
     }
 
@@ -213,12 +236,12 @@ impl ChunkCast for ListChunked {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
                     (Utf8, Categorical(_)) => {
-                        let (arr, inner_dtype) = cast_list(self, child_type)?;
+                        let (arr, child_type) = cast_list(self, child_type)?;
                         Ok(unsafe {
                             Series::from_chunks_and_dtype_unchecked(
                                 self.name(),
                                 vec![arr],
-                                &List(Box::new(inner_dtype)),
+                                &List(Box::new(child_type)),
                             )
                         })
                     }
@@ -251,7 +274,8 @@ impl ChunkCast for ListChunked {
     }
 }
 
-// returns inner data type
+// Returns inner data type. This is needed because a cast can instantiate the dtype inner
+// values for instance with categoricals
 fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef, DataType)> {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
@@ -259,6 +283,7 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
     let new_inner = s.cast(child_type)?;
 
     let inner_dtype = new_inner.dtype().clone();
+    debug_assert_eq!(&inner_dtype, child_type);
 
     let new_values = new_inner.array_ref(0).clone();
 
