@@ -316,7 +316,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def from_json(cls, json: str) -> LazyFrame:
+    def from_json(cls, json: str) -> Self:
         """
         Read a logical plan from a JSON string to construct a LazyFrame.
 
@@ -332,10 +332,10 @@ class LazyFrame:
         """
         bytes = StringIO(json).getvalue().encode()
         file = BytesIO(bytes)
-        return wrap_ldf(PyLazyFrame.read_json(file))
+        return cls._from_pyldf(PyLazyFrame.read_json(file))
 
     @classmethod
-    def read_json(cls, file: str | Path | IOBase) -> LazyFrame:
+    def read_json(cls, file: str | Path | IOBase) -> Self:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
 
@@ -354,7 +354,7 @@ class LazyFrame:
         elif isinstance(file, (str, Path)):
             file = normalise_filepath(file)
 
-        return wrap_ldf(PyLazyFrame.read_json(file))
+        return cls._from_pyldf(PyLazyFrame.read_json(file))
 
     @classmethod
     def _scan_python_function(
@@ -362,7 +362,7 @@ class LazyFrame:
         schema: pa.schema | dict[str, PolarsDataType],
         scan_fn: bytes,
         pyarrow: bool = False,
-    ) -> LazyFrame:
+    ) -> Self:
         self = cls.__new__(cls)
         if isinstance(schema, dict):
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
@@ -472,13 +472,13 @@ class LazyFrame:
     def __deepcopy__(self, memo: None = None) -> Self:
         return self.clone()
 
-    def __getitem__(self, item: int | range | slice) -> LazyFrame:
+    def __getitem__(self, item: int | range | slice) -> Self:
         if not isinstance(item, slice):
             raise TypeError(
                 "'LazyFrame' object is not subscriptable (aside from slicing). Use"
                 " 'select()' or 'filter()' instead."
             )
-        return LazyPolarsSlice(self).apply(item)
+        return self._from_pyldf(LazyPolarsSlice(self).apply(item)._ldf)
 
     def __str__(self) -> str:
         return f"""\
@@ -1433,7 +1433,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """Cache the result once the execution of the physical plan hits this node."""
         return self._from_pyldf(self._ldf.cache())
 
-    def cleared(self) -> LazyFrame:
+    def cleared(self) -> Self:
         """
         Create an empty copy of the current LazyFrame.
 
@@ -1462,7 +1462,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┴──────┘
 
         """
-        return pli.DataFrame(schema=self.schema).lazy()
+        return self._from_pyldf(pli.DataFrame(schema=self.schema).lazy()._ldf)
 
     def clone(self) -> Self:
         """
@@ -4005,7 +4005,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def update(
         self, other: LazyFrame, on: None | str | Sequence[str] = None, how: str = "left"
-    ) -> LazyFrame:
+    ) -> Self:
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
 
@@ -4118,4 +4118,4 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         )
         if row_count_used:
             result = result.drop(row_count_name)
-        return result
+        return self._from_pyldf(result._ldf)

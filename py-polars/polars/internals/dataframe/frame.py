@@ -120,6 +120,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         CsvEncoding,
         FillNullStrategy,
+        IntoExpr,
         IpcCompression,
         JoinStrategy,
         NullStrategy,
@@ -897,7 +898,7 @@ class DataFrame:
         row_count_offset: int = 0,
         rechunk: bool = True,
         memory_map: bool = True,
-    ) -> DataFrame:
+    ) -> Self:
         """
         Read into a DataFrame from Arrow IPC stream format.
 
@@ -943,14 +944,15 @@ class DataFrame:
                 memory_map=memory_map,
             )
             if columns is None:
-                return scan.collect()
+                df = scan.collect()
             elif is_str_sequence(columns, allow_str=False):
-                return scan.select(columns).collect()
+                df = scan.select(columns).collect()
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns`"
                     " argument; Use columns: List[str]"
                 )
+            return cls._from_pydf(df._df)
 
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
@@ -1261,7 +1263,7 @@ class DataFrame:
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
         df = (
-            df  # type: ignore[assignment]
+            df
             if not floordiv
             else df.with_columns([s.floor() for s in df if s.dtype() in FLOAT_DTYPES])
         )
@@ -1272,7 +1274,7 @@ class DataFrame:
                 if tp in INTEGER_DTYPES and orig_dtypes[i] in INTEGER_DTYPES
             ]
             if int_casts:
-                return df.with_columns(int_casts)  # type: ignore[return-value]
+                return df.with_columns(int_casts)
         return df
 
     def _cast_all_from_to(
@@ -2760,7 +2762,7 @@ class DataFrame:
         predicate: (
             pli.Expr | str | pli.Series | list[bool] | np.ndarray[Any, Any] | bool
         ),
-    ) -> DataFrame:
+    ) -> Self:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -2821,10 +2823,11 @@ class DataFrame:
         if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray):
             predicate = pli.Series(predicate)
 
-        return (
+        return self._from_pydf(
             self.lazy()
             .filter(predicate)  # type: ignore[arg-type]
             .collect(no_optimization=True)
+            ._df
         )
 
     @overload
@@ -4124,7 +4127,7 @@ class DataFrame:
         tolerance: str | int | float | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
-    ) -> DataFrame:
+    ) -> Self:
         """
         Perform an asof join.
 
@@ -4238,7 +4241,7 @@ class DataFrame:
                 f"Expected 'other' join table to be a DataFrame, not a {type(other).__name__}"
             )
 
-        return (
+        return self._from_pydf(
             self.lazy()
             .join_asof(
                 other.lazy(),
@@ -4255,6 +4258,7 @@ class DataFrame:
                 force_parallel=force_parallel,
             )
             .collect(no_optimization=True)
+            ._df
         )
 
     @deprecate_nonkeyword_arguments(
@@ -4271,7 +4275,7 @@ class DataFrame:
         on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
-    ) -> DataFrame:
+    ) -> Self:
         """
         Join in SQL-like fashion.
 
@@ -4380,7 +4384,7 @@ class DataFrame:
                 f"Expected 'other' join table to be a DataFrame, not a {type(other).__name__}"
             )
 
-        return (
+        return self._from_pydf(
             self.lazy()
             .join(
                 other=other.lazy(),
@@ -4391,6 +4395,7 @@ class DataFrame:
                 suffix=suffix,
             )
             .collect(no_optimization=True)
+            ._df
         )
 
     @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
@@ -4933,7 +4938,7 @@ class DataFrame:
             ._df
         )
 
-    def fill_nan(self, fill_value: pli.Expr | int | float | None) -> DataFrame:
+    def fill_nan(self, fill_value: pli.Expr | int | float | None) -> Self:
         """
         Fill floating point NaN values by an Expression evaluation.
 
@@ -4977,12 +4982,14 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        return self.lazy().fill_nan(fill_value).collect(no_optimization=True)
+        return self._from_pydf(
+            self.lazy().fill_nan(fill_value).collect(no_optimization=True)._df
+        )
 
     def explode(
         self,
         columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
-    ) -> DataFrame:
+    ) -> Self:
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
 
@@ -5033,7 +5040,9 @@ class DataFrame:
         └─────────┴─────────┘
 
         """
-        return self.lazy().explode(columns).collect(no_optimization=True)
+        return self._from_pydf(
+            self.lazy().explode(columns).collect(no_optimization=True)._df
+        )
 
     @deprecate_nonkeyword_arguments(
         allowed_args=["self", "values", "index", "columns", "aggregate_fn"]
@@ -5304,7 +5313,7 @@ class DataFrame:
 
         if how == "horizontal":
             df = (
-                df.with_columns(  # type: ignore[assignment]
+                df.with_columns(
                     (pli.arange(0, n_cols * n_rows, eager=True) % n_cols).alias(
                         "__sort_order"
                     ),
@@ -5510,7 +5519,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: int | str | float) -> DataFrame:
+    def shift_and_fill(self, periods: int, fill_value: int | str | float) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
@@ -5543,10 +5552,11 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return (
+        return self._from_pydf(
             self.lazy()
             .shift_and_fill(periods, fill_value)
             .collect(no_optimization=True)
+            ._df
         )
 
     def is_duplicated(self) -> pli.Series:
@@ -5787,17 +5797,10 @@ class DataFrame:
 
     def with_columns(
         self,
-        exprs: (
-            str
-            | PolarsExprType
-            | PythonLiteral
-            | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
-            | None
-        ) = None,
-        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
-        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
-    ) -> DataFrame:
+        exprs: IntoExpr | Iterable[IntoExpr] = None,
+        *more_exprs: IntoExpr,
+        **named_exprs: IntoExpr,
+    ) -> Self:
         """
         Add columns to this DataFrame.
 
@@ -5942,10 +5945,11 @@ class DataFrame:
         └─────┴──────┴─────────────┘
 
         """
-        return (
+        return self._from_pydf(
             self.lazy()
             .with_columns(exprs, *more_exprs, **named_exprs)
             .collect(no_optimization=True)
+            ._df
         )
 
     @overload
@@ -7326,7 +7330,7 @@ class DataFrame:
         return self._from_pydf(self._df.unnest(names))
 
     @typing.no_type_check
-    def pearson_corr(self, **kwargs: dict[str, Any]) -> DataFrame:
+    def pearson_corr(self, **kwargs: Any) -> Self:
         """
         Return Pearson product-moment correlation coefficients.
 
@@ -7357,9 +7361,11 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
-        return DataFrame(
-            np.corrcoef(self, **kwargs),
-            schema=self.columns,
+        return self._from_pydf(
+            DataFrame(
+                np.corrcoef(self, **kwargs),
+                schema=self.columns,
+            )._df
         )
 
     def merge_sorted(self, other: DataFrame, key: str) -> Self:
@@ -7389,7 +7395,7 @@ class DataFrame:
 
     def update(
         self, other: DataFrame, on: None | str | Sequence[str] = None, how: str = "left"
-    ) -> DataFrame:
+    ) -> Self:
         """
         Update the values in this `DataFrame` with the non-null values in `other`.
 
@@ -7464,7 +7470,9 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.lazy().update(other.lazy(), on, how).collect(no_optimization=True)
+        return self._from_pydf(
+            self.lazy().update(other.lazy(), on, how).collect(no_optimization=True)._df
+        )
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> pli.Series:
