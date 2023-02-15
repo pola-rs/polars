@@ -479,29 +479,34 @@ def test_to_pandas() -> None:
         {
             "a": [1, 2, 3],
             "b": [6, None, 8],
-            "c": [date(2023, 7, 5), None, date(1999, 12, 13)],
-            "d": ["a", "b", "c"],
-            "e": [None, "e", "f"],
-        }
+            "c": [10.0, 25.0, 50.5],
+            "d": [date(2023, 7, 5), None, date(1999, 12, 13)],
+            "e": ["a", "b", "c"],
+            "f": [None, "e", "f"],
+            "g": [datetime.now(), datetime.now(), None],
+        },
+        schema_overrides={"a": pl.UInt8},
     ).with_columns(
         [
-            pl.col("d").cast(pl.Categorical).alias("f"),
-            pl.col("e").cast(pl.Categorical).alias("g"),
+            pl.col("e").cast(pl.Categorical).alias("h"),
+            pl.col("f").cast(pl.Categorical).alias("i"),
         ]
     )
     pd_out = df.to_pandas()
     pd_out_dtypes_expected = [
-        np.int64,
+        np.uint8,
+        np.float64,
         np.float64,
         np.dtype("datetime64[ns]"),
         np.object_,
         np.object_,
+        np.dtype("datetime64[ns]"),
         pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
         pd.CategoricalDtype(categories=["e", "f"], ordered=False),
     ]
     assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
 
-    pd_out_dtypes_expected[2] = np.dtype("O")
+    pd_out_dtypes_expected[3] = np.dtype("O")
     pd_out = df.to_pandas(date_as_object=True)
     assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
 
@@ -509,11 +514,13 @@ def test_to_pandas() -> None:
         pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
         pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
         pd_pa_dtypes_names_expected = [
+            "uint8[pyarrow]",
             "int64[pyarrow]",
-            "int64[pyarrow]",
+            "double[pyarrow]",
             "date32[day][pyarrow]",
             "large_string[pyarrow]",
             "large_string[pyarrow]",
+            "timestamp[us][pyarrow]",
             "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
             "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
         ]
