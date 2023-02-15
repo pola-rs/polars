@@ -156,7 +156,7 @@ where
                 .zip(rhs.downcast_iter())
                 .map(|(lhs, rhs)| Box::new(kernel(lhs, rhs)) as ArrayRef)
                 .collect();
-            lhs.copy_with_chunks(chunks, false)
+            lhs.copy_with_chunks(chunks, false, false)
         }
         // broadcast right path
         (_, 1) => {

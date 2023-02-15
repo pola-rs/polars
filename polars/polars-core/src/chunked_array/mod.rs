@@ -166,6 +166,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.contains(Settings::SORTED_DSC)
     }
 
+    pub fn unset_fast_explode_list(&mut self) {
+        self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
+    }
+
     pub fn is_sorted_flag2(&self) -> IsSorted {
         if self.is_sorted_flag() {
             IsSorted::Ascending
@@ -319,7 +323,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Create a new ChunkedArray from self, where the chunks are replaced.
-    fn copy_with_chunks(&self, chunks: Vec<ArrayRef>, keep_sorted: bool) -> Self {
+    fn copy_with_chunks(
+        &self,
+        chunks: Vec<ArrayRef>,
+        keep_sorted: bool,
+        keep_fast_explode: bool,
+    ) -> Self {
         let mut out = ChunkedArray {
             field: self.field.clone(),
             chunks,
@@ -330,6 +339,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         out.compute_len();
         if !keep_sorted {
             out.set_sorted_flag(IsSorted::Not);
+        }
+        if !keep_fast_explode {
+            out.unset_fast_explode_list()
         }
         out
     }
@@ -390,7 +402,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 a.with_validity(validity)
             })
             .collect();
-        self.copy_with_chunks(chunks, true)
+        self.copy_with_chunks(chunks, true, false)
     }
 
     /// Get data type of ChunkedArray.

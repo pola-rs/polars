@@ -58,6 +58,16 @@ macro_rules! take_opt_iter_n_chunks_unchecked {
     }};
 }
 
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    fn finish_from_array(&self, array: Box<dyn Array>) -> Self {
+        let keep_fast_explode = array.null_count() == 0;
+        self.copy_with_chunks(vec![array], false, keep_fast_explode)
+    }
+}
+
 impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -97,7 +107,7 @@ where
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::Iter(iter) => {
                 if self.is_empty() {
@@ -118,7 +128,7 @@ where
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::IterNulls(iter) => {
                 if self.is_empty() {
@@ -139,7 +149,7 @@ where
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
         }
     }
@@ -188,7 +198,7 @@ impl ChunkTake for BooleanChunked {
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::Iter(iter) => {
                 if self.is_empty() {
@@ -205,7 +215,7 @@ impl ChunkTake for BooleanChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::IterNulls(iter) => {
                 if self.is_empty() {
@@ -225,7 +235,7 @@ impl ChunkTake for BooleanChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
         }
     }
@@ -274,7 +284,7 @@ impl ChunkTake for Utf8Chunked {
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::Iter(iter) => {
                 let array = match (self.has_validity(), self.chunks.len()) {
@@ -288,7 +298,7 @@ impl ChunkTake for Utf8Chunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::IterNulls(iter) => {
                 let array = match (self.has_validity(), self.chunks.len()) {
@@ -305,7 +315,7 @@ impl ChunkTake for Utf8Chunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
         }
     }
@@ -356,7 +366,7 @@ impl ChunkTake for BinaryChunked {
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::Iter(iter) => {
                 let array = match (self.has_validity(), self.chunks.len()) {
@@ -370,7 +380,7 @@ impl ChunkTake for BinaryChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             TakeIdx::IterNulls(iter) => {
                 let array = match (self.has_validity(), self.chunks.len()) {
@@ -387,7 +397,7 @@ impl ChunkTake for BinaryChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
         }
     }
@@ -447,7 +457,7 @@ impl ChunkTake for ListChunked {
                         }
                     }
                 };
-                ca_self.copy_with_chunks(vec![array], false)
+                self.finish_from_array(array)
             }
             // todo! fast path for single chunk
             TakeIdx::Iter(iter) => {
