@@ -46,7 +46,7 @@ where
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
-        Ok(self.copy_with_chunks(chunks, true))
+        Ok(self.copy_with_chunks(chunks, true, true))
     }
 }
 
@@ -67,7 +67,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
-        Ok(self.copy_with_chunks(chunks, true))
+        Ok(self.copy_with_chunks(chunks, true, true))
     }
 }
 
@@ -89,7 +89,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
 
-        Ok(self.copy_with_chunks(chunks, true))
+        Ok(self.copy_with_chunks(chunks, true, true))
     }
 }
 
@@ -112,7 +112,7 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
 
-        Ok(self.copy_with_chunks(chunks, true))
+        Ok(self.copy_with_chunks(chunks, true, true))
     }
 }
 

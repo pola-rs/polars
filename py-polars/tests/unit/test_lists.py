@@ -572,6 +572,16 @@ def test_fast_explode_flag() -> None:
     df1 = pl.DataFrame({"values": [[[1, 2]]]})
     assert df1.clone().vstack(df1)["values"].flags["FAST_EXPLODE"]
 
+    # test take that produces a null in list
+    df = pl.DataFrame({"a": [1, 2, 1, 3]})
+    df_b = pl.DataFrame({"a": [1, 2], "c": [["1", "2", "c"], ["1", "2", "c"]]})
+    assert df_b["c"].flags["FAST_EXPLODE"]
+
+    # join produces a null
+    assert not (df.join(df_b, on=["a"], how="left").select(["c"]))["c"].flags[
+        "FAST_EXPLODE"
+    ]
+
 
 def test_list_amortized_apply_explode_5812() -> None:
     s = pl.Series([None, [1, 3], [0, -3], [1, 2, 2]])
