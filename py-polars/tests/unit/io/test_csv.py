@@ -9,6 +9,7 @@ import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -1168,3 +1169,30 @@ def test_read_web_file() -> None:
     url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/datasets/foods1.csv"
     df = pl.read_csv(url)
     assert df.shape == (27, 4)
+
+
+@pytest.mark.slow()
+def test_csv_multiline_splits() -> None:
+    # create a very unlikely csv file with many multilines in a
+    # single field (e.g. 5000). polars must reject multi-threading here
+    # as it cannot find proper file chunks without sequentially parsing.
+
+    np.random.seed(0)
+    f = io.BytesIO()
+
+    def some_multiline_str(n: int) -> str:
+        strs = []
+        strs.append('"')
+        # sample between 0 and 5 so that it is likely
+        # the multiline field also go 3 separators.
+        for length in np.random.randint(0, 5, n):
+            strs.append(f"{'xx,' * length}")
+
+        strs.append('"')
+        return "\n".join(strs)
+
+    for _ in range(4):
+        f.write(f"field1,field2,{some_multiline_str(5000)}\n".encode())
+
+    f.seek(0)
+    assert pl.read_csv(f, has_header=False).shape == (4, 3)
