@@ -1213,7 +1213,7 @@ class Expr:
 
     def drop_nulls(self) -> Self:
         """
-        Drop null values.
+        Drop all null values.
 
         Warnings
         --------

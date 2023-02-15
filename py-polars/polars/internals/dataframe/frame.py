@@ -3364,12 +3364,15 @@ class DataFrame:
 
     def drop_nulls(self, subset: str | Sequence[str] | None = None) -> Self:
         """
-        Return a new DataFrame where rows with null values are dropped.
+        Drop all rows that contain null values.
+
+        Returns a new DataFrame.
 
         Parameters
         ----------
         subset
-            Subset of column(s) for which null values are considered.
+            Column name(s) for which null values are considered.
+            If set to ``None`` (default), use all columns.
 
         Examples
         --------
@@ -3446,9 +3449,9 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        if isinstance(subset, str):
-            subset = [subset]
-        return self._from_pydf(self._df.drop_nulls(subset))
+        return self._from_pydf(
+            self.lazy().drop_nulls(subset).collect(no_optimization=True)._df
+        )
 
     def pipe(
         self,
@@ -4628,12 +4631,12 @@ class DataFrame:
 
     def drop(self, columns: str | Sequence[str]) -> Self:
         """
-        Remove column from DataFrame and return as new.
+        Remove columns from the dataframe.
 
         Parameters
         ----------
         columns
-            Column(s) to drop.
+            Name of the column(s) that should be removed from the dataframe.
 
         Examples
         --------
@@ -4657,14 +4660,9 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        if isinstance(columns, list):
-            df = self.clone()
-
-            for n in columns:
-                df._df.drop_in_place(n)
-            return df
-
-        return self._from_pydf(self._df.drop(columns))
+        return self._from_pydf(
+            self.lazy().drop(columns).collect(no_optimization=True)._df
+        )
 
     def drop_in_place(self, name: str) -> pli.Series:
         """
@@ -4987,16 +4985,16 @@ class DataFrame:
         )
 
     def explode(
-        self,
-        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        self, columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr]
     ) -> Self:
         """
-        Explode `DataFrame` to long format by exploding a column with Lists.
+        Explode the dataframe to long format by exploding the given columns.
 
         Parameters
         ----------
         columns
-            Column of LargeList type.
+            Name of the column(s) to explode. Columns must be of datatype List or Utf8.
+            Accepts ``col`` expressions as input as well.
 
         Returns
         -------
@@ -5064,11 +5062,12 @@ class DataFrame:
         ----------
         values
             Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well
+            arguments contains multiple columns as well.
         index
-            One or multiple keys to group by
+            One or multiple keys to group by.
         columns
-            Columns whose values will be used as the header of the output DataFrame
+            Name of the column(s) whose values will be used as the header of the output
+            DataFrame.
         aggregate_fn : {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
             A predefined aggregate function str or an expression.
         maintain_order
@@ -5234,7 +5233,8 @@ class DataFrame:
         how : { 'vertical', 'horizontal' }
             Direction of the unstack.
         columns
-            Column to include in the operation.
+            Name of the column(s) to include in the operation.
+            If set to ``None`` (default), use all columns.
         fill_values
             Fill values that don't fit the new size with this value.
 
@@ -6403,16 +6403,16 @@ class DataFrame:
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
     def to_dummies(
-        self, columns: Sequence[str] | None = None, *, separator: str = "_"
+        self, columns: str | Sequence[str] | None = None, *, separator: str = "_"
     ) -> Self:
         """
-        Get one hot encoded dummy variables.
+        Convert categorical variables into dummy/indicator variables.
 
         Parameters
         ----------
-        columns:
-            A subset of columns to convert to dummy variables. ``None`` means
-            "all columns".
+        columns
+            Name of the column(s) that should be converted to dummy variables.
+            If set to ``None`` (default), convert all columns.
         separator
             Separator/delimiter used when generating column names.
 
@@ -6454,7 +6454,7 @@ class DataFrame:
         keep: UniqueKeepStrategy = "first",
     ) -> Self:
         """
-        Drop duplicate rows from this DataFrame.
+        Drop duplicate rows from this dataframe.
 
         Parameters
         ----------
@@ -6462,8 +6462,8 @@ class DataFrame:
             Keep the same order as the original DataFrame. This is more expensive to
             compute.
         subset
-            Columns to consider for identifying duplicates. Defaults to using all
-            columns.
+            Column name(s) to consider when identifying duplicates.
+            If set to ``None`` (default), use all columns.
         keep : {'first', 'last', 'none'}
             Which of the duplicate rows to keep.
 
@@ -6518,13 +6518,12 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        if subset is not None:
-            if isinstance(subset, str):
-                subset = [subset]
-            elif not isinstance(subset, list):
-                subset = list(subset)
-
-        return self._from_pydf(self._df.unique(maintain_order, subset, keep))
+        return self._from_pydf(
+            self.lazy()
+            .unique(maintain_order=maintain_order, subset=subset, keep=keep)
+            .collect(no_optimization=True)
+            ._df
+        )
 
     def n_unique(
         self, subset: str | pli.Expr | Sequence[str | pli.Expr] | None = None
@@ -6567,10 +6566,14 @@ class DataFrame:
         ... )
         >>> df.n_unique()
         5
-        >>> # simple columns subset
+
+        Simple columns subset.
+
         >>> df.n_unique(subset=["b", "c"])
         4
-        >>> # expression subset
+
+        Expression subset.
+
         >>> df.n_unique(
         ...     subset=[
         ...         (pl.col("a") // 2),

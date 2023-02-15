@@ -2708,15 +2708,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    def drop(self, columns: str | list[str]) -> Self:
+    def drop(self, columns: str | Sequence[str]) -> Self:
         """
-        Remove one or multiple columns from a DataFrame.
+        Remove columns from the dataframe.
 
         Parameters
         ----------
         columns
-            - Name of the column that should be removed.
-            - List of column names.
+            Name of the column(s) that should be removed from the dataframe.
 
         Examples
         --------
@@ -3556,11 +3555,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
 
     def explode(
-        self,
-        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        self, columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr]
     ) -> Self:
         """
-        Explode lists to long format.
+        Explode the dataframe to long format by exploding the given columns.
+
+        Parameters
+        ----------
+        columns
+            Name of the column(s) to explode. Columns must be of datatype List or Utf8.
+            Accepts ``col`` expressions as input as well.
 
         Examples
         --------
@@ -3604,7 +3608,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         keep: UniqueKeepStrategy = "first",
     ) -> Self:
         """
-        Drop duplicate rows from this DataFrame.
+        Drop duplicate rows from this dataframe.
 
         Parameters
         ----------
@@ -3612,8 +3616,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Keep the same order as the original DataFrame. This is more expensive to
             compute.
         subset
-            Columns to consider for identifying duplicates. Defaults to using all
-            columns.
+            Column name(s) to consider when identifying duplicates.
+            If set to ``None`` (default), use all columns.
         keep : {'first', 'last', 'none'}
             Which of the duplicate rows to keep.
 
@@ -3668,22 +3672,21 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        if subset is not None:
-            if isinstance(subset, str):
-                subset = [subset]
-            elif not isinstance(subset, list):
-                subset = list(subset)
-
+        if isinstance(subset, str):
+            subset = [subset]
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
-    def drop_nulls(self, subset: list[str] | str | None = None) -> Self:
+    def drop_nulls(self, subset: str | Sequence[str] | None = None) -> Self:
         """
-        Return a new LazyFrame where rows with null values are dropped.
+        Drop all rows that contain null values.
+
+        Returns a new LazyFrame.
 
         Parameters
         ----------
         subset
-            Subset of column(s) for which null values are considered.
+            Column name(s) for which null values are considered.
+            If set to ``None`` (default), use all columns.
 
         Examples
         --------
@@ -3745,7 +3748,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └──────┴─────┴──────┘
 
         """
-        if subset is not None and not isinstance(subset, list):
+        if isinstance(subset, str):
             subset = [subset]
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 

@@ -932,19 +932,6 @@ impl PyDataFrame {
         Ok(PySeries { series: s })
     }
 
-    pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> PyResult<Self> {
-        let df = self
-            .df
-            .drop_nulls(subset.as_ref().map(|s| s.as_ref()))
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
-    pub fn drop(&self, name: &str) -> PyResult<Self> {
-        let df = self.df.drop(name).map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn select_at_idx(&self, idx: usize) -> Option<PySeries> {
         self.df.select_at_idx(idx).map(|s| PySeries::new(s.clone()))
     }
@@ -1162,25 +1149,6 @@ impl PyDataFrame {
 
     pub fn shift(&self, periods: i64) -> Self {
         self.df.shift(periods).into()
-    }
-
-    #[pyo3(signature = (maintain_order, subset, keep))]
-    pub fn unique(
-        &self,
-        py: Python,
-        maintain_order: bool,
-        subset: Option<Vec<String>>,
-        keep: Wrap<UniqueKeepStrategy>,
-    ) -> PyResult<Self> {
-        let df = py.allow_threads(|| {
-            let subset = subset.as_ref().map(|v| v.as_ref());
-            match maintain_order {
-                true => self.df.unique_stable(subset, keep.0),
-                false => self.df.unique(subset, keep.0),
-            }
-            .map_err(PyPolarsErr::from)
-        })?;
-        Ok(df.into())
     }
 
     pub fn lazy(&self) -> PyLazyFrame {
