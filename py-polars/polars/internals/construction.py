@@ -262,13 +262,10 @@ def sequence_to_pyseries(
 
     # empty sequence
     if not values and dtype is None:
-        if dtype_if_empty:
-            # if dtype for empty sequence could be guessed
-            # (e.g comparisons between self and other)
-            dtype = dtype_if_empty
-        else:
-            # default to Float32 type
-            dtype = Float32
+        # if dtype for empty sequence could be guessed
+        # (e.g comparisons between self and other), default to Float32
+        dtype = dtype_if_empty or Float32
+
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
         nested_dtype = getattr(dtype, "inner", None)
@@ -321,11 +318,8 @@ def sequence_to_pyseries(
         ).to_struct(name)
     else:
         if python_dtype is None:
-            if value is None:
-                # generic default dtype
-                python_dtype = float
-            else:
-                python_dtype = type(value)
+            # generic default dtype
+            python_dtype = float if value is None else type(value)
 
         # temporal branch
         if python_dtype in py_temporal_types:
@@ -1239,7 +1233,7 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
 
     index_cols = df.index.names
 
-    if len(index_cols) > 1:
+    if len(index_cols) > 1:  # noqa: SIM114
         return False  # not default: more than one index
     elif index_cols not in ([None], [""]):
         return False  # not default: index is named
