@@ -42,9 +42,6 @@ class StringNameSpace:
             `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
-            Note that the ``Z`` suffix for "Zulu time" in ISO8601 formats is not (yet!)
-            fully supported: you should first try ``"%+"`` and if that fails, insert a
-            ``Z`` in your ``fmt`` string and then use ``dt.convert_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -65,6 +62,17 @@ class StringNameSpace:
 
         Examples
         --------
+        Dealing with a consistent format:
+
+        >>> ts = ["2020-01-01 01:00Z", "2020-01-01 02:00Z"]
+        >>> pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        shape: (2,)
+        Series: '' [datetime[μs, +00:00]]
+        [
+                2020-01-01 01:00:00 +00:00
+                2020-01-01 02:00:00 +00:00
+        ]
+
         Dealing with different formats.
 
         >>> s = pl.Series(
