@@ -447,7 +447,7 @@ impl PredicatePushDown {
                     };
                     #[cfg(not(feature = "is_unique"))]
                         let matches = {
-                        |e: &AExpr| false
+                        |_e: &AExpr| false
                     };
 
 
