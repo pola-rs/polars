@@ -15,6 +15,7 @@ Computation
     Series.arctanh
     Series.arg_true
     Series.arg_unique
+    Series.cbrt
     Series.cos
     Series.cosh
     Series.cummax
