@@ -6,15 +6,9 @@ import polars.internals as pli
 from polars.datatypes import SchemaDict
 from polars.internals import selection_to_pyexpr_list
 
-try:
-    from polars.polars import PyLazyGroupBy
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import IntoExpr
+    from polars.internals.type_aliases import IntoExpr, RollingInterpolationMethod
+    from polars.polars import PyLazyGroupBy
 
 LDF = TypeVar("LDF", bound="pli.LazyFrame")
 
@@ -57,6 +51,88 @@ class LazyGroupBy(Generic[LDF]):
         """
         pyexprs = selection_to_pyexpr_list(aggs)
         return self._lazyframe_class._from_pyldf(self.lgb.agg(pyexprs))
+
+    def apply(
+        self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: SchemaDict | None
+    ) -> LDF:
+        """
+        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
+
+        Implementing logic using a Python function is almost always _significantly_
+        slower and more memory intensive than implementing the same logic using
+        the native expression API because:
+
+        - The native expression engine runs in Rust; UDFs run in Python.
+        - Use of Python UDFs forces the DataFrame to be materialized in memory.
+        - Polars-native expressions can be parallelised (UDFs cannot).
+        - Polars-native expressions can be logically optimised (UDFs cannot).
+
+        Wherever possible you should strongly prefer the native expression API
+        to achieve the best performance.
+
+        Parameters
+        ----------
+        f
+            Function to apply over each group of the `LazyFrame`.
+        schema
+            Schema of the output function. This has to be known statically. If the
+            given schema is incorrect, this is a bug in the caller's query and may
+            lead to errors. If set to None, polars assumes the schema is unchanged.
+
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": [0, 1, 2, 3, 4],
+        ...         "color": ["red", "green", "green", "red", "red"],
+        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
+        ...     }
+        ... )
+        >>> df
+        shape: (5, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 0   ┆ red   ┆ square   │
+        │ 1   ┆ green ┆ triangle │
+        │ 2   ┆ green ┆ square   │
+        │ 3   ┆ red   ┆ triangle │
+        │ 4   ┆ red   ┆ square   │
+        └─────┴───────┴──────────┘
+
+        For each color group sample two rows:
+
+        >>> (
+        ...     df.lazy()
+        ...     .groupby("color")
+        ...     .apply(lambda group_df: group_df.sample(2), schema=None)
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (4, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 1   ┆ green ┆ triangle │
+        │ 2   ┆ green ┆ square   │
+        │ 4   ┆ red   ┆ square   │
+        │ 3   ┆ red   ┆ triangle │
+        └─────┴───────┴──────────┘
+
+        It is better to implement this with an expression:
+
+        >>> (
+        ...     df.lazy()
+        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
+
+        """
+        return self._lazyframe_class._from_pyldf(self.lgb.apply(f, schema))
 
     def head(self, n: int = 5) -> LDF:
         """
@@ -154,84 +230,322 @@ class LazyGroupBy(Generic[LDF]):
         """
         return self._lazyframe_class._from_pyldf(self.lgb.tail(n))
 
-    def apply(
-        self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: SchemaDict | None
-    ) -> LDF:
+    def all(self) -> LDF:
         """
-        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
-
-        Implementing logic using a Python function is almost always _significantly_
-        slower and more memory intensive than implementing the same logic using
-        the native expression API because:
-
-        - The native expression engine runs in Rust; UDFs run in Python.
-        - Use of Python UDFs forces the DataFrame to be materialized in memory.
-        - Polars-native expressions can be parallelised (UDFs cannot).
-        - Polars-native expressions can be logically optimised (UDFs cannot).
-
-        Wherever possible you should strongly prefer the native expression API
-        to achieve the best performance.
-
-        Parameters
-        ----------
-        f
-            Function to apply over each group of the `LazyFrame`.
-        schema
-            Schema of the output function. This has to be known statically. If the
-            given schema is incorrect, this is a bug in the caller's query and may
-            lead to errors. If set to None, polars assumes the schema is unchanged.
-
+        Aggregate the groups into Series.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> ldf = pl.DataFrame(
         ...     {
-        ...         "id": [0, 1, 2, 3, 4],
-        ...         "color": ["red", "green", "green", "red", "red"],
-        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
+        ...         "a": ["one", "two", "one", "two"],
+        ...         "b": [1, 2, 3, 4],
         ...     }
-        ... )
-        >>> df
-        shape: (5, 3)
-        ┌─────┬───────┬──────────┐
-        │ id  ┆ color ┆ shape    │
-        │ --- ┆ ---   ┆ ---      │
-        │ i64 ┆ str   ┆ str      │
-        ╞═════╪═══════╪══════════╡
-        │ 0   ┆ red   ┆ square   │
-        │ 1   ┆ green ┆ triangle │
-        │ 2   ┆ green ┆ square   │
-        │ 3   ┆ red   ┆ triangle │
-        │ 4   ┆ red   ┆ square   │
-        └─────┴───────┴──────────┘
-
-        For each color group sample two rows:
-
-        >>> (
-        ...     df.lazy()
-        ...     .groupby("color")
-        ...     .apply(lambda group_df: group_df.sample(2), schema=None)
-        ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (4, 3)
-        ┌─────┬───────┬──────────┐
-        │ id  ┆ color ┆ shape    │
-        │ --- ┆ ---   ┆ ---      │
-        │ i64 ┆ str   ┆ str      │
-        ╞═════╪═══════╪══════════╡
-        │ 1   ┆ green ┆ triangle │
-        │ 2   ┆ green ┆ square   │
-        │ 4   ┆ red   ┆ square   │
-        │ 3   ┆ red   ┆ triangle │
-        └─────┴───────┴──────────┘
-
-        It is better to implement this with an expression:
-
-        >>> (
-        ...     df.lazy()
-        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
-        ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
+        ... ).lazy()
+        >>> ldf.groupby("a", maintain_order=True).all().collect()
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ str ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ one ┆ [1, 3]    │
+        │ two ┆ [2, 4]    │
+        └─────┴───────────┘
 
         """
-        return self._lazyframe_class._from_pyldf(self.lgb.apply(f, schema))
+        return self.agg(pli.all())
+
+    def count(self) -> LDF:
+        """
+        Count the number of values in each group.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).count().collect()
+        shape: (3, 2)
+        ┌────────┬───────┐
+        │ d      ┆ count │
+        │ ---    ┆ ---   │
+        │ str    ┆ u32   │
+        ╞════════╪═══════╡
+        │ Apple  ┆ 3     │
+        │ Orange ┆ 1     │
+        │ Banana ┆ 2     │
+        └────────┴───────┘
+
+        """
+        return self.agg(pli.lazy_functions.count())
+
+    def first(self) -> LDF:
+        """
+        Aggregate the first values in the group.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).first().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ true  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+
+        """
+        return self.agg(pli.all().first())
+
+    def last(self) -> LDF:
+        """
+        Aggregate the last values in the group.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).last().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ false │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 5   ┆ 14.0 ┆ true  │
+        └────────┴─────┴──────┴───────┘
+
+        """
+        return self.agg(pli.all().last())
+
+    def max(self) -> LDF:
+        """
+        Reduce the groups to the maximal value.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).max().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ true │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ 14.0 ┆ true │
+        └────────┴─────┴──────┴──────┘
+
+        """
+        return self.agg(pli.all().max())
+
+    def mean(self) -> LDF:
+        """
+        Reduce the groups to the mean values.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).mean().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────────┬──────────┐
+        │ d      ┆ a   ┆ b        ┆ c        │
+        │ ---    ┆ --- ┆ ---      ┆ ---      │
+        │ str    ┆ f64 ┆ f64      ┆ f64      │
+        ╞════════╪═════╪══════════╪══════════╡
+        │ Apple  ┆ 2.0 ┆ 4.833333 ┆ 0.666667 │
+        │ Orange ┆ 2.0 ┆ 0.5      ┆ 1.0      │
+        │ Banana ┆ 4.5 ┆ 13.5     ┆ 0.5      │
+        └────────┴─────┴──────────┴──────────┘
+
+        """
+        return self.agg(pli.all().mean())
+
+    def median(self) -> LDF:
+        """
+        Return the median per group.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).median().collect()
+        shape: (2, 3)
+        ┌────────┬─────┬──────┐
+        │ d      ┆ a   ┆ b    │
+        │ ---    ┆ --- ┆ ---  │
+        │ str    ┆ f64 ┆ f64  │
+        ╞════════╪═════╪══════╡
+        │ Apple  ┆ 2.0 ┆ 4.0  │
+        │ Banana ┆ 4.0 ┆ 13.0 │
+        └────────┴─────┴──────┘
+
+        """
+        return self.agg(pli.all().median())
+
+    def min(self) -> LDF:
+        """
+        Reduce the groups to the minimal value.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).min().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ false │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+
+        """
+        return self.agg(pli.all().min())
+
+    def n_unique(self) -> LDF:
+        """
+        Count the unique values per group.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 1, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 0.5, 10, 13, 14],
+        ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).n_unique().collect()
+        shape: (2, 3)
+        ┌────────┬─────┬─────┐
+        │ d      ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ str    ┆ u32 ┆ u32 │
+        ╞════════╪═════╪═════╡
+        │ Apple  ┆ 2   ┆ 2   │
+        │ Banana ┆ 3   ┆ 3   │
+        └────────┴─────┴─────┘
+
+        """
+        return self.agg(pli.all().n_unique())
+
+    def quantile(
+        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+    ) -> LDF:
+        """
+        Compute the quantile per group.
+
+        Parameters
+        ----------
+        quantile
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).quantile(1).collect()
+        shape: (3, 3)
+        ┌────────┬─────┬──────┐
+        │ d      ┆ a   ┆ b    │
+        │ ---    ┆ --- ┆ ---  │
+        │ str    ┆ f64 ┆ f64  │
+        ╞════════╪═════╪══════╡
+        │ Apple  ┆ 3.0 ┆ 10.0 │
+        │ Orange ┆ 2.0 ┆ 0.5  │
+        │ Banana ┆ 5.0 ┆ 14.0 │
+        └────────┴─────┴──────┘
+
+        """
+        return self.agg(pli.all().quantile(quantile, interpolation=interpolation))
+
+    def sum(self) -> LDF:
+        """
+        Reduce the groups to the sum.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("d", maintain_order=True).sum().collect()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬─────┐
+        │ d      ┆ a   ┆ b    ┆ c   │
+        │ ---    ┆ --- ┆ ---  ┆ --- │
+        │ str    ┆ i64 ┆ f64  ┆ u32 │
+        ╞════════╪═════╪══════╪═════╡
+        │ Apple  ┆ 6   ┆ 14.5 ┆ 2   │
+        │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
+        │ Banana ┆ 9   ┆ 27.0 ┆ 1   │
+        └────────┴─────┴──────┴─────┘
+
+        """
+        return self.agg(pli.all().sum())
