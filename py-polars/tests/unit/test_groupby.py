@@ -524,3 +524,23 @@ def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> Non
     assert df.groupby("group").agg(pl.col("data").mean()).sort(by="group").to_dict(
         False
     ) == {"group": [1, 2], "data": [10000000.0, 10000000.0]}
+
+
+def test_groupby_dynamic_elementwise_following_mean_agg_6904() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "a": [
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(5)
+                ],
+                "b": [float(i) for i in range(5)],
+            }
+        )
+        .lazy()
+        .groupby_dynamic("a", every="10s", period="100s")
+        .agg([pl.col("b").mean().sin().alias("c")])
+        .collect()
+    ).to_dict(False) == {
+        "a": [datetime(2021, 1, 1, 0, 0), datetime(2021, 1, 1, 0, 0, 10)],
+        "c": [0.9092974268256817, -0.7568024953079282],
+    }

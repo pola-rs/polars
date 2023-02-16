@@ -92,6 +92,91 @@ impl ApplyExpr {
             })
         })
     }
+    fn apply_single_group_aware<'a>(
+        &self,
+        mut ac: AggregationContext<'a>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let s = ac.series();
+
+        if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
+            let msg = format!(
+                "Cannot aggregate {:?}. The column is already aggregated.",
+                self.expr
+            );
+            return Err(expression_err!(msg, self.expr, ComputeError));
+        }
+
+        let name = s.name().to_string();
+        let agg = ac.aggregated();
+        // collection of empty list leads to a null dtype
+        // see: #3687
+        if agg.len() == 0 {
+            // create input for the function to determine the output dtype
+            // see #3946
+            let agg = agg.list().unwrap();
+            let input_dtype = agg.inner_dtype();
+
+            let input = Series::full_null("", 0, &input_dtype);
+
+            let output = self.eval_and_flatten(&mut [input])?;
+            let ca = ListChunked::full(&name, &output, 0);
+            return self.finish_apply_groups(ac, ca);
+        }
+
+        let mut ca: ListChunked = POOL.install(|| {
+            agg.list()
+                .unwrap()
+                .par_iter()
+                .map(|opt_s| match opt_s {
+                    None => Ok(None),
+                    Some(mut s) => {
+                        if self.pass_name_to_apply {
+                            s.rename(&name);
+                        }
+                        let mut container = [s];
+                        self.function.call_udf(&mut container)
+                    }
+                })
+                .collect::<PolarsResult<_>>()
+        })?;
+
+        ca.rename(&name);
+        self.finish_apply_groups(ac, ca)
+    }
+    fn apply_single_flattened<'a>(
+        &self,
+        mut ac: AggregationContext<'a>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        // make sure the groups are updated because we are about to throw away
+        // the series' length information
+        let set_update_groups = match ac.update_groups {
+            UpdateGroups::WithSeriesLen => {
+                ac.groups();
+                true
+            }
+            UpdateGroups::WithSeriesLenOwned(_) => false,
+            UpdateGroups::No | UpdateGroups::WithGroupsLen => false,
+        };
+
+        if let UpdateGroups::WithSeriesLen = ac.update_groups {
+            ac.groups();
+        }
+
+        let input = ac.flat_naive().into_owned();
+        let input_len = input.len();
+        let s = self.eval_and_flatten(&mut [input])?;
+
+        check_map_output_len(input_len, s.len(), &self.expr)?;
+        ac.with_series(s, false, None)?;
+
+        if set_update_groups {
+            // The flat_naive orders by groups, so we must create new groups
+            // not by series length as we don't have an agg_list, but by original
+            // groups length
+            ac.update_groups = UpdateGroups::WithGroupsLen;
+        }
+        Ok(ac)
+    }
 }
 
 fn all_unit_length(ca: &ListChunked) -> bool {
@@ -149,86 +234,18 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 }
-                // overlapping groups always take this branch as explode/flat_naive bloats data size
-                (_, ApplyOptions::ApplyGroups) | (true, _) => {
-                    let s = ac.series();
-
-                    if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
-                        let msg = format!(
-                            "Cannot aggregate {:?}. The column is already aggregated.",
-                            self.expr
-                        );
-                        return Err(expression_err!(msg, self.expr, ComputeError));
-                    }
-
-                    let name = s.name().to_string();
-                    let agg = ac.aggregated();
-                    // collection of empty list leads to a null dtype
-                    // see: #3687
-                    if agg.len() == 0 {
-                        // create input for the function to determine the output dtype
-                        // see #3946
-                        let agg = agg.list().unwrap();
-                        let input_dtype = agg.inner_dtype();
-
-                        let input = Series::full_null("", 0, &input_dtype);
-
-                        let output = self.eval_and_flatten(&mut [input])?;
-                        let ca = ListChunked::full(&name, &output, 0);
-                        return self.finish_apply_groups(ac, ca);
-                    }
-
-                    let mut ca: ListChunked = POOL.install(|| {
-                        agg.list()
-                            .unwrap()
-                            .par_iter()
-                            .map(|opt_s| match opt_s {
-                                None => Ok(None),
-                                Some(mut s) => {
-                                    if self.pass_name_to_apply {
-                                        s.rename(&name);
-                                    }
-                                    let mut container = [s];
-                                    self.function.call_udf(&mut container)
-                                }
-                            })
-                            .collect::<PolarsResult<_>>()
-                    })?;
-
-                    ca.rename(&name);
-                    self.finish_apply_groups(ac, ca)
-                }
-                (_, ApplyOptions::ApplyFlat) => {
-                    // make sure the groups are updated because we are about to throw away
-                    // the series' length information
-                    let set_update_groups = match ac.update_groups {
-                        UpdateGroups::WithSeriesLen => {
-                            ac.groups();
-                            true
-                        }
-                        UpdateGroups::WithSeriesLenOwned(_) => false,
-                        UpdateGroups::No | UpdateGroups::WithGroupsLen => false,
-                    };
-
-                    if let UpdateGroups::WithSeriesLen = ac.update_groups {
-                        ac.groups();
-                    }
-
-                    let input = ac.flat_naive().into_owned();
-                    let input_len = input.len();
-                    let s = self.eval_and_flatten(&mut [input])?;
-
-                    check_map_output_len(input_len, s.len(), &self.expr)?;
-                    ac.with_series(s, false, None)?;
-
-                    if set_update_groups {
-                        // The flat_naive orders by groups, so we must create new groups
-                        // not by series length as we don't have an agg_list, but by original
-                        // groups length
-                        ac.update_groups = UpdateGroups::WithGroupsLen;
-                    }
+                // - series is aggregated flat/reduction: sum/min/mean etc.
+                // - apply options is apply_flat -> elementwise
+                // we can simply apply the function in a vectorized manner.
+                (_, ApplyOptions::ApplyFlat) if ac.is_aggregated_flat() => {
+                    let s = ac.aggregated();
+                    let s = self.eval_and_flatten(&mut [s])?;
+                    ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 }
+                // overlapping groups always take this branch as explode/flat_naive bloats data size
+                (_, ApplyOptions::ApplyGroups) | (true, _) => self.apply_single_group_aware(ac),
+                (_, ApplyOptions::ApplyFlat) => self.apply_single_flattened(ac),
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
