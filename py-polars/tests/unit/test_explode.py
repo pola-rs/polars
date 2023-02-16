@@ -222,3 +222,22 @@ def test_explode_inner_lists_3985() -> None:
         .agg(pl.col("categories"))
         .with_columns(pl.col("categories").arr.eval(pl.element().arr.explode()))
     ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}
+
+
+def test_list_struct_explode_6905() -> None:
+    assert pl.DataFrame(
+        {
+            "group": [
+                [],
+                [
+                    {"params": [1]},
+                    {"params": []},
+                ],
+            ]
+        },
+        schema={"group": pl.List(pl.Struct([pl.Field("params", pl.List(pl.Int32))]))},
+    )["group"].arr.explode().to_list() == [
+        {"params": None},
+        {"params": [1]},
+        {"params": []},
+    ]

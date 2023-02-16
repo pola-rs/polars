@@ -1452,7 +1452,7 @@ def test_unique_unit_rows() -> None:
 
 
 def test_panic() -> None:
-    # may contain some tests that yielded a panic in polars or arrow
+    # may contain some tests that yielded a panic in polars or pl_arrow
     # https://github.com/pola-rs/polars/issues/1110
     a = pl.DataFrame(
         {
