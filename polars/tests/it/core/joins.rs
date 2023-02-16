@@ -251,7 +251,6 @@ fn test_join_multiple_columns() {
 #[cfg_attr(miri, ignore)]
 #[cfg(feature = "dtype-categorical")]
 fn test_join_categorical() {
-    use polars::toggle_string_cache;
     let _lock = IUseStringCache::new();
     let _lock = polars_core::SINGLE_LOCK.lock();
 

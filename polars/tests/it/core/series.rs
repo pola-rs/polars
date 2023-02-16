@@ -31,7 +31,7 @@ fn test_min_max_sorted_asc() {
 
 #[test]
 fn test_min_max_sorted_desc() {
-    let mut a = &mut Series::new("a", &[4, 3, 2, 1]);
+    let a = &mut Series::new("a", &[4, 3, 2, 1]);
     a.set_sorted_flag(IsSorted::Descending);
     assert_eq!(a.max(), Some(4));
     assert_eq!(a.min(), Some(1));

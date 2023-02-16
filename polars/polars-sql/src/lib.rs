@@ -60,6 +60,7 @@ mod test {
                 SortOptions {
                     descending: false,
                     nulls_last: false,
+                    ..Default::default()
                 },
             )
             .collect()?;
@@ -77,6 +78,7 @@ mod test {
                 SortOptions {
                     descending: false,
                     nulls_last: false,
+                    ..Default::default()
                 },
             )
             .collect()?;

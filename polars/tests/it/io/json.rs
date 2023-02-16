@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::io::Cursor;
 
 use super::*;
