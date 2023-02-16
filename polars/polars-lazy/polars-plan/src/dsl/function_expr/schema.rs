@@ -33,7 +33,6 @@ impl FunctionExpr {
             Ok(fld)
         };
 
-        #[cfg(any(feature = "rolling_window", feature = "trigonometry", feature = "log"))]
         // set float supertype
         let float_dtype = || {
             map_dtype(&|dtype| match dtype {
@@ -269,6 +268,7 @@ impl FunctionExpr {
                     }
                 })
             }
+            Root(_) => float_dtype(),
             #[cfg(feature = "dot_product")]
             Dot => map_dtype(&|dt| {
                 use DataType::*;

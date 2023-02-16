@@ -1045,14 +1045,34 @@ class Series:
         """
         Compute the square root of the elements.
 
-        Syntactic sugar for
-
-        >>> pl.Series([1, 2]) ** 0.5
-        shape: (2,)
-        Series: '' [f64]
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, -1.0])
+        >>> s.sqrt()
+        shape: (3,)
+        Series: 'a' [f64]
         [
             1.0
             1.414214
+            NaN
+        ]
+
+        """
+
+    def cbrt(self) -> Series:
+        """
+        Compute the cubic root of the elements.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, -1.0])
+        >>> s.cbrt()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            1.0
+            1.259921
+            -1.0
         ]
 
         """

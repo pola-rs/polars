@@ -61,6 +61,30 @@ impl Expr {
         }
     }
 
+    /// Compute the square root of the given expression
+    pub fn sqrt(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Root(RootFunction::Sqrt),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Compute the cubic root of the given expression
+    pub fn cbrt(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Root(RootFunction::Cbrt),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                ..Default::default()
+            },
+        }
+    }
+
     /// Compute the sine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn sin(self) -> Self {

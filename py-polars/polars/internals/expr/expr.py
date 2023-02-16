@@ -424,7 +424,29 @@ class Expr:
         └──────────┘
 
         """
-        return self**0.5
+        return wrap_expr(self._pyexpr.sqrt())
+
+    def cbrt(self) -> Expr:
+        """
+        Compute the cubic root of the elements.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
+        >>> df.select(pl.col("values").cbrt())
+        shape: (3, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        │ 1.259921 │
+        │ 1.587401 │
+        └──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.cbrt())
 
     def log10(self) -> Self:
         """

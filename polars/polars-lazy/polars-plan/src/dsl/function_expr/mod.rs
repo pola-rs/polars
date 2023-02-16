@@ -15,6 +15,7 @@ mod nan;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
+mod root;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 mod schema;
@@ -45,6 +46,7 @@ pub(crate) use self::binary::BinaryFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
 pub(super) use self::nan::NanFunction;
+pub(super) use self::root::RootFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -113,6 +115,7 @@ pub enum FunctionExpr {
     IsDuplicated,
     Coalesce,
     ShrinkType,
+    Root(RootFunction),
     #[cfg(feature = "diff")]
     Diff(usize, NullBehavior),
     #[cfg(feature = "interpolate")]
@@ -183,6 +186,7 @@ impl Display for FunctionExpr {
             IsDuplicated => "is_duplicated",
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
+            Root(func) => return write!(f, "{func}"),
             #[cfg(feature = "diff")]
             Diff(_, _) => "diff",
             #[cfg(feature = "interpolate")]
@@ -366,6 +370,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsDuplicated => map!(dispatch::is_duplicated),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
+            Root(root_function) => {
+                map!(root::apply_root_function, root_function)
+            }
             #[cfg(feature = "diff")]
             Diff(n, null_behavior) => map!(dispatch::diff, n, null_behavior),
             #[cfg(feature = "interpolate")]

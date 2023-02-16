@@ -416,6 +416,14 @@ impl PyExpr {
         self.clone().inner.abs().into()
     }
 
+    pub fn sqrt(&self) -> PyExpr {
+        self.clone().inner.sqrt().into()
+    }
+
+    pub fn cbrt(&self) -> PyExpr {
+        self.clone().inner.cbrt().into()
+    }
+
     #[cfg(feature = "trigonometry")]
     pub fn sin(&self) -> PyExpr {
         self.clone().inner.sin().into()
