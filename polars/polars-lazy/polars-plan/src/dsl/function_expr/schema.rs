@@ -230,7 +230,9 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
-            IsNotNull | IsNull | Not | IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
+            IsNotNull | IsNull | Not => with_dtype(DataType::Boolean),
+            #[cfg(feature = "is_unique")]
+            IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
             #[cfg(feature = "diff")]
             Diff(_, _) => map_dtype(&|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]

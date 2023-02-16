@@ -331,14 +331,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical().is_not_null()
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        self.0.logical().is_unique()
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        self.0.logical().is_duplicated()
-    }
-
     fn reverse(&self) -> Series {
         self.with_state(true, |cats| cats.reverse()).into_series()
     }

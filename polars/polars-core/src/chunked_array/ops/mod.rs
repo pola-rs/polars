@@ -460,20 +460,6 @@ pub trait ChunkUnique<T: PolarsDataType> {
         self.arg_unique().map(|v| v.len())
     }
 
-    /// Get a mask of all the unique values.
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        Err(PolarsError::InvalidOperation(
-            "is_unique is not implemented for this dtype".into(),
-        ))
-    }
-
-    /// Get a mask of all the duplicated values.
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        Err(PolarsError::InvalidOperation(
-            "is_duplicated is not implemented for this dtype".into(),
-        ))
-    }
-
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<ChunkedArray<T>> {

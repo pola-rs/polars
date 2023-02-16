@@ -1161,12 +1161,14 @@ impl Expr {
 
     /// Get a mask of duplicated values
     #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_unique")]
     pub fn is_duplicated(self) -> Self {
         self.apply_private(FunctionExpr::IsDuplicated)
     }
 
     /// Get a mask of unique values
     #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_unique")]
     pub fn is_unique(self) -> Self {
         self.apply_private(FunctionExpr::IsUnique)
     }

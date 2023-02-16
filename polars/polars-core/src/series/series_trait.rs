@@ -423,16 +423,6 @@ pub trait SeriesTrait:
     /// Get a mask of the non-null values.
     fn is_not_null(&self) -> BooleanChunked;
 
-    /// Get a mask of all the unique values.
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        invalid_operation_panic!(self)
-    }
-
-    /// Get a mask of all the duplicated values.
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        invalid_operation_panic!(self)
-    }
-
     /// return a Series in reversed order
     fn reverse(&self) -> Series;
 

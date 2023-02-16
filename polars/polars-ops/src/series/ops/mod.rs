@@ -3,6 +3,8 @@ mod arg_min_max;
 mod floor_divide;
 #[cfg(feature = "is_first")]
 mod is_first;
+#[cfg(feature = "is_unique")]
+mod is_unique;
 #[cfg(feature = "log")]
 mod log;
 #[cfg(feature = "rolling_window")]
@@ -18,6 +20,8 @@ pub use arg_min_max::ArgAgg;
 pub use floor_divide::*;
 #[cfg(feature = "is_first")]
 pub use is_first::*;
+#[cfg(feature = "is_unique")]
+pub use is_unique::*;
 #[cfg(feature = "log")]
 pub use log::*;
 use polars_core::prelude::*;
