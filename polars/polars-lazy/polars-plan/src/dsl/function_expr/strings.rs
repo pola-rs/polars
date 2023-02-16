@@ -121,7 +121,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                 if literal {
                     ca.contains_literal(pat)?
                 } else {
-                    ca.contains(pat)?
+                    ca.contains(pat, strict)?
                 }
             }
             None => BooleanChunked::full(ca.name(), false, ca.len()),

@@ -160,10 +160,12 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Check if strings contain a regex pattern.
-    fn contains(&self, pat: &str) -> PolarsResult<BooleanChunked> {
+    fn contains(&self, pat: &str, strict: bool) -> PolarsResult<BooleanChunked> {
         let ca = self.as_utf8();
 
-        let opt_reg = Regex::new(pat).ok();
+        let res_reg = Regex::new(pat);
+        let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
+
         let mut out: BooleanChunked = match (opt_reg, ca.has_validity()) {
             (Some(reg), false) => ca
                 .into_no_null_iter()
@@ -184,7 +186,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         // note: benchmarking shows that the regex engine is actually
         // faster at finding literal matches than str::contains.
         // ref: https://github.com/pola-rs/polars/pull/6811
-        self.contains(escape(lit).as_str())
+        self.contains(escape(lit).as_str(), true)
     }
 
     /// Check if strings ends with a substring
