@@ -49,7 +49,7 @@ impl PhysicalExpr for CastExpr {
         if ac.is_literal() {
             ac.with_literal(s);
         } else {
-            ac.with_series(s, false);
+            ac.with_series(s, false, None)?;
         }
 
         Ok(ac)

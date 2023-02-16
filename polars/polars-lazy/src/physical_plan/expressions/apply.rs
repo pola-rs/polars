@@ -65,16 +65,16 @@ impl ApplyExpr {
         &self,
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
-    ) -> AggregationContext<'a> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let all_unit_len = all_unit_length(&ca);
         if all_unit_len && self.auto_explode {
-            ac.with_series(ca.explode().unwrap().into_series(), true);
+            ac.with_series(ca.explode().unwrap().into_series(), true, Some(&self.expr))?;
             ac.update_groups = UpdateGroups::No;
         } else {
-            ac.with_series(ca.into_series(), true);
+            ac.with_series(ca.into_series(), true, Some(&self.expr))?;
             ac.with_update_groups(UpdateGroups::WithSeriesLen);
         }
-        ac
+        Ok(ac)
     }
 
     fn get_input_schema(&self, df: &DataFrame) -> Cow<Schema> {
@@ -146,7 +146,7 @@ impl PhysicalExpr for ApplyExpr {
             match (state.has_overlapping_groups(), self.collect_groups) {
                 (_, ApplyOptions::ApplyList) => {
                     let s = self.eval_and_flatten(&mut [ac.aggregated()])?;
-                    ac.with_series(s, true);
+                    ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 }
                 // overlapping groups always take this branch as explode/flat_naive bloats data size
@@ -175,7 +175,7 @@ impl PhysicalExpr for ApplyExpr {
 
                         let output = self.eval_and_flatten(&mut [input])?;
                         let ca = ListChunked::full(&name, &output, 0);
-                        return Ok(self.finish_apply_groups(ac, ca));
+                        return self.finish_apply_groups(ac, ca);
                     }
 
                     let mut ca: ListChunked = POOL.install(|| {
@@ -196,7 +196,7 @@ impl PhysicalExpr for ApplyExpr {
                     })?;
 
                     ca.rename(&name);
-                    Ok(self.finish_apply_groups(ac, ca))
+                    self.finish_apply_groups(ac, ca)
                 }
                 (_, ApplyOptions::ApplyFlat) => {
                     // make sure the groups are updated because we are about to throw away
@@ -219,7 +219,7 @@ impl PhysicalExpr for ApplyExpr {
                     let s = self.eval_and_flatten(&mut [input])?;
 
                     check_map_output_len(input_len, s.len(), &self.expr)?;
-                    ac.with_series(s, false);
+                    ac.with_series(s, false, None)?;
 
                     if set_update_groups {
                         // The flat_naive orders by groups, so we must create new groups
@@ -240,7 +240,7 @@ impl PhysicalExpr for ApplyExpr {
                     // take the first aggregation context that as that is the input series
                     let mut ac = acs.swap_remove(0);
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s, true);
+                    ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 }
 
@@ -282,7 +282,7 @@ impl PhysicalExpr for ApplyExpr {
                             drop(iters);
                             // take the first aggregation context that as that is the input series
                             let mut ac = acs.swap_remove(0);
-                            ac.with_series(out, true);
+                            ac.with_series(out, true, Some(&self.expr))?;
                             return Ok(ac);
                         }
 
@@ -304,8 +304,7 @@ impl PhysicalExpr for ApplyExpr {
 
                         // take the first aggregation context that as that is the input series
                         let ac = acs.swap_remove(0);
-                        let ac = self.finish_apply_groups(ac, ca);
-                        Ok(ac)
+                        self.finish_apply_groups(ac, ca)
                     }
                 }
                 (_, ApplyOptions::ApplyFlat) => {
@@ -367,7 +366,7 @@ fn apply_multiple_flat<'a>(
 
     // take the first aggregation context that as that is the input series
     let mut ac = acs.swap_remove(0);
-    ac.with_series(s, false);
+    ac.with_series(s, false, None)?;
     Ok(ac)
 }
 

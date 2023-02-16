@@ -333,10 +333,28 @@ impl<'a> AggregationContext<'a> {
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
     /// the columns dtype)
-    pub(crate) fn with_series(&mut self, series: Series, aggregated: bool) -> &mut Self {
+    pub(crate) fn with_series(
+        &mut self,
+        series: Series,
+        aggregated: bool,
+        expr: Option<&Expr>,
+    ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, series.dtype()) {
             (true, &DataType::List(_)) => {
-                assert_eq!(series.len(), self.groups.len());
+                if series.len() != self.groups.len() {
+                    let fmt_expr = if let Some(e) = expr {
+                        format!("'{e}' ")
+                    } else {
+                        String::new()
+                    };
+
+                    return Err(PolarsError::ComputeError(
+                        format!(r#"The aggregation expression {}did produce a different number of elements than
+the number of groups. This likely is an invalid expression.
+Number of groups: {}
+Number of elements: {}"#, fmt_expr, self.groups.len(), series.len()).into()
+                    ));
+                }
                 AggState::AggregatedList(series)
             }
             (true, _) => AggState::AggregatedFlat(series),
@@ -350,7 +368,7 @@ impl<'a> AggregationContext<'a> {
                 }
             }
         };
-        self
+        Ok(self)
     }
 
     pub(crate) fn with_literal(&mut self, series: Series) -> &mut Self {
@@ -361,7 +379,8 @@ impl<'a> AggregationContext<'a> {
     /// Update the group tuples
     pub(crate) fn with_groups(&mut self, groups: GroupsProxy) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
-        self.with_series(self.flat_naive().into_owned(), false);
+        self.with_series(self.flat_naive().into_owned(), false, None)
+            .unwrap();
         self.groups = Cow::Owned(groups);
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;

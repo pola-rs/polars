@@ -62,7 +62,7 @@ impl PhysicalExpr for FilterExpr {
                     })
                     .collect::<PolarsResult<ListChunked>>()?;
                 out.rename(s.name());
-                ac_s.with_series(out.into_series(), true);
+                ac_s.with_series(out.into_series(), true, Some(&self.expr))?;
                 ac_s.update_groups = WithSeriesLen;
                 Ok(ac_s)
             }
