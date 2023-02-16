@@ -430,6 +430,11 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
             let out = cast(&**arr, &ArrowDataType::LargeList(field.clone())).unwrap();
             convert_inner_types(&out)
         }
+        #[cfg(feature = "dtype-binary")]
+        ArrowDataType::FixedSizeBinary(_) | ArrowDataType::Binary => {
+            let out = cast(&**arr, &ArrowDataType::LargeBinary).unwrap();
+            convert_inner_types(&out)
+        }
         ArrowDataType::LargeList(_) => {
             let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values = convert_inner_types(arr.values());
