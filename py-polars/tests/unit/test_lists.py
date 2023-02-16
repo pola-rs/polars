@@ -735,6 +735,6 @@ def test_list_function_group_awareness() -> None:
 def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
-    assert df.groupby("a").agg(
+    assert df.groupby("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").arr.get(i).mean().list() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
