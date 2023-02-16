@@ -68,4 +68,4 @@ def test_empty_sort() -> None:
 
 def test_object_to_dicts() -> None:
     df = pl.DataFrame({"d": [{"a": 1, "b": 2, "c": 3}]}, schema={"d": pl.Object})
-    assert df.to_dicts() == [{"d": {"a": 2, "b": 2, "c": 3}}]
+    assert df.to_dicts() == [{"d": {"a": 1, "b": 2, "c": 3}}]
