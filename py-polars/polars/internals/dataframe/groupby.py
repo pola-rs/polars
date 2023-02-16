@@ -12,7 +12,7 @@ from typing import (
 )
 
 import polars.internals as pli
-from polars.utils import _timedelta_to_pl_duration
+from polars.utils import _timedelta_to_pl_duration, redirect
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 DF = TypeVar("DF", bound="pli.DataFrame")
 
 
+@redirect({"agg_list": "all"})
 class GroupBy(Generic[DF]):
     """Starts a new GroupBy operation."""
 
@@ -673,30 +674,6 @@ class GroupBy(Generic[DF]):
 
         """
         return self.agg(pli.all().median())
-
-    def agg_list(self) -> pli.DataFrame:
-        """
-        Aggregate the groups into Series.
-
-        .. deprecated:: 0.16.0
-            Use ```all()``
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
-        >>> df.groupby("a", maintain_order=True).agg_list()
-        shape: (2, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ b         │
-        │ --- ┆ ---       │
-        │ str ┆ list[i64] │
-        ╞═════╪═══════════╡
-        │ one ┆ [1, 3]    │
-        │ two ┆ [2, 4]    │
-        └─────┴───────────┘
-
-        """
-        return self.agg(pli.all())
 
     def all(self) -> pli.DataFrame:
         """

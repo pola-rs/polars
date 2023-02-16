@@ -58,7 +58,7 @@ def test_groupby() -> None:
     assert sorted(df.groupby("b").mean().rows()) == [("a", 1.5, 1.0), ("b", 4.0, 1.0)]
     assert sorted(df.groupby("b").n_unique().rows()) == [("a", 2, 2), ("b", 3, 2)]
     assert sorted(df.groupby("b").median().rows()) == [("a", 1.5, 1.0), ("b", 4.0, 1.0)]
-    assert sorted(df.groupby("b").agg_list().rows()) == [
+    assert sorted(df.groupby("b").all().rows()) == [
         ("a", [1, 2], [None, 1]),
         ("b", [3, 4, 5], [None, 1, None]),
     ]
