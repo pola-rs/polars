@@ -39,6 +39,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Object,
     PolarsDataType,
     SchemaDefinition,
     SchemaDict,
@@ -7098,10 +7099,11 @@ class DataFrame:
         """
         # load into the local namespace for a modest performance boost in the hot loops
         columns, get_row, dict_, zip_ = self.columns, self.row, dict, zip
+        has_object = Object in self.dtypes
 
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
-        if buffer_size:
+        if buffer_size and not has_object:
             load_pyarrow_dicts = (
                 named
                 and _PYARROW_AVAILABLE
