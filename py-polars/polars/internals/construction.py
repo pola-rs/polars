@@ -1233,7 +1233,7 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
 
     index_cols = df.index.names
 
-    if len(index_cols) > 1:  # noqa: SIM114
+    if len(index_cols) > 1:
         return False  # not default: more than one index
     elif index_cols not in ([None], [""]):
         return False  # not default: index is named

@@ -2392,3 +2392,17 @@ def test_is_between() -> None:
         True,
         False,
     ]
+
+
+def test_map_dict() -> None:
+    s = pl.Series("s", [-1, 2, None, 4, -5])
+    remap = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
+
+    assert_series_equal(
+        s.abs().map_dict(remap, default="?"),
+        pl.Series("s", ["one", "two", "?", "four", "five"]),
+    )
+    assert_series_equal(
+        s.map_dict(remap, default=s.cast(pl.Utf8)),
+        pl.Series("s", ["-1", "two", None, "four", "-5"]),
+    )

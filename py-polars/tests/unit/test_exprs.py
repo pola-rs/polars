@@ -508,7 +508,7 @@ def test_map_dict() -> None:
 
     assert (
         df.with_columns(
-            pl.struct(pl.col(["country_code", "row_nr"]))  # type: ignore[union-attr]
+            pl.struct(pl.col(["country_code", "row_nr"]))
             .map_dict(
                 country_code_dict,
                 default=pl.col("row_nr").cast(pl.Utf8),
