@@ -66,6 +66,7 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             let ca = s.bit_repr_large();
             is_unique_ca(&ca, invert)
         }
+        #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap().clone();
             let df = ca.unnest();
