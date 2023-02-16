@@ -1046,8 +1046,19 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn groupby_apply(&self, by: Vec<&str>, lambda: PyObject) -> PyResult<Self> {
-        let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
+    pub fn groupby_apply(
+        &self,
+        by: Vec<&str>,
+        lambda: PyObject,
+        maintain_order: bool,
+    ) -> PyResult<Self> {
+        let gb = if maintain_order {
+            self.df.groupby_stable(&by)
+        } else {
+            self.df.groupby(&by)
+        }
+        .map_err(PyPolarsErr::from)?;
+
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
                 // get the pypolars module
