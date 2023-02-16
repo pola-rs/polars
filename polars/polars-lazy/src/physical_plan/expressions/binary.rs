@@ -160,7 +160,7 @@ impl PhysicalExpr for BinaryExpr {
 
                 let out = apply_operator_owned(lhs, rhs, self.op)?;
 
-                ac_l.with_series(out, true);
+                ac_l.with_series(out, true, Some(&self.expr))?;
                 Ok(ac_l)
             }
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
@@ -211,7 +211,7 @@ impl PhysicalExpr for BinaryExpr {
                     .collect::<PolarsResult<_>>()?;
                 ca.rename(l.name());
 
-                ac_l.with_series(ca.into_series(), true);
+                ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
                 ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
                 Ok(ac_l)
             }
@@ -260,7 +260,7 @@ impl PhysicalExpr for BinaryExpr {
                     .collect::<PolarsResult<_>>()?;
                 ca.rename(l.name());
 
-                ac_l.with_series(ca.into_series(), true);
+                ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
                 // Todo! maybe always update with groups len here?
                 if matches!(ac_l.update_groups, UpdateGroups::WithSeriesLen)
                     || matches!(ac_r.update_groups, UpdateGroups::WithSeriesLen)
@@ -309,7 +309,7 @@ impl PhysicalExpr for BinaryExpr {
                         //
                         // but adding another aggregation is valid:
                         // (expr - expr.mean()).mean()
-                        ac_l.with_series(null_prop, true);
+                        ac_l.with_series(null_prop, true, Some(&self.expr))?;
                         ac_l.null_propagated = true;
                     }
                     None => {
@@ -324,7 +324,7 @@ impl PhysicalExpr for BinaryExpr {
 
                         // we flattened the series, so that sorts by group
                         ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
-                        ac_l.with_series(out, false);
+                        ac_l.with_series(out, false, None)?;
                     }
                 }
                 Ok(ac_l)
@@ -344,7 +344,7 @@ impl PhysicalExpr for BinaryExpr {
 
                 let out = apply_operator_owned(lhs, rhs, self.op)?;
 
-                ac_l.combine_groups(ac_r).with_series(out, false);
+                ac_l.combine_groups(ac_r).with_series(out, false, None)?;
                 ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
                 Ok(ac_l)
             }
@@ -376,7 +376,7 @@ impl PhysicalExpr for BinaryExpr {
 
                     let out =
                         apply_operator(&flatten(lhs)?, &flatten(ac_r.aggregated())?, self.op)?;
-                    ac_l.with_series(out, false);
+                    ac_l.with_series(out, false, None)?;
                     Ok(ac_l)
                 } else {
                     let lhs = ac_l.flat_naive().as_ref().clone();
@@ -389,7 +389,7 @@ impl PhysicalExpr for BinaryExpr {
 
                     let out = apply_operator_owned(lhs, rhs, self.op)?;
 
-                    ac_l.combine_groups(ac_r).with_series(out, false);
+                    ac_l.combine_groups(ac_r).with_series(out, false, None)?;
 
                     Ok(ac_l)
                 }
@@ -414,7 +414,7 @@ impl PhysicalExpr for BinaryExpr {
                 })?;
 
                 out.rename(ac_l.series().name());
-                ac_l.with_series(out.into_series(), true);
+                ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
                 Ok(ac_l)
             }
             // overlapping groups, we iterate the separate groups, so that we don't have to explode
@@ -430,7 +430,7 @@ impl PhysicalExpr for BinaryExpr {
                     })
                     .collect::<PolarsResult<ListChunked>>()?;
                 out.rename(ac_l.series().name());
-                ac_l.with_series(out.into_series(), true);
+                ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
                 Ok(ac_l)
             }
         }
