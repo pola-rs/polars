@@ -4805,7 +4805,7 @@ class Series:
         ...     "NLD": "Netherlands",
         ... }
 
-        Remap, setting a default value for unrecognised values...
+        Remap, setting a default for unrecognised values...
 
         >>> s.map_dict(country_lookup, default="Unspecified").rename("country_name")
         shape: (4,)
