@@ -14,6 +14,7 @@ import pytest
 
 import polars as pl
 from polars import DataType
+from polars.exceptions import NoDataError
 from polars.internals.type_aliases import TimeUnit
 from polars.testing import (
     assert_frame_equal,
@@ -90,6 +91,14 @@ def test_csv_null_values() -> None:
     f = io.StringIO(csv)
     df = pl.read_csv(f, null_values="na")
     assert df.rows() == [(None, "b", "c"), ("a", None, "c")]
+
+    # note: after reading, the buffer position in StringIO will have been
+    # advanced; reading again will raise NoDataError, so we provide a hint
+    # in the error string about this, suggesting "seek(0)" as a possible fix
+    with pytest.raises(
+        NoDataError, match=r"empty CSV data .* position = 20; try seek\(0\)"
+    ):
+        pl.read_csv(f)
 
     out = io.BytesIO()
     df.write_csv(out, null_value="na")
@@ -710,9 +719,7 @@ def test_quoting_round_trip() -> None:
         }
     )
     df.write_csv(f)
-    f.seek(0)
     read_df = pl.read_csv(f)
-
     assert_frame_equal(read_df, df)
 
 
