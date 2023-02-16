@@ -30,6 +30,7 @@ Computation
     Series.ewm_var
     Series.exp
     Series.hash
+    Series.is_between
     Series.kurtosis
     Series.log
     Series.log10
