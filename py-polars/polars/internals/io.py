@@ -9,11 +9,23 @@ from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 import polars.internals as pli
 from polars.datatypes import PolarsDataType
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
+from polars.exceptions import NoDataError
 from polars.utils import normalise_filepath
 
 with suppress(ImportError):
     from polars.polars import ipc_schema as _ipc_schema
     from polars.polars import parquet_schema as _parquet_schema
+
+
+def _check_empty(b: BytesIO, context: str, read_position: int | None = None) -> BytesIO:
+    if not b.getbuffer().nbytes:
+        hint = (
+            f" (buffer position = {read_position}; try seek(0) before reading?)"
+            if context in ("StringIO", "BytesIO") and read_position
+            else ""
+        )
+        raise NoDataError(f"empty CSV data from {context}{hint}")
+    return b
 
 
 def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
@@ -91,21 +103,41 @@ def _prepare_file_arg(
 
     if isinstance(file, bytes):
         if has_non_utf8_non_utf8_lossy_encoding:
-            return BytesIO(file.decode(encoding_str).encode("utf8"))
+            return _check_empty(
+                BytesIO(file.decode(encoding_str).encode("utf8")),
+                context="bytes",
+            )
         if use_pyarrow:
-            return BytesIO(file)
+            return _check_empty(BytesIO(file), context="bytes")
 
     if isinstance(file, StringIO):
-        return BytesIO(file.read().encode("utf8"))
+        return _check_empty(
+            BytesIO(file.read().encode("utf8")),
+            context="StringIO",
+            read_position=file.tell(),
+        )
 
     if isinstance(file, BytesIO):
         if has_non_utf8_non_utf8_lossy_encoding:
-            return BytesIO(file.read().decode(encoding_str).encode("utf8"))
-        return managed_file(file)
+            return _check_empty(
+                BytesIO(file.read().decode(encoding_str).encode("utf8")),
+                context="BytesIO",
+                read_position=file.tell(),
+            )
+        return managed_file(
+            _check_empty(
+                b=file,
+                context="BytesIO",
+                read_position=file.tell(),
+            )
+        )
 
     if isinstance(file, Path):
         if has_non_utf8_non_utf8_lossy_encoding:
-            return BytesIO(file.read_bytes().decode(encoding_str).encode("utf8"))
+            return _check_empty(
+                BytesIO(file.read_bytes().decode(encoding_str).encode("utf8")),
+                context=f"Path ({file!r})",
+            )
         return managed_file(normalise_filepath(file))
 
     if isinstance(file, str):
@@ -137,7 +169,9 @@ def _prepare_file_arg(
         file = normalise_filepath(file)
         if has_non_utf8_non_utf8_lossy_encoding:
             with open(file, encoding=encoding_str) as f:
-                return BytesIO(f.read().encode("utf8"))
+                return _check_empty(
+                    BytesIO(f.read().encode("utf8")), context=f"{file!r}"
+                )
 
     return managed_file(file)
 
