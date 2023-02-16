@@ -536,6 +536,15 @@ def test_round() -> None:
     col_a_rounded = df.select(pl.col("a").round(decimals=0))["a"]
     assert_series_equal(col_a_rounded, pl.Series("a", [2, 1, 3]).cast(pl.Float64))
 
+def test_sqrt() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, -1.0]})
+    col_a_sqrt = df.select(pl.col("a").sqrt())["a"]
+    assert_series_equal(col_a_sqrt, pl.Series("a", [1.0, np.sqrt(2), np.nan]))
+
+def test_cbrt() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, -1.0]})
+    col_a_cbrt = df.select(pl.col("a").cbrt())["a"]
+    assert_series_equal(col_a_cbrt, pl.Series("a", [1.0, np.cbrt(2), -1.0]))
 
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
