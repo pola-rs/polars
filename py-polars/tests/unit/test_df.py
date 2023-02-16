@@ -1694,7 +1694,7 @@ def test_groupby_order_dispatch() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = df.groupby("x", maintain_order=True).agg_list()
+    result = df.groupby("x", maintain_order=True).all()
     expected = pl.DataFrame({"x": ["b", "a"], "y": [[0, 2], [1]]})
     assert_frame_equal(result, expected)
 

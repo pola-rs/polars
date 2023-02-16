@@ -328,7 +328,7 @@ def test_struct_list_head_tail() -> None:
     }
 
 
-def test_struct_agg_list() -> None:
+def test_struct_agg_all() -> None:
     df = pl.DataFrame(
         {
             "group": ["a", "a", "b", "b", "b"],
@@ -342,7 +342,7 @@ def test_struct_agg_list() -> None:
         }
     )
 
-    assert df.groupby("group", maintain_order=True).agg_list().to_dict(False) == {
+    assert df.groupby("group", maintain_order=True).all().to_dict(False) == {
         "group": ["a", "b"],
         "col1": [
             [{"x": 1, "y": 100}, {"x": 2, "y": 200}],
