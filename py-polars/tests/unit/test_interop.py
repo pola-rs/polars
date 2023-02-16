@@ -730,3 +730,12 @@ def test_to_numpy_datelike() -> None:
             dtype="datetime64[us]",
         )
     )
+
+
+@typing.no_type_check
+def test_from_fixed_size_binary_list() -> None:
+    val = [[b"63A0B1C66575DD5708E1EB2B"]]
+    arrow_array = pa.array(val, type=pa.list_(pa.binary(24)))
+    s = pl.from_arrow(arrow_array)
+    assert s.dtype == pl.List(pl.Binary)
+    assert s.to_list() == val
