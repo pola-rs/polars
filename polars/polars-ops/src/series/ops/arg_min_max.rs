@@ -196,7 +196,7 @@ where
 {
     match ca.is_sorted_flag2() {
         IsSorted::Ascending => Some(0),
-        IsSorted::Descending => Some(ca.len()),
+        IsSorted::Descending => Some(ca.len() - 1),
         IsSorted::Not => ca
             .into_iter()
             .enumerate()
@@ -212,7 +212,7 @@ where
     <&'a ChunkedArray<T> as IntoIterator>::Item: PartialOrd,
 {
     match ca.is_sorted_flag2() {
-        IsSorted::Ascending => Some(ca.len()),
+        IsSorted::Ascending => Some(ca.len() - 1),
         IsSorted::Descending => Some(0),
         IsSorted::Not => ca
             .into_iter()
@@ -228,7 +228,7 @@ where
 {
     match is_sorted {
         IsSorted::Ascending => Some(0),
-        IsSorted::Descending => Some(vals.len()),
+        IsSorted::Descending => Some(vals.len() - 1),
         IsSorted::Not => vals
             .iter()
             .enumerate()
@@ -242,8 +242,8 @@ where
     T: PartialOrd,
 {
     match is_sorted {
-        IsSorted::Ascending => Some(0),
-        IsSorted::Descending => Some(vals.len()),
+        IsSorted::Ascending => Some(vals.len() - 1),
+        IsSorted::Descending => Some(0),
         IsSorted::Not => vals
             .iter()
             .enumerate()

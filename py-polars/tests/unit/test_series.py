@@ -1653,6 +1653,18 @@ def test_arg_min_and_arg_max() -> None:
     assert s.arg_min() == 0
     assert s.arg_max() == 1
 
+    # test ascending and descending series
+    s = pl.Series("a", [1, 2, 3, 4, 5])
+    s.sort(in_place=True)  # set ascending sorted flag
+    assert s.flags == {"SORTED_ASC": True, "SORTED_DESC": False}
+    assert s.arg_min() == 0
+    assert s.arg_max() == 4
+    s = pl.Series("a", [5, 4, 3, 2, 1])
+    s.sort(reverse=True, in_place=True)  # set descing sorted flag
+    assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
+    assert s.arg_min() == 4
+    assert s.arg_max() == 0
+
 
 def test_is_null_is_not_null() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, None])
