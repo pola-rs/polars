@@ -250,10 +250,6 @@ def test_auto_explode() -> None:
 
 
 def test_contains() -> None:
-    pl.Series(["2", "9", "(not_valid_regex"])
-    # pl.select(expr_txt.str.contains(expr_pat, literal = False, strict = False))
-    # pl.select(expr_txt.str.contains(expr_pat, literal = False, strict = True))
-
     # test strict/non strict
     s_txt = pl.Series(["123", "456", "789"])
     assert (
