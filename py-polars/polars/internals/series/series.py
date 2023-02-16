@@ -97,6 +97,7 @@ except ImportError:
 if TYPE_CHECKING:
     from polars.internals.series._numpy import SeriesView
     from polars.internals.type_aliases import (
+        ClosedInterval,
         ComparisonOperator,
         FillNullStrategy,
         InterpolationMethod,
@@ -2667,6 +2668,77 @@ class Series:
         ]
 
         """
+
+    def is_between(
+        self,
+        start: pli.Expr | datetime | date | time | int | float | str,
+        end: pli.Expr | datetime | date | time | int | float | str,
+        closed: ClosedInterval = "both",
+    ) -> Series:
+        """
+        Get a boolean mask of the values that fall between the given start/end values.
+
+        Parameters
+        ----------
+        start
+            Lower bound value (can be an expression or literal).
+        end
+            Upper bound value (can be an expression or literal).
+        closed : {'both', 'left', 'right', 'none'}
+            Define which sides of the interval are closed (inclusive).
+
+        Examples
+        --------
+        >>> s = pl.Series("num", [1, 2, 3, 4, 5])
+        >>> s.is_between(2, 4)
+        shape: (5,)
+        Series: 'num' [bool]
+        [
+            false
+            true
+            true
+            true
+            false
+        ]
+
+        Use the ``closed`` argument to include or exclude the values at the bounds:
+
+        >>> s.is_between(2, 4, closed="left")
+        shape: (5,)
+        Series: 'num' [bool]
+        [
+            false
+            true
+            true
+            false
+            false
+        ]
+
+        You can also use strings as well as numeric/temporal values:
+
+        >>> s = pl.Series("s", ["a", "b", "c", "d", "e"])
+        >>> s.is_between("b", "d", closed="both")
+        shape: (5,)
+        Series: 's' [bool]
+        [
+            false
+            true
+            true
+            true
+            false
+        ]
+
+        """
+        if isinstance(start, str):
+            start = pli.lit(start)
+        if isinstance(end, str):
+            end = pli.lit(end)
+
+        return (
+            self.to_frame()
+            .select(pli.col(self.name).is_between(start, end, closed))
+            .to_series()
+        )
 
     def is_numeric(self) -> bool:
         """

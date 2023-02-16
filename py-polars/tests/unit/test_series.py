@@ -2351,3 +2351,44 @@ def test_min_max_agg_on_str() -> None:
     strings = ["b", "a", "x"]
     s = pl.Series(strings)
     assert (s.min(), s.max()) == ("a", "x")
+
+
+def test_is_between() -> None:
+    s = pl.Series("num", [1, 2, None, 4, 5])
+    assert s.is_between(2, 4).to_list() == [False, True, None, True, False]
+
+    s = pl.Series("num", [1, 2, None, 4, 5])
+    assert s.is_between(2, 4, closed="left").to_list() == [
+        False,
+        True,
+        None,
+        False,
+        False,
+    ]
+
+    s = pl.Series("num", [1, 2, None, 4, 5])
+    assert s.is_between(2, 4, closed="right").to_list() == [
+        False,
+        False,
+        None,
+        True,
+        False,
+    ]
+
+    s = pl.Series("num", [1, 2, None, 4, 5])
+    assert s.is_between(pl.lit(2) / 2, pl.lit(4) * 2, closed="both").to_list() == [
+        True,
+        True,
+        None,
+        True,
+        True,
+    ]
+
+    s = pl.Series("s", ["a", "b", "c", "d", "e"])
+    assert s.is_between("b", "d").to_list() == [
+        False,
+        True,
+        True,
+        True,
+        False,
+    ]

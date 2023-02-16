@@ -3483,6 +3483,7 @@ class Expr:
         │ d   ┆ false      │
         │ e   ┆ false      │
         └─────┴────────────┘
+
         """
         start = expr_to_lit_or_expr(start, str_to_lit=False)
         end = expr_to_lit_or_expr(end, str_to_lit=False)
