@@ -109,7 +109,9 @@ pub enum FunctionExpr {
     IsNull,
     IsNotNull,
     Not,
+    #[cfg(feature = "is_unique")]
     IsUnique,
+    #[cfg(feature = "is_unique")]
     IsDuplicated,
     Coalesce,
     ShrinkType,
@@ -179,7 +181,9 @@ impl Display for FunctionExpr {
             Not => "is_not",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
+            #[cfg(feature = "is_unique")]
             IsUnique => "is_unique",
+            #[cfg(feature = "is_unique")]
             IsDuplicated => "is_duplicated",
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
@@ -362,7 +366,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsNull => map!(dispatch::is_null),
             IsNotNull => map!(dispatch::is_not_null),
             Not => map!(dispatch::is_not),
+            #[cfg(feature = "is_unique")]
             IsUnique => map!(dispatch::is_unique),
+            #[cfg(feature = "is_unique")]
             IsDuplicated => map!(dispatch::is_duplicated),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),

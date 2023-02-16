@@ -441,8 +441,15 @@ impl PredicatePushDown {
 
                 for (_, predicate) in acc_predicates {
                     // unique and duplicated can be caused by joins
-                    let matches =
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsDuplicated | FunctionExpr::IsUnique, ..});
+                    #[cfg(feature = "is_unique")]
+                    let matches = {
+                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsDuplicated | FunctionExpr::IsUnique, ..})
+                    };
+                    #[cfg(not(feature = "is_unique"))]
+                        let matches = {
+                        |_e: &AExpr| false
+                    };
+
 
                     let checks_nulls =
                         |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsNotNull | FunctionExpr::IsNull, ..} ) ||

@@ -409,14 +409,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.is_not_null()
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        self.0.is_unique()
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        self.0.is_duplicated()
-    }
-
     fn reverse(&self) -> Series {
         self.0
             .reverse()

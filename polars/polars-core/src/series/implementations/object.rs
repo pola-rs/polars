@@ -204,14 +204,6 @@ where
         ObjectChunked::is_not_null(&self.0)
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        ChunkUnique::is_unique(&self.0)
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        ChunkUnique::is_duplicated(&self.0)
-    }
-
     fn reverse(&self) -> Series {
         ChunkReverse::reverse(&self.0).into_series()
     }

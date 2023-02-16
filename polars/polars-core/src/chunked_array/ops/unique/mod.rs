@@ -3,6 +3,8 @@ pub(crate) mod rank;
 
 use std::hash::Hash;
 
+use arrow::bitmap::MutableBitmap;
+
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
@@ -14,37 +16,19 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 
 fn finish_is_unique_helper(
-    mut unique_idx: Vec<IdxSize>,
-    len: IdxSize,
-    unique_val: bool,
-    duplicated_val: bool,
-) -> BooleanChunked {
-    unique_idx.sort_unstable();
-    let mut unique_idx_iter = unique_idx.into_iter();
-    let mut next_unique_idx = unique_idx_iter.next();
-    (0..len)
-        .map(|idx| match next_unique_idx {
-            Some(unique_idx) => {
-                if idx == unique_idx {
-                    next_unique_idx = unique_idx_iter.next();
-                    unique_val
-                } else {
-                    duplicated_val
-                }
-            }
-            None => duplicated_val,
-        })
-        .collect()
-}
-
-pub(crate) fn is_unique_helper2(
     unique_idx: Vec<IdxSize>,
     len: IdxSize,
-    unique_val: bool,
-    duplicated_val: bool,
+    setter: bool,
+    default: bool,
 ) -> BooleanChunked {
-    debug_assert_ne!(unique_val, duplicated_val);
-    finish_is_unique_helper(unique_idx, len, unique_val, duplicated_val)
+    let mut values = MutableBitmap::with_capacity(len as usize);
+    values.extend_constant(len as usize, default);
+
+    for idx in unique_idx {
+        unsafe { values.set_unchecked(idx as usize, setter) }
+    }
+    let arr = BooleanArray::from_data_default(values.into(), None);
+    unsafe { BooleanChunked::from_chunks("", vec![Box::new(arr)]) }
 }
 
 pub(crate) fn is_unique_helper(
@@ -66,31 +50,6 @@ pub(crate) fn is_unique_helper(
             .collect(),
     };
     finish_is_unique_helper(idx, len, unique_val, duplicated_val)
-}
-
-/// if inverse is true, this is an `is_duplicated`
-/// otherwise an `is_unique`
-macro_rules! is_unique_duplicated {
-    ($ca:expr, $inverse:expr) => {{
-        let mut idx_key = PlHashMap::new();
-
-        // instead of grouptuples, which allocates a full vec per group, we now just toggle a boolean
-        // that's false if a group has multiple entries.
-        $ca.into_iter().enumerate().for_each(|(idx, key)| {
-            idx_key
-                .entry(key)
-                .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
-                .or_insert((idx as IdxSize, true));
-        });
-
-        let idx: Vec<_> = idx_key
-            .into_iter()
-            .filter_map(|(_k, v)| if v.1 { Some(v.0) } else { None })
-            .collect();
-        let mut out = is_unique_helper2(idx, $ca.len() as IdxSize, !$inverse, $inverse);
-        out.rename($ca.name());
-        Ok(out)
-    }};
 }
 
 #[cfg(feature = "object")]
@@ -230,14 +189,6 @@ where
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        is_unique_duplicated!(self, false)
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        is_unique_duplicated!(self, true)
-    }
-
     fn n_unique(&self) -> PolarsResult<usize> {
         if self.null_count() > 0 {
             Ok(fill_set(self.into_iter().flatten()).len() + 1)
@@ -282,13 +233,6 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
-    }
-
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        is_unique_duplicated!(self, false)
-    }
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        is_unique_duplicated!(self, true)
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
@@ -338,13 +282,6 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        is_unique_duplicated!(self, false)
-    }
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        is_unique_duplicated!(self, true)
-    }
-
     fn n_unique(&self) -> PolarsResult<usize> {
         if self.null_count() > 0 {
             Ok(fill_set(self.into_iter().flatten()).len() + 1)
@@ -377,13 +314,6 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
-
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        is_unique_duplicated!(self, false)
-    }
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        is_unique_duplicated!(self, true)
-    }
 }
 
 impl ChunkUnique<Float32Type> for Float32Chunked {
@@ -396,13 +326,6 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.bit_repr_small().arg_unique()
     }
-
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        self.bit_repr_small().is_unique()
-    }
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        self.bit_repr_small().is_duplicated()
-    }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
@@ -414,13 +337,6 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.bit_repr_large().arg_unique()
-    }
-
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        self.bit_repr_large().is_unique()
-    }
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        self.bit_repr_large().is_duplicated()
     }
 }
 
@@ -458,21 +374,6 @@ mod test {
         assert_eq!(
             ca.arg_unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
-        );
-    }
-
-    #[test]
-    fn is_unique() {
-        let ca = Float32Chunked::from_slice("a", &[1., 2., 1., 1., 3.]);
-        assert_eq!(
-            Vec::from(&ca.is_unique().unwrap()),
-            &[
-                Some(false),
-                Some(true),
-                Some(false),
-                Some(false),
-                Some(true)
-            ]
         );
     }
 

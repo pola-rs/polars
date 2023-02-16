@@ -123,6 +123,7 @@ features = [
   "private",
   "round_series",
   "is_first",
+  "is_unique",
   "dot_product",
   "concat_str",
   "row_hash",
