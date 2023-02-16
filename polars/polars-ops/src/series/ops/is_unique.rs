@@ -66,6 +66,15 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             let ca = s.bit_repr_large();
             is_unique_ca(&ca, invert)
         }
+        Struct(_) => {
+            let ca = s.struct_().unwrap().clone();
+            let df = ca.unnest();
+            return if invert {
+                df.is_duplicated()
+            } else {
+                df.is_unique()
+            };
+        }
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

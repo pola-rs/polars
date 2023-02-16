@@ -811,3 +811,12 @@ def test_nested_struct_in_lists_cast() -> None:
     ).to_dict(False) == {
         "node_groups": [[{"nodes": [{"id": 1, "is_started": True}]}], [{"nodes": []}]]
     }
+
+
+def test_is_unique_struct() -> None:
+    assert pl.Series(
+        [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
+    ).is_unique().to_list() == [False, True, False]
+    assert pl.Series(
+        [{"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 1}]
+    ).is_duplicated().to_list() == [True, False, True]
