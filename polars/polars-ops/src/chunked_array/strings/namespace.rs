@@ -162,12 +162,18 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Check if strings contain a regex pattern.
     fn contains(&self, pat: &str) -> PolarsResult<BooleanChunked> {
         let ca = self.as_utf8();
-        let reg = Regex::new(pat)?;
-        let f = |s: &str| reg.is_match(s);
-        let mut out: BooleanChunked = if !ca.has_validity() {
-            ca.into_no_null_iter().map(f).collect()
-        } else {
-            ca.into_iter().map(|opt_s| opt_s.map(f)).collect()
+
+        let opt_reg = Regex::new(pat).ok();
+        let mut out: BooleanChunked = match (opt_reg, ca.has_validity()) {
+            (Some(reg), false) => ca
+                .into_no_null_iter()
+                .map(|s: &str| reg.is_match(s))
+                .collect(),
+            (Some(reg), true) => ca
+                .into_iter()
+                .map(|opt_s| opt_s.map(|s: &str| reg.is_match(s)))
+                .collect(),
+            (None, _) => ca.into_iter().map(|_| None).collect(),
         };
         out.rename(ca.name());
         Ok(out)

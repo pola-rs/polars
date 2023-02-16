@@ -150,10 +150,10 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                 ca.into_iter()
                     .zip(pat.into_iter())
                     .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                        (Some(src), Some(pat)) => {
-                            let re = Regex::new(pat).ok()?;
-                            Some(re.is_match(src))
-                        }
+                        (Some(src), Some(pat)) => match Regex::new(pat).ok() {
+                            Some(re) => Some(re.is_match(src)),
+                            _ => None, //invalid regex pattern, however not an Error
+                        },
                         _ => Some(false),
                     })
                     .collect_trusted()
