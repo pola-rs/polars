@@ -219,7 +219,9 @@ class GroupBy(Generic[DF]):
         else:
             raise TypeError("Cannot call `apply` when grouping by an expression.")
 
-        return self.df.__class__._from_pydf(self.df._df.groupby_apply(by, f))
+        return self.df.__class__._from_pydf(
+            self.df._df.groupby_apply(by, f, self.maintain_order)
+        )
 
     def agg(self, aggs: IntoExpr | Iterable[IntoExpr]) -> pli.DataFrame:
         """
