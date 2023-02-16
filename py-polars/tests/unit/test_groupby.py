@@ -391,7 +391,7 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038() -> None:
             )
             .lazy()
             .groupby_dynamic("a", every=every, period=period)
-            .agg([pl.col("b").var().sqrt().alias("corr")])
+            .agg([pl.col("b").std().alias("corr")])
         ).collect().sum().to_dict(False) == pytest.approx(
             {"a": [None], "corr": [6.988674024215477]}
         )
