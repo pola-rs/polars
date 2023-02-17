@@ -146,7 +146,7 @@ class LazyFrame:
         skip_rows_after_header: int = 0,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
-        parse_dates: bool = False,
+        try_parse_dates: bool = False,
         eol_char: str = "\n",
     ) -> Self:
         """
@@ -187,7 +187,7 @@ class LazyFrame:
             skip_rows_after_header,
             encoding,
             _prepare_row_count_args(row_count_name, row_count_offset),
-            parse_dates,
+            try_parse_dates,
             eol_char=eol_char,
         )
         return self
