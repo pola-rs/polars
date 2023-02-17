@@ -8,7 +8,7 @@ use rayon::prelude::*;
 
 use self::hashing::*;
 use crate::prelude::*;
-use crate::utils::{_set_partition_size, _split_offsets, accumulate_dataframes_vertical};
+use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
 use crate::POOL;
 
@@ -59,39 +59,6 @@ impl DataFrame {
             ));
         }
 
-        macro_rules! finish_packed_bit_path {
-            ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
-                let n_partitions = _set_partition_size();
-
-                // we split so that we can prepare the data over multiple threads.
-                // pack the bit values together and add a final byte that will be 0
-                // when there are no null values.
-                // otherwise we use two bits of this byte to represent null values.
-                let splits = _split_offsets($ca0.len(), n_partitions);
-
-                let keys = POOL.install(|| {
-                    splits
-                        .into_par_iter()
-                        .map(|(offset, len)| {
-                            let ca0 = $ca0.slice(offset as i64, len);
-                            let ca1 = $ca1.slice(offset as i64, len);
-                            ca0.into_iter()
-                                .zip(ca1.into_iter())
-                                .map(|(l, r)| $pack_fn(l, r))
-                                .collect_trusted::<Vec<_>>()
-                        })
-                        .collect::<Vec<_>>()
-                });
-
-                return Ok(GroupBy::new(
-                    self,
-                    by,
-                    groupby_threaded_num(keys, 0, n_partitions as u64, sorted),
-                    None,
-                ));
-            }};
-        }
-
         let by_len = by[0].len();
 
         // we only throw this error if self.width > 0
@@ -123,32 +90,7 @@ impl DataFrame {
 
                 // fast path for numeric data
                 // uses the bit values to tightly pack those into arrays.
-                if s0.dtype().is_numeric() && s1.dtype().is_numeric() {
-                    match (s0.bit_repr_is_large(), s1.bit_repr_is_large()) {
-                        (false, false) => {
-                            let ca0 = s0.bit_repr_small();
-                            let ca1 = s1.bit_repr_small();
-                            finish_packed_bit_path!(ca0, ca1, pack_u32_tuples)
-                        }
-                        (true, true) => {
-                            let ca0 = s0.bit_repr_large();
-                            let ca1 = s1.bit_repr_large();
-                            finish_packed_bit_path!(ca0, ca1, pack_u64_tuples)
-                        }
-                        (true, false) => {
-                            let ca0 = s0.bit_repr_large();
-                            let ca1 = s1.bit_repr_small();
-                            // small first
-                            finish_packed_bit_path!(ca1, ca0, pack_u32_u64_tuples)
-                        }
-                        (false, true) => {
-                            let ca0 = s0.bit_repr_small();
-                            let ca1 = s1.bit_repr_large();
-                            // small first
-                            finish_packed_bit_path!(ca0, ca1, pack_u32_u64_tuples)
-                        }
-                    }
-                } else if matches!((s0.dtype(), s1.dtype()), (DataType::Utf8, DataType::Utf8)) {
+                if matches!((s0.dtype(), s1.dtype()), (DataType::Utf8, DataType::Utf8)) {
                     let lhs = s0.utf8().unwrap();
                     let rhs = s1.utf8().unwrap();
 

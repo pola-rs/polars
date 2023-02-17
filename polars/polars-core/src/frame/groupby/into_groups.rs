@@ -6,7 +6,7 @@ use polars_utils::{flatten, HashSingle};
 
 use super::*;
 use crate::config::verbose;
-use crate::utils::{_split_offsets, copy_from_slice_unchecked};
+use crate::utils::_split_offsets;
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {
@@ -422,111 +422,6 @@ where
     fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         Ok(groupby(self.into_iter(), sorted))
     }
-}
-
-/// Used to tightly two 32 bit values and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-pub(super) fn pack_u32_tuples(opt_l: Option<u32>, opt_r: Option<u32>) -> [u8; 9] {
-    // 4 bytes for first value
-    // 4 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 9];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..8]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // set right null bit
-            s[8] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..8]) }
-            // set left null bit
-            s[8] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[8] = 3;
-        }
-    }
-    val
-}
-
-/// Used to tightly two 64 bit values and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-pub(super) fn pack_u64_tuples(opt_l: Option<u64>, opt_r: Option<u64>) -> [u8; 17] {
-    // 8 bytes for first value
-    // 8 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 17];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..8]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[8..16]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..8]) }
-            // set right null bit
-            s[16] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[8..16]) }
-            // set left null bit
-            s[16] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[16] = 3;
-        }
-    }
-    val
-}
-
-/// Used to tightly one 32 bit and a 64 bit valued type and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-pub(super) fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
-    // 8 bytes for first value
-    // 8 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 13];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..12]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // set right null bit
-            s[12] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..12]) }
-            // set left null bit
-            s[12] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[12] = 3;
-        }
-    }
-    val
 }
 
 /// We will pack the utf8 columns into single column. Nulls are encoded in the start of the string
