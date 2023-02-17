@@ -204,41 +204,52 @@ def test_epoch() -> None:
 
 
 def test_date_time_combine() -> None:
-    # test combining datetime/date and time (as expr/col and as literal)
-    df = pl.DataFrame(
-        {
-            "dtm": [
-                datetime(2022, 12, 31, 10, 30, 45),
-                datetime(2023, 7, 5, 23, 59, 59),
-            ],
-            "dt": [date(2022, 10, 10), date(2022, 7, 5)],
-            "tm": [time(1, 2, 3, 456000), time(7, 8, 9, 101000)],
-        }
-    ).select(
-        [
-            pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),
-            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),
-            pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),
-        ]
-    )
-    # if combining with datetime, the time component should be overwritten.
-    # if combining with date, should write both parts 'as-is' into the new datetime.
-    assert df.to_dict(False) == {
+    # Define a DataFrame with columns for datetime, date, and time
+    df = pl.DataFrame({
+        "dtm": [
+            datetime(2022, 12, 31, 10, 30, 45),
+            datetime(2023, 7, 5, 23, 59, 59),
+        ],
+        "dt": [
+            date(2022, 10, 10),
+            date(2022, 7, 5),
+        ],
+        "tm": [
+            time(1, 2, 3, 456000),
+            time(7, 8, 9, 101000),
+        ],
+    })
+
+    # Use the .select() method to combine datetime/date and time
+    df = df.select([
+        pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),  # Combine datetime and time
+        pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # Combine date and time
+        pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),  # Combine date and a specified time
+    ])
+
+    # Check that the new columns have the expected values and datatypes
+    expected_dict = {
         "d1": [
-            datetime(2022, 12, 31, 1, 2, 3, 456000),
+            datetime(2022, 12, 31, 1, 2, 3, 456000),  # Time component should be overwritten by `tm`
             datetime(2023, 7, 5, 7, 8, 9, 101000),
         ],
         "d2": [
             datetime(2022, 10, 10, 1, 2, 3, 456000),
             datetime(2022, 7, 5, 7, 8, 9, 101000),
         ],
-        "d3": [datetime(2022, 10, 10, 4, 5, 6), datetime(2022, 7, 5, 4, 5, 6)],
+        "d3": [
+            datetime(2022, 10, 10, 4, 5, 6),  # New datetime should use specified time component
+            datetime(2022, 7, 5, 4, 5, 6),
+        ],
     }
-    assert df.schema == {
+    assert df.to_dict(False) == expected_dict
+
+    expected_schema = {
         "d1": pl.Datetime("us"),
         "d2": pl.Datetime("us"),
         "d3": pl.Datetime("us"),
     }
+    assert df.schema == expected_schema
 
 
 def test_quarter() -> None:
