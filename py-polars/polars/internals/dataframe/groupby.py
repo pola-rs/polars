@@ -133,7 +133,12 @@ class GroupBy(Generic[DF]):
 
         return group_name, group_data
 
-    def agg(self, aggs: IntoExpr | Iterable[IntoExpr], *more_aggs: IntoExpr) -> DF:
+    def agg(
+        self,
+        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_aggs: IntoExpr,
+        **named_aggs: IntoExpr,
+    ) -> DF:
         """
         Compute aggregations for each group of a groupby operation.
 
@@ -144,6 +149,9 @@ class GroupBy(Generic[DF]):
             Accepts expression input. Strings are parsed as column names.
         *more_aggs
             Additional aggregations, specified as positional arguments.
+        **named_aggs
+            Additional aggregations, specified as keyword arguments. The resulting
+            columns will be renamed to the keyword used.
 
         Examples
         --------
@@ -199,11 +207,28 @@ class GroupBy(Generic[DF]):
         │ b   ┆ 5     ┆ 10.0           │
         └─────┴───────┴────────────────┘
 
+        Use keyword arguments to easily name your expression inputs.
+
+        >>> df.groupby("a").agg(
+        ...     b_sum=pl.sum("b"),
+        ...     c_mean_squared=(pl.col("c") ** 2).mean(),
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────┬────────────────┐
+        │ a   ┆ b_sum ┆ c_mean_squared │
+        │ --- ┆ ---   ┆ ---            │
+        │ str ┆ i64   ┆ f64            │
+        ╞═════╪═══════╪════════════════╡
+        │ a   ┆ 2     ┆ 17.0           │
+        │ c   ┆ 3     ┆ 1.0            │
+        │ b   ┆ 5     ┆ 10.0           │
+        └─────┴───────┴────────────────┘
+
         """
         df = (
             self.df.lazy()
             .groupby(self.by, *self.more_by, maintain_order=self.maintain_order)
-            .agg(aggs, *more_aggs)
+            .agg(aggs, *more_aggs, **named_aggs)
             .collect(no_optimization=True)
         )
         return self.df.__class__._from_pydf(df._df)
@@ -790,7 +815,12 @@ class RollingGroupBy(Generic[DF]):
 
         return group_name, group_data
 
-    def agg(self, aggs: IntoExpr | Iterable[IntoExpr], *more_aggs: IntoExpr) -> DF:
+    def agg(
+        self,
+        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_aggs: IntoExpr,
+        **named_aggs: IntoExpr,
+    ) -> DF:
         df = (
             self.df.lazy()
             .groupby_rolling(
@@ -800,7 +830,7 @@ class RollingGroupBy(Generic[DF]):
                 closed=self.closed,
                 by=self.by,
             )
-            .agg(aggs, *more_aggs)
+            .agg(aggs, *more_aggs, **named_aggs)
             .collect(no_optimization=True)
         )
         return self.df.__class__._from_pydf(df._df)
@@ -887,7 +917,12 @@ class DynamicGroupBy(Generic[DF]):
 
         return group_name, group_data
 
-    def agg(self, aggs: IntoExpr | Iterable[IntoExpr], *more_aggs: IntoExpr) -> DF:
+    def agg(
+        self,
+        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_aggs: IntoExpr,
+        **named_aggs: IntoExpr,
+    ) -> DF:
         df = (
             self.df.lazy()
             .groupby_dynamic(
@@ -901,7 +936,7 @@ class DynamicGroupBy(Generic[DF]):
                 by=self.by,
                 start_by=self.start_by,
             )
-            .agg(aggs, *more_aggs)
+            .agg(aggs, *more_aggs, **named_aggs)
             .collect(no_optimization=True)
         )
         return self.df.__class__._from_pydf(df._df)

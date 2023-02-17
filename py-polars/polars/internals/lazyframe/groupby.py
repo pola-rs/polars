@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Callable, Generic, Iterable, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import SchemaDict
-from polars.internals import selection_to_pyexpr_list
+from polars.internals import expr_to_lit_or_expr, selection_to_pyexpr_list
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import IntoExpr, RollingInterpolationMethod
@@ -24,7 +24,12 @@ class LazyGroupBy(Generic[LDF]):
         self.lgb = lgb
         self._lazyframe_class = lazyframe_class
 
-    def agg(self, aggs: IntoExpr | Iterable[IntoExpr], *more_aggs: IntoExpr) -> LDF:
+    def agg(
+        self,
+        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_aggs: IntoExpr,
+        **named_aggs: IntoExpr,
+    ) -> LDF:
         """
         Compute aggregations for each group of a groupby operation.
 
@@ -35,6 +40,9 @@ class LazyGroupBy(Generic[LDF]):
             Accepts expression input. Strings are parsed as column names.
         *more_aggs
             Additional aggregations, specified as positional arguments.
+        **named_aggs
+            Additional aggregations, specified as keyword arguments. The resulting
+            columns will be renamed to the keyword used.
 
         Examples
         --------
@@ -92,9 +100,33 @@ class LazyGroupBy(Generic[LDF]):
         │ b   ┆ 5     ┆ 10.0           │
         └─────┴───────┴────────────────┘
 
+        Use keyword arguments to easily name your expression inputs.
+
+        >>> ldf.groupby("a").agg(
+        ...     b_sum=pl.sum("b"),
+        ...     c_mean_squared=(pl.col("c") ** 2).mean(),
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────┬────────────────┐
+        │ a   ┆ b_sum ┆ c_mean_squared │
+        │ --- ┆ ---   ┆ ---            │
+        │ str ┆ i64   ┆ f64            │
+        ╞═════╪═══════╪════════════════╡
+        │ a   ┆ 2     ┆ 17.0           │
+        │ c   ┆ 3     ┆ 1.0            │
+        │ b   ┆ 5     ┆ 10.0           │
+        └─────┴───────┴────────────────┘
+
         """
+        if aggs is None and not named_aggs:
+            raise ValueError("Expected at least one of 'aggs' or '**named_aggs'")
+
         exprs = selection_to_pyexpr_list(aggs)
         exprs.extend(selection_to_pyexpr_list(more_aggs))
+        exprs.extend(
+            expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+            for name, expr in named_aggs.items()
+        )
         return self._lazyframe_class._from_pyldf(self.lgb.agg(exprs))
 
     def apply(

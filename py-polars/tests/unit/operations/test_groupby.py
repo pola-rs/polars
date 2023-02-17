@@ -120,6 +120,8 @@ def test_groupby_args() -> None:
     assert df.groupby("a").agg(["b", "c"]).columns == expected
     # Multiple aggregations as positional arguments
     assert df.groupby("a").agg("b", "c").columns == expected
+    # Multiple aggregations as keyword arguments
+    assert df.groupby("a").agg(q="b", r="c").columns == ["a", "q", "r"]
 
 
 def test_groupby_iteration() -> None:
