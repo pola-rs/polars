@@ -2443,3 +2443,41 @@ def test_upper_lower_bounds(
     s = pl.Series("s", dtype=dtype)
     assert s.lower_bound().item() == lower
     assert s.upper_bound().item() == upper
+
+
+def test_numpy_series_arithmetic() -> None:
+    sx = pl.Series(values=[1, 2])
+    y = np.array([3.0, 4.0])
+
+    result_add1 = y + sx
+    result_add2 = sx + y
+    expected_add = pl.Series([4.0, 6.0], dtype=pl.Float64)
+    assert_series_equal(result_add1, expected_add)  # type: ignore[arg-type]
+    assert_series_equal(result_add2, expected_add)
+
+    result_sub1 = cast(pl.Series, y - sx)  # py37 is different vs py311 on this one
+    expected = pl.Series([2.0, 2.0], dtype=pl.Float64)
+    assert_series_equal(result_sub1, expected)
+    result_sub2 = sx - y
+    expected = pl.Series([-2.0, -2.0], dtype=pl.Float64)
+    assert_series_equal(result_sub2, expected)
+
+    result_mul1 = y * sx
+    result_mul2 = sx * y
+    expected = pl.Series([3.0, 8.0], dtype=pl.Float64)
+    assert_series_equal(result_mul1, expected)  # type: ignore[arg-type]
+    assert_series_equal(result_mul2, expected)
+
+    result_div1 = y / sx
+    expected = pl.Series([3.0, 2.0], dtype=pl.Float64)
+    assert_series_equal(result_div1, expected)  # type: ignore[arg-type]
+    result_div2 = sx / y
+    expected = pl.Series([1 / 3, 0.5], dtype=pl.Float64)
+    assert_series_equal(result_div2, expected)
+
+    result_pow1 = y**sx
+    expected = pl.Series([3.0, 16.0], dtype=pl.Float64)
+    assert_series_equal(result_pow1, expected)  # type: ignore[arg-type]
+    result_pow2 = sx**y
+    expected = pl.Series([1.0, 16.0], dtype=pl.Float64)
+    assert_series_equal(result_pow2, expected)  # type: ignore[arg-type]

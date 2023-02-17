@@ -527,7 +527,8 @@ class Series:
             other = self.to_frame().select(other).to_series()
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
-
+        if _check_for_numpy(other) and isinstance(other, np.ndarray):
+            return wrap_s(getattr(self._s, op_s)(Series(other)._s))
         # recurse; the 'if' statement above will ensure we return early
         if isinstance(other, (date, datetime, timedelta, str)):
             other = Series("", [other])
@@ -653,6 +654,8 @@ class Series:
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
+        if _check_for_numpy(power) and isinstance(power, np.ndarray):
+            power = Series(power)
         return self.to_frame().select(pli.col(self.name).pow(power)).to_series()
 
     def __rpow__(self, other: Any) -> Series:
