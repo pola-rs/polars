@@ -14,6 +14,16 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
 
 
+@pytest.fixture()
+def date_2022_01_01() -> date:
+    return date(2022, 1, 1)
+
+
+@pytest.fixture()
+def date_2022_01_02() -> date:
+    return date(2022, 1, 2)
+
+
 def test_dt_strftime() -> None:
     s = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
     assert s.dtype == pl.Date
@@ -71,23 +81,27 @@ def test_dt_datetimes() -> None:
     )
 
 
-@pytest.mark.parametrize("unit, expected", [
-    ("days", [1]),
-    ("hours", [24]),
-    ("seconds", [3600 * 24]),
-    ("milliseconds", [3600 * 24 * int(1e3)]),
-    ("microseconds", [3600 * 24 * int(1e6)]),
-    ("nanoseconds", [3600 * 24 * int(1e9)])
-])
-def test_duration_extract_times(unit: str, expected: list[int]) -> None:
-    a = pl.Series("a", [datetime(2021, 1, 1)])
-    b = pl.Series("b", [datetime(2021, 1, 2)])
-    duration = b - a
-    assert_series_equal(getattr(duration.dt, unit)(), pl.Series("b", expected))
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [
+        ("days", [1]),
+        ("hours", [24]),
+        ("seconds", [3600 * 24]),
+        ("milliseconds", [3600 * 24 * int(1e3)]),
+        ("microseconds", [3600 * 24 * int(1e6)]),
+        ("nanoseconds", [3600 * 24 * int(1e9)]),
+    ],
+)
+def test_duration_extract_times(
+    unit: str, expected: list[int], date_2022_01_01: date, date_2022_01_02: date
+) -> None:
+    duration = pl.Series([date_2022_01_02]) - pl.Series([date_2022_01_01])
+
+    assert_series_equal(getattr(duration.dt, unit)(), pl.Series(expected))
 
 
 @pytest.mark.parametrize(
-    "time_unit, every",
+    ("time_unit", "every"),
     [
         ("ms", "1h"),
         ("us", "1h0m0s"),
@@ -95,13 +109,18 @@ def test_duration_extract_times(unit: str, expected: list[int]) -> None:
     ],
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
-def test_truncate(time_unit: Literal["ms", "us", "ns"], every: str | timedelta) -> None:
-    start = datetime(2021, 1, 1)
-    stop = datetime(2021, 1, 2)
-
+def test_truncate(
+    time_unit: Literal["ms", "us", "ns"],
+    every: str | timedelta,
+    start: date = date_2022_01_01,
+    stop: date = date_2022_01_02,
+) -> None:
     s = pl.date_range(
-        start, stop, timedelta(minutes=30), name=f"dates[{time_unit}]",
-        time_unit=time_unit
+        start,
+        stop,
+        timedelta(minutes=30),
+        name=f"dates[{time_unit}]",
+        time_unit=time_unit,
     )
 
     # can pass strings and time-deltas
@@ -117,7 +136,7 @@ def test_truncate(time_unit: Literal["ms", "us", "ns"], every: str | timedelta) 
 
 
 @pytest.mark.parametrize(
-    "time_unit, every",
+    ("time_unit", "every"),
     [
         ("ms", "1h"),
         ("us", "1h0m0s"),
@@ -125,13 +144,18 @@ def test_truncate(time_unit: Literal["ms", "us", "ns"], every: str | timedelta) 
     ],
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
-def test_round(time_unit: Literal["ms", "us", "ns"], every: str | timedelta) -> None:
-    start = datetime(2021, 1, 1)
-    stop = datetime(2021, 1, 2)
-
+def test_round(
+    time_unit: Literal["ms", "us", "ns"],
+    every: str | timedelta,
+    start: date = date_2022_01_01,
+    stop: date = date_2022_01_02,
+) -> None:
     s = pl.date_range(
-        start, stop, timedelta(minutes=30), name=f"dates[{time_unit}]",
-        time_unit=time_unit
+        start,
+        stop,
+        timedelta(minutes=30),
+        name=f"dates[{time_unit}]",
+        time_unit=time_unit,
     )
 
     # can pass strings and time-deltas
@@ -263,8 +287,8 @@ def test_year_empty_df() -> None:
     ["ms", "us", "ns"],
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
-def test_weekday(time_unit: Literal["ms", "us", "ns"]) -> None:
-    friday = pl.Series([datetime(2021, 1, 1)])
+def test_weekday(time_unit: Literal["ms", "us", "ns"], date_2022_01_01: date) -> None:
+    friday = pl.Series([date_2022_01_01])
 
     assert friday.dt.cast_time_unit(time_unit).dt.weekday()[0] == 5
     assert friday.cast(pl.Date).dt.weekday()[0] == 5
