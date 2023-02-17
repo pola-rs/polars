@@ -41,6 +41,7 @@ impl Operator for ProjectionOperator {
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
         let mut has_literals = false;
+        let mut has_empty = false;
         let mut projected = self
             .exprs
             .iter()
@@ -49,11 +50,18 @@ impl Operator for ProjectionOperator {
                 if s.len() == 1 {
                     has_literals = true;
                 }
+                if s.len() == 0 {
+                    has_empty = true;
+                }
                 Ok(s)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        if has_literals {
+        if has_empty {
+            for s in &mut projected {
+                *s = s.slice(0, 0);
+            }
+        } else if has_literals {
             let height = projected.iter().map(|s| s.len()).max().unwrap();
             for s in &mut projected {
                 let len = s.len();
