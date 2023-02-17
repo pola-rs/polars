@@ -4780,6 +4780,57 @@ class Series:
 
         """
 
+    def map_dict(
+        self,
+        remapping: dict[Any, Any],
+        *,
+        default: Any = None,
+    ) -> Self:
+        """
+        Replace values in the Series using a remapping dictionary.
+
+        Parameters
+        ----------
+        remapping
+            Dictionary containing the before/after values to map.
+        default
+            Value to use when the remapping dict does not contain the lookup value.
+
+        Examples
+        --------
+        >>> s = pl.Series("iso3166", ["TUR", "???", "JPN", "NLD"])
+        >>> country_lookup = {
+        ...     "JPN": "Japan",
+        ...     "TUR": "Türkiye",
+        ...     "NLD": "Netherlands",
+        ... }
+
+        Remap, setting a default for unrecognised values...
+
+        >>> s.map_dict(country_lookup, default="Unspecified").rename("country_name")
+        shape: (4,)
+        Series: 'country_name' [str]
+        [
+            "Türkiye"
+            "Unspecified"
+            "Japan"
+            "Netherlands"
+        ]
+
+        ...or keep the original value:
+
+        >>> s.map_dict(country_lookup, default=s).rename("country_name")
+        shape: (4,)
+        Series: 'country_name' [str]
+        [
+            "Türkiye"
+            "???"
+            "Japan"
+            "Netherlands"
+        ]
+
+        """
+
     def reshape(self, dims: tuple[int, ...]) -> Series:
         """
         Reshape this Series to a flat Series or a Series of Lists.
@@ -5137,6 +5188,11 @@ class Series:
         return ListNameSpace(self)
 
     @property
+    def bin(self) -> BinaryNameSpace:
+        """Create an object namespace of all binary related methods."""
+        return BinaryNameSpace(self)
+
+    @property
     def cat(self) -> CatNameSpace:
         """Create an object namespace of all categorical related methods."""
         return CatNameSpace(self)
@@ -5150,11 +5206,6 @@ class Series:
     def str(self) -> StringNameSpace:
         """Create an object namespace of all string related methods."""
         return StringNameSpace(self)
-
-    @property
-    def bin(self) -> BinaryNameSpace:
-        """Create an object namespace of all binary related methods."""
-        return BinaryNameSpace(self)
 
     @property
     def struct(self) -> StructNameSpace:

@@ -34,6 +34,7 @@ Computation
     Series.kurtosis
     Series.log
     Series.log10
+    Series.map_dict
     Series.pct_change
     Series.peak_max
     Series.peak_min

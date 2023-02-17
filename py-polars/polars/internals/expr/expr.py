@@ -6047,9 +6047,9 @@ class Expr:
         Parameters
         ----------
         remapping
-            Mapping dictionary to use for remapping the values.
+            Dictionary containing the before/after values to map.
         default
-            Value to use when original value was not found in remapping dictionary.
+            Value to use when the remapping dict does not contain the lookup value.
 
         Warnings
         --------
@@ -6097,7 +6097,7 @@ class Expr:
         │ 3      ┆ DE           ┆ Germany       │
         └────────┴──────────────┴───────────────┘
 
-        Set a default value for values that couldn't be mapped.
+        Set a default value for values that cannot be mapped...
 
         >>> df.with_columns(
         ...     pl.col("country_code")
@@ -6116,7 +6116,7 @@ class Expr:
         │ 3      ┆ DE           ┆ Germany       │
         └────────┴──────────────┴───────────────┘
 
-        Keep the original value for values that couldn't be mapped.
+        ...or keep the original value:
 
         >>> df.with_columns(
         ...     pl.col("country_code")
@@ -6135,10 +6135,9 @@ class Expr:
         │ 3      ┆ DE           ┆ Germany       │
         └────────┴──────────────┴───────────────┘
 
-        If you need to access different columns to set a default value for values that
-        couldn't be mapped, a struct needs to be constructed, with in the first field
-        the column that you want to remap and the rest of the fields the other columns
-        you use in the default expression.
+        If you need to access different columns to set a default value, a struct needs
+        to be constructed; in the first field is the column that you want to remap and
+        the rest of the fields are the other columns used in the default expression.
 
         >>> df.with_columns(
         ...     pl.struct(pl.col(["country_code", "row_nr"])).map_dict(
