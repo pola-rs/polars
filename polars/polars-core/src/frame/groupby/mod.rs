@@ -19,7 +19,6 @@ mod into_groups;
 mod proxy;
 
 pub use into_groups::*;
-use polars_arrow::array::ValueSize;
 pub use proxy::*;
 
 // This will remove the sorted flag on signed integers
@@ -75,40 +74,12 @@ impl DataFrame {
 
         let n_partitions = _set_partition_size();
 
-        let groups = match by.len() {
-            1 => {
-                let series = &by[0];
-                series.group_tuples(multithreaded, sorted)
-            }
-            2 => {
-                // multiple keys is always multi-threaded
-                // reduce code paths
-                let keys_df = prepare_dataframe_unsorted(&by);
-
-                let s0 = &keys_df.get_columns()[0];
-                let s1 = &keys_df.get_columns()[1];
-
-                // fast path for numeric data
-                // uses the bit values to tightly pack those into arrays.
-                if matches!((s0.dtype(), s1.dtype()), (DataType::Utf8, DataType::Utf8)) {
-                    let lhs = s0.utf8().unwrap();
-                    let rhs = s1.utf8().unwrap();
-
-                    // arbitrarily chosen bound, if avg no of bytes to encode is larger than this
-                    // value we fall back to default groupby
-                    if (lhs.get_values_size() + rhs.get_values_size()) / (lhs.len() + 1) < 128 {
-                        Ok(pack_utf8_columns(lhs, rhs, n_partitions, sorted))
-                    } else {
-                        groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
-                    }
-                } else {
-                    groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
-                }
-            }
-            _ => {
-                let keys_df = prepare_dataframe_unsorted(&by);
-                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
-            }
+        let groups = if by.len() == 1 {
+            let series = &by[0];
+            series.group_tuples(multithreaded, sorted)
+        } else {
+            let keys_df = prepare_dataframe_unsorted(&by);
+            groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
         };
         Ok(GroupBy::new(self, by, groups?, None))
     }

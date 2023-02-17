@@ -585,6 +585,7 @@ impl<'a> Hash for BytesHash<'a> {
 
 impl<'a> BytesHash<'a> {
     #[inline]
+    #[cfg(any(feature = "dtype-binary", feature = "groupby_list"))]
     pub(crate) fn new(s: Option<&'a [u8]>, hash: u64) -> Self {
         Self { payload: s, hash }
     }
