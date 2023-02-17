@@ -11,7 +11,7 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+    pass
 
 
 @pytest.fixture()
@@ -205,32 +205,42 @@ def test_epoch() -> None:
 
 def test_date_time_combine() -> None:
     # Define a DataFrame with columns for datetime, date, and time
-    df = pl.DataFrame({
-        "dtm": [
-            datetime(2022, 12, 31, 10, 30, 45),
-            datetime(2023, 7, 5, 23, 59, 59),
-        ],
-        "dt": [
-            date(2022, 10, 10),
-            date(2022, 7, 5),
-        ],
-        "tm": [
-            time(1, 2, 3, 456000),
-            time(7, 8, 9, 101000),
-        ],
-    })
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(2022, 12, 31, 10, 30, 45),
+                datetime(2023, 7, 5, 23, 59, 59),
+            ],
+            "dt": [
+                date(2022, 10, 10),
+                date(2022, 7, 5),
+            ],
+            "tm": [
+                time(1, 2, 3, 456000),
+                time(7, 8, 9, 101000),
+            ],
+        }
+    )
 
     # Use the .select() method to combine datetime/date and time
-    df = df.select([
-        pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),  # Combine datetime and time
-        pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # Combine date and time
-        pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),  # Combine date and a specified time
-    ])
+    df = df.select(
+        [
+            pl.col("dtm")
+            .dt.combine(pl.col("tm"))
+            .alias("d1"),  # Combine datetime and time
+            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # Combine date and time
+            pl.col("dt")
+            .dt.combine(time(4, 5, 6))
+            .alias("d3"),  # Combine date and a specified time
+        ]
+    )
 
     # Check that the new columns have the expected values and datatypes
     expected_dict = {
         "d1": [
-            datetime(2022, 12, 31, 1, 2, 3, 456000),  # Time component should be overwritten by `tm`
+            datetime(
+                2022, 12, 31, 1, 2, 3, 456000
+            ),  # Time component should be overwritten by `tm`
             datetime(2023, 7, 5, 7, 8, 9, 101000),
         ],
         "d2": [
@@ -238,7 +248,9 @@ def test_date_time_combine() -> None:
             datetime(2022, 7, 5, 7, 8, 9, 101000),
         ],
         "d3": [
-            datetime(2022, 10, 10, 4, 5, 6),  # New datetime should use specified time component
+            datetime(
+                2022, 10, 10, 4, 5, 6
+            ),  # New datetime should use specified time component
             datetime(2022, 7, 5, 4, 5, 6),
         ],
     }
@@ -259,13 +271,17 @@ def test_quarter() -> None:
 
 
 def test_date_offset() -> None:
-    df = pl.DataFrame({"dates": pl.date_range(datetime(2000, 1, 1), datetime(2020, 1, 1), "1y")})
+    df = pl.DataFrame(
+        {"dates": pl.date_range(datetime(2000, 1, 1), datetime(2020, 1, 1), "1y")}
+    )
 
     # Add two new columns to the DataFrame using the offset_by() method
-    df = df.with_columns([
-        df["dates"].dt.offset_by("1y").alias("date_plus_1y"),
-        df["dates"].dt.offset_by("-1y2mo").alias("date_min"),
-    ])
+    df = df.with_columns(
+        [
+            df["dates"].dt.offset_by("1y").alias("date_plus_1y"),
+            df["dates"].dt.offset_by("-1y2mo").alias("date_min"),
+        ]
+    )
 
     # Assert that the day of the month for all dates in the 'date_plus_1y' column is 1
     assert (df["date_plus_1y"].dt.day() == 1).all()
