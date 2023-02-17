@@ -967,21 +967,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn sort(&self, by_column: &str, reverse: bool, nulls_last: bool) -> PyResult<Self> {
-        let df = self
-            .df
-            .sort_with_options(
-                by_column,
-                SortOptions {
-                    descending: reverse,
-                    nulls_last,
-                    multithreaded: true,
-                },
-            )
-            .map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn replace(&mut self, column: &str, new_col: PySeries) -> PyResult<()> {
         self.df
             .replace(column, new_col.series)

@@ -814,107 +814,108 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def sort(
         self,
-        by: (
-            str
-            | pli.Expr
-            | Sequence[str]
-            | Sequence[pli.Expr]
-            | Sequence[str | pli.Expr]
-        ),
-        *,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
         reverse: bool | Sequence[bool] = False,
         nulls_last: bool = False,
     ) -> Self:
         """
-        Sort the DataFrame.
-
-        Sorting can be done by:
-
-        - A single column name
-        - An expression
-        - Multiple expressions
+        Sort the dataframe by the given columns.
 
         Parameters
         ----------
         by
-            Column (expressions) to sort by.
+            Column(s) to sort by. Accepts expression input. Strings are parsed as column
+            names.
+        *more_by
+            Additional columns to sort by, specified as positional arguments.
         reverse
-            Sort in descending order.
+            Sort in descending order. When sorting by multiple columns, can be specified
+            per column by passing a sequence of booleans.
         nulls_last
-            Place null values last. Can only be used if sorted by a single column.
+            Place null values last. Can only be used when sorting by a single column.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        Pass a single column name to sort by that column.
+
+        >>> ldf = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3, None],
-        ...         "bar": [6.0, 7.0, 8.0, 9.0],
-        ...         "ham": ["a", "b", "c", "d"],
+        ...         "a": [1, 2, None],
+        ...         "b": [6.0, 5.0, 4.0],
+        ...         "c": ["a", "c", "b"],
         ...     }
         ... ).lazy()
-        >>> df.sort("foo").collect()
-        shape: (4, 3)
+        >>> ldf.sort("a").collect()
+        shape: (3, 3)
         ┌──────┬─────┬─────┐
-        │ foo  ┆ bar ┆ ham │
+        │ a    ┆ b   ┆ c   │
         │ ---  ┆ --- ┆ --- │
         │ i64  ┆ f64 ┆ str │
         ╞══════╪═════╪═════╡
-        │ null ┆ 9.0 ┆ d   │
+        │ null ┆ 4.0 ┆ b   │
         │ 1    ┆ 6.0 ┆ a   │
-        │ 2    ┆ 7.0 ┆ b   │
-        │ 3    ┆ 8.0 ┆ c   │
-        └──────┴─────┴─────┘
-        >>> df.sort("foo", nulls_last=True).collect()
-        shape: (4, 3)
-        ┌──────┬─────┬─────┐
-        │ foo  ┆ bar ┆ ham │
-        │ ---  ┆ --- ┆ --- │
-        │ i64  ┆ f64 ┆ str │
-        ╞══════╪═════╪═════╡
-        │ 1    ┆ 6.0 ┆ a   │
-        │ 2    ┆ 7.0 ┆ b   │
-        │ 3    ┆ 8.0 ┆ c   │
-        │ null ┆ 9.0 ┆ d   │
-        └──────┴─────┴─────┘
-        >>> df.sort("foo", reverse=True).collect()
-        shape: (4, 3)
-        ┌──────┬─────┬─────┐
-        │ foo  ┆ bar ┆ ham │
-        │ ---  ┆ --- ┆ --- │
-        │ i64  ┆ f64 ┆ str │
-        ╞══════╪═════╪═════╡
-        │ 3    ┆ 8.0 ┆ c   │
-        │ 2    ┆ 7.0 ┆ b   │
-        │ 1    ┆ 6.0 ┆ a   │
-        │ null ┆ 9.0 ┆ d   │
+        │ 2    ┆ 5.0 ┆ c   │
         └──────┴─────┴─────┘
 
-        **Sort by multiple columns.**
-        For multiple columns we can also use expression syntax.
+        Sorting by expressions is also supported.
 
-        >>> df.sort(
-        ...     [pl.col("foo"), pl.col("bar") ** 2],
-        ...     reverse=[True, False],
-        ... ).collect()
-        shape: (4, 3)
+        >>> ldf.sort(pl.col("a") + pl.col("b") * 2, nulls_last=True).collect()
+        shape: (3, 3)
         ┌──────┬─────┬─────┐
-        │ foo  ┆ bar ┆ ham │
+        │ a    ┆ b   ┆ c   │
         │ ---  ┆ --- ┆ --- │
         │ i64  ┆ f64 ┆ str │
         ╞══════╪═════╪═════╡
-        │ 3    ┆ 8.0 ┆ c   │
-        │ 2    ┆ 7.0 ┆ b   │
+        │ 2    ┆ 5.0 ┆ c   │
         │ 1    ┆ 6.0 ┆ a   │
-        │ null ┆ 9.0 ┆ d   │
+        │ null ┆ 4.0 ┆ b   │
+        └──────┴─────┴─────┘
+
+        Sort by multiple columns by passing a list of columns.
+
+        >>> ldf.sort(["c", "a"], reverse=True).collect()
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ a    ┆ b   ┆ c   │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ f64 ┆ str │
+        ╞══════╪═════╪═════╡
+        │ 2    ┆ 5.0 ┆ c   │
+        │ null ┆ 4.0 ┆ b   │
+        │ 1    ┆ 6.0 ┆ a   │
+        └──────┴─────┴─────┘
+
+        Or use positional arguments to sort by multiple columns in the same way.
+
+        >>> ldf.sort("c", "a", reverse=[False, True]).collect()
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ a    ┆ b   ┆ c   │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ f64 ┆ str │
+        ╞══════╪═════╪═════╡
+        │ 1    ┆ 6.0 ┆ a   │
+        │ null ┆ 4.0 ┆ b   │
+        │ 2    ┆ 5.0 ┆ c   │
         └──────┴─────┴─────┘
 
         """
-        if type(by) is str:
+        # Fast path for sorting by a single existing column
+        if isinstance(by, str) and not more_by:
             return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
-        if type(reverse) is bool:
-            reverse = [reverse]
 
         by = pli.selection_to_pyexpr_list(by)
+        by.extend(pli.selection_to_pyexpr_list(more_by))
+
+        # TODO: Do this check on the Rust side
+        if nulls_last and len(by) > 1:
+            raise ValueError(
+                "`nulls_last=True` only works when sorting by a single column"
+            )
+
+        if isinstance(reverse, bool):
+            reverse = [reverse]
         return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
 
     def profile(
@@ -1558,16 +1559,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def select(
         self,
-        exprs: (
-            str
-            | PolarsExprType
-            | PythonLiteral
-            | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
-            | None
-        ) = None,
-        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
-        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_exprs: IntoExpr,
+        **named_exprs: IntoExpr,
     ) -> Self:
         """
         Select columns from this DataFrame.
@@ -1575,8 +1569,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         exprs
-            Column or columns to select. Accepts expression input. Strings are parsed
-            as column names, other non-expression inputs are parsed as literals.
+            Column(s) to select. Accepts expression input. Strings are parsed as column
+            names, other non-expression inputs are parsed as literals.
         *more_exprs
             Additional columns to select, specified as positional arguments.
         **named_exprs
