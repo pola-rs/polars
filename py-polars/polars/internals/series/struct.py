@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import os
-import warnings
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import sphinx_accessor
+from polars.utils import redirect, sphinx_accessor
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
@@ -15,6 +14,7 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 
 @expr_dispatch
+@redirect({"to_frame": "unnest"})
 class StructNameSpace:
     """Series.struct namespace."""
 
@@ -62,16 +62,6 @@ class StructNameSpace:
             New names in the order of the struct's fields
 
         """
-
-    def to_frame(self) -> pli.DataFrame:
-        """Convert this Struct Series to a DataFrame."""
-        warnings.warn(
-            "`Series.struct.to_frame` has been renamed to `Series.struct.unnest`."
-            " Use the new method name to silence this warning.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return pli.wrap_df(self._s.struct_unnest())
 
     def unnest(self) -> pli.DataFrame:
         """
