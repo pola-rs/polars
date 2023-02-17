@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pytest
@@ -71,88 +71,79 @@ def test_dt_datetimes() -> None:
     )
 
 
-def test_duration_extract_times() -> None:
+@pytest.mark.parametrize("unit, expected", [
+    ("days", [1]),
+    ("hours", [24]),
+    ("seconds", [3600 * 24]),
+    ("milliseconds", [3600 * 24 * int(1e3)]),
+    ("microseconds", [3600 * 24 * int(1e6)]),
+    ("nanoseconds", [3600 * 24 * int(1e9)])
+])
+def test_duration_extract_times(unit: str, expected: list[int]) -> None:
     a = pl.Series("a", [datetime(2021, 1, 1)])
     b = pl.Series("b", [datetime(2021, 1, 2)])
-
     duration = b - a
-    expected = pl.Series("b", [1])
-    assert_series_equal(duration.dt.days(), expected)
-
-    expected = pl.Series("b", [24])
-    assert_series_equal(duration.dt.hours(), expected)
-
-    expected = pl.Series("b", [3600 * 24])
-    assert_series_equal(duration.dt.seconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e3)])
-    assert_series_equal(duration.dt.milliseconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e6)])
-    assert_series_equal(duration.dt.microseconds(), expected)
-
-    expected = pl.Series("b", [3600 * 24 * int(1e9)])
-    assert_series_equal(duration.dt.nanoseconds(), expected)
+    assert_series_equal(getattr(duration.dt, unit)(), pl.Series("b", expected))
 
 
-def test_truncate() -> None:
-    start = datetime(2001, 1, 1)
-    stop = datetime(2001, 1, 2)
+@pytest.mark.parametrize(
+    "time_unit, every",
+    [
+        ("ms", "1h"),
+        ("us", "1h0m0s"),
+        ("ns", timedelta(hours=1)),
+    ],
+    ids=["milliseconds", "microseconds", "nanoseconds"],
+)
+def test_truncate(time_unit: Literal["ms", "us", "ns"], every: str | timedelta) -> None:
+    start = datetime(2021, 1, 1)
+    stop = datetime(2021, 1, 2)
 
-    s1 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[ms]", time_unit="ms"
-    )
-    s2 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[us]", time_unit="us"
-    )
-    s3 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[ns]", time_unit="ns"
+    s = pl.date_range(
+        start, stop, timedelta(minutes=30), name=f"dates[{time_unit}]",
+        time_unit=time_unit
     )
 
-    # can pass strings and timedeltas
-    for out in [
-        s1.dt.truncate("1h"),
-        s2.dt.truncate("1h0m0s"),
-        s3.dt.truncate(timedelta(hours=1)),
-    ]:
-        assert out.dt[0] == start
-        assert out.dt[1] == start
-        assert out.dt[2] == start + timedelta(hours=1)
-        assert out.dt[3] == start + timedelta(hours=1)
-        # ...
-        assert out.dt[-3] == stop - timedelta(hours=1)
-        assert out.dt[-2] == stop - timedelta(hours=1)
-        assert out.dt[-1] == stop
+    # can pass strings and time-deltas
+    out = s.dt.truncate(every)
+    assert out.dt[0] == start
+    assert out.dt[1] == start
+    assert out.dt[2] == start + timedelta(hours=1)
+    assert out.dt[3] == start + timedelta(hours=1)
+    # ...
+    assert out.dt[-3] == stop - timedelta(hours=1)
+    assert out.dt[-2] == stop - timedelta(hours=1)
+    assert out.dt[-1] == stop
 
 
-def test_round() -> None:
-    start = datetime(2001, 1, 1)
-    stop = datetime(2001, 1, 2)
+@pytest.mark.parametrize(
+    "time_unit, every",
+    [
+        ("ms", "1h"),
+        ("us", "1h0m0s"),
+        ("ns", timedelta(hours=1)),
+    ],
+    ids=["milliseconds", "microseconds", "nanoseconds"],
+)
+def test_round(time_unit: Literal["ms", "us", "ns"], every: str | timedelta) -> None:
+    start = datetime(2021, 1, 1)
+    stop = datetime(2021, 1, 2)
 
-    s1 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[ms]", time_unit="ms"
+    s = pl.date_range(
+        start, stop, timedelta(minutes=30), name=f"dates[{time_unit}]",
+        time_unit=time_unit
     )
-    s2 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[us]", time_unit="us"
-    )
-    s3 = pl.date_range(
-        start, stop, timedelta(minutes=30), name="dates[ns]", time_unit="ns"
-    )
 
-    # can pass strings and timedeltas
-    for out in [
-        s1.dt.round("1h"),
-        s2.dt.round("1h0m0s"),
-        s3.dt.round(timedelta(hours=1)),
-    ]:
-        assert out.dt[0] == start
-        assert out.dt[1] == start + timedelta(hours=1)
-        assert out.dt[2] == start + timedelta(hours=1)
-        assert out.dt[3] == start + timedelta(hours=2)
-        # ...
-        assert out.dt[-3] == stop - timedelta(hours=1)
-        assert out.dt[-2] == stop
-        assert out.dt[-1] == stop
+    # can pass strings and time-deltas
+    out = s.dt.round(every)
+    assert out.dt[0] == start
+    assert out.dt[1] == start + timedelta(hours=1)
+    assert out.dt[2] == start + timedelta(hours=1)
+    assert out.dt[3] == start + timedelta(hours=2)
+    # ...
+    assert out.dt[-3] == stop - timedelta(hours=1)
+    assert out.dt[-2] == stop
+    assert out.dt[-1] == stop
 
 
 def test_cast_time_units() -> None:
@@ -267,15 +258,16 @@ def test_year_empty_df() -> None:
     assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]
 
 
-def test_weekday() -> None:
-    # monday
-    s = pl.Series([datetime(2020, 1, 6)])
+@pytest.mark.parametrize(
+    "time_unit",
+    ["ms", "us", "ns"],
+    ids=["milliseconds", "microseconds", "nanoseconds"],
+)
+def test_weekday(time_unit: Literal["ms", "us", "ns"]) -> None:
+    friday = pl.Series([datetime(2021, 1, 1)])
 
-    time_units: list[TimeUnit] = ["ns", "us", "ms"]
-    for tu in time_units:
-        assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 1
-
-    assert s.cast(pl.Date).dt.weekday()[0] == 1
+    assert friday.dt.cast_time_unit(time_unit).dt.weekday()[0] == 5
+    assert friday.cast(pl.Date).dt.weekday()[0] == 5
 
 
 @pytest.mark.parametrize(
