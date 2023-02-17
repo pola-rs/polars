@@ -11,17 +11,17 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    pass
+    from polars.internals.type_aliases import TimeUnit
 
 
 @pytest.fixture()
-def date_2022_01_01() -> date:
-    return date(2022, 1, 1)
+def date_2022_01_01() -> datetime:
+    return datetime(2022, 1, 1)
 
 
 @pytest.fixture()
-def date_2022_01_02() -> date:
-    return date(2022, 1, 2)
+def date_2022_01_02() -> datetime:
+    return datetime(2022, 1, 2)
 
 
 @pytest.fixture()
@@ -100,7 +100,7 @@ def test_dt_datetimes() -> None:
     ],
 )
 def test_duration_extract_times(
-    unit: str, expected: list[int], date_2022_01_01: date, date_2022_01_02: date
+    unit: str, expected: list[int], date_2022_01_01: datetime, date_2022_01_02: datetime
 ) -> None:
     duration = pl.Series([date_2022_01_02]) - pl.Series([date_2022_01_01])
 
@@ -119,9 +119,10 @@ def test_duration_extract_times(
 def test_truncate(
     time_unit: Literal["ms", "us", "ns"],
     every: str | timedelta,
-    start: date = date_2022_01_01,
-    stop: date = date_2022_01_02,
+    date_2022_01_01: datetime,
+    date_2022_01_02: datetime,
 ) -> None:
+    start, stop = date_2022_01_01, date_2022_01_02
     s = pl.date_range(
         start,
         stop,
@@ -154,9 +155,10 @@ def test_truncate(
 def test_round(
     time_unit: Literal["ms", "us", "ns"],
     every: str | timedelta,
-    start: date = date_2022_01_01,
-    stop: date = date_2022_01_02,
+    date_2022_01_01: datetime,
+    date_2022_01_02: datetime,
 ) -> None:
+    start, stop = date_2022_01_01, date_2022_01_02
     s = pl.date_range(
         start,
         stop,
@@ -326,8 +328,8 @@ def test_year_empty_df() -> None:
     ["ms", "us", "ns"],
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
-def test_weekday(time_unit: Literal["ms", "us", "ns"], date_2022_01_01: date) -> None:
-    friday = pl.Series([date_2022_01_01])
+def test_weekday(time_unit: Literal["ms", "us", "ns"]) -> None:
+    friday = pl.Series([datetime(2023, 2, 17)])
 
     assert friday.dt.cast_time_unit(time_unit).dt.weekday()[0] == 5
     assert friday.cast(pl.Date).dt.weekday()[0] == 5
