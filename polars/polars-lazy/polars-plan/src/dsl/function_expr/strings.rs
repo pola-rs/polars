@@ -121,7 +121,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                 if literal {
                     ca.contains_literal(pat)?
                 } else {
-                    ca.contains(pat)?
+                    ca.contains(pat, strict)?
                 }
             }
             None => BooleanChunked::full(ca.name(), false, ca.len()),
@@ -150,10 +150,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                 ca.into_iter()
                     .zip(pat.into_iter())
                     .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                        (Some(src), Some(pat)) => {
-                            let re = Regex::new(pat).ok()?;
-                            Some(re.is_match(src))
-                        }
+                        (Some(src), Some(pat)) => Regex::new(pat).ok().map(|re| re.is_match(src)),
                         _ => Some(false),
                     })
                     .collect_trusted()

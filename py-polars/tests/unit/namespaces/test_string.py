@@ -250,6 +250,19 @@ def test_auto_explode() -> None:
 
 
 def test_contains() -> None:
+    # test strict/non strict
+    s_txt = pl.Series(["123", "456", "789"])
+    assert (
+        pl.Series([None, None, None]).cast(pl.Boolean).to_list()
+        == s_txt.str.contains("(not_valid_regex", literal=False, strict=False).to_list()
+    )
+    with pytest.raises(pl.ComputeError):
+        s_txt.str.contains("(not_valid_regex", literal=False, strict=True)
+    assert (
+        pl.Series([True, False, False]).cast(pl.Boolean).to_list()
+        == s_txt.str.contains("1", literal=False, strict=False).to_list()
+    )
+
     df = pl.DataFrame(
         data=[(1, "some * * text"), (2, "(with) special\n * chars"), (3, "**etc...?$")],
         schema=["idx", "text"],
