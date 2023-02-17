@@ -76,7 +76,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
-    K::Native: VecHashSingle,
+    K::Native: FxHash,
 {
     pub(crate) fn new(
         key: Arc<dyn PhysicalPipedExpr>,
@@ -193,7 +193,7 @@ where
         for group in &self.sort_partitions {
             let [offset, length] = group;
             let first_g_value = unsafe { *values.get_unchecked_release(*offset as usize) };
-            let h = first_g_value._vec_hash_single(k);
+            let h = first_g_value._fx_hash(k);
 
             let agg_idx = insert_and_get(
                 h,
@@ -219,7 +219,7 @@ where
 
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
-    K::Native: Hash + Eq + Debug + VecHashSingle,
+    K::Native: Hash + Eq + Debug + FxHash,
     ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
@@ -374,7 +374,7 @@ fn insert_and_get<T>(
     agg_fns: &Vec<AggregateFunction>,
 ) -> IdxSize
 where
-    T: NumericNative + VecHashSingle,
+    T: NumericNative + FxHash,
 {
     let part = hash_to_partition(h, pre_agg_len);
     let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };

@@ -68,6 +68,72 @@ macro_rules! fx_hash_64_bit {
 }
 const FXHASH_K: u64 = 0x517cc1b727220a95;
 
+/// Ensure that the same hash is used as with `VecHash`.
+pub trait FxHash {
+    fn get_k(random_state: RandomState) -> u64 {
+        random_state.hash_one(FXHASH_K)
+    }
+    fn _fx_hash(self, k: u64) -> u64;
+}
+impl FxHash for i8 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        unsafe { fx_hash_8_bit!(self, k) }
+    }
+}
+impl FxHash for u8 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_8_bit!(self, k)
+        }
+    }
+}
+impl FxHash for i16 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        unsafe { fx_hash_16_bit!(self, k) }
+    }
+}
+impl FxHash for u16 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_16_bit!(self, k)
+        }
+    }
+}
+
+impl FxHash for i32 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        unsafe { fx_hash_32_bit!(self, k) }
+    }
+}
+impl FxHash for u32 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_32_bit!(self, k)
+        }
+    }
+}
+
+impl FxHash for i64 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        fx_hash_64_bit!(self, k)
+    }
+}
+impl FxHash for u64 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        fx_hash_64_bit!(self, k)
+    }
+}
 fn finish_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
 where
     T: PolarsIntegerType,
@@ -92,12 +158,43 @@ where
     });
 }
 
+fn integer_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
+where
+    T: PolarsIntegerType,
+    T::Native: Hash + FxHash,
+{
+    // Note that we don't use the no null branch! This can break in unexpected ways.
+    // for instance with threading we split an array in n_threads, this may lead to
+    // splits that have no nulls and splits that have nulls. Then one array is hashed with
+    // Option<T> and the other array with T.
+    // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
+    // the only deterministic seed.
+    buf.clear();
+    buf.reserve(ca.len());
+
+    let k = random_state.hash_one(FXHASH_K);
+
+    #[allow(unused_unsafe)]
+    #[allow(clippy::useless_transmute)]
+    ca.downcast_iter().for_each(|arr| {
+        buf.extend(
+            arr.values()
+                .as_slice()
+                .iter()
+                .copied()
+                .map(|v| unsafe { v._fx_hash(k) }),
+        );
+    });
+    finish_vec_hash(ca, random_state, buf)
+}
+
 fn integer_vec_hash_combine<T>(ca: &ChunkedArray<T>, random_state: RandomState, hashes: &mut [u64])
 where
     T: PolarsIntegerType,
-    T::Native: Hash,
+    T::Native: Hash + FxHash,
 {
     let null_h = get_null_hash_value(random_state.clone());
+    let k = random_state.hash_one(FXHASH_K);
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
@@ -108,7 +205,7 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    let l = random_state.hash_single(v);
+                    let l = v._fx_hash(k);
                     *h = _boost_hash_combine(l, *h)
                 }),
             _ => {
@@ -134,29 +231,7 @@ macro_rules! vec_hash_int {
     ($ca:ident, $fx_hash:ident) => {
         impl VecHash for $ca {
             fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
-                // Note that we don't use the no null branch! This can break in unexpected ways.
-                // for instance with threading we split an array in n_threads, this may lead to
-                // splits that have no nulls and splits that have nulls. Then one array is hashed with
-                // Option<T> and the other array with T.
-                // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
-                // the only deterministic seed.
-                buf.clear();
-                buf.reserve(self.len());
-
-                let k = random_state.hash_one(FXHASH_K);
-
-                #[allow(unused_unsafe)]
-                #[allow(clippy::useless_transmute)]
-                self.downcast_iter().for_each(|arr| {
-                    buf.extend(
-                        arr.values()
-                            .as_slice()
-                            .iter()
-                            .copied()
-                            .map(|v| unsafe { $fx_hash!(v, k) }),
-                    );
-                });
-                finish_vec_hash(self, random_state, buf)
+                integer_vec_hash(self, random_state, buf)
             }
 
             fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
@@ -174,72 +249,6 @@ vec_hash_int!(UInt64Chunked, fx_hash_64_bit);
 vec_hash_int!(UInt32Chunked, fx_hash_32_bit);
 vec_hash_int!(UInt16Chunked, fx_hash_16_bit);
 vec_hash_int!(UInt8Chunked, fx_hash_8_bit);
-
-/// Ensure that the same hash is used as with `VecHash`.
-pub trait VecHashSingle {
-    fn get_k(random_state: RandomState) -> u64 {
-        random_state.hash_one(FXHASH_K)
-    }
-    fn _vec_hash_single(self, k: u64) -> u64;
-}
-impl VecHashSingle for i8 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        unsafe { fx_hash_8_bit!(self, k) }
-    }
-}
-impl VecHashSingle for u8 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_8_bit!(self, k)
-        }
-    }
-}
-impl VecHashSingle for i16 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        unsafe { fx_hash_16_bit!(self, k) }
-    }
-}
-impl VecHashSingle for u16 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_16_bit!(self, k)
-        }
-    }
-}
-
-impl VecHashSingle for i32 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        unsafe { fx_hash_32_bit!(self, k) }
-    }
-}
-impl VecHashSingle for u32 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_32_bit!(self, k)
-        }
-    }
-}
-impl VecHashSingle for i64 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        fx_hash_64_bit!(self, k)
-    }
-}
-impl VecHashSingle for u64 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        fx_hash_64_bit!(self, k)
-    }
-}
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {

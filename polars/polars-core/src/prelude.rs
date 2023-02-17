@@ -50,5 +50,5 @@ pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
-pub use crate::vector_hasher::{VecHash, VecHashSingle};
+pub use crate::vector_hasher::{FxHash, VecHash};
 pub use crate::{cloud, datatypes, df};
