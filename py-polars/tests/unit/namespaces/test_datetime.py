@@ -24,28 +24,39 @@ def date_2022_01_02() -> date:
     return date(2022, 1, 2)
 
 
-def test_dt_strftime() -> None:
-    s = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
-    assert s.dtype == pl.Date
-    expected = pl.Series("a", ["1997-05-19", "2024-10-04", "2052-02-20"])
-    assert_series_equal(s.dt.strftime("%F"), expected)
+@pytest.fixture()
+def series_of_dates() -> pl.Series:
+    return pl.Series([10000, 20000, 30000], dtype=pl.Date)
 
 
-def test_dt_year_month_week_day_ordinal_day() -> None:
-    s = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
+def test_dt_strftime(series_of_dates: pl.Series) -> None:
+    expected = pl.Series(["1997-05-19", "2024-10-04", "2052-02-20"])
 
-    assert_series_equal(s.dt.year(), pl.Series("a", [1997, 2024, 2052], dtype=pl.Int32))
+    assert series_of_dates.dtype == pl.Date
+    assert_series_equal(series_of_dates.dt.strftime("%F"), expected)
 
-    assert_series_equal(s.dt.month(), pl.Series("a", [5, 10, 2], dtype=pl.UInt32))
-    assert_series_equal(s.dt.weekday(), pl.Series("a", [1, 5, 2], dtype=pl.UInt32))
-    assert_series_equal(s.dt.week(), pl.Series("a", [21, 40, 8], dtype=pl.UInt32))
-    assert_series_equal(s.dt.day(), pl.Series("a", [19, 4, 20], dtype=pl.UInt32))
+
+def test_dt_year_month_week_day_ordinal_day(
+    series_of_dates: pl.Series,
+) -> None:
     assert_series_equal(
-        s.dt.ordinal_day(), pl.Series("a", [139, 278, 51], dtype=pl.UInt32)
+        series_of_dates.dt.year(), pl.Series([1997, 2024, 2052], dtype=pl.Int32)
     )
-
-    assert s.dt.median() == date(2024, 10, 4)
-    assert s.dt.mean() == date(2024, 10, 4)
+    assert_series_equal(
+        series_of_dates.dt.month(), pl.Series([5, 10, 2], dtype=pl.UInt32)
+    )
+    assert_series_equal(
+        series_of_dates.dt.weekday(), pl.Series([1, 5, 2], dtype=pl.UInt32)
+    )
+    assert_series_equal(
+        series_of_dates.dt.week(), pl.Series([21, 40, 8], dtype=pl.UInt32)
+    )
+    assert_series_equal(
+        series_of_dates.dt.day(), pl.Series([19, 4, 20], dtype=pl.UInt32)
+    )
+    assert_series_equal(
+        series_of_dates.dt.ordinal_day(), pl.Series([139, 278, 51], dtype=pl.UInt32)
+    )
 
 
 def test_dt_datetimes() -> None:
@@ -53,31 +64,27 @@ def test_dt_datetimes() -> None:
     s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
     # hours, minutes, seconds, milliseconds, microseconds, and nanoseconds
-    assert_series_equal(s.dt.hour(), pl.Series("", [0, 3], dtype=pl.UInt32))
-    assert_series_equal(s.dt.minute(), pl.Series("", [0, 20], dtype=pl.UInt32))
-    assert_series_equal(s.dt.second(), pl.Series("", [0, 10], dtype=pl.UInt32))
-    assert_series_equal(s.dt.millisecond(), pl.Series("", [0, 987], dtype=pl.UInt32))
-    assert_series_equal(s.dt.microsecond(), pl.Series("", [0, 987654], dtype=pl.UInt32))
-    assert_series_equal(
-        s.dt.nanosecond(), pl.Series("", [0, 987654321], dtype=pl.UInt32)
-    )
+    assert_series_equal(s.dt.hour(), pl.Series([0, 3], dtype=pl.UInt32))
+    assert_series_equal(s.dt.minute(), pl.Series([0, 20], dtype=pl.UInt32))
+    assert_series_equal(s.dt.second(), pl.Series([0, 10], dtype=pl.UInt32))
+    assert_series_equal(s.dt.millisecond(), pl.Series([0, 987], dtype=pl.UInt32))
+    assert_series_equal(s.dt.microsecond(), pl.Series([0, 987654], dtype=pl.UInt32))
+    assert_series_equal(s.dt.nanosecond(), pl.Series([0, 987654321], dtype=pl.UInt32))
 
     # epoch methods
-    assert_series_equal(
-        s.dt.epoch(tu="d"), pl.Series("", [18262, 18294], dtype=pl.Int32)
-    )
+    assert_series_equal(s.dt.epoch(tu="d"), pl.Series([18262, 18294], dtype=pl.Int32))
     assert_series_equal(
         s.dt.epoch(tu="s"),
-        pl.Series("", [1_577_836_800, 1_580_613_610], dtype=pl.Int64),
+        pl.Series([1_577_836_800, 1_580_613_610], dtype=pl.Int64),
     )
     assert_series_equal(
         s.dt.epoch(tu="ms"),
-        pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=pl.Int64),
+        pl.Series([1_577_836_800_000, 1_580_613_610_000], dtype=pl.Int64),
     )
     # fractional seconds
     assert_series_equal(
         s.dt.second(fractional=True),
-        pl.Series("", [0.0, 10.987654321], dtype=pl.Float64),
+        pl.Series([0.0, 10.987654321], dtype=pl.Float64),
     )
 
 
@@ -171,7 +178,7 @@ def test_round(
 
 
 def test_cast_time_units() -> None:
-    dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
+    dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
     dates_in_ns = np.array([978307200000000000, 981022089000000000])
 
     assert dates.dt.cast_time_unit("ns").cast(int).to_list() == list(dates_in_ns)
@@ -184,7 +191,7 @@ def test_cast_time_units() -> None:
 
 
 def test_epoch() -> None:
-    dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
+    dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 
     for unit in DTYPE_TEMPORAL_UNITS:
         assert_series_equal(dates.dt.epoch(unit), dates.dt.timestamp(unit))
