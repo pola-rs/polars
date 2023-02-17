@@ -248,18 +248,22 @@ def test_quarter() -> None:
 
 
 def test_date_offset() -> None:
-    out = pl.DataFrame(
-        {"dates": pl.date_range(datetime(2000, 1, 1), datetime(2020, 1, 1), "1y")}
-    ).with_columns(
-        [
-            pl.col("dates").dt.offset_by("1y").alias("date_plus_1y"),
-            pl.col("dates").dt.offset_by("-1y2mo").alias("date_min"),
-        ]
-    )
+    df = pl.DataFrame({"dates": pl.date_range(datetime(2000, 1, 1), datetime(2020, 1, 1), "1y")})
 
-    assert (out["date_plus_1y"].dt.day() == 1).all()
-    assert (out["date_min"].dt.day() == 1).all()
-    assert out["date_min"].to_list() == [
+    # Add two new columns to the DataFrame using the offset_by() method
+    df = df.with_columns([
+        df["dates"].dt.offset_by("1y").alias("date_plus_1y"),
+        df["dates"].dt.offset_by("-1y2mo").alias("date_min"),
+    ])
+
+    # Assert that the day of the month for all dates in the 'date_plus_1y' column is 1
+    assert (df["date_plus_1y"].dt.day() == 1).all()
+
+    # Assert that the day of the month for all dates in the 'date_min' column is 1
+    assert (df["date_min"].dt.day() == 1).all()
+
+    # Assert that the 'date_min' column contains the expected list of dates
+    expected_dates = [
         datetime(1998, 11, 1, 0, 0),
         datetime(1999, 11, 1, 0, 0),
         datetime(2000, 11, 1, 0, 0),
@@ -282,6 +286,7 @@ def test_date_offset() -> None:
         datetime(2017, 11, 1, 0, 0),
         datetime(2018, 11, 1, 0, 0),
     ]
+    assert df["date_min"].to_list() == expected_dates
 
 
 def test_year_empty_df() -> None:
