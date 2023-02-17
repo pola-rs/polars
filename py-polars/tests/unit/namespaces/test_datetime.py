@@ -279,26 +279,32 @@ def test_weekday() -> None:
 
 
 @pytest.mark.parametrize(
-    ("values", "expected"),
+    ("values", "expected_median"),
     [
-        ([datetime(1969, 12, 31), datetime(1970, 1, 2)], datetime(1970, 1, 1)),
+        ([], None),
         ([None, None], None),
+        ([date(2022, 1, 1)], date(2022, 1, 1)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 1, 2)),
     ],
-    ids=["datetime_dates", "Nones"],
+    ids=["empty", "Nones", "single", "spread_even", "spread_skewed"],
 )
-def test_median(values: list[datetime | None], expected: datetime | None) -> None:
-    result = pl.Series(values).cast(pl.Datetime).dt.median()
-    assert result == expected
+def test_median(values: list[date | None], expected_median: date | None) -> None:
+    result = pl.Series(values).cast(pl.Date).dt.median()
+    assert result == expected_median
 
 
 @pytest.mark.parametrize(
-    ("values", "expected"),
+    ("values", "expected_mean"),
     [
-        ([datetime(1969, 12, 31), datetime(1970, 1, 2)], datetime(1970, 1, 1)),
+        ([], None),
         ([None, None], None),
+        ([date(2022, 1, 1)], date(2022, 1, 1)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 10, 16)),
     ],
-    ids=["datetime_dates", "Nones"],
+    ids=["empty", "Nones", "single", "spread_even", "spread_skewed"],
 )
-def test_mean(values: list[datetime | None], expected: datetime | None) -> None:
-    result = pl.Series(values).cast(pl.Datetime).dt.mean()
-    assert result == expected
+def test_mean(values: list[date | None], expected_mean: date | None) -> None:
+    result = pl.Series(values).cast(pl.Date).dt.mean()
+    assert result == expected_mean
