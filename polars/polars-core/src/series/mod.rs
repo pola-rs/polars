@@ -407,10 +407,10 @@ impl Series {
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
         match self.dtype() {
-            Date => Cow::Owned(self.cast(&DataType::Int32).unwrap()),
-            Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
+            Date => Cow::Owned(self.cast(&Int32).unwrap()),
+            Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => Cow::Owned(self.cast(&DataType::UInt32).unwrap()),
+            Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
             _ => Cow::Borrowed(self),
         }
     }
