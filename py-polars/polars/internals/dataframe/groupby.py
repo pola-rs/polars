@@ -134,6 +134,53 @@ class GroupBy(Generic[DF]):
 
         return group_name, group_data
 
+    def agg(self, aggs: IntoExpr | Iterable[IntoExpr]) -> DF:
+        """
+        Use multiple aggregations on columns.
+
+        This can be combined with complete lazy API and is considered idiomatic polars.
+
+        Parameters
+        ----------
+        aggs
+            Single expression or `Iterable` of expressions.
+            In addition to `pl.Expr`, some objects convertible to expressions
+            are supported (for example, `str` that indicates a column).
+
+        Returns
+        -------
+        Result of groupby split apply operations.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"foo": ["one", "two", "two", "one", "two"], "bar": [5, 3, 2, 4, 1]}
+        ... )
+        >>> df.groupby("foo", maintain_order=True).agg(
+        ...     [
+        ...         pl.sum("bar").suffix("_sum"),
+        ...         pl.col("bar").sort().tail(2).sum().suffix("_tail_sum"),
+        ...     ]
+        ... )
+        shape: (2, 3)
+        ┌─────┬─────────┬──────────────┐
+        │ foo ┆ bar_sum ┆ bar_tail_sum │
+        │ --- ┆ ---     ┆ ---          │
+        │ str ┆ i64     ┆ i64          │
+        ╞═════╪═════════╪══════════════╡
+        │ one ┆ 9       ┆ 9            │
+        │ two ┆ 6       ┆ 5            │
+        └─────┴─────────┴──────────────┘
+
+        """
+        df = (
+            self.df.lazy()
+            .groupby(self.by, *self.more_by, maintain_order=self.maintain_order)
+            .agg(aggs)
+            .collect(no_optimization=True)
+        )
+        return self.df.__class__._from_pydf(df._df)
+
     def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> DF:
         """
         Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
@@ -223,53 +270,6 @@ class GroupBy(Generic[DF]):
         return self.df.__class__._from_pydf(
             self.df._df.groupby_apply(by, f, self.maintain_order)
         )
-
-    def agg(self, aggs: IntoExpr | Iterable[IntoExpr]) -> pli.DataFrame:
-        """
-        Use multiple aggregations on columns.
-
-        This can be combined with complete lazy API and is considered idiomatic polars.
-
-        Parameters
-        ----------
-        aggs
-            Single expression or `Iterable` of expressions.
-            In addition to `pl.Expr`, some objects convertible to expressions
-            are supported (for example, `str` that indicates a column).
-
-        Returns
-        -------
-        Result of groupby split apply operations.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": ["one", "two", "two", "one", "two"], "bar": [5, 3, 2, 4, 1]}
-        ... )
-        >>> df.groupby("foo", maintain_order=True).agg(
-        ...     [
-        ...         pl.sum("bar").suffix("_sum"),
-        ...         pl.col("bar").sort().tail(2).sum().suffix("_tail_sum"),
-        ...     ]
-        ... )
-        shape: (2, 3)
-        ┌─────┬─────────┬──────────────┐
-        │ foo ┆ bar_sum ┆ bar_tail_sum │
-        │ --- ┆ ---     ┆ ---          │
-        │ str ┆ i64     ┆ i64          │
-        ╞═════╪═════════╪══════════════╡
-        │ one ┆ 9       ┆ 9            │
-        │ two ┆ 6       ┆ 5            │
-        └─────┴─────────┴──────────────┘
-
-        """
-        df = (
-            self.df.lazy()
-            .groupby(self.by, *self.more_by, maintain_order=self.maintain_order)
-            .agg(aggs)
-            .collect(no_optimization=True)
-        )
-        return self.df.__class__._from_pydf(df._df)
 
     def head(self, n: int = 5) -> DF:
         """
@@ -379,152 +379,28 @@ class GroupBy(Generic[DF]):
         )
         return self.df.__class__._from_pydf(df._df)
 
-    def first(self) -> pli.DataFrame:
+    def all(self) -> DF:
         """
-        Aggregate the first values in the group.
+        Aggregate the groups into Series.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...     }
-        ... )
-        >>> df.groupby("d", maintain_order=True).first()
-        shape: (3, 4)
-        ┌────────┬─────┬──────┬───────┐
-        │ d      ┆ a   ┆ b    ┆ c     │
-        │ ---    ┆ --- ┆ ---  ┆ ---   │
-        │ str    ┆ i64 ┆ f64  ┆ bool  │
-        ╞════════╪═════╪══════╪═══════╡
-        │ Apple  ┆ 1   ┆ 0.5  ┆ true  │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 4   ┆ 13.0 ┆ false │
-        └────────┴─────┴──────┴───────┘
+        >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+        >>> df.groupby("a", maintain_order=True).all()
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ str ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ one ┆ [1, 3]    │
+        │ two ┆ [2, 4]    │
+        └─────┴───────────┘
 
         """
-        return self.agg(pli.all().first())
+        return self.agg(pli.all())
 
-    def last(self) -> pli.DataFrame:
-        """
-        Aggregate the last values in the group.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...     }
-        ... )
-        >>> df.groupby("d", maintain_order=True).last()
-        shape: (3, 4)
-        ┌────────┬─────┬──────┬───────┐
-        │ d      ┆ a   ┆ b    ┆ c     │
-        │ ---    ┆ --- ┆ ---  ┆ ---   │
-        │ str    ┆ i64 ┆ f64  ┆ bool  │
-        ╞════════╪═════╪══════╪═══════╡
-        │ Apple  ┆ 3   ┆ 10.0 ┆ false │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 5   ┆ 14.0 ┆ true  │
-        └────────┴─────┴──────┴───────┘
-
-        """
-        return self.agg(pli.all().last())
-
-    def sum(self) -> pli.DataFrame:
-        """
-        Reduce the groups to the sum.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...     }
-        ... )
-        >>> df.groupby("d", maintain_order=True).sum()
-        shape: (3, 4)
-        ┌────────┬─────┬──────┬─────┐
-        │ d      ┆ a   ┆ b    ┆ c   │
-        │ ---    ┆ --- ┆ ---  ┆ --- │
-        │ str    ┆ i64 ┆ f64  ┆ u32 │
-        ╞════════╪═════╪══════╪═════╡
-        │ Apple  ┆ 6   ┆ 14.5 ┆ 2   │
-        │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
-        │ Banana ┆ 9   ┆ 27.0 ┆ 1   │
-        └────────┴─────┴──────┴─────┘
-
-        """
-        return self.agg(pli.all().sum())
-
-    def min(self) -> pli.DataFrame:
-        """
-        Reduce the groups to the minimal value.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...     }
-        ... )
-        >>> df.groupby("d", maintain_order=True).min()
-        shape: (3, 4)
-        ┌────────┬─────┬──────┬───────┐
-        │ d      ┆ a   ┆ b    ┆ c     │
-        │ ---    ┆ --- ┆ ---  ┆ ---   │
-        │ str    ┆ i64 ┆ f64  ┆ bool  │
-        ╞════════╪═════╪══════╪═══════╡
-        │ Apple  ┆ 1   ┆ 0.5  ┆ false │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 4   ┆ 13.0 ┆ false │
-        └────────┴─────┴──────┴───────┘
-
-        """
-        return self.agg(pli.all().min())
-
-    def max(self) -> pli.DataFrame:
-        """
-        Reduce the groups to the maximal value.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "c": [True, True, True, False, False, True],
-        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
-        ...     }
-        ... )
-        >>> df.groupby("d", maintain_order=True).max()
-        shape: (3, 4)
-        ┌────────┬─────┬──────┬──────┐
-        │ d      ┆ a   ┆ b    ┆ c    │
-        │ ---    ┆ --- ┆ ---  ┆ ---  │
-        │ str    ┆ i64 ┆ f64  ┆ bool │
-        ╞════════╪═════╪══════╪══════╡
-        │ Apple  ┆ 3   ┆ 10.0 ┆ true │
-        │ Orange ┆ 2   ┆ 0.5  ┆ true │
-        │ Banana ┆ 5   ┆ 14.0 ┆ true │
-        └────────┴─────┴──────┴──────┘
-
-        """
-        return self.agg(pli.all().max())
-
-    def count(self) -> pli.DataFrame:
+    def count(self) -> DF:
         """
         Count the number of values in each group.
 
@@ -553,7 +429,94 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.lazy_functions.count())
 
-    def mean(self) -> pli.DataFrame:
+    def first(self) -> DF:
+        """
+        Aggregate the first values in the group.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).first()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ true  │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+
+        """
+        return self.agg(pli.all().first())
+
+    def last(self) -> DF:
+        """
+        Aggregate the last values in the group.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).last()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ false │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 5   ┆ 14.0 ┆ true  │
+        └────────┴─────┴──────┴───────┘
+
+        """
+        return self.agg(pli.all().last())
+
+    def max(self) -> DF:
+        """
+        Reduce the groups to the maximal value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).max()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬──────┐
+        │ d      ┆ a   ┆ b    ┆ c    │
+        │ ---    ┆ --- ┆ ---  ┆ ---  │
+        │ str    ┆ i64 ┆ f64  ┆ bool │
+        ╞════════╪═════╪══════╪══════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ true │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true │
+        │ Banana ┆ 5   ┆ 14.0 ┆ true │
+        └────────┴─────┴──────┴──────┘
+
+        """
+        return self.agg(pli.all().max())
+
+    def mean(self) -> DF:
         """
         Reduce the groups to the mean values.
 
@@ -567,7 +530,6 @@ class GroupBy(Generic[DF]):
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
-
         >>> df.groupby("d", maintain_order=True).mean()
         shape: (3, 4)
         ┌────────┬─────┬──────────┬──────────┐
@@ -583,7 +545,63 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().mean())
 
-    def n_unique(self) -> pli.DataFrame:
+    def median(self) -> DF:
+        """
+        Return the median per group.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).median()
+        shape: (2, 3)
+        ┌────────┬─────┬──────┐
+        │ d      ┆ a   ┆ b    │
+        │ ---    ┆ --- ┆ ---  │
+        │ str    ┆ f64 ┆ f64  │
+        ╞════════╪═════╪══════╡
+        │ Apple  ┆ 2.0 ┆ 4.0  │
+        │ Banana ┆ 4.0 ┆ 13.0 │
+        └────────┴─────┴──────┘
+
+        """
+        return self.agg(pli.all().median())
+
+    def min(self) -> DF:
+        """
+        Reduce the groups to the minimal value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).min()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬───────┐
+        │ d      ┆ a   ┆ b    ┆ c     │
+        │ ---    ┆ --- ┆ ---  ┆ ---   │
+        │ str    ┆ i64 ┆ f64  ┆ bool  │
+        ╞════════╪═════╪══════╪═══════╡
+        │ Apple  ┆ 1   ┆ 0.5  ┆ false │
+        │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        │ Banana ┆ 4   ┆ 13.0 ┆ false │
+        └────────┴─────┴──────┴───────┘
+
+        """
+        return self.agg(pli.all().min())
+
+    def n_unique(self) -> DF:
         """
         Count the unique values per group.
 
@@ -596,7 +614,6 @@ class GroupBy(Generic[DF]):
         ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
-
         >>> df.groupby("d", maintain_order=True).n_unique()
         shape: (2, 3)
         ┌────────┬─────┬─────┐
@@ -613,7 +630,7 @@ class GroupBy(Generic[DF]):
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
-    ) -> pli.DataFrame:
+    ) -> DF:
         """
         Compute the quantile per group.
 
@@ -646,11 +663,11 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────┘
 
         """
-        return self.agg(pli.all().quantile(quantile, interpolation))
+        return self.agg(pli.all().quantile(quantile, interpolation=interpolation))
 
-    def median(self) -> pli.DataFrame:
+    def sum(self) -> DF:
         """
-        Return the median per group.
+        Reduce the groups to the sum.
 
         Examples
         --------
@@ -658,43 +675,24 @@ class GroupBy(Generic[DF]):
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
         ...         "b": [0.5, 0.5, 4, 10, 13, 14],
-        ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
-        >>> df.groupby("d", maintain_order=True).median()
-        shape: (2, 3)
-        ┌────────┬─────┬──────┐
-        │ d      ┆ a   ┆ b    │
-        │ ---    ┆ --- ┆ ---  │
-        │ str    ┆ f64 ┆ f64  │
-        ╞════════╪═════╪══════╡
-        │ Apple  ┆ 2.0 ┆ 4.0  │
-        │ Banana ┆ 4.0 ┆ 13.0 │
-        └────────┴─────┴──────┘
+        >>> df.groupby("d", maintain_order=True).sum()
+        shape: (3, 4)
+        ┌────────┬─────┬──────┬─────┐
+        │ d      ┆ a   ┆ b    ┆ c   │
+        │ ---    ┆ --- ┆ ---  ┆ --- │
+        │ str    ┆ i64 ┆ f64  ┆ u32 │
+        ╞════════╪═════╪══════╪═════╡
+        │ Apple  ┆ 6   ┆ 14.5 ┆ 2   │
+        │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
+        │ Banana ┆ 9   ┆ 27.0 ┆ 1   │
+        └────────┴─────┴──────┴─────┘
 
         """
-        return self.agg(pli.all().median())
-
-    def all(self) -> pli.DataFrame:
-        """
-        Aggregate the groups into Series.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
-        >>> df.groupby("a", maintain_order=True).all()
-        shape: (2, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ b         │
-        │ --- ┆ ---       │
-        │ str ┆ list[i64] │
-        ╞═════╪═══════════╡
-        │ one ┆ [1, 3]    │
-        │ two ┆ [2, 4]    │
-        └─────┴───────────┘
-
-        """
-        return self.agg(pli.all())
+        return self.agg(pli.all().sum())
 
 
 class RollingGroupBy(Generic[DF]):
@@ -765,8 +763,8 @@ class RollingGroupBy(Generic[DF]):
 
         return group_name, group_data
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
-        return (
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
+        df = (
             self.df.lazy()
             .groupby_rolling(
                 index_column=self.time_column,
@@ -778,6 +776,7 @@ class RollingGroupBy(Generic[DF]):
             .agg(aggs)
             .collect(no_optimization=True)
         )
+        return self.df.__class__._from_pydf(df._df)
 
 
 class DynamicGroupBy(Generic[DF]):
@@ -861,8 +860,8 @@ class DynamicGroupBy(Generic[DF]):
 
         return group_name, group_data
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
-        return (
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
+        df = (
             self.df.lazy()
             .groupby_dynamic(
                 index_column=self.time_column,
@@ -878,3 +877,4 @@ class DynamicGroupBy(Generic[DF]):
             .agg(aggs)
             .collect(no_optimization=True)
         )
+        return self.df.__class__._from_pydf(df._df)
