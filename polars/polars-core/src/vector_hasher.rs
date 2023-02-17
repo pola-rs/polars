@@ -134,16 +134,12 @@ impl FxHash for u64 {
         fx_hash_64_bit!(self, k)
     }
 }
-fn finish_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
-where
-    T: PolarsIntegerType,
-    T::Native: Hash,
-{
+fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Vec<u64>) {
     let null_h = get_null_hash_value(random_state);
     let hashes = buf.as_mut_slice();
 
     let mut offset = 0;
-    ca.downcast_iter().for_each(|arr| {
+    chunks.iter().for_each(|arr| {
         if arr.null_count() > 0 {
             let validity = arr.validity().unwrap();
             let (slice, byte_offset, _) = validity.as_slice();
@@ -185,7 +181,7 @@ where
                 .map(|v| unsafe { v._fx_hash(k) }),
         );
     });
-    finish_vec_hash(ca, random_state, buf)
+    insert_null_hash(&ca.chunks, random_state, buf)
 }
 
 fn integer_vec_hash_combine<T>(ca: &ChunkedArray<T>, random_state: RandomState, hashes: &mut [u64])
@@ -272,16 +268,36 @@ impl VecHash for Utf8Chunked {
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
         let null_h = get_null_hash_value(random_state);
-        self.apply_to_slice(
-            |opt_v, h| {
-                let l = match opt_v {
-                    Some(v) => xxh3_64_with_seed(v.as_bytes(), null_h),
-                    None => null_h,
-                };
-                _boost_hash_combine(l, *h)
-            },
-            hashes,
-        )
+
+        let mut offset = 0;
+        self.downcast_iter().for_each(|arr| {
+            match arr.null_count() {
+                0 => arr
+                    .values_iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(v, h)| {
+                        let l = xxh3_64_with_seed(v.as_bytes(), null_h);
+                        *h = _boost_hash_combine(l, *h)
+                    }),
+                _ => {
+                    let validity = arr.validity().unwrap();
+                    let (slice, byte_offset, _) = validity.as_slice();
+                    (0..validity.len())
+                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                        .zip(&mut hashes[offset..])
+                        .zip(arr.values_iter())
+                        .for_each(|((valid, h), l)| {
+                            let l = if valid {
+                                xxh3_64_with_seed(l.as_bytes(), null_h)
+                            } else {
+                                null_h
+                            };
+                            *h = _boost_hash_combine(l, *h)
+                        });
+                }
+            }
+            offset += arr.len();
+        });
     }
 }
 
@@ -301,16 +317,36 @@ impl VecHash for BinaryChunked {
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
         let null_h = get_null_hash_value(random_state);
-        self.apply_to_slice(
-            |opt_v, h| {
-                let l = match opt_v {
-                    Some(v) => xxh3_64_with_seed(v, null_h),
-                    None => null_h,
-                };
-                _boost_hash_combine(l, *h)
-            },
-            hashes,
-        )
+
+        let mut offset = 0;
+        self.downcast_iter().for_each(|arr| {
+            match arr.null_count() {
+                0 => arr
+                    .values_iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(v, h)| {
+                        let l = xxh3_64_with_seed(v, null_h);
+                        *h = _boost_hash_combine(l, *h)
+                    }),
+                _ => {
+                    let validity = arr.validity().unwrap();
+                    let (slice, byte_offset, _) = validity.as_slice();
+                    (0..validity.len())
+                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                        .zip(&mut hashes[offset..])
+                        .zip(arr.values_iter())
+                        .for_each(|((valid, h), l)| {
+                            let l = if valid {
+                                xxh3_64_with_seed(l, null_h)
+                            } else {
+                                null_h
+                            };
+                            *h = _boost_hash_combine(l, *h)
+                        });
+                }
+            }
+            offset += arr.len();
+        });
     }
 }
 
@@ -318,20 +354,60 @@ impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         buf.clear();
         buf.reserve(self.len());
+        let true_h = random_state.hash_single(true);
+        let false_h = random_state.hash_single(false);
+        let null_h = get_null_hash_value(random_state);
         self.downcast_iter().for_each(|arr| {
-            buf.extend(arr.into_iter().map(|opt_v| random_state.hash_single(opt_v)))
+            if arr.null_count() == 0 {
+                buf.extend(arr.values_iter().map(|v| if v { true_h } else { false_h }))
+            } else {
+                buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+                    Some(true) => true_h,
+                    Some(false) => false_h,
+                    None => null_h,
+                }))
+            }
         });
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        self.apply_to_slice(
-            |opt_v, h| {
-                let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
-                _boost_hash_combine(hasher.finish(), *h)
-            },
-            hashes,
-        )
+        let true_h = random_state.hash_single(true);
+        let false_h = random_state.hash_single(false);
+        let null_h = get_null_hash_value(random_state);
+
+        let mut offset = 0;
+        self.downcast_iter().for_each(|arr| {
+            match arr.null_count() {
+                0 => arr
+                    .values_iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(v, h)| {
+                        let l = if v { true_h } else { false_h };
+                        *h = _boost_hash_combine(l, *h)
+                    }),
+                _ => {
+                    let validity = arr.validity().unwrap();
+                    let (slice, byte_offset, _) = validity.as_slice();
+                    (0..validity.len())
+                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                        .zip(&mut hashes[offset..])
+                        .zip(arr.values())
+                        .for_each(|((valid, h), l)| {
+                            let l = if valid {
+                                if l {
+                                    true_h
+                                } else {
+                                    false_h
+                                }
+                            } else {
+                                null_h
+                            };
+                            *h = _boost_hash_combine(l, *h)
+                        });
+                }
+            }
+            offset += arr.len();
+        });
     }
 }
 
