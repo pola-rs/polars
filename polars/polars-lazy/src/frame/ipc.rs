@@ -80,17 +80,12 @@ impl LazyFileListReader for LazyIpcReader {
         self
     }
 
-    fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
-        let args = &self.args;
-        concat_impl(&lfs, args.rechunk, true, true).map(|mut lf| {
-            if let Some(n_rows) = args.n_rows {
-                lf = lf.slice(0, n_rows as IdxSize)
-            };
-            if let Some(rc) = args.row_count.clone() {
-                lf = lf.with_row_count(&rc.name, Some(rc.offset))
-            };
-            lf
-        })
+    fn n_rows(&self) -> Option<usize> {
+        self.args.n_rows
+    }
+
+    fn row_count(&self) -> Option<&RowCount> {
+        self.args.row_count.as_ref()
     }
 }
 
