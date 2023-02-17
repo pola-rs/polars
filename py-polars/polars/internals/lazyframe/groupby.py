@@ -24,33 +24,78 @@ class LazyGroupBy(Generic[LDF]):
         self.lgb = lgb
         self._lazyframe_class = lazyframe_class
 
-    def agg(self, aggs: IntoExpr | Iterable[IntoExpr]) -> LDF:
+    def agg(self, aggs: IntoExpr | Iterable[IntoExpr], *more_aggs: IntoExpr) -> LDF:
         """
-        Describe the aggregation that need to be done on a group.
+        Compute aggregations for each group of a groupby operation.
 
         Parameters
         ----------
         aggs
-            Single expression or `Iterable` of expressions.
-            In addition to `pl.Expr`, some objects convertible to expressions
-            are supported (for example, `str` that indicates a column).
+            Aggregations to compute for each group of the groupby operation.
+            Accepts expression input. Strings are parsed as column names.
+        *more_aggs
+            Additional aggregations, specified as positional arguments.
 
         Examples
         --------
-        >>> (
-        ...     pl.scan_csv("data.csv")
-        ...     .groupby("groups")
-        ...     .agg(
-        ...         [
-        ...             pl.col("name").n_unique().alias("unique_names"),
-        ...             pl.max("values"),
-        ...         ]
-        ...     )
-        ... )  # doctest: +SKIP
+        Compute the sum of a column for each group.
+
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...         "b": [1, 2, 1, 3, 3],
+        ...         "c": [5, 4, 3, 2, 1],
+        ...     }
+        ... ).lazy()
+        >>> ldf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 2   │
+        │ b   ┆ 5   │
+        │ c   ┆ 3   │
+        └─────┴─────┘
+
+        Compute multiple aggregates at once by passing a list of expressions.
+
+        >>> ldf.groupby("a").agg(
+        ...     [pl.sum("b"), pl.mean("c")]
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ f64 │
+        ╞═════╪═════╪═════╡
+        │ c   ┆ 3   ┆ 1.0 │
+        │ a   ┆ 2   ┆ 4.0 │
+        │ b   ┆ 5   ┆ 3.0 │
+        └─────┴─────┴─────┘
+
+        Or use positional arguments to compute multiple aggregations in the same way.
+
+        >>> ldf.groupby("a").agg(
+        ...     pl.sum("b").suffix("_sum"),
+        ...     (pl.col("c") ** 2).mean().suffix("_mean_squared"),
+        ... ).collect()  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────┬────────────────┐
+        │ a   ┆ b_sum ┆ c_mean_squared │
+        │ --- ┆ ---   ┆ ---            │
+        │ str ┆ i64   ┆ f64            │
+        ╞═════╪═══════╪════════════════╡
+        │ a   ┆ 2     ┆ 17.0           │
+        │ c   ┆ 3     ┆ 1.0            │
+        │ b   ┆ 5     ┆ 10.0           │
+        └─────┴───────┴────────────────┘
 
         """
-        pyexprs = selection_to_pyexpr_list(aggs)
-        return self._lazyframe_class._from_pyldf(self.lgb.agg(pyexprs))
+        exprs = selection_to_pyexpr_list(aggs)
+        exprs.extend(selection_to_pyexpr_list(more_aggs))
+        return self._lazyframe_class._from_pyldf(self.lgb.agg(exprs))
 
     def apply(
         self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: SchemaDict | None
