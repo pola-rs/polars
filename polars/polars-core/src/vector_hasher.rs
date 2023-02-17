@@ -216,10 +216,8 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
-                        *h = _boost_hash_combine(
-                            [null_h, random_state.hash_single(l)][valid as usize],
-                            *h,
-                        )
+                        let l = l._fx_hash(k);
+                        *h = _boost_hash_combine([null_h, l][valid as usize], *h)
                     });
             }
         }
