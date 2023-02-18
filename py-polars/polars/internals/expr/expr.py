@@ -70,7 +70,9 @@ def selection_to_pyexpr_list(
     if isinstance(
         exprs, (str, Expr, pli.Series, pli.WhenThen, pli.WhenThenThen)
     ) or not isinstance(exprs, Iterable):
-        exprs = [exprs]
+        return [
+            expr_to_lit_or_expr(exprs, str_to_lit=False, structify=structify)._pyexpr,
+        ]
 
     return [
         expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
