@@ -4,6 +4,7 @@ from __future__ import annotations
 import functools
 import inspect
 import os
+import re
 import sys
 import warnings
 from collections.abc import MappingView, Reversible, Sized
@@ -370,6 +371,13 @@ def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> st
     return path
 
 
+def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
+    """Simple version parser; split into a tuple of ints for comparison."""
+    if isinstance(version, str):
+        version = version.split(".")
+    return tuple(int(re.sub(r"\D", "", str(v))) for v in version)
+
+
 def threadpool_size() -> int:
     """Get the size of polars' thread pool."""
     return _pool_size()
@@ -377,56 +385,6 @@ def threadpool_size() -> int:
 
 P = ParamSpec("P")
 T = TypeVar("T")
-
-
-def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """
-    Deprecate a function or method argument.
-
-    Decorator for deprecated function and method arguments. Use as follows:
-
-    @deprecated_alias(old_arg='new_arg')
-    def myfunc(new_arg):
-        ...
-    """
-
-    def deco(fn: Callable[P, T]) -> Callable[P, T]:
-        @functools.wraps(fn)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            _rename_kwargs(fn.__name__, kwargs, aliases)
-            return fn(*args, **kwargs)
-
-        return wrapper
-
-    return deco
-
-
-def redirect(from_to: dict[str, str]) -> Callable[[type[T]], type[T]]:
-    """
-    Class decorator allowing deprecation/transition from one method name to another.
-
-    The parameters must be the same (unless they are being renamed, in
-    which case you can use this in conjunction with @deprecated_alias).
-    """
-
-    def _redirecting_getattr_(obj: T, item: Any) -> Any:
-        if isinstance(item, str) and item in from_to:
-            new_item = from_to[item]
-            warnings.warn(
-                f"`{type(obj).__name__}.{item}` has been renamed; this"
-                f" redirect is temporary, please use `.{new_item}` instead",
-                category=DeprecationWarning,
-                stacklevel=2,
-            )
-            item = new_item
-        return obj.__getattribute__(item)
-
-    def _cls_(cls: type[T]) -> type[T]:
-        # note: __getattr__ is only invoked if item isn't found on the class
-        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
-        return cls
-
-    return _cls_
 
 
 def _rename_kwargs(
@@ -453,6 +411,28 @@ def _rename_kwargs(
                 stacklevel=3,
             )
             kwargs[new] = kwargs.pop(alias)
+
+
+def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Deprecate a function or method argument.
+
+    Decorator for deprecated function and method arguments. Use as follows:
+
+    @deprecated_alias(old_arg='new_arg')
+    def myfunc(new_arg):
+        ...
+    """
+
+    def deco(fn: Callable[P, T]) -> Callable[P, T]:
+        @functools.wraps(fn)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            _rename_kwargs(fn.__name__, kwargs, aliases)
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return deco
 
 
 def deprecate_nonkeyword_arguments(
@@ -519,6 +499,34 @@ def deprecate_nonkeyword_arguments(
         return wrapper
 
     return decorate
+
+
+def redirect(from_to: dict[str, str]) -> Callable[[type[T]], type[T]]:
+    """
+    Class decorator allowing deprecation/transition from one method name to another.
+
+    The parameters must be the same (unless they are being renamed, in
+    which case you can use this in conjunction with @deprecated_alias).
+    """
+
+    def _redirecting_getattr_(obj: T, item: Any) -> Any:
+        if isinstance(item, str) and item in from_to:
+            new_item = from_to[item]
+            warnings.warn(
+                f"`{type(obj).__name__}.{item}` has been renamed; this"
+                f" redirect is temporary, please use `.{new_item}` instead",
+                category=DeprecationWarning,
+                stacklevel=2,
+            )
+            item = new_item
+        return obj.__getattribute__(item)
+
+    def _cls_(cls: type[T]) -> type[T]:
+        # note: __getattr__ is only invoked if item isn't found on the class
+        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
+        return cls
+
+    return _cls_
 
 
 def _format_argument_list(allowed_args: list[str]) -> str:

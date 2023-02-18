@@ -84,6 +84,7 @@ from polars.utils import (
     is_int_sequence,
     is_str_sequence,
     normalise_filepath,
+    parse_version,
     range_to_slice,
     redirect,
     scale_bytes,
@@ -103,11 +104,7 @@ else:
 
 if sys.version_info >= (3, 10):
     from typing import Concatenate, ParamSpec, TypeAlias
-
-    from packaging.version import parse as ParseVersion
 else:
-    from distutils.version import LooseVersion as ParseVersion
-
     from typing_extensions import Concatenate, ParamSpec, TypeAlias
 
 if sys.version_info >= (3, 11):
@@ -2025,7 +2022,7 @@ class DataFrame:
 
         """
         if use_pyarrow_extension_array:
-            if ParseVersion(pd.__version__) < ParseVersion("1.5"):
+            if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
                     f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
                 )
