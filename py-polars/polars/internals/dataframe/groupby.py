@@ -7,7 +7,6 @@ from typing import (
     Generic,
     Iterable,
     Iterator,
-    Sequence,
     TypeVar,
 )
 
@@ -134,49 +133,102 @@ class GroupBy(Generic[DF]):
 
         return group_name, group_data
 
-    def agg(self, aggs: IntoExpr | Iterable[IntoExpr]) -> DF:
+    def agg(
+        self,
+        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_aggs: IntoExpr,
+        **named_aggs: IntoExpr,
+    ) -> DF:
         """
-        Use multiple aggregations on columns.
-
-        This can be combined with complete lazy API and is considered idiomatic polars.
+        Compute aggregations for each group of a groupby operation.
 
         Parameters
         ----------
         aggs
-            Single expression or `Iterable` of expressions.
-            In addition to `pl.Expr`, some objects convertible to expressions
-            are supported (for example, `str` that indicates a column).
-
-        Returns
-        -------
-        Result of groupby split apply operations.
+            Aggregations to compute for each group of the groupby operation.
+            Accepts expression input. Strings are parsed as column names.
+        *more_aggs
+            Additional aggregations, specified as positional arguments.
+        **named_aggs
+            Additional aggregations, specified as keyword arguments. The resulting
+            columns will be renamed to the keyword used.
 
         Examples
         --------
+        Compute the sum of a column for each group.
+
         >>> df = pl.DataFrame(
-        ...     {"foo": ["one", "two", "two", "one", "two"], "bar": [5, 3, 2, 4, 1]}
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...         "b": [1, 2, 1, 3, 3],
+        ...         "c": [5, 4, 3, 2, 1],
+        ...     }
         ... )
-        >>> df.groupby("foo", maintain_order=True).agg(
-        ...     [
-        ...         pl.sum("bar").suffix("_sum"),
-        ...         pl.col("bar").sort().tail(2).sum().suffix("_tail_sum"),
-        ...     ]
-        ... )
-        shape: (2, 3)
-        ┌─────┬─────────┬──────────────┐
-        │ foo ┆ bar_sum ┆ bar_tail_sum │
-        │ --- ┆ ---     ┆ ---          │
-        │ str ┆ i64     ┆ i64          │
-        ╞═════╪═════════╪══════════════╡
-        │ one ┆ 9       ┆ 9            │
-        │ two ┆ 6       ┆ 5            │
-        └─────┴─────────┴──────────────┘
+        >>> df.groupby("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 2   │
+        │ b   ┆ 5   │
+        │ c   ┆ 3   │
+        └─────┴─────┘
+
+        Compute multiple aggregates at once by passing a list of expressions.
+
+        >>> df.groupby("a").agg([pl.sum("b"), pl.mean("c")])  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ f64 │
+        ╞═════╪═════╪═════╡
+        │ c   ┆ 3   ┆ 1.0 │
+        │ a   ┆ 2   ┆ 4.0 │
+        │ b   ┆ 5   ┆ 3.0 │
+        └─────┴─────┴─────┘
+
+        Or use positional arguments to compute multiple aggregations in the same way.
+
+        >>> df.groupby("a").agg(
+        ...     pl.sum("b").suffix("_sum"),
+        ...     (pl.col("c") ** 2).mean().suffix("_mean_squared"),
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────┬────────────────┐
+        │ a   ┆ b_sum ┆ c_mean_squared │
+        │ --- ┆ ---   ┆ ---            │
+        │ str ┆ i64   ┆ f64            │
+        ╞═════╪═══════╪════════════════╡
+        │ a   ┆ 2     ┆ 17.0           │
+        │ c   ┆ 3     ┆ 1.0            │
+        │ b   ┆ 5     ┆ 10.0           │
+        └─────┴───────┴────────────────┘
+
+        Use keyword arguments to easily name your expression inputs.
+
+        >>> df.groupby("a").agg(
+        ...     b_sum=pl.sum("b"),
+        ...     c_mean_squared=(pl.col("c") ** 2).mean(),
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (3, 3)
+        ┌─────┬───────┬────────────────┐
+        │ a   ┆ b_sum ┆ c_mean_squared │
+        │ --- ┆ ---   ┆ ---            │
+        │ str ┆ i64   ┆ f64            │
+        ╞═════╪═══════╪════════════════╡
+        │ a   ┆ 2     ┆ 17.0           │
+        │ c   ┆ 3     ┆ 1.0            │
+        │ b   ┆ 5     ┆ 10.0           │
+        └─────┴───────┴────────────────┘
 
         """
         df = (
             self.df.lazy()
             .groupby(self.by, *self.more_by, maintain_order=self.maintain_order)
-            .agg(aggs)
+            .agg(aggs, *more_aggs, **named_aggs)
             .collect(no_optimization=True)
         )
         return self.df.__class__._from_pydf(df._df)
@@ -763,7 +815,12 @@ class RollingGroupBy(Generic[DF]):
 
         return group_name, group_data
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
+    def agg(
+        self,
+        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_aggs: IntoExpr,
+        **named_aggs: IntoExpr,
+    ) -> DF:
         df = (
             self.df.lazy()
             .groupby_rolling(
@@ -773,7 +830,7 @@ class RollingGroupBy(Generic[DF]):
                 closed=self.closed,
                 by=self.by,
             )
-            .agg(aggs)
+            .agg(aggs, *more_aggs, **named_aggs)
             .collect(no_optimization=True)
         )
         return self.df.__class__._from_pydf(df._df)
@@ -860,7 +917,12 @@ class DynamicGroupBy(Generic[DF]):
 
         return group_name, group_data
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
+    def agg(
+        self,
+        aggs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_aggs: IntoExpr,
+        **named_aggs: IntoExpr,
+    ) -> DF:
         df = (
             self.df.lazy()
             .groupby_dynamic(
@@ -874,7 +936,7 @@ class DynamicGroupBy(Generic[DF]):
                 by=self.by,
                 start_by=self.start_by,
             )
-            .agg(aggs)
+            .agg(aggs, *more_aggs, **named_aggs)
             .collect(no_optimization=True)
         )
         return self.df.__class__._from_pydf(df._df)
