@@ -122,7 +122,28 @@ where
     }
 
     fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.cast_impl(data_type, false)
+        match data_type {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(Some(rev_map)) => {
+                if self.dtype() == &DataType::UInt32 {
+                    // safety:
+                    // we are guarded by the type system.
+                    let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
+                    Ok(unsafe {
+                        CategoricalChunked::from_cats_and_rev_map_unchecked(
+                            ca.clone(),
+                            rev_map.clone(),
+                        )
+                    }
+                    .into_series())
+                } else {
+                    Err(PolarsError::ComputeError(
+                        "Cannot cast numeric types to 'Categorical'".into(),
+                    ))
+                }
+            }
+            _ => self.cast_impl(data_type, false),
+        }
     }
 }
 
