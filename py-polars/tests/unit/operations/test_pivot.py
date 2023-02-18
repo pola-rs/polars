@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -196,3 +197,29 @@ def test_pivot_subclassed_df() -> None:
     df = SubClassedDataFrame({"a": [1, 2], "b": [3, 4]})
     result = df.pivot(values="b", index="a", columns="a", aggregate_fn="first")
     assert isinstance(result, SubClassedDataFrame)
+
+
+def test_pivot_temporal_logical_types() -> None:
+    date_lst = [datetime(_, 1, 1) for _ in range(1960, 1980)]
+
+    df = pl.DataFrame(
+        {
+            "idx": date_lst[-3:] + date_lst[0:5],
+            "foo": ["a"] * 3 + ["b"] * 5,
+            "value": [0] * 8,
+        }
+    )
+    assert df.pivot(index="idx", columns="foo", values="value").to_dict(False) == {
+        "idx": [
+            datetime(1977, 1, 1, 0, 0),
+            datetime(1978, 1, 1, 0, 0),
+            datetime(1979, 1, 1, 0, 0),
+            datetime(1960, 1, 1, 0, 0),
+            datetime(1961, 1, 1, 0, 0),
+            datetime(1962, 1, 1, 0, 0),
+            datetime(1963, 1, 1, 0, 0),
+            datetime(1964, 1, 1, 0, 0),
+        ],
+        "a": [0, 0, 0, None, None, None, None, None],
+        "b": [None, None, None, 0, 0, 0, 0, 0],
+    }

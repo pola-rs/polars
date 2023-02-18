@@ -97,6 +97,7 @@ except ImportError:
 if TYPE_CHECKING:
     from polars.internals.series._numpy import SeriesView
     from polars.internals.type_aliases import (
+        ClosedInterval,
         ComparisonOperator,
         FillNullStrategy,
         InterpolationMethod,
@@ -1921,16 +1922,17 @@ class Series:
 
         """
 
-    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Series:
+    @deprecate_nonkeyword_arguments()
+    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Self:
         """
         Sort this Series.
 
         Parameters
         ----------
         reverse
-            Reverse sort.
+            Sort in descending order.
         in_place
-            Sort in place.
+            Sort in-place.
 
         Examples
         --------
@@ -1959,7 +1961,7 @@ class Series:
             self._s = self._s.sort(reverse)
             return self
         else:
-            return wrap_s(self._s.sort(reverse))
+            return self._from_pyseries(self._s.sort(reverse))
 
     def top_k(self, k: int = 5, reverse: bool = False) -> Series:
         r"""
@@ -2667,6 +2669,77 @@ class Series:
         ]
 
         """
+
+    def is_between(
+        self,
+        start: pli.Expr | datetime | date | time | int | float | str,
+        end: pli.Expr | datetime | date | time | int | float | str,
+        closed: ClosedInterval = "both",
+    ) -> Series:
+        """
+        Get a boolean mask of the values that fall between the given start/end values.
+
+        Parameters
+        ----------
+        start
+            Lower bound value (can be an expression or literal).
+        end
+            Upper bound value (can be an expression or literal).
+        closed : {'both', 'left', 'right', 'none'}
+            Define which sides of the interval are closed (inclusive).
+
+        Examples
+        --------
+        >>> s = pl.Series("num", [1, 2, 3, 4, 5])
+        >>> s.is_between(2, 4)
+        shape: (5,)
+        Series: 'num' [bool]
+        [
+            false
+            true
+            true
+            true
+            false
+        ]
+
+        Use the ``closed`` argument to include or exclude the values at the bounds:
+
+        >>> s.is_between(2, 4, closed="left")
+        shape: (5,)
+        Series: 'num' [bool]
+        [
+            false
+            true
+            true
+            false
+            false
+        ]
+
+        You can also use strings as well as numeric/temporal values:
+
+        >>> s = pl.Series("s", ["a", "b", "c", "d", "e"])
+        >>> s.is_between("b", "d", closed="both")
+        shape: (5,)
+        Series: 's' [bool]
+        [
+            false
+            true
+            true
+            true
+            false
+        ]
+
+        """
+        if isinstance(start, str):
+            start = pli.lit(start)
+        if isinstance(end, str):
+            end = pli.lit(end)
+
+        return (
+            self.to_frame()
+            .select(pli.col(self.name).is_between(start, end, closed))
+            .to_series()
+        )
 
     def is_numeric(self) -> bool:
         """
@@ -4708,6 +4781,57 @@ class Series:
 
         """
 
+    def map_dict(
+        self,
+        remapping: dict[Any, Any],
+        *,
+        default: Any = None,
+    ) -> Self:
+        """
+        Replace values in the Series using a remapping dictionary.
+
+        Parameters
+        ----------
+        remapping
+            Dictionary containing the before/after values to map.
+        default
+            Value to use when the remapping dict does not contain the lookup value.
+
+        Examples
+        --------
+        >>> s = pl.Series("iso3166", ["TUR", "???", "JPN", "NLD"])
+        >>> country_lookup = {
+        ...     "JPN": "Japan",
+        ...     "TUR": "Türkiye",
+        ...     "NLD": "Netherlands",
+        ... }
+
+        Remap, setting a default for unrecognised values...
+
+        >>> s.map_dict(country_lookup, default="Unspecified").rename("country_name")
+        shape: (4,)
+        Series: 'country_name' [str]
+        [
+            "Türkiye"
+            "Unspecified"
+            "Japan"
+            "Netherlands"
+        ]
+
+        ...or keep the original value:
+
+        >>> s.map_dict(country_lookup, default=s).rename("country_name")
+        shape: (4,)
+        Series: 'country_name' [str]
+        [
+            "Türkiye"
+            "???"
+            "Japan"
+            "Netherlands"
+        ]
+
+        """
+
     def reshape(self, dims: tuple[int, ...]) -> Series:
         """
         Reshape this Series to a flat Series or a Series of Lists.
@@ -5065,6 +5189,11 @@ class Series:
         return ListNameSpace(self)
 
     @property
+    def bin(self) -> BinaryNameSpace:
+        """Create an object namespace of all binary related methods."""
+        return BinaryNameSpace(self)
+
+    @property
     def cat(self) -> CatNameSpace:
         """Create an object namespace of all categorical related methods."""
         return CatNameSpace(self)
@@ -5078,11 +5207,6 @@ class Series:
     def str(self) -> StringNameSpace:
         """Create an object namespace of all string related methods."""
         return StringNameSpace(self)
-
-    @property
-    def bin(self) -> BinaryNameSpace:
-        """Create an object namespace of all binary related methods."""
-        return BinaryNameSpace(self)
 
     @property
     def struct(self) -> StructNameSpace:

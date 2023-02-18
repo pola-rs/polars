@@ -111,7 +111,11 @@ pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
         }
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_struct(&s),
-        dt => panic!("dtype {dt} not supported in 'is_first' operation"),
+        dt => {
+            return Err(PolarsError::ComputeError(
+                format!("Dtype {dt} not supported in 'is_first' operation.").into(),
+            ))
+        }
     };
     Ok(out)
 }

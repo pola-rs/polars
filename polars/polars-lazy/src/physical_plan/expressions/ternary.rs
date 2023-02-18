@@ -82,7 +82,7 @@ fn finish_as_iters<'a>(
         out = out.explode()?
     }
 
-    ac_truthy.with_series(out, true);
+    ac_truthy.with_series(out, true, None)?;
     Ok(ac_truthy)
 }
 
@@ -167,7 +167,7 @@ impl PhysicalExpr for TernaryExpr {
                 expand_lengths(&mut truthy, &mut falsy, &mut mask);
                 let mut out = truthy.zip_with(&mask, &falsy).unwrap();
                 out.rename(truthy.name());
-                ac_truthy.with_series(out, true);
+                ac_truthy.with_series(out, true, Some(&self.expr))?;
                 Ok(ac_truthy)
             }
 
@@ -208,7 +208,7 @@ impl PhysicalExpr for TernaryExpr {
                         })
                         .collect_trusted();
                     out.rename(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true);
+                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 } else if ac_truthy.is_literal()
                     && self.truthy.as_expression().map(has_null) == Some(true)
@@ -226,7 +226,7 @@ impl PhysicalExpr for TernaryExpr {
                         })
                         .collect_trusted();
                     out.rename(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true);
+                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 }
                 // then:
@@ -248,7 +248,7 @@ impl PhysicalExpr for TernaryExpr {
                         })
                         .collect_trusted();
                     out.rename(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true);
+                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 } else {
                     let literal = ac_falsy.series();
@@ -265,7 +265,7 @@ impl PhysicalExpr for TernaryExpr {
                         })
                         .collect_trusted();
                     out.rename(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true);
+                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 }
             }
@@ -313,7 +313,7 @@ impl PhysicalExpr for TernaryExpr {
                     ac_truthy.with_update_groups(UpdateGroups::No);
                 }
 
-                ac_truthy.with_series(out, false);
+                ac_truthy.with_series(out, false, None)?;
 
                 Ok(ac_truthy)
             }

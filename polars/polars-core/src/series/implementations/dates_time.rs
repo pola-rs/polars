@@ -387,14 +387,6 @@ macro_rules! impl_dyn_series {
                 self.0.is_not_null()
             }
 
-            fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-                self.0.is_unique()
-            }
-
-            fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-                self.0.is_duplicated()
-            }
-
             fn reverse(&self) -> Series {
                 self.0.reverse().$into_logical().into_series()
             }

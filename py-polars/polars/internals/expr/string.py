@@ -7,9 +7,11 @@ from polars.datatypes import (
     DataType,
     Date,
     Datetime,
+    PolarsDataType,
     PolarsTemporalType,
     Time,
     is_polars_dtype,
+    py_type_to_dtype,
 )
 
 if TYPE_CHECKING:
@@ -45,9 +47,6 @@ class ExprStringNameSpace:
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
-            Note that the ``Z`` suffix for "Zulu time" in ISO8601 formats is not (yet!)
-            fully supported: you should first try ``"%+"`` and if that fails, insert a
-            ``Z`` in your ``fmt`` string and then use ``dt.convert_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -70,6 +69,17 @@ class ExprStringNameSpace:
 
         Examples
         --------
+        Dealing with a consistent format:
+
+        >>> ts = ["2020-01-01 01:00Z", "2020-01-01 02:00Z"]
+        >>> pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        shape: (2,)
+        Series: '' [datetime[μs, +00:00]]
+        [
+                2020-01-01 01:00:00 +00:00
+                2020-01-01 02:00:00 +00:00
+        ]
+
         Dealing with different formats.
 
         >>> s = pl.Series(
@@ -642,6 +652,46 @@ class ExprStringNameSpace:
         """
         sub = pli.expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_starts_with(sub))
+
+    def json_extract(self, dtype: PolarsDataType | None = None) -> pli.Expr:
+        """
+        Parse string values as JSON.
+
+        Throw errors if encounter invalid JSON strings.
+
+        Parameters
+        ----------
+        dtype
+            The dtype to cast the extracted value to. If None, the dtype will be
+            inferred from the JSON value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"json": ['{"a":1, "b": true}', None, '{"a":2, "b": false}']}
+        ... )
+        >>> dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
+        >>> df.select(pl.col("json").str.json_extract(dtype))
+        shape: (3, 1)
+        ┌─────────────┐
+        │ json        │
+        │ ---         │
+        │ struct[2]   │
+        ╞═════════════╡
+        │ {1,true}    │
+        │ {null,null} │
+        │ {2,false}   │
+        └─────────────┘
+
+        See Also
+        --------
+        json_path_match : Extract the first match of json string with provided JSONPath
+            expression.
+
+        """
+        if dtype is not None:
+            dtype = py_type_to_dtype(dtype)
+        return pli.wrap_expr(self._pyexpr.str_json_extract(dtype))
 
     def json_path_match(self, json_path: str) -> pli.Expr:
         """

@@ -300,5 +300,5 @@ def test_median(values: list[datetime | None], expected: datetime | None) -> Non
     ids=["datetime_dates", "Nones"],
 )
 def test_mean(values: list[datetime | None], expected: datetime | None) -> None:
-    result = pl.Series(values).cast(pl.Datetime).dt.median()
+    result = pl.Series(values).cast(pl.Datetime).dt.mean()
     assert result == expected

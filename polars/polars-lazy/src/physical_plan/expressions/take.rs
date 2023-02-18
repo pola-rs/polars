@@ -114,7 +114,7 @@ impl PhysicalExpr for TakeExpr {
                             }
                         };
                     let taken = ac.flat_naive().take(&idx)?;
-                    ac.with_series(taken, true);
+                    ac.with_series(taken, true, Some(&self.expr))?;
                     return Ok(ac);
                 }
                 AggState::AggregatedList(s) => s.list().unwrap().clone(),
@@ -157,7 +157,7 @@ impl PhysicalExpr for TakeExpr {
                                     }
                                 };
                                 let taken = ac.flat_naive().take(&idx.into_inner())?;
-                                ac.with_series(taken, true);
+                                ac.with_series(taken, true, Some(&self.expr))?;
                                 ac.with_update_groups(UpdateGroups::WithGroupsLen);
                                 Ok(ac)
                             }
@@ -169,7 +169,7 @@ impl PhysicalExpr for TakeExpr {
                             .unwrap()
                             .try_apply_amortized(|s| s.as_ref().take(idx))?;
 
-                        ac.with_series(out.into_series(), true);
+                        ac.with_series(out.into_series(), true, Some(&self.expr))?;
                         ac.with_update_groups(UpdateGroups::WithGroupsLen);
                         Ok(ac)
                     };
@@ -198,7 +198,7 @@ impl PhysicalExpr for TakeExpr {
 
         taken.rename(ac.series().name());
 
-        ac.with_series(taken.into_series(), true);
+        ac.with_series(taken.into_series(), true, Some(&self.expr))?;
         ac.with_update_groups(UpdateGroups::WithGroupsLen);
         Ok(ac)
     }

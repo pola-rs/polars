@@ -64,3 +64,8 @@ def test_empty_sort() -> None:
     )
     df_filtered = df.filter(pl.col("blob").apply(lambda blob: blob["name"] == "baz"))
     df_filtered.sort(pl.col("blob").apply(lambda blob: blob["sort_key"]))
+
+
+def test_object_to_dicts() -> None:
+    df = pl.DataFrame({"d": [{"a": 1, "b": 2, "c": 3}]}, schema={"d": pl.Object})
+    assert df.to_dicts() == [{"d": {"a": 1, "b": 2, "c": 3}}]

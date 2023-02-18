@@ -1452,7 +1452,7 @@ def test_unique_unit_rows() -> None:
 
 
 def test_panic() -> None:
-    # may contain some tests that yielded a panic in polars or arrow
+    # may contain some tests that yielded a panic in polars or pl_arrow
     # https://github.com/pola-rs/polars/issues/1110
     a = pl.DataFrame(
         {
@@ -1694,7 +1694,7 @@ def test_groupby_order_dispatch() -> None:
     )
     assert_frame_equal(result, expected)
 
-    result = df.groupby("x", maintain_order=True).agg_list()
+    result = df.groupby("x", maintain_order=True).all()
     expected = pl.DataFrame({"x": ["b", "a"], "y": [[0, 2], [1]]})
     assert_frame_equal(result, expected)
 

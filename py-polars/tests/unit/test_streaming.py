@@ -243,3 +243,35 @@ def test_ooc_sort(monkeypatch: Any) -> None:
         ).to_series()
 
         assert_series_equal(out, s.sort(reverse=reverse))
+
+
+def test_streaming_literal_expansion() -> None:
+    df = pl.DataFrame(
+        {
+            "y": ["a", "b"],
+            "z": [1, 2],
+        }
+    )
+
+    q = df.lazy().select(
+        x=pl.lit("constant"),
+        y=pl.col("y"),
+        z=pl.col("z"),
+    )
+
+    assert q.collect(streaming=True).to_dict(False) == {
+        "x": ["constant", "constant"],
+        "y": ["a", "b"],
+        "z": [1, 2],
+    }
+    assert q.groupby(["x", "y"]).agg(pl.mean("z")).sort("y").collect(
+        streaming=True
+    ).to_dict(False) == {
+        "x": ["constant", "constant"],
+        "y": ["a", "b"],
+        "z": [1.0, 2.0],
+    }
+    assert q.groupby(["x"]).agg(pl.mean("z")).collect().to_dict(False) == {
+        "x": ["constant"],
+        "z": [1.5],
+    }

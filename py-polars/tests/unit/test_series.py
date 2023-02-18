@@ -1653,6 +1653,18 @@ def test_arg_min_and_arg_max() -> None:
     assert s.arg_min() == 0
     assert s.arg_max() == 1
 
+    # test ascending and descending series
+    s = pl.Series("a", [1, 2, 3, 4, 5])
+    s.sort(in_place=True)  # set ascending sorted flag
+    assert s.flags == {"SORTED_ASC": True, "SORTED_DESC": False}
+    assert s.arg_min() == 0
+    assert s.arg_max() == 4
+    s = pl.Series("a", [5, 4, 3, 2, 1])
+    s.sort(reverse=True, in_place=True)  # set descing sorted flag
+    assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
+    assert s.arg_min() == 4
+    assert s.arg_max() == 0
+
 
 def test_is_null_is_not_null() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, None])
@@ -2339,3 +2351,58 @@ def test_min_max_agg_on_str() -> None:
     strings = ["b", "a", "x"]
     s = pl.Series(strings)
     assert (s.min(), s.max()) == ("a", "x")
+
+
+def test_is_between() -> None:
+    s = pl.Series("num", [1, 2, None, 4, 5])
+    assert s.is_between(2, 4).to_list() == [False, True, None, True, False]
+
+    s = pl.Series("num", [1, 2, None, 4, 5])
+    assert s.is_between(2, 4, closed="left").to_list() == [
+        False,
+        True,
+        None,
+        False,
+        False,
+    ]
+
+    s = pl.Series("num", [1, 2, None, 4, 5])
+    assert s.is_between(2, 4, closed="right").to_list() == [
+        False,
+        False,
+        None,
+        True,
+        False,
+    ]
+
+    s = pl.Series("num", [1, 2, None, 4, 5])
+    assert s.is_between(pl.lit(2) / 2, pl.lit(4) * 2, closed="both").to_list() == [
+        True,
+        True,
+        None,
+        True,
+        True,
+    ]
+
+    s = pl.Series("s", ["a", "b", "c", "d", "e"])
+    assert s.is_between("b", "d").to_list() == [
+        False,
+        True,
+        True,
+        True,
+        False,
+    ]
+
+
+def test_map_dict() -> None:
+    s = pl.Series("s", [-1, 2, None, 4, -5])
+    remap = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
+
+    assert_series_equal(
+        s.abs().map_dict(remap, default="?"),
+        pl.Series("s", ["one", "two", "?", "four", "five"]),
+    )
+    assert_series_equal(
+        s.map_dict(remap, default=s.cast(pl.Utf8)),
+        pl.Series("s", ["-1", "two", None, "four", "-5"]),
+    )

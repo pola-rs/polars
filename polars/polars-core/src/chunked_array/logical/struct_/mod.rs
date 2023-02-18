@@ -198,6 +198,9 @@ impl StructChunked {
         let fields = self.fields.iter().map(func).collect::<Vec<_>>();
         Self::new_unchecked(self.field.name(), &fields)
     }
+    pub fn unnest(self) -> DataFrame {
+        self.into()
+    }
 }
 
 impl LogicalType for StructChunked {

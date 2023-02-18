@@ -136,7 +136,7 @@ impl PhysicalExpr for SortByExpr {
                 .collect();
             ca.rename(s.name());
             let s = ca.into_series();
-            ac_in.with_series(s, true);
+            ac_in.with_series(s, true, Some(&self.expr))?;
             Ok(ac_in)
         } else {
             let reverse = prepare_reverse(&self.reverse, self.by.len());
@@ -259,7 +259,7 @@ impl PhysicalExpr for SortByExpr {
             // we must ensure that we are as well.
             if ordered_by_group_operation {
                 let s = ac_in.aggregated();
-                ac_in.with_series(s.explode().unwrap(), false);
+                ac_in.with_series(s.explode().unwrap(), false, None)?;
             }
 
             ac_in.with_groups(groups);

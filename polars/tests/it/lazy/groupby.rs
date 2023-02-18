@@ -124,7 +124,7 @@ fn test_groupby_agg_list_with_not_aggregated() -> PolarsResult<()> {
 #[test]
 #[cfg(all(feature = "dtype-duration", feature = "dtype-struct"))]
 fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
-    let guard = SINGLE_LOCK.lock();
+    let _guard = SINGLE_LOCK.lock();
     let df = df![
         "a" => [1, 1, 2],
         "duration" => [1000, 2000, 3000]

@@ -447,3 +447,12 @@ def test_string_numeric_arithmetic_err() -> None:
         pl.ComputeError, match=r"Arithmetic on string and numeric not allowed"
     ):
         df.select(pl.col("s") + 1)
+
+
+def test_file_path_truncate_err() -> None:
+    content = "lskdfj".join(str(i) for i in range(25))
+    with pytest.raises(
+        FileNotFoundError,
+        match=r"\.\.\.42jfdksl32jfdksl22jfdksl12jfdksl02jfdksl91jfdksl81jfdksl71jfdksl61jfdksl51jfdksl41jfdksl",
+    ):
+        pl.read_csv(content)

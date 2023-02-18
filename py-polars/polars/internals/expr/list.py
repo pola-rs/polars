@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
+from polars.utils import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
@@ -123,9 +124,15 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_mean())
 
+    @deprecate_nonkeyword_arguments()
     def sort(self, reverse: bool = False) -> pli.Expr:
         """
-        Sort the arrays in the list.
+        Sort the arrays in this column.
+
+        Parameters
+        ----------
+        reverse
+            Sort in descending order.
 
         Examples
         --------
@@ -143,6 +150,16 @@ class ExprListNameSpace:
         ╞═══════════╡
         │ [1, 2, 3] │
         │ [1, 2, 9] │
+        └───────────┘
+        >>> df.select(pl.col("a").arr.sort(reverse=True))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [3, 2, 1] │
+        │ [9, 2, 1] │
         └───────────┘
 
         """

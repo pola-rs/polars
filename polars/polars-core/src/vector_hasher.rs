@@ -68,16 +68,78 @@ macro_rules! fx_hash_64_bit {
 }
 const FXHASH_K: u64 = 0x517cc1b727220a95;
 
-fn finish_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
-where
-    T: PolarsIntegerType,
-    T::Native: Hash,
-{
+/// Ensure that the same hash is used as with `VecHash`.
+pub trait FxHash {
+    fn get_k(random_state: RandomState) -> u64 {
+        random_state.hash_one(FXHASH_K)
+    }
+    fn _fx_hash(self, k: u64) -> u64;
+}
+impl FxHash for i8 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        unsafe { fx_hash_8_bit!(self, k) }
+    }
+}
+impl FxHash for u8 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_8_bit!(self, k)
+        }
+    }
+}
+impl FxHash for i16 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        unsafe { fx_hash_16_bit!(self, k) }
+    }
+}
+impl FxHash for u16 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_16_bit!(self, k)
+        }
+    }
+}
+
+impl FxHash for i32 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        unsafe { fx_hash_32_bit!(self, k) }
+    }
+}
+impl FxHash for u32 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        #[allow(clippy::useless_transmute)]
+        unsafe {
+            fx_hash_32_bit!(self, k)
+        }
+    }
+}
+
+impl FxHash for i64 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        fx_hash_64_bit!(self, k)
+    }
+}
+impl FxHash for u64 {
+    #[inline]
+    fn _fx_hash(self, k: u64) -> u64 {
+        fx_hash_64_bit!(self, k)
+    }
+}
+fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Vec<u64>) {
     let null_h = get_null_hash_value(random_state);
     let hashes = buf.as_mut_slice();
 
     let mut offset = 0;
-    ca.downcast_iter().for_each(|arr| {
+    chunks.iter().for_each(|arr| {
         if arr.null_count() > 0 {
             let validity = arr.validity().unwrap();
             let (slice, byte_offset, _) = validity.as_slice();
@@ -92,12 +154,43 @@ where
     });
 }
 
+fn integer_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
+where
+    T: PolarsIntegerType,
+    T::Native: Hash + FxHash,
+{
+    // Note that we don't use the no null branch! This can break in unexpected ways.
+    // for instance with threading we split an array in n_threads, this may lead to
+    // splits that have no nulls and splits that have nulls. Then one array is hashed with
+    // Option<T> and the other array with T.
+    // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
+    // the only deterministic seed.
+    buf.clear();
+    buf.reserve(ca.len());
+
+    let k = random_state.hash_one(FXHASH_K);
+
+    #[allow(unused_unsafe)]
+    #[allow(clippy::useless_transmute)]
+    ca.downcast_iter().for_each(|arr| {
+        buf.extend(
+            arr.values()
+                .as_slice()
+                .iter()
+                .copied()
+                .map(|v| unsafe { v._fx_hash(k) }),
+        );
+    });
+    insert_null_hash(&ca.chunks, random_state, buf)
+}
+
 fn integer_vec_hash_combine<T>(ca: &ChunkedArray<T>, random_state: RandomState, hashes: &mut [u64])
 where
     T: PolarsIntegerType,
-    T::Native: Hash,
+    T::Native: Hash + FxHash,
 {
     let null_h = get_null_hash_value(random_state.clone());
+    let k = random_state.hash_one(FXHASH_K);
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
@@ -108,7 +201,7 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    let l = random_state.hash_single(v);
+                    let l = v._fx_hash(k);
                     *h = _boost_hash_combine(l, *h)
                 }),
             _ => {
@@ -119,10 +212,8 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
-                        *h = _boost_hash_combine(
-                            [null_h, random_state.hash_single(l)][valid as usize],
-                            *h,
-                        )
+                        let l = l._fx_hash(k);
+                        *h = _boost_hash_combine([null_h, l][valid as usize], *h)
                     });
             }
         }
@@ -134,29 +225,7 @@ macro_rules! vec_hash_int {
     ($ca:ident, $fx_hash:ident) => {
         impl VecHash for $ca {
             fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
-                // Note that we don't use the no null branch! This can break in unexpected ways.
-                // for instance with threading we split an array in n_threads, this may lead to
-                // splits that have no nulls and splits that have nulls. Then one array is hashed with
-                // Option<T> and the other array with T.
-                // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
-                // the only deterministic seed.
-                buf.clear();
-                buf.reserve(self.len());
-
-                let k = random_state.hash_one(FXHASH_K);
-
-                #[allow(unused_unsafe)]
-                #[allow(clippy::useless_transmute)]
-                self.downcast_iter().for_each(|arr| {
-                    buf.extend(
-                        arr.values()
-                            .as_slice()
-                            .iter()
-                            .copied()
-                            .map(|v| unsafe { $fx_hash!(v, k) }),
-                    );
-                });
-                finish_vec_hash(self, random_state, buf)
+                integer_vec_hash(self, random_state, buf)
             }
 
             fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
@@ -174,72 +243,6 @@ vec_hash_int!(UInt64Chunked, fx_hash_64_bit);
 vec_hash_int!(UInt32Chunked, fx_hash_32_bit);
 vec_hash_int!(UInt16Chunked, fx_hash_16_bit);
 vec_hash_int!(UInt8Chunked, fx_hash_8_bit);
-
-/// Ensure that the same hash is used as with `VecHash`.
-pub trait VecHashSingle {
-    fn get_k(random_state: RandomState) -> u64 {
-        random_state.hash_one(FXHASH_K)
-    }
-    fn _vec_hash_single(self, k: u64) -> u64;
-}
-impl VecHashSingle for i8 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        unsafe { fx_hash_8_bit!(self, k) }
-    }
-}
-impl VecHashSingle for u8 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_8_bit!(self, k)
-        }
-    }
-}
-impl VecHashSingle for i16 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        unsafe { fx_hash_16_bit!(self, k) }
-    }
-}
-impl VecHashSingle for u16 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_16_bit!(self, k)
-        }
-    }
-}
-
-impl VecHashSingle for i32 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        unsafe { fx_hash_32_bit!(self, k) }
-    }
-}
-impl VecHashSingle for u32 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_32_bit!(self, k)
-        }
-    }
-}
-impl VecHashSingle for i64 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        fx_hash_64_bit!(self, k)
-    }
-}
-impl VecHashSingle for u64 {
-    #[inline]
-    fn _vec_hash_single(self, k: u64) -> u64 {
-        fx_hash_64_bit!(self, k)
-    }
-}
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
@@ -265,16 +268,36 @@ impl VecHash for Utf8Chunked {
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
         let null_h = get_null_hash_value(random_state);
-        self.apply_to_slice(
-            |opt_v, h| {
-                let l = match opt_v {
-                    Some(v) => xxh3_64_with_seed(v.as_bytes(), null_h),
-                    None => null_h,
-                };
-                _boost_hash_combine(l, *h)
-            },
-            hashes,
-        )
+
+        let mut offset = 0;
+        self.downcast_iter().for_each(|arr| {
+            match arr.null_count() {
+                0 => arr
+                    .values_iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(v, h)| {
+                        let l = xxh3_64_with_seed(v.as_bytes(), null_h);
+                        *h = _boost_hash_combine(l, *h)
+                    }),
+                _ => {
+                    let validity = arr.validity().unwrap();
+                    let (slice, byte_offset, _) = validity.as_slice();
+                    (0..validity.len())
+                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                        .zip(&mut hashes[offset..])
+                        .zip(arr.values_iter())
+                        .for_each(|((valid, h), l)| {
+                            let l = if valid {
+                                xxh3_64_with_seed(l.as_bytes(), null_h)
+                            } else {
+                                null_h
+                            };
+                            *h = _boost_hash_combine(l, *h)
+                        });
+                }
+            }
+            offset += arr.len();
+        });
     }
 }
 
@@ -294,16 +317,36 @@ impl VecHash for BinaryChunked {
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
         let null_h = get_null_hash_value(random_state);
-        self.apply_to_slice(
-            |opt_v, h| {
-                let l = match opt_v {
-                    Some(v) => xxh3_64_with_seed(v, null_h),
-                    None => null_h,
-                };
-                _boost_hash_combine(l, *h)
-            },
-            hashes,
-        )
+
+        let mut offset = 0;
+        self.downcast_iter().for_each(|arr| {
+            match arr.null_count() {
+                0 => arr
+                    .values_iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(v, h)| {
+                        let l = xxh3_64_with_seed(v, null_h);
+                        *h = _boost_hash_combine(l, *h)
+                    }),
+                _ => {
+                    let validity = arr.validity().unwrap();
+                    let (slice, byte_offset, _) = validity.as_slice();
+                    (0..validity.len())
+                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                        .zip(&mut hashes[offset..])
+                        .zip(arr.values_iter())
+                        .for_each(|((valid, h), l)| {
+                            let l = if valid {
+                                xxh3_64_with_seed(l, null_h)
+                            } else {
+                                null_h
+                            };
+                            *h = _boost_hash_combine(l, *h)
+                        });
+                }
+            }
+            offset += arr.len();
+        });
     }
 }
 
@@ -311,20 +354,60 @@ impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         buf.clear();
         buf.reserve(self.len());
+        let true_h = random_state.hash_single(true);
+        let false_h = random_state.hash_single(false);
+        let null_h = get_null_hash_value(random_state);
         self.downcast_iter().for_each(|arr| {
-            buf.extend(arr.into_iter().map(|opt_v| random_state.hash_single(opt_v)))
+            if arr.null_count() == 0 {
+                buf.extend(arr.values_iter().map(|v| if v { true_h } else { false_h }))
+            } else {
+                buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+                    Some(true) => true_h,
+                    Some(false) => false_h,
+                    None => null_h,
+                }))
+            }
         });
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        self.apply_to_slice(
-            |opt_v, h| {
-                let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
-                _boost_hash_combine(hasher.finish(), *h)
-            },
-            hashes,
-        )
+        let true_h = random_state.hash_single(true);
+        let false_h = random_state.hash_single(false);
+        let null_h = get_null_hash_value(random_state);
+
+        let mut offset = 0;
+        self.downcast_iter().for_each(|arr| {
+            match arr.null_count() {
+                0 => arr
+                    .values_iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(v, h)| {
+                        let l = if v { true_h } else { false_h };
+                        *h = _boost_hash_combine(l, *h)
+                    }),
+                _ => {
+                    let validity = arr.validity().unwrap();
+                    let (slice, byte_offset, _) = validity.as_slice();
+                    (0..validity.len())
+                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                        .zip(&mut hashes[offset..])
+                        .zip(arr.values())
+                        .for_each(|((valid, h), l)| {
+                            let l = if valid {
+                                if l {
+                                    true_h
+                                } else {
+                                    false_h
+                                }
+                            } else {
+                                null_h
+                            };
+                            *h = _boost_hash_combine(l, *h)
+                        });
+                }
+            }
+            offset += arr.len();
+        });
     }
 }
 
@@ -578,6 +661,7 @@ impl<'a> Hash for BytesHash<'a> {
 
 impl<'a> BytesHash<'a> {
     #[inline]
+    #[cfg(any(feature = "dtype-binary", feature = "groupby_list"))]
     pub(crate) fn new(s: Option<&'a [u8]>, hash: u64) -> Self {
         Self { payload: s, hash }
     }

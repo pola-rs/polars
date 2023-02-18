@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -41,20 +43,24 @@ def test_sort_by() -> None:
 
     by: list[pl.Expr | str]
     for by in [["b", "c"], [pl.col("b"), "c"]]:  # type: ignore[assignment]
-        out = df.select([pl.col("a").sort_by(by)])
+        out = df.select(pl.col("a").sort_by(by))
         assert out["a"].to_list() == [3, 1, 2, 5, 4]
 
-    out = df.select([pl.col("a").sort_by(by, reverse=[False])])
+    # Columns as positional arguments are also accepted
+    out = df.select(pl.col("a").sort_by("b", "c"))
     assert out["a"].to_list() == [3, 1, 2, 5, 4]
 
-    out = df.select([pl.col("a").sort_by(by, reverse=[True])])
+    out = df.select(pl.col("a").sort_by(by, reverse=[False]))
+    assert out["a"].to_list() == [3, 1, 2, 5, 4]
+
+    out = df.select(pl.col("a").sort_by(by, reverse=[True]))
     assert out["a"].to_list() == [4, 5, 2, 1, 3]
 
-    out = df.select([pl.col("a").sort_by(by, reverse=[True, False])])
+    out = df.select(pl.col("a").sort_by(by, reverse=[True, False]))
     assert out["a"].to_list() == [5, 4, 3, 1, 2]
 
     # by can also be a single column
-    out = df.select([pl.col("a").sort_by("b", reverse=[False])])
+    out = df.select(pl.col("a").sort_by("b", reverse=[False]))
     assert out["a"].to_list() == [1, 2, 3, 4, 5]
 
 
@@ -393,3 +399,43 @@ def test_merge_sorted() -> None:
             datetime(2022, 12, 1, 0, 0),
         ],
     }
+
+
+def test_sort_args() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None],
+            "b": [6.0, 5.0, 4.0],
+            "c": ["a", "c", "b"],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [None, 1, 2],
+            "b": [4.0, 6.0, 5.0],
+            "c": ["b", "a", "c"],
+        }
+    )
+
+    # Single column name
+    result = df.sort("a")
+    assert_frame_equal(result, expected)
+
+    # Column names as list
+    result = df.sort(["a", "b"])
+    assert_frame_equal(result, expected)
+
+    # Column names as positional arguments
+    result = df.sort("a", "b")
+    assert_frame_equal(result, expected)
+
+    # Mixed
+    result = df.sort(["a"], "b")
+    assert_frame_equal(result, expected)
+
+    # nulls_last
+    result = df.sort("a", nulls_last=True)
+    assert_frame_equal(result, df)
+
+    with pytest.raises(ValueError):
+        df.sort("a", "b", nulls_last=True)

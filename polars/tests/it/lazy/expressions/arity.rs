@@ -57,7 +57,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
                 move |s| {
                     s.utf8()?
                         .to_lowercase()
-                        .contains("not_exist")
+                        .contains("not_exist", true)
                         .map(|ca| Some(ca.into_series()))
                 },
                 GetOutput::from_type(DataType::Boolean),

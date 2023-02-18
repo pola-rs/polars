@@ -25,9 +25,9 @@ pub enum PivotAgg {
 
 fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
     // restore logical type
-    match logical_type {
+    match (logical_type, s.dtype()) {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(Some(rev_map)) => {
+        (DataType::Categorical(Some(rev_map)), _) => {
             let cats = s.u32().unwrap().clone();
             // safety:
             // the rev-map comes from these categoricals
@@ -36,21 +36,36 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
                     .into_series()
             }
         }
-        DataType::Float32 if matches!(s.dtype(), DataType::UInt32) => {
+        (DataType::Float32, DataType::UInt32) => {
             let ca = s.u32().unwrap();
             ca._reinterpret_float().into_series()
         }
-        DataType::Float64 if matches!(s.dtype(), DataType::UInt64) => {
+        (DataType::Float64, DataType::UInt64) => {
             let ca = s.u64().unwrap();
             ca._reinterpret_float().into_series()
         }
-        DataType::Int32 if matches!(s.dtype(), DataType::UInt32) => {
+        (DataType::Int32, DataType::UInt32) => {
             let ca = s.u32().unwrap();
-            ca.reinterpret_signed().into_series()
+            ca.reinterpret_signed()
         }
-        DataType::Int64 if matches!(s.dtype(), DataType::UInt64) => {
+        (DataType::Int64, DataType::UInt64) => {
             let ca = s.u64().unwrap();
-            ca.reinterpret_signed().into_series()
+            ca.reinterpret_signed()
+        }
+        #[cfg(feature = "dtype-duration")]
+        (DataType::Duration(_), DataType::UInt64) => {
+            let ca = s.u64().unwrap();
+            ca.reinterpret_signed().cast(logical_type).unwrap()
+        }
+        #[cfg(feature = "dtype-datetime")]
+        (DataType::Datetime(_, _), DataType::UInt64) => {
+            let ca = s.u64().unwrap();
+            ca.reinterpret_signed().cast(logical_type).unwrap()
+        }
+        #[cfg(feature = "dtype-date")]
+        (DataType::Date, DataType::UInt32) => {
+            let ca = s.u32().unwrap();
+            ca.reinterpret_signed().cast(logical_type).unwrap()
         }
         _ => s.cast(logical_type).unwrap(),
     }

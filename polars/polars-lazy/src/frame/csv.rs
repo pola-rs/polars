@@ -5,6 +5,7 @@ use polars_io::csv::utils::{get_reader_bytes, infer_file_schema};
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::RowCount;
 
+use crate::frame::LazyFileListReader;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -183,13 +184,6 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
-    pub fn with_rechunk(mut self, toggle: bool) -> Self {
-        self.rechunk = toggle;
-        self
-    }
-
     /// Set  [`CsvEncoding`]
     #[must_use]
     pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
@@ -212,15 +206,11 @@ impl<'a> LazyCsvReader<'a> {
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
         let path;
-        let path_str = self.path.to_string_lossy();
 
-        let mut file = if path_str.contains('*') {
-            let glob_err = || PolarsError::ComputeError("invalid glob pattern given".into());
-            let mut paths = glob::glob(&path_str).map_err(|_| glob_err())?;
-
+        let mut file = if let Some(mut paths) = self.glob()? {
             match paths.next() {
                 Some(globresult) => {
-                    path = globresult.map_err(|_| glob_err())?;
+                    path = globresult?;
                 }
                 None => {
                     return Err(PolarsError::ComputeError(
@@ -261,8 +251,10 @@ impl<'a> LazyCsvReader<'a> {
 
         Ok(self.with_schema(Arc::new(schema)))
     }
+}
 
-    pub fn finish_impl(self) -> PolarsResult<LazyFrame> {
+impl LazyFileListReader for LazyCsvReader<'_> {
+    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             self.path,
             self.delimiter,
@@ -291,27 +283,28 @@ impl<'a> LazyCsvReader<'a> {
         Ok(lf)
     }
 
-    pub fn finish(self) -> PolarsResult<LazyFrame> {
-        let path_str = self.path.to_string_lossy();
-        if path_str.contains('*') {
-            let paths = glob::glob(&path_str)
-                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
+    fn path(&self) -> &Path {
+        &self.path
+    }
 
-            let lfs = paths
-                .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
-                    let mut builder = self.clone();
-                    builder.path = path;
-                    // do no rechunk yet.
-                    builder.rechunk = false;
-                    builder.finish_impl()
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
-            // set to false, as the csv parser has full thread utilization
-            concat_impl(&lfs, self.rechunk, false, true)
-                .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
-        } else {
-            self.finish_impl()
-        }
+    fn with_path(mut self, path: PathBuf) -> Self {
+        self.path = path;
+        self
+    }
+
+    fn rechunk(&self) -> bool {
+        self.rechunk
+    }
+
+    /// Rechunk the memory to contiguous chunks when parsing is done.
+    #[must_use]
+    fn with_rechunk(mut self, toggle: bool) -> Self {
+        self.rechunk = toggle;
+        self
+    }
+
+    fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
+        // set to false, as the csv parser has full thread utilization
+        concat_impl(&lfs, self.rechunk(), false, true)
     }
 }

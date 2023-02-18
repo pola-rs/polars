@@ -417,14 +417,15 @@ impl PyLazyFrame {
 
     pub fn sort_by_exprs(
         &self,
-        by_column: Vec<PyExpr>,
+        by: Vec<PyExpr>,
         reverse: Vec<bool>,
         nulls_last: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let exprs = py_exprs_to_exprs(by_column);
+        let exprs = py_exprs_to_exprs(by);
         ldf.sort_by_exprs(exprs, reverse, nulls_last).into()
     }
+
     pub fn cache(&self) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.cache().into()

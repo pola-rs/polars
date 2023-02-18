@@ -388,6 +388,7 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
     let rhs = rhs.struct_().unwrap();
     let s_fields = s.fields();
     let rhs_fields = rhs.fields();
+
     match (s_fields.len(), rhs_fields.len()) {
         (_, 1) => {
             let rhs = &rhs.fields()[0];

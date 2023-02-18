@@ -37,7 +37,7 @@ where
         if self.header {
             write_impl::write_header(&mut self.buffer, &names, &self.options)?;
         }
-        write_impl::write(&mut self.buffer, df, self.batch_size, &mut self.options)
+        write_impl::write(&mut self.buffer, df, self.batch_size, &self.options)
     }
 }
 

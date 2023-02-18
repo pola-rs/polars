@@ -1,3 +1,4 @@
+use memchr::memchr2_iter;
 use num::traits::Pow;
 use polars_core::prelude::*;
 
@@ -32,12 +33,36 @@ pub(crate) fn next_line_position(
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Option<usize> {
+    fn accept_line(
+        line: &[u8],
+        expected_fields: usize,
+        delimiter: u8,
+        eol_char: u8,
+        quote_char: Option<u8>,
+    ) -> bool {
+        let mut count = 0usize;
+        for (field, _) in SplitFields::new(line, delimiter, quote_char, eol_char) {
+            if memchr2_iter(delimiter, eol_char, field).count() >= expected_fields {
+                return false;
+            }
+            count += 1;
+        }
+        count == expected_fields
+    }
+
+    // we check 3 subsequent lines for `accept_line` before we accept
+    // if 3 groups are rejected we reject completely
+    let mut rejected_line_groups = 0u8;
+
     let mut total_pos = 0;
     if input.is_empty() {
         return None;
     }
     let mut lines_checked = 0u16;
     loop {
+        if rejected_line_groups >= 3 {
+            return None;
+        }
         lines_checked += 1;
         // headers might have an extra value
         // So if we have churned through enough lines
@@ -53,29 +78,39 @@ pub(crate) fn next_line_position(
         }
         debug_assert!(pos <= input.len());
         let new_input = unsafe { input.get_unchecked(pos..) };
-        let line = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char).next();
-
-        let count_fields =
-            |line: &[u8]| SplitFields::new(line, delimiter, quote_char, eol_char).count();
+        let mut lines = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char);
+        let line = lines.next();
 
         match (line, expected_fields) {
             // count the fields, and determine if they are equal to what we expect from the schema
-            (Some(line), Some(expected_fields)) if { count_fields(line) == expected_fields } => {
-                return Some(total_pos + pos)
-            }
-            (Some(_), Some(_)) => {
-                debug_assert!(pos < input.len());
-                unsafe {
-                    input = input.get_unchecked(pos + 1..);
+            (Some(line), Some(expected_fields)) => {
+                if accept_line(line, expected_fields, delimiter, eol_char, quote_char) {
+                    let mut valid = true;
+                    for line in lines.take(2) {
+                        if !accept_line(line, expected_fields, delimiter, eol_char, quote_char) {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if valid {
+                        return Some(total_pos + pos);
+                    } else {
+                        rejected_line_groups += 1;
+                    }
+                } else {
+                    debug_assert!(pos < input.len());
+                    unsafe {
+                        input = input.get_unchecked(pos + 1..);
+                    }
+                    total_pos += pos + 1;
                 }
-                total_pos += pos + 1;
             }
             // don't count the fields
             (Some(_), None) => return Some(total_pos + pos),
-            // no new line found, check latest line (without eol) for number of fields
-            (None, Some(expected_fields)) if { count_fields(new_input) == expected_fields } => {
-                return Some(total_pos + pos)
-            }
+            // // no new line found, check latest line (without eol) for number of fields
+            // (None, Some(expected_fields)) if { count_fields(new_input) == expected_fields } => {
+            //     return Some(total_pos + pos)
+            // }
             _ => return None,
         }
     }

@@ -39,6 +39,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Object,
     PolarsDataType,
     SchemaDefinition,
     SchemaDict,
@@ -102,7 +103,11 @@ else:
 
 if sys.version_info >= (3, 10):
     from typing import Concatenate, ParamSpec, TypeAlias
+
+    from packaging.version import parse as ParseVersion
 else:
+    from distutils.version import LooseVersion as ParseVersion
+
     from typing_extensions import Concatenate, ParamSpec, TypeAlias
 
 if sys.version_info >= (3, 11):
@@ -128,8 +133,6 @@ if TYPE_CHECKING:
         ParallelStrategy,
         ParquetCompression,
         PivotAgg,
-        PolarsExprType,
-        PythonLiteral,
         RollingInterpolationMethod,
         SizeUnit,
         StartBy,
@@ -1944,7 +1947,10 @@ class DataFrame:
             return out
 
     def to_pandas(  # noqa: D417
-        self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
+        self,
+        *args: Any,
+        use_pyarrow_extension_array: bool = False,
+        **kwargs: Any,
     ) -> pd.DataFrame:
         """
         Cast to a pandas DataFrame.
@@ -1955,12 +1961,11 @@ class DataFrame:
         Parameters
         ----------
         use_pyarrow_extension_array
-            Use PyArrow backed-extension arrays instead of numpy arrays for each
-            column of the pandas DataFrame. This allows zero copy operations and
-            preservation of nulls values.
-            Further operations on this pandas DataFrame, might trigger conversion
-            to NumPy arrays if that operation is not supported by pyarrow compute
-            functions.
+            Use PyArrow backed-extension arrays instead of numpy arrays for each column
+            of the pandas DataFrame; this allows zero copy operations and preservation
+            of null values. Subsequent operations on the resulting pandas DataFrame may
+            trigger conversion to NumPy arrays if that operation is not supported by
+            pyarrow compute functions.
         kwargs
             Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
 
@@ -2020,28 +2025,23 @@ class DataFrame:
 
         """
         if use_pyarrow_extension_array:
-            pandas_version_major, pandas_version_minor = (
-                int(x) for x in pd.__version__.split(".")[0:2]
-            )
-            if pandas_version_major == 0 or (
-                pandas_version_major == 1 and pandas_version_minor < 5
-            ):
+            if ParseVersion(pd.__version__) < ParseVersion("1.5"):
                 raise ModuleNotFoundError(
                     f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
                 )
 
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
-        return (
-            tbl.to_pandas(
+        if use_pyarrow_extension_array:
+            return tbl.to_pandas(
                 self_destruct=True,
                 split_blocks=True,
                 types_mapper=lambda pa_dtype: pd.ArrowDtype(pa_dtype),
                 **kwargs,
             )
-            if use_pyarrow_extension_array
-            else tbl.to_pandas(**kwargs)
-        )
+
+        date_as_object = kwargs.pop("date_as_object", False)
+        return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
 
     def to_series(self, index: int = 0) -> pli.Series:
         """
@@ -3059,71 +3059,99 @@ class DataFrame:
 
     def sort(
         self,
-        by: str | pli.Expr | Sequence[str] | Sequence[pli.Expr],
-        *,
-        reverse: bool | list[bool] = False,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
+        reverse: bool | Sequence[bool] = False,
         nulls_last: bool = False,
     ) -> Self:
         """
-        Sort the DataFrame by column.
+        Sort the dataframe by the given columns.
 
         Parameters
         ----------
         by
-            By which column to sort. Only accepts string.
+            Column(s) to sort by. Accepts expression input. Strings are parsed as column
+            names.
+        *more_by
+            Additional columns to sort by, specified as positional arguments.
         reverse
-            Reverse/descending sort.
+            Sort in descending order. When sorting by multiple columns, can be specified
+            per column by passing a sequence of booleans.
         nulls_last
-            Place null values last. Can only be used if sorted by a single column.
+            Place null values last. Can only be used when sorting by a single column.
 
         Examples
         --------
+        Pass a single column name to sort by that column.
+
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6.0, 7.0, 8.0],
-        ...         "ham": ["a", "b", "c"],
+        ...         "a": [1, 2, None],
+        ...         "b": [6.0, 5.0, 4.0],
+        ...         "c": ["a", "c", "b"],
         ...     }
         ... )
-        >>> df.sort("foo", reverse=True)
+        >>> df.sort("a")
         shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ f64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 3   ┆ 8.0 ┆ c   │
-        │ 2   ┆ 7.0 ┆ b   │
-        │ 1   ┆ 6.0 ┆ a   │
-        └─────┴─────┴─────┘
+        ┌──────┬─────┬─────┐
+        │ a    ┆ b   ┆ c   │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ f64 ┆ str │
+        ╞══════╪═════╪═════╡
+        │ null ┆ 4.0 ┆ b   │
+        │ 1    ┆ 6.0 ┆ a   │
+        │ 2    ┆ 5.0 ┆ c   │
+        └──────┴─────┴─────┘
 
-        **Sort by multiple columns.**
-        For multiple columns we can also use expression syntax.
+        Sorting by expressions is also supported.
 
-        >>> df.sort(
-        ...     [pl.col("foo"), pl.col("bar") ** 2],
-        ...     reverse=[True, False],
-        ... )
+        >>> df.sort(pl.col("a") + pl.col("b") * 2, nulls_last=True)
         shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ f64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 3   ┆ 8.0 ┆ c   │
-        │ 2   ┆ 7.0 ┆ b   │
-        │ 1   ┆ 6.0 ┆ a   │
-        └─────┴─────┴─────┘
+        ┌──────┬─────┬─────┐
+        │ a    ┆ b   ┆ c   │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ f64 ┆ str │
+        ╞══════╪═════╪═════╡
+        │ 2    ┆ 5.0 ┆ c   │
+        │ 1    ┆ 6.0 ┆ a   │
+        │ null ┆ 4.0 ┆ b   │
+        └──────┴─────┴─────┘
+
+        Sort by multiple columns by passing a list of columns.
+
+        >>> df.sort(["c", "a"], reverse=True)
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ a    ┆ b   ┆ c   │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ f64 ┆ str │
+        ╞══════╪═════╪═════╡
+        │ 2    ┆ 5.0 ┆ c   │
+        │ null ┆ 4.0 ┆ b   │
+        │ 1    ┆ 6.0 ┆ a   │
+        └──────┴─────┴─────┘
+
+        Or use positional arguments to sort by multiple columns in the same way.
+
+        >>> df.sort("c", "a", reverse=[False, True])
+        shape: (3, 3)
+        ┌──────┬─────┬─────┐
+        │ a    ┆ b   ┆ c   │
+        │ ---  ┆ --- ┆ --- │
+        │ i64  ┆ f64 ┆ str │
+        ╞══════╪═════╪═════╡
+        │ 1    ┆ 6.0 ┆ a   │
+        │ null ┆ 4.0 ┆ b   │
+        │ 2    ┆ 5.0 ┆ c   │
+        └──────┴─────┴─────┘
 
         """
-        if not isinstance(by, str) and isinstance(by, (Sequence, pli.Expr)):
-            df = (
-                self.lazy()
-                .sort(by, reverse=reverse, nulls_last=nulls_last)
-                .collect(no_optimization=True)
-            )
-            return self._from_pydf(df._df)
-        return self._from_pydf(self._df.sort(by, reverse, nulls_last))
+        return self._from_pydf(
+            self.lazy()
+            .sort(by, *more_by, reverse=reverse, nulls_last=nulls_last)
+            .collect(no_optimization=True)
+            ._df
+        )
 
     def frame_equal(self, other: DataFrame, null_equal: bool = True) -> bool:
         """
@@ -5730,16 +5758,9 @@ class DataFrame:
 
     def select(
         self,
-        exprs: (
-            str
-            | PolarsExprType
-            | PythonLiteral
-            | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
-            | None
-        ) = None,
-        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
-        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_exprs: IntoExpr,
+        **named_exprs: IntoExpr,
     ) -> Self:
         """
         Select columns from this DataFrame.
@@ -5747,8 +5768,8 @@ class DataFrame:
         Parameters
         ----------
         exprs
-            Column or columns to select. Accepts expression input. Strings are parsed
-            as column names, other non-expression inputs are parsed as literals.
+            Column(s) to select. Accepts expression input. Strings are parsed as column
+            names, other non-expression inputs are parsed as literals.
         *more_exprs
             Additional columns to select, specified as positional arguments.
         **named_exprs
@@ -7097,10 +7118,11 @@ class DataFrame:
         """
         # load into the local namespace for a modest performance boost in the hot loops
         columns, get_row, dict_, zip_ = self.columns, self.row, dict, zip
+        has_object = Object in self.dtypes
 
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
-        if buffer_size:
+        if buffer_size and not has_object:
             load_pyarrow_dicts = (
                 named
                 and _PYARROW_AVAILABLE

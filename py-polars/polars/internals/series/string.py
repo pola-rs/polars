@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import PolarsTemporalType
+from polars.datatypes import PolarsDataType, PolarsTemporalType
 from polars.internals.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
@@ -42,9 +42,6 @@ class StringNameSpace:
             `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
-            Note that the ``Z`` suffix for "Zulu time" in ISO8601 formats is not (yet!)
-            fully supported: you should first try ``"%+"`` and if that fails, insert a
-            ``Z`` in your ``fmt`` string and then use ``dt.convert_time_zone``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -65,6 +62,17 @@ class StringNameSpace:
 
         Examples
         --------
+        Dealing with a consistent format:
+
+        >>> ts = ["2020-01-01 01:00Z", "2020-01-01 02:00Z"]
+        >>> pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        shape: (2,)
+        Series: '' [datetime[μs, +00:00]]
+        [
+                2020-01-01 01:00:00 +00:00
+                2020-01-01 02:00:00 +00:00
+        ]
+
         Dealing with different formats.
 
         >>> s = pl.Series(
@@ -315,6 +323,37 @@ class StringNameSpace:
             "626172"
             null
         ]
+
+        """
+
+    def json_extract(self, dtype: PolarsDataType | None = None) -> pli.Series:
+        """
+        Parse string values as JSON.
+
+        Throw errors if encounter invalid JSON strings.
+
+        Parameters
+        ----------
+        dtype
+            The dtype to cast the extracted value to. If None, the dtype will be
+            inferred from the JSON value.
+
+        Examples
+        --------
+        >>> s = pl.Series("json", ['{"a":1, "b": true}', None, '{"a":2, "b": false}'])
+        >>> s.str.json_extract()
+        shape: (3,)
+        Series: 'json' [struct[2]]
+        [
+                {1,true}
+                {null,null}
+                {2,false}
+        ]
+
+        See Also
+        --------
+        json_path_match : Extract the first match of json string with provided JSONPath
+            expression.
 
         """
 

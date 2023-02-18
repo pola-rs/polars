@@ -1667,6 +1667,35 @@ def test_cumagg_types() -> None:
     assert collected_cumprod_lf.schema == cumprod_lf.schema
 
 
+def test_col() -> None:
+    df = pl.DataFrame(
+        {
+            "ham": [1, 2, 3],
+            "hamburger": [11, 22, 33],
+            "foo": [3, 2, 1],
+            "bar": ["a", "b", "c"],
+        }
+    )
+
+    # Single column
+    assert df.select(pl.col("foo")).columns == ["foo"]
+    # Regex
+    assert df.select(pl.col("*")).columns == ["ham", "hamburger", "foo", "bar"]
+    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
+    assert df.select(pl.col("*").exclude("ham")).columns == ["hamburger", "foo", "bar"]
+    # Multiple inputs
+    assert df.select(pl.col(["hamburger", "foo"])).columns == ["hamburger", "foo"]
+    assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
+    assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
+    # Dtypes
+    assert df.select(pl.col(pl.Utf8)).columns == ["bar"]
+    assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
+        "ham",
+        "hamburger",
+        "foo",
+    ]
+
+
 def test_compare_schema_between_lazy_and_eager_6904() -> None:
     float32_df = pl.DataFrame({"x": pl.Series(values=[], dtype=pl.Float32)})
     eager_result = float32_df.select(pl.col("x").sqrt()).select(pl.col(pl.Float32))

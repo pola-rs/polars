@@ -967,21 +967,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn sort(&self, by_column: &str, reverse: bool, nulls_last: bool) -> PyResult<Self> {
-        let df = self
-            .df
-            .sort_with_options(
-                by_column,
-                SortOptions {
-                    descending: reverse,
-                    nulls_last,
-                    multithreaded: true,
-                },
-            )
-            .map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn replace(&mut self, column: &str, new_col: PySeries) -> PyResult<()> {
         self.df
             .replace(column, new_col.series)
@@ -1046,8 +1031,19 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn groupby_apply(&self, by: Vec<&str>, lambda: PyObject) -> PyResult<Self> {
-        let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
+    pub fn groupby_apply(
+        &self,
+        by: Vec<&str>,
+        lambda: PyObject,
+        maintain_order: bool,
+    ) -> PyResult<Self> {
+        let gb = if maintain_order {
+            self.df.groupby_stable(&by)
+        } else {
+            self.df.groupby(&by)
+        }
+        .map_err(PyPolarsErr::from)?;
+
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
                 // get the pypolars module

@@ -11,6 +11,7 @@ mod parquet;
 mod python;
 
 mod anonymous_scan;
+mod file_list_reader;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
@@ -22,6 +23,7 @@ use std::sync::Arc;
 pub use anonymous_scan::*;
 #[cfg(feature = "csv-file")]
 pub use csv::*;
+pub use file_list_reader::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
 #[cfg(feature = "json")]

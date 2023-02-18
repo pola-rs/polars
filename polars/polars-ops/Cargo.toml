@@ -41,6 +41,7 @@ performant = ["polars-core/performant"]
 big_idx = ["polars-core/bigidx"]
 round_series = []
 is_first = []
+is_unique = []
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex", "dtype-binary"]
