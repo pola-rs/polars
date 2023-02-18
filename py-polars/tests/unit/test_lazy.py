@@ -1698,3 +1698,31 @@ def test_col() -> None:
         "hamburger",
         "foo",
     ]
+
+
+def test_compare_schema_between_lazy_and_eager_6904() -> None:
+    float32_df = pl.DataFrame({"x": pl.Series(values=[], dtype=pl.Float32)})
+    eager_result = float32_df.select(pl.col("x").sqrt()).select(pl.col(pl.Float32))
+    lazy_result = (
+        float32_df.lazy()
+        .select(pl.col("x").sqrt())
+        .select(pl.col(pl.Float32))
+        .collect()
+    )
+    assert eager_result.shape == lazy_result.shape
+
+    eager_result = float32_df.select(pl.col("x").pow(2)).select(pl.col(pl.Float32))
+    lazy_result = (
+        float32_df.lazy()
+        .select(pl.col("x").pow(2))
+        .select(pl.col(pl.Float32))
+        .collect()
+    )
+    assert eager_result.shape == lazy_result.shape
+
+    int32_df = pl.DataFrame({"x": pl.Series(values=[], dtype=pl.Int32)})
+    eager_result = int32_df.select(pl.col("x").pow(2)).select(pl.col(pl.Float64))
+    lazy_result = (
+        int32_df.lazy().select(pl.col("x").pow(2)).select(pl.col(pl.Float64)).collect()
+    )
+    assert eager_result.shape == lazy_result.shape
