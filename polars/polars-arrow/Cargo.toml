@@ -10,7 +10,7 @@ description = "Arrow interfaces for Polars DataFrame library"
 
 [dependencies]
 arrow.workspace = true
-chrono = { version = "0.4", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 chrono-tz = { version = "0.8", optional = true }
 hashbrown.workspace = true
 num.workspace = true
