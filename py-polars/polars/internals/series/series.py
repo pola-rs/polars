@@ -4824,7 +4824,7 @@ class Series:
         shape: (1,)
         Series: 's' [i8]
         [
-            255
+            127
         ]
 
         >>> s = pl.Series("s", [1.0, 2.5, 3.0], dtype=pl.Float64)
