@@ -40,7 +40,7 @@ class BatchedCsvReader:
         null_values: str | list[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
-        parse_dates: bool = False,
+        try_parse_dates: bool = False,
         n_threads: int | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 50_000,
@@ -95,7 +95,7 @@ class BatchedCsvReader:
             quote_char=quote_char,
             null_values=processed_null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
-            parse_dates=parse_dates,
+            try_parse_dates=try_parse_dates,
             skip_rows_after_header=skip_rows_after_header,
             row_count=_prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
@@ -119,7 +119,7 @@ class BatchedCsvReader:
         Examples
         --------
         >>> reader = pl.read_csv_batched(
-        ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", parse_dates=True
+        ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", try_parse_dates=True
         ... )  # doctest: +SKIP
         >>> reader.next_batches(5)  # doctest: +SKIP
 

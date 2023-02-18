@@ -127,7 +127,7 @@ where
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
-    parse_dates: bool,
+    try_parse_dates: bool,
     row_count: Option<RowCount>,
     // temporary schema needed for batch lifetimes
     owned_schema: Option<Box<Schema>>,
@@ -307,8 +307,8 @@ where
     }
 
     /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
-    pub fn with_parse_dates(mut self, toggle: bool) -> Self {
-        self.parse_dates = toggle;
+    pub fn with_try_parse_dates(mut self, toggle: bool) -> Self {
+        self.try_parse_dates = toggle;
         self
     }
 
@@ -365,7 +365,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             to_cast,
             self.skip_rows_after_header,
             std::mem::take(&mut self.row_count),
-            self.parse_dates,
+            self.try_parse_dates,
         )
     }
 
@@ -446,7 +446,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.quote_char,
                     self.eol_char,
                     self.null_values.as_ref(),
-                    self.parse_dates,
+                    self.try_parse_dates,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned(self, schema))
@@ -488,7 +488,7 @@ where
             predicate: None,
             quote_char: Some(b'"'),
             skip_rows_after_header: 0,
-            parse_dates: false,
+            try_parse_dates: false,
             row_count: None,
             owned_schema: None,
         }
@@ -499,7 +499,7 @@ where
         let rechunk = self.rechunk;
         let schema_overwrite = self.schema_overwrite;
         let dtype_overwrite = self.dtype_overwrite;
-        let should_parse_dates = self.parse_dates;
+        let should_parse_dates = self.try_parse_dates;
         let low_memory = self.low_memory;
 
         #[cfg(feature = "dtype-categorical")]

@@ -590,7 +590,7 @@ fn test_automatic_datetime_parsing() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).with_parse_dates(true).finish()?;
+    let df = CsvReader::new(file).with_try_parse_dates(true).finish()?;
 
     let ts = df.column("timestamp")?;
     assert_eq!(
@@ -613,7 +613,7 @@ fn test_automatic_datetime_parsing_default_formats() -> PolarsResult<()> {
 ";
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).with_parse_dates(true).finish()?;
+    let df = CsvReader::new(file).with_try_parse_dates(true).finish()?;
 
     for col in df.get_column_names() {
         let ts = df.column(col)?;
@@ -701,7 +701,7 @@ fn test_ignore_parse_dates() -> PolarsResult<()> {
     use DataType::*;
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
-        .with_parse_dates(true)
+        .with_try_parse_dates(true)
         .with_dtypes_slice(Some(&[Utf8, Utf8, Utf8]))
         .finish()?;
 
@@ -1033,7 +1033,7 @@ fn test_empty_csv() {
 }
 
 #[test]
-fn test_parse_dates() -> PolarsResult<()> {
+fn test_try_parse_dates() -> PolarsResult<()> {
     let csv = "date
 1745-04-02
 1742-03-21
@@ -1044,7 +1044,7 @@ fn test_parse_dates() -> PolarsResult<()> {
 ";
     let file = Cursor::new(csv);
 
-    let out = CsvReader::new(file).with_parse_dates(true).finish()?;
+    let out = CsvReader::new(file).with_try_parse_dates(true).finish()?;
     assert_eq!(out.dtypes(), &[DataType::Date]);
     assert_eq!(out.column("date")?.null_count(), 1);
     Ok(())
@@ -1066,14 +1066,14 @@ fn test_whitespace_skipping() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_parse_dates_3380() -> PolarsResult<()> {
+fn test_try_parse_dates_3380() -> PolarsResult<()> {
     let csv = "lat;lon;validdate;t_2m:C;precip_1h:mm
 46.685;7.953;2022-05-10T07:07:12Z;6.1;0.00
 46.685;7.953;2022-05-10T08:07:12Z;8.8;0.00";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .with_delimiter(b';')
-        .with_parse_dates(true)
+        .with_try_parse_dates(true)
         .finish()?;
     assert_eq!(df.column("validdate")?.null_count(), 0);
     Ok(())

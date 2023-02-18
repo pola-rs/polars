@@ -37,7 +37,7 @@ def test_quoted_date() -> None:
         "2022-01-02",2
         """
     )
-    result = pl.read_csv(csv.encode(), parse_dates=True)
+    result = pl.read_csv(csv.encode(), try_parse_dates=True)
     expected = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2)], "b": [1, 2]})
     assert_frame_equal(result, expected)
 
@@ -48,7 +48,7 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
     df.write_csv(buf)
     buf.seek(0)
 
-    read_df = pl.read_csv(buf, parse_dates=True)
+    read_df = pl.read_csv(buf, try_parse_dates=True)
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
@@ -63,7 +63,7 @@ def test_to_from_file(df_no_lists: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.csv"
         df.write_csv(file_path)
-        read_df = pl.read_csv(file_path, parse_dates=True)
+        read_df = pl.read_csv(file_path, try_parse_dates=True)
 
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
@@ -250,7 +250,7 @@ def test_datetime_parsing() -> None:
     )
 
     f = io.StringIO(csv)
-    df = pl.read_csv(f, parse_dates=True)
+    df = pl.read_csv(f, try_parse_dates=True)
     assert df.dtypes == [pl.Datetime, pl.Float64, pl.Float64]
 
 
@@ -266,7 +266,7 @@ def test_datetime_parsing_default_formats() -> None:
     )
 
     f = io.StringIO(csv)
-    df = pl.read_csv(f, parse_dates=True)
+    df = pl.read_csv(f, try_parse_dates=True)
     assert df.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
 
 
@@ -559,7 +559,7 @@ def test_csv_empty_quotes_char_1622() -> None:
     pl.read_csv(b"a,b,c,d\nA1,B1,C1,1\nA2,B2,C2,2\n", quote_char="")
 
 
-def test_ignore_parse_dates() -> None:
+def test_ignore_try_parse_dates() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -602,7 +602,7 @@ def test_csv_date_handling() -> None:
             ]
         }
     )
-    out = pl.read_csv(csv.encode(), parse_dates=True)
+    out = pl.read_csv(csv.encode(), try_parse_dates=True)
     assert_frame_equal(out, expected)
     dtypes = {"date": pl.Date}
     out = pl.read_csv(csv.encode(), dtypes=dtypes)
@@ -732,7 +732,7 @@ def test_fallback_chrono_parser() -> None:
     2021-10-10,2021-10-10
     """
     )
-    df = pl.read_csv(data.encode(), parse_dates=True)
+    df = pl.read_csv(data.encode(), try_parse_dates=True)
     assert df.null_count().row(0) == (0, 0)
 
 

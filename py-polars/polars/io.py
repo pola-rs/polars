@@ -16,6 +16,7 @@ from typing import (
 )
 
 from polars import BatchedCsvReader
+from polars.utils import deprecated_alias
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -53,6 +54,7 @@ def _check_arg_is_1byte(
             )
 
 
+@deprecated_alias(parse_dates="try_parse_dates")
 def read_csv(
     file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
@@ -66,7 +68,7 @@ def read_csv(
     null_values: str | list[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
-    parse_dates: bool = False,
+    try_parse_dates: bool = False,
     n_threads: int | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 8192,
@@ -139,7 +141,7 @@ def read_csv(
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
         ``pl.Utf8`` to check which values might cause an issue.
-    parse_dates
+    try_parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
         If ``use_pyarrow=True``, dates will always be parsed.
@@ -169,7 +171,7 @@ def read_csv(
         aggregating the chunks into a single array.
     use_pyarrow
         Try to use pyarrow's native CSV parser. This will always
-        parse dates, even if ``parse_dates=False``.
+        parse dates, even if ``try_parse_dates=False``.
         This is not always possible. The set of arguments given to
         this function determines if it is possible to use pyarrow's
         native parser. Note that pyarrow and polars may have a
@@ -386,7 +388,7 @@ def read_csv(
             null_values=null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             ignore_errors=ignore_errors,
-            parse_dates=parse_dates,
+            try_parse_dates=try_parse_dates,
             n_threads=n_threads,
             infer_schema_length=infer_schema_length,
             batch_size=batch_size,
@@ -406,6 +408,7 @@ def read_csv(
     return df
 
 
+@deprecated_alias(parse_dates="try_parse_dates")
 def scan_csv(
     file: str | Path,
     has_header: bool = True,
@@ -427,7 +430,7 @@ def scan_csv(
     skip_rows_after_header: int = 0,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    parse_dates: bool = False,
+    try_parse_dates: bool = False,
     eol_char: str = "\n",
 ) -> LazyFrame:
     """
@@ -499,7 +502,7 @@ def scan_csv(
         the DataFrame.
     row_count_offset
         Offset to start the row_count column (only used if the name is set).
-    parse_dates
+    try_parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     eol_char
@@ -579,7 +582,7 @@ def scan_csv(
         encoding=encoding,
         row_count_name=row_count_name,
         row_count_offset=row_count_offset,
-        parse_dates=parse_dates,
+        try_parse_dates=try_parse_dates,
         eol_char=eol_char,
     )
 
@@ -1667,7 +1670,7 @@ def read_csv_batched(
     null_values: str | list[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
-    parse_dates: bool = False,
+    try_parse_dates: bool = False,
     n_threads: int | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 50_000,
@@ -1692,7 +1695,7 @@ def read_csv_batched(
     Examples
     --------
     >>> reader = pl.read_csv_batched(
-    ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", parse_dates=True
+    ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", try_parse_dates=True
     ... )  # doctest: +SKIP
     >>> batches = reader.next_batches(5)  # doctest: +SKIP
     >>> for df in batches:  # doctest: +SKIP
@@ -1767,7 +1770,7 @@ def read_csv_batched(
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
         ``pl.Utf8`` to check which values might cause an issue.
-    parse_dates
+    try_parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     n_threads
@@ -1933,7 +1936,7 @@ def read_csv_batched(
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
-        parse_dates=parse_dates,
+        try_parse_dates=try_parse_dates,
         n_threads=n_threads,
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,

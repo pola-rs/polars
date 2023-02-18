@@ -96,11 +96,11 @@ static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Infer the data type of a record
-fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
+fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // Utf8 for them
     if string.starts_with('"') {
-        if parse_dates {
+        if try_parse_dates {
             #[cfg(feature = "polars-time")]
             {
                 match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
@@ -126,7 +126,7 @@ fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
         DataType::Float64
     } else if INTEGER_RE.is_match(string) {
         DataType::Int64
-    } else if parse_dates {
+    } else if try_parse_dates {
         #[cfg(feature = "polars-time")]
         {
             match date_infer::infer_pattern_single(string) {
@@ -184,7 +184,7 @@ pub fn infer_file_schema(
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<&NullValues>,
-    parse_dates: bool,
+    try_parse_dates: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -294,7 +294,7 @@ pub fn infer_file_schema(
             quote_char,
             eol_char,
             null_values,
-            parse_dates,
+            try_parse_dates,
         );
     } else {
         return Err(PolarsError::NoData("empty csv".into()));
@@ -357,16 +357,16 @@ pub fn infer_file_schema(
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     match &null_values {
                         None => {
-                            column_types[i].insert(infer_field_schema(&s, parse_dates));
+                            column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                         }
                         Some(NullValues::AllColumns(names)) => {
                             if !names.iter().any(|nv| nv == s.as_ref()) {
-                                column_types[i].insert(infer_field_schema(&s, parse_dates));
+                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
                         }
                         Some(NullValues::AllColumnsSingle(name)) => {
                             if s.as_ref() != name {
-                                column_types[i].insert(infer_field_schema(&s, parse_dates));
+                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
                         }
                         Some(NullValues::Named(names)) => {
@@ -375,10 +375,10 @@ pub fn infer_file_schema(
 
                             if let Some(null_name) = null_name {
                                 if null_name.1 != s.as_ref() {
-                                    column_types[i].insert(infer_field_schema(&s, parse_dates));
+                                    column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                                 }
                             } else {
-                                column_types[i].insert(infer_field_schema(&s, parse_dates));
+                                column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
                         }
                     }
@@ -455,7 +455,7 @@ pub fn infer_file_schema(
             quote_char,
             eol_char,
             null_values,
-            parse_dates,
+            try_parse_dates,
         );
     }
 
