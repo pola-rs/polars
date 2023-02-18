@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -92,7 +92,7 @@ def test_strptime_extract_times(
     ],
 )
 def test_strptime_epoch(
-    temporal_unit: Literal["d", "s", "ms"],
+    temporal_unit: TimeUnit,
     expected: pl.Series,
     series_of_str_dates: pl.Series,
 ) -> None:
@@ -101,7 +101,7 @@ def test_strptime_epoch(
     assert_series_equal(s.dt.epoch(tu=temporal_unit), expected)
 
 
-def test_strptime_fractional_seconds(series_of_str_dates: pl.Series):
+def test_strptime_fractional_seconds(series_of_str_dates: pl.Series) -> None:
     s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(
@@ -143,7 +143,7 @@ def test_duration_extract_times(
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
 def test_truncate(
-    time_unit: Literal["ms", "us", "ns"],
+    time_unit: TimeUnit,
     every: str | timedelta,
     date_2022_01_01: datetime,
     date_2022_01_02: datetime,
@@ -179,7 +179,7 @@ def test_truncate(
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
 def test_round(
-    time_unit: Literal["ms", "us", "ns"],
+    time_unit: TimeUnit,
     every: str | timedelta,
     date_2022_01_01: datetime,
     date_2022_01_02: datetime,
@@ -215,7 +215,7 @@ def test_round(
     ids=["nanoseconds", "microseconds", "milliseconds"],
 )
 def test_cast_time_units(
-    time_unit: Literal["ms", "us", "ns"],
+    time_unit: TimeUnit,
     date_in_that_unit: list[int],
 ) -> None:
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
@@ -327,7 +327,7 @@ def test_year_empty_df() -> None:
     ["ms", "us", "ns"],
     ids=["milliseconds", "microseconds", "nanoseconds"],
 )
-def test_weekday(time_unit: Literal["ms", "us", "ns"]) -> None:
+def test_weekday(time_unit: TimeUnit) -> None:
     friday = pl.Series([datetime(2023, 2, 17)])
 
     assert friday.dt.cast_time_unit(time_unit).dt.weekday()[0] == 5
