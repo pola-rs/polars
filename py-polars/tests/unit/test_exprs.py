@@ -526,12 +526,12 @@ def test_map_dict() -> None:
 
 
 def test_lit_dtypes() -> None:
-    def lit_series(value: Any, dtype: PolarsDataType) -> pl.Series:
+    def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:
         return pl.select(pl.lit(value, dtype=dtype)).to_series()
 
     d = datetime(2049, 10, 5, 1, 2, 3, 987654)
     d_ms = datetime(2049, 10, 5, 1, 2, 3, 987000)
-    d_aware = datetime(2049, 10, 5, 1, 2, 3, 987654, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    d_tz = datetime(2049, 10, 5, 1, 2, 3, 987654, tzinfo=ZoneInfo("Asia/Kathmandu"))
 
     td = timedelta(days=942, hours=6, microseconds=123456)
     td_ms = timedelta(days=942, seconds=21600, microseconds=123000)
@@ -542,7 +542,9 @@ def test_lit_dtypes() -> None:
             "dtm_us": lit_series(d, pl.Datetime("us")),
             "dtm_ns": lit_series(d, pl.Datetime("ns")),
             "dtm_aware_0": lit_series(d, pl.Datetime("us", "Asia/Kathmandu")),
-            "dtm_aware_1": lit_series(d_aware, pl.Datetime("us")),
+            "dtm_aware_1": lit_series(d_tz, pl.Datetime("us")),
+            "dtm_aware_2": lit_series(d_tz, None),
+            "dtm_aware_3": lit_series(d, pl.Datetime(None, "Asia/Kathmandu")),
             "dur_ms": lit_series(td, pl.Duration("ms")),
             "dur_us": lit_series(td, pl.Duration("us")),
             "dur_ns": lit_series(td, pl.Duration("ns")),
@@ -557,6 +559,8 @@ def test_lit_dtypes() -> None:
         pl.Datetime("ns"),
         pl.Datetime("us", "Asia/Kathmandu"),
         pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
         pl.Duration("ms"),
         pl.Duration("us"),
         pl.Duration("ns"),
@@ -564,7 +568,7 @@ def test_lit_dtypes() -> None:
         pl.UInt16,
         pl.Int16,
     ]
-    assert df.row(0) == (d_ms, d, d, d_aware, d_aware, td_ms, td, td, 0, 0, 0)
+    assert df.row(0) == (d_ms, d, d, d_tz, d_tz, d_tz, d_tz, td_ms, td, td, 0, 0, 0)
 
 
 def test_incompatible_lit_dtype() -> None:
