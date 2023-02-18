@@ -1153,9 +1153,19 @@ def lit(
 
     if isinstance(value, datetime):
         tu = "us" if dtype is None else getattr(dtype, "tu", "us")
+        tz = (
+            value.tzinfo
+            if getattr(dtype, "tz", None) is None
+            else getattr(dtype, "tz", None)
+        )
+        if value.tzinfo is not None and getattr(dtype, "tz", None) is not None:
+            raise TypeError(
+                "Cannot cast tz-aware value to tz-aware dtype. "
+                "Please drop the time zone from the dtype."
+            )
         e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
-        if value.tzinfo is not None:
-            return e.dt.replace_time_zone(str(value.tzinfo))
+        if tz is not None:
+            return e.dt.replace_time_zone(str(tz))
         else:
             return e
 

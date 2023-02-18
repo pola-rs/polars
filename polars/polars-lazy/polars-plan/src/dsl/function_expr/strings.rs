@@ -346,7 +346,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         DataType::Datetime(tu, tz) => {
             if tz.is_some() && tz_aware {
                 return Err(PolarsError::ComputeError(
-                    "Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime.".into(),
+                    "Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime. Please drop time zone from the dtype.".into(),
                 ));
             }
             if options.exact {
