@@ -101,6 +101,10 @@ def _prepare_file_arg(
     )
     encoding_str = encoding if encoding else "utf8"
 
+    # PyArrow allows directories, so we only check that something is not
+    # a dir if we are not using PyArrow
+    check_not_dir = not use_pyarrow
+
     if isinstance(file, bytes):
         if has_non_utf8_non_utf8_lossy_encoding:
             return _check_empty(
@@ -138,7 +142,7 @@ def _prepare_file_arg(
                 BytesIO(file.read_bytes().decode(encoding_str).encode("utf8")),
                 context=f"Path ({file!r})",
             )
-        return managed_file(normalise_filepath(file))
+        return managed_file(normalise_filepath(file, check_not_dir))
 
     if isinstance(file, str):
         # make sure that this is before fsspec
@@ -151,7 +155,7 @@ def _prepare_file_arg(
 
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if infer_storage_options(file)["protocol"] == "file":
-                    return managed_file(normalise_filepath(file))
+                    return managed_file(normalise_filepath(file, check_not_dir))
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
 
@@ -161,12 +165,14 @@ def _prepare_file_arg(
 
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                    return managed_file([normalise_filepath(f) for f in file])
+                    return managed_file(
+                        [normalise_filepath(f, check_not_dir) for f in file]
+                    )
             kwargs["encoding"] = encoding
             return fsspec.open_files(file, **kwargs)
 
     if isinstance(file, str):
-        file = normalise_filepath(file)
+        file = normalise_filepath(file, check_not_dir)
         if has_non_utf8_non_utf8_lossy_encoding:
             with open(file, encoding=encoding_str) as f:
                 return _check_empty(
