@@ -33,7 +33,6 @@ impl FunctionExpr {
             Ok(fld)
         };
 
-        #[cfg(any(feature = "rolling_window", feature = "trigonometry", feature = "log"))]
         // set float supertype
         let float_dtype = || {
             map_dtype(&|dtype| match dtype {
@@ -108,7 +107,7 @@ impl FunctionExpr {
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
-            Pow => super_type(),
+            Pow => float_dtype(),
             Coalesce => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
