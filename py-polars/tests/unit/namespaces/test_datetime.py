@@ -37,21 +37,22 @@ def test_dt_strftime(series_of_dates: pl.Series) -> None:
 
 
 @pytest.mark.parametrize(
-    ("unit", "expected"),
+    ("unit_attr", "expected"),
     [
-        ("year", pl.Series("", [1997, 2024, 2052], pl.Int32)),
-        ("month", pl.Series("", [5, 10, 2], pl.UInt32)),
-        ("week", pl.Series("", [21, 40, 8], pl.UInt32)),
-        ("day", pl.Series("", [19, 4, 20], pl.UInt32)),
-        ("ordinal_day", pl.Series("", [139, 278, 51], pl.UInt32)),
+        ("year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
+        ("month", pl.Series(values=[5, 10, 2], dtype=pl.UInt32)),
+        ("week", pl.Series(values=[21, 40, 8], dtype=pl.UInt32)),
+        ("day", pl.Series(values=[19, 4, 20], dtype=pl.UInt32)),
+        ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.UInt32)),
+        ("day_of_year", pl.Series(values=[139, 278, 51], dtype=pl.UInt32)),
     ],
 )
-def test_dt_year_month_week_day_ordinal_day(
-    unit: str,
+def test_dt_extract_year_month_week_day_ordinal_day(
+    unit_attr: str,
     expected: pl.Series,
     series_of_dates: pl.Series,
 ) -> None:
-    assert_series_equal(getattr(series_of_dates.dt, unit)(), expected)
+    assert_series_equal(getattr(series_of_dates.dt, unit_attr)(), expected)
 
 
 def test_dt_datetimes() -> None:
@@ -84,22 +85,26 @@ def test_dt_datetimes() -> None:
 
 
 @pytest.mark.parametrize(
-    ("unit", "expected"),
+    ("unit_attr", "expected"),
     [
-        ("days", [1]),
-        ("hours", [24]),
-        ("seconds", [3600 * 24]),
-        ("milliseconds", [3600 * 24 * int(1e3)]),
-        ("microseconds", [3600 * 24 * int(1e6)]),
-        ("nanoseconds", [3600 * 24 * int(1e9)]),
+        ("days", pl.Series([1])),
+        ("hours", pl.Series([24])),
+        ("minutes", pl.Series([24 * 60])),
+        ("seconds", pl.Series([3600 * 24])),
+        ("milliseconds", pl.Series([3600 * 24 * int(1e3)])),
+        ("microseconds", pl.Series([3600 * 24 * int(1e6)])),
+        ("nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
     ],
 )
 def test_duration_extract_times(
-    unit: str, expected: list[int], date_2022_01_01: datetime, date_2022_01_02: datetime
+    unit_attr: str,
+    expected: pl.Series,
+    date_2022_01_01: datetime,
+    date_2022_01_02: datetime
 ) -> None:
     duration = pl.Series([date_2022_01_02]) - pl.Series([date_2022_01_01])
 
-    assert_series_equal(getattr(duration.dt, unit)(), pl.Series(expected))
+    assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
 
 
 @pytest.mark.parametrize(
