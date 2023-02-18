@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import random
+import sys
 import typing
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
-from zoneinfo import ZoneInfo
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+else:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
