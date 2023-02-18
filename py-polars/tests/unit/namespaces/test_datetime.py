@@ -36,27 +36,22 @@ def test_dt_strftime(series_of_dates: pl.Series) -> None:
     assert_series_equal(series_of_dates.dt.strftime("%F"), expected)
 
 
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [
+        ("year", pl.Series("", [1997, 2024, 2052], pl.Int32)),
+        ("month", pl.Series("", [5, 10, 2], pl.UInt32)),
+        ("week", pl.Series("", [21, 40, 8], pl.UInt32)),
+        ("day", pl.Series("", [19, 4, 20], pl.UInt32)),
+        ("ordinal_day", pl.Series("", [139, 278, 51], pl.UInt32)),
+    ],
+)
 def test_dt_year_month_week_day_ordinal_day(
+    unit: str,
+    expected: pl.Series,
     series_of_dates: pl.Series,
 ) -> None:
-    assert_series_equal(
-        series_of_dates.dt.year(), pl.Series([1997, 2024, 2052], dtype=pl.Int32)
-    )
-    assert_series_equal(
-        series_of_dates.dt.month(), pl.Series([5, 10, 2], dtype=pl.UInt32)
-    )
-    assert_series_equal(
-        series_of_dates.dt.weekday(), pl.Series([1, 5, 2], dtype=pl.UInt32)
-    )
-    assert_series_equal(
-        series_of_dates.dt.week(), pl.Series([21, 40, 8], dtype=pl.UInt32)
-    )
-    assert_series_equal(
-        series_of_dates.dt.day(), pl.Series([19, 4, 20], dtype=pl.UInt32)
-    )
-    assert_series_equal(
-        series_of_dates.dt.ordinal_day(), pl.Series([139, 278, 51], dtype=pl.UInt32)
-    )
+    assert_series_equal(getattr(series_of_dates.dt, unit)(), expected)
 
 
 def test_dt_datetimes() -> None:
