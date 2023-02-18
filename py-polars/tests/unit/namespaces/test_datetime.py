@@ -55,29 +55,52 @@ def test_dt_extract_year_month_week_day_ordinal_day(
     assert_series_equal(getattr(series_of_dates.dt, unit_attr)(), expected)
 
 
-def test_dt_datetimes() -> None:
+@pytest.mark.parametrize(
+    ("unit_attr", "expected"),
+    [
+        ("hour", pl.Series(values=[0, 3], dtype=pl.UInt32)),
+        ("minute", pl.Series(values=[0, 20], dtype=pl.UInt32)),
+        ("second", pl.Series(values=[0, 10], dtype=pl.UInt32)),
+        ("millisecond", pl.Series(values=[0, 987], dtype=pl.UInt32)),
+        ("microsecond", pl.Series(values=[0, 987654], dtype=pl.UInt32)),
+        ("nanosecond", pl.Series(values=[0, 987654321], dtype=pl.UInt32)),
+    ],
+)
+def test_strptime_extract_times(
+    unit_attr: str,
+    expected: pl.Series,
+    series_of_dates: pl.Series,
+) -> None:
     s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
     s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
-    # hours, minutes, seconds, milliseconds, microseconds, and nanoseconds
-    assert_series_equal(s.dt.hour(), pl.Series([0, 3], dtype=pl.UInt32))
-    assert_series_equal(s.dt.minute(), pl.Series([0, 20], dtype=pl.UInt32))
-    assert_series_equal(s.dt.second(), pl.Series([0, 10], dtype=pl.UInt32))
-    assert_series_equal(s.dt.millisecond(), pl.Series([0, 987], dtype=pl.UInt32))
-    assert_series_equal(s.dt.microsecond(), pl.Series([0, 987654], dtype=pl.UInt32))
-    assert_series_equal(s.dt.nanosecond(), pl.Series([0, 987654321], dtype=pl.UInt32))
+    assert_series_equal(getattr(s.dt, unit_attr)(), expected)
 
-    # epoch methods
-    assert_series_equal(s.dt.epoch(tu="d"), pl.Series([18262, 18294], dtype=pl.Int32))
-    assert_series_equal(
-        s.dt.epoch(tu="s"),
-        pl.Series([1_577_836_800, 1_580_613_610], dtype=pl.Int64),
-    )
-    assert_series_equal(
-        s.dt.epoch(tu="ms"),
-        pl.Series([1_577_836_800_000, 1_580_613_610_000], dtype=pl.Int64),
-    )
-    # fractional seconds
+
+@pytest.mark.parametrize(
+    ("temporal_unit", "expected"),
+    [
+        ("d", pl.Series(values=[18262, 18294], dtype=pl.Int32)),
+        ("s", pl.Series(values=[1_577_836_800, 1_580_613_610], dtype=pl.Int64)),
+        (
+            "ms",
+            pl.Series(values=[1_577_836_800_000, 1_580_613_610_000], dtype=pl.Int64),
+        ),
+    ],
+)
+def test_strptime_epoch(
+    temporal_unit: Literal["d", "s", "ms"], expected: pl.Series
+) -> None:
+    s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
+    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+
+    assert_series_equal(s.dt.epoch(tu=temporal_unit), expected)
+
+
+def test_strptime_fractional_seconds():
+    s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
+    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+
     assert_series_equal(
         s.dt.second(fractional=True),
         pl.Series([0.0, 10.987654321], dtype=pl.Float64),
@@ -100,7 +123,7 @@ def test_duration_extract_times(
     unit_attr: str,
     expected: pl.Series,
     date_2022_01_01: datetime,
-    date_2022_01_02: datetime
+    date_2022_01_02: datetime,
 ) -> None:
     duration = pl.Series([date_2022_01_02]) - pl.Series([date_2022_01_01])
 
