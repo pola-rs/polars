@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Literal
 
-import numpy as np
 import pytest
 
 import polars as pl
@@ -256,16 +255,12 @@ def test_date_time_combine() -> None:
         }
     )
 
-    # Use the .select() method to combine datetime/date and time
+    # Combine datetime/date and time
     df = df.select(
         [
-            pl.col("dtm")
-            .dt.combine(pl.col("tm"))
-            .alias("d1"),  # Combine datetime and time
-            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # Combine date and time
-            pl.col("dt")
-            .dt.combine(time(4, 5, 6))
-            .alias("d3"),  # Combine date and a specified time
+            pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),  # datetime & time
+            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # date & time
+            pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),  # date & specified time
         ]
     )
 
@@ -317,16 +312,12 @@ def test_date_offset() -> None:
         ]
     )
 
-    # Assert that the day of the month for all dates in the 'date_plus_1y' column is 1
+    # Assert that the day of the month for all the dates in new columns is 1
     assert (df["date_plus_1y"].dt.day() == 1).all()
-
-    # Assert that the day of the month for all dates in the 'date_min' column is 1
     assert (df["date_min"].dt.day() == 1).all()
 
     # Assert that the 'date_min' column contains the expected list of dates
-    expected_dates = [
-        datetime(year, 11, 1, 0, 0) for year in range(1998, 2019)
-    ]
+    expected_dates = [datetime(year, 11, 1, 0, 0) for year in range(1998, 2019)]
     assert df["date_min"].to_list() == expected_dates
 
 
