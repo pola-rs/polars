@@ -110,7 +110,9 @@ def expr_to_lit_or_expr(
     Expr
 
     """
-    if isinstance(expr, str) and not str_to_lit:
+    if isinstance(expr, Expr):
+        pass
+    elif isinstance(expr, str) and not str_to_lit:
         expr = pli.col(expr)
     elif (
         isinstance(expr, (int, float, str, pli.Series, datetime, date, time, timedelta))
@@ -123,7 +125,7 @@ def expr_to_lit_or_expr(
         structify = False
     elif isinstance(expr, (pli.WhenThen, pli.WhenThenThen)):
         expr = expr.otherwise(None)  # implicitly add the null branch.
-    elif not isinstance(expr, Expr):
+    else:
         raise TypeError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
             " pl.lit or pl.col"
