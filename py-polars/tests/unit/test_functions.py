@@ -256,6 +256,17 @@ def test_coalesce() -> None:
     assert df.select(pl.coalesce(pl.col(["a", "b", "c"]))).to_dict(False) == {
         "a": [1.0, 2.0, 3.0, None]
     }
+    # test literal and supertype #6988
+    df = pl.DataFrame(
+        {
+            "a": [1, None, None, None],
+            "b": [1, 2, None, None],
+            "c": [5, None, 3, None],
+        }
+    )
+    assert df.select(pl.coalesce(["a", "b", "c", 10])).to_dict(False) == {
+        "a": [1, 2, 3, 10]
+    }
 
 
 def test_ones_zeros() -> None:
