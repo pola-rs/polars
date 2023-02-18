@@ -451,7 +451,9 @@ impl OptimizationRule for TypeCoercionRule {
                         unpack!(get_aexpr_and_type(expr_arena, *other, &input_schema));
 
                     // early return until Unknown is set
-                    unpack!(early_escape(&super_type, &type_other));
+                    if matches!(type_other, DataType::Unknown) {
+                        return Ok(None);
+                    }
                     let new_st = unpack!(get_supertype(&super_type, &type_other));
                     super_type = modify_supertype(new_st, self_ae, other, &type_self, &type_other)
                 }
