@@ -1127,8 +1127,9 @@ def lit(
 
     """
     tu: TimeUnit
+
     if isinstance(value, datetime):
-        tu = "us"
+        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
         e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
         if value.tzinfo is not None:
             return e.dt.replace_time_zone(str(value.tzinfo))
@@ -1136,7 +1137,7 @@ def lit(
             return e
 
     elif isinstance(value, timedelta):
-        tu = "us"
+        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
         return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
 
     elif isinstance(value, time):
