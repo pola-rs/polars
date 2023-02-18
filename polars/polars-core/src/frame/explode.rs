@@ -282,7 +282,11 @@ impl DataFrame {
 
         for value_column_name in &value_vars {
             variable_col.extend_trusted_len_values(std::iter::repeat(value_column_name).take(len));
-            let value_col = self.column(value_column_name)?.cast(&st)?;
+            // ensure we go via the schema so we are O(1)
+            // self.column() is linear
+            // together with this loop that would make it O^2 over value_vars
+            let (pos, _name, _dtype) = schema.try_get_full(value_column_name)?;
+            let value_col = self.columns[pos].cast(&st).unwrap();
             values.extend_from_slice(value_col.chunks())
         }
         let values_arr = concatenate_owned_unchecked(&values)?;
