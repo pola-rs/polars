@@ -206,17 +206,22 @@ def test_round(
     assert out.dt[-1] == stop
 
 
-def test_cast_time_units() -> None:
+@pytest.mark.parametrize(
+    ("time_unit", "date_in_that_unit"),
+    [
+        ("ns", [978307200000000000, 981022089000000000]),
+        ("us", [978307200000000, 981022089000000]),
+        ("ms", [978307200000, 981022089000]),
+    ],
+    ids=["nanoseconds", "microseconds", "milliseconds"],
+)
+def test_cast_time_units(
+    time_unit: Literal["ms", "us", "ns"],
+    date_in_that_unit: list[int],
+) -> None:
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
-    dates_in_ns = np.array([978307200000000000, 981022089000000000])
 
-    assert dates.dt.cast_time_unit("ns").cast(int).to_list() == list(dates_in_ns)
-    assert dates.dt.cast_time_unit("us").cast(int).to_list() == list(
-        dates_in_ns // 1_000
-    )
-    assert dates.dt.cast_time_unit("ms").cast(int).to_list() == list(
-        dates_in_ns // 1_000_000
-    )
+    assert dates.dt.cast_time_unit(time_unit).cast(int).to_list() == date_in_that_unit
 
 
 def test_epoch() -> None:
