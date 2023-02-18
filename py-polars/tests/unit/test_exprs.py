@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import typing
+from datetime import datetime
 from typing import cast
 
 import numpy as np
@@ -520,3 +521,16 @@ def test_map_dict() -> None:
         "country_code": ["FR", None, "ES", "DE"],
         "remapped": ["France", "Not specified", "2", "Germany"],
     }
+
+
+def test_lit_dtype_timeunits() -> None:
+    d = datetime(2049, 10, 5, 1, 2, 3, 456789)
+    df = pl.DataFrame(
+        {
+            "ms": pl.select(pl.lit(d, dtype=pl.Datetime("ms"))).to_series(),
+            "us": pl.select(pl.lit(d, dtype=pl.Datetime("us"))).to_series(),
+            "ns": pl.select(pl.lit(d, dtype=pl.Datetime("ns"))).to_series(),
+        }
+    )
+    assert df.dtypes == [pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")]
+    assert df.row(0) == (datetime(2049, 10, 5, 1, 2, 3, 456000), d, d)
