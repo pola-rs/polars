@@ -1694,8 +1694,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         by
-            Column or columns to group by. Accepts expression input. Strings are parsed
-            as column names.
+            Column(s) to group by. Accepts expression input. Strings are parsed as
+            column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
         maintain_order

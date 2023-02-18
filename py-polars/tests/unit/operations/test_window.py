@@ -7,6 +7,30 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
+def test_over_args() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["a", "a", "b"],
+            "b": [1, 2, 3],
+            "c": [3, 2, 1],
+        }
+    )
+
+    # Single input
+    expected = pl.Series("c", [3, 3, 1]).to_frame()
+    result = df.select(pl.col("c").max().over("a"))
+    assert_frame_equal(result, expected)
+
+    # Multiple input as list
+    expected = pl.Series("c", [3, 2, 1]).to_frame()
+    result = df.select(pl.col("c").max().over(["a", "b"]))
+    assert_frame_equal(result, expected)
+
+    # Multiple input as positional args
+    result = df.select(pl.col("c").max().over("a", "b"))
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int32])
 def test_std(dtype: type[pl.DataType]) -> None:
     if dtype == pl.Int32:
