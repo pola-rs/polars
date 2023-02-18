@@ -1688,6 +1688,20 @@ def test_is_unique() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     assert_series_equal(s.is_unique(), pl.Series("a", [True, False, False, True]))
 
+    # utf8
+    assert pl.Series(["a", "b", "c", "a"]).is_duplicated().to_list() == [
+        True,
+        False,
+        False,
+        True,
+    ]
+    assert pl.Series(["a", "b", "c", "a"]).is_unique().to_list() == [
+        False,
+        True,
+        True,
+        False,
+    ]
+
 
 def test_is_duplicated() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
