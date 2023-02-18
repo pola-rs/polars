@@ -223,7 +223,7 @@ def test_cast_time_units(
     assert dates.dt.cast_time_unit(time_unit).cast(int).to_list() == date_in_that_unit
 
 
-def test_epoch() -> None:
+def test_epoch_matches_timestamp() -> None:
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 
     for unit in DTYPE_TEMPORAL_UNITS:
@@ -255,7 +255,7 @@ def test_date_time_combine() -> None:
         }
     )
 
-    # Combine datetime/date and time
+    # Combine datetime/date with time
     df = df.select(
         [
             pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),  # datetime & time
@@ -264,22 +264,18 @@ def test_date_time_combine() -> None:
         ]
     )
 
-    # Check that the new columns have the expected values and datatypes
+    # Assert that the new columns have the expected values and datatypes
     expected_dict = {
-        "d1": [
-            datetime(
-                2022, 12, 31, 1, 2, 3, 456000
-            ),  # Time component should be overwritten by `tm`
+        "d1": [  # Time component should be overwritten by `tm` values
+            datetime(2022, 12, 31, 1, 2, 3, 456000),
             datetime(2023, 7, 5, 7, 8, 9, 101000),
         ],
-        "d2": [
+        "d2": [  # Both date and time components combined "as-is" into new datetime
             datetime(2022, 10, 10, 1, 2, 3, 456000),
             datetime(2022, 7, 5, 7, 8, 9, 101000),
         ],
-        "d3": [
-            datetime(
-                2022, 10, 10, 4, 5, 6
-            ),  # New datetime should use specified time component
+        "d3": [  # New datetime should use specified time component
+            datetime(2022, 10, 10, 4, 5, 6),
             datetime(2022, 7, 5, 4, 5, 6),
         ],
     }
