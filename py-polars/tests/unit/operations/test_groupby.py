@@ -558,7 +558,7 @@ def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> Non
 
 
 def test_groupby_dynamic_elementwise_following_mean_agg_6904() -> None:
-    assert (
+    df = (
         pl.DataFrame(
             {
                 "a": [
@@ -571,7 +571,13 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904() -> None:
         .groupby_dynamic("a", every="10s", period="100s")
         .agg([pl.col("b").mean().sin().alias("c")])
         .collect()
-    ).to_dict(False) == {
-        "a": [datetime(2021, 1, 1, 0, 0), datetime(2021, 1, 1, 0, 0, 10)],
-        "c": [0.9092974268256817, -0.7568024953079282],
-    }
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": [datetime(2021, 1, 1, 0, 0), datetime(2021, 1, 1, 0, 0, 10)],
+                "c": [0.9092974268256817, -0.7568024953079282],
+            }
+        ),
+    )

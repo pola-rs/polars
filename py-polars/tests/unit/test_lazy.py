@@ -1358,9 +1358,13 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
 
 def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.col("A").lower_bound())
-    assert res_expr["A"][0] < -10_000_000
-    res_expr = fruits_cars.select(pl.col("A").upper_bound())
-    assert res_expr["A"][0] > 10_000_000
+    assert res_expr.item() == -9223372036854775808
+
+    res_expr = fruits_cars.select(pl.col("B").upper_bound())
+    assert res_expr.item() == 9223372036854775807
+
+    with pytest.raises(pl.ComputeError):
+        fruits_cars.select(pl.col("fruits").upper_bound())
 
 
 def test_nested_min_max() -> None:

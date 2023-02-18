@@ -1619,30 +1619,25 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cumsum(self, reverse: bool = False) -> Series:
+    def cummax(self, reverse: bool = False) -> Series:
         """
-        Get an array with the cumulative sum computed at every element.
+        Get an array with the cumulative max computed at every element.
 
         Parameters
         ----------
         reverse
             reverse the operation.
 
-        Notes
-        -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
-
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cumsum()
+        >>> s = pl.Series("s", [3, 5, 1])
+        >>> s.cummax()
         shape: (3,)
-        Series: 'a' [i64]
+        Series: 's' [i64]
         [
-            1
             3
-            6
+            5
+            5
         ]
 
         """
@@ -1658,37 +1653,14 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("s", [1, 2, 3])
         >>> s.cummin()
         shape: (3,)
-        Series: 'a' [i64]
+        Series: 's' [i64]
         [
             1
             1
             1
-        ]
-
-        """
-
-    def cummax(self, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative max computed at every element.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [3, 5, 1])
-        >>> s.cummax()
-        shape: (3,)
-        Series: 'a' [i64]
-        [
-            3
-            5
-            5
         ]
 
         """
@@ -1716,6 +1688,34 @@ class Series:
         [
             1
             2
+            6
+        ]
+
+        """
+
+    def cumsum(self, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative sum computed at every element.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.cumsum()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            3
             6
         ]
 
@@ -4778,6 +4778,62 @@ class Series:
         ----------
         max_val
             Maximum value.
+
+        """
+
+    def lower_bound(self) -> Self:
+        """
+        Return the lower bound of this Series' dtype as a unit Series.
+
+        See Also
+        --------
+        upper_bound : return the upper bound of the given Series' dtype.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", [-1, 0, 1], dtype=pl.Int32)
+        >>> s.lower_bound()
+        shape: (1,)
+        Series: 's' [i32]
+        [
+            -2147483648
+        ]
+
+        >>> s = pl.Series("s", [1.0, 2.5, 3.0], dtype=pl.Float32)
+        >>> s.lower_bound()
+        shape: (1,)
+        Series: 's' [f32]
+        [
+            -inf
+        ]
+
+        """
+
+    def upper_bound(self) -> Self:
+        """
+        Return the upper bound of this Series' dtype as a unit Series.
+
+        See Also
+        --------
+        lower_bound : return the lower bound of the given Series' dtype.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", [-1, 0, 1], dtype=pl.Int8)
+        >>> s.upper_bound()
+        shape: (1,)
+        Series: 's' [i8]
+        [
+            127
+        ]
+
+        >>> s = pl.Series("s", [1.0, 2.5, 3.0], dtype=pl.Float64)
+        >>> s.upper_bound()
+        shape: (1,)
+        Series: 's' [f64]
+        [
+            inf
+        ]
 
         """
 

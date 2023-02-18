@@ -2420,3 +2420,26 @@ def test_map_dict() -> None:
         s.map_dict(remap, default=s.cast(pl.Utf8)),
         pl.Series("s", ["-1", "two", None, "four", "-5"]),
     )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "lower", "upper"),
+    [
+        (pl.Int8, -128, 127),
+        (pl.UInt8, 0, 255),
+        (pl.Int16, -32768, 32767),
+        (pl.UInt16, 0, 65535),
+        (pl.Int32, -2147483648, 2147483647),
+        (pl.UInt32, 0, 4294967295),
+        (pl.Int64, -9223372036854775808, 9223372036854775807),
+        (pl.UInt64, 0, 18446744073709551615),
+        (pl.Float32, float("-inf"), float("inf")),
+        (pl.Float64, float("-inf"), float("inf")),
+    ],
+)
+def test_upper_lower_bounds(
+    dtype: PolarsDataType, upper: int | float, lower: int | float
+) -> None:
+    s = pl.Series("s", dtype=dtype)
+    assert s.lower_bound().item() == lower
+    assert s.upper_bound().item() == upper
