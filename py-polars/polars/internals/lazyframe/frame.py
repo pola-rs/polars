@@ -2681,13 +2681,17 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
-        exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
-        exprs.extend(
-            pli.expr_to_lit_or_expr(
-                expr, structify=structify, name=name, str_to_lit=False
-            )._pyexpr
-            for name, expr in named_exprs.items()
-        )
+
+        if more_exprs:
+            exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
+
+        if named_exprs:
+            exprs.extend(
+                pli.expr_to_lit_or_expr(
+                    expr, structify=structify, name=name, str_to_lit=False
+                )._pyexpr
+                for name, expr in named_exprs.items()
+            )
 
         return self._from_pyldf(self._ldf.with_columns(exprs))
 
