@@ -25,15 +25,20 @@ def date_2022_01_02() -> datetime:
 
 
 @pytest.fixture()
-def series_of_dates() -> pl.Series:
+def series_of_int_dates() -> pl.Series:
     return pl.Series([10000, 20000, 30000], dtype=pl.Date)
 
 
-def test_dt_strftime(series_of_dates: pl.Series) -> None:
-    expected = pl.Series(["1997-05-19", "2024-10-04", "2052-02-20"])
+@pytest.fixture()
+def series_of_str_dates() -> pl.Series:
+    return pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
 
-    assert series_of_dates.dtype == pl.Date
-    assert_series_equal(series_of_dates.dt.strftime("%F"), expected)
+
+def test_dt_strftime(series_of_int_dates: pl.Series) -> None:
+    expected_str_dates = pl.Series(["1997-05-19", "2024-10-04", "2052-02-20"])
+
+    assert series_of_int_dates.dtype == pl.Date
+    assert_series_equal(series_of_int_dates.dt.strftime("%F"), expected_str_dates)
 
 
 @pytest.mark.parametrize(
@@ -44,15 +49,14 @@ def test_dt_strftime(series_of_dates: pl.Series) -> None:
         ("week", pl.Series(values=[21, 40, 8], dtype=pl.UInt32)),
         ("day", pl.Series(values=[19, 4, 20], dtype=pl.UInt32)),
         ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.UInt32)),
-        ("day_of_year", pl.Series(values=[139, 278, 51], dtype=pl.UInt32)),
     ],
 )
 def test_dt_extract_year_month_week_day_ordinal_day(
     unit_attr: str,
     expected: pl.Series,
-    series_of_dates: pl.Series,
+    series_of_int_dates: pl.Series,
 ) -> None:
-    assert_series_equal(getattr(series_of_dates.dt, unit_attr)(), expected)
+    assert_series_equal(getattr(series_of_int_dates.dt, unit_attr)(), expected)
 
 
 @pytest.mark.parametrize(
@@ -69,10 +73,10 @@ def test_dt_extract_year_month_week_day_ordinal_day(
 def test_strptime_extract_times(
     unit_attr: str,
     expected: pl.Series,
-    series_of_dates: pl.Series,
+    series_of_int_dates: pl.Series,
+    series_of_str_dates: pl.Series,
 ) -> None:
-    s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
-    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(getattr(s.dt, unit_attr)(), expected)
 
@@ -89,17 +93,17 @@ def test_strptime_extract_times(
     ],
 )
 def test_strptime_epoch(
-    temporal_unit: Literal["d", "s", "ms"], expected: pl.Series
+    temporal_unit: Literal["d", "s", "ms"],
+    expected: pl.Series,
+    series_of_str_dates: pl.Series,
 ) -> None:
-    s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
-    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(s.dt.epoch(tu=temporal_unit), expected)
 
 
-def test_strptime_fractional_seconds():
-    s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
-    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+def test_strptime_fractional_seconds(series_of_str_dates: pl.Series):
+    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(
         s.dt.second(fractional=True),
@@ -316,27 +320,7 @@ def test_date_offset() -> None:
 
     # Assert that the 'date_min' column contains the expected list of dates
     expected_dates = [
-        datetime(1998, 11, 1, 0, 0),
-        datetime(1999, 11, 1, 0, 0),
-        datetime(2000, 11, 1, 0, 0),
-        datetime(2001, 11, 1, 0, 0),
-        datetime(2002, 11, 1, 0, 0),
-        datetime(2003, 11, 1, 0, 0),
-        datetime(2004, 11, 1, 0, 0),
-        datetime(2005, 11, 1, 0, 0),
-        datetime(2006, 11, 1, 0, 0),
-        datetime(2007, 11, 1, 0, 0),
-        datetime(2008, 11, 1, 0, 0),
-        datetime(2009, 11, 1, 0, 0),
-        datetime(2010, 11, 1, 0, 0),
-        datetime(2011, 11, 1, 0, 0),
-        datetime(2012, 11, 1, 0, 0),
-        datetime(2013, 11, 1, 0, 0),
-        datetime(2014, 11, 1, 0, 0),
-        datetime(2015, 11, 1, 0, 0),
-        datetime(2016, 11, 1, 0, 0),
-        datetime(2017, 11, 1, 0, 0),
-        datetime(2018, 11, 1, 0, 0),
+        datetime(year, 11, 1, 0, 0) for year in range(1998, 2019)
     ]
     assert df["date_min"].to_list() == expected_dates
 
