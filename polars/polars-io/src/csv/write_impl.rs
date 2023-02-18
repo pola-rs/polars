@@ -125,7 +125,9 @@ fn write_anyvalue(
                 Some(fmt) => write!(f, "{}", date.format(fmt)),
             }
         }
-        dt => panic!("DataType: {dt} not supported in writing to csv"),
+        ref dt => Err(PolarsError::ComputeError(
+            format!("DataType: {dt} not supported in writing to csv").into(),
+        ))?,
     }
     .map_err(|err| match value {
         AnyValue::Datetime(_, _, tz) => {
