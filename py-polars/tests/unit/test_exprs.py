@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import random
 import typing
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -530,6 +531,7 @@ def test_lit_dtypes() -> None:
 
     d = datetime(2049, 10, 5, 1, 2, 3, 987654)
     d_ms = datetime(2049, 10, 5, 1, 2, 3, 987000)
+    d_aware = datetime(2049, 10, 5, 1, 2, 3, 987654, tzinfo=ZoneInfo("Asia/Kathmandu"))
 
     td = timedelta(days=942, hours=6, microseconds=123456)
     td_ms = timedelta(days=942, seconds=21600, microseconds=123000)
@@ -539,6 +541,8 @@ def test_lit_dtypes() -> None:
             "dtm_ms": lit_series(d, pl.Datetime("ms")),
             "dtm_us": lit_series(d, pl.Datetime("us")),
             "dtm_ns": lit_series(d, pl.Datetime("ns")),
+            "dtm_aware_0": lit_series(d, pl.Datetime("us", "Asia/Kathmandu")),
+            "dtm_aware_1": lit_series(d_aware, pl.Datetime("us")),
             "dur_ms": lit_series(td, pl.Duration("ms")),
             "dur_us": lit_series(td, pl.Duration("us")),
             "dur_ns": lit_series(td, pl.Duration("ns")),
@@ -551,6 +555,8 @@ def test_lit_dtypes() -> None:
         pl.Datetime("ms"),
         pl.Datetime("us"),
         pl.Datetime("ns"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
         pl.Duration("ms"),
         pl.Duration("us"),
         pl.Duration("ns"),
@@ -558,4 +564,12 @@ def test_lit_dtypes() -> None:
         pl.UInt16,
         pl.Int16,
     ]
-    assert df.row(0) == (d_ms, d, d, td_ms, td, td, 0, 0, 0)
+    assert df.row(0) == (d_ms, d, d, d_aware, d_aware, td_ms, td, td, 0, 0, 0)
+
+
+def test_incompatible_lit_dtype() -> None:
+    with pytest.raises(TypeError, match="Cannot cast tz-aware value to tz-aware dtype"):
+        pl.lit(
+            datetime(2020, 1, 1, tzinfo=timezone.utc),
+            dtype=pl.Datetime("us", "Asia/Kathmandu"),
+        )
