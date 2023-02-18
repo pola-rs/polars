@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
-    DataType,
-    DataTypeClass,
     Date,
     Datetime,
     Duration,
@@ -81,15 +79,7 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: (
-        str
-        | Sequence[str]
-        | Sequence[PolarsDataType]
-        | set[PolarsDataType]
-        | frozenset[PolarsDataType]
-        | pli.Series
-        | PolarsDataType
-    ),
+    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
@@ -197,33 +187,29 @@ def col(
     └─────┴───────────┴─────┘
 
     """
-    if isinstance(name, pli.Series):
-        name = name.to_list()
-
-    if isinstance(name, DataTypeClass):
-        name = [name]
-
-    if isinstance(name, DataType):
+    if isinstance(name, str):
+        return pli.wrap_expr(pycol(name))
+    elif is_polars_dtype(name):
         return pli.wrap_expr(_dtype_cols([name]))
+    elif isinstance(name, Iterable):
+        names = list(name)
+        if not names:
+            return pli.wrap_expr(pycols(names))
 
-    elif not isinstance(name, str) and isinstance(
-        name, (list, tuple, set, frozenset, Sequence)
-    ):
-        if len(name) == 0:
-            return pli.wrap_expr(pycols(name))
+        item = names[0]
+        if isinstance(item, str):
+            return pli.wrap_expr(pycols(names))
+        elif is_polars_dtype(item):
+            return pli.wrap_expr(_dtype_cols(names))
         else:
-            names = list(name)
-            item = names[0]
-            if isinstance(item, str):
-                return pli.wrap_expr(pycols(names))
-            elif is_polars_dtype(item):
-                return pli.wrap_expr(_dtype_cols(names))
-            else:
-                raise ValueError(
-                    "Expected list values to be all `str` or all `DataType`"
-                )
-
-    return pli.wrap_expr(pycol(name))
+            raise ValueError(
+                "Invalid input for `col`. Expected iterable of type `str` or DataType,"
+                f" got iterable of type {type(item)!r}"
+            )
+    else:
+        raise ValueError(
+            f"Invalid input for `col`. Expected `str` or `DataType`, got {type(name)!r}"
+        )
 
 
 def element() -> pli.Expr:
