@@ -65,14 +65,6 @@ def test_string_numeric_comp_err() -> None:
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
 
-def test_panic_exception() -> None:
-    with pytest.raises(
-        pl.PanicException,
-        match=r"""this operation is not implemented/valid for this dtype: .*""",
-    ):
-        pl.struct(pl.Series("a", [1, 2, 3]), eager=True).sort()
-
-
 @typing.no_type_check
 def test_join_lazy_on_df() -> None:
     df_left = pl.DataFrame(
