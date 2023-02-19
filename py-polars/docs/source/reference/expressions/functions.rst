@@ -46,6 +46,8 @@ These functions are available from the polars module root and can be used as exp
    min
    n_unique
    corr
+   pearson_corr
+   spearman_rank_corr
    quantile
    reduce
    repeat
