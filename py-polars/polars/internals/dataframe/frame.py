@@ -5021,7 +5021,7 @@ class DataFrame:
         """
         return self._from_pydf(
             self.lazy()
-            .fill_null(value, strategy, limit, matches_supertype)
+            .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
             .collect(no_optimization=True)
             ._df
         )
