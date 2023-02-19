@@ -201,20 +201,22 @@ def range_to_slice(rng: range) -> slice:
 
 def handle_projection_columns(
     columns: Sequence[str] | Sequence[int] | str | None,
-) -> tuple[list[int] | None, list[str] | None]:
+) -> tuple[list[int] | None, Sequence[str] | None]:
     """Disambiguates between columns specified as integers vs. strings."""
     projection: list[int] | None = None
-    if columns:
+    new_columns: Sequence[str] | None = None
+    if columns is not None:
         if isinstance(columns, str):
-            columns = [columns]
+            new_columns = [columns]
         elif is_int_sequence(columns):
             projection = list(columns)
-            columns = None
         elif not is_str_sequence(columns):
             raise ValueError(
                 "'columns' arg should contain a list of all integers or all strings"
                 " values."
             )
+        else:
+            new_columns = columns
         if columns and len(set(columns)) != len(columns):
             raise ValueError(
                 f"'columns' arg should only have unique values. Got '{columns}'."
@@ -223,7 +225,7 @@ def handle_projection_columns(
             raise ValueError(
                 f"'columns' arg should only have unique values. Got '{projection}'."
             )
-    return projection, columns  # type: ignore[return-value]
+    return projection, new_columns
 
 
 def _to_python_time(value: int) -> time:
@@ -333,13 +335,14 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
 
 def _localize(dt: datetime, tz: str) -> datetime:
     # zone info installation should already be checked
+    _tzinfo: ZoneInfo | tzinfo
     try:
-        tzinfo = ZoneInfo(tz)
+        _tzinfo = ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
-        tzinfo = _parse_fixed_tz_offset(tz)  # type: ignore[assignment]
+        _tzinfo = _parse_fixed_tz_offset(tz)
 
-    return dt.astimezone(tzinfo)
+    return dt.astimezone(_tzinfo)
 
 
 def _in_notebook() -> bool:

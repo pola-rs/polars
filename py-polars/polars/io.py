@@ -10,6 +10,7 @@ from typing import (
     BinaryIO,
     Callable,
     Mapping,
+    Sequence,
     TextIO,
     cast,
     overload,
@@ -58,7 +59,7 @@ def _check_arg_is_1byte(
 def read_csv(
     file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
-    columns: list[int] | list[str] | None = None,
+    columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: list[str] | None = None,
     sep: str = ",",
     comment_char: str | None = None,
@@ -230,7 +231,7 @@ def read_csv(
         and not low_memory
         and null_values is None
     ):
-        include_columns = None
+        include_columns: Sequence[str] | None = None
 
         if columns:
             if not has_header:
@@ -1235,7 +1236,7 @@ def _read_excel_sheet(
     parser: Any,
     sheet_id: int | None,
     sheet_name: str | None,
-    read_csv_options: dict[str, Any] | None,
+    read_csv_options: dict[str, Any],
 ) -> DataFrame:
     csv_buffer = StringIO()
 
@@ -1246,7 +1247,7 @@ def _read_excel_sheet(
     csv_buffer.seek(0)
 
     # Parse CSV output.
-    return read_csv(csv_buffer, **read_csv_options)  # type: ignore[arg-type]
+    return read_csv(csv_buffer, **read_csv_options)
 
 
 def _get_delta_lake_table(
@@ -1660,7 +1661,7 @@ def scan_ds(ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True) -> LazyFr
 def read_csv_batched(
     file: str | Path,
     has_header: bool = True,
-    columns: list[int] | list[str] | None = None,
+    columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: list[str] | None = None,
     sep: str = ",",
     comment_char: str | None = None,

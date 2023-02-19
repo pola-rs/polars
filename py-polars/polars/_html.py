@@ -5,7 +5,10 @@ import html
 import os
 from textwrap import dedent
 from types import TracebackType
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
+
+if TYPE_CHECKING:
+    from polars.internals import DataFrame
 
 
 class Tag:
@@ -43,7 +46,7 @@ class Tag:
 class HTMLFormatter:
     def __init__(
         self,
-        df: DataFrame,  # type: ignore[name-defined] # noqa: F821
+        df: DataFrame,
         max_cols: int = 75,
         max_rows: int = 40,
         from_series: bool = False,
@@ -75,7 +78,7 @@ class HTMLFormatter:
 
     def write_header(self) -> None:
         """Write the header of an HTML table."""
-        shape = self.df.shape
+        shape: tuple[int, ...] = self.df.shape
         if self.series:
             shape = shape[:1]
 
