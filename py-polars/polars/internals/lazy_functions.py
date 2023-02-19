@@ -1379,6 +1379,90 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
 
 
+def spearman_rank_corr(
+    a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
+) -> pli.Expr:
+    """
+    Compute the spearman rank correlation between two columns.
+    Missing data will be excluded from the computation.
+
+    Parameters
+    ----------
+    a
+        Column name or Expression.
+    b
+        Column name or Expression.
+    ddof
+        Delta degrees of freedom
+    propagate_nans
+        If `True` any `NaN` encountered will lead to `NaN` in the output.
+        Defaults to `False` where `NaN` are regarded as larger than any finite number
+        and thus lead to the highest rank.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.spearman_rank_corr("a", "b"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 0.5 │
+    └─────┘.
+    """
+    warnings.warn(
+        "`spearman_rank_corr()` is deprecated in favor of `corr()`",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    if isinstance(a, str):
+        a = col(a)
+    if isinstance(b, str):
+        b = col(b)
+    return pli.wrap_expr(
+        pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
+    )
+
+
+def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
+    """
+    Compute the pearson's correlation between two columns.
+
+    Parameters
+    ----------
+    a
+        Column name or Expression.
+    b
+        Column name or Expression.
+    ddof
+        Delta degrees of freedom
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.pearson_corr("a", "b"))
+    shape: (1, 1)
+    ┌──────────┐
+    │ a        │
+    │ ---      │
+    │ f64      │
+    ╞══════════╡
+    │ 0.544705 │
+    └──────────┘.
+    """
+    warnings.warn(
+        "`pearson_corr()` is deprecated in favor of `corr()`",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    if isinstance(a, str):
+        a = col(a)
+    if isinstance(b, str):
+        b = col(b)
+    return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+
+
 def corr(
     a: str | pli.Expr,
     b: str | pli.Expr,
