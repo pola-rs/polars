@@ -1338,7 +1338,7 @@ def spearman_rank_corr(
     │ f64 │
     ╞═════╡
     │ 0.5 │
-    └─────┘.
+    └─────┘
 
     """
     warnings.warn(
@@ -1378,7 +1378,7 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     │ f64      │
     ╞══════════╡
     │ 0.544705 │
-    └──────────┘.
+    └──────────┘
 
     """
     warnings.warn(
