@@ -2589,56 +2589,55 @@ def arg_where(
         return pli.wrap_expr(py_arg_where(condition._pyexpr))
 
 
-def coalesce(
-    exprs: (
-        Sequence[
-            pli.Expr
-            | str
-            | date
-            | datetime
-            | timedelta
-            | int
-            | float
-            | bool
-            | pli.Series
-        ]
-        | pli.Expr
-    ),
-) -> pli.Expr:
+def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> pli.Expr:
     """
-    Folds the expressions from left to right, keeping the first non-null value.
+    Folds the columns from left to right, keeping the first non-null value.
 
     Parameters
     ----------
     exprs
-        Expressions to coalesce.
+        Columns to coalesce. Accepts expression input. Strings are parsed as column
+        names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to coalesce, specified as positional arguments.
 
     Examples
     --------
     >>> df = pl.DataFrame(
-    ...     data=[
-    ...         (None, 1.0, 1.0),
-    ...         (None, 2.0, 2.0),
-    ...         (None, None, 3.0),
-    ...         (None, None, None),
-    ...     ],
-    ...     schema=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
+    ...     {
+    ...         "a": [1, None, None, None],
+    ...         "b": [1, 2, None, None],
+    ...         "c": [5, None, 3, None],
+    ...     }
     ... )
-    >>> df.with_columns(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
+    >>> df.with_columns(pl.coalesce(["a", "b", "c", 10]).alias("d"))
+    shape: (4, 4)
+    ┌──────┬──────┬──────┬─────┐
+    │ a    ┆ b    ┆ c    ┆ d   │
+    │ ---  ┆ ---  ┆ ---  ┆ --- │
+    │ i64  ┆ i64  ┆ i64  ┆ i64 │
+    ╞══════╪══════╪══════╪═════╡
+    │ 1    ┆ 1    ┆ 5    ┆ 1   │
+    │ null ┆ 2    ┆ null ┆ 2   │
+    │ null ┆ null ┆ 3    ┆ 3   │
+    │ null ┆ null ┆ null ┆ 10  │
+    └──────┴──────┴──────┴─────┘
+    >>> df.with_columns(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
     │ a    ┆ b    ┆ c    ┆ d    │
     │ ---  ┆ ---  ┆ ---  ┆ ---  │
-    │ f64  ┆ f64  ┆ f64  ┆ f64  │
+    │ i64  ┆ i64  ┆ i64  ┆ f64  │
     ╞══════╪══════╪══════╪══════╡
-    │ null ┆ 1.0  ┆ 1.0  ┆ 1.0  │
-    │ null ┆ 2.0  ┆ 2.0  ┆ 2.0  │
-    │ null ┆ null ┆ 3.0  ┆ 3.0  │
-    │ null ┆ null ┆ null ┆ 99.9 │
+    │ 1    ┆ 1    ┆ 5    ┆ 1.0  │
+    │ null ┆ 2    ┆ null ┆ 2.0  │
+    │ null ┆ null ┆ 3    ┆ 3.0  │
+    │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs.extend(pli.selection_to_pyexpr_list(more_exprs))
     return pli.wrap_expr(_coalesce_exprs(exprs))
 
 
