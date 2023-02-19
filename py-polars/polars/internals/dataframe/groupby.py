@@ -11,7 +11,7 @@ from typing import (
 )
 
 import polars.internals as pli
-from polars.utils import _timedelta_to_pl_duration, redirect
+from polars.utils import _timedelta_to_pl_duration, deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -233,7 +233,8 @@ class GroupBy(Generic[DF]):
         )
         return self.df.__class__._from_pydf(df._df)
 
-    def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> DF:
+    @deprecated_alias(f="function")
+    def apply(self, function: Callable[[pli.DataFrame], pli.DataFrame]) -> DF:
         """
         Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
 
@@ -251,7 +252,7 @@ class GroupBy(Generic[DF]):
 
         Parameters
         ----------
-        f
+        function
             Custom function.
 
         Returns
@@ -320,7 +321,7 @@ class GroupBy(Generic[DF]):
             raise TypeError("Cannot call `apply` when grouping by an expression.")
 
         return self.df.__class__._from_pydf(
-            self.df._df.groupby_apply(by, f, self.maintain_order)
+            self.df._df.groupby_apply(by, function, self.maintain_order)
         )
 
     def head(self, n: int = 5) -> DF:

@@ -350,7 +350,9 @@ def test_regex_in_filter() -> None:
     )
 
     res = df.filter(
-        pl.fold(acc=False, f=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3))
+        pl.fold(
+            acc=False, function=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3)
+        )
     ).row(0)
     expected = (1, "foo", 1.0)
     assert res == expected

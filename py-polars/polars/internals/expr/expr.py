@@ -30,6 +30,7 @@ from polars.internals.type_aliases import PythonLiteral
 from polars.utils import (
     _timedelta_to_pl_duration,
     deprecate_nonkeyword_arguments,
+    deprecated_alias,
     sphinx_accessor,
 )
 
@@ -774,13 +775,14 @@ class Expr:
         """  # noqa: W505
         return self._from_pyexpr(self._pyexpr.suffix(suffix))
 
-    def map_alias(self, f: Callable[[str], str]) -> Self:
+    @deprecated_alias(f="function")
+    def map_alias(self, function: Callable[[str], str]) -> Self:
         """
         Rename the output of an expression by mapping a function over the root name.
 
         Parameters
         ----------
-        f
+        function
             Function that maps root name to new name.
 
         Examples
@@ -805,7 +807,7 @@ class Expr:
         └───────────┴───────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.map_alias(f))
+        return self._from_pyexpr(self._pyexpr.map_alias(function))
 
     def is_not(self) -> Self:
         """
@@ -3090,10 +3092,11 @@ class Expr:
         """
         return self.filter(predicate)
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
+    @deprecated_alias(f="function")
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def map(
         self,
-        f: Callable[[pli.Series], pli.Series | Any],
+        function: Callable[[pli.Series], pli.Series | Any],
         return_dtype: PolarsDataType | None = None,
         agg_list: bool = False,
     ) -> Self:
@@ -3110,7 +3113,7 @@ class Expr:
 
         Parameters
         ----------
-        f
+        function
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
@@ -3138,12 +3141,13 @@ class Expr:
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
-        return self._from_pyexpr(self._pyexpr.map(f, return_dtype, agg_list))
+        return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
+    @deprecated_alias(f="function")
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def apply(
         self,
-        f: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
+        function: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
         skip_nulls: bool = True,
         pass_name: bool = False,
@@ -3174,7 +3178,7 @@ class Expr:
 
         Parameters
         ----------
-        f
+        function
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
@@ -3248,7 +3252,7 @@ class Expr:
             def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
                 def inner(s: pli.Series) -> pli.Series:  # pragma: no cover
                     s.rename(x.name, in_place=True)
-                    return f(s)
+                    return function(s)
 
                 return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
 
@@ -3257,7 +3261,9 @@ class Expr:
         else:
 
             def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
-                return x.apply(f, return_dtype=return_dtype, skip_nulls=skip_nulls)
+                return x.apply(
+                    function, return_dtype=return_dtype, skip_nulls=skip_nulls
+                )
 
             return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
 

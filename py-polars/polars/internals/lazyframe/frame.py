@@ -54,6 +54,7 @@ from polars.utils import (
     _process_null_values,
     _timedelta_to_pl_duration,
     deprecate_nonkeyword_arguments,
+    deprecated_alias,
     normalise_filepath,
     redirect,
 )
@@ -3864,10 +3865,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             self._ldf.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @deprecated_alias(f="function")
     @deprecate_nonkeyword_arguments()
     def map(
         self,
-        f: Callable[[pli.DataFrame], pli.DataFrame],
+        function: Callable[[pli.DataFrame], pli.DataFrame],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         slice_pushdown: bool = True,
@@ -3883,7 +3885,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Parameters
         ----------
-        f
+        function
             Lambda/ function to apply.
         predicate_pushdown
             Allow predicate pushdown optimization to pass this node.
@@ -3937,7 +3939,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self._from_pyldf(
             self._ldf.map(
-                f,
+                function,
                 predicate_pushdown,
                 projection_pushdown,
                 slice_pushdown,
