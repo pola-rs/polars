@@ -14,7 +14,7 @@ import pytest
 
 import polars as pl
 from polars import DataType
-from polars.exceptions import NoDataError
+from polars.exceptions import ComputeError, NoDataError
 from polars.internals.type_aliases import TimeUnit
 from polars.testing import (
     assert_frame_equal,
@@ -868,6 +868,17 @@ def test_datetime_format(fmt: str, expected: str) -> None:
     df = pl.DataFrame({"dt": [datetime(2022, 1, 2)]})
     csv = df.write_csv(datetime_format=fmt)
     assert csv == expected
+
+
+def test_invalid_datetime_format() -> None:
+    tz_naive = pl.Series(["2020-01-01T00:00:00"]).str.strptime(pl.Datetime)
+    tz_aware = tz_naive.dt.replace_time_zone("UTC")
+    with pytest.raises(
+        ComputeError, match="Cannot format NaiveDateTime with format '%q'."
+    ):
+        tz_naive.to_frame().write_csv(datetime_format="%q")
+    with pytest.raises(ComputeError, match="Cannot format DateTime with format '%q'."):
+        tz_aware.to_frame().write_csv(datetime_format="%q")
 
 
 @pytest.mark.parametrize(
