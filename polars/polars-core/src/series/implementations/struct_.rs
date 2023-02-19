@@ -362,4 +362,24 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
+
+    fn sort_with(&self, options: SortOptions) -> Series {
+        let df = self.0.clone().unnest();
+
+        let desc = if options.descending {
+            vec![true; df.width()]
+        } else {
+            vec![false; df.width()]
+        };
+        let out = df
+            .sort_impl(
+                df.columns.clone(),
+                desc,
+                options.nulls_last,
+                None,
+                options.multithreaded,
+            )
+            .unwrap();
+        StructChunked::new_unchecked(self.name(), &out.columns).into_series()
+    }
 }

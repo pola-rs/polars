@@ -803,3 +803,12 @@ def test_struct_concat_self_no_rechunk() -> None:
     out = pl.concat([df, df], rechunk=False)
     assert out.dtypes == [pl.Struct([pl.Field("a", pl.Int64)])]
     assert out.to_dict(False) == {"A": [{"a": 1}, {"a": 1}]}
+
+
+def test_sort_structs() -> None:
+    assert pl.DataFrame(
+        {"sex": ["male", "female", "female"], "age": [22, 38, 26]}
+    ).select(pl.struct(["sex", "age"]).sort()).unnest("sex").to_dict(False) == {
+        "sex": ["female", "female", "male"],
+        "age": [26, 38, 22],
+    }
