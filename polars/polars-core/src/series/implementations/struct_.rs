@@ -104,40 +104,52 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     /// When offset is negative the offset is counted from the
     /// end of the array
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0
-            .apply_fields(|s| s.slice(offset, length))
-            .into_series()
+        let mut out = self.0.apply_fields(|s| s.slice(offset, length));
+        out.update_chunks(0);
+        out.into_series()
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
-        let offset = self.chunks().len();
-
-        for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-            let lhs_name = lhs.name();
-            let rhs_name = rhs.name();
-            if lhs_name != rhs_name {
-                return Err(PolarsError::SchemaMisMatch(format!("cannot append field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+        if self.is_empty() {
+            self.0 = other.clone();
+            Ok(())
+        } else if other.is_empty() {
+            Ok(())
+        } else {
+            let offset = self.chunks().len();
+            for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+                let lhs_name = lhs.name();
+                let rhs_name = rhs.name();
+                if lhs_name != rhs_name {
+                    return Err(PolarsError::SchemaMisMatch(format!("cannot append field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+                }
+                lhs.append(rhs)?;
             }
-            lhs.append(rhs)?;
+            self.0.update_chunks(offset);
+            Ok(())
         }
-        self.0.update_chunks(offset);
-        Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
-
-        for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-            let lhs_name = lhs.name();
-            let rhs_name = rhs.name();
-            if lhs_name != rhs_name {
-                return Err(PolarsError::SchemaMisMatch(format!("cannot extend field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+        if self.is_empty() {
+            self.0 = other.clone();
+            Ok(())
+        } else if other.is_empty() {
+            Ok(())
+        } else {
+            for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+                let lhs_name = lhs.name();
+                let rhs_name = rhs.name();
+                if lhs_name != rhs_name {
+                    return Err(PolarsError::SchemaMisMatch(format!("cannot extend field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+                }
+                lhs.extend(rhs)?;
             }
-            lhs.extend(rhs)?;
+            self.0.update_chunks(0);
+            Ok(())
         }
-        self.0.update_chunks(0);
-        Ok(())
     }
 
     /// Filter by boolean mask. This operation clones data.
