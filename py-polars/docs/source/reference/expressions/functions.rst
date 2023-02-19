@@ -45,12 +45,11 @@ These functions are available from the polars module root and can be used as exp
    median
    min
    n_unique
-   pearson_corr
+   corr
    quantile
    reduce
    repeat
    select
-   spearman_rank_corr
    std
    struct
    sum
