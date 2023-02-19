@@ -52,7 +52,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 1, 0, 0)
 
         """
-        return cast(date | datetime | timedelta, pli.wrap_s(self._s).min())
+        return cast("date | datetime | timedelta", pli.wrap_s(self._s).min())
 
     def max(self) -> date | datetime | timedelta:
         """
@@ -74,7 +74,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 3, 0, 0)
 
         """
-        return cast(date | datetime | timedelta, pli.wrap_s(self._s).max())
+        return cast("date | datetime | timedelta", pli.wrap_s(self._s).max())
 
     def median(self) -> date | datetime | timedelta | None:
         """
