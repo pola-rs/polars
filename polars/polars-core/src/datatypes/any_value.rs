@@ -72,6 +72,9 @@ pub enum AnyValue<'a> {
     ObjectOwned(OwnedObject),
     #[cfg(feature = "dtype-struct")]
     // 3 pointers and thus not larger than string/vec
+    // - idx in the `&StructArray`
+    // - The array itself
+    // - The fields
     Struct(usize, &'a StructArray, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
