@@ -677,6 +677,23 @@ class ExprListNameSpace:
         element
             An expression that produces a single value
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"listcol": [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
+        >>> df.select(pl.col("listcol").arr.count_match(2).alias("number_of_twos"))
+        shape: (5, 1)
+        ┌────────────────┐
+        │ number_of_twos │
+        │ ---            │
+        │ u32            │
+        ╞════════════════╡
+        │ 0              │
+        │ 0              │
+        │ 2              │
+        │ 1              │
+        │ 0              │
+        └────────────────┘
+
         """
 
         return pli.wrap_expr(
