@@ -71,6 +71,7 @@ else:
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
+        CorrelationMethod,
         IntoExpr,
         PythonLiteral,
         RollingInterpolationMethod,
@@ -1305,13 +1306,15 @@ def cumsum(
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
 
 
-def spearman_rank_corr(
-    a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
+def corr(
+    a: str | pli.Expr,
+    b: str | pli.Expr,
+    method: CorrelationMethod = "pearson",
+    ddof: int = 1,
+    propagate_nans: bool = False,
 ) -> pli.Expr:
     """
-    Compute the spearman rank correlation between two columns.
-
-    Missing data will be excluded from the computation.
+    Compute the pearson's or spearman rank correlation correlation between two columns.
 
     Parameters
     ----------
@@ -1321,6 +1324,8 @@ def spearman_rank_corr(
         Column name or Expression.
     ddof
         Delta degrees of freedom
+    method : {'pearson', 'spearman'}
+        Correlation method.
     propagate_nans
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
@@ -1328,8 +1333,23 @@ def spearman_rank_corr(
 
     Examples
     --------
+    Pearson's correlation:
+
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.spearman_rank_corr("a", "b"))
+    >>> df.select(pl.corr("a", "b"))
+    shape: (1, 1)
+    ┌──────────┐
+    │ a        │
+    │ ---      │
+    │ f64      │
+    ╞══════════╡
+    │ 0.544705 │
+    └──────────┘
+
+    Spearman rank correlation:
+
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.corr("a", "b", method="spearman"))
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -1344,43 +1364,12 @@ def spearman_rank_corr(
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(
-        pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
-    )
-
-
-def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
-    """
-    Compute the pearson's correlation between two columns.
-
-    Parameters
-    ----------
-    a
-        Column name or Expression.
-    b
-        Column name or Expression.
-    ddof
-        Delta degrees of freedom
-
-    Examples
-    --------
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.pearson_corr("a", "b"))
-    shape: (1, 1)
-    ┌──────────┐
-    │ a        │
-    │ ---      │
-    │ f64      │
-    ╞══════════╡
-    │ 0.544705 │
-    └──────────┘
-
-    """
-    if isinstance(a, str):
-        a = col(a)
-    if isinstance(b, str):
-        b = col(b)
-    return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+    if method == "pearson":
+        return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+    elif method == "spearman":
+        return pli.wrap_expr(
+            pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
+        )
 
 
 def cov(

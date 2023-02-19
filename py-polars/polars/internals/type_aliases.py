@@ -71,6 +71,7 @@ ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWi
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
+CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]  # CorrelationOptions
 JoinStrategy: TypeAlias = Literal[
     "inner", "left", "outer", "semi", "anti", "cross"
 ]  # JoinType
