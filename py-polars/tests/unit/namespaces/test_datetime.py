@@ -14,16 +14,6 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture()
-def date_2022_01_01() -> datetime:
-    return datetime(2022, 1, 1)
-
-
-@pytest.fixture()
-def date_2022_01_02() -> datetime:
-    return datetime(2022, 1, 2)
-
-
-@pytest.fixture()
 def series_of_int_dates() -> pl.Series:
     return pl.Series([10000, 20000, 30000], dtype=pl.Date)
 
@@ -125,10 +115,8 @@ def test_strptime_fractional_seconds(series_of_str_dates: pl.Series) -> None:
 def test_duration_extract_times(
     unit_attr: str,
     expected: pl.Series,
-    date_2022_01_01: datetime,
-    date_2022_01_02: datetime,
 ) -> None:
-    duration = pl.Series([date_2022_01_02]) - pl.Series([date_2022_01_01])
+    duration = pl.Series([datetime(2022, 1, 2)]) - pl.Series([datetime(2022, 1, 1)])
 
     assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
 
@@ -145,10 +133,8 @@ def test_duration_extract_times(
 def test_truncate(
     time_unit: TimeUnit,
     every: str | timedelta,
-    date_2022_01_01: datetime,
-    date_2022_01_02: datetime,
 ) -> None:
-    start, stop = date_2022_01_01, date_2022_01_02
+    start, stop = datetime(2022, 1, 1), datetime(2022, 1, 2)
     s = pl.date_range(
         start,
         stop,
@@ -181,10 +167,8 @@ def test_truncate(
 def test_round(
     time_unit: TimeUnit,
     every: str | timedelta,
-    date_2022_01_01: datetime,
-    date_2022_01_02: datetime,
 ) -> None:
-    start, stop = date_2022_01_01, date_2022_01_02
+    start, stop = datetime(2022, 1, 1), datetime(2022, 1, 2)
     s = pl.date_range(
         start,
         stop,
