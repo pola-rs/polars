@@ -1311,6 +1311,7 @@ def spearman_rank_corr(
 ) -> pli.Expr:
     """
     Compute the spearman rank correlation between two columns.
+
     Missing data will be excluded from the computation.
 
     Parameters
