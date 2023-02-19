@@ -122,11 +122,14 @@ class LazyGroupBy(Generic[LDF]):
             raise ValueError("Expected at least one of 'aggs' or '**named_aggs'")
 
         exprs = selection_to_pyexpr_list(aggs)
-        exprs.extend(selection_to_pyexpr_list(more_aggs))
-        exprs.extend(
-            expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
-            for name, expr in named_aggs.items()
-        )
+        if more_aggs:
+            exprs.extend(selection_to_pyexpr_list(more_aggs))
+        if named_aggs:
+            exprs.extend(
+                expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+                for name, expr in named_aggs.items()
+            )
+
         return self._lazyframe_class._from_pyldf(self.lgb.agg(exprs))
 
     def apply(
