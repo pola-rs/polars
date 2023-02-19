@@ -1768,6 +1768,23 @@ def test_convert_time_zone_invalid() -> None:
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 
+def test_convert_time_zone_lazy_schema() -> None:
+    ts_us = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime("us", "UTC"))
+    ts_ms = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime("ms", "UTC"))
+    ldf = pl.DataFrame({"ts_us": ts_us, "ts_ms": ts_ms}).lazy()
+    result = ldf.with_columns(
+        pl.col("ts_us").dt.convert_time_zone("America/New_York").alias("ts_us_ny"),
+        pl.col("ts_ms").dt.convert_time_zone("America/New_York").alias("ts_us_kt"),
+    ).schema
+    expected = {
+        "ts_us": pl.Datetime("us", "UTC"),
+        "ts_ms": pl.Datetime("ms", "UTC"),
+        "ts_us_ny": pl.Datetime("us", "America/New_York"),
+        "ts_us_kt": pl.Datetime("ms", "America/New_York"),
+    }
+    assert result == expected
+
+
 def test_convert_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(

@@ -68,6 +68,7 @@ impl DateLikeNameSpace {
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
     #[cfg(feature = "timezones")]
     pub fn convert_time_zone(self, time_zone: TimeZone) -> Expr {
+        let time_zone_clone = time_zone.clone();
         self.0.map(
             move |s| match s.dtype() {
                 DataType::Datetime(_, Some(_)) => {
@@ -79,7 +80,10 @@ impl DateLikeNameSpace {
                     "Cannot call convert_time_zone on tz-naive. Set a time zone first with replace_time_zone".into()
                 )),
             },
-            GetOutput::same_type(),
+            GetOutput::map_dtype(move |dtype| match dtype {
+                DataType::Datetime(tu, _) => DataType::Datetime(*tu, Some(time_zone_clone.clone())),
+                _ => panic!("expected datetime"),
+            }),
         )
     }
 
