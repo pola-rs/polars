@@ -18,7 +18,6 @@ from typing import (
     Iterable,
     Sequence,
     TypeVar,
-    cast,
     overload,
 )
 
@@ -331,7 +330,7 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
     except ValueError:
         raise ValueError(f"Offset: {offset} not understood.") from None
 
-    return cast(tzinfo, dt_offset.tzinfo)
+    return dt_offset.tzinfo  # type: ignore[return-value]
 
 
 def _localize(dt: datetime, tz: str) -> datetime:
