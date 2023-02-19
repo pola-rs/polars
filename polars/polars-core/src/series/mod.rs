@@ -551,7 +551,9 @@ impl Series {
     /// first cast to `Int64` to prevent overflow issues.
     pub fn sum_as_series(&self) -> Series {
         use DataType::*;
-        if self.is_empty() && self.dtype().is_numeric() {
+        if self.is_empty()
+            && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
+        {
             return Series::new("", [0])
                 .cast(self.dtype())
                 .unwrap()

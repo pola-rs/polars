@@ -61,6 +61,7 @@ timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
 list_take = ["polars/list_take"]
+list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 
 all = [
@@ -96,6 +97,7 @@ all = [
   "streaming",
   "performant",
   "list_take",
+  "list_count",
 ]
 
 # we cannot conditionaly activate simd

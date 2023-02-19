@@ -1,4 +1,5 @@
 use polars_arrow::utils::CustomIterTools;
+use polars_ops::chunked_array::list::*;
 
 use super::*;
 
@@ -12,6 +13,8 @@ pub enum ListFunction {
     Get,
     #[cfg(feature = "list_take")]
     Take(bool),
+    #[cfg(feature = "list_count")]
+    CountMatch,
 }
 
 impl Display for ListFunction {
@@ -26,6 +29,8 @@ impl Display for ListFunction {
             Get => "get",
             #[cfg(feature = "list_take")]
             Take(_) => "take",
+            #[cfg(feature = "list_count")]
+            CountMatch => "count",
         };
         write!(f, "{name}")
     }
@@ -205,4 +210,22 @@ pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
     } else {
         ca.lst_take(idx, null_on_oob)
     }
+}
+
+#[cfg(feature = "list_count")]
+pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let element = &args[1];
+
+    if element.len() != 1 {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "The argument expression in 'arr.count' must produce exactly one element, got {}",
+                element.len()
+            )
+            .into(),
+        ));
+    }
+    let ca = s.list()?;
+    list_count_match(ca, element.get(0).unwrap())
 }

@@ -65,6 +65,7 @@ trigonometry = ["polars-plan/trigonometry"]
 sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
 list_take = ["polars-ops/list_take", "polars-plan/list_take"]
+list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 
 true_div = ["polars-plan/true_div"]
 
