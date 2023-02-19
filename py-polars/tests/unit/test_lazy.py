@@ -1728,3 +1728,10 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
         int32_df.lazy().select(pl.col("x").pow(2)).select(pl.col(pl.Float64)).collect()
     )
     assert eager_result.shape == lazy_result.shape
+
+    int8_df = pl.DataFrame({"x": pl.Series(values=[], dtype=pl.Int8)})
+    eager_result = int8_df.select(pl.col("x").diff()).select(pl.col(pl.Int16))
+    lazy_result = (
+        int8_df.lazy().select(pl.col("x").diff()).select(pl.col(pl.Int16)).collect()
+    )
+    assert eager_result.shape == lazy_result.shape

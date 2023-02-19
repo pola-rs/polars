@@ -242,7 +242,7 @@ impl FunctionExpr {
                 DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
                 DataType::UInt64 | DataType::UInt32 => DataType::Int64,
                 DataType::UInt16 => DataType::Int32,
-                DataType::UInt8 => DataType::Int8,
+                DataType::UInt8 => DataType::Int16,
                 dt => dt.clone(),
             }),
             #[cfg(feature = "interpolate")]
