@@ -1338,6 +1338,7 @@ def spearman_rank_corr(
     ╞═════╡
     │ 0.5 │
     └─────┘.
+
     """
     warnings.warn(
         "`spearman_rank_corr()` is deprecated in favor of `corr()`",
@@ -1377,6 +1378,7 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     ╞══════════╡
     │ 0.544705 │
     └──────────┘.
+
     """
     warnings.warn(
         "`pearson_corr()` is deprecated in favor of `corr()`",
@@ -1398,7 +1400,7 @@ def corr(
     propagate_nans: bool = False,
 ) -> pli.Expr:
     """
-    Compute the pearson's or spearman rank correlation correlation between two columns.
+    Compute the pearson's or spearman rank correlation between two columns.
 
     Parameters
     ----------
@@ -1411,6 +1413,7 @@ def corr(
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans
+        Spearman rank correlation support propagate_nans.
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.

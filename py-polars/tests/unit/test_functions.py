@@ -143,7 +143,9 @@ def test_null_handling_correlation() -> None:
 
     assert np.isclose(df1.select(pl.corr("a", "b", method="spearman")).item(), -1.0)
     assert (
-        str(df2.select(pl.corr("a", "b", method="spearman", propagate_nans=True)).item())
+        str(
+            df2.select(pl.corr("a", "b", method="spearman", propagate_nans=True)).item()
+        )
         == "nan"
     )
 
