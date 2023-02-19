@@ -65,11 +65,15 @@ def selection_to_pyexpr_list(
     structify: bool = False,
 ) -> list[PyExpr]:
     if exprs is None:
-        exprs = []
-    elif isinstance(
+        return []
+
+    if isinstance(
         exprs, (str, Expr, pli.Series, pli.WhenThen, pli.WhenThenThen)
     ) or not isinstance(exprs, Iterable):
-        exprs = [exprs]
+        return [
+            expr_to_lit_or_expr(exprs, str_to_lit=False, structify=structify)._pyexpr,
+        ]
+
     return [
         expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
         for e in exprs  # type: ignore[union-attr]
