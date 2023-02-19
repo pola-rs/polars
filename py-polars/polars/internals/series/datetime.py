@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
@@ -52,8 +52,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 1, 0, 0)
 
         """
-        # we can ignore types because we are certain we get a logical type
-        return pli.wrap_s(self._s).min()  # type: ignore[return-value]
+        return cast(date | datetime | timedelta, pli.wrap_s(self._s).min())
 
     def max(self) -> date | datetime | timedelta:
         """
@@ -75,7 +74,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 3, 0, 0)
 
         """
-        return pli.wrap_s(self._s).max()  # type: ignore[return-value]
+        return cast(date | datetime | timedelta, pli.wrap_s(self._s).max())
 
     def median(self) -> date | datetime | timedelta | None:
         """

@@ -8,7 +8,8 @@ import re
 import sys
 import warnings
 from collections.abc import MappingView, Reversible, Sized
-from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from datetime import date, datetime, time, timedelta, timezone
+from datetime import tzinfo as tzinfo_t
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -18,6 +19,7 @@ from typing import (
     Iterable,
     Sequence,
     TypeVar,
+    cast,
     overload,
 )
 
@@ -201,20 +203,22 @@ def range_to_slice(rng: range) -> slice:
 
 def handle_projection_columns(
     columns: Sequence[str] | Sequence[int] | str | None,
-) -> tuple[list[int] | None, list[str] | None]:
+) -> tuple[list[int] | None, Sequence[str] | None]:
     """Disambiguates between columns specified as integers vs. strings."""
     projection: list[int] | None = None
-    if columns:
+    new_columns: Sequence[str] | None = None
+    if columns is not None:
         if isinstance(columns, str):
-            columns = [columns]
+            new_columns = [columns]
         elif is_int_sequence(columns):
             projection = list(columns)
-            columns = None
         elif not is_str_sequence(columns):
             raise ValueError(
                 "'columns' arg should contain a list of all integers or all strings"
                 " values."
             )
+        else:
+            new_columns = columns
         if columns and len(set(columns)) != len(columns):
             raise ValueError(
                 f"'columns' arg should only have unique values. Got '{columns}'."
@@ -223,7 +227,7 @@ def handle_projection_columns(
             raise ValueError(
                 f"'columns' arg should only have unique values. Got '{projection}'."
             )
-    return projection, columns  # type: ignore[return-value]
+    return projection, new_columns
 
 
 def _to_python_time(value: int) -> time:
@@ -317,7 +321,7 @@ def _to_python_datetime(
 # cache here as we have a single tz per column
 # and this function will be called on every conversion
 @functools.lru_cache(16)
-def _parse_fixed_tz_offset(offset: str) -> tzinfo:
+def _parse_fixed_tz_offset(offset: str) -> tzinfo_t:
     try:
         # use fromisoformat to parse the offset
         dt_offset = datetime.fromisoformat("2000-01-01T00:00:00" + offset)
@@ -328,16 +332,16 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
     except ValueError:
         raise ValueError(f"Offset: {offset} not understood.") from None
 
-    return dt_offset.tzinfo  # type: ignore[return-value]
+    return cast(tzinfo_t, dt_offset.tzinfo)
 
 
 def _localize(dt: datetime, tz: str) -> datetime:
     # zone info installation should already be checked
     try:
-        tzinfo = ZoneInfo(tz)
+        tzinfo: ZoneInfo | tzinfo_t = ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
-        tzinfo = _parse_fixed_tz_offset(tz)  # type: ignore[assignment]
+        tzinfo = _parse_fixed_tz_offset(tz)
 
     return dt.astimezone(tzinfo)
 
