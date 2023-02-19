@@ -22,7 +22,6 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.internals.type_aliases import EpochTimeUnit, PolarsExprType
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
@@ -72,8 +71,8 @@ else:
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
+        EpochTimeUnit,
         IntoExpr,
-        PythonLiteral,
         RollingInterpolationMethod,
         TimeUnit,
     )
@@ -1110,6 +1109,7 @@ def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
     return col(column).tail(n)
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["value", "dtype"])
 def lit(
     value: Any, dtype: PolarsDataType | None = None, allow_object: bool = False
 ) -> pli.Expr:
@@ -1307,6 +1307,7 @@ def cumsum(
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["a", "b", "ddof"])
 def spearman_rank_corr(
     a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
 ) -> pli.Expr:
@@ -1385,10 +1386,7 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
 
 
-def cov(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-) -> pli.Expr:
+def cov(a: str | pli.Expr, b: str | pli.Expr) -> pli.Expr:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -2264,6 +2262,7 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
     return pli.wrap_expr(_concat_lst(exprs))
 
 
+@deprecate_nonkeyword_arguments()
 def collect_all(
     lazy_frames: Sequence[pli.LazyFrame],
     type_coercion: bool = True,
@@ -2335,16 +2334,9 @@ def collect_all(
 
 
 def select(
-    exprs: (
-        str
-        | PolarsExprType
-        | PythonLiteral
-        | pli.Series
-        | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
-        | None
-    ) = None,
-    *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
-    **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+    exprs: IntoExpr | Iterable[IntoExpr] | None = None,
+    *more_exprs: IntoExpr,
+    **named_exprs: IntoExpr,
 ) -> pli.DataFrame:
     """
     Run polars expressions without a context.

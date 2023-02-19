@@ -9,6 +9,7 @@ from polars.datatypes import Categorical, Date, Float64, PolarsDataType
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
+    deprecate_nonkeyword_arguments,
     deprecated_alias,
 )
 
@@ -119,6 +120,7 @@ def concat(
     ...
 
 
+@deprecate_nonkeyword_arguments()
 def concat(
     items: (
         Iterable[pli.DataFrame]
