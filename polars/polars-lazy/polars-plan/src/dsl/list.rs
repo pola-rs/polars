@@ -297,7 +297,21 @@ impl ListNameSpace {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,
                 auto_explode: true,
-                fmt_str: "arr.contains",
+                ..Default::default()
+            },
+        }
+    }
+    #[cfg(feature = "list_count")]
+    pub fn count_match<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+
+        Expr::Function {
+            input: vec![self.0, other],
+            function: FunctionExpr::ListExpr(ListFunction::CountMatch),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: true,
+                auto_explode: true,
                 ..Default::default()
             },
         }

@@ -130,6 +130,7 @@ chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids", "polars-cor
 to_dummies = ["polars-ops/to_dummies"]
 bigidx = ["polars-core/bigidx", "polars-lazy/bigidx", "polars-ops/big_idx"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy/list_to_struct"]
+list_count = ["polars-ops/list_count", "polars-lazy/list_count"]
 list_take = ["polars-ops/list_take", "polars-lazy/list_take"]
 describe = ["polars-core/describe"]
 timezones = ["polars-core/timezones", "polars-lazy/timezones", "polars-io/timezones"]
