@@ -94,7 +94,7 @@ pub(crate) mod private {
         }
 
         fn _set_sorted_flag(&mut self, _is_sorted: IsSorted) {
-            invalid_operation_panic!(self)
+            // ignore
         }
 
         unsafe fn equal_element(

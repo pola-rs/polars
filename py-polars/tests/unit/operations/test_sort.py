@@ -200,10 +200,19 @@ def test_sorted_join_and_dtypes() -> None:
     }
 
 
-def test_sorted_flag_reverse() -> None:
+def test_sorted_flag() -> None:
     s = pl.arange(0, 7, eager=True)
     assert s.flags["SORTED_ASC"]
     assert s.reverse().flags["SORTED_DESC"]
+    assert pl.Series([b"a"]).set_sorted().flags["SORTED_ASC"]
+
+    # ensure we don't panic for these types
+    # struct
+    pl.Series([{"a": 1}]).set_sorted(True)
+    # list
+    pl.Series([[{"a": 1}]]).set_sorted(True)
+    # object
+    pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(True)
 
 
 def test_sorted_fast_paths() -> None:
