@@ -192,6 +192,8 @@ impl FunctionExpr {
                     Get => inner_type_list(),
                     #[cfg(feature = "list_take")]
                     Take(_) => same_type(),
+                    #[cfg(feature = "list_count")]
+                    CountMatch => with_dtype(IDX_DTYPE),
                 }
             }
             #[cfg(feature = "dtype-struct")]

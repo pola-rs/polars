@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
@@ -364,6 +364,19 @@ class ListNameSpace:
             5
             6
         ]
+
+        """
+
+    def count_match(
+        self, element: float | str | bool | int | date | datetime | time | pli.Expr
+    ) -> pli.Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
 
         """
 

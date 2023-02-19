@@ -366,3 +366,9 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     assert df.groupby("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").arr.get(i).mean().list() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+
+
+def test_list_count_match() -> None:
+    assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
+        pl.col("listcol").arr.count_match(2).alias("number_of_twos")
+    ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
