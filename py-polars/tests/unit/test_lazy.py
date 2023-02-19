@@ -1134,7 +1134,7 @@ def test_spearman_corr() -> None:
     # we can also pass in column names directly
     out = (
         df.groupby("era", maintain_order=True).agg(
-            pl.corr("prediction", "target", "spearman").alias("c"),
+            pl.corr("prediction", "target", method="spearman").alias("c"),
         )
     )["c"]
     assert np.isclose(out[0], 0.5)

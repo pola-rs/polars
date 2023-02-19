@@ -1395,6 +1395,7 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
 def corr(
     a: str | pli.Expr,
     b: str | pli.Expr,
+    *,
     method: CorrelationMethod = "pearson",
     ddof: int = 1,
     propagate_nans: bool = False,
