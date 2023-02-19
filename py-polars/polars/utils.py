@@ -8,8 +8,7 @@ import re
 import sys
 import warnings
 from collections.abc import MappingView, Reversible, Sized
-from datetime import date, datetime, time, timedelta, timezone
-from datetime import tzinfo as tzinfo_t
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -321,7 +320,7 @@ def _to_python_datetime(
 # cache here as we have a single tz per column
 # and this function will be called on every conversion
 @functools.lru_cache(16)
-def _parse_fixed_tz_offset(offset: str) -> tzinfo_t:
+def _parse_fixed_tz_offset(offset: str) -> tzinfo:
     try:
         # use fromisoformat to parse the offset
         dt_offset = datetime.fromisoformat("2000-01-01T00:00:00" + offset)
@@ -332,18 +331,19 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo_t:
     except ValueError:
         raise ValueError(f"Offset: {offset} not understood.") from None
 
-    return cast(tzinfo_t, dt_offset.tzinfo)
+    return cast(tzinfo, dt_offset.tzinfo)
 
 
 def _localize(dt: datetime, tz: str) -> datetime:
     # zone info installation should already be checked
+    _tzinfo: ZoneInfo | tzinfo
     try:
-        tzinfo: ZoneInfo | tzinfo_t = ZoneInfo(tz)
+        _tzinfo = ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
-        tzinfo = _parse_fixed_tz_offset(tz)
+        _tzinfo = _parse_fixed_tz_offset(tz)
 
-    return dt.astimezone(tzinfo)
+    return dt.astimezone(_tzinfo)
 
 
 def _in_notebook() -> bool:
