@@ -13,9 +13,10 @@ from polars.datatypes import (
     dtype_to_py_type,
 )
 from polars.exceptions import InvalidAssert, PanicException
-from polars.utils import deprecated_alias
+from polars.utils import deprecate_nonkeyword_arguments, deprecated_alias
 
 
+@deprecate_nonkeyword_arguments()
 @deprecated_alias(check_column_names="check_column_order")
 def assert_frame_equal(
     left: pli.DataFrame | pli.LazyFrame,
@@ -117,6 +118,7 @@ def assert_frame_equal(
             raise AssertionError(msg) from exc
 
 
+@deprecate_nonkeyword_arguments()
 def assert_frame_not_equal(
     left: pli.DataFrame | pli.LazyFrame,
     right: pli.DataFrame | pli.LazyFrame,
@@ -182,6 +184,7 @@ def assert_frame_not_equal(
         raise AssertionError("Expected the input frames to be unequal.")
 
 
+@deprecate_nonkeyword_arguments()
 def assert_series_equal(
     left: pli.Series,
     right: pli.Series,
@@ -240,6 +243,7 @@ def assert_series_equal(
     )
 
 
+@deprecate_nonkeyword_arguments()
 def assert_series_not_equal(
     left: pli.Series,
     right: pli.Series,
