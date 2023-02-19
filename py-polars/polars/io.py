@@ -31,7 +31,11 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltal
 from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
-from polars.utils import handle_projection_columns, normalise_filepath
+from polars.utils import (
+    deprecate_nonkeyword_arguments,
+    handle_projection_columns,
+    normalise_filepath,
+)
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
@@ -55,6 +59,7 @@ def _check_arg_is_1byte(
             )
 
 
+@deprecate_nonkeyword_arguments()
 @deprecated_alias(parse_dates="try_parse_dates")
 def read_csv(
     file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
@@ -409,6 +414,7 @@ def read_csv(
     return df
 
 
+@deprecate_nonkeyword_arguments()
 @deprecated_alias(parse_dates="try_parse_dates")
 def scan_csv(
     file: str | Path,
@@ -588,6 +594,7 @@ def scan_csv(
     )
 
 
+@deprecate_nonkeyword_arguments()
 def scan_ipc(
     file: str | Path,
     n_rows: int | None = None,
@@ -641,6 +648,7 @@ def scan_ipc(
     )
 
 
+@deprecate_nonkeyword_arguments()
 def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
@@ -701,6 +709,7 @@ def scan_parquet(
     )
 
 
+@deprecate_nonkeyword_arguments()
 def scan_ndjson(
     file: str | Path,
     infer_schema_length: int | None = N_INFER_DEFAULT,
@@ -782,6 +791,7 @@ def read_avro(
     return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
 
+@deprecate_nonkeyword_arguments()
 def read_ipc(
     file: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
@@ -866,6 +876,7 @@ def read_ipc(
         )
 
 
+@deprecate_nonkeyword_arguments()
 def read_parquet(
     source: str | Path | BinaryIO | BytesIO | bytes,
     columns: list[int] | list[str] | None = None,
@@ -1001,6 +1012,7 @@ def read_ndjson(file: str | Path | IOBase) -> DataFrame:
     return DataFrame._read_ndjson(file)
 
 
+@deprecate_nonkeyword_arguments()
 def read_sql(
     sql: list[str] | str,
     connection_uri: str,
@@ -1122,6 +1134,7 @@ def read_excel(
     ...
 
 
+@deprecate_nonkeyword_arguments()
 def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
@@ -1301,6 +1314,7 @@ def _resolve_delta_lake_uri(table_uri: str) -> tuple[str, str, str]:
     return (scheme, resolved_uri, normalized_path)
 
 
+@deprecate_nonkeyword_arguments()
 def scan_delta(
     table_uri: str,
     version: int | None = None,
@@ -1483,6 +1497,7 @@ def scan_delta(
     return scan_ds(pa_ds)
 
 
+@deprecate_nonkeyword_arguments()
 def read_delta(
     table_uri: str,
     version: int | None = None,
@@ -1615,6 +1630,7 @@ def read_delta(
     )
 
 
+@deprecate_nonkeyword_arguments()
 def scan_ds(ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True) -> LazyFrame:
     """
     Scan a pyarrow dataset.
@@ -1658,6 +1674,7 @@ def scan_ds(ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True) -> LazyFr
     return _scan_ds(ds, allow_pyarrow_filter)
 
 
+@deprecate_nonkeyword_arguments()
 def read_csv_batched(
     file: str | Path,
     has_header: bool = True,
