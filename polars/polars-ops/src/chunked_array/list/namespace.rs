@@ -124,10 +124,27 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_sum(&self) -> Series {
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().sum_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+
+        fn inner(ca: &ListChunked) -> Series {
+            ca.apply_amortized(|s| s.as_ref().sum_as_series())
+                .explode()
+                .unwrap()
+                .into_series()
+        }
+
+        // empty lists in this function return None.
+        // so we check if we can fast_explode, that means we don't have empty list
+        // then we can use the fast implementation for booleans
+        if ca._can_fast_explode() && matches!(ca.inner_dtype(), DataType::Boolean) {
+            let ca = ca.rechunk();
+            if ca.chunks()[0].null_count() == 0 {
+                count_boolean_bits(&ca).into()
+            } else {
+                inner(&ca)
+            }
+        } else {
+            inner(ca)
+        }
     }
 
     fn lst_mean(&self) -> Float64Chunked {
