@@ -220,9 +220,10 @@ def col(
             dtypes = [name]
             dtypes.extend(more_names)
             return pli.wrap_expr(_dtype_cols(dtypes))
-        raise TypeError(
-            f"Invalid input for `col`. Expected `str` or `DataType`, got {type(name)!r}"
-        )
+        else:
+            raise TypeError(
+                f"Invalid input for `col`. Expected `str` or `DataType`, got {type(name)!r}"
+            )
 
     if isinstance(name, str):
         return pli.wrap_expr(pycol(name))
@@ -2637,7 +2638,8 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> pli
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
-    exprs.extend(pli.selection_to_pyexpr_list(more_exprs))
+    if more_exprs:
+        exprs.extend(pli.selection_to_pyexpr_list(more_exprs))
     return pli.wrap_expr(_coalesce_exprs(exprs))
 
 
