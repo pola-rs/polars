@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
@@ -44,6 +45,9 @@ def get_dummies(
     """
     Convert categorical variables into dummy/indicator variables.
 
+    .. deprecated:: 0.16.8
+        `pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`
+
     Parameters
     ----------
     df
@@ -75,6 +79,11 @@ def get_dummies(
     └───────┴───────┴───────┴───────┴───────┴───────┘
 
     """
+    warnings.warn(
+        "`pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
     return df.to_dummies(columns=columns, separator=separator)
 
 

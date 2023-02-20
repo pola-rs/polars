@@ -800,9 +800,9 @@ def test_arg_where() -> None:
     assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
 
 
-def test_get_dummies() -> None:
+def test_to_dummies2() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
-    res = pl.get_dummies(df)
+    res = df.to_dummies()
     expected = pl.DataFrame(
         {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]}
     ).with_columns(pl.all().cast(pl.UInt8))
@@ -820,8 +820,14 @@ def test_get_dummies() -> None:
         },
         schema={"i": pl.Int32, "category|cat": pl.UInt8, "category|dog": pl.UInt8},
     )
-    result = pl.get_dummies(df, columns=["category"], separator="|")
+    result = df.to_dummies(columns=["category"], separator="|")
     assert_frame_equal(result, expected)
+
+
+def test_get_dummies_function_deprecated() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    with pytest.deprecated_call():
+        pl.get_dummies(df)
 
 
 def test_to_pandas(df: pl.DataFrame) -> None:
