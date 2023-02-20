@@ -415,3 +415,23 @@ def test_list_mean() -> None:
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], None]}).select(
         pl.col("a").arr.mean()
     ).to_dict(False) == {"a": [1.0, 2.0, 2.5, None]}
+
+
+def test_list_min_max() -> None:
+    for dt in pl.datatypes.NUMERIC_DTYPES:
+        df = pl.DataFrame(
+            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+            schema={"a": pl.List(dt)},
+        )
+        assert df.select(pl.col("a").arr.min())["a"].series_equal(
+            df.select(pl.col("a").arr.first())["a"]
+        )
+        assert df.select(pl.col("a").arr.max())["a"].series_equal(
+            df.select(pl.col("a").arr.last())["a"]
+        )
+
+    df = pl.DataFrame(
+        {"a": [[1], [1, 5, -1, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]},
+    )
+    assert df.select(pl.col("a").arr.min()).to_dict(False) == {"a": [1, -1, 1, 1, None]}
+    assert df.select(pl.col("a").arr.max()).to_dict(False) == {"a": [1, 5, 4, 5, None]}
