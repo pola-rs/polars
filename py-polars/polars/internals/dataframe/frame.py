@@ -3054,11 +3054,12 @@ class DataFrame:
         self._df.replace_at_idx(index, series._s)
         return self
 
+    @deprecated_alias(reverse="descending")
     def sort(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
-        reverse: bool | Sequence[bool] = False,
+        descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
     ) -> Self:
         """
@@ -3071,7 +3072,7 @@ class DataFrame:
             names.
         *more_by
             Additional columns to sort by, specified as positional arguments.
-        reverse
+        descending
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
@@ -3116,7 +3117,7 @@ class DataFrame:
 
         Sort by multiple columns by passing a list of columns.
 
-        >>> df.sort(["c", "a"], reverse=True)
+        >>> df.sort(["c", "a"], descending=True)
         shape: (3, 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
@@ -3130,7 +3131,7 @@ class DataFrame:
 
         Or use positional arguments to sort by multiple columns in the same way.
 
-        >>> df.sort("c", "a", reverse=[False, True])
+        >>> df.sort("c", "a", descending=[False, True])
         shape: (3, 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
@@ -3145,7 +3146,7 @@ class DataFrame:
         """
         return self._from_pydf(
             self.lazy()
-            .sort(by, *more_by, reverse=reverse, nulls_last=nulls_last)
+            .sort(by, *more_by, descending=descending, nulls_last=nulls_last)
             .collect(no_optimization=True)
             ._df
         )

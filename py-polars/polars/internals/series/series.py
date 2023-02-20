@@ -358,8 +358,8 @@ class Series:
 
         """
         out = {
-            "SORTED_ASC": self._s.is_sorted_flag(),
-            "SORTED_DESC": self._s.is_sorted_reverse_flag(),
+            "SORTED_ASC": self._s.is_sorted_ascending_flag(),
+            "SORTED_DESC": self._s.is_sorted_descending_flag(),
         }
         if self.dtype == List:
             out["FAST_EXPLODE"] = self._s.can_fast_explode_flag()
@@ -1926,13 +1926,13 @@ class Series:
         """
 
     @deprecate_nonkeyword_arguments()
-    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Self:
+    def sort(self, descending: bool = False, *, in_place: bool = False) -> Self:
         """
         Sort this Series.
 
         Parameters
         ----------
-        reverse
+        descending
             Sort in descending order.
         in_place
             Sort in-place.
@@ -1949,7 +1949,7 @@ class Series:
                 3
                 4
         ]
-        >>> s.sort(reverse=True)
+        >>> s.sort(descending=True)
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -1961,16 +1961,17 @@ class Series:
 
         """
         if in_place:
-            self._s = self._s.sort(reverse)
+            self._s = self._s.sort(descending)
             return self
         else:
-            return self._from_pyseries(self._s.sort(reverse))
+            return self._from_pyseries(self._s.sort(descending))
 
-    def top_k(self, k: int = 5, reverse: bool = False) -> Series:
+    @deprecated_alias(reverse="descending")
+    def top_k(self, k: int = 5, descending: bool = False) -> Series:
         r"""
         Return the `k` largest elements.
 
-        If 'reverse=True` the smallest elements will be given.
+        If 'descending=True` the smallest elements will be given.
 
         This has time complexity:
 
@@ -1980,20 +1981,27 @@ class Series:
         ----------
         k
             Number of elements to return.
-        reverse
+        descending
             Return the smallest elements.
 
         """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).top_k(k=k, descending=descending))
+            .to_series()
+        )
 
+    @deprecated_alias(reverse="descending")
     @deprecate_nonkeyword_arguments()
-    def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
+    def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
 
         Parameters
         ----------
-        reverse
-            Sort in reverse (descending) order.
+        descending
+            Sort in descending order.
         nulls_last
             Place null values last instead of first.
 
@@ -2016,12 +2024,15 @@ class Series:
             pli.wrap_s(self._s)
             .to_frame()
             .select(
-                pli.col(self._s.name()).arg_sort(reverse=reverse, nulls_last=nulls_last)
+                pli.col(self._s.name()).arg_sort(
+                    descending=descending, nulls_last=nulls_last
+                )
             )
             .to_series()
         )
 
-    def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
+    @deprecated_alias(reverse="descending")
+    def argsort(self, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
 
@@ -2032,8 +2043,8 @@ class Series:
 
         Parameters
         ----------
-        reverse
-            Sort in reverse (descending) order.
+        descending
+            Sort in descending order.
         nulls_last
             Place null values last instead of first.
 
@@ -2207,17 +2218,18 @@ class Series:
         """
         return self.len() == 0
 
-    def is_sorted(self, reverse: bool = False) -> bool:
+    @deprecated_alias(reverse="descending")
+    def is_sorted(self, descending: bool = False) -> bool:
         """
         Check if the Series is sorted.
 
         Parameters
         ----------
-        reverse
+        descending
             Check if the Series is sorted in descending order
 
         """
-        return self._s.is_sorted(reverse)
+        return self._s.is_sorted(descending)
 
     def is_null(self) -> Series:
         """
@@ -4502,7 +4514,8 @@ class Series:
         Same as `abs(series)`.
         """
 
-    def rank(self, method: RankMethod = "average", reverse: bool = False) -> Series:
+    @deprecated_alias(reverse="descending")
+    def rank(self, method: RankMethod = "average", descending: bool = False) -> Series:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -4526,8 +4539,8 @@ class Series:
               the order that the values occur in the Series.
             - 'random' : Like 'ordinal', but the rank for ties is not dependent
               on the order that the values occur in the Series.
-        reverse
-            Reverse the operation.
+        descending
+            Rank in descending order.
 
         Examples
         --------
@@ -4560,6 +4573,12 @@ class Series:
         ]
 
         """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).rank(method=method, descending=descending))
+            .to_series()
+        )
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
@@ -5199,7 +5218,8 @@ class Series:
 
         """
 
-    def set_sorted(self, reverse: bool = False) -> Series:
+    @deprecated_alias(reverse="descending")
+    def set_sorted(self, descending: bool = False) -> Series:
         """
         Flags the Series as 'sorted'.
 
@@ -5207,8 +5227,8 @@ class Series:
 
         Parameters
         ----------
-        reverse
-            If the `Series` order is reversed, e.g. descending.
+        descending
+            If the `Series` order is descending.
 
         Warnings
         --------
@@ -5222,7 +5242,7 @@ class Series:
         3
 
         """
-        return wrap_s(self._s.set_sorted_flag(reverse))
+        return wrap_s(self._s.set_sorted_flag(descending))
 
     def new_from_index(self, index: int, length: int) -> pli.Series:
         """Create a new Series filled with values from the given index."""

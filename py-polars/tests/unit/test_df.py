@@ -929,13 +929,15 @@ def test_multiple_column_sort() -> None:
     df = pl.DataFrame({"a": np.arange(1, 4, dtype=np.int64), "b": ["a", "a", "b"]})
 
     assert_frame_equal(
-        df.sort("a", reverse=True), pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]})
+        df.sort("a", descending=True),
+        pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]}),
     )
     assert_frame_equal(
-        df.sort("b", reverse=True), pl.DataFrame({"a": [3, 1, 2], "b": ["b", "a", "a"]})
+        df.sort("b", descending=True),
+        pl.DataFrame({"a": [3, 1, 2], "b": ["b", "a", "a"]}),
     )
     assert_frame_equal(
-        df.sort(["b", "a"], reverse=[False, True]),
+        df.sort(["b", "a"], descending=[False, True]),
         pl.DataFrame({"a": [2, 1, 3], "b": ["a", "a", "b"]}),
     )
 
@@ -1051,21 +1053,21 @@ def test_to_numpy() -> None:
 
 def test_arg_sort_by(df: pl.DataFrame) -> None:
     idx_df = df.select(
-        pl.arg_sort_by(["int_nulls", "floats"], reverse=[False, True]).alias("idx")
+        pl.arg_sort_by(["int_nulls", "floats"], descending=[False, True]).alias("idx")
     )
     assert (idx_df["idx"] == [1, 0, 2]).all()
 
     idx_df = df.select(
-        pl.arg_sort_by(["int_nulls", "floats"], reverse=False).alias("idx")
+        pl.arg_sort_by(["int_nulls", "floats"], descending=False).alias("idx")
     )
     assert (idx_df["idx"] == [1, 0, 2]).all()
 
     df = pl.DataFrame({"x": [0, 0, 0, 1, 1, 2], "y": [9, 9, 8, 7, 6, 6]})
     for expr, expected in (
         (pl.arg_sort_by(["x", "y"]), [2, 0, 1, 4, 3, 5]),
-        (pl.arg_sort_by(["x", "y"], reverse=[True, True]), [5, 3, 4, 0, 1, 2]),
-        (pl.arg_sort_by(["x", "y"], reverse=[True, False]), [5, 4, 3, 2, 0, 1]),
-        (pl.arg_sort_by(["x", "y"], reverse=[False, True]), [0, 1, 2, 3, 4, 5]),
+        (pl.arg_sort_by(["x", "y"], descending=[True, True]), [5, 3, 4, 0, 1, 2]),
+        (pl.arg_sort_by(["x", "y"], descending=[True, False]), [5, 4, 3, 2, 0, 1]),
+        (pl.arg_sort_by(["x", "y"], descending=[False, True]), [0, 1, 2, 3, 4, 5]),
     ):
         assert (df.select(expr.alias("idx"))["idx"] == expected).all()
 

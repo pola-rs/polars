@@ -1964,10 +1964,11 @@ def arange(
         )
 
 
+@deprecated_alias(reverse="descending")
 @deprecate_nonkeyword_arguments()
 def arg_sort_by(
     exprs: pli.Expr | str | Sequence[pli.Expr | str],
-    reverse: Sequence[bool] | bool = False,
+    descending: Sequence[bool] | bool = False,
 ) -> pli.Expr:
     """
     Find the indexes that would sort the columns.
@@ -1980,21 +1981,22 @@ def arg_sort_by(
     ----------
     exprs
         Columns use to determine the ordering.
-    reverse
-        Default is ascending.
+    descending
+        Sort descending; default is ascending.
 
     """
     if isinstance(exprs, str) or not isinstance(exprs, Sequence):
         exprs = [exprs]
-    if isinstance(reverse, bool):
-        reverse = [reverse] * len(exprs)
+    if isinstance(descending, bool):
+        descending = [descending] * len(exprs)
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(py_arg_sort_by(exprs, reverse))
+    return pli.wrap_expr(py_arg_sort_by(exprs, descending))
 
 
+@deprecated_alias(reverse="descending")
 def argsort_by(
     exprs: pli.Expr | str | Sequence[pli.Expr | str],
-    reverse: Sequence[bool] | bool = False,
+    descending: Sequence[bool] | bool = False,
 ) -> pli.Expr:
     """
     Find the indexes that would sort the columns.
@@ -2010,8 +2012,8 @@ def argsort_by(
     ----------
     exprs
         Columns use to determine the ordering.
-    reverse
-        Default is ascending.
+    descending
+        Sort in descending order; default is ascending.
 
     """
     warnings.warn(
@@ -2019,7 +2021,7 @@ def argsort_by(
         DeprecationWarning,
         stacklevel=2,
     )
-    return pli.arg_sort_by(exprs, reverse)
+    return pli.arg_sort_by(exprs, descending)
 
 
 def duration(

@@ -50,17 +50,17 @@ def test_sort_by() -> None:
     out = df.select(pl.col("a").sort_by("b", "c"))
     assert out["a"].to_list() == [3, 1, 2, 5, 4]
 
-    out = df.select(pl.col("a").sort_by(by, reverse=[False]))
+    out = df.select(pl.col("a").sort_by(by, descending=[False]))
     assert out["a"].to_list() == [3, 1, 2, 5, 4]
 
-    out = df.select(pl.col("a").sort_by(by, reverse=[True]))
+    out = df.select(pl.col("a").sort_by(by, descending=[True]))
     assert out["a"].to_list() == [4, 5, 2, 1, 3]
 
-    out = df.select(pl.col("a").sort_by(by, reverse=[True, False]))
+    out = df.select(pl.col("a").sort_by(by, descending=[True, False]))
     assert out["a"].to_list() == [5, 4, 3, 1, 2]
 
     # by can also be a single column
-    out = df.select(pl.col("a").sort_by("b", reverse=[False]))
+    out = df.select(pl.col("a").sort_by("b", descending=[False]))
     assert out["a"].to_list() == [1, 2, 3, 4, 5]
 
 
@@ -161,16 +161,16 @@ def test_sort_aggregation_fast_paths() -> None:
         "f_min": [1],
     }
 
-    for reverse in [True, False]:
+    for descending in [True, False]:
         for null_last in [True, False]:
             out = df.select(
                 [
                     pl.all()
-                    .sort(reverse=reverse, nulls_last=null_last)
+                    .sort(descending=descending, nulls_last=null_last)
                     .max()
                     .suffix("_max"),
                     pl.all()
-                    .sort(reverse=reverse, nulls_last=null_last)
+                    .sort(descending=descending, nulls_last=null_last)
                     .min()
                     .suffix("_min"),
                 ]
@@ -217,15 +217,15 @@ def test_sorted_flag() -> None:
 
 def test_sorted_fast_paths() -> None:
     s = pl.Series([1, 2, 3]).sort()
-    rev = s.sort(reverse=True)
+    rev = s.sort(descending=True)
 
     assert rev.to_list() == [3, 2, 1]
     assert s.sort().to_list() == [1, 2, 3]
 
     s = pl.Series([None, 1, 2, 3]).sort()
-    rev = s.sort(reverse=True)
+    rev = s.sort(descending=True)
     assert rev.to_list() == [None, 3, 2, 1]
-    assert rev.sort(reverse=True).to_list() == [None, 3, 2, 1]
+    assert rev.sort(descending=True).to_list() == [None, 3, 2, 1]
     assert rev.sort().to_list() == [None, 1, 2, 3]
 
 
@@ -250,7 +250,7 @@ def test_top_k() -> None:
     s = pl.Series([3, 1, 2, 5, 8])
 
     assert s.top_k(3).to_list() == [8, 5, 3]
-    assert s.top_k(4, reverse=True).to_list() == [1, 2, 3, 5]
+    assert s.top_k(4, descending=True).to_list() == [1, 2, 3, 5]
 
     # 5886
     df = pl.DataFrame({"test": [4, 3, 2, 1]})
@@ -312,8 +312,8 @@ def test_explicit_list_agg_sort_in_groupby() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
 
     # this was col().list().sort() before we changed the logic
-    result = df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A")
-    expected = df.groupby("A").agg(pl.col("B").sort(reverse=True)).sort("A")
+    result = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
+    expected = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
     assert_frame_equal(result, expected)
 
 
@@ -341,7 +341,7 @@ def test_sorted_join_query_5406() -> None:
 
     filter1 = (
         df1.groupby(["Datetime", "Group"])
-        .agg([pl.all().sort_by("Value", reverse=True).first()])
+        .agg([pl.all().sort_by("Value", descending=True).first()])
         .sort(["Datetime", "RowId"])
     )
 

@@ -194,7 +194,7 @@ def test_apply_custom_function() -> None:
                 pl.count("cars").alias("cars_count"),
             ]
         )
-        .sort("custom_1", reverse=True)
+        .sort("custom_1", descending=True)
     ).collect()
     expected = pl.DataFrame(
         {
@@ -456,7 +456,7 @@ def test_head_groupby() -> None:
     # this query flexes the wildcard exclusion quite a bit.
     keys = ["commodity", "location"]
     out = (
-        df.sort(by="price", reverse=True)
+        df.sort(by="price", descending=True)
         .groupby(keys, maintain_order=True)
         .agg([col("*").exclude(keys).head(2).keep_name()])
         .explode(col("*").exclude(keys))
@@ -971,20 +971,6 @@ def test_ufunc_expr_not_first() -> None:
         ]
     )
     assert_frame_equal(out, expected)
-
-
-def test_ufunc_multiple_expr() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("a", [1, 2, 3], dtype=pl.Float64),
-            pl.Series("b", [4, 5, 6], dtype=pl.Float64),
-        ]
-    )
-
-    with pytest.raises(
-        ValueError, match="Numpy ufunc can only be used with one expression, 2 given"
-    ):
-        df.select(np.arctan2(pl.col("a"), pl.col("b")))  # type: ignore[call-overload]
 
 
 def test_clip() -> None:

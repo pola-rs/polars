@@ -104,7 +104,8 @@ where
 
         let n_threads = POOL.current_num_threads();
         let groups = if multithreaded && n_threads > 1 {
-            let parts = create_clean_partitions(values, n_threads, self.is_sorted_reverse_flag());
+            let parts =
+                create_clean_partitions(values, n_threads, self.is_sorted_descending_flag());
             let n_parts = parts.len();
 
             let first_ptr = &values[0] as *const T::Native as usize;
@@ -152,7 +153,9 @@ where
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         // sorted path
-        if self.is_sorted_flag() || self.is_sorted_reverse_flag() && self.chunks().len() == 1 {
+        if self.is_sorted_ascending_flag()
+            || self.is_sorted_descending_flag() && self.chunks().len() == 1
+        {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
             return Ok(GroupsProxy::Slice {
                 groups: self.create_groups_from_sorted(multithreaded),

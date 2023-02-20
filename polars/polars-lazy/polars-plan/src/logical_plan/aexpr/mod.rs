@@ -69,7 +69,7 @@ pub enum AExpr {
     SortBy {
         expr: Node,
         by: Vec<Node>,
-        reverse: Vec<bool>,
+        descending: Vec<bool>,
     },
     Filter {
         input: Node,

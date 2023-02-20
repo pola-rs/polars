@@ -257,7 +257,7 @@ t0 = time.time()
 print("q8")
 out = (
     x.drop_nulls("v3")
-    .sort("v3", reverse=True)
+    .sort("v3", descending=True)
     .groupby("id6")
     .agg(pl.col("v3").head(2).alias("largest2_v3"))
     .explode("largest2_v3")

@@ -813,11 +813,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
 
+    @deprecated_alias(reverse="descending")
     def sort(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
-        reverse: bool | Sequence[bool] = False,
+        descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
     ) -> Self:
         """
@@ -830,7 +831,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             names.
         *more_by
             Additional columns to sort by, specified as positional arguments.
-        reverse
+        descending
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
@@ -875,7 +876,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Sort by multiple columns by passing a list of columns.
 
-        >>> ldf.sort(["c", "a"], reverse=True).collect()
+        >>> ldf.sort(["c", "a"], descending=True).collect()
         shape: (3, 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
@@ -889,7 +890,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Or use positional arguments to sort by multiple columns in the same way.
 
-        >>> ldf.sort("c", "a", reverse=[False, True]).collect()
+        >>> ldf.sort("c", "a", descending=[False, True]).collect()
         shape: (3, 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
@@ -904,7 +905,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         # Fast path for sorting by a single existing column
         if isinstance(by, str) and not more_by:
-            return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
+            return self._from_pyldf(self._ldf.sort(by, descending, nulls_last))
 
         by = pli.selection_to_pyexpr_list(by)
         if more_by:
@@ -916,9 +917,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 "`nulls_last=True` only works when sorting by a single column"
             )
 
-        if isinstance(reverse, bool):
-            reverse = [reverse]
-        return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
+        if isinstance(descending, bool):
+            descending = [descending]
+        return self._from_pyldf(self._ldf.sort_by_exprs(by, descending, nulls_last))
 
     def profile(
         self,

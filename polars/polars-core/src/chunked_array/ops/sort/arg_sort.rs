@@ -1,12 +1,12 @@
 use super::*;
 
 #[inline]
-fn default_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
+fn ascending_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
     compare_fn_nan_max(&a.1, &b.1)
 }
 
 #[inline]
-fn reverse_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
+fn descending_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
     compare_fn_nan_max(&b.1, &a.1)
 }
 
@@ -22,14 +22,14 @@ where
     J: IntoIterator<Item = Option<T>>,
     T: PartialOrd + Send + Sync + IsFloat,
 {
-    let reverse = options.descending;
+    let descending = options.descending;
     let nulls_last = options.nulls_last;
 
     let mut vals = Vec::with_capacity(len - null_count);
 
-    // if we sort reverse, the nulls are last
-    // and need to be extended to the indices in reverse order
-    let null_cap = if reverse || nulls_last {
+    // if we sort descending, the nulls are last
+    // and need to be extended to the indices in descending order
+    let null_cap = if descending || nulls_last {
         null_count
         // if we sort normally, the nulls are first
         // and can be extended with the sorted indices
@@ -58,14 +58,14 @@ where
 
     arg_sort_branch(
         vals.as_mut_slice(),
-        reverse,
-        default_order,
-        reverse_order,
+        descending,
+        ascending_order,
+        descending_order,
         options.multithreaded,
     );
 
     let iter = vals.into_iter().map(|(idx, _v)| idx);
-    let idx = if reverse || nulls_last {
+    let idx = if descending || nulls_last {
         let mut idx = Vec::with_capacity(len);
         idx.extend(iter);
         idx.extend(nulls_idx.into_iter().rev());

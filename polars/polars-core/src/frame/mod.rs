@@ -1782,12 +1782,12 @@ impl DataFrame {
     pub fn sort_in_place(
         &mut self,
         by_column: impl IntoVec<String>,
-        reverse: impl IntoVec<bool>,
+        descending: impl IntoVec<bool>,
     ) -> PolarsResult<&mut Self> {
         let by_column = self.select_series(by_column)?;
-        let reverse = reverse.into_vec();
+        let descending = descending.into_vec();
         self.columns = self
-            .sort_impl(by_column, reverse, false, None, true)?
+            .sort_impl(by_column, descending, false, None, true)?
             .columns;
         Ok(self)
     }
@@ -1797,7 +1797,7 @@ impl DataFrame {
     pub fn sort_impl(
         &self,
         by_column: Vec<Series>,
-        reverse: Vec<bool>,
+        descending: Vec<bool>,
         nulls_last: bool,
         slice: Option<(i64, usize)>,
         parallel: bool,
@@ -1813,13 +1813,13 @@ impl DataFrame {
 
         // therefore when we try to set the first columns as sorted, we ignore the error
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
-        let first_reverse = reverse[0];
+        let first_descending = descending[0];
         let first_by_column = by_column[0].name().to_string();
         let mut take = match by_column.len() {
             1 => {
                 let s = &by_column[0];
                 let options = SortOptions {
-                    descending: reverse[0],
+                    descending: descending[0],
                     nulls_last,
                     multithreaded: parallel,
                 };
@@ -1839,8 +1839,8 @@ impl DataFrame {
             _ => {
                 #[cfg(feature = "sort_multiple")]
                 {
-                    let (first, by_column, reverse) = prepare_arg_sort(by_column, reverse)?;
-                    first.arg_sort_multiple(&by_column, &reverse)?
+                    let (first, by_column, descending) = prepare_arg_sort(by_column, descending)?;
+                    first.arg_sort_multiple(&by_column, &descending)?
                 }
                 #[cfg(not(feature = "sort_multiple"))]
                 {
@@ -1861,7 +1861,7 @@ impl DataFrame {
         // not present in the dataframe
         let _ = df.apply(&first_by_column, |s| {
             let mut s = s.clone();
-            if first_reverse {
+            if first_descending {
                 s.set_sorted_flag(IsSorted::Descending)
             } else {
                 s.set_sorted_flag(IsSorted::Ascending)
@@ -1877,8 +1877,8 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn sort_example(df: &DataFrame, reverse: bool) -> PolarsResult<DataFrame> {
-    ///     df.sort(["a"], reverse)
+    /// fn sort_example(df: &DataFrame, descending: bool) -> PolarsResult<DataFrame> {
+    ///     df.sort(["a"], descending)
     /// }
     ///
     /// fn sort_by_multiple_columns_example(df: &DataFrame) -> PolarsResult<DataFrame> {
@@ -1888,10 +1888,10 @@ impl DataFrame {
     pub fn sort(
         &self,
         by_column: impl IntoVec<String>,
-        reverse: impl IntoVec<bool>,
+        descending: impl IntoVec<bool>,
     ) -> PolarsResult<Self> {
         let mut df = self.clone();
-        df.sort_in_place(by_column, reverse)?;
+        df.sort_in_place(by_column, descending)?;
         Ok(df)
     }
 
@@ -1899,11 +1899,11 @@ impl DataFrame {
     pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> PolarsResult<Self> {
         let mut df = self.clone();
         let by_column = vec![df.column(by_column)?.clone()];
-        let reverse = vec![options.descending];
+        let descending = vec![options.descending];
         df.columns = df
             .sort_impl(
                 by_column,
-                reverse,
+                descending,
                 options.nulls_last,
                 None,
                 options.multithreaded,

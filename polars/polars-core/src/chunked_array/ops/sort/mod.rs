@@ -25,16 +25,16 @@ use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 
 /// Reverse sorting when there are no nulls
-fn order_reverse<T: Ord>(a: &T, b: &T) -> Ordering {
+fn order_descending<T: Ord>(a: &T, b: &T) -> Ordering {
     b.cmp(a)
 }
 
 /// Default sorting when there are no nulls
-fn order_default<T: Ord>(a: &T, b: &T) -> Ordering {
+fn order_ascending<T: Ord>(a: &T, b: &T) -> Ordering {
     a.cmp(b)
 }
 
-fn order_default_flt<T: Float>(a: &T, b: &T) -> Ordering {
+fn order_ascending_flt<T: Float>(a: &T, b: &T) -> Ordering {
     a.partial_cmp(b).unwrap_or_else(|| {
         match (a.is_nan(), b.is_nan()) {
             (true, true) => Ordering::Equal,
@@ -46,15 +46,15 @@ fn order_default_flt<T: Float>(a: &T, b: &T) -> Ordering {
     })
 }
 
-fn order_reverse_flt<T: Float>(a: &T, b: &T) -> Ordering {
-    order_default_flt(b, a)
+fn order_descending_flt<T: Float>(a: &T, b: &T) -> Ordering {
+    order_ascending_flt(b, a)
 }
 
 fn sort_branch<T, Fd, Fr>(
     slice: &mut [T],
-    reverse: bool,
-    default_order_fn: Fd,
-    reverse_order_fn: Fr,
+    descending: bool,
+    ascending_order_fn: Fd,
+    descending_order_fn: Fr,
     parallel: bool,
 ) where
     T: PartialOrd + Send,
@@ -62,27 +62,27 @@ fn sort_branch<T, Fd, Fr>(
     Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
 {
     if parallel {
-        match reverse {
-            true => slice.par_sort_unstable_by(reverse_order_fn),
-            false => slice.par_sort_unstable_by(default_order_fn),
+        match descending {
+            true => slice.par_sort_unstable_by(descending_order_fn),
+            false => slice.par_sort_unstable_by(ascending_order_fn),
         }
     } else {
-        match reverse {
-            true => slice.sort_unstable_by(reverse_order_fn),
-            false => slice.sort_unstable_by(default_order_fn),
+        match descending {
+            true => slice.sort_unstable_by(descending_order_fn),
+            false => slice.sort_unstable_by(ascending_order_fn),
         }
     }
 }
 
 #[cfg(feature = "private")]
-pub fn arg_sort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], reverse: bool, parallel: bool)
+pub fn arg_sort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], descending: bool, parallel: bool)
 where
     T: PartialOrd + Send + IsFloat,
     Idx: PartialOrd + Send,
 {
     arg_sort_branch(
         slice,
-        reverse,
+        descending,
         |(_, a), (_, b)| compare_fn_nan_max(a, b),
         |(_, a), (_, b)| compare_fn_nan_max(b, a),
         parallel,
@@ -91,9 +91,9 @@ where
 
 pub fn arg_sort_branch<T, Fd, Fr>(
     slice: &mut [T],
-    reverse: bool,
-    default_order_fn: Fd,
-    reverse_order_fn: Fr,
+    descending: bool,
+    ascending_order_fn: Fd,
+    descending_order_fn: Fr,
     parallel: bool,
 ) where
     T: PartialOrd + Send,
@@ -101,14 +101,14 @@ pub fn arg_sort_branch<T, Fd, Fr>(
     Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
 {
     if parallel {
-        match reverse {
-            true => slice.par_sort_by(reverse_order_fn),
-            false => slice.par_sort_by(default_order_fn),
+        match descending {
+            true => slice.par_sort_by(descending_order_fn),
+            false => slice.par_sort_by(ascending_order_fn),
         }
     } else {
-        match reverse {
-            true => slice.sort_by(reverse_order_fn),
-            false => slice.sort_by(default_order_fn),
+        match descending {
+            true => slice.sort_by(descending_order_fn),
+            false => slice.sort_by(ascending_order_fn),
         }
     }
 }
@@ -134,7 +134,7 @@ macro_rules! sort_with_fast_path {
         }
 
         // we can clone if we sort in same order
-        if $options.descending && $ca.is_sorted_reverse_flag() || ($ca.is_sorted_flag() && !$options.descending) {
+        if $options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending) {
             // there are nulls
             if $ca.null_count() > 0 {
                 // if the nulls are already last we can clone
@@ -152,7 +152,7 @@ macro_rules! sort_with_fast_path {
             }
         }
         // we can reverse if we sort in other order
-        else if ($options.descending && $ca.is_sorted_flag() || $ca.is_sorted_reverse_flag()) && $ca.null_count() == 0 {
+        else if ($options.descending && $ca.is_sorted_ascending_flag() || $ca.is_sorted_descending_flag()) && $ca.null_count() == 0 {
             return $ca.reverse()
         };
 
@@ -163,8 +163,8 @@ macro_rules! sort_with_fast_path {
 fn sort_with_numeric<T>(
     ca: &ChunkedArray<T>,
     options: SortOptions,
-    order_default: fn(&T::Native, &T::Native) -> Ordering,
-    order_reverse: fn(&T::Native, &T::Native) -> Ordering,
+    order_ascending: fn(&T::Native, &T::Native) -> Ordering,
+    order_descending: fn(&T::Native, &T::Native) -> Ordering,
 ) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -176,8 +176,8 @@ where
         sort_branch(
             vals.as_mut_slice(),
             options.descending,
-            order_default,
-            order_reverse,
+            order_ascending,
+            order_descending,
             options.multithreaded,
         );
 
@@ -213,8 +213,8 @@ where
         sort_branch(
             mut_slice,
             options.descending,
-            order_default,
-            order_reverse,
+            order_ascending,
+            order_descending,
             options.multithreaded,
         );
 
@@ -263,7 +263,7 @@ fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> IdxCa
 where
     T: PolarsNumericType,
 {
-    let reverse = options.descending;
+    let descending = options.descending;
     if ca.null_count() == 0 {
         let mut vals = Vec::with_capacity(ca.len());
         let mut count: IdxSize = 0;
@@ -277,7 +277,7 @@ where
             vals.extend_trusted_len(iter);
         });
 
-        arg_sort_no_nulls(vals.as_mut_slice(), reverse, options.multithreaded);
+        arg_sort_no_nulls(vals.as_mut_slice(), descending, options.multithreaded);
 
         let out: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut out = out.into_inner();
@@ -295,9 +295,9 @@ where
 fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
     other: &[Series],
-    reverse: &[bool],
+    descending: &[bool],
 ) -> PolarsResult<IdxCa> {
-    args_validate(ca, other, reverse)?;
+    args_validate(ca, other, descending)?;
     let mut count: IdxSize = 0;
     let vals: Vec<_> = ca
         .into_iter()
@@ -308,7 +308,7 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
         })
         .collect_trusted();
 
-    arg_sort_multiple_impl(vals, other, reverse)
+    arg_sort_multiple_impl(vals, other, descending)
 }
 
 impl<T> ChunkSort<T> for ChunkedArray<T>
@@ -317,12 +317,12 @@ where
     T::Native: Default + Ord,
 {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
-        sort_with_numeric(self, options, order_default, order_reverse)
+        sort_with_numeric(self, options, order_ascending, order_descending)
     }
 
-    fn sort(&self, reverse: bool) -> ChunkedArray<T> {
+    fn sort(&self, descending: bool) -> ChunkedArray<T> {
         self.sort_with(SortOptions {
-            descending: reverse,
+            descending,
             ..Default::default()
         })
     }
@@ -336,19 +336,19 @@ where
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        arg_sort_multiple_numeric(self, other, reverse)
+    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, other, descending)
     }
 }
 
 impl ChunkSort<Float32Type> for Float32Chunked {
     fn sort_with(&self, options: SortOptions) -> Float32Chunked {
-        sort_with_numeric(self, options, order_default_flt, order_reverse_flt)
+        sort_with_numeric(self, options, order_ascending_flt, order_descending_flt)
     }
 
-    fn sort(&self, reverse: bool) -> Float32Chunked {
+    fn sort(&self, descending: bool) -> Float32Chunked {
         self.sort_with(SortOptions {
-            descending: reverse,
+            descending,
             ..Default::default()
         })
     }
@@ -362,19 +362,19 @@ impl ChunkSort<Float32Type> for Float32Chunked {
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        arg_sort_multiple_numeric(self, other, reverse)
+    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, other, descending)
     }
 }
 
 impl ChunkSort<Float64Type> for Float64Chunked {
     fn sort_with(&self, options: SortOptions) -> Float64Chunked {
-        sort_with_numeric(self, options, order_default_flt, order_reverse_flt)
+        sort_with_numeric(self, options, order_ascending_flt, order_descending_flt)
     }
 
-    fn sort(&self, reverse: bool) -> Float64Chunked {
+    fn sort(&self, descending: bool) -> Float64Chunked {
         self.sort_with(SortOptions {
-            descending: reverse,
+            descending,
             ..Default::default()
         })
     }
@@ -388,22 +388,22 @@ impl ChunkSort<Float64Type> for Float64Chunked {
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        arg_sort_multiple_numeric(self, other, reverse)
+    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, other, descending)
     }
 }
 
 fn ordering_other_columns<'a>(
     compare_inner: &'a [Box<dyn PartialOrdInner + 'a>],
-    reverse: &[bool],
+    descending: &[bool],
     idx_a: usize,
     idx_b: usize,
 ) -> Ordering {
-    for (cmp, reverse) in compare_inner.iter().zip(reverse) {
+    for (cmp, descending) in compare_inner.iter().zip(descending) {
         // Safety:
         // indices are in bounds
         let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b) };
-        match (ordering, reverse) {
+        match (ordering, descending) {
             (Ordering::Equal, _) => continue,
             (_, true) => return ordering.reverse(),
             _ => return ordering,
@@ -425,8 +425,8 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         sort_branch(
             v.as_mut_slice(),
             options.descending,
-            order_default,
-            order_reverse,
+            order_ascending,
+            order_descending,
             options.multithreaded,
         );
 
@@ -507,9 +507,9 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         ca
     }
 
-    fn sort(&self, reverse: bool) -> Utf8Chunked {
+    fn sort(&self, descending: bool) -> Utf8Chunked {
         self.sort_with(SortOptions {
-            descending: reverse,
+            descending,
             nulls_last: false,
             multithreaded: true,
         })
@@ -534,8 +534,8 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
     ///
-    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        args_validate(self, other, reverse)?;
+    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+        args_validate(self, other, descending)?;
 
         let mut count: IdxSize = 0;
         let vals: Vec<_> = self
@@ -546,7 +546,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 (i, v)
             })
             .collect_trusted();
-        arg_sort_multiple_impl(vals, other, reverse)
+        arg_sort_multiple_impl(vals, other, descending)
     }
 }
 
@@ -563,8 +563,8 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         sort_branch(
             v.as_mut_slice(),
             options.descending,
-            order_default,
-            order_reverse,
+            order_ascending,
+            order_descending,
             options.multithreaded,
         );
 
@@ -645,9 +645,9 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         ca
     }
 
-    fn sort(&self, reverse: bool) -> BinaryChunked {
+    fn sort(&self, descending: bool) -> BinaryChunked {
         self.sort_with(SortOptions {
-            descending: reverse,
+            descending,
             nulls_last: false,
             multithreaded: true,
         })
@@ -672,8 +672,8 @@ impl ChunkSort<BinaryType> for BinaryChunked {
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
     ///
-    fn arg_sort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        args_validate(self, other, reverse)?;
+    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+        args_validate(self, other, descending)?;
 
         let mut count: IdxSize = 0;
         let vals: Vec<_> = self
@@ -684,7 +684,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 (i, v)
             })
             .collect_trusted();
-        arg_sort_multiple_impl(vals, other, reverse)
+        arg_sort_multiple_impl(vals, other, descending)
     }
 }
 
@@ -708,9 +708,9 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         ca
     }
 
-    fn sort(&self, reverse: bool) -> BooleanChunked {
+    fn sort(&self, descending: bool) -> BooleanChunked {
         self.sort_with(SortOptions {
-            descending: reverse,
+            descending,
             nulls_last: false,
             multithreaded: true,
         })
@@ -730,7 +730,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 #[cfg(feature = "sort_multiple")]
 pub(crate) fn prepare_arg_sort(
     columns: Vec<Series>,
-    mut reverse: Vec<bool>,
+    mut descending: Vec<bool>,
 ) -> PolarsResult<(Series, Vec<Series>, Vec<bool>)> {
     let n_cols = columns.len();
 
@@ -758,12 +758,12 @@ pub(crate) fn prepare_arg_sort(
     let first = columns.remove(0);
 
     // broadcast ordering
-    if n_cols > reverse.len() && reverse.len() == 1 {
-        while n_cols != reverse.len() {
-            reverse.push(reverse[0]);
+    if n_cols > descending.len() && descending.len() == 1 {
+        while n_cols != descending.len() {
+            descending.push(descending[0]);
         }
     }
-    Ok((first, columns, reverse))
+    Ok((first, columns, descending))
 }
 
 #[cfg(test)]

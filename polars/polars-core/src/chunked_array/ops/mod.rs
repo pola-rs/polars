@@ -493,13 +493,13 @@ pub trait ChunkSort<T: PolarsDataType> {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T>;
 
     /// Returned a sorted `ChunkedArray`.
-    fn sort(&self, reverse: bool) -> ChunkedArray<T>;
+    fn sort(&self, descending: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
     fn arg_sort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    fn arg_sort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> PolarsResult<IdxCa> {
+    fn arg_sort_multiple(&self, _other: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "arg_sort_multiple not implemented for this dtype".into(),
         ))

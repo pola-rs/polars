@@ -592,11 +592,11 @@ impl Expr {
     }
 
     /// Sort in increasing order. See [the eager implementation](Series::sort).
-    pub fn sort(self, reverse: bool) -> Self {
+    pub fn sort(self, descending: bool) -> Self {
         Expr::Sort {
             expr: Box::new(self),
             options: SortOptions {
-                descending: reverse,
+                descending,
                 ..Default::default()
             },
         }
@@ -614,8 +614,8 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: usize, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::TopK { k, reverse })
+    pub fn top_k(self, k: usize, descending: bool) -> Self {
+        self.apply_private(FunctionExpr::TopK { k, descending })
     }
 
     /// Reverse column
@@ -1231,14 +1231,14 @@ impl Expr {
     pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone, R: AsRef<[bool]>>(
         self,
         by: E,
-        reverse: R,
+        descending: R,
     ) -> Expr {
         let by = by.as_ref().iter().map(|e| e.clone().into()).collect();
-        let reverse = reverse.as_ref().to_vec();
+        let descending = descending.as_ref().to_vec();
         Expr::SortBy {
             expr: Box::new(self),
             by,
-            reverse,
+            descending,
         }
     }
 

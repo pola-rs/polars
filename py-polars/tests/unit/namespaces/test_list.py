@@ -155,7 +155,7 @@ def test_list_eval_dtype_inference() -> None:
         }
     )
 
-    rank_pct = pl.col("").rank(reverse=True) / pl.col("").count().cast(pl.UInt16)
+    rank_pct = pl.col("").rank(descending=True) / pl.col("").count().cast(pl.UInt16)
 
     # the .arr.first() would fail if .arr.eval did not correctly infer the output type
     assert grades.with_columns(
