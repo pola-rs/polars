@@ -5418,8 +5418,8 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        groups: str | Sequence[str],
-        *,
+        by: str | Iterable[str],
+        *more_by: str,
         maintain_order: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[Self]:
@@ -5428,130 +5428,156 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        groups: str | Sequence[str],
-        *,
+        by: str | Iterable[str],
+        *more_by: str,
         maintain_order: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, Self]:
         ...
 
-    @overload
+    @deprecated_alias(groups="by")
     def partition_by(
         self,
-        groups: str | Sequence[str],
-        *,
-        maintain_order: bool,
-        as_dict: bool,
-    ) -> list[Self] | dict[Any, Self]:
-        ...
-
-    def partition_by(
-        self,
-        groups: str | Sequence[str],
-        *,
+        by: str | Iterable[str],
+        *more_by: str,
         maintain_order: bool = True,
         as_dict: bool = False,
     ) -> list[Self] | dict[Any, Self]:
         """
-        Split into multiple DataFrames partitioned by groups.
+        Group by the given columns and return the groups as separate dataframes.
 
         Parameters
         ----------
-        groups
-            Groups to partition by.
+        by
+            Name of the column(s) to group by.
+        *more_by
+            Additional names of columns to group by, specified as positional arguments.
         maintain_order
-            Keep predictable output order. This is slower as it requires an extra sort
-            operation.
+            Ensure that the order of the groups is consistent with the input data.
+            This is slower than a default partition by operation.
         as_dict
-            If True, return the partitions in a dictionary keyed by the distinct group
-            values instead of a list.
+            Return a dictionary instead of a list. The dictionary keys are the distinct
+            group values that identify that group.
 
         Examples
         --------
+        Pass a single column name to partition by that column.
+
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": ["A", "A", "B", "B", "C"],
-        ...         "N": [1, 2, 2, 4, 2],
-        ...         "bar": ["k", "l", "m", "m", "l"],
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...         "b": [1, 2, 1, 3, 3],
+        ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.partition_by(groups="foo", maintain_order=True)
+        >>> df.partition_by("a")  # doctest: +IGNORE_RESULT
         [shape: (2, 3)
-         ┌─────┬─────┬─────┐
-         │ foo ┆ N   ┆ bar │
-         │ --- ┆ --- ┆ --- │
-         │ str ┆ i64 ┆ str │
-         ╞═════╪═════╪═════╡
-         │ A   ┆ 1   ┆ k   │
-         │ A   ┆ 2   ┆ l   │
-         └─────┴─────┴─────┘,
-         shape: (2, 3)
-         ┌─────┬─────┬─────┐
-         │ foo ┆ N   ┆ bar │
-         │ --- ┆ --- ┆ --- │
-         │ str ┆ i64 ┆ str │
-         ╞═════╪═════╪═════╡
-         │ B   ┆ 2   ┆ m   │
-         │ B   ┆ 4   ┆ m   │
-         └─────┴─────┴─────┘,
-         shape: (1, 3)
-         ┌─────┬─────┬─────┐
-         │ foo ┆ N   ┆ bar │
-         │ --- ┆ --- ┆ --- │
-         │ str ┆ i64 ┆ str │
-         ╞═════╪═════╪═════╡
-         │ C   ┆ 2   ┆ l   │
-         └─────┴─────┴─────┘]
-        >>> df.partition_by(groups="foo", maintain_order=True, as_dict=True)
-        {'A': shape: (2, 3)
         ┌─────┬─────┬─────┐
-        │ foo ┆ N   ┆ bar │
+        │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ str │
+        │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ A   ┆ 1   ┆ k   │
-        │ A   ┆ 2   ┆ l   │
-        └─────┴─────┴─────┘, 'B': shape: (2, 3)
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 1   ┆ 3   │
+        └─────┴─────┴─────┘, shape: (2, 3)
         ┌─────┬─────┬─────┐
-        │ foo ┆ N   ┆ bar │
+        │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ str │
+        │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ B   ┆ 2   ┆ m   │
-        │ B   ┆ 4   ┆ m   │
-        └─────┴─────┴─────┘, 'C': shape: (1, 3)
+        │ b   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 2   │
+        └─────┴─────┴─────┘, shape: (1, 3)
         ┌─────┬─────┬─────┐
-        │ foo ┆ N   ┆ bar │
+        │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ str │
+        │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ C   ┆ 2   ┆ l   │
+        │ c   ┆ 3   ┆ 1   │
+        └─────┴─────┴─────┘]
+
+        Partition by multiple columns by either passing a list of column names, or by
+        specifying each column name as a positional argument.
+
+        >>> df.partition_by("a", "b")  # doctest: +IGNORE_RESULT
+        [shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 1   ┆ 3   │
+        └─────┴─────┴─────┘, shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 2   ┆ 4   │
+        └─────┴─────┴─────┘, shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 3   ┆ 2   │
+        └─────┴─────┴─────┘, shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ c   ┆ 3   ┆ 1   │
+        └─────┴─────┴─────┘]
+
+        Return the partitions as a dictionary by specifying ``as_dict=True``.
+
+        >>> df.partition_by("a", as_dict=True)  # doctest: +IGNORE_RESULT
+        {'a': shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 1   ┆ 3   │
+        └─────┴─────┴─────┘, 'b': shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 2   │
+        └─────┴─────┴─────┘, 'c': shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘}
 
         """
-        if isinstance(groups, str):
-            groups = [groups]
-        elif not isinstance(groups, list):
-            groups = list(groups)
+        if isinstance(by, str):
+            by = [by]
+        elif not isinstance(by, list):
+            by = list(by)
+        if more_by:
+            by.extend(more_by)
+
+        partitions = [
+            self._from_pydf(_df) for _df in self._df.partition_by(by, maintain_order)
+        ]
 
         if as_dict:
-            out: dict[Any, Self] = {}
-            if len(groups) == 1:
-                for _df in self._df.partition_by(groups, maintain_order):
-                    df = self._from_pydf(_df)
-                    out[df[groups][0, 0]] = df
+            if len(by) == 1:
+                return {df[by][0, 0]: df for df in partitions}
             else:
-                for _df in self._df.partition_by(groups, maintain_order):
-                    df = self._from_pydf(_df)
-                    out[df[groups].row(0)] = df
+                return {df[by].row(0): df for df in partitions}
 
-            return out
-
-        else:
-            return [
-                self._from_pydf(_df)
-                for _df in self._df.partition_by(groups, maintain_order)
-            ]
+        return partitions
 
     def shift(self, periods: int) -> Self:
         """
