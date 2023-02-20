@@ -701,3 +701,10 @@ def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame(schema=["a", "b", "c"])
     with pytest.raises(TypeError):
         df.select(pl.all().exclude(*input))
+
+
+def test_arg_true() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 1]})
+    res = df.select((pl.col("a") == 1).arg_true())
+    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.UInt32)])
+    assert_frame_equal(res, expected)
