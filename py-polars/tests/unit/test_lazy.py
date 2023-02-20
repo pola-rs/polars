@@ -396,7 +396,7 @@ def test_fold_filter() -> None:
     out = df.filter(
         pl.fold(
             acc=pl.lit(True),
-            f=lambda a, b: a & b,
+            function=lambda a, b: a & b,
             exprs=[pl.col(c) > 1 for c in df.columns],
         )
     )
@@ -406,7 +406,7 @@ def test_fold_filter() -> None:
     out = df.filter(
         pl.fold(
             acc=pl.lit(True),
-            f=lambda a, b: a | b,
+            function=lambda a, b: a | b,
             exprs=[pl.col(c) > 1 for c in df.columns],
         )
     )

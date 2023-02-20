@@ -4481,10 +4481,11 @@ class DataFrame:
             ._df
         )
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
+    @deprecated_alias(f="function")
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def apply(
         self,
-        f: Callable[[tuple[Any, ...]], Any],
+        function: Callable[[tuple[Any, ...]], Any],
         return_dtype: PolarsDataType | None = None,
         inference_size: int = 256,
     ) -> Self:
@@ -4507,7 +4508,7 @@ class DataFrame:
 
         Parameters
         ----------
-        f
+        function
             Custom function/ lambda function.
         return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
@@ -4563,7 +4564,7 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
         """
-        out, is_df = self._df.apply(f, return_dtype, inference_size)
+        out, is_df = self._df.apply(function, return_dtype, inference_size)
         if is_df:
             return self._from_pydf(out)
         else:

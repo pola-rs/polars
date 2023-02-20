@@ -3654,10 +3654,11 @@ class Series:
 
         """
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "func", "return_dtype"])
+    @deprecated_alias(func="function")
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def apply(
         self,
-        func: Callable[[Any], Any],
+        function: Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
         skip_nulls: bool = True,
     ) -> Series:
@@ -3683,7 +3684,7 @@ class Series:
 
         Parameters
         ----------
-        func
+        function
             function or lambda.
         return_dtype
             Output datatype. If none is given, the same datatype as this Series will be
@@ -3702,7 +3703,7 @@ class Series:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
-        return wrap_s(self._s.apply_lambda(func, pl_return_dtype, skip_nulls))
+        return wrap_s(self._s.apply_lambda(function, pl_return_dtype, skip_nulls))
 
     def shift(self, periods: int = 1) -> Series:
         """

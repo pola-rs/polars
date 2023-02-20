@@ -20,9 +20,9 @@ def test_fold_regex_expand() -> None:
         }
     )
     assert df.with_columns(
-        pl.fold(acc=pl.lit(0), f=lambda acc, x: acc + x, exprs=pl.col("^y_.*$")).alias(
-            "y_sum"
-        ),
+        pl.fold(
+            acc=pl.lit(0), function=lambda acc, x: acc + x, exprs=pl.col("^y_.*$")
+        ).alias("y_sum"),
     ).to_dict(False) == {
         "x": [0, 1, 2],
         "y_1": [1.1, 2.2, 3.3],

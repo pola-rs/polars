@@ -208,7 +208,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
         pl.DataFrame({"a": [1, 2, 3]})
         .lazy()
         .map(
-            f=lambda df: df.with_columns(pl.col("a").alias("b")),
+            function=lambda df: df.with_columns(pl.col("a").alias("b")),
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,
         )

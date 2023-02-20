@@ -16,10 +16,14 @@ def test_fold() -> None:
     assert_series_equal(out["min"], pl.Series("min", [1.0, 2.0, 3.0]))
 
     out = df.select(
-        pl.fold(acc=pl.lit(0), f=lambda acc, x: acc + x, exprs=pl.all()).alias("foo")
+        pl.fold(acc=pl.lit(0), function=lambda acc, x: acc + x, exprs=pl.all()).alias(
+            "foo"
+        )
     )
     assert out["foo"].to_list() == [2, 4, 6]
-    out = df.select(pl.reduce(f=lambda acc, x: acc + x, exprs=pl.all()).alias("foo"))
+    out = df.select(
+        pl.reduce(function=lambda acc, x: acc + x, exprs=pl.all()).alias("foo")
+    )
     assert out["foo"].to_list() == [2, 4, 6]
 
 

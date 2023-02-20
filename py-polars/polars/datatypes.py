@@ -478,10 +478,10 @@ NUMERIC_DTYPES: frozenset[PolarsDataType] = FLOAT_DTYPES | INTEGER_DTYPES
 T = TypeVar("T")
 
 
-def cache(func: Callable[..., T]) -> T:
+def cache(function: Callable[..., T]) -> T:
     # need this to satisfy mypy issue with "@property/@cache combination"
     # See: https://github.com/python/mypy/issues/5858
-    return functools.lru_cache()(func)  # type: ignore[return-value]
+    return functools.lru_cache()(function)  # type: ignore[return-value]
 
 
 class _DataTypeMappings:
