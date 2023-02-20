@@ -141,7 +141,7 @@ impl SQLContext {
                         let expr = parse_sql_expr(expr)?;
                         expr.alias(&alias.value)
                     }
-                    SelectItem::QualifiedWildcard(_) | SelectItem::Wildcard => {
+                    SelectItem::QualifiedWildcard { .. } | SelectItem::Wildcard { .. } => {
                         contains_wildcard = true;
                         col("*")
                     }

@@ -1,293 +1,270 @@
 use polars_core::prelude::{PolarsError, PolarsResult};
 use polars_lazy::dsl::{lit, Expr};
 use sqlparser::ast::{
-    Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, JoinConstraint,
-    Value as SqlValue,
+    Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
+    WindowSpec,
 };
 
-use crate::sql_expr::{apply_window_spec, parse_sql_expr};
+use crate::sql_expr::parse_sql_expr;
 
-/// Convert a SQL function to a Polars Expr
-pub(crate) enum SQLFunctionExpr<'a> {
+pub(crate) struct SqlFunctionVisitor<'a>(pub(crate) &'a SQLFunction);
+
+/// SQL functions that are supported by Polars
+pub(crate) enum PolarsSqlFunctions {
     // ----
     // Math functions
     // ----
     /// SQL 'abs' function
-    Abs(&'a SQLFunction),
+    Abs,
     /// SQL 'acos' function
-    Acos(&'a SQLFunction),
+    Acos,
     /// SQL 'asin' function
-    Asin(&'a SQLFunction),
+    Asin,
     /// SQL 'atan' function
-    Atan(&'a SQLFunction),
+    Atan,
     /// SQL 'ceil' function
-    Ceil(&'a SQLFunction),
+    Ceil,
     /// SQL 'exp' function
-    Exp(&'a SQLFunction),
+    Exp,
     /// SQL 'floor' function
-    Floor(&'a SQLFunction),
+    Floor,
     /// SQL 'ln' function
-    Ln(&'a SQLFunction),
+    Ln,
     /// SQL 'log2' function
-    Log2(&'a SQLFunction),
+    Log2,
     /// SQL 'log10' function
-    Log10(&'a SQLFunction),
+    Log10,
     /// SQL 'log' function
-    Log(&'a SQLFunction),
+    Log,
 
     /// SQL 'pow' function
-    Pow(&'a SQLFunction),
+    Pow,
     // ----
     // String functions
     // ----
     /// SQL 'lower' function
-    Lower(&'a SQLFunction),
+    Lower,
     /// SQL 'upper' function
-    Upper(&'a SQLFunction),
+    Upper,
     /// SQL 'ltrim' function
-    LTrim(&'a SQLFunction),
+    LTrim,
     /// SQL 'rtrim' function
-    RTrim(&'a SQLFunction),
+    RTrim,
     /// SQL 'starts_with' function
-    StartsWith(&'a SQLFunction),
+    StartsWith,
     /// SQL 'ends_with' function
-    EndsWith(&'a SQLFunction),
+    EndsWith,
     // ----
     // Aggregate functions
     // ----
     /// SQL 'count' function
-    Count(CountExpr<'a>),
+    Count,
     /// SQL 'sum' function
-    Sum(&'a SQLFunction),
+    Sum,
     /// SQL 'min' function
-    Min(&'a SQLFunction),
+    Min,
     /// SQL 'max' function
-    Max(&'a SQLFunction),
+    Max,
     /// SQL 'avg' function
-    Avg(&'a SQLFunction),
+    Avg,
     /// SQL 'stddev' function
-    StdDev(&'a SQLFunction),
+    StdDev,
     /// SQL 'variance' function
-    Variance(&'a SQLFunction),
+    Variance,
     /// SQL 'first' function
-    First(&'a SQLFunction),
+    First,
     /// SQL 'last' function
-    Last(&'a SQLFunction),
+    Last,
     // ----
     // Array functions
     // ----
     /// SQL 'array_length' function
-    ArrayLength(&'a SQLFunction),
-    /// SQL 'array_min' function
-    ArrayMin(&'a SQLFunction),
-    /// SQL 'array_max' function
-    ArrayMax(&'a SQLFunction),
+    ArrayLength,
+    /// SQL 'array_lower' function
+    ArrayMin,
+    /// SQL 'array_upper' function
+    ArrayMax,
     /// SQL 'array_sum' function
-    ArraySum(&'a SQLFunction),
+    ArraySum,
     /// SQL 'array_mean' function
-    ArrayMean(&'a SQLFunction),
+    ArrayMean,
     /// SQL 'array_reverse' function
-    ArrayReverse(&'a SQLFunction),
+    ArrayReverse,
     /// SQL 'array_unique' function
-    ArrayUnique(&'a SQLFunction),
-    /// SQL 'explode' function
-    Explode(&'a SQLFunction),
-    /// SQL 'slice' function
-    Slice(&'a SQLFunction),
+    ArrayUnique,
+    /// SQL 'unnest' function
+    Explode,
     /// SQL 'array_get' function
-    ArrayGet(&'a SQLFunction),
+    ArrayGet,
     /// SQL 'array_contains' function
-    ArrayContains(&'a SQLFunction),
+    ArrayContains,
 }
 
-impl<'a> From<&'a SQLFunction> for SQLFunctionExpr<'a> {
-    fn from(function: &'a SQLFunction) -> Self {
+impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
+    type Error = PolarsError;
+    fn try_from(function: &'_ SQLFunction) -> Result<Self, Self::Error> {
         let function_name = function.name.0[0].value.to_lowercase();
-        match function_name.as_str() {
+        Ok(match function_name.as_str() {
             // ----
             // Math functions
             // ----
-            "abs" => Self::Abs(function),
-            "acos" => Self::Acos(function),
-            "asin" => Self::Asin(function),
-            "atan" => Self::Atan(function),
-            "ceil" | "ceiling" => Self::Ceil(function),
-            "exp" => Self::Exp(function),
-            "floor" => Self::Floor(function),
-            "ln" => Self::Ln(function),
-            "log2" => Self::Log2(function),
-            "log10" => Self::Log10(function),
-            "log" => Self::Log(function),
-            "pow" => Self::Pow(function),
+            "abs" => Self::Abs,
+            "acos" => Self::Acos,
+            "asin" => Self::Asin,
+            "atan" => Self::Atan,
+            "ceil" | "ceiling" => Self::Ceil,
+            "exp" => Self::Exp,
+            "floor" => Self::Floor,
+            "ln" => Self::Ln,
+            "log2" => Self::Log2,
+            "log10" => Self::Log10,
+            "log" => Self::Log,
+            "pow" => Self::Pow,
             // ----
             // String functions
             // ----
-            "lower" => Self::Lower(function),
-            "upper" => Self::Upper(function),
-            "ltrim" => Self::LTrim(function),
-            "rtrim" => Self::RTrim(function),
-            "starts_with" => Self::StartsWith(function),
-            "ends_with" => Self::EndsWith(function),
+            "lower" => Self::Lower,
+            "upper" => Self::Upper,
+            "ltrim" => Self::LTrim,
+            "rtrim" => Self::RTrim,
+            "starts_with" => Self::StartsWith,
+            "ends_with" => Self::EndsWith,
             // ----
             // Aggregate functions
             // ----
-            "count" => Self::Count(CountExpr(function)),
-            "sum" => Self::Sum(function),
-            "min" => Self::Min(function),
-            "max" => Self::Max(function),
-            "avg" => Self::Avg(function),
-            "stddev" | "stddev_samp" => Self::StdDev(function),
-            "variance" | "var_samp" => Self::Variance(function),
-            "first" => Self::First(function),
-            "last" => Self::Last(function),
+            "count" => Self::Count,
+            "sum" => Self::Sum,
+            "min" => Self::Min,
+            "max" => Self::Max,
+            "avg" => Self::Avg,
+            "stddev" | "stddev_samp" => Self::StdDev,
+            "variance" | "var_samp" => Self::Variance,
+            "first" => Self::First,
+            "last" => Self::Last,
             // ----
             // Array functions
             // ----
-            "array_length" => Self::ArrayLength(function),
-            "array_min" => Self::ArrayMin(function),
-            "array_max" => Self::ArrayMax(function),
-            "array_sum" => Self::ArraySum(function),
-            "array_mean" => Self::ArrayMean(function),
-            "array_reverse" => Self::ArrayReverse(function),
-            "array_unique" => Self::ArrayUnique(function),
-            "explode" => Self::Explode(function),
-            "slice" => Self::Slice(function),
-            "array_get" => Self::ArrayGet(function),
-            "array_contains" => Self::ArrayContains(function),
-            other => unimplemented!("{other}"),
-        }
+            "array_length" => Self::ArrayLength,
+            "array_lower" => Self::ArrayMin,
+            "array_upper" => Self::ArrayMax,
+            "array_sum" => Self::ArraySum,
+            "array_mean" => Self::ArrayMean,
+            "array_reverse" => Self::ArrayReverse,
+            "array_unique" => Self::ArrayUnique,
+            "unnest" => Self::Explode,
+            "array_get" => Self::ArrayGet,
+            "array_contains" => Self::ArrayContains,
+            other => {
+                return Err(PolarsError::InvalidOperation(
+                    format!("Unsupported SQL function: {}", other).into(),
+                ))
+            }
+        })
     }
 }
+impl SqlFunctionVisitor<'_> {
+    pub(crate) fn visit_function(&self) -> PolarsResult<Expr> {
+        let function = self.0;
 
-impl TryFrom<SQLFunctionExpr<'_>> for Expr {
-    type Error = PolarsError;
-    fn try_from(function_expr: SQLFunctionExpr) -> Result<Self, Self::Error> {
-        use SQLFunctionExpr::*;
-        match function_expr {
+        let function_name: PolarsSqlFunctions = function.try_into()?;
+        use PolarsSqlFunctions::*;
+        match function_name {
             // ----
             // Math functions
             // ----
-            Abs(function) => unary(function, Expr::abs),
-            Acos(function) => unary(function, Expr::arccos),
-            Asin(function) => unary(function, Expr::arcsin),
-            Atan(function) => unary(function, Expr::arctan),
-            Ceil(function) => unary(function, Expr::ceil),
-            Exp(function) => unary(function, Expr::exp),
-            Floor(function) => unary(function, Expr::floor),
-            Ln(function) => unary(function, |e| e.log(std::f64::consts::E)),
-            Log2(function) => unary(function, |e| e.log(2.0)),
-            Log10(function) => unary(function, |e| e.log(10.0)),
-            Log(function) => binary(function, Expr::log),
-            Pow(function) => binary(function, |e: Expr, p: Expr| e.pow(p)),
+            Abs => self.visit_unary(Expr::abs),
+            Acos => self.visit_unary(Expr::arccos),
+            Asin => self.visit_unary(Expr::arcsin),
+            Atan => self.visit_unary(Expr::arctan),
+            Ceil => self.visit_unary(Expr::ceil),
+            Exp => self.visit_unary(Expr::exp),
+            Floor => self.visit_unary(Expr::floor),
+            Ln => self.visit_unary(|e| e.log(std::f64::consts::E)),
+            Log2 => self.visit_unary(|e| e.log(2.0)),
+            Log10 => self.visit_unary(|e| e.log(10.0)),
+            Log => self.visit_binary(Expr::log),
+            Pow => self.visit_binary::<Expr>(Expr::pow),
             // ----
             // String functions
             // ----
-            Lower(function) => unary(function, |e| e.str().to_lowercase()),
-            Upper(function) => unary(function, |e| e.str().to_uppercase()),
-            LTrim(function) => match function.args.len() {
-                1 => unary(function, |e| e.str().lstrip(None)),
-                2 => binary(function, |e, s| e.str().lstrip(Some(s))),
+            Lower => self.visit_unary(|e| e.str().to_lowercase()),
+            Upper => self.visit_unary(|e| e.str().to_uppercase()),
+            LTrim => match function.args.len() {
+                1 => self.visit_unary(|e| e.str().lstrip(None)),
+                2 => self.visit_binary(|e, s| e.str().lstrip(Some(s))),
                 _ => panic!(
                     "Invalid number of arguments for LTrim: {}",
                     function.args.len()
                 ),
             },
-            RTrim(function) => match function.args.len() {
-                1 => unary(function, |e| e.str().rstrip(None)),
-                2 => binary(function, |e, s| e.str().rstrip(Some(s))),
+            RTrim => match function.args.len() {
+                1 => self.visit_unary(|e| e.str().rstrip(None)),
+                2 => self.visit_binary(|e, s| e.str().rstrip(Some(s))),
                 _ => panic!(
                     "Invalid number of arguments for RTrim: {}",
                     function.args.len()
                 ),
             },
-            StartsWith(function) => binary(function, |e, s| e.str().starts_with(s)),
-            EndsWith(function) => binary(function, |e, s| e.str().ends_with(s)),
-
+            StartsWith => self.visit_binary(|e, s| e.str().starts_with(s)),
+            EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             // ----
             // Aggregate functions
             // ----
-            Count(count_expr) => count_expr.try_into(),
-            Sum(function) => unary(function, Expr::sum),
-            Min(function) => unary(function, Expr::min),
-            Max(function) => unary(function, Expr::max),
-            Avg(function) => unary(function, Expr::mean),
-            StdDev(function) => unary(function, |e| e.std(1)),
-            Variance(function) => unary(function, |e| e.var(1)),
-            First(function) => unary(function, Expr::first),
-            Last(function) => unary(function, Expr::last),
+            Count => self.visit_count(),
+            Sum => self.visit_unary(Expr::sum),
+            Min => self.visit_unary(Expr::min),
+            Max => self.visit_unary(Expr::max),
+            Avg => self.visit_unary(Expr::mean),
+            StdDev => self.visit_unary(|e| e.std(1)),
+            Variance => self.visit_unary(|e| e.var(1)),
+            First => self.visit_unary(Expr::first),
+            Last => self.visit_unary(Expr::last),
             // ----
             // Array functions
             // ----
-            ArrayLength(function) => unary(function, |e| e.arr().lengths()),
-            ArrayMin(function) => unary(function, |e| e.arr().min()),
-            ArrayMax(function) => unary(function, |e| e.arr().max()),
-            ArraySum(function) => unary(function, |e| e.arr().sum()),
-            ArrayMean(function) => unary(function, |e| e.arr().mean()),
-            ArrayReverse(function) => unary(function, |e| e.arr().reverse()),
-            ArrayUnique(function) => unary(function, |e| e.arr().unique()),
-            Explode(function) => unary(function, |e| e.explode()),
-            Slice(function) => trinary(function, |e, s: Expr, l: Expr| e.slice(s, l)),
-            ArrayGet(function) => binary(function, |e, i| e.arr().get(i)),
-            ArrayContains(function) => binary(function, |e, i: Expr| e.arr().contains(i)),
+            ArrayLength => self.visit_unary(|e| e.arr().lengths()),
+            ArrayMin => self.visit_unary(|e| e.arr().min()),
+            ArrayMax => self.visit_unary(|e| e.arr().max()),
+            ArraySum => self.visit_unary(|e| e.arr().sum()),
+            ArrayMean => self.visit_unary(|e| e.arr().mean()),
+            ArrayReverse => self.visit_unary(|e| e.arr().reverse()),
+            ArrayUnique => self.visit_unary(|e| e.arr().unique()),
+            Explode => self.visit_unary(|e| e.explode()),
+            ArrayContains => self.visit_binary::<Expr>(|e, s| e.arr().contains(s)),
+            ArrayGet => self.visit_binary(|e, i| e.arr().get(i)),
         }
     }
-}
 
-fn unary<'a>(function: &'a SQLFunction, f: impl Fn(Expr) -> Expr) -> Result<Expr, PolarsError> {
-    let args = extract_args(function);
-    if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-        let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &function.over)?;
-        Ok(f(expr))
-    } else {
-        not_supported_error(function.name.0[0].value.as_str(), &args)
-    }
-}
-
-fn binary<'a, T: FromSqlExpr>(
-    function: &'a SQLFunction,
-    f: impl Fn(Expr, T) -> Expr,
-) -> Result<Expr, PolarsError> {
-    let args = extract_args(function);
-
-    if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-        let expr1 = apply_window_spec(parse_sql_expr(sql_expr)?, &function.over)?;
-        if let FunctionArgExpr::Expr(sql_expr) = args[1] {
-            let expr2 = T::from_sql_expr(sql_expr)?;
-            Ok(f(expr1, expr2))
+    fn visit_unary(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+        let function = self.0;
+        let args = extract_args(function);
+        if let FunctionArgExpr::Expr(sql_expr) = args[0] {
+            let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &function.over)?;
+            Ok(f(expr))
         } else {
             not_supported_error(function.name.0[0].value.as_str(), &args)
         }
-    } else {
-        not_supported_error(function.name.0[0].value.as_str(), &args)
     }
-}
 
-fn trinary<'a, Arg1: FromSqlExpr, Arg2: FromSqlExpr>(
-    function: &'a SQLFunction,
-    f: impl Fn(Expr, Arg1, Arg2) -> Expr,
-) -> Result<Expr, PolarsError> {
-    let args = extract_args(function);
-
-    if let [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2), FunctionArgExpr::Expr(sql_expr3)] =
-        &args[..]
-    {
-        let expr1 = apply_window_spec(parse_sql_expr(sql_expr1)?, &function.over)?;
-        let arg1 = Arg1::from_sql_expr(sql_expr2)?;
-        let arg2 = Arg2::from_sql_expr(sql_expr3)?;
-        Ok(f(expr1, arg1, arg2))
-    } else {
-        not_supported_error(function.name.0[0].value.as_str(), &args)
+    fn visit_binary<Arg: FromSqlExpr>(&self, f: impl Fn(Expr, Arg) -> Expr) -> PolarsResult<Expr> {
+        let function = self.0;
+        let args = extract_args(function);
+        if let FunctionArgExpr::Expr(sql_expr) = args[0] {
+            let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &function.over)?;
+            if let FunctionArgExpr::Expr(sql_expr) = args[1] {
+                let expr2 = Arg::from_sql_expr(sql_expr)?;
+                Ok(f(expr, expr2))
+            } else {
+                not_supported_error(function.name.0[0].value.as_str(), &args)
+            }
+        } else {
+            not_supported_error(function.name.0[0].value.as_str(), &args)
+        }
     }
-}
 
-// CountExpr is extracted because it has many special cases
-pub(crate) struct CountExpr<'a>(&'a SQLFunction);
-
-impl TryFrom<CountExpr<'_>> for Expr {
-    type Error = PolarsError;
-    fn try_from(count_expr: CountExpr) -> Result<Self, Self::Error> {
-        let args = extract_args(count_expr.0);
-        Ok(match (args.len(), count_expr.0.distinct) {
+    fn visit_count(&self) -> PolarsResult<Expr> {
+        let args = extract_args(self.0);
+        Ok(match (args.len(), self.0.distinct) {
             // count()
             (0, false) => lit(1i32).count(),
             // count(distinct)
@@ -295,7 +272,7 @@ impl TryFrom<CountExpr<'_>> for Expr {
             (1, false) => match args[0] {
                 // count(col)
                 FunctionArgExpr::Expr(sql_expr) => {
-                    let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &count_expr.0.over)?;
+                    let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &self.0.over)?;
                     expr.count()
                 }
                 // count(*)
@@ -306,7 +283,7 @@ impl TryFrom<CountExpr<'_>> for Expr {
             (1, true) => {
                 // count(distinct col)
                 if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-                    let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &count_expr.0.over)?;
+                    let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &self.0.over)?;
                     expr.n_unique()
                 } else {
                     // count(distinct *) or count(distinct tbl.*) is not supported
@@ -316,6 +293,22 @@ impl TryFrom<CountExpr<'_>> for Expr {
             _ => return not_supported_error("count", &args),
         })
     }
+}
+
+fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> PolarsResult<Expr> {
+    Ok(match &window_spec {
+        Some(window_spec) => {
+            // Process for simple window specification, partition by first
+            let partition_by = window_spec
+                .partition_by
+                .iter()
+                .map(parse_sql_expr)
+                .collect::<PolarsResult<Vec<_>>>()?;
+            expr.over(partition_by)
+            // Order by and Row range may not be supported at the moment
+        }
+        None => expr,
+    })
 }
 
 fn not_supported_error(
