@@ -1048,7 +1048,6 @@ impl PyExpr {
     }
 
     pub fn dt_offset_by(&self, by: PyExpr) -> PyExpr {
-        //let by = by.into_iter().map(|e| Duration::parse(e.inner)).collect::<Vec<_>>();
         self.inner.clone().dt().offset_by(by.inner).into()
     }
 
