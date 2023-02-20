@@ -372,3 +372,36 @@ def test_list_count_match() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").arr.count_match(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
+    assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
+        pl.col("listcol").arr.count_match(2).alias("number_of_twos")
+    ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
+
+
+def test_list_sum_and_dtypes() -> None:
+    # ensure the dtypes of sum align with normal sum
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int32),
+        (pl.Int64, pl.Int64),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.UInt32),
+        (pl.UInt64, pl.UInt64),
+    ]:
+        df = pl.DataFrame(
+            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+            schema={"a": pl.List(dt_in)},
+        )
+
+        summed = df.explode("a").sum()
+        assert summed.dtypes == [dt_out]
+        assert summed.item() == 32
+        assert df.select(pl.col("a").arr.sum()).dtypes == [dt_out]
+
+    assert df.select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15]}
+
+    # include nulls
+    assert pl.DataFrame(
+        {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]}
+    ).select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15, None]}

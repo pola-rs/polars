@@ -194,6 +194,18 @@ impl FunctionExpr {
                     Take(_) => same_type(),
                     #[cfg(feature = "list_count")]
                     CountMatch => with_dtype(IDX_DTYPE),
+                    Sum => {
+                        let mut first = fields[0].clone();
+                        use DataType::*;
+                        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+
+                        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
+                            first.coerce(Int64);
+                        } else {
+                            first.coerce(dt);
+                        }
+                        Ok(first)
+                    }
                 }
             }
             #[cfg(feature = "dtype-struct")]

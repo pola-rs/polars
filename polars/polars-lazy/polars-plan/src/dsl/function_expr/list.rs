@@ -15,6 +15,7 @@ pub enum ListFunction {
     Take(bool),
     #[cfg(feature = "list_count")]
     CountMatch,
+    Sum,
 }
 
 impl Display for ListFunction {
@@ -31,6 +32,7 @@ impl Display for ListFunction {
             Take(_) => "take",
             #[cfg(feature = "list_count")]
             CountMatch => "count",
+            Sum => "sum",
         };
         write!(f, "{name}")
     }
@@ -228,4 +230,8 @@ pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
     }
     let ca = s.list()?;
     list_count_match(ca, element.get(0).unwrap())
+}
+
+pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_sum())
 }
