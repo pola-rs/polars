@@ -836,7 +836,7 @@ def sequence_to_pydf(
                 if schema_overrides
                 else {}
             )
-            if column_names and data and len(data[0]) != len(column_names):
+            if column_names and len(data[0]) != len(column_names):
                 raise ShapeError("The row data does not match the number of columns")
 
             for col, tp in schema_override.items():
