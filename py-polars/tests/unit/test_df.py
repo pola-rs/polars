@@ -720,8 +720,12 @@ def test_custom_groupby() -> None:
 
 def test_multiple_columns_drop() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    # List input
     out = df.drop(["a", "b"])
     assert out.columns == ["c"]
+    # Positional input
+    out = df.drop("b", "c")
+    assert out.columns == ["a"]
 
 
 def test_concat() -> None:

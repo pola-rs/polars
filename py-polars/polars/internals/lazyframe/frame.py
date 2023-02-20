@@ -2759,7 +2759,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    def drop(self, columns: str | Sequence[str]) -> Self:
+    def drop(self, columns: str | Sequence[str], *more_columns: str) -> Self:
         """
         Remove columns from the dataframe.
 
@@ -2767,17 +2767,21 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ----------
         columns
             Name of the column(s) that should be removed from the dataframe.
+        *more_columns
+            Additional columns to drop, specified as positional arguments.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        Drop a single column by passing the name of that column.
+
+        >>> ldf = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... ).lazy()
-        >>> df.drop("ham").collect()
+        >>> ldf.drop("ham").collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -2789,10 +2793,41 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 3   ┆ 8.0 │
         └─────┴─────┘
 
+        Drop multiple columns by passing a list of column names.
+
+        >>> ldf.drop(["bar", "ham"]).collect()
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        Or use positional arguments to drop multiple columns in the same way.
+
+        >>> ldf.drop("foo", "bar").collect()
+        shape: (3, 1)
+        ┌─────┐
+        │ ham │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        │ b   │
+        │ c   │
+        └─────┘
+
         """
         if isinstance(columns, str):
             columns = [columns]
-        return self._from_pyldf(self._ldf.drop_columns(columns))
+        if more_columns:
+            columns = list(columns)
+            columns.extend(more_columns)
+        return self._from_pyldf(self._ldf.drop(columns))
 
     def rename(self, mapping: dict[str, str]) -> Self:
         """

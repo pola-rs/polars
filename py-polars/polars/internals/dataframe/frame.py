@@ -4711,7 +4711,7 @@ class DataFrame:
         self._df.extend(other._df)
         return self
 
-    def drop(self, columns: str | Sequence[str]) -> Self:
+    def drop(self, columns: str | Sequence[str], *more_columns: str) -> Self:
         """
         Remove columns from the dataframe.
 
@@ -4719,9 +4719,13 @@ class DataFrame:
         ----------
         columns
             Name of the column(s) that should be removed from the dataframe.
+        *more_columns
+            Additional columns to drop, specified as positional arguments.
 
         Examples
         --------
+        Drop a single column by passing the name of that column.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -4741,19 +4745,51 @@ class DataFrame:
         │ 3   ┆ 8.0 │
         └─────┴─────┘
 
+        Drop multiple columns by passing a list of column names.
+
+        >>> df.drop(["bar", "ham"])
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        Or use positional arguments to drop multiple columns in the same way.
+
+        >>> df.drop("foo", "bar")
+        shape: (3, 1)
+        ┌─────┐
+        │ ham │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        │ b   │
+        │ c   │
+        └─────┘
+
         """
         return self._from_pydf(
-            self.lazy().drop(columns).collect(no_optimization=True)._df
+            self.lazy().drop(columns, *more_columns).collect(no_optimization=True)._df
         )
 
     def drop_in_place(self, name: str) -> pli.Series:
         """
-        Drop in place.
+        Drop a single column in-place and return the dropped column.
 
         Parameters
         ----------
         name
-            Column to drop.
+            Name of the column to drop.
+
+        Returns
+        -------
+        The dropped column.
 
         Examples
         --------

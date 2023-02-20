@@ -904,9 +904,9 @@ impl PyLazyFrame {
         ldf.map(function, opt, udf_schema, None).into()
     }
 
-    pub fn drop_columns(&self, cols: Vec<String>) -> Self {
+    pub fn drop(&self, columns: Vec<String>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_columns(cols).into()
+        ldf.drop_columns(columns).into()
     }
 
     pub fn clone(&self) -> PyLazyFrame {
