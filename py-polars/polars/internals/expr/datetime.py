@@ -1542,7 +1542,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.duration_nanoseconds())
 
-    def offset_by(self, by: str) -> pli.Expr:
+    def offset_by(self, by: str | pli.Expr) -> pli.Expr:
         """
         Offset this date by a relative time offset.
 
@@ -1602,4 +1602,5 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         """
+        by = pli.expr_to_lit_or_expr(by)._pyexpr
         return pli.wrap_expr(self._pyexpr.dt_offset_by(by))

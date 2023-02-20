@@ -1270,7 +1270,7 @@ class DateTimeNameSpace:
 
         """
 
-    def offset_by(self, by: str) -> pli.Series:
+    def offset_by(self, by: str | pli.Series) -> pli.Series:
         """
         Offset this date by a relative time offset.
 

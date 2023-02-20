@@ -1047,9 +1047,9 @@ impl PyExpr {
         self.inner.clone().dt().timestamp(tu.0).into()
     }
 
-    pub fn dt_offset_by(&self, by: &str) -> PyExpr {
-        let by = Duration::parse(by);
-        self.inner.clone().dt().offset_by(by).into()
+    pub fn dt_offset_by(&self, by: PyExpr) -> PyExpr {
+        //let by = by.into_iter().map(|e| Duration::parse(e.inner)).collect::<Vec<_>>();
+        self.inner.clone().dt().offset_by(by.inner).into()
     }
 
     pub fn dt_epoch_seconds(&self) -> PyExpr {

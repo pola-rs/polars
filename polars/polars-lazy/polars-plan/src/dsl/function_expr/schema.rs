@@ -170,7 +170,7 @@ impl FunctionExpr {
             }
 
             #[cfg(feature = "date_offset")]
-            DateOffset(_) => same_type(),
+            DateOffset { .. } => same_type(),
             #[cfg(feature = "trigonometry")]
             Trigonometry(_) => float_dtype(),
             #[cfg(feature = "sign")]
