@@ -28,6 +28,7 @@ from polars.utils import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
     deprecate_nonkeyword_arguments,
+    deprecated_alias,
 )
 
 try:
@@ -1419,9 +1420,10 @@ def cov(
     return pli.wrap_expr(pycov(a._pyexpr, b._pyexpr))
 
 
+@deprecated_alias(f="function")
 def map(
     exprs: Sequence[str] | Sequence[pli.Expr],
-    f: Callable[[Sequence[pli.Series]], pli.Series],
+    function: Callable[[Sequence[pli.Series]], pli.Series],
     return_dtype: PolarsDataType | None = None,
 ) -> pli.Expr:
     """
@@ -1433,7 +1435,7 @@ def map(
     ----------
     exprs
         Input Series to f
-    f
+    function
         Function to apply over the input
     return_dtype
         dtype of the output Series
@@ -1445,14 +1447,17 @@ def map(
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
-        _map_mul(exprs, f, return_dtype, apply_groups=False, returns_scalar=False)
+        _map_mul(
+            exprs, function, return_dtype, apply_groups=False, returns_scalar=False
+        )
     )
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["exprs", "f", "return_dtype"])
+@deprecated_alias(f="function")
+@deprecate_nonkeyword_arguments(allowed_args=["exprs", "function", "return_dtype"])
 def apply(
     exprs: Sequence[str | pli.Expr],
-    f: Callable[[Sequence[pli.Series]], pli.Series | Any],
+    function: Callable[[Sequence[pli.Series]], pli.Series | Any],
     return_dtype: PolarsDataType | None = None,
     returns_scalar: bool = True,
 ) -> pli.Expr:
@@ -1471,7 +1476,7 @@ def apply(
     ----------
     exprs
         Input Series to f
-    f
+    function
         Function to apply over the input
     return_dtype
         dtype of the output Series
@@ -1486,14 +1491,19 @@ def apply(
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
         _map_mul(
-            exprs, f, return_dtype, apply_groups=True, returns_scalar=returns_scalar
+            exprs,
+            function,
+            return_dtype,
+            apply_groups=True,
+            returns_scalar=returns_scalar,
         )
     )
 
 
+@deprecated_alias(f="function")
 def fold(
     acc: IntoExpr,
-    f: Callable[[pli.Series, pli.Series], pli.Series],
+    function: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
 ) -> pli.Expr:
     """
@@ -1504,7 +1514,7 @@ def fold(
     acc
         Accumulator Expression. This is the value that will be initialized when the fold
         starts. For a sum this could for instance be lit(0).
-    f
+    function
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
@@ -1522,11 +1532,12 @@ def fold(
         exprs = [exprs]
 
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
+    return pli.wrap_expr(pyfold(acc._pyexpr, function, exprs))
 
 
+@deprecated_alias(f="function")
 def reduce(
-    f: Callable[[pli.Series, pli.Series], pli.Series],
+    function: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
 ) -> pli.Expr:
     """
@@ -1534,7 +1545,7 @@ def reduce(
 
     Parameters
     ----------
-    f
+    function
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
@@ -1550,13 +1561,14 @@ def reduce(
         exprs = [exprs]
 
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyreduce(f, exprs))
+    return pli.wrap_expr(pyreduce(function, exprs))
 
 
+@deprecated_alias(f="function")
 @deprecate_nonkeyword_arguments()
 def cumfold(
     acc: IntoExpr,
-    f: Callable[[pli.Series, pli.Series], pli.Series],
+    function: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
     include_init: bool = False,
 ) -> pli.Expr:
@@ -1570,7 +1582,7 @@ def cumfold(
     acc
         Accumulator Expression. This is the value that will be initialized when the fold
         starts. For a sum this could for instance be lit(0).
-    f
+    function
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
@@ -1590,11 +1602,12 @@ def cumfold(
         exprs = [exprs]
 
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pycumfold(acc._pyexpr, f, exprs, include_init))
+    return pli.wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
 
 
+@deprecated_alias(f="function")
 def cumreduce(
-    f: Callable[[pli.Series, pli.Series], pli.Series],
+    function: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
 ) -> pli.Expr:
     """
@@ -1604,7 +1617,7 @@ def cumreduce(
 
     Parameters
     ----------
-    f
+    function
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
@@ -1616,7 +1629,7 @@ def cumreduce(
         exprs = [exprs]
 
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pycumreduce(f, exprs))
+    return pli.wrap_expr(pycumreduce(function, exprs))
 
 
 def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:

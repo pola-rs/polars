@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Callable, Generic, Iterable, TypeVar
 import polars.internals as pli
 from polars.datatypes import SchemaDict
 from polars.internals import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import IntoExpr, RollingInterpolationMethod
@@ -132,8 +133,11 @@ class LazyGroupBy(Generic[LDF]):
 
         return self._lazyframe_class._from_pyldf(self.lgb.agg(exprs))
 
+    @deprecated_alias(f="function")
     def apply(
-        self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: SchemaDict | None
+        self,
+        function: Callable[[pli.DataFrame], pli.DataFrame],
+        schema: SchemaDict | None,
     ) -> LDF:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
@@ -152,7 +156,7 @@ class LazyGroupBy(Generic[LDF]):
 
         Parameters
         ----------
-        f
+        function
             Function to apply over each group of the `LazyFrame`.
         schema
             Schema of the output function. This has to be known statically. If the
@@ -212,7 +216,7 @@ class LazyGroupBy(Generic[LDF]):
         ... )  # doctest: +IGNORE_RESULT
 
         """
-        return self._lazyframe_class._from_pyldf(self.lgb.apply(f, schema))
+        return self._lazyframe_class._from_pyldf(self.lgb.apply(function, schema))
 
     def head(self, n: int = 5) -> LDF:
         """

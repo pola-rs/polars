@@ -427,11 +427,11 @@ def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T
         ...
     """
 
-    def deco(fn: Callable[P, T]) -> Callable[P, T]:
-        @functools.wraps(fn)
+    def deco(function: Callable[P, T]) -> Callable[P, T]:
+        @functools.wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            _rename_kwargs(fn.__name__, kwargs, aliases)
-            return fn(*args, **kwargs)
+            _rename_kwargs(function.__name__, kwargs, aliases)
+            return function(*args, **kwargs)
 
         return wrapper
 
@@ -456,8 +456,8 @@ def deprecate_nonkeyword_arguments(
         Optionally overwrite the default warning message.
     """
 
-    def decorate(fn: Callable[P, T]) -> Callable[P, T]:
-        old_sig = inspect.signature(fn)
+    def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        old_sig = inspect.signature(function)
 
         if allowed_args is not None:
             allow_args = allowed_args
@@ -485,18 +485,18 @@ def deprecate_nonkeyword_arguments(
         num_allowed_args = len(allow_args)
         if message is None:
             msg_format = (
-                f"All arguments of {fn.__qualname__}{{except_args}} will be keyword-only in the next breaking release."
+                f"All arguments of {function.__qualname__}{{except_args}} will be keyword-only in the next breaking release."
                 " Use keyword arguments to silence this warning."
             )
             msg = msg_format.format(except_args=_format_argument_list(allow_args))
         else:
             msg = message
 
-        @functools.wraps(fn)
+        @functools.wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             if len(args) > num_allowed_args:
                 warnings.warn(msg, DeprecationWarning, stacklevel=2)
-            return fn(*args, **kwargs)
+            return function(*args, **kwargs)
 
         wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
         return wrapper
