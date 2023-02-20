@@ -13,7 +13,7 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
-use crate::prelude::list::sum::sum_list_numerical;
+use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::ArgAgg;
 
 fn has_inner_nulls(ca: &ListChunked) -> bool {
@@ -154,11 +154,39 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
-    fn lst_mean(&self) -> Float64Chunked {
+    fn lst_mean(&self) -> Series {
+        fn inner(ca: &ListChunked) -> Series {
+            let mut out: Float64Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().mean()))
+                .collect();
+
+            out.rename(ca.name());
+            out.into_series()
+        }
+        use DataType::*;
+
         let ca = self.as_list();
-        ca.amortized_iter()
-            .map(|s| s.and_then(|s| s.as_ref().mean()))
-            .collect()
+
+        if has_inner_nulls(ca) {
+            return match ca.inner_dtype() {
+                Float32 => {
+                    let mut out: Float32Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
+                        .collect();
+
+                    out.rename(ca.name());
+                    out.into_series()
+                }
+                _ => inner(ca),
+            };
+        };
+
+        match ca.inner_dtype() {
+            dt if dt.is_numeric() => mean_list_numerical(ca, &dt),
+            _ => inner(ca),
+        }
     }
 
     #[must_use]

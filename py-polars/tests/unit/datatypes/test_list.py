@@ -405,3 +405,13 @@ def test_list_sum_and_dtypes() -> None:
     assert pl.DataFrame(
         {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]}
     ).select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15, None]}
+
+
+def test_list_mean() -> None:
+    assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]}).select(
+        pl.col("a").arr.mean()
+    ).to_dict(False) == {"a": [1.0, 2.0, 2.5, 3.0]}
+
+    assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], None]}).select(
+        pl.col("a").arr.mean()
+    ).to_dict(False) == {"a": [1.0, 2.0, 2.5, None]}
