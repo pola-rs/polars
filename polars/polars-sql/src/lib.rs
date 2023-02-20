@@ -509,4 +509,21 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal(&expected));
     }
+    #[test]
+    #[cfg(feature = "csv")]
+    fn read_csv_tbl_func_inline_2() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            SELECT category
+            FROM read_csv('../../examples/datasets/foods1.csv')"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+        let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
+            .finish()
+            .unwrap()
+            .select(&[col("category")])
+            .collect()
+            .unwrap();
+        assert!(df_sql.frame_equal(&expected));
+    }
 }
