@@ -62,18 +62,7 @@ impl ListNameSpace {
     /// Compute the sum the items in every sublist.
     pub fn sum(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_sum())),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.sum")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Sum))
     }
 
     /// Compute the mean of every sublist and return a `Series` of dtype `Float64`
@@ -297,7 +286,21 @@ impl ListNameSpace {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,
                 auto_explode: true,
-                fmt_str: "arr.contains",
+                ..Default::default()
+            },
+        }
+    }
+    #[cfg(feature = "list_count")]
+    pub fn count_match<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+
+        Expr::Function {
+            input: vec![self.0, other],
+            function: FunctionExpr::ListExpr(ListFunction::CountMatch),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: true,
+                auto_explode: true,
                 ..Default::default()
             },
         }

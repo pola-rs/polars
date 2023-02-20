@@ -2,7 +2,7 @@
 mod binary;
 #[cfg(feature = "interpolate")]
 mod interpolate;
-mod list;
+pub mod list;
 #[cfg(feature = "propagate_nans")]
 pub mod nan_propagating_aggregate;
 mod set;

@@ -13,7 +13,18 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
+use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
+use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::ArgAgg;
+
+pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
+    for arr in ca.downcast_iter() {
+        if arr.values().null_count() > 0 {
+            return true;
+        }
+    }
+    false
+}
 
 fn cast_rhs(
     other: &mut [Series],
@@ -107,34 +118,68 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_max(&self) -> Series {
-        let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().max_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+        list_max_function(self.as_list())
     }
 
     fn lst_min(&self) -> Series {
-        let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().min_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+        list_min_function(self.as_list())
     }
 
     fn lst_sum(&self) -> Series {
+        fn inner(ca: &ListChunked) -> Series {
+            ca.apply_amortized(|s| s.as_ref().sum_as_series())
+                .explode()
+                .unwrap()
+                .into_series()
+        }
+
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().sum_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+
+        if has_inner_nulls(ca) {
+            return inner(ca);
+        };
+
+        use DataType::*;
+        match ca.inner_dtype() {
+            Boolean => count_boolean_bits(ca).into_series(),
+            dt if dt.is_numeric() => sum_list_numerical(ca, &dt),
+            _ => inner(ca),
+        }
     }
 
-    fn lst_mean(&self) -> Float64Chunked {
+    fn lst_mean(&self) -> Series {
+        fn inner(ca: &ListChunked) -> Series {
+            let mut out: Float64Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().mean()))
+                .collect();
+
+            out.rename(ca.name());
+            out.into_series()
+        }
+        use DataType::*;
+
         let ca = self.as_list();
-        ca.amortized_iter()
-            .map(|s| s.and_then(|s| s.as_ref().mean()))
-            .collect()
+
+        if has_inner_nulls(ca) {
+            return match ca.inner_dtype() {
+                Float32 => {
+                    let mut out: Float32Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
+                        .collect();
+
+                    out.rename(ca.name());
+                    out.into_series()
+                }
+                _ => inner(ca),
+            };
+        };
+
+        match ca.inner_dtype() {
+            dt if dt.is_numeric() => mean_list_numerical(ca, &dt),
+            _ => inner(ca),
+        }
     }
 
     #[must_use]

@@ -666,6 +666,40 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.explode())
 
+    def count_match(
+        self, element: float | str | bool | int | date | datetime | time | pli.Expr
+    ) -> pli.Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"listcol": [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
+        >>> df.select(pl.col("listcol").arr.count_match(2).alias("number_of_twos"))
+        shape: (5, 1)
+        ┌────────────────┐
+        │ number_of_twos │
+        │ ---            │
+        │ u32            │
+        ╞════════════════╡
+        │ 0              │
+        │ 0              │
+        │ 2              │
+        │ 1              │
+        │ 0              │
+        └────────────────┘
+
+        """
+
+        return pli.wrap_expr(
+            self._pyexpr.lst_count_match(pli.expr_to_lit_or_expr(element)._pyexpr)
+        )
+
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",

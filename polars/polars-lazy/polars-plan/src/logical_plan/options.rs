@@ -36,7 +36,7 @@ pub struct CsvParserOptions {
     pub rechunk: bool,
     pub encoding: CsvEncoding,
     pub row_count: Option<RowCount>,
-    pub parse_dates: bool,
+    pub try_parse_dates: bool,
     pub file_counter: FileCount,
 }
 

@@ -347,6 +347,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Get => wrap!(list::get),
                     #[cfg(feature = "list_take")]
                     Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
+                    #[cfg(feature = "list_count")]
+                    CountMatch => map_as_slice!(list::count_match),
+                    Sum => map!(list::sum),
                 }
             }
             #[cfg(feature = "dtype-struct")]

@@ -53,11 +53,13 @@ def fruits_cars() -> pl.DataFrame:
             "fruits": ["banana", "banana", "apple", "apple", "banana"],
             "B": [5, 4, 3, 2, 1],
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        }
+        },
+        schema_overrides={"A": pl.Int64, "B": pl.Int64},
     )
 
 
 ISO8601_FORMATS = []
+
 for T in ["T", " "]:
     for hms in (
         [

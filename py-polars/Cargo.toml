@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.16.6"
+version = "0.16.7"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -61,6 +61,7 @@ timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
 list_take = ["polars/list_take"]
+list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 
 all = [
@@ -96,6 +97,7 @@ all = [
   "streaming",
   "performant",
   "list_take",
+  "list_count",
 ]
 
 # we cannot conditionaly activate simd

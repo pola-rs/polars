@@ -221,7 +221,7 @@ impl LogicalPlanBuilder {
         skip_rows_after_header: usize,
         encoding: CsvEncoding,
         row_count: Option<RowCount>,
-        parse_dates: bool,
+        try_parse_dates: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
@@ -251,7 +251,7 @@ impl LogicalPlanBuilder {
             quote_char,
             eol_char,
             null_values.as_ref(),
-            parse_dates,
+            try_parse_dates,
         )?;
 
         let schema = schema.unwrap_or_else(|| Arc::new(inferred_schema));
@@ -282,7 +282,7 @@ impl LogicalPlanBuilder {
                 rechunk,
                 encoding,
                 row_count,
-                parse_dates,
+                try_parse_dates,
                 file_counter: Default::default(),
             },
             predicate: None,

@@ -33,7 +33,6 @@ impl FunctionExpr {
             Ok(fld)
         };
 
-        #[cfg(any(feature = "rolling_window", feature = "trigonometry", feature = "log"))]
         // set float supertype
         let float_dtype = || {
             map_dtype(&|dtype| match dtype {
@@ -108,7 +107,7 @@ impl FunctionExpr {
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
-            Pow => super_type(),
+            Pow => float_dtype(),
             Coalesce => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
@@ -193,6 +192,20 @@ impl FunctionExpr {
                     Get => inner_type_list(),
                     #[cfg(feature = "list_take")]
                     Take(_) => same_type(),
+                    #[cfg(feature = "list_count")]
+                    CountMatch => with_dtype(IDX_DTYPE),
+                    Sum => {
+                        let mut first = fields[0].clone();
+                        use DataType::*;
+                        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+
+                        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
+                            first.coerce(Int64);
+                        } else {
+                            first.coerce(dt);
+                        }
+                        Ok(first)
+                    }
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -243,7 +256,7 @@ impl FunctionExpr {
                 DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
                 DataType::UInt64 | DataType::UInt32 => DataType::Int64,
                 DataType::UInt16 => DataType::Int32,
-                DataType::UInt8 => DataType::Int8,
+                DataType::UInt8 => DataType::Int16,
                 dt => dt.clone(),
             }),
             #[cfg(feature = "interpolate")]

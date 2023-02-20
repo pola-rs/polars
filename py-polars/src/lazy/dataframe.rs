@@ -197,7 +197,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, sep, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_count, parse_dates, eol_char,
+        encoding, row_count, try_parse_dates, eol_char,
     )
     )]
     pub fn new_from_csv(
@@ -220,7 +220,7 @@ impl PyLazyFrame {
         skip_rows_after_header: usize,
         encoding: Wrap<CsvEncoding>,
         row_count: Option<(String, IdxSize)>,
-        parse_dates: bool,
+        try_parse_dates: bool,
         eol_char: &str,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -253,7 +253,7 @@ impl PyLazyFrame {
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_encoding(encoding.0)
             .with_row_count(row_count)
-            .with_parse_dates(parse_dates)
+            .with_try_parse_dates(try_parse_dates)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string);
 

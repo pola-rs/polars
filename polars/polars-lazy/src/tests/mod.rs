@@ -150,21 +150,3 @@ pub(crate) fn get_df() -> DataFrame {
         .unwrap();
     df
 }
-
-#[test]
-fn test_foo() {
-    let df: DataFrame = df![
-        "a" => [1u64]
-    ]
-    .unwrap();
-
-    let s = df.column("a").unwrap().clone();
-
-    let df = df
-        .lazy()
-        .select([lit(s).floor_div(lit(1i64))])
-        .collect()
-        .unwrap();
-
-    dbg!(df);
-}

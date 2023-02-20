@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
-    DataType,
-    DataTypeClass,
     Date,
     Datetime,
     Duration,
@@ -30,6 +28,7 @@ from polars.utils import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
     deprecate_nonkeyword_arguments,
+    deprecated_alias,
 )
 
 try:
@@ -81,33 +80,25 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: (
-        str
-        | Sequence[str]
-        | Sequence[PolarsDataType]
-        | set[PolarsDataType]
-        | frozenset[PolarsDataType]
-        | pli.Series
-        | PolarsDataType
-    ),
+    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+    *more_names: str | PolarsDataType,
 ) -> pli.Expr:
     """
-    Return an expression representing a column in a DataFrame.
-
-    Can be used to select:
-
-    - a single column by name
-    - all columns by using a wildcard `"*"`
-    - column by regular expression if the regex starts with `^` and ends with `$`
-    - all columns with the same dtype by using a Polars type
+    Return an expression representing column(s) in a dataframe.
 
     Parameters
     ----------
     name
-        A string that holds the name of the column
+        The name or datatype of the column(s) to represent. Accepts regular expression
+        input. Regular expressions should start with ``^`` and end with ``$``.
+    *more_names
+        Additional names or datatypes of columns to represent, specified as positional
+        arguments.
 
     Examples
     --------
+    Pass a single column name to represent that column.
+
     >>> df = pl.DataFrame(
     ...     {
     ...         "ham": [1, 2, 3],
@@ -127,6 +118,9 @@ def col(
     │ 2   │
     │ 1   │
     └─────┘
+
+    Use the wildcard ``*`` to represent all columns.
+
     >>> df.select(pl.col("*"))
     shape: (3, 4)
     ┌─────┬───────────┬─────┬─────┐
@@ -138,17 +132,6 @@ def col(
     │ 2   ┆ 22        ┆ 2   ┆ b   │
     │ 3   ┆ 33        ┆ 1   ┆ c   │
     └─────┴───────────┴─────┴─────┘
-    >>> df.select(pl.col("^ham.*$"))
-    shape: (3, 2)
-    ┌─────┬───────────┐
-    │ ham ┆ hamburger │
-    │ --- ┆ ---       │
-    │ i64 ┆ i64       │
-    ╞═════╪═══════════╡
-    │ 1   ┆ 11        │
-    │ 2   ┆ 22        │
-    │ 3   ┆ 33        │
-    └─────┴───────────┘
     >>> df.select(pl.col("*").exclude("ham"))
     shape: (3, 3)
     ┌───────────┬─────┬─────┐
@@ -160,6 +143,23 @@ def col(
     │ 22        ┆ 2   ┆ b   │
     │ 33        ┆ 1   ┆ c   │
     └───────────┴─────┴─────┘
+
+    Regular expression input is supported.
+
+    >>> df.select(pl.col("^ham.*$"))
+    shape: (3, 2)
+    ┌─────┬───────────┐
+    │ ham ┆ hamburger │
+    │ --- ┆ ---       │
+    │ i64 ┆ i64       │
+    ╞═════╪═══════════╡
+    │ 1   ┆ 11        │
+    │ 2   ┆ 22        │
+    │ 3   ┆ 33        │
+    └─────┴───────────┘
+
+    Multiple columns can be represented by passing a list of names.
+
     >>> df.select(pl.col(["hamburger", "foo"]))
     shape: (3, 2)
     ┌───────────┬─────┐
@@ -171,7 +171,23 @@ def col(
     │ 22        ┆ 2   │
     │ 33        ┆ 1   │
     └───────────┴─────┘
-    >>> # Select columns with a dtype
+
+    Or use positional arguments to represent multiple columns in the same way.
+
+    >>> df.select(pl.col("hamburger", "foo"))
+    shape: (3, 2)
+    ┌───────────┬─────┐
+    │ hamburger ┆ foo │
+    │ ---       ┆ --- │
+    │ i64       ┆ i64 │
+    ╞═══════════╪═════╡
+    │ 11        ┆ 3   │
+    │ 22        ┆ 2   │
+    │ 33        ┆ 1   │
+    └───────────┴─────┘
+
+    Easily select all columns that match a certain data type by passing that datatype.
+
     >>> df.select(pl.col(pl.Utf8))
     shape: (3, 1)
     ┌─────┐
@@ -183,8 +199,7 @@ def col(
     │ b   │
     │ c   │
     └─────┘
-    >>> # Select columns from a list of dtypes
-    >>> df.select(pl.col([pl.Int64, pl.Float64]))
+    >>> df.select(pl.col(pl.Int64, pl.Float64))
     shape: (3, 3)
     ┌─────┬───────────┬─────┐
     │ ham ┆ hamburger ┆ foo │
@@ -197,33 +212,43 @@ def col(
     └─────┴───────────┴─────┘
 
     """
-    if isinstance(name, pli.Series):
-        name = name.to_list()
-
-    if isinstance(name, DataTypeClass):
-        name = [name]
-
-    if isinstance(name, DataType):
-        return pli.wrap_expr(_dtype_cols([name]))
-
-    elif not isinstance(name, str) and isinstance(
-        name, (list, tuple, set, frozenset, Sequence)
-    ):
-        if len(name) == 0:
-            return pli.wrap_expr(pycols(name))
+    if more_names:
+        if isinstance(name, str):
+            names_str = [name]
+            names_str.extend(more_names)  # type: ignore[arg-type]
+            return pli.wrap_expr(pycols(names_str))
+        elif is_polars_dtype(name):
+            dtypes = [name]
+            dtypes.extend(more_names)
+            return pli.wrap_expr(_dtype_cols(dtypes))
         else:
-            names = list(name)
-            item = names[0]
-            if isinstance(item, str):
-                return pli.wrap_expr(pycols(names))
-            elif is_polars_dtype(item):
-                return pli.wrap_expr(_dtype_cols(names))
-            else:
-                raise ValueError(
-                    "Expected list values to be all `str` or all `DataType`"
-                )
+            raise TypeError(
+                f"Invalid input for `col`. Expected `str` or `DataType`, got {type(name)!r}"
+            )
 
-    return pli.wrap_expr(pycol(name))
+    if isinstance(name, str):
+        return pli.wrap_expr(pycol(name))
+    elif is_polars_dtype(name):
+        return pli.wrap_expr(_dtype_cols([name]))
+    elif isinstance(name, Iterable):
+        names = list(name)
+        if not names:
+            return pli.wrap_expr(pycols(names))
+
+        item = names[0]
+        if isinstance(item, str):
+            return pli.wrap_expr(pycols(names))
+        elif is_polars_dtype(item):
+            return pli.wrap_expr(_dtype_cols(names))
+        else:
+            raise TypeError(
+                "Invalid input for `col`. Expected iterable of type `str` or `DataType`,"
+                f" got iterable of type {type(item)!r}"
+            )
+    else:
+        raise TypeError(
+            f"Invalid input for `col`. Expected `str` or `DataType`, got {type(name)!r}"
+        )
 
 
 def element() -> pli.Expr:
@@ -1127,16 +1152,27 @@ def lit(
 
     """
     tu: TimeUnit
+
     if isinstance(value, datetime):
-        tu = "us"
+        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
+        tz = (
+            value.tzinfo
+            if getattr(dtype, "tz", None) is None
+            else getattr(dtype, "tz", None)
+        )
+        if value.tzinfo is not None and getattr(dtype, "tz", None) is not None:
+            raise TypeError(
+                "Cannot cast tz-aware value to tz-aware dtype. "
+                "Please drop the time zone from the dtype."
+            )
         e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
-        if value.tzinfo is not None:
-            return e.dt.replace_time_zone(str(value.tzinfo))
+        if tz is not None:
+            return e.dt.replace_time_zone(str(tz))
         else:
             return e
 
     elif isinstance(value, timedelta):
-        tu = "us"
+        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
         return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
 
     elif isinstance(value, time):
@@ -1384,9 +1420,10 @@ def cov(
     return pli.wrap_expr(pycov(a._pyexpr, b._pyexpr))
 
 
+@deprecated_alias(f="function")
 def map(
     exprs: Sequence[str] | Sequence[pli.Expr],
-    f: Callable[[Sequence[pli.Series]], pli.Series],
+    function: Callable[[Sequence[pli.Series]], pli.Series],
     return_dtype: PolarsDataType | None = None,
 ) -> pli.Expr:
     """
@@ -1398,7 +1435,7 @@ def map(
     ----------
     exprs
         Input Series to f
-    f
+    function
         Function to apply over the input
     return_dtype
         dtype of the output Series
@@ -1410,14 +1447,17 @@ def map(
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
-        _map_mul(exprs, f, return_dtype, apply_groups=False, returns_scalar=False)
+        _map_mul(
+            exprs, function, return_dtype, apply_groups=False, returns_scalar=False
+        )
     )
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["exprs", "f", "return_dtype"])
+@deprecated_alias(f="function")
+@deprecate_nonkeyword_arguments(allowed_args=["exprs", "function", "return_dtype"])
 def apply(
     exprs: Sequence[str | pli.Expr],
-    f: Callable[[Sequence[pli.Series]], pli.Series | Any],
+    function: Callable[[Sequence[pli.Series]], pli.Series | Any],
     return_dtype: PolarsDataType | None = None,
     returns_scalar: bool = True,
 ) -> pli.Expr:
@@ -1436,7 +1476,7 @@ def apply(
     ----------
     exprs
         Input Series to f
-    f
+    function
         Function to apply over the input
     return_dtype
         dtype of the output Series
@@ -1451,14 +1491,19 @@ def apply(
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
         _map_mul(
-            exprs, f, return_dtype, apply_groups=True, returns_scalar=returns_scalar
+            exprs,
+            function,
+            return_dtype,
+            apply_groups=True,
+            returns_scalar=returns_scalar,
         )
     )
 
 
+@deprecated_alias(f="function")
 def fold(
     acc: IntoExpr,
-    f: Callable[[pli.Series, pli.Series], pli.Series],
+    function: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
 ) -> pli.Expr:
     """
@@ -1469,7 +1514,7 @@ def fold(
     acc
         Accumulator Expression. This is the value that will be initialized when the fold
         starts. For a sum this could for instance be lit(0).
-    f
+    function
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
@@ -1487,11 +1532,12 @@ def fold(
         exprs = [exprs]
 
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
+    return pli.wrap_expr(pyfold(acc._pyexpr, function, exprs))
 
 
+@deprecated_alias(f="function")
 def reduce(
-    f: Callable[[pli.Series, pli.Series], pli.Series],
+    function: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
 ) -> pli.Expr:
     """
@@ -1499,7 +1545,7 @@ def reduce(
 
     Parameters
     ----------
-    f
+    function
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
@@ -1515,13 +1561,14 @@ def reduce(
         exprs = [exprs]
 
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyreduce(f, exprs))
+    return pli.wrap_expr(pyreduce(function, exprs))
 
 
+@deprecated_alias(f="function")
 @deprecate_nonkeyword_arguments()
 def cumfold(
     acc: IntoExpr,
-    f: Callable[[pli.Series, pli.Series], pli.Series],
+    function: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
     include_init: bool = False,
 ) -> pli.Expr:
@@ -1535,7 +1582,7 @@ def cumfold(
     acc
         Accumulator Expression. This is the value that will be initialized when the fold
         starts. For a sum this could for instance be lit(0).
-    f
+    function
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
@@ -1555,11 +1602,12 @@ def cumfold(
         exprs = [exprs]
 
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pycumfold(acc._pyexpr, f, exprs, include_init))
+    return pli.wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
 
 
+@deprecated_alias(f="function")
 def cumreduce(
-    f: Callable[[pli.Series, pli.Series], pli.Series],
+    function: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
 ) -> pli.Expr:
     """
@@ -1569,7 +1617,7 @@ def cumreduce(
 
     Parameters
     ----------
-    f
+    function
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
@@ -1581,7 +1629,7 @@ def cumreduce(
         exprs = [exprs]
 
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pycumreduce(f, exprs))
+    return pli.wrap_expr(pycumreduce(function, exprs))
 
 
 def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
@@ -2555,56 +2603,56 @@ def arg_where(
         return pli.wrap_expr(py_arg_where(condition._pyexpr))
 
 
-def coalesce(
-    exprs: (
-        Sequence[
-            pli.Expr
-            | str
-            | date
-            | datetime
-            | timedelta
-            | int
-            | float
-            | bool
-            | pli.Series
-        ]
-        | pli.Expr
-    ),
-) -> pli.Expr:
+def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> pli.Expr:
     """
-    Folds the expressions from left to right, keeping the first non-null value.
+    Folds the columns from left to right, keeping the first non-null value.
 
     Parameters
     ----------
     exprs
-        Expressions to coalesce.
+        Columns to coalesce. Accepts expression input. Strings are parsed as column
+        names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to coalesce, specified as positional arguments.
 
     Examples
     --------
     >>> df = pl.DataFrame(
-    ...     data=[
-    ...         (None, 1.0, 1.0),
-    ...         (None, 2.0, 2.0),
-    ...         (None, None, 3.0),
-    ...         (None, None, None),
-    ...     ],
-    ...     schema=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
+    ...     {
+    ...         "a": [1, None, None, None],
+    ...         "b": [1, 2, None, None],
+    ...         "c": [5, None, 3, None],
+    ...     }
     ... )
-    >>> df.with_columns(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
+    >>> df.with_columns(pl.coalesce(["a", "b", "c", 10]).alias("d"))
+    shape: (4, 4)
+    ┌──────┬──────┬──────┬─────┐
+    │ a    ┆ b    ┆ c    ┆ d   │
+    │ ---  ┆ ---  ┆ ---  ┆ --- │
+    │ i64  ┆ i64  ┆ i64  ┆ i64 │
+    ╞══════╪══════╪══════╪═════╡
+    │ 1    ┆ 1    ┆ 5    ┆ 1   │
+    │ null ┆ 2    ┆ null ┆ 2   │
+    │ null ┆ null ┆ 3    ┆ 3   │
+    │ null ┆ null ┆ null ┆ 10  │
+    └──────┴──────┴──────┴─────┘
+    >>> df.with_columns(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
     │ a    ┆ b    ┆ c    ┆ d    │
     │ ---  ┆ ---  ┆ ---  ┆ ---  │
-    │ f64  ┆ f64  ┆ f64  ┆ f64  │
+    │ i64  ┆ i64  ┆ i64  ┆ f64  │
     ╞══════╪══════╪══════╪══════╡
-    │ null ┆ 1.0  ┆ 1.0  ┆ 1.0  │
-    │ null ┆ 2.0  ┆ 2.0  ┆ 2.0  │
-    │ null ┆ null ┆ 3.0  ┆ 3.0  │
-    │ null ┆ null ┆ null ┆ 99.9 │
+    │ 1    ┆ 1    ┆ 5    ┆ 1.0  │
+    │ null ┆ 2    ┆ null ┆ 2.0  │
+    │ null ┆ null ┆ 3    ┆ 3.0  │
+    │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(pli.selection_to_pyexpr_list(more_exprs))
     return pli.wrap_expr(_coalesce_exprs(exprs))
 
 

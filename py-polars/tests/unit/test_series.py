@@ -1688,6 +1688,20 @@ def test_is_unique() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     assert_series_equal(s.is_unique(), pl.Series("a", [True, False, False, True]))
 
+    # utf8
+    assert pl.Series(["a", "b", "c", "a"]).is_duplicated().to_list() == [
+        True,
+        False,
+        False,
+        True,
+    ]
+    assert pl.Series(["a", "b", "c", "a"]).is_unique().to_list() == [
+        False,
+        True,
+        True,
+        False,
+    ]
+
 
 def test_is_duplicated() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
@@ -2406,3 +2420,64 @@ def test_map_dict() -> None:
         s.map_dict(remap, default=s.cast(pl.Utf8)),
         pl.Series("s", ["-1", "two", None, "four", "-5"]),
     )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "lower", "upper"),
+    [
+        (pl.Int8, -128, 127),
+        (pl.UInt8, 0, 255),
+        (pl.Int16, -32768, 32767),
+        (pl.UInt16, 0, 65535),
+        (pl.Int32, -2147483648, 2147483647),
+        (pl.UInt32, 0, 4294967295),
+        (pl.Int64, -9223372036854775808, 9223372036854775807),
+        (pl.UInt64, 0, 18446744073709551615),
+        (pl.Float32, float("-inf"), float("inf")),
+        (pl.Float64, float("-inf"), float("inf")),
+    ],
+)
+def test_upper_lower_bounds(
+    dtype: PolarsDataType, upper: int | float, lower: int | float
+) -> None:
+    s = pl.Series("s", dtype=dtype)
+    assert s.lower_bound().item() == lower
+    assert s.upper_bound().item() == upper
+
+
+def test_numpy_series_arithmetic() -> None:
+    sx = pl.Series(values=[1, 2])
+    y = np.array([3.0, 4.0])
+
+    result_add1 = y + sx
+    result_add2 = sx + y
+    expected_add = pl.Series([4.0, 6.0], dtype=pl.Float64)
+    assert_series_equal(result_add1, expected_add)  # type: ignore[arg-type]
+    assert_series_equal(result_add2, expected_add)
+
+    result_sub1 = cast(pl.Series, y - sx)  # py37 is different vs py311 on this one
+    expected = pl.Series([2.0, 2.0], dtype=pl.Float64)
+    assert_series_equal(result_sub1, expected)
+    result_sub2 = sx - y
+    expected = pl.Series([-2.0, -2.0], dtype=pl.Float64)
+    assert_series_equal(result_sub2, expected)
+
+    result_mul1 = y * sx
+    result_mul2 = sx * y
+    expected = pl.Series([3.0, 8.0], dtype=pl.Float64)
+    assert_series_equal(result_mul1, expected)  # type: ignore[arg-type]
+    assert_series_equal(result_mul2, expected)
+
+    result_div1 = y / sx
+    expected = pl.Series([3.0, 2.0], dtype=pl.Float64)
+    assert_series_equal(result_div1, expected)  # type: ignore[arg-type]
+    result_div2 = sx / y
+    expected = pl.Series([1 / 3, 0.5], dtype=pl.Float64)
+    assert_series_equal(result_div2, expected)
+
+    result_pow1 = y**sx
+    expected = pl.Series([3.0, 16.0], dtype=pl.Float64)
+    assert_series_equal(result_pow1, expected)  # type: ignore[arg-type]
+    result_pow2 = sx**y
+    expected = pl.Series([1.0, 16.0], dtype=pl.Float64)
+    assert_series_equal(result_pow2, expected)  # type: ignore[arg-type]

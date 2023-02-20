@@ -245,6 +245,7 @@
 //!     - `unique_counts` - Count unique values in expressions.
 //!     - `log` - Logarithms for `Series`.
 //!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
+//!     - `list_count` - Count elements in lists.
 //!     - `list_eval` - Apply expressions over list elements.
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `arg_where` - Get indices where condition holds.

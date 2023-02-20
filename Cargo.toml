@@ -21,7 +21,7 @@ members = [
 version = "0.27.2"
 
 [workspace.dependencies]
-rayon = "1.5"
+rayon = "1.6"
 thiserror = "^1"
 num = "0.4"
 ahash = "0.8"

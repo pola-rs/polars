@@ -22,3 +22,7 @@ def test_bool_arg_min_max() -> None:
         assert idx == pl.Series(a)[offset:].arg_max()
         idx = a[offset:].argmin()
         assert idx == pl.Series(a)[offset:].arg_min()
+
+
+def test_bool_sum_empty() -> None:
+    assert pl.Series([], dtype=pl.Boolean).sum() == 0

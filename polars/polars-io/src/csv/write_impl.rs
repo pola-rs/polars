@@ -57,7 +57,7 @@ fn write_anyvalue(
     value: AnyValue,
     options: &SerializeOptions,
     datetime_format: Option<&str>,
-) {
+) -> PolarsResult<()> {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),
         AnyValue::Int8(v) => write!(f, "{v}"),
@@ -125,9 +125,25 @@ fn write_anyvalue(
                 Some(fmt) => write!(f, "{}", date.format(fmt)),
             }
         }
-        dt => panic!("DataType: {dt} not supported in writing to csv"),
+        ref dt => Err(PolarsError::ComputeError(
+            format!("DataType: {dt} not supported in writing to csv").into(),
+        ))?,
     }
-    .unwrap();
+    .map_err(|err| match value {
+        AnyValue::Datetime(_, _, tz) => {
+            // If this is a datetime, then datetime_format was either set or inferred.
+            let datetime_format = datetime_format.unwrap();
+            match tz {
+                Some(_) => PolarsError::ComputeError(
+                    format!("Cannot format DateTime with format '{datetime_format}'.").into(),
+                ),
+                None => PolarsError::ComputeError(
+                    format!("Cannot format NaiveDateTime with format '{datetime_format}'.").into(),
+                ),
+            }
+        }
+        _ => PolarsError::ComputeError(format!("Error writing value {value}: {:?}", err).into()),
+    })
 }
 
 /// Options to serialize logical types to CSV
@@ -230,7 +246,7 @@ pub(crate) fn write<W: Write>(
     let mut n_rows_finished = 0;
 
     // holds the buffers that will be written
-    let mut result_buf = Vec::with_capacity(n_threads);
+    let mut result_buf: Vec<PolarsResult<Vec<u8>>> = Vec::with_capacity(n_threads);
     while n_rows_finished < len {
         let par_iter = (0..n_threads).into_par_iter().map(|thread_no| {
             let thread_offset = thread_no * chunk_size;
@@ -247,7 +263,7 @@ pub(crate) fn write<W: Write>(
 
             // don't use df.empty, won't work if there are columns.
             if df.height() == 0 {
-                return write_buffer;
+                return Ok(write_buffer);
             }
 
             let any_value_iters = cols.iter().map(|s| s.iter());
@@ -265,7 +281,7 @@ pub(crate) fn write<W: Write>(
                     };
                     match col.next() {
                         Some(value) => {
-                            write_anyvalue(&mut write_buffer, value, options, datetime_format);
+                            write_anyvalue(&mut write_buffer, value, options, datetime_format)?;
                         }
                         None => {
                             finished = true;
@@ -286,13 +302,14 @@ pub(crate) fn write<W: Write>(
             col_iters.clear();
             any_value_iter_pool.set(col_iters);
 
-            write_buffer
+            Ok(write_buffer)
         });
 
         // rayon will ensure the right order
         result_buf.par_extend(par_iter);
 
-        for mut buf in result_buf.drain(..) {
+        for buf in result_buf.drain(..) {
+            let mut buf = buf?;
             let _ = writer.write(&buf)?;
             buf.clear();
             write_buffer_pool.set(buf);

@@ -84,6 +84,7 @@ from polars.utils import (
     is_int_sequence,
     is_str_sequence,
     normalise_filepath,
+    parse_version,
     range_to_slice,
     redirect,
     scale_bytes,
@@ -103,11 +104,7 @@ else:
 
 if sys.version_info >= (3, 10):
     from typing import Concatenate, ParamSpec, TypeAlias
-
-    from packaging.version import parse as ParseVersion
 else:
-    from distutils.version import LooseVersion as ParseVersion
-
     from typing_extensions import Concatenate, ParamSpec, TypeAlias
 
 if sys.version_info >= (3, 11):
@@ -673,7 +670,7 @@ class DataFrame:
         null_values: str | list[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
-        parse_dates: bool = False,
+        try_parse_dates: bool = False,
         n_threads: int | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 8192,
@@ -790,7 +787,7 @@ class DataFrame:
             quote_char,
             processed_null_values,
             missing_utf8_is_empty_string,
-            parse_dates,
+            try_parse_dates,
             skip_rows_after_header,
             _prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
@@ -2025,7 +2022,7 @@ class DataFrame:
 
         """
         if use_pyarrow_extension_array:
-            if ParseVersion(pd.__version__) < ParseVersion("1.5"):
+            if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
                     f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
                 )
@@ -3596,8 +3593,8 @@ class DataFrame:
         Parameters
         ----------
         by
-            Column or columns to group by. Accepts expression input. Strings are parsed
-            as column names.
+            Column(s) to group by. Accepts expression input. Strings are parsed as
+            column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
         maintain_order
@@ -4484,10 +4481,11 @@ class DataFrame:
             ._df
         )
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
+    @deprecated_alias(f="function")
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def apply(
         self,
-        f: Callable[[tuple[Any, ...]], Any],
+        function: Callable[[tuple[Any, ...]], Any],
         return_dtype: PolarsDataType | None = None,
         inference_size: int = 256,
     ) -> Self:
@@ -4510,7 +4508,7 @@ class DataFrame:
 
         Parameters
         ----------
-        f
+        function
             Custom function/ lambda function.
         return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
@@ -4566,7 +4564,7 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
         """
-        out, is_df = self._df.apply(f, return_dtype, inference_size)
+        out, is_df = self._df.apply(function, return_dtype, inference_size)
         if is_df:
             return self._from_pydf(out)
         else:

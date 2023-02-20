@@ -245,17 +245,21 @@ def test_nan_aggregations() -> None:
 def test_coalesce() -> None:
     df = pl.DataFrame(
         {
-            "a": [None, None, None, None],
+            "a": [1, None, None, None],
             "b": [1, 2, None, None],
-            "c": [1, None, 3, None],
+            "c": [5, None, 3, None],
         }
     )
-    assert df.select(pl.coalesce(["a", "b", "c", 10])).to_dict(False) == {
-        "a": [1.0, 2.0, 3.0, 10.0]
-    }
-    assert df.select(pl.coalesce(pl.col(["a", "b", "c"]))).to_dict(False) == {
-        "a": [1.0, 2.0, 3.0, None]
-    }
+
+    # List inputs
+    expected = pl.Series("d", [1, 2, 3, 10]).to_frame()
+    result = df.select(pl.coalesce(["a", "b", "c", 10]).alias("d"))
+    assert_frame_equal(expected, result)
+
+    # Positional inputs
+    expected = pl.Series("d", [1.0, 2.0, 3.0, 10.0]).to_frame()
+    result = df.select(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
+    assert_frame_equal(result, expected)
 
 
 def test_ones_zeros() -> None:

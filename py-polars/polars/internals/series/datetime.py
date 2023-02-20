@@ -32,7 +32,7 @@ class DateTimeNameSpace:
         s = pli.wrap_s(self._s)
         return s[item]
 
-    def min(self) -> date | datetime | timedelta:
+    def min(self) -> date | datetime | timedelta | None:
         """
         Return minimum as python DateTime.
 
@@ -52,10 +52,9 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 1, 0, 0)
 
         """
-        # we can ignore types because we are certain we get a logical type
         return pli.wrap_s(self._s).min()  # type: ignore[return-value]
 
-    def max(self) -> date | datetime | timedelta:
+    def max(self) -> date | datetime | timedelta | None:
         """
         Return maximum as python DateTime.
 

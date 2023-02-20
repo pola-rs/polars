@@ -1582,6 +1582,11 @@ impl PyExpr {
         self.inner.clone().arr().eval(expr.inner, parallel).into()
     }
 
+    #[cfg(feature = "list_count")]
+    fn lst_count_match(&self, expr: PyExpr) -> Self {
+        self.inner.clone().arr().count_match(expr.inner).into()
+    }
+
     fn cumulative_eval(&self, expr: PyExpr, min_periods: usize, parallel: bool) -> Self {
         self.inner
             .clone()

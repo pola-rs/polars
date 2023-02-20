@@ -366,3 +366,72 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     assert df.groupby("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").arr.get(i).mean().list() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+
+
+def test_list_count_match() -> None:
+    assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
+        pl.col("listcol").arr.count_match(2).alias("number_of_twos")
+    ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
+    assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
+        pl.col("listcol").arr.count_match(2).alias("number_of_twos")
+    ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
+
+
+def test_list_sum_and_dtypes() -> None:
+    # ensure the dtypes of sum align with normal sum
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int32),
+        (pl.Int64, pl.Int64),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.UInt32),
+        (pl.UInt64, pl.UInt64),
+    ]:
+        df = pl.DataFrame(
+            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+            schema={"a": pl.List(dt_in)},
+        )
+
+        summed = df.explode("a").sum()
+        assert summed.dtypes == [dt_out]
+        assert summed.item() == 32
+        assert df.select(pl.col("a").arr.sum()).dtypes == [dt_out]
+
+    assert df.select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15]}
+
+    # include nulls
+    assert pl.DataFrame(
+        {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]}
+    ).select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15, None]}
+
+
+def test_list_mean() -> None:
+    assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]}).select(
+        pl.col("a").arr.mean()
+    ).to_dict(False) == {"a": [1.0, 2.0, 2.5, 3.0]}
+
+    assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], None]}).select(
+        pl.col("a").arr.mean()
+    ).to_dict(False) == {"a": [1.0, 2.0, 2.5, None]}
+
+
+def test_list_min_max() -> None:
+    for dt in pl.datatypes.NUMERIC_DTYPES:
+        df = pl.DataFrame(
+            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+            schema={"a": pl.List(dt)},
+        )
+        assert df.select(pl.col("a").arr.min())["a"].series_equal(
+            df.select(pl.col("a").arr.first())["a"]
+        )
+        assert df.select(pl.col("a").arr.max())["a"].series_equal(
+            df.select(pl.col("a").arr.last())["a"]
+        )
+
+    df = pl.DataFrame(
+        {"a": [[1], [1, 5, -1, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]},
+    )
+    assert df.select(pl.col("a").arr.min()).to_dict(False) == {"a": [1, -1, 1, 1, None]}
+    assert df.select(pl.col("a").arr.max()).to_dict(False) == {"a": [1, 5, 4, 5, None]}

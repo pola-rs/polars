@@ -28,8 +28,10 @@ Descriptive
     Series.is_unique
     Series.is_utf8
     Series.len
+    Series.lower_bound
     Series.n_chunks
     Series.n_unique
     Series.null_count
     Series.unique_counts
+    Series.upper_bound
     Series.value_counts

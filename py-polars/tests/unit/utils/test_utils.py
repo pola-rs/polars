@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -13,6 +13,7 @@ from polars.utils import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
     deprecate_nonkeyword_arguments,
+    parse_version,
 )
 
 if TYPE_CHECKING:
@@ -76,6 +77,21 @@ def test_estimated_size() -> None:
 
     with pytest.raises(ValueError):
         s.estimated_size("milkshake")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("v1", "v2"),
+    [
+        ("0.16.8", "0.16.7"),
+        ("23.0.0", (3, 1000)),
+        ((23, 0, 0), "3.1000"),
+        (("0", "0", "2beta"), "0.0.1"),
+        (("2", "5", "0", "1"), (2, 5, 0)),
+    ],
+)
+def test_parse_version(v1: Any, v2: Any) -> None:
+    assert parse_version(v1) > parse_version(v2)
+    assert parse_version(v2) < parse_version(v1)
 
 
 class Foo:

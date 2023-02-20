@@ -527,7 +527,8 @@ class Series:
             other = self.to_frame().select(other).to_series()
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
-
+        if _check_for_numpy(other) and isinstance(other, np.ndarray):
+            return wrap_s(getattr(self._s, op_s)(Series(other)._s))
         # recurse; the 'if' statement above will ensure we return early
         if isinstance(other, (date, datetime, timedelta, str)):
             other = Series("", [other])
@@ -653,6 +654,8 @@ class Series:
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
+        if _check_for_numpy(power) and isinstance(power, np.ndarray):
+            power = Series(power)
         return self.to_frame().select(pli.col(self.name).pow(power)).to_series()
 
     def __rpow__(self, other: Any) -> Series:
@@ -1619,30 +1622,25 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cumsum(self, reverse: bool = False) -> Series:
+    def cummax(self, reverse: bool = False) -> Series:
         """
-        Get an array with the cumulative sum computed at every element.
+        Get an array with the cumulative max computed at every element.
 
         Parameters
         ----------
         reverse
             reverse the operation.
 
-        Notes
-        -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
-
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cumsum()
+        >>> s = pl.Series("s", [3, 5, 1])
+        >>> s.cummax()
         shape: (3,)
-        Series: 'a' [i64]
+        Series: 's' [i64]
         [
-            1
             3
-            6
+            5
+            5
         ]
 
         """
@@ -1658,37 +1656,14 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("s", [1, 2, 3])
         >>> s.cummin()
         shape: (3,)
-        Series: 'a' [i64]
+        Series: 's' [i64]
         [
             1
             1
             1
-        ]
-
-        """
-
-    def cummax(self, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative max computed at every element.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [3, 5, 1])
-        >>> s.cummax()
-        shape: (3,)
-        Series: 'a' [i64]
-        [
-            3
-            5
-            5
         ]
 
         """
@@ -1716,6 +1691,34 @@ class Series:
         [
             1
             2
+            6
+        ]
+
+        """
+
+    def cumsum(self, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative sum computed at every element.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.cumsum()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            3
             6
         ]
 
@@ -3651,10 +3654,11 @@ class Series:
 
         """
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "func", "return_dtype"])
+    @deprecated_alias(func="function")
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def apply(
         self,
-        func: Callable[[Any], Any],
+        function: Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
         skip_nulls: bool = True,
     ) -> Series:
@@ -3680,7 +3684,7 @@ class Series:
 
         Parameters
         ----------
-        func
+        function
             function or lambda.
         return_dtype
             Output datatype. If none is given, the same datatype as this Series will be
@@ -3699,7 +3703,7 @@ class Series:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
-        return wrap_s(self._s.apply_lambda(func, pl_return_dtype, skip_nulls))
+        return wrap_s(self._s.apply_lambda(function, pl_return_dtype, skip_nulls))
 
     def shift(self, periods: int = 1) -> Series:
         """
@@ -4778,6 +4782,62 @@ class Series:
         ----------
         max_val
             Maximum value.
+
+        """
+
+    def lower_bound(self) -> Self:
+        """
+        Return the lower bound of this Series' dtype as a unit Series.
+
+        See Also
+        --------
+        upper_bound : return the upper bound of the given Series' dtype.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", [-1, 0, 1], dtype=pl.Int32)
+        >>> s.lower_bound()
+        shape: (1,)
+        Series: 's' [i32]
+        [
+            -2147483648
+        ]
+
+        >>> s = pl.Series("s", [1.0, 2.5, 3.0], dtype=pl.Float32)
+        >>> s.lower_bound()
+        shape: (1,)
+        Series: 's' [f32]
+        [
+            -inf
+        ]
+
+        """
+
+    def upper_bound(self) -> Self:
+        """
+        Return the upper bound of this Series' dtype as a unit Series.
+
+        See Also
+        --------
+        lower_bound : return the lower bound of the given Series' dtype.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", [-1, 0, 1], dtype=pl.Int8)
+        >>> s.upper_bound()
+        shape: (1,)
+        Series: 's' [i8]
+        [
+            127
+        ]
+
+        >>> s = pl.Series("s", [1.0, 2.5, 3.0], dtype=pl.Float64)
+        >>> s.upper_bound()
+        shape: (1,)
+        Series: 's' [f64]
+        [
+            inf
+        ]
 
         """
 

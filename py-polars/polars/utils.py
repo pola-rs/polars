@@ -4,6 +4,7 @@ from __future__ import annotations
 import functools
 import inspect
 import os
+import re
 import sys
 import warnings
 from collections.abc import MappingView, Reversible, Sized
@@ -200,20 +201,22 @@ def range_to_slice(rng: range) -> slice:
 
 def handle_projection_columns(
     columns: Sequence[str] | Sequence[int] | str | None,
-) -> tuple[list[int] | None, list[str] | None]:
+) -> tuple[list[int] | None, Sequence[str] | None]:
     """Disambiguates between columns specified as integers vs. strings."""
     projection: list[int] | None = None
-    if columns:
+    new_columns: Sequence[str] | None = None
+    if columns is not None:
         if isinstance(columns, str):
-            columns = [columns]
+            new_columns = [columns]
         elif is_int_sequence(columns):
             projection = list(columns)
-            columns = None
         elif not is_str_sequence(columns):
             raise ValueError(
                 "'columns' arg should contain a list of all integers or all strings"
                 " values."
             )
+        else:
+            new_columns = columns
         if columns and len(set(columns)) != len(columns):
             raise ValueError(
                 f"'columns' arg should only have unique values. Got '{columns}'."
@@ -222,7 +225,7 @@ def handle_projection_columns(
             raise ValueError(
                 f"'columns' arg should only have unique values. Got '{projection}'."
             )
-    return projection, columns  # type: ignore[return-value]
+    return projection, new_columns
 
 
 def _to_python_time(value: int) -> time:
@@ -332,13 +335,14 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
 
 def _localize(dt: datetime, tz: str) -> datetime:
     # zone info installation should already be checked
+    _tzinfo: ZoneInfo | tzinfo
     try:
-        tzinfo = ZoneInfo(tz)
+        _tzinfo = ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
-        tzinfo = _parse_fixed_tz_offset(tz)  # type: ignore[assignment]
+        _tzinfo = _parse_fixed_tz_offset(tz)
 
-    return dt.astimezone(tzinfo)
+    return dt.astimezone(_tzinfo)
 
 
 def _in_notebook() -> bool:
@@ -370,6 +374,13 @@ def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> st
     return path
 
 
+def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
+    """Simple version parser; split into a tuple of ints for comparison."""
+    if isinstance(version, str):
+        version = version.split(".")
+    return tuple(int(re.sub(r"\D", "", str(v))) for v in version)
+
+
 def threadpool_size() -> int:
     """Get the size of polars' thread pool."""
     return _pool_size()
@@ -377,56 +388,6 @@ def threadpool_size() -> int:
 
 P = ParamSpec("P")
 T = TypeVar("T")
-
-
-def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """
-    Deprecate a function or method argument.
-
-    Decorator for deprecated function and method arguments. Use as follows:
-
-    @deprecated_alias(old_arg='new_arg')
-    def myfunc(new_arg):
-        ...
-    """
-
-    def deco(fn: Callable[P, T]) -> Callable[P, T]:
-        @functools.wraps(fn)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            _rename_kwargs(fn.__name__, kwargs, aliases)
-            return fn(*args, **kwargs)
-
-        return wrapper
-
-    return deco
-
-
-def redirect(from_to: dict[str, str]) -> Callable[[type[T]], type[T]]:
-    """
-    Class decorator allowing deprecation/transition from one method name to another.
-
-    The parameters must be the same (unless they are being renamed, in
-    which case you can use this in conjunction with @deprecated_alias).
-    """
-
-    def _redirecting_getattr_(obj: T, item: Any) -> Any:
-        if isinstance(item, str) and item in from_to:
-            new_item = from_to[item]
-            warnings.warn(
-                f"`{type(obj).__name__}.{item}` has been renamed; this"
-                f" redirect is temporary, please use `.{new_item}` instead",
-                category=DeprecationWarning,
-                stacklevel=2,
-            )
-            item = new_item
-        return obj.__getattribute__(item)
-
-    def _cls_(cls: type[T]) -> type[T]:
-        # note: __getattr__ is only invoked if item isn't found on the class
-        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
-        return cls
-
-    return _cls_
 
 
 def _rename_kwargs(
@@ -455,6 +416,28 @@ def _rename_kwargs(
             kwargs[new] = kwargs.pop(alias)
 
 
+def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Deprecate a function or method argument.
+
+    Decorator for deprecated function and method arguments. Use as follows:
+
+    @deprecated_alias(old_arg='new_arg')
+    def myfunc(new_arg):
+        ...
+    """
+
+    def deco(function: Callable[P, T]) -> Callable[P, T]:
+        @functools.wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            _rename_kwargs(function.__name__, kwargs, aliases)
+            return function(*args, **kwargs)
+
+        return wrapper
+
+    return deco
+
+
 def deprecate_nonkeyword_arguments(
     allowed_args: list[str] | None = None,
     message: str | None = None,
@@ -473,8 +456,8 @@ def deprecate_nonkeyword_arguments(
         Optionally overwrite the default warning message.
     """
 
-    def decorate(fn: Callable[P, T]) -> Callable[P, T]:
-        old_sig = inspect.signature(fn)
+    def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        old_sig = inspect.signature(function)
 
         if allowed_args is not None:
             allow_args = allowed_args
@@ -502,23 +485,51 @@ def deprecate_nonkeyword_arguments(
         num_allowed_args = len(allow_args)
         if message is None:
             msg_format = (
-                f"All arguments of {fn.__qualname__}{{except_args}} will be keyword-only in the next breaking release."
+                f"All arguments of {function.__qualname__}{{except_args}} will be keyword-only in the next breaking release."
                 " Use keyword arguments to silence this warning."
             )
             msg = msg_format.format(except_args=_format_argument_list(allow_args))
         else:
             msg = message
 
-        @functools.wraps(fn)
+        @functools.wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             if len(args) > num_allowed_args:
                 warnings.warn(msg, DeprecationWarning, stacklevel=2)
-            return fn(*args, **kwargs)
+            return function(*args, **kwargs)
 
         wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
         return wrapper
 
     return decorate
+
+
+def redirect(from_to: dict[str, str]) -> Callable[[type[T]], type[T]]:
+    """
+    Class decorator allowing deprecation/transition from one method name to another.
+
+    The parameters must be the same (unless they are being renamed, in
+    which case you can use this in conjunction with @deprecated_alias).
+    """
+
+    def _redirecting_getattr_(obj: T, item: Any) -> Any:
+        if isinstance(item, str) and item in from_to:
+            new_item = from_to[item]
+            warnings.warn(
+                f"`{type(obj).__name__}.{item}` has been renamed; this"
+                f" redirect is temporary, please use `.{new_item}` instead",
+                category=DeprecationWarning,
+                stacklevel=2,
+            )
+            item = new_item
+        return obj.__getattribute__(item)
+
+    def _cls_(cls: type[T]) -> type[T]:
+        # note: __getattr__ is only invoked if item isn't found on the class
+        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
+        return cls
+
+    return _cls_
 
 
 def _format_argument_list(allowed_args: list[str]) -> str:

@@ -56,7 +56,8 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
         #[cfg(feature = "dtype-binary")]
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
-            return is_unique(&s);
+            let ca = s.binary().unwrap();
+            is_unique_ca(ca, invert)
         }
         Float32 => {
             let ca = s.bit_repr_small();

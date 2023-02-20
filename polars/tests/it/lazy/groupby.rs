@@ -147,3 +147,29 @@ fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_filter_aggregated_expression() -> PolarsResult<()> {
+    let df: DataFrame = df![
+    "day" => [2, 2, 2, 2, 2, 2, 1, 1],
+    "y" => [Some(4), Some(5), Some(8), Some(7), Some(9), None, None, None],
+    "x" => [1, 2, 3, 4, 5, 6, 1, 2],
+    ]?;
+
+    let f = col("y").is_not_null().and(col("x").is_not_null());
+
+    let df = df
+        .lazy()
+        .groupby([col("day")])
+        .agg([(col("x") - col("x").first()).filter(f)])
+        .sort("day", Default::default())
+        .collect()
+        .unwrap();
+    let x = df.column("x")?;
+
+    assert_eq!(
+        x.get(1).unwrap(),
+        AnyValue::List(Series::new("", [0, 1, 2, 3, 4]))
+    );
+    Ok(())
+}

@@ -1862,6 +1862,11 @@ def test_fill_null() -> None:
         ],
         "b_backward": ["Apple", "Orange", "Carrot", "Carrot", None, None],
     }
+    # categoricals
+    df = pl.DataFrame(pl.Series("cat", ["a", None], dtype=pl.Categorical))
+    s = df.select(pl.col("cat").fill_null(strategy="forward"))["cat"]
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["a", "a"]
 
 
 def test_fill_nan() -> None:

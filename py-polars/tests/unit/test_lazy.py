@@ -396,7 +396,7 @@ def test_fold_filter() -> None:
     out = df.filter(
         pl.fold(
             acc=pl.lit(True),
-            f=lambda a, b: a & b,
+            function=lambda a, b: a & b,
             exprs=[pl.col(c) > 1 for c in df.columns],
         )
     )
@@ -406,7 +406,7 @@ def test_fold_filter() -> None:
     out = df.filter(
         pl.fold(
             acc=pl.lit(True),
-            f=lambda a, b: a | b,
+            function=lambda a, b: a | b,
             exprs=[pl.col(c) > 1 for c in df.columns],
         )
     )
@@ -1358,9 +1358,13 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
 
 def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.col("A").lower_bound())
-    assert res_expr["A"][0] < -10_000_000
-    res_expr = fruits_cars.select(pl.col("A").upper_bound())
-    assert res_expr["A"][0] > 10_000_000
+    assert res_expr.item() == -9223372036854775808
+
+    res_expr = fruits_cars.select(pl.col("B").upper_bound())
+    assert res_expr.item() == 9223372036854775807
+
+    with pytest.raises(pl.ComputeError):
+        fruits_cars.select(pl.col("fruits").upper_bound())
 
 
 def test_nested_min_max() -> None:
@@ -1665,3 +1669,67 @@ def test_cumagg_types() -> None:
     assert cumprod_lf.schema["c"] == pl.Float64
     collected_cumprod_lf = cumprod_lf.collect()
     assert collected_cumprod_lf.schema == cumprod_lf.schema
+
+
+def test_col() -> None:
+    df = pl.DataFrame(
+        {
+            "ham": [1, 2, 3],
+            "hamburger": [11, 22, 33],
+            "foo": [3, 2, 1],
+            "bar": ["a", "b", "c"],
+        }
+    )
+
+    # Single column
+    assert df.select(pl.col("foo")).columns == ["foo"]
+    # Regex
+    assert df.select(pl.col("*")).columns == ["ham", "hamburger", "foo", "bar"]
+    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
+    assert df.select(pl.col("*").exclude("ham")).columns == ["hamburger", "foo", "bar"]
+    # Multiple inputs
+    assert df.select(pl.col(["hamburger", "foo"])).columns == ["hamburger", "foo"]
+    assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
+    assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
+    # Dtypes
+    assert df.select(pl.col(pl.Utf8)).columns == ["bar"]
+    assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
+        "ham",
+        "hamburger",
+        "foo",
+    ]
+
+
+def test_compare_schema_between_lazy_and_eager_6904() -> None:
+    float32_df = pl.DataFrame({"x": pl.Series(values=[], dtype=pl.Float32)})
+    eager_result = float32_df.select(pl.col("x").sqrt()).select(pl.col(pl.Float32))
+    lazy_result = (
+        float32_df.lazy()
+        .select(pl.col("x").sqrt())
+        .select(pl.col(pl.Float32))
+        .collect()
+    )
+    assert eager_result.shape == lazy_result.shape
+
+    eager_result = float32_df.select(pl.col("x").pow(2)).select(pl.col(pl.Float32))
+    lazy_result = (
+        float32_df.lazy()
+        .select(pl.col("x").pow(2))
+        .select(pl.col(pl.Float32))
+        .collect()
+    )
+    assert eager_result.shape == lazy_result.shape
+
+    int32_df = pl.DataFrame({"x": pl.Series(values=[], dtype=pl.Int32)})
+    eager_result = int32_df.select(pl.col("x").pow(2)).select(pl.col(pl.Float64))
+    lazy_result = (
+        int32_df.lazy().select(pl.col("x").pow(2)).select(pl.col(pl.Float64)).collect()
+    )
+    assert eager_result.shape == lazy_result.shape
+
+    int8_df = pl.DataFrame({"x": pl.Series(values=[], dtype=pl.Int8)})
+    eager_result = int8_df.select(pl.col("x").diff()).select(pl.col(pl.Int16))
+    lazy_result = (
+        int8_df.lazy().select(pl.col("x").diff()).select(pl.col(pl.Int16)).collect()
+    )
+    assert eager_result.shape == lazy_result.shape

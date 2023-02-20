@@ -30,6 +30,7 @@ from polars.internals.type_aliases import PythonLiteral
 from polars.utils import (
     _timedelta_to_pl_duration,
     deprecate_nonkeyword_arguments,
+    deprecated_alias,
     sphinx_accessor,
 )
 
@@ -65,11 +66,15 @@ def selection_to_pyexpr_list(
     structify: bool = False,
 ) -> list[PyExpr]:
     if exprs is None:
-        exprs = []
-    elif isinstance(
+        return []
+
+    if isinstance(
         exprs, (str, Expr, pli.Series, pli.WhenThen, pli.WhenThenThen)
     ) or not isinstance(exprs, Iterable):
-        exprs = [exprs]
+        return [
+            expr_to_lit_or_expr(exprs, str_to_lit=False, structify=structify)._pyexpr,
+        ]
+
     return [
         expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
         for e in exprs  # type: ignore[union-attr]
@@ -110,7 +115,9 @@ def expr_to_lit_or_expr(
     Expr
 
     """
-    if isinstance(expr, str) and not str_to_lit:
+    if isinstance(expr, Expr):
+        pass
+    elif isinstance(expr, str) and not str_to_lit:
         expr = pli.col(expr)
     elif (
         isinstance(expr, (int, float, str, pli.Series, datetime, date, time, timedelta))
@@ -123,7 +130,7 @@ def expr_to_lit_or_expr(
         structify = False
     elif isinstance(expr, (pli.WhenThen, pli.WhenThenThen)):
         expr = expr.otherwise(None)  # implicitly add the null branch.
-    elif not isinstance(expr, Expr):
+    else:
         raise TypeError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
             " pl.lit or pl.col"
@@ -768,13 +775,14 @@ class Expr:
         """  # noqa: W505
         return self._from_pyexpr(self._pyexpr.suffix(suffix))
 
-    def map_alias(self, f: Callable[[str], str]) -> Self:
+    @deprecated_alias(f="function")
+    def map_alias(self, function: Callable[[str], str]) -> Self:
         """
         Rename the output of an expression by mapping a function over the root name.
 
         Parameters
         ----------
-        f
+        function
             Function that maps root name to new name.
 
         Examples
@@ -799,7 +807,7 @@ class Expr:
         └───────────┴───────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.map_alias(f))
+        return self._from_pyexpr(self._pyexpr.map_alias(function))
 
     def is_not(self) -> Self:
         """
@@ -2056,7 +2064,8 @@ class Expr:
         if isinstance(reverse, bool):
             reverse = [reverse]
         by = selection_to_pyexpr_list(by)
-        by.extend(pli.selection_to_pyexpr_list(more_by))
+        if more_by:
+            by.extend(pli.selection_to_pyexpr_list(more_by))
         return self._from_pyexpr(self._pyexpr.sort_by(by, reverse))
 
     def take(
@@ -2766,68 +2775,103 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.last())
 
-    def over(self, expr: str | Expr | list[Expr | str]) -> Self:
+    def over(self, expr: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Self:
         """
-        Apply window function over a subgroup.
+        Compute expressions over the given groups.
 
-        This is similar to a groupby + aggregation + self join.
-        Or similar to `window functions in Postgres
-        <https://www.postgresql.org/docs/current/tutorial-window.html>`_.
+        This expression is similar to performing a groupby aggregation and joining the
+        result back into the original dataframe.
+
+        The outcome is similar to how `window functions
+        <https://www.postgresql.org/docs/current/tutorial-window.html>`_
+        work in PostgreSQL.
 
         Parameters
         ----------
         expr
-            Column(s) to group by.
+            Column(s) to group by. Accepts expression input. Strings are parsed as
+            column names.
+        *more_exprs
+            Additional columns to group by, specified as positional arguments.
 
         Examples
         --------
+        Pass the name of a column to compute the expression over that column.
+
         >>> df = pl.DataFrame(
         ...     {
-        ...         "groups": ["g1", "g1", "g2"],
-        ...         "values": [1, 2, 3],
+        ...         "a": ["a", "a", "b", "b", "b"],
+        ...         "b": [1, 2, 3, 5, 3],
+        ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("values").max().over("groups").alias("max_by_group"))
-        shape: (3, 3)
-        ┌────────┬────────┬──────────────┐
-        │ groups ┆ values ┆ max_by_group │
-        │ ---    ┆ ---    ┆ ---          │
-        │ str    ┆ i64    ┆ i64          │
-        ╞════════╪════════╪══════════════╡
-        │ g1     ┆ 1      ┆ 2            │
-        │ g1     ┆ 2      ┆ 2            │
-        │ g2     ┆ 3      ┆ 3            │
-        └────────┴────────┴──────────────┘
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
-        ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
-        ...     }
-        ... )
-        >>> df.lazy().select(
-        ...     pl.col("groups").sum().over("groups"),
-        ... ).collect()
-        shape: (9, 1)
-        ┌────────┐
-        │ groups │
-        │ ---    │
-        │ i64    │
-        ╞════════╡
-        │ 4      │
-        │ 4      │
-        │ 6      │
-        │ 6      │
-        │ ...    │
-        │ 6      │
-        │ 6      │
-        │ 6      │
-        │ 4      │
-        └────────┘
+        >>> df.with_columns(pl.col("c").max().over("a").suffix("_max"))
+        shape: (5, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ a   ┆ b   ┆ c   ┆ c_max │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ str ┆ i64 ┆ i64 ┆ i64   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ a   ┆ 1   ┆ 5   ┆ 5     │
+        │ a   ┆ 2   ┆ 4   ┆ 5     │
+        │ b   ┆ 3   ┆ 3   ┆ 3     │
+        │ b   ┆ 5   ┆ 2   ┆ 3     │
+        │ b   ┆ 3   ┆ 1   ┆ 3     │
+        └─────┴─────┴─────┴───────┘
+
+        Expression input is supported.
+
+        >>> df.with_columns(pl.col("c").max().over(pl.col("b") // 2).suffix("_max"))
+        shape: (5, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ a   ┆ b   ┆ c   ┆ c_max │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ str ┆ i64 ┆ i64 ┆ i64   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ a   ┆ 1   ┆ 5   ┆ 5     │
+        │ a   ┆ 2   ┆ 4   ┆ 4     │
+        │ b   ┆ 3   ┆ 3   ┆ 4     │
+        │ b   ┆ 5   ┆ 2   ┆ 2     │
+        │ b   ┆ 3   ┆ 1   ┆ 4     │
+        └─────┴─────┴─────┴───────┘
+
+        Group by multiple columns by passing a list of column names or expressions.
+
+        >>> df.with_columns(pl.col("c").min().over(["a", "b"]).suffix("_min"))
+        shape: (5, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ a   ┆ b   ┆ c   ┆ c_min │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ str ┆ i64 ┆ i64 ┆ i64   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ a   ┆ 1   ┆ 5   ┆ 5     │
+        │ a   ┆ 2   ┆ 4   ┆ 4     │
+        │ b   ┆ 3   ┆ 3   ┆ 1     │
+        │ b   ┆ 5   ┆ 2   ┆ 2     │
+        │ b   ┆ 3   ┆ 1   ┆ 1     │
+        └─────┴─────┴─────┴───────┘
+
+        Or use positional arguments to group by multiple columns in the same way.
+
+        >>> df.with_columns(pl.col("c").min().over("a", pl.col("b") % 2).suffix("_min"))
+        shape: (5, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ a   ┆ b   ┆ c   ┆ c_min │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ str ┆ i64 ┆ i64 ┆ i64   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ a   ┆ 1   ┆ 5   ┆ 5     │
+        │ a   ┆ 2   ┆ 4   ┆ 4     │
+        │ b   ┆ 3   ┆ 3   ┆ 1     │
+        │ b   ┆ 5   ┆ 2   ┆ 1     │
+        │ b   ┆ 3   ┆ 1   ┆ 1     │
+        └─────┴─────┴─────┴───────┘
 
         """
-        pyexprs = selection_to_pyexpr_list(expr)
-
-        return self._from_pyexpr(self._pyexpr.over(pyexprs))
+        exprs = selection_to_pyexpr_list(expr)
+        if more_exprs:
+            exprs.extend(selection_to_pyexpr_list(more_exprs))
+        return self._from_pyexpr(self._pyexpr.over(exprs))
 
     def is_unique(self) -> Self:
         """
@@ -3050,10 +3094,11 @@ class Expr:
         """
         return self.filter(predicate)
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
+    @deprecated_alias(f="function")
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def map(
         self,
-        f: Callable[[pli.Series], pli.Series | Any],
+        function: Callable[[pli.Series], pli.Series | Any],
         return_dtype: PolarsDataType | None = None,
         agg_list: bool = False,
     ) -> Self:
@@ -3070,7 +3115,7 @@ class Expr:
 
         Parameters
         ----------
-        f
+        function
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
@@ -3098,12 +3143,13 @@ class Expr:
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
-        return self._from_pyexpr(self._pyexpr.map(f, return_dtype, agg_list))
+        return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "f", "return_dtype"])
+    @deprecated_alias(f="function")
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def apply(
         self,
-        f: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
+        function: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
         skip_nulls: bool = True,
         pass_name: bool = False,
@@ -3134,7 +3180,7 @@ class Expr:
 
         Parameters
         ----------
-        f
+        function
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
@@ -3208,7 +3254,7 @@ class Expr:
             def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
                 def inner(s: pli.Series) -> pli.Series:  # pragma: no cover
                     s.rename(x.name, in_place=True)
-                    return f(s)
+                    return function(s)
 
                 return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
 
@@ -3217,7 +3263,9 @@ class Expr:
         else:
 
             def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
-                return x.apply(f, return_dtype=return_dtype, skip_nulls=skip_nulls)
+                return x.apply(
+                    function, return_dtype=return_dtype, skip_nulls=skip_nulls
+                )
 
             return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
 

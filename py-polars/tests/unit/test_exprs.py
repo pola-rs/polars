@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import random
+import sys
 import typing
-from typing import cast
+from datetime import datetime, timedelta, timezone
+from typing import Any, cast
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+else:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -15,6 +24,7 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
+    PolarsDataType,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -340,7 +350,9 @@ def test_regex_in_filter() -> None:
     )
 
     res = df.filter(
-        pl.fold(acc=False, f=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3))
+        pl.fold(
+            acc=False, function=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3)
+        )
     ).row(0)
     expected = (1, "foo", 1.0)
     assert res == expected
@@ -520,3 +532,57 @@ def test_map_dict() -> None:
         "country_code": ["FR", None, "ES", "DE"],
         "remapped": ["France", "Not specified", "2", "Germany"],
     }
+
+
+def test_lit_dtypes() -> None:
+    def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:
+        return pl.select(pl.lit(value, dtype=dtype)).to_series()
+
+    d = datetime(2049, 10, 5, 1, 2, 3, 987654)
+    d_ms = datetime(2049, 10, 5, 1, 2, 3, 987000)
+    d_tz = datetime(2049, 10, 5, 1, 2, 3, 987654, tzinfo=ZoneInfo("Asia/Kathmandu"))
+
+    td = timedelta(days=942, hours=6, microseconds=123456)
+    td_ms = timedelta(days=942, seconds=21600, microseconds=123000)
+
+    df = pl.DataFrame(
+        {
+            "dtm_ms": lit_series(d, pl.Datetime("ms")),
+            "dtm_us": lit_series(d, pl.Datetime("us")),
+            "dtm_ns": lit_series(d, pl.Datetime("ns")),
+            "dtm_aware_0": lit_series(d, pl.Datetime("us", "Asia/Kathmandu")),
+            "dtm_aware_1": lit_series(d_tz, pl.Datetime("us")),
+            "dtm_aware_2": lit_series(d_tz, None),
+            "dtm_aware_3": lit_series(d, pl.Datetime(None, "Asia/Kathmandu")),
+            "dur_ms": lit_series(td, pl.Duration("ms")),
+            "dur_us": lit_series(td, pl.Duration("us")),
+            "dur_ns": lit_series(td, pl.Duration("ns")),
+            "f32": lit_series(0, pl.Float32),
+            "u16": lit_series(0, pl.UInt16),
+            "i16": lit_series(0, pl.Int16),
+        }
+    )
+    assert df.dtypes == [
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        pl.Datetime("ns"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Duration("ms"),
+        pl.Duration("us"),
+        pl.Duration("ns"),
+        pl.Float32,
+        pl.UInt16,
+        pl.Int16,
+    ]
+    assert df.row(0) == (d_ms, d, d, d_tz, d_tz, d_tz, d_tz, td_ms, td, td, 0, 0, 0)
+
+
+def test_incompatible_lit_dtype() -> None:
+    with pytest.raises(TypeError, match="Cannot cast tz-aware value to tz-aware dtype"):
+        pl.lit(
+            datetime(2020, 1, 1, tzinfo=timezone.utc),
+            dtype=pl.Datetime("us", "Asia/Kathmandu"),
+        )

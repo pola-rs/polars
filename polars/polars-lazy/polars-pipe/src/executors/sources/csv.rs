@@ -65,7 +65,7 @@ impl CsvSource {
             .with_rechunk(options.rechunk)
             .with_chunk_size(chunk_size)
             .with_row_count(options.row_count)
-            .with_parse_dates(options.parse_dates);
+            .with_try_parse_dates(options.try_parse_dates);
 
         let reader = Box::new(reader);
         let reader = Box::leak(reader) as *mut CsvReader<'static, File>;

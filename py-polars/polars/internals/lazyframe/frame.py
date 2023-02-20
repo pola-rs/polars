@@ -54,6 +54,7 @@ from polars.utils import (
     _process_null_values,
     _timedelta_to_pl_duration,
     deprecate_nonkeyword_arguments,
+    deprecated_alias,
     normalise_filepath,
     redirect,
 )
@@ -146,7 +147,7 @@ class LazyFrame:
         skip_rows_after_header: int = 0,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
-        parse_dates: bool = False,
+        try_parse_dates: bool = False,
         eol_char: str = "\n",
     ) -> Self:
         """
@@ -187,7 +188,7 @@ class LazyFrame:
             skip_rows_after_header,
             encoding,
             _prepare_row_count_args(row_count_name, row_count_offset),
-            parse_dates,
+            try_parse_dates,
             eol_char=eol_char,
         )
         return self
@@ -906,7 +907,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
 
         by = pli.selection_to_pyexpr_list(by)
-        by.extend(pli.selection_to_pyexpr_list(more_by))
+        if more_by:
+            by.extend(pli.selection_to_pyexpr_list(more_by))
 
         # TODO: Do this check on the Rust side
         if nulls_last and len(by) > 1:
@@ -1668,18 +1670,21 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         if exprs is None and not named_exprs:
-            raise ValueError("Expected at least one of 'exprs' or **named_exprs")
+            raise ValueError("Expected at least one of 'exprs' or '**named_exprs'")
 
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
-        exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
-        exprs.extend(
-            pli.expr_to_lit_or_expr(
-                expr, structify=structify, name=name, str_to_lit=False
-            )._pyexpr
-            for name, expr in named_exprs.items()
-        )
+        if more_exprs:
+            exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
+        if named_exprs:
+            exprs.extend(
+                pli.expr_to_lit_or_expr(
+                    expr, structify=structify, name=name, str_to_lit=False
+                )._pyexpr
+                for name, expr in named_exprs.items()
+            )
+
         return self._from_pyldf(self._ldf.select(exprs))
 
     def groupby(
@@ -1694,8 +1699,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         by
-            Column or columns to group by. Accepts expression input. Strings are parsed
-            as column names.
+            Column(s) to group by. Accepts expression input. Strings are parsed as
+            column names.
         *more_by
             Additional columns to group by, specified as positional arguments.
         maintain_order
@@ -1775,7 +1780,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         exprs = selection_to_pyexpr_list(by)
-        exprs.extend(selection_to_pyexpr_list(more_by))
+        if more_by:
+            exprs.extend(selection_to_pyexpr_list(more_by))
         lgb = self._ldf.groupby(exprs, maintain_order)
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
@@ -2676,18 +2682,20 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         if exprs is None and not named_exprs:
-            raise ValueError("Expected at least one of 'exprs' or **named_exprs")
+            raise ValueError("Expected at least one of 'exprs' or '**named_exprs'")
 
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
-        exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
-        exprs.extend(
-            pli.expr_to_lit_or_expr(
-                expr, structify=structify, name=name, str_to_lit=False
-            )._pyexpr
-            for name, expr in named_exprs.items()
-        )
+        if more_exprs:
+            exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
+        if named_exprs:
+            exprs.extend(
+                pli.expr_to_lit_or_expr(
+                    expr, structify=structify, name=name, str_to_lit=False
+                )._pyexpr
+                for name, expr in named_exprs.items()
+            )
 
         return self._from_pyldf(self._ldf.with_columns(exprs))
 
@@ -3860,10 +3868,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             self._ldf.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @deprecated_alias(f="function")
     @deprecate_nonkeyword_arguments()
     def map(
         self,
-        f: Callable[[pli.DataFrame], pli.DataFrame],
+        function: Callable[[pli.DataFrame], pli.DataFrame],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         slice_pushdown: bool = True,
@@ -3879,7 +3888,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Parameters
         ----------
-        f
+        function
             Lambda/ function to apply.
         predicate_pushdown
             Allow predicate pushdown optimization to pass this node.
@@ -3933,7 +3942,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self._from_pyldf(
             self._ldf.map(
-                f,
+                function,
                 predicate_pushdown,
                 projection_pushdown,
                 slice_pushdown,
