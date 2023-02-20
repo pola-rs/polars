@@ -175,7 +175,7 @@ def from_dicts(
 @deprecated_alias(columns="schema")
 def from_records(
     data: Sequence[Sequence[Any]],
-    schema: Sequence[str] | None = None,
+    schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
     orient: Orientation | None = None,
