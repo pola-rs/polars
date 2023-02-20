@@ -13,10 +13,11 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
+use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::ArgAgg;
 
-fn has_inner_nulls(ca: &ListChunked) -> bool {
+pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
     for arr in ca.downcast_iter() {
         if arr.values().null_count() > 0 {
             return true;
@@ -117,19 +118,11 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_max(&self) -> Series {
-        let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().max_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+        list_max_function(self.as_list())
     }
 
     fn lst_min(&self) -> Series {
-        let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().min_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+        list_min_function(self.as_list())
     }
 
     fn lst_sum(&self) -> Series {
