@@ -859,10 +859,8 @@ def sequence_to_pydf(
                 schema, schema_overrides=schema_overrides, n_expected=len(data)
             )
             data_series = [
-                pli.Series(
-                    column_names[i], data[i], schema_overrides.get(column_names[i])
-                )._s
-                for i in range(len(data))
+                pli.Series(column_names[i], s, schema_overrides.get(column_names[i]))._s
+                for i, s in enumerate(data)
             ]
         else:
             raise ValueError(
