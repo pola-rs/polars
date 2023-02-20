@@ -37,8 +37,8 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
                     .clone();
                 let opt_offset = offset.get(0);
                 if opt_offset.is_some() {
-                    let v = opt_offset.unwrap();
-                    ca.0.apply_mut(|date| adder(&v, date))
+                    let offset = opt_offset.unwrap();
+                    ca.0.apply_mut(|date| adder(&offset, date))
                 }
                 ca.into_series()
             } else {
