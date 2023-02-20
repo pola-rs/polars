@@ -93,38 +93,10 @@ def test_all_any_horizontally() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_cut() -> None:
-    a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-    out = pl.cut(a, bins=[-1, 1])
-
-    assert out.shape == (12, 3)
-    assert out.filter(pl.col("break_point") < 1e9).to_dict(False) == {
-        "a": [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0],
-        "break_point": [-1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0],
-        "category": [
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-        ],
-    }
-
-    # test cut on integers #4939
-    inf = float("inf")
-    df = pl.DataFrame({"a": list(range(5))})
-    ser = df.select("a").to_series()
-    assert pl.cut(ser, bins=[-1, 1]).rows() == [
-        (0.0, 1.0, "(-1.0, 1.0]"),
-        (1.0, 1.0, "(-1.0, 1.0]"),
-        (2.0, inf, "(1.0, inf]"),
-        (3.0, inf, "(1.0, inf]"),
-        (4.0, inf, "(1.0, inf]"),
-    ]
+def test_cut_deprecated() -> None:
+    with pytest.deprecated_call():
+        a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
+        pl.cut(a, bins=[-1, 1])
 
 
 def test_null_handling_correlation() -> None:
