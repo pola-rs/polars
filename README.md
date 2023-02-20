@@ -130,7 +130,7 @@ Install the latest polars version with:
 pip install polars
 ```
 
-We also have a conda package (`conda install polars`), however pip is the preferred way to install Polars.
+We also have a conda package (`conda install -c conda-forge polars`), however pip is the preferred way to install Polars.
 
 Install Polars with all optional dependencies.
 
