@@ -5123,15 +5123,16 @@ class DataFrame:
             self.lazy().explode(columns).collect(no_optimization=True)._df
         )
 
+    @deprecated_alias(aggregate_fn="aggregate_function")
     @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "values", "index", "columns", "aggregate_fn"]
+        allowed_args=["self", "values", "index", "columns", "aggregate_function"]
     )
     def pivot(
         self,
         values: Sequence[str] | str,
         index: Sequence[str] | str,
         columns: Sequence[str] | str,
-        aggregate_fn: PivotAgg | pli.Expr = "first",
+        aggregate_function: PivotAgg | pli.Expr = "first",
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
@@ -5149,7 +5150,7 @@ class DataFrame:
         columns
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
-        aggregate_fn : {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
+        aggregate_function : {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
             A predefined aggregate function str or an expression.
         maintain_order
             Sort the grouped keys so that the output order is predictable.
@@ -5182,7 +5183,7 @@ class DataFrame:
         │ two ┆ 4   ┆ 5   ┆ 6   │
         └─────┴─────┴─────┴─────┘
 
-        """
+        """  # noqa: W505
         if isinstance(values, str):
             values = [values]
         if isinstance(index, str):
@@ -5190,26 +5191,26 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(aggregate_fn, str):
-            if aggregate_fn == "first":
-                aggregate_fn = pli.element().first()
-            elif aggregate_fn == "sum":
-                aggregate_fn = pli.element().sum()
-            elif aggregate_fn == "max":
-                aggregate_fn = pli.element().max()
-            elif aggregate_fn == "min":
-                aggregate_fn = pli.element().min()
-            elif aggregate_fn == "mean":
-                aggregate_fn = pli.element().mean()
-            elif aggregate_fn == "median":
-                aggregate_fn = pli.element().median()
-            elif aggregate_fn == "last":
-                aggregate_fn = pli.element().last()
-            elif aggregate_fn == "count":
-                aggregate_fn = pli.count()
+        if isinstance(aggregate_function, str):
+            if aggregate_function == "first":
+                aggregate_function = pli.element().first()
+            elif aggregate_function == "sum":
+                aggregate_function = pli.element().sum()
+            elif aggregate_function == "max":
+                aggregate_function = pli.element().max()
+            elif aggregate_function == "min":
+                aggregate_function = pli.element().min()
+            elif aggregate_function == "mean":
+                aggregate_function = pli.element().mean()
+            elif aggregate_function == "median":
+                aggregate_function = pli.element().median()
+            elif aggregate_function == "last":
+                aggregate_function = pli.element().last()
+            elif aggregate_function == "count":
+                aggregate_function = pli.count()
             else:
                 raise ValueError(
-                    f"Argument aggregate fn: '{aggregate_fn}' " f"was not expected."
+                    f"Invalid input for `aggregate_function` argument: {aggregate_function!r}"
                 )
 
         return self._from_pydf(
@@ -5217,7 +5218,7 @@ class DataFrame:
                 values,
                 index,
                 columns,
-                aggregate_fn._pyexpr,
+                aggregate_function._pyexpr,
                 maintain_order,
                 sort_columns,
                 separator,
