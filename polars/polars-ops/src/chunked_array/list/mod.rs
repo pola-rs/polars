@@ -4,6 +4,7 @@ mod count;
 #[cfg(feature = "hash")]
 pub(crate) mod hash;
 mod namespace;
+mod sum;
 #[cfg(feature = "list_to_struct")]
 mod to_struct;
 
