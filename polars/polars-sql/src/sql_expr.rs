@@ -9,7 +9,7 @@ use sqlparser::ast::{
 use crate::context::TABLES;
 use crate::functions::SqlFunctionVisitor;
 
-fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
+pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
         SQLDataType::Char(_)
         | SQLDataType::Varchar(_)

@@ -162,6 +162,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
         })
     }
 }
+
 impl SqlFunctionVisitor<'_> {
     pub(crate) fn visit_function(&self) -> PolarsResult<Expr> {
         let function = self.0;
@@ -335,7 +336,7 @@ fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {
         .collect()
 }
 
-trait FromSqlExpr {
+pub(crate) trait FromSqlExpr {
     fn from_sql_expr(expr: &SqlExpr) -> Result<Self, PolarsError>
     where
         Self: Sized;

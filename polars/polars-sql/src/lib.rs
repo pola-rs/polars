@@ -1,6 +1,7 @@
 mod context;
 mod functions;
 mod sql_expr;
+mod table_functions;
 pub use context::SQLContext;
 
 #[cfg(test)]
@@ -441,5 +442,71 @@ mod test {
             .collect()
             .unwrap();
         assert!(df_sql.frame_equal(&df_pl));
+    }
+
+    #[test]
+    fn create_table() {
+        let df = create_sample_df().unwrap();
+        let mut context = SQLContext::try_new().unwrap();
+        context.register("df", df.clone().lazy());
+        let sql = r#"
+            CREATE TABLE df2 AS
+            SELECT a
+            FROM df"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let create_tbl_res = df! {
+            "Response" => ["Create Table"]
+        }
+        .unwrap();
+        assert!(df_sql.frame_equal(&create_tbl_res));
+        let df_2 = context
+            .execute(r#"SELECT a FROM df2"#)
+            .unwrap()
+            .collect()
+            .unwrap();
+        let expected = df.lazy().select(&[col("a")]).collect().unwrap();
+
+        println!("{df_sql}");
+        assert!(df_2.frame_equal(&expected));
+    }
+
+    #[test]
+    #[cfg(feature = "csv")]
+    fn read_csv_tbl_func() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            CREATE TABLE foods1 AS
+            SELECT *
+            FROM read_csv('../../examples/datasets/foods1.csv', sep=>',')"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let create_tbl_res = df! {
+            "Response" => ["Create Table"]
+        }
+        .unwrap();
+        assert!(df_sql.frame_equal(&create_tbl_res));
+        let df_2 = context
+            .execute(r#"SELECT * FROM foods1"#)
+            .unwrap()
+            .collect()
+            .unwrap();
+        assert_eq!(df_2.height(), 27);
+        assert_eq!(df_2.width(), 4);
+    }
+    #[test]
+    #[cfg(feature = "csv")]
+    fn read_csv_tbl_func_inline() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            SELECT foods1.category
+            FROM read_csv('../../examples/datasets/foods1.csv') as foods1"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+        let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
+            .finish()
+            .unwrap()
+            .select(&[col("category")])
+            .collect()
+            .unwrap();
+        assert!(df_sql.frame_equal(&expected));
     }
 }
