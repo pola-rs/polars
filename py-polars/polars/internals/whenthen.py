@@ -27,13 +27,7 @@ class WhenThenThen:
 
     def then(
         self,
-        expr: (
-            PolarsExprType
-            | PythonLiteral
-            | pli.Series
-            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
-            | None
-        ),
+        expr: (PolarsExprType | PythonLiteral | pli.Series | None),
     ) -> WhenThenThen:
         """
         Values to return in case of the predicate being `True`.
@@ -49,13 +43,7 @@ class WhenThenThen:
 
     def otherwise(
         self,
-        expr: (
-            PolarsExprType
-            | PythonLiteral
-            | pli.Series
-            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
-            | None
-        ),
+        expr: (PolarsExprType | PythonLiteral | pli.Series | None),
     ) -> pli.Expr:
         """
         Values to return in case of the predicate being `False`.
