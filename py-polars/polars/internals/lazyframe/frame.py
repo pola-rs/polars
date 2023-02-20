@@ -906,7 +906,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
 
         by = pli.selection_to_pyexpr_list(by)
-        by.extend(pli.selection_to_pyexpr_list(more_by))
+        if more_by:
+            by.extend(pli.selection_to_pyexpr_list(more_by))
 
         # TODO: Do this check on the Rust side
         if nulls_last and len(by) > 1:
@@ -1673,13 +1674,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
-        exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
-        exprs.extend(
-            pli.expr_to_lit_or_expr(
-                expr, structify=structify, name=name, str_to_lit=False
-            )._pyexpr
-            for name, expr in named_exprs.items()
-        )
+        if more_exprs:
+            exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
+        if named_exprs:
+            exprs.extend(
+                pli.expr_to_lit_or_expr(
+                    expr, structify=structify, name=name, str_to_lit=False
+                )._pyexpr
+                for name, expr in named_exprs.items()
+            )
+
         return self._from_pyldf(self._ldf.select(exprs))
 
     def groupby(
@@ -1775,7 +1779,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         exprs = selection_to_pyexpr_list(by)
-        exprs.extend(selection_to_pyexpr_list(more_by))
+        if more_by:
+            exprs.extend(selection_to_pyexpr_list(more_by))
         lgb = self._ldf.groupby(exprs, maintain_order)
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
@@ -2681,10 +2686,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
-
         if more_exprs:
             exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
-
         if named_exprs:
             exprs.extend(
                 pli.expr_to_lit_or_expr(

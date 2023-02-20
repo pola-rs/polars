@@ -2062,7 +2062,8 @@ class Expr:
         if isinstance(reverse, bool):
             reverse = [reverse]
         by = selection_to_pyexpr_list(by)
-        by.extend(pli.selection_to_pyexpr_list(more_by))
+        if more_by:
+            by.extend(pli.selection_to_pyexpr_list(more_by))
         return self._from_pyexpr(self._pyexpr.sort_by(by, reverse))
 
     def take(
@@ -2866,7 +2867,8 @@ class Expr:
 
         """
         exprs = selection_to_pyexpr_list(expr)
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+        if more_exprs:
+            exprs.extend(selection_to_pyexpr_list(more_exprs))
         return self._from_pyexpr(self._pyexpr.over(exprs))
 
     def is_unique(self) -> Self:
