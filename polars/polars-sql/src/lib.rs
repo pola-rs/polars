@@ -477,7 +477,7 @@ mod test {
         let sql = r#"
             CREATE TABLE foods1 AS
             SELECT *
-            FROM read_csv('../../examples/datasets/foods1.csv', sep=>',')"#;
+            FROM read_csv('../../examples/datasets/foods1.csv')"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
         let create_tbl_res = df! {
             "Response" => ["Create Table"]
