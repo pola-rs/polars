@@ -258,7 +258,6 @@ impl SqlExprVisitor {
             (Some(TrimWhereField::Trailing), None) => expr.str().rstrip(None),
             (Some(TrimWhereField::Trailing), Some(val)) => expr.str().rstrip(Some(val)),
         })
-        // todo!()
     }
 
     fn err(&self, expr: &Expr) -> PolarsResult<Expr> {
