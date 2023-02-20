@@ -309,7 +309,7 @@ pub enum Expr {
     SortBy {
         expr: Box<Expr>,
         by: Vec<Expr>,
-        reverse: Vec<bool>,
+        descending: Vec<bool>,
     },
     Agg(AggExpr),
     /// A ternary operation

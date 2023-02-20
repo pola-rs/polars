@@ -237,11 +237,11 @@ impl PyExpr {
             .into()
     }
 
-    pub fn arg_sort(&self, reverse: bool, nulls_last: bool) -> PyExpr {
+    pub fn arg_sort(&self, descending: bool, nulls_last: bool) -> PyExpr {
         self.clone()
             .inner
             .arg_sort(SortOptions {
-                descending: reverse,
+                descending,
                 nulls_last,
                 multithreaded: true,
             })
@@ -249,8 +249,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    pub fn top_k(&self, k: usize, reverse: bool) -> PyExpr {
-        self.inner.clone().top_k(k, reverse).into()
+    pub fn top_k(&self, k: usize, descending: bool) -> PyExpr {
+        self.inner.clone().top_k(k, descending).into()
     }
 
     pub fn arg_max(&self) -> PyExpr {
@@ -271,9 +271,9 @@ impl PyExpr {
         self.clone().inner.take(idx.inner).into()
     }
 
-    pub fn sort_by(&self, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyExpr {
+    pub fn sort_by(&self, by: Vec<PyExpr>, descending: Vec<bool>) -> PyExpr {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        self.clone().inner.sort_by(by, reverse).into()
+        self.clone().inner.sort_by(by, descending).into()
     }
 
     pub fn backward_fill(&self, limit: FillNullLimit) -> PyExpr {
@@ -1507,12 +1507,12 @@ impl PyExpr {
         self.inner.clone().arr().mean().with_fmt("arr.mean").into()
     }
 
-    fn lst_sort(&self, reverse: bool) -> Self {
+    fn lst_sort(&self, descending: bool) -> Self {
         self.inner
             .clone()
             .arr()
             .sort(SortOptions {
-                descending: reverse,
+                descending,
                 ..Default::default()
             })
             .with_fmt("arr.sort")
@@ -1618,10 +1618,10 @@ impl PyExpr {
             .into())
     }
 
-    fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> Self {
+    fn rank(&self, method: Wrap<RankMethod>, descending: bool) -> Self {
         let options = RankOptions {
             method: method.0,
-            descending: reverse,
+            descending,
         };
         self.inner.clone().rank(options).into()
     }
@@ -1798,8 +1798,8 @@ impl PyExpr {
     pub fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
     }
-    pub fn set_sorted_flag(&self, reverse: bool) -> Self {
-        let is_sorted = if reverse {
+    pub fn set_sorted_flag(&self, descending: bool) -> Self {
+        let is_sorted = if descending {
             IsSorted::Descending
         } else {
             IsSorted::Ascending

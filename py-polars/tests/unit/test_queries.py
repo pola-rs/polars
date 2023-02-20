@@ -145,13 +145,15 @@ def test_sorted_groupby_optimization(monkeypatch: Any) -> None:
 
     # the sorted optimization should not randomize the
     # groups, so this is tests that we hit the sorted optimization
-    for reverse in [True, False]:
+    for descending in [True, False]:
         sorted_implicit = (
-            df.with_columns(pl.col("a").sort(reverse=reverse))
+            df.with_columns(pl.col("a").sort(descending=descending))
             .groupby("a")
             .agg(pl.count())
         )
-        sorted_explicit = df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
+        sorted_explicit = (
+            df.groupby("a").agg(pl.count()).sort("a", descending=descending)
+        )
         assert_frame_equal(sorted_explicit, sorted_implicit)
 
 

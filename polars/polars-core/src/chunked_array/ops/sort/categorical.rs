@@ -12,12 +12,12 @@ fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
 }
 
 /// Default sorting nulls
-pub fn order_default_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+pub fn order_ascending_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     sort_with_nulls(a, b)
 }
 
 /// Default sorting nulls
-pub fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+pub fn order_descending_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     sort_with_nulls(b, a)
 }
 
@@ -60,8 +60,8 @@ impl CategoricalChunked {
                     arg_sort_branch(
                         vals.as_mut_slice(),
                         options.descending,
-                        |(_, a), (_, b)| order_default_null(a, b),
-                        |(_, a), (_, b)| order_reverse_null(a, b),
+                        |(_, a), (_, b)| order_ascending_null(a, b),
+                        |(_, a), (_, b)| order_descending_null(a, b),
                         options.multithreaded,
                     );
                     let cats: NoNull<UInt32Chunked> =
@@ -94,10 +94,10 @@ impl CategoricalChunked {
 
     /// Returned a sorted `ChunkedArray`.
     #[must_use]
-    pub fn sort(&self, reverse: bool) -> CategoricalChunked {
+    pub fn sort(&self, descending: bool) -> CategoricalChunked {
         self.sort_with(SortOptions {
             nulls_last: false,
-            descending: reverse,
+            descending,
             multithreaded: true,
         })
     }
@@ -123,10 +123,10 @@ impl CategoricalChunked {
     pub(crate) fn arg_sort_multiple(
         &self,
         other: &[Series],
-        reverse: &[bool],
+        descending: &[bool],
     ) -> PolarsResult<IdxCa> {
         if self.use_lexical_sort() {
-            args_validate(self.logical(), other, reverse)?;
+            args_validate(self.logical(), other, descending)?;
             let mut count: IdxSize = 0;
             let vals: Vec<_> = self
                 .iter_str()
@@ -137,9 +137,9 @@ impl CategoricalChunked {
                 })
                 .collect_trusted();
 
-            arg_sort_multiple_impl(vals, other, reverse)
+            arg_sort_multiple_impl(vals, other, descending)
         } else {
-            self.logical().arg_sort_multiple(other, reverse)
+            self.logical().arg_sort_multiple(other, descending)
         }
     }
 }

@@ -102,7 +102,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "top_k")]
     TopK {
         k: usize,
-        reverse: bool,
+        descending: bool,
     },
     Shift(i64),
     Reverse,
@@ -361,8 +361,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 }
             }
             #[cfg(feature = "top_k")]
-            TopK { k, reverse } => {
-                map!(top_k, k, reverse)
+            TopK { k, descending } => {
+                map!(top_k, k, descending)
             }
             Shift(periods) => map!(dispatch::shift, periods),
             Reverse => map!(dispatch::reverse),

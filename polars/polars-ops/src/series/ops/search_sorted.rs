@@ -100,7 +100,7 @@ fn binary_search_array<G, I>(
     arr: G,
     len: usize,
     search_value: I,
-    reverse: bool,
+    descending: bool,
 ) where
     G: GetArray<I>,
     I: PartialEq + Debug + Copy + PartialOrd + IsFloat,
@@ -118,7 +118,7 @@ fn binary_search_array<G, I>(
         let cmp = match unsafe { arr._get_value_unchecked(mid as usize) } {
             None => Ordering::Less,
             Some(value) => {
-                if reverse {
+                if descending {
                     compare_fn_nan_max(&search_value, &value)
                 } else {
                     compare_fn_nan_max(&value, &search_value)
@@ -149,7 +149,7 @@ fn search_sorted_ca_array<T>(
     ca: &ChunkedArray<T>,
     search_values: &ChunkedArray<T>,
     side: SearchSortedSide,
-    reverse: bool,
+    descending: bool,
 ) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
@@ -162,15 +162,20 @@ where
     for search_arr in search_values.downcast_iter() {
         if search_arr.null_count() == 0 {
             for search_value in search_arr.values_iter() {
-                binary_search_array(side, &mut out, arr, ca.len(), *search_value, reverse)
+                binary_search_array(side, &mut out, arr, ca.len(), *search_value, descending)
             }
         } else {
             for opt_v in search_arr.into_iter() {
                 match opt_v {
                     None => out.push(0),
-                    Some(search_value) => {
-                        binary_search_array(side, &mut out, arr, ca.len(), *search_value, reverse)
-                    }
+                    Some(search_value) => binary_search_array(
+                        side,
+                        &mut out,
+                        arr,
+                        ca.len(),
+                        *search_value,
+                        descending,
+                    ),
                 }
             }
         }
@@ -182,7 +187,7 @@ fn search_sorted_utf8_array(
     ca: &Utf8Chunked,
     search_values: &Utf8Chunked,
     side: SearchSortedSide,
-    reverse: bool,
+    descending: bool,
 ) -> Vec<IdxSize> {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
@@ -192,14 +197,14 @@ fn search_sorted_utf8_array(
     for search_arr in search_values.downcast_iter() {
         if search_arr.null_count() == 0 {
             for search_value in search_arr.values_iter() {
-                binary_search_array(side, &mut out, arr, ca.len(), search_value, reverse)
+                binary_search_array(side, &mut out, arr, ca.len(), search_value, descending)
             }
         } else {
             for opt_v in search_arr.into_iter() {
                 match opt_v {
                     None => out.push(0),
                     Some(search_value) => {
-                        binary_search_array(side, &mut out, arr, ca.len(), search_value, reverse)
+                        binary_search_array(side, &mut out, arr, ca.len(), search_value, descending)
                     }
                 }
             }
@@ -212,7 +217,7 @@ pub fn search_sorted(
     s: &Series,
     search_values: &Series,
     side: SearchSortedSide,
-    reverse: bool,
+    descending: bool,
 ) -> PolarsResult<IdxCa> {
     let original_dtype = s.dtype();
     let s = s.to_physical_repr();
@@ -222,7 +227,7 @@ pub fn search_sorted(
         DataType::Utf8 => {
             let ca = s.utf8().unwrap();
             let search_values = search_values.utf8()?;
-            let idx = search_sorted_utf8_array(ca, search_values, side, reverse);
+            let idx = search_sorted_utf8_array(ca, search_values, side, descending);
 
             Ok(IdxCa::new_vec(s.name(), idx))
         }
@@ -233,7 +238,7 @@ pub fn search_sorted(
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let search_values: &ChunkedArray<$T> = search_values.as_ref().as_ref().as_ref();
 
-                search_sorted_ca_array(ca, search_values, side, reverse)
+                search_sorted_ca_array(ca, search_values, side, descending)
             });
             Ok(IdxCa::new_vec(s.name(), idx))
         }

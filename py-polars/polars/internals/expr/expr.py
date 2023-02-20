@@ -1694,8 +1694,9 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
 
+    @deprecated_alias(reverse="descending")
     @deprecate_nonkeyword_arguments()
-    def sort(self, reverse: bool = False, nulls_last: bool = False) -> Self:
+    def sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Sort this column.
 
@@ -1704,7 +1705,7 @@ class Expr:
 
         Parameters
         ----------
-        reverse
+        descending
             Sort in descending order.
         nulls_last
             Place null values last.
@@ -1728,7 +1729,7 @@ class Expr:
         │ 2    │
         │ 3    │
         └──────┘
-        >>> df.select(pl.col("a").sort(reverse=True))
+        >>> df.select(pl.col("a").sort(descending=True))
         shape: (4, 1)
         ┌──────┐
         │ a    │
@@ -1774,13 +1775,14 @@ class Expr:
         └───────┴────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.sort_with(reverse, nulls_last))
+        return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(self, k: int = 5, reverse: bool = False) -> Self:
+    @deprecated_alias(reverse="descending")
+    def top_k(self, k: int = 5, descending: bool = False) -> Self:
         r"""
         Return the `k` largest elements.
 
-        If 'reverse=True` the smallest elements will be given.
+        If 'descending=True` the smallest elements will be given.
 
         This has time complexity:
 
@@ -1790,7 +1792,7 @@ class Expr:
         ----------
         k
             Number of elements to return.
-        reverse
+        descending
             Return the smallest elements.
 
         Examples
@@ -1803,7 +1805,7 @@ class Expr:
         >>> df.select(
         ...     [
         ...         pl.col("value").top_k().alias("top_k"),
-        ...         pl.col("value").top_k(reverse=True).alias("bottom_k"),
+        ...         pl.col("value").top_k(descending=True).alias("bottom_k"),
         ...     ]
         ... )
         shape: (5, 2)
@@ -1820,17 +1822,18 @@ class Expr:
         └───────┴──────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.top_k(k, reverse))
+        return self._from_pyexpr(self._pyexpr.top_k(k, descending))
 
+    @deprecated_alias(reverse="descending")
     @deprecate_nonkeyword_arguments()
-    def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Self:
+    def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Get the index values that would sort this column.
 
         Parameters
         ----------
-        reverse
-            Sort in reverse (descending) order.
+        descending
+            Sort in descending (descending) order.
         nulls_last
             Place null values last instead of first.
 
@@ -1859,7 +1862,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.arg_sort(reverse, nulls_last))
+        return self._from_pyexpr(self._pyexpr.arg_sort(descending, nulls_last))
 
     def arg_max(self) -> Self:
         """
@@ -1953,11 +1956,12 @@ class Expr:
         element = expr_to_lit_or_expr(element, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
 
+    @deprecated_alias(reverse="descending")
     def sort_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
-        reverse: bool | Sequence[bool] = False,
+        descending: bool | Sequence[bool] = False,
     ) -> Self:
         """
         Sort this column by the ordering of other columns.
@@ -1972,7 +1976,7 @@ class Expr:
             names.
         *more_by
             Additional columns to sort by, specified as positional arguments.
-        reverse
+        descending
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
 
@@ -2017,7 +2021,7 @@ class Expr:
 
         Sort by multiple columns by passing a list of columns.
 
-        >>> df.select(pl.col("group").sort_by(["value1", "value2"], reverse=True))
+        >>> df.select(pl.col("group").sort_by(["value1", "value2"], descending=True))
         shape: (4, 1)
         ┌───────┐
         │ group │
@@ -2061,12 +2065,12 @@ class Expr:
         └───────┴───────────┘
 
         """
-        if isinstance(reverse, bool):
-            reverse = [reverse]
+        if isinstance(descending, bool):
+            descending = [descending]
         by = selection_to_pyexpr_list(by)
         if more_by:
             by.extend(pli.selection_to_pyexpr_list(more_by))
-        return self._from_pyexpr(self._pyexpr.sort_by(by, reverse))
+        return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def take(
         self, indices: int | list[int] | Expr | pli.Series | np.ndarray[Any, Any]
@@ -4666,7 +4670,8 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.abs())
 
-    def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Self:
+    @deprecated_alias(reverse="descending")
+    def argsort(self, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Get the index values that would sort this column.
 
@@ -4677,8 +4682,8 @@ class Expr:
 
         Parameters
         ----------
-        reverse
-            Sort in reverse (descending) order.
+        descending
+            Sort in descending order.
         nulls_last
             Place null values last instead of first.
 
@@ -4712,9 +4717,10 @@ class Expr:
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.arg_sort(reverse, nulls_last)
+        return self.arg_sort(descending, nulls_last)
 
-    def rank(self, method: RankMethod = "average", reverse: bool = False) -> Self:
+    @deprecated_alias(reverse="descending")
+    def rank(self, method: RankMethod = "average", descending: bool = False) -> Self:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -4738,8 +4744,8 @@ class Expr:
               the order that the values occur in the Series.
             - 'random' : Like 'ordinal', but the rank for ties is not dependent
               on the order that the values occur in the Series.
-        reverse
-            Reverse the operation.
+        descending
+            Rank in descending order.
 
         Examples
         --------
@@ -4778,7 +4784,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.rank(method, reverse))
+        return self._from_pyexpr(self._pyexpr.rank(method, descending))
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Self:
         """
@@ -6054,7 +6060,8 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
-    def set_sorted(self, reverse: bool = False) -> Self:
+    @deprecated_alias(reverse="descending")
+    def set_sorted(self, descending: bool = False) -> Self:
         """
         Flags the expression as 'sorted'.
 
@@ -6062,8 +6069,8 @@ class Expr:
 
         Parameters
         ----------
-        reverse
-            If the `Series` order is reversed, e.g. descending.
+        descending
+            Whether the `Series` order is descending.
 
         Warnings
         --------
@@ -6084,7 +6091,7 @@ class Expr:
         └────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.set_sorted_flag(reverse))
+        return self._from_pyexpr(self._pyexpr.set_sorted_flag(descending))
 
     # Keep the `list` and `str` methods below at the end of the definition of Expr,
     # as to not confuse mypy with the type annotation `str` and `list`

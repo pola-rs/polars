@@ -13,7 +13,7 @@ use crate::prelude::*;
 pub struct SortByExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) by: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) reverse: Vec<bool>,
+    pub(crate) descending: Vec<bool>,
     pub(crate) expr: Expr,
 }
 
@@ -21,26 +21,26 @@ impl SortByExpr {
     pub fn new(
         input: Arc<dyn PhysicalExpr>,
         by: Vec<Arc<dyn PhysicalExpr>>,
-        reverse: Vec<bool>,
+        descending: Vec<bool>,
         expr: Expr,
     ) -> Self {
         Self {
             input,
             by,
-            reverse,
+            descending,
             expr,
         }
     }
 }
 
-fn prepare_reverse(reverse: &[bool], by_len: usize) -> Vec<bool> {
-    match (reverse.len(), by_len) {
+fn prepare_descending(descending: &[bool], by_len: usize) -> Vec<bool> {
+    match (descending.len(), by_len) {
         // equal length
-        (n_reverse, n) if n_reverse == n => reverse.to_vec(),
+        (n_rdescending, n) if n_rdescending == n => descending.to_vec(),
         // none given all false
         (0, n) => vec![false; n],
         // broadcast first
-        (_, n) => vec![reverse[0]; n],
+        (_, n) => vec![descending[0]; n],
     }
 }
 
@@ -50,13 +50,13 @@ impl PhysicalExpr for SortByExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series_f = || self.input.evaluate(df, state);
-        let reverse = prepare_reverse(&self.reverse, self.by.len());
+        let descending = prepare_descending(&self.descending, self.by.len());
 
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
                 Ok(s_sort_by.arg_sort(SortOptions {
-                    descending: reverse[0],
+                    descending: descending[0],
                     ..Default::default()
                 }))
             };
@@ -69,7 +69,7 @@ impl PhysicalExpr for SortByExpr {
                     .map(|e| e.evaluate(df, state))
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &reverse)
+                s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &descending)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
@@ -114,7 +114,7 @@ impl PhysicalExpr for SortByExpr {
             let s = ac_in.aggregated();
             let mut s = s.list().unwrap().clone();
 
-            let descending = self.reverse[0];
+            let descending = self.descending[0];
             let mut ca: ListChunked = s
                 .par_iter_indexed()
                 .zip(sort_by.par_iter_indexed())
@@ -139,7 +139,7 @@ impl PhysicalExpr for SortByExpr {
             ac_in.with_series(s, true, Some(&self.expr))?;
             Ok(ac_in)
         } else {
-            let reverse = prepare_reverse(&self.reverse, self.by.len());
+            let descending = prepare_descending(&self.descending, self.by.len());
 
             let (groups, ordered_by_group_operation) = if self.by.len() == 1 {
                 let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
@@ -169,7 +169,7 @@ impl PhysicalExpr for SortByExpr {
                                 };
 
                                 let sorted_idx = group.arg_sort(SortOptions {
-                                    descending: reverse[0],
+                                    descending: descending[0],
                                     ..Default::default()
                                 });
                                 map_sorted_indices_to_group_idx(&sorted_idx, idx)
@@ -177,7 +177,7 @@ impl PhysicalExpr for SortByExpr {
                             GroupsIndicator::Slice([first, len]) => {
                                 let group = sort_by_s.slice(first as i64, len as usize);
                                 let sorted_idx = group.arg_sort(SortOptions {
-                                    descending: reverse[0],
+                                    descending: descending[0],
                                     ..Default::default()
                                 });
                                 map_sorted_indices_to_group_slice(&sorted_idx, first)
@@ -228,8 +228,9 @@ impl PhysicalExpr for SortByExpr {
                                     })
                                     .collect::<Vec<_>>();
 
-                                let sorted_idx =
-                                    groups[0].arg_sort_multiple(&groups[1..], &reverse).unwrap();
+                                let sorted_idx = groups[0]
+                                    .arg_sort_multiple(&groups[1..], &descending)
+                                    .unwrap();
                                 map_sorted_indices_to_group_idx(&sorted_idx, idx)
                             }
                             GroupsIndicator::Slice([first, len]) => {
@@ -237,8 +238,9 @@ impl PhysicalExpr for SortByExpr {
                                     .iter()
                                     .map(|s| s.slice(first as i64, len as usize))
                                     .collect::<Vec<_>>();
-                                let sorted_idx =
-                                    groups[0].arg_sort_multiple(&groups[1..], &reverse).unwrap();
+                                let sorted_idx = groups[0]
+                                    .arg_sort_multiple(&groups[1..], &descending)
+                                    .unwrap();
                                 map_sorted_indices_to_group_slice(&sorted_idx, first)
                             }
                         };

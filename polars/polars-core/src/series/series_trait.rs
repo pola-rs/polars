@@ -178,7 +178,7 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
         #[cfg(feature = "sort_multiple")]
-        fn arg_sort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> PolarsResult<IdxCa> {
+        fn arg_sort_multiple(&self, _by: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
             Err(PolarsError::InvalidOperation(
                 "arg_sort_multiple is not implemented for this Series".into(),
             ))

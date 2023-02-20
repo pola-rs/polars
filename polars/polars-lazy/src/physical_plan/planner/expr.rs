@@ -114,13 +114,17 @@ pub(crate) fn create_physical_expr(
                 expr: node_to_expr(expression, expr_arena),
             }))
         }
-        SortBy { expr, by, reverse } => {
+        SortBy {
+            expr,
+            by,
+            descending,
+        } => {
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema)?;
             let phys_by = create_physical_expressions(&by, ctxt, expr_arena, schema)?;
             Ok(Arc::new(SortByExpr::new(
                 phys_expr,
                 phys_by,
-                reverse,
+                descending,
                 node_to_expr(expression, expr_arena),
             )))
         }

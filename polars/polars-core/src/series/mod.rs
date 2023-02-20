@@ -214,9 +214,9 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, reverse: bool) -> Self {
+    pub fn sort(&self, descending: bool) -> Self {
         self.sort_with(SortOptions {
-            descending: reverse,
+            descending,
             ..Default::default()
         })
     }

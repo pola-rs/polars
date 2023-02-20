@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
-from polars.utils import deprecate_nonkeyword_arguments
+from polars.utils import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
@@ -125,13 +125,14 @@ class ExprListNameSpace:
         return pli.wrap_expr(self._pyexpr.lst_mean())
 
     @deprecate_nonkeyword_arguments()
-    def sort(self, reverse: bool = False) -> pli.Expr:
+    @deprecated_alias(reverse="descending")
+    def sort(self, descending: bool = False) -> pli.Expr:
         """
         Sort the arrays in this column.
 
         Parameters
         ----------
-        reverse
+        descending
             Sort in descending order.
 
         Examples
@@ -163,7 +164,7 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_sort(reverse))
+        return pli.wrap_expr(self._pyexpr.lst_sort(descending))
 
     def reverse(self) -> pli.Expr:
         """

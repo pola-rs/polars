@@ -199,7 +199,7 @@ where
 
             let sort_sink = SortSink::new(
                 index,
-                args.reverse[0],
+                args.descending[0],
                 input_schema.into_owned(),
                 args.slice,
             );

@@ -610,10 +610,14 @@ impl OptimizationRule for SimplifyExprRule {
                             options,
                         })
                     }
-                    AExpr::SortBy { expr, by, reverse } => Some(AExpr::SortBy {
+                    AExpr::SortBy {
+                        expr,
+                        by,
+                        descending,
+                    } => Some(AExpr::SortBy {
                         expr: *expr,
                         by: by.clone(),
-                        reverse: reverse.iter().map(|r| !*r).collect(),
+                        descending: descending.iter().map(|r| !*r).collect(),
                     }),
                     // TODO: add support for cumsum and other operation that allow reversing.
                     _ => None,

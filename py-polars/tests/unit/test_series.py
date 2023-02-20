@@ -505,7 +505,7 @@ def test_to_python() -> None:
 def test_sort() -> None:
     a = pl.Series("a", [2, 1, 3])
     assert_series_equal(a.sort(), pl.Series("a", [1, 2, 3]))
-    assert_series_equal(a.sort(reverse=True), pl.Series("a", [3, 2, 1]))
+    assert_series_equal(a.sort(descending=True), pl.Series("a", [3, 2, 1]))
 
 
 def test_rechunk() -> None:
@@ -1188,7 +1188,7 @@ def test_rank() -> None:
     assert df.select(pl.col("a").rank("dense"))["a"].to_list() == [2, 3, 4, 3, 3, 4, 1]
 
     assert_series_equal(
-        s.rank("dense", reverse=True),
+        s.rank("dense", descending=True),
         pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=UInt32),
     )
 
@@ -1628,8 +1628,8 @@ def test_arg_sort() -> None:
 
     assert_series_equal(s.arg_sort(), expected)
 
-    expected_reverse = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    assert_series_equal(s.arg_sort(reverse=True), expected_reverse)
+    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
+    assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
 def test_arg_min_and_arg_max() -> None:
@@ -1660,7 +1660,7 @@ def test_arg_min_and_arg_max() -> None:
     assert s.arg_min() == 0
     assert s.arg_max() == 4
     s = pl.Series("a", [5, 4, 3, 2, 1])
-    s.sort(reverse=True, in_place=True)  # set descing sorted flag
+    s.sort(descending=True, in_place=True)  # set descing sorted flag
     assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
     assert s.arg_min() == 4
     assert s.arg_max() == 0

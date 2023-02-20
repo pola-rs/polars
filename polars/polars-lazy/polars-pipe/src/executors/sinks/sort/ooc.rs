@@ -22,7 +22,7 @@ pub(super) fn sort_ooc(
     io_thread: &IOThread,
     partitions: Series,
     idx: usize,
-    reverse: bool,
+    descending: bool,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<FinalizedSink> {
     let partitions = partitions.to_physical_repr().into_owned();
@@ -42,7 +42,7 @@ pub(super) fn sort_ooc(
                 let df = read_df(entry)?;
 
                 let sort_col = &df.get_columns()[idx];
-                let assigned_parts = det_partitions(sort_col, &partitions, reverse);
+                let assigned_parts = det_partitions(sort_col, &partitions, descending);
 
                 // partition the dataframe into proper buckets
                 let (iter, unique_assigned_parts) = partition_df(df, &assigned_parts)?;
@@ -71,14 +71,14 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, reverse, slice, partitions);
+    let source = SortSource::new(files, idx, descending, slice, partitions);
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 
-fn det_partitions(s: &Series, partitions: &Series, reverse: bool) -> IdxCa {
+fn det_partitions(s: &Series, partitions: &Series, descending: bool) -> IdxCa {
     let s = s.to_physical_repr();
 
-    search_sorted(partitions, &s, SearchSortedSide::Any, reverse).unwrap()
+    search_sorted(partitions, &s, SearchSortedSide::Any, descending).unwrap()
 }
 
 fn partition_df(df: DataFrame, partitions: &IdxCa) -> PolarsResult<(DfIter, IdxCa)> {

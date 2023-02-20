@@ -402,12 +402,12 @@ impl PyLazyFrame {
         ldf.into()
     }
 
-    pub fn sort(&self, by_column: &str, reverse: bool, nulls_last: bool) -> PyLazyFrame {
+    pub fn sort(&self, by_column: &str, descending: bool, nulls_last: bool) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.sort(
             by_column,
             SortOptions {
-                descending: reverse,
+                descending,
                 nulls_last,
                 multithreaded: true,
             },
@@ -418,12 +418,12 @@ impl PyLazyFrame {
     pub fn sort_by_exprs(
         &self,
         by: Vec<PyExpr>,
-        reverse: Vec<bool>,
+        descending: Vec<bool>,
         nulls_last: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let exprs = py_exprs_to_exprs(by);
-        ldf.sort_by_exprs(exprs, reverse, nulls_last).into()
+        ldf.sort_by_exprs(exprs, descending, nulls_last).into()
     }
 
     pub fn cache(&self) -> PyLazyFrame {
