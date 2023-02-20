@@ -13,7 +13,17 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
+use crate::prelude::list::sum::sum_list_numerical;
 use crate::series::ArgAgg;
+
+fn has_inner_nulls(ca: &ListChunked) -> bool {
+    for arr in ca.downcast_iter() {
+        if arr.values().null_count() > 0 {
+            return true;
+        }
+    }
+    false
+}
 
 fn cast_rhs(
     other: &mut [Series],
@@ -123,8 +133,6 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_sum(&self) -> Series {
-        let ca = self.as_list();
-
         fn inner(ca: &ListChunked) -> Series {
             ca.apply_amortized(|s| s.as_ref().sum_as_series())
                 .explode()
@@ -132,16 +140,17 @@ pub trait ListNameSpaceImpl: AsList {
                 .into_series()
         }
 
-        // fast implementation for booleans
-        if matches!(ca.inner_dtype(), DataType::Boolean) {
-            let ca = ca.rechunk();
-            if ca.chunks()[0].null_count() == 0 {
-                count_boolean_bits(&ca).into()
-            } else {
-                inner(&ca)
-            }
-        } else {
-            inner(ca)
+        let ca = self.as_list();
+
+        if has_inner_nulls(ca) {
+            return inner(ca);
+        };
+
+        use DataType::*;
+        match ca.inner_dtype() {
+            Boolean => count_boolean_bits(ca).into_series(),
+            dt if dt.is_numeric() => sum_list_numerical(ca, &dt),
+            _ => inner(ca),
         }
     }
 

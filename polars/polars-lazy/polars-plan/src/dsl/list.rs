@@ -62,18 +62,7 @@ impl ListNameSpace {
     /// Compute the sum the items in every sublist.
     pub fn sum(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_sum())),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.sum")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Sum))
     }
 
     /// Compute the mean of every sublist and return a `Series` of dtype `Float64`
