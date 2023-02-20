@@ -1078,7 +1078,6 @@ pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
         function: FunctionExpr::ArgWhere,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            fmt_str: "arg_where",
             ..Default::default()
         },
     }
