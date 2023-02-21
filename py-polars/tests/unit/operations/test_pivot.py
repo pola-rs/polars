@@ -44,7 +44,9 @@ def test_pivot_list() -> None:
             "3": [None, None, [3, 3]],
         }
     )
-    out = df.pivot("b", index="a", columns="a", aggregate_fn="first", sort_columns=True)
+    out = df.pivot(
+        "b", index="a", columns="a", aggregate_function="first", sort_columns=True
+    )
     assert_frame_equal(out, expected)
 
 
@@ -69,7 +71,7 @@ def test_pivot_aggregate(agg_fn: PivotAgg, expected_rows: list[tuple[Any]]) -> N
         }
     )
     result = df.pivot(
-        values="c", index="b", columns="a", aggregate_fn=agg_fn, sort_columns=True
+        values="c", index="b", columns="a", aggregate_function=agg_fn, sort_columns=True
     )
     assert result.rows() == expected_rows
 
@@ -98,12 +100,14 @@ def test_pivot_categorical_index() -> None:
         schema=[("A", pl.Categorical), ("B", pl.Categorical)],
     )
 
-    result = df.pivot(values="B", index=["A"], columns="B", aggregate_fn="count")
+    result = df.pivot(values="B", index=["A"], columns="B", aggregate_function="count")
     expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
     assert result.to_dict(False) == expected
 
     # test expression dispatch
-    result = df.pivot(values="B", index=["A"], columns="B", aggregate_fn=pl.count())
+    result = df.pivot(
+        values="B", index=["A"], columns="B", aggregate_function=pl.count()
+    )
     assert result.to_dict(False) == expected
 
     df = pl.DataFrame(
@@ -114,7 +118,9 @@ def test_pivot_categorical_index() -> None:
         },
         schema=[("A", pl.Categorical), ("B", pl.Categorical), ("C", pl.Categorical)],
     )
-    result = df.pivot(values="B", index=["A", "C"], columns="B", aggregate_fn="count")
+    result = df.pivot(
+        values="B", index=["A", "C"], columns="B", aggregate_function="count"
+    )
     expected = {
         "A": ["Fire", "Water"],
         "C": ["Paper", "Paper"],
@@ -184,7 +190,7 @@ def test_pivot_reinterpret_5907() -> None:
     )
 
     result = df.pivot(
-        index=["A"], values=["C"], columns=["B"], aggregate_fn=pl.element().sum()
+        index=["A"], values=["C"], columns=["B"], aggregate_function=pl.element().sum()
     )
     expected = {"A": [3, -2], "x": [100, 50], "y": [500, -80]}
     assert result.to_dict(False) == expected
@@ -195,7 +201,7 @@ def test_pivot_subclassed_df() -> None:
         pass
 
     df = SubClassedDataFrame({"a": [1, 2], "b": [3, 4]})
-    result = df.pivot(values="b", index="a", columns="a", aggregate_fn="first")
+    result = df.pivot(values="b", index="a", columns="a", aggregate_function="first")
     assert isinstance(result, SubClassedDataFrame)
 
 
