@@ -97,21 +97,33 @@ def test_str_to_uppercase() -> None:
 
 def test_str_parse_int() -> None:
     bin = pl.Series(["110", "101", "010"])
-    assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(pl.Int32))
+    assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(pl.Int64))
 
-    hex = pl.Series(["fa1e", "ff00", "cafe"])
+    hex = pl.Series(["fa1e", "ff00", "cafe", "invalid", None, "-aaffaaffaaffaa"])
     assert_series_equal(
-        hex.str.parse_int(16), pl.Series([64030, 65280, 51966]).cast(pl.Int32)
+        hex.str.parse_int(16),
+        pl.Series([64030, 65280, 51966, None, None, -48131855939731370]).cast(pl.Int64),
+        check_exact=True,
     )
 
 
 def test_str_parse_int_df() -> None:
-    df = pl.DataFrame({"bin": ["110", "101", "010"], "hex": ["fa1e", "ff00", "cafe"]})
+    df = pl.DataFrame(
+        {
+            "bin": ["110", "101", "010", "invalid", None, "-101"],
+            "hex": ["fa1e", "ff00", "cafe", "invalid", None, "-aaffaaffaaffaa"],
+        }
+    )
     out = df.with_columns(
         [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
     )
 
-    expected = pl.DataFrame({"bin": [6, 5, 2], "hex": [64030, 65280, 51966]})
+    expected = pl.DataFrame(
+        {
+            "bin": [6, 5, 2, None, None, -5],
+            "hex": [64030, 65280, 51966, None, None, -48131855939731370],
+        }
+    )
     assert out.frame_equal(expected)
 
 

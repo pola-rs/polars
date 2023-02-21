@@ -1258,7 +1258,7 @@ class ExprStringNameSpace:
         radix
             Positive integer which is the base of the string we are parsing.
             Default: 2
-        
+
         strict
             Bool, default False will conver parse errors/overflows to Null.
             If true parse errors/overflow will be raised at query time.
