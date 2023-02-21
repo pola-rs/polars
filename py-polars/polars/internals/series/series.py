@@ -1388,7 +1388,6 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    @deprecate_nonkeyword_arguments()
     def to_dummies(self, separator: str = "_") -> pli.DataFrame:
         """
         Get dummy/indicator variables.

@@ -655,6 +655,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             return self._ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
+    @deprecate_nonkeyword_arguments()
     def describe_optimized_plan(
         self,
         type_coercion: bool = True,
@@ -678,6 +679,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return ldf.describe_optimized_plan()
 
+    @deprecate_nonkeyword_arguments()
     def show_graph(
         self,
         optimized: bool = True,
@@ -921,6 +923,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             descending = [descending]
         return self._from_pyldf(self._ldf.sort_by_exprs(by, descending, nulls_last))
 
+    @deprecate_nonkeyword_arguments()
     def profile(
         self,
         type_coercion: bool = True,
@@ -3247,6 +3250,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return self.select(pli.col("*").take_every(n))
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "value", "strategy", "limit"])
     def fill_null(
         self,
         value: Any | None = None,
