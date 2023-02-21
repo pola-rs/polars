@@ -1640,10 +1640,7 @@ def corr(
         )
 
 
-def cov(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-) -> pli.Expr:
+def cov(a: str | pli.Expr, b: str | pli.Expr) -> pli.Expr:
     """
     Compute the covariance between two columns/ expressions.
 
