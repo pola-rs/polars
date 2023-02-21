@@ -1250,18 +1250,13 @@ class ExprStringNameSpace:
     def parse_int(self, radix: int = 2) -> pli.Expr:
         """
         Parse integers with base radix from strings.
-
-        By default base 2.
+        By default base 2. ParseError/Overflows become Nulls.
 
         Parameters
         ----------
         radix
             Positive integer which is the base of the string we are parsing.
-            Default: 2
-
-        strict
-            Bool, default False will conver parse errors/overflows to Null.
-            If true parse errors/overflow will be raised at query time.
+            Default: 2.
 
         Returns
         -------

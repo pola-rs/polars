@@ -950,8 +950,7 @@ class StringNameSpace:
     def parse_int(self, radix: int = 2) -> pli.Series:
         r"""
         Parse integers with base radix from strings.
-
-        By default base 2.
+        By default base 2. ParseError/Overflows become Nulls.
 
         Parameters
         ----------
@@ -961,14 +960,14 @@ class StringNameSpace:
 
         Returns
         -------
-        Column of parsed integers in i32 format
+        Series: Column of parsed integers in i64 format
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010"])
         >>> s.str.parse_int(2)
         shape: (3,)
-        Series: 'bin' [i32]
+        Series: 'bin' [i64]
         [
                 6
                 5
@@ -978,7 +977,7 @@ class StringNameSpace:
         >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe"])
         >>> s.str.parse_int(16)
         shape: (3,)
-        Series: 'hex' [i32]
+        Series: 'hex' [i64]
         [
                 64030
                 65280
