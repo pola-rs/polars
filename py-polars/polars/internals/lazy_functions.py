@@ -68,6 +68,7 @@ if TYPE_CHECKING:
         CorrelationMethod,
         EpochTimeUnit,
         CorrelationMethod,
+        EpochTimeUnit,
         IntoExpr,
         RollingInterpolationMethod,
         TimeUnit,
@@ -1402,6 +1403,7 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["a", "b", "ddof"])
 def spearman_rank_corr(
     a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
 ) -> pli.Expr:

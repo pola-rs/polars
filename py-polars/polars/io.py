@@ -25,7 +25,6 @@ from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 from polars.utils import (
     deprecate_nonkeyword_arguments,
-    deprecated_alias,
     handle_projection_columns,
     normalise_filepath,
 )
