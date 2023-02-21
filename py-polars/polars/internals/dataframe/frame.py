@@ -2090,6 +2090,7 @@ class DataFrame:
     ) -> None:
         ...
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "file"])
     def write_json(
         self,
         file: IOBase | str | Path | None = None,
@@ -2223,6 +2224,7 @@ class DataFrame:
     ) -> None:
         ...
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "file"])
     def write_csv(
         self,
         file: BytesIO | str | Path | None = None,
@@ -2537,6 +2539,7 @@ class DataFrame:
         sz = self._df.estimated_size()
         return scale_bytes(sz, unit)
 
+    @deprecate_nonkeyword_arguments()
     def transpose(
         self,
         include_header: bool = False,
@@ -2835,6 +2838,7 @@ class DataFrame:
     def glimpse(self, return_as_string: Literal[True]) -> str:
         ...
 
+    @deprecate_nonkeyword_arguments()
     def glimpse(self, return_as_string: bool = False) -> str | None:
         """
         Return a dense preview of the dataframe.
@@ -3151,6 +3155,7 @@ class DataFrame:
             ._df
         )
 
+    @deprecate_nonkeyword_arguments()
     def frame_equal(self, other: DataFrame, null_equal: bool = True) -> bool:
         """
         Check if DataFrame is equal to other.
@@ -4571,6 +4576,7 @@ class DataFrame:
         else:
             return self._from_pydf(pli.wrap_s(out).to_frame()._df)
 
+    @deprecate_nonkeyword_arguments()
     def hstack(
         self,
         columns: list[pli.Series] | DataFrame,
@@ -4617,6 +4623,7 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
+    @deprecate_nonkeyword_arguments()
     def vstack(self, df: DataFrame, in_place: bool = False) -> Self:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
@@ -4921,6 +4928,7 @@ class DataFrame:
         """
         return self[name]
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "value", "strategy", "limit"])
     def fill_null(
         self,
         value: Any | None = None,
@@ -5013,7 +5021,7 @@ class DataFrame:
         """
         return self._from_pydf(
             self.lazy()
-            .fill_null(value, strategy, limit, matches_supertype)
+            .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
             .collect(no_optimization=True)
             ._df
         )
@@ -6259,6 +6267,7 @@ class DataFrame:
     ) -> Self | pli.Series:
         ...
 
+    @deprecate_nonkeyword_arguments()
     def mean(
         self,
         axis: int = 0,
@@ -6707,6 +6716,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.null_count())
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"])
     def sample(
         self,
         n: int | None = None,
@@ -7000,6 +7010,7 @@ class DataFrame:
     def rows(self, named: Literal[True]) -> list[dict[str, Any]]:
         ...
 
+    @deprecate_nonkeyword_arguments()
     def rows(self, named: bool = False) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
         """
         Returns all data in the DataFrame as a list of rows of python-native values.
@@ -7063,6 +7074,7 @@ class DataFrame:
     ) -> Iterator[dict[str, Any]]:
         ...
 
+    @deprecate_nonkeyword_arguments()
     def iter_rows(
         self, named: bool = False, buffer_size: int = 500
     ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]]:
@@ -7199,6 +7211,7 @@ class DataFrame:
         for offset in range(0, self.height, n_rows):
             yield self.slice(offset, n_rows)
 
+    @deprecate_nonkeyword_arguments()
     def shrink_to_fit(self, in_place: bool = False) -> Self:
         """
         Shrink DataFrame memory usage.

@@ -9,7 +9,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
 from polars.internals import DataFrame, Series
-from polars.utils import deprecated_alias
+from polars.utils import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import Orientation
@@ -70,6 +70,7 @@ def from_dict(
     )
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["dicts"])
 def from_dicts(
     dicts: Sequence[dict[str, Any]],
     infer_schema_length: int | None = N_INFER_DEFAULT,
@@ -303,6 +304,7 @@ def from_numpy(
     )
 
 
+@deprecate_nonkeyword_arguments()
 def from_arrow(
     a: pa.Table | pa.Array | pa.ChunkedArray,
     rechunk: bool = True,
@@ -411,6 +413,7 @@ def from_pandas(
     ...
 
 
+@deprecate_nonkeyword_arguments()
 @deprecated_alias(nan_to_none="nan_to_null")
 def from_pandas(
     df: pd.DataFrame | pd.Series | pd.DatetimeIndex,
@@ -491,6 +494,7 @@ def from_pandas(
         raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")
 
 
+@deprecate_nonkeyword_arguments()
 def from_dataframe(df: Any, allow_copy: bool = True) -> DataFrame:
     """
     Build a Polars DataFrame from any dataframe supporting the interchange protocol.
