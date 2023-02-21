@@ -1,14 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 from types import TracebackType
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import toggle_string_cache as _toggle_string_cache
     from polars.polars import using_string_cache as _using_string_cache
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 
 class StringCache:

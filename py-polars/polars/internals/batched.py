@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Sequence
 
@@ -18,12 +19,8 @@ from polars.utils import (
     normalise_filepath,
 )
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyBatchedCsv
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 
 class BatchedCsvReader:

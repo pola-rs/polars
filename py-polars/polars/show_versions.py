@@ -1,16 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import importlib
 import platform
 import sys
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import get_idx_type as _get_idx_type
     from polars.polars import version
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 
 def show_versions() -> None:

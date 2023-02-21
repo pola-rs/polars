@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import math
 import os
 import random
@@ -34,12 +35,13 @@ from polars.utils import (
     sphinx_accessor,
 )
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyExpr
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -54,11 +56,6 @@ if TYPE_CHECKING:
     )
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 
 def selection_to_pyexpr_list(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -59,12 +60,8 @@ from polars.utils import (
     redirect,
 )
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 if sys.version_info >= (3, 10):
     from typing import Concatenate, ParamSpec

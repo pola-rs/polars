@@ -1,6 +1,7 @@
 """Module containing logic related to eager DataFrames."""
 from __future__ import annotations
 
+import contextlib
 import math
 import os
 import random
@@ -90,12 +91,8 @@ from polars.utils import (
     scale_bytes,
 )
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -6929,8 +6926,8 @@ class DataFrame:
         one row is returned; more than one row raises ``TooManyRowsReturned``, and
         zero rows will raise ``NoRowsReturned`` (both inherit from ``RowsException``).
 
-        Warning
-        -------
+        Warnings
+        --------
         You should NEVER use this method to iterate over a DataFrame; if you absolutely
         require row-iteration you should strongly prefer ``iter_rows()`` instead.
 

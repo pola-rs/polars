@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from contextlib import suppress
 from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
@@ -62,6 +63,12 @@ from polars.utils import (
     threadpool_size,
 )
 
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame, PySeries
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import Orientation
+
 if version_info >= (3, 10):
 
     def dataclass_type_hints(obj: type) -> dict[str, Any]:
@@ -71,18 +78,6 @@ else:
 
     def dataclass_type_hints(obj: type) -> dict[str, Any]:
         return obj.__annotations__
-
-
-try:
-    from polars.polars import PyDataFrame, PySeries
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
-
-if TYPE_CHECKING:
-    from polars.internals.type_aliases import Orientation
 
 
 def is_namedtuple(value: Any, annotated: bool = False) -> bool:

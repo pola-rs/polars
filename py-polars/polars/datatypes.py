@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import functools
 import re
@@ -27,14 +28,9 @@ from typing import List as ListType
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr
     from polars.polars import get_idx_type as _get_idx_type
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
 
 if sys.version_info >= (3, 8):
     from typing import Literal, get_args
@@ -57,7 +53,6 @@ else:
     # infer equivalent class
     NoneType = type(None)
     UnionType = type(Union[int, float])
-
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit

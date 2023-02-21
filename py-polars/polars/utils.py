@@ -1,6 +1,7 @@
 """Utility functions."""
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import os
@@ -31,13 +32,10 @@ from polars.datatypes import (
 )
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyExpr
     from polars.polars import pool_size as _pool_size
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 # This code block is due to a typing issue with backports.zoneinfo package:
 # https://github.com/pganssle/zoneinfo/issues/125

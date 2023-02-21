@@ -1,17 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import typing
 from typing import Any, Iterable
 
-try:
-    from polars.polars import when as pywhen
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
 from polars import internals as pli
 from polars.internals.type_aliases import PolarsExprType, PythonLiteral
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import when as pywhen
 
 
 class WhenThenThen:
