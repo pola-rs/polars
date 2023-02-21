@@ -3,8 +3,7 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-
-from polars import internals as pli
+from typing import TYPE_CHECKING, Union
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -16,7 +15,8 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import TypeAlias
 
-from typing import Union
+if TYPE_CHECKING:
+    from polars import internals as pli
 
 # Types that qualify as expressions (eg: for use in 'select', 'with_columns'...)
 PolarsExprType: TypeAlias = "pli.Expr | pli.WhenThen | pli.WhenThenThen"

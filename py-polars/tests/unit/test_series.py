@@ -24,11 +24,10 @@ from polars.datatypes import (
 )
 from polars.exceptions import ShapeError
 from polars.internals.construction import iterable_to_pyseries
-from polars.internals.type_aliases import EpochTimeUnit
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+    from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
 
 
 def test_cum_agg() -> None:

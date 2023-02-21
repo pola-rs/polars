@@ -109,6 +109,7 @@ select = [
   "D", # flake8-docstrings
   "I", # isort
   "SIM", # flake8-simplify
+  "TCH", # flake8-type-checking
   "TID", # flake8-tidy-imports
   "Q", # flake8-quotes
   "UP", # pyupgrade

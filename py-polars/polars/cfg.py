@@ -1,22 +1,22 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import sys
-from types import TracebackType
+from typing import TYPE_CHECKING
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import set_float_fmt as _set_float_fmt
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
+if TYPE_CHECKING:
+    import sys
+    from types import TracebackType
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 # note: register all Config-specific environment variable names here; need to constrain
 # which 'POLARS_' environment variables are recognised, as there are other lower-level

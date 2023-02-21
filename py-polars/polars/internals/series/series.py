@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import math
 import os
-import sys
 import typing
 from datetime import date, datetime, time, timedelta
 from typing import (
@@ -86,15 +86,13 @@ from polars.utils import (
     sphinx_accessor,
 )
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 
 if TYPE_CHECKING:
+    import sys
+
     from polars.internals.series._numpy import SeriesView
     from polars.internals.type_aliases import (
         ClosedInterval,
@@ -109,15 +107,13 @@ if TYPE_CHECKING:
         SizeUnit,
         TimeUnit,
     )
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
-
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
-
 
 ArrayLike = Union[
     Sequence[Any],

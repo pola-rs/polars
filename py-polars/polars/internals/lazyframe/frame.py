@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
-import sys
 import typing
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, IOBase, StringIO
@@ -43,11 +43,9 @@ from polars.datatypes import (
     Utf8,
     py_type_to_dtype,
 )
-from polars.dependencies import pyarrow as pa
 from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
-from polars.internals.type_aliases import PythonLiteral
 from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
@@ -59,24 +57,14 @@ from polars.utils import (
     redirect,
 )
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
-if sys.version_info >= (3, 10):
-    from typing import Concatenate, ParamSpec
-else:
-    from typing_extensions import Concatenate, ParamSpec
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 if TYPE_CHECKING:
+    import sys
+
+    from polars.dependencies import pyarrow as pa
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -86,10 +74,21 @@ if TYPE_CHECKING:
         JoinStrategy,
         ParallelStrategy,
         PolarsExprType,
+        PythonLiteral,
         RollingInterpolationMethod,
         StartBy,
         UniqueKeepStrategy,
     )
+
+    if sys.version_info >= (3, 10):
+        from typing import Concatenate, ParamSpec
+    else:
+        from typing_extensions import Concatenate, ParamSpec
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
     T = TypeVar("T")
     P = ParamSpec("P")

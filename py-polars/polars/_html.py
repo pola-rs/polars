@@ -4,10 +4,11 @@ from __future__ import annotations
 import html
 import os
 from textwrap import dedent
-from types import TracebackType
 from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from polars.internals import DataFrame
 
 

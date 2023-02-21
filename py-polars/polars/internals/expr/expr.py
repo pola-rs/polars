@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 import os
 import random
-import sys
 import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, cast
@@ -26,7 +25,6 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.internals.type_aliases import PythonLiteral
 from polars.utils import (
     _timedelta_to_pl_duration,
     deprecate_nonkeyword_arguments,
@@ -34,31 +32,28 @@ from polars.utils import (
     sphinx_accessor,
 )
 
-try:
-    from polars.polars import PyExpr
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
 if TYPE_CHECKING:
+    import sys
+
     from polars.internals.type_aliases import (
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
         NullBehavior,
+        PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
     )
+    from polars.polars import PyExpr
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 
 def selection_to_pyexpr_list(

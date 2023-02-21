@@ -35,10 +35,12 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import ModuleType
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 import polars
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 
 def doctest_teardown(d: doctest.DocTest) -> None:

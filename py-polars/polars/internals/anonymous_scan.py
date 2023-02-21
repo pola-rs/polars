@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import polars as pl
 from polars import internals as pli
-from polars.dependencies import pyarrow as pa
+from polars.dependencies import pyarrow as pa  # noqa: TCH001
 
 
 def _deser_and_exec(  # noqa: D417

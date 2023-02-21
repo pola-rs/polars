@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import ctypes
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from polars import internals as pli
+if TYPE_CHECKING:
+    from polars import internals as pli
 
 
 # https://numpy.org/doc/stable/user/basics.subclassing.html#slightly-more-realistic-example-attribute-added-to-existing-array

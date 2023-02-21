@@ -4,10 +4,16 @@ import glob
 from contextlib import contextmanager, suppress
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    BinaryIO,
+    ContextManager,
+    Iterator,
+    TextIO,
+    overload,
+)
 
-import polars.internals as pli
-from polars.datatypes import PolarsDataType
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
 from polars.utils import normalise_filepath
@@ -15,6 +21,10 @@ from polars.utils import normalise_filepath
 with suppress(ImportError):
     from polars.polars import ipc_schema as _ipc_schema
     from polars.polars import parquet_schema as _parquet_schema
+
+if TYPE_CHECKING:
+    import polars.internals as pli
+    from polars.datatypes import PolarsDataType
 
 
 def _check_empty(b: BytesIO, context: str, read_position: int | None = None) -> BytesIO:
