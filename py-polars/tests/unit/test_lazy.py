@@ -4,17 +4,19 @@ from datetime import date, datetime, time
 from functools import reduce
 from operator import add
 from string import ascii_letters
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
-from _pytest.capture import CaptureFixture
 
 import polars as pl
 from polars import col, lit, when
 from polars.datatypes import NUMERIC_DTYPES, PolarsDataType
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
+
+if TYPE_CHECKING:
+    from _pytest.capture import CaptureFixture
 
 
 def test_lazy() -> None:

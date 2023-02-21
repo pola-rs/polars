@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
@@ -8,6 +7,8 @@ from polars.internals.series.utils import expr_dispatch
 from polars.utils import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
+    from datetime import date, datetime, time
+
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
     from polars.polars import PySeries
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-import polars.internals as pli
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import polars.internals as pli
 
 
 def _to_rust_syntax(df: pli.DataFrame) -> str:

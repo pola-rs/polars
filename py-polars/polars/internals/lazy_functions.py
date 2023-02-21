@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import sys
+import contextlib
 import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
@@ -30,7 +30,7 @@ from polars.utils import (
     deprecated_alias,
 )
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arange as pyarange
     from polars.polars import arg_sort_by as py_arg_sort_by
     from polars.polars import arg_where as py_arg_where
@@ -60,22 +60,21 @@ try:
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
     from polars.polars import sum_exprs as _sum_exprs
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if TYPE_CHECKING:
+    import sys
+
     from polars.internals.type_aliases import (
         EpochTimeUnit,
         IntoExpr,
         RollingInterpolationMethod,
         TimeUnit,
     )
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 
 def col(

@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import PolarsDataType, PolarsTemporalType
 from polars.internals.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType, PolarsTemporalType
     from polars.internals.type_aliases import TransferEncoding
     from polars.polars import PySeries
 

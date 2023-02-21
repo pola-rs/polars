@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import functools
 import re
@@ -27,20 +28,13 @@ from typing import List as ListType
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr
     from polars.polars import get_idx_type as _get_idx_type
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
-
 if sys.version_info >= (3, 8):
-    from typing import Literal, get_args
+    from typing import get_args
 else:
-    from typing_extensions import Literal
-
     # pass-through (only impact is that under 3.7 we'll end-up doing
     # standard inference for dataclass fields with an option/union)
     def get_args(tp: Any) -> Any:
@@ -50,10 +44,7 @@ else:
 OptionType = type(Optional[type])
 if sys.version_info >= (3, 10):
     from types import NoneType, UnionType
-    from typing import TypeAlias
 else:
-    from typing_extensions import TypeAlias
-
     # infer equivalent class
     NoneType = type(None)
     UnionType = type(Union[int, float])
@@ -62,6 +53,15 @@ else:
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
 
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
 # number of rows to scan by default when inferring datatypes
 N_INFER_DEFAULT = 100

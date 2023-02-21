@@ -28,6 +28,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import numpy as np
 
+# Module not available when building docs
 try:
     from polars.polars import PySeries
 
