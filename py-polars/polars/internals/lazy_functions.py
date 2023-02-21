@@ -1640,34 +1640,27 @@ def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
 
 
 def exclude(
-    columns: (
-        str
-        | PolarsDataType
-        | Sequence[str]
-        | Sequence[PolarsDataType]
-        | set[PolarsDataType]
-        | frozenset[PolarsDataType]
-    ),
+    columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+    *more_columns: str | PolarsDataType,
 ) -> pli.Expr:
     """
-    Exclude certain columns from a wildcard/regex selection.
+    Represent all columns except for the given columns.
 
-    Syntactic sugar for:
-
-    >>> pl.all().exclude(columns)  # doctest: +SKIP
+    Syntactic sugar for ``pl.all().exclude(columns)``.
 
     Parameters
     ----------
     columns
-        Column(s) to exclude from selection
-        This can be:
-
-        - a column name, or multiple column names
-        - a regular expression starting with `^` and ending with `$`
-        - a dtype or multiple dtypes
+        The name or datatype of the column(s) to exclude. Accepts regular expression
+        input. Regular expressions should start with ``^`` and end with ``$``.
+    *more_columns
+        Additional names or datatypes of columns to exclude, specified as positional
+        arguments.
 
     Examples
     --------
+    Exclude by column name(s):
+
     >>> df = pl.DataFrame(
     ...     {
     ...         "aa": [1, 2, 3],
@@ -1675,20 +1668,6 @@ def exclude(
     ...         "cc": [None, 2.5, 1.5],
     ...     }
     ... )
-    >>> df
-    shape: (3, 3)
-    ┌─────┬──────┬──────┐
-    │ aa  ┆ ba   ┆ cc   │
-    │ --- ┆ ---  ┆ ---  │
-    │ i64 ┆ str  ┆ f64  │
-    ╞═════╪══════╪══════╡
-    │ 1   ┆ a    ┆ null │
-    │ 2   ┆ b    ┆ 2.5  │
-    │ 3   ┆ null ┆ 1.5  │
-    └─────┴──────┴──────┘
-
-    Exclude by column name(s):
-
     >>> df.select(pl.exclude("ba"))
     shape: (3, 2)
     ┌─────┬──────┐
@@ -1730,7 +1709,7 @@ def exclude(
     └──────┘
 
     """
-    return col("*").exclude(columns)
+    return col("*").exclude(columns, *more_columns)
 
 
 def all(name: str | Sequence[pli.Expr] | pli.Expr | None = None) -> pli.Expr:

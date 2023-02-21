@@ -16,7 +16,7 @@ use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
@@ -391,9 +391,9 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 DataType::Struct(fields)
             }
             dt => {
-                return Err(PyValueError::new_err(format!(
-                    "A {dt} object is not a correct polars DataType.\
-                 Hint: use the class without instantiating it.",
+                return Err(PyTypeError::new_err(format!(
+                    "A {dt} object is not a correct polars DataType. \
+                    Hint: use the class without instantiating it.",
                 )))
             }
         };
