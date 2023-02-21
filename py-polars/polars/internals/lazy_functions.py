@@ -1552,6 +1552,41 @@ def reduce(
     -----
     See ``fold`` for the version with an explicit accumulator.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [0, 1, 2],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 0   │
+    │ 2   ┆ 1   │
+    │ 3   ┆ 2   │
+    └─────┴─────┘
+
+    Cumulatively sums over all columns
+    >>> df.select(
+    ...     pl.reduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
+    ... )
+    shape: (3, 1)
+    ┌─────┐
+    │ sum │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 3   │
+    │ 5   │
+    └─────┘
+
     """
     # in case of pl.col("*")
     if isinstance(exprs, pli.Expr):
