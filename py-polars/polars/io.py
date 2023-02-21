@@ -877,8 +877,9 @@ def read_ipc(
 
 
 @deprecate_nonkeyword_arguments()
+@deprecated_alias(source="file")
 def read_parquet(
-    source: str | Path | BinaryIO | BytesIO | bytes,
+    file: str | Path | BinaryIO | BytesIO | bytes,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
@@ -902,7 +903,7 @@ def read_parquet(
 
     Parameters
     ----------
-    source
+    file
         Path to a file, or a file-like object. If the path is a directory, that
         directory will be used as partition aware scan.
         If ``fsspec`` is installed, it will be used to open remote files.
@@ -947,7 +948,7 @@ def read_parquet(
     pyarrow_options = pyarrow_options or {}
 
     with _prepare_file_arg(
-        source, use_pyarrow=use_pyarrow, **storage_options
+        file, use_pyarrow=use_pyarrow, **storage_options
     ) as source_prep:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
