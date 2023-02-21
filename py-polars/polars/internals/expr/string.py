@@ -1258,10 +1258,14 @@ class ExprStringNameSpace:
         radix
             Positive integer which is the base of the string we are parsing.
             Default: 2
+        
+        strict
+            Bool, default False will conver parse errors/overflows to Null.
+            If true parse errors/overflow will be raised at query time.
 
         Returns
         -------
-        Column of parsed integers in i32 format
+        Expr: Series of parsed integers in i64 format
 
         Examples
         --------
