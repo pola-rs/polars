@@ -1275,7 +1275,7 @@ class ExprStringNameSpace:
         ┌─────┐
         │ bin │
         │ --- │
-        │ i32 │
+        │ i64 │
         ╞═════╡
         │ 6   │
         │ 5   │
@@ -1288,7 +1288,7 @@ class ExprStringNameSpace:
         ┌───────┐
         │ hex   │
         │ ---   │
-        │ i32   │
+        │ i64   │
         ╞═══════╡
         │ 64030 │
         │ 65280 │
