@@ -5,10 +5,8 @@ import contextlib
 import math
 import os
 import random
-import sys
 import typing
 from collections.abc import Sized
-from datetime import timedelta
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
@@ -94,22 +92,11 @@ from polars.utils import (
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
-if sys.version_info >= (3, 10):
-    from typing import Concatenate, ParamSpec, TypeAlias
-else:
-    from typing_extensions import Concatenate, ParamSpec, TypeAlias
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 if TYPE_CHECKING:
+    import sys
+    from datetime import timedelta
+
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
 
     from polars.internals.type_aliases import (
@@ -133,6 +120,21 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
+
+    if sys.version_info >= (3, 10):
+        from typing import Concatenate, ParamSpec, TypeAlias
+    else:
+        from typing_extensions import Concatenate, ParamSpec, TypeAlias
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
     # these aliases are used to annotate DataFrame.__getitem__()
     # MultiRowSelector indexes into the vertical axis and

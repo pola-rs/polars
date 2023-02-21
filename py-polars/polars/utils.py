@@ -10,7 +10,6 @@ import sys
 import warnings
 from collections.abc import MappingView, Reversible, Sized
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
-from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -55,6 +54,8 @@ if sys.version_info >= (3, 11):
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.internals.type_aliases import SizeUnit, TimeUnit
 
 

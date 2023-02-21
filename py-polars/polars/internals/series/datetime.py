@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -8,6 +7,8 @@ from polars.internals.series.utils import expr_dispatch
 from polars.utils import _to_python_datetime, deprecated_alias, redirect
 
 if TYPE_CHECKING:
+    from datetime import date, datetime, time, timedelta
+
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
     from polars.polars import PySeries
 

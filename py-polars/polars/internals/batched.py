@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import polars.internals as pli
 from polars.datatypes import (
@@ -11,7 +11,6 @@ from polars.datatypes import (
     SchemaDict,
     py_type_to_dtype,
 )
-from polars.internals.type_aliases import CsvEncoding
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
@@ -21,6 +20,9 @@ from polars.utils import (
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyBatchedCsv
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import CsvEncoding
 
 
 class BatchedCsvReader:

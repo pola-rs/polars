@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
-from polars.datatypes import PolarsTemporalType
 from polars.exceptions import ComputeError
-from polars.internals.type_aliases import TimeUnit
 from polars.testing import assert_series_equal
 
 if sys.version_info >= (3, 9):
@@ -22,6 +21,10 @@ else:
     # Import from submodule due to typing issue with backports.zoneinfo package:
     # https://github.com/pganssle/zoneinfo/issues/125
     from backports.zoneinfo._zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsTemporalType
+    from polars.internals.type_aliases import TimeUnit
 
 
 def test_str_strptime() -> None:

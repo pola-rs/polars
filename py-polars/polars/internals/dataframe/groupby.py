@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import (
     TYPE_CHECKING,
     Callable,
@@ -14,6 +13,8 @@ import polars.internals as pli
 from polars.utils import _timedelta_to_pl_duration, deprecated_alias, redirect
 
 if TYPE_CHECKING:
+    from datetime import timedelta
+
     from polars.internals.type_aliases import (
         ClosedInterval,
         IntoExpr,

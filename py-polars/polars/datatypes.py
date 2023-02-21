@@ -33,10 +33,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import get_idx_type as _get_idx_type
 
 if sys.version_info >= (3, 8):
-    from typing import Literal, get_args
+    from typing import get_args
 else:
-    from typing_extensions import Literal
-
     # pass-through (only impact is that under 3.7 we'll end-up doing
     # standard inference for dataclass fields with an option/union)
     def get_args(tp: Any) -> Any:
@@ -46,17 +44,24 @@ else:
 OptionType = type(Optional[type])
 if sys.version_info >= (3, 10):
     from types import NoneType, UnionType
-    from typing import TypeAlias
 else:
-    from typing_extensions import TypeAlias
-
     # infer equivalent class
     NoneType = type(None)
     UnionType = type(Union[int, float])
 
+
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
 
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
 # number of rows to scan by default when inferring datatypes
 N_INFER_DEFAULT = 100

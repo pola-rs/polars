@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import math
 import os
-import sys
 import typing
 from datetime import date, datetime, time, timedelta
 from typing import (
@@ -90,12 +89,10 @@ from polars.utils import (
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
 
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 if TYPE_CHECKING:
+    import sys
+
     from polars.internals.series._numpy import SeriesView
     from polars.internals.type_aliases import (
         ClosedInterval,
@@ -110,6 +107,11 @@ if TYPE_CHECKING:
         SizeUnit,
         TimeUnit,
     )
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 

@@ -8,6 +8,7 @@ import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -15,13 +16,15 @@ import pytest
 import polars as pl
 from polars import DataType
 from polars.exceptions import ComputeError, NoDataError
-from polars.internals.type_aliases import TimeUnit
 from polars.testing import (
     assert_frame_equal,
     assert_frame_equal_local_categoricals,
     assert_series_equal,
 )
 from polars.utils import normalise_filepath
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
 
 
 @pytest.fixture()

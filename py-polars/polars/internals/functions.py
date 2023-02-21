@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
@@ -24,13 +23,16 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import py_diag_concat_lf as _diag_concat_lf
     from polars.polars import py_hor_concat_df as _hor_concat_df
 
-if sys.version_info >= (3, 10):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if TYPE_CHECKING:
+    import sys
+
     from polars.internals.type_aliases import ClosedInterval, ConcatMethod, TimeUnit
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 
 def get_dummies(

@@ -1,7 +1,6 @@
 """Functions for reading and writing data."""
 from __future__ import annotations
 
-import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
@@ -16,15 +15,8 @@ from typing import (
     overload,
 )
 
-from polars import BatchedCsvReader
-from polars.utils import deprecated_alias
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
 import polars.internals as pli
+from polars import BatchedCsvReader
 from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT, PolarsDataType, SchemaDict, Utf8
 from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
@@ -33,12 +25,20 @@ from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 from polars.utils import (
     deprecate_nonkeyword_arguments,
+    deprecated_alias,
     handle_projection_columns,
     normalise_filepath,
 )
 
 if TYPE_CHECKING:
+    import sys
+
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 
 def _check_arg_is_1byte(
