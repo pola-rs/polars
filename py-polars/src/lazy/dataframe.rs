@@ -286,7 +286,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (path, n_rows, cache, parallel, rechunk, row_count,
-        low_memory, cloud_options)
+        low_memory, cloud_options, use_statistics)
     )]
     pub fn new_from_parquet(
         path: String,
@@ -297,6 +297,7 @@ impl PyLazyFrame {
         row_count: Option<(String, IdxSize)>,
         low_memory: bool,
         cloud_options: Option<PyObject>,
+        use_statistics: bool,
     ) -> PyResult<Self> {
         let cloud_options = cloud_options
             .map(|po| extract_cloud_options(&path, po))
@@ -310,6 +311,7 @@ impl PyLazyFrame {
             row_count,
             low_memory,
             cloud_options,
+            use_statistics,
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())

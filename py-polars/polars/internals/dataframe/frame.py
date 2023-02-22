@@ -804,6 +804,8 @@ class DataFrame:
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         low_memory: bool = False,
+        use_statistics: bool = True,
+        rechunk: bool = True,
     ) -> Self:
         """
         Read into a DataFrame from a parquet file.
@@ -853,6 +855,8 @@ class DataFrame:
             parallel,
             _prepare_row_count_args(row_count_name, row_count_offset),
             low_memory=low_memory,
+            use_statistics=use_statistics,
+            rechunk=rechunk,
         )
         return self
 

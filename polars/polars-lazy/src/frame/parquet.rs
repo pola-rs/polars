@@ -16,6 +16,7 @@ pub struct ScanArgsParquet {
     pub row_count: Option<RowCount>,
     pub low_memory: bool,
     pub cloud_options: Option<CloudOptions>,
+    pub use_statistics: bool,
 }
 
 impl Default for ScanArgsParquet {
@@ -28,6 +29,7 @@ impl Default for ScanArgsParquet {
             row_count: None,
             low_memory: false,
             cloud_options: None,
+            use_statistics: true,
         }
     }
 }
@@ -57,6 +59,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.rechunk,
             self.args.low_memory,
             self.args.cloud_options,
+            self.args.use_statistics,
         )?
         .build()
         .into();

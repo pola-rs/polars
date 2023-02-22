@@ -668,81 +668,6 @@ impl OptimizationRule for SimplifyExprRule {
 
 fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
     match (input, dtype) {
-        #[cfg(feature = "dtype-i8")]
-        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Int64) => {
-            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-        }
-        #[cfg(feature = "dtype-i16")]
-        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Int64) => {
-            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-        }
-        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Int64) => {
-            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-        }
-        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Int64) => {
-            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-        }
-        (AExpr::Literal(LiteralValue::Float32(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-
-        #[cfg(feature = "dtype-i8")]
-        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-        #[cfg(feature = "dtype-i16")]
-        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-        #[cfg(feature = "dtype-u8")]
-        (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-        #[cfg(feature = "dtype-u16")]
-        (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-        (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float64) => {
-            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-        }
-
-        #[cfg(feature = "dtype-i8")]
-        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float32) => {
-            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-        }
-        #[cfg(feature = "dtype-i16")]
-        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float32) => {
-            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-        }
-        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float32) => {
-            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-        }
-        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float32) => {
-            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-        }
-        #[cfg(feature = "dtype-u8")]
-        (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float32) => {
-            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-        }
-        #[cfg(feature = "dtype-u16")]
-        (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float32) => {
-            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-        }
-        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float32) => {
-            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-        }
-        (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float32) => {
-            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-        }
         #[cfg(feature = "dtype-duration")]
         (AExpr::Literal(LiteralValue::Int64(v)), DataType::Duration(tu)) => {
             let dur = match tu {
@@ -751,6 +676,12 @@ fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
                 TimeUnit::Milliseconds => chrono::Duration::milliseconds(*v),
             };
             Some(AExpr::Literal(LiteralValue::Duration(dur, *tu)))
+        }
+        (AExpr::Literal(lv), dt) if dt.is_numeric() => {
+            let av = lv.to_anyvalue()?;
+            let av = av.cast(dt).ok()?;
+            let lv = LiteralValue::try_from(av).ok()?;
+            Some(AExpr::Literal(lv))
         }
         _ => None,
     }

@@ -52,6 +52,7 @@ pub struct ParquetOptions {
     pub row_count: Option<RowCount>,
     pub file_counter: FileCount,
     pub low_memory: bool,
+    pub use_statistics: bool,
 }
 
 #[cfg(feature = "parquet")]
