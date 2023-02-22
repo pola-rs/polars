@@ -1730,6 +1730,19 @@ def test_df_schema_unique() -> None:
         df.rename({"b": "a"})
 
 
+def test_cleared() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2], "b": [True, False]}, schema_overrides={"a": pl.UInt32}
+    )
+    dfc = df.clear()
+    assert dfc.schema == df.schema
+    assert dfc.rows() == []
+
+    dfc = df.clear(3)
+    assert dfc.schema == df.schema
+    assert dfc.rows() == [(None, None), (None, None), (None, None)]
+
+
 def test_empty_projection() -> None:
     empty_df = pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([])
     assert empty_df.rows() == []

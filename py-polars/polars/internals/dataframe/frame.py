@@ -156,6 +156,7 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
 
 @redirect(
     {
+        "cleared": "clear",
         "iterrows": "iter_rows",
         "with_column": "with_columns",
     }
@@ -4822,11 +4823,16 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.drop_in_place(name))
 
-    def cleared(self) -> Self:
+    def clear(self, n: int = 0) -> Self:
         """
-        Create an empty copy of the current DataFrame.
+        Create an empty copy of the current DataFrame, with zero to 'n' rows.
 
         Returns a DataFrame with identical schema but no data.
+
+        Parameters
+        ----------
+        n
+            Number of (empty) rows to return in the cleared frame.
 
         See Also
         --------
@@ -4841,7 +4847,7 @@ class DataFrame:
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> df.cleared()
+        >>> df.clear()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -4850,8 +4856,26 @@ class DataFrame:
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
+        >>> df.clear(n=2)
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ a    ┆ b    ┆ c    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ f64  ┆ bool │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
+
         """
-        return self.head(0) if len(self) > 0 else self.clone()
+        if n > 0 or len(self) > 0:
+            return self.__class__(
+                {
+                    nm: pli.Series(name=nm, dtype=tp).extend_constant(None, n)
+                    for nm, tp in self.schema.items()
+                }
+            )
+        return self.clone()
 
     def clone(self) -> Self:
         """
@@ -4859,7 +4883,7 @@ class DataFrame:
 
         See Also
         --------
-        cleared : Create an empty copy of the current DataFrame, with identical
+        clear : Create an empty copy of the current DataFrame, with identical
             schema but no data.
 
         Examples

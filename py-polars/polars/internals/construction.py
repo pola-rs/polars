@@ -360,7 +360,7 @@ def sequence_to_pyseries(
                     nan_to_null=nan_to_null,
                     strict=strict,
                 )
-                return s if values else pli.Series._from_pyseries(s)[:0]._s
+                return s if values else pli.Series._from_pyseries(s).head(0)._s
 
             # logs will show a panic if we infer wrong dtype and it's hard to error
             # from the rust side. to reduce the likelihood of this happening we
