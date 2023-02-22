@@ -148,12 +148,12 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(replace_timezone(
+                        replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             to.to_string(),
                             from.to_string(),
-                        )?)
+                        )
                     })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
@@ -163,12 +163,12 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(replace_timezone(
+                        replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             "UTC".to_string(),
                             from.to_string(),
-                        )?)
+                        )
                     })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
@@ -178,12 +178,12 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        Ok(replace_timezone(
+                        replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
                             to.to_string(),
                             "UTC".to_string(),
-                        )?)
+                        )
                     })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
