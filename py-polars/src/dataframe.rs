@@ -232,6 +232,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory, use_statistics, rechunk))]
+    #[allow(clippy::too_many_arguments)]
     pub fn read_parquet(
         py_f: PyObject,
         columns: Option<Vec<String>>,
