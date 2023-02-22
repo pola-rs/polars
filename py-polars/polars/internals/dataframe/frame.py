@@ -4208,9 +4208,9 @@ class DataFrame:
     def join_asof(
         self,
         other: DataFrame,
-        left_on: str | None = None,
-        right_on: str | None = None,
-        on: str | None = None,
+        left_on: str | None | pli.Expr = None,
+        right_on: str | None | pli.Expr = None,
+        on: str | None | pli.Expr = None,
         by_left: str | Sequence[str] | None = None,
         by_right: str | Sequence[str] | None = None,
         by: str | Sequence[str] | None = None,
