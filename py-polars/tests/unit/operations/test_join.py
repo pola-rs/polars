@@ -515,3 +515,15 @@ def test_join_frame_consistency() -> None:
         _ = ldf.join_asof(df, on="A")
     with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
         _ = df.join_asof(ldf, on="A")
+
+
+def test_join_concat_projection_pd_case_7071() -> None:
+    ldf = pl.DataFrame({"id": [1, 2], "value": [100, 200]}).lazy()
+    ldf2 = pl.DataFrame({"id": [1, 3], "value": [100, 300]}).lazy()
+
+    ldf = ldf.join(ldf2, on=["id", "value"])
+    ldf = pl.concat([ldf, ldf2])
+    result = ldf.select("id")
+
+    expected = pl.DataFrame({"id": [1, 1, 3]}).lazy()
+    assert_frame_equal(result, expected)
