@@ -8,7 +8,6 @@ hypothesis==6.65.2
 
 autodocsumm==0.2.9
 commonmark==0.9.1
-ghp-import==2.1.0
 numpydoc==1.5.0
 pydata-sphinx-theme==0.12.0
 sphinx-autosummary-accessors==2022.4.0
