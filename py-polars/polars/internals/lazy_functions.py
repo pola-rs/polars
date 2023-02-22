@@ -67,7 +67,6 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         CorrelationMethod,
         EpochTimeUnit,
-        CorrelationMethod,
         IntoExpr,
         RollingInterpolationMethod,
         TimeUnit,
@@ -1307,6 +1306,7 @@ def cumsum(
     # (Expr): use u32 as that will not cast to float as eagerly
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
 
+
 @deprecate_nonkeyword_arguments(allowed_args=["a", "b", "ddof"])
 def spearman_rank_corr(
     a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
@@ -1314,6 +1314,7 @@ def spearman_rank_corr(
     """
     Compute the spearman rank correlation between two columns.
     Missing data will be excluded from the computation.
+
     Parameters
     ----------
     a
@@ -1326,6 +1327,7 @@ def spearman_rank_corr(
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
@@ -1337,7 +1339,7 @@ def spearman_rank_corr(
     │ f64 │
     ╞═════╡
     │ 0.5 │
-    └─────┘
+    └─────┘.
     """
     if isinstance(a, str):
         a = col(a)
@@ -1351,6 +1353,7 @@ def spearman_rank_corr(
 def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
     """
     Compute the pearson's correlation between two columns.
+
     Parameters
     ----------
     a
@@ -1370,7 +1373,7 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     │ f64      │
     ╞══════════╡
     │ 0.544705 │
-    └──────────┘
+    └──────────┘.
     """
     if isinstance(a, str):
         a = col(a)
