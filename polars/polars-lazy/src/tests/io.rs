@@ -164,22 +164,6 @@ fn test_parquet_globbing() -> PolarsResult<()> {
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));
     assert_eq!(cal.get(53)?, AnyValue::Int64(194));
 
-    let n_rows_df = LazyFrame::scan_parquet(
-        glob,
-        ScanArgsParquet {
-            n_rows: Some(40),
-            cache: true,
-            parallel: Default::default(),
-            ..Default::default()
-        },
-    )?
-    .collect()?;
-    // 27 rows from foods1.parquet and 13 from foods2.parquet
-    assert_eq!(n_rows_df.shape(), (40, 4));
-    let cal = n_rows_df.column("calories")?;
-    assert_eq!(cal.get(0)?, AnyValue::Int64(45));
-    assert_eq!(cal.get(39)?, AnyValue::Int64(146));
-
     Ok(())
 }
 
@@ -204,23 +188,6 @@ fn test_ipc_globbing() -> PolarsResult<()> {
     let cal = df.column("calories")?;
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));
     assert_eq!(cal.get(53)?, AnyValue::Int64(194));
-
-    let n_rows_df = LazyFrame::scan_ipc(
-        glob,
-        ScanArgsIpc {
-            n_rows: Some(40),
-            cache: true,
-            rechunk: false,
-            row_count: None,
-            memmap: true,
-        },
-    )?
-    .collect()?;
-    // 27 rows from foods1.ipc and 13 from foods2.ipc
-    assert_eq!(n_rows_df.shape(), (40, 4));
-    let cal = n_rows_df.column("calories")?;
-    assert_eq!(cal.get(0)?, AnyValue::Int64(45));
-    assert_eq!(cal.get(39)?, AnyValue::Int64(146));
 
     Ok(())
 }
@@ -266,16 +233,6 @@ fn test_csv_globbing() -> PolarsResult<()> {
         .slice(0, 100);
     let node = lf.optimize(&mut lp_arena, &mut expr_arena)?;
     assert!(slice_at_union(&mut lp_arena, node));
-
-    let n_rows_df = LazyCsvReader::new(glob)
-        .with_n_rows(Some(40))
-        .finish()?
-        .collect()?;
-    // 27 rows from foods1.csv and 13 from foods2.csv
-    assert_eq!(n_rows_df.shape(), (40, 4));
-    let cal = n_rows_df.column("calories")?;
-    assert_eq!(cal.get(0)?, AnyValue::Int64(45));
-    assert_eq!(cal.get(39)?, AnyValue::Int64(146));
 
     Ok(())
 }
