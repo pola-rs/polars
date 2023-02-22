@@ -418,6 +418,64 @@ impl<'a> AnyValue<'a> {
             )
         })
     }
+
+    pub fn is_signed(&self) -> bool {
+        matches!(
+            self,
+            AnyValue::Int8(_) | AnyValue::Int16(_) | AnyValue::Int32(_) | AnyValue::Int64(_)
+        )
+    }
+
+    pub fn is_unsigned(&self) -> bool {
+        matches!(
+            self,
+            AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
+        )
+    }
+
+    pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        macro_rules! cast_to (
+            ($av:expr) => {
+                match dtype {
+                    DataType::UInt8 => AnyValue::UInt8($av as u8),
+                    DataType::UInt16 => AnyValue::UInt16($av as u16),
+                    DataType::UInt32 => AnyValue::UInt32($av as u32),
+                    DataType::UInt64 => AnyValue::UInt64($av as u64),
+                    DataType::Int8 => AnyValue::Int8($av as i8),
+                    DataType::Int16 => AnyValue::Int16($av as i16),
+                    DataType::Int32 => AnyValue::Int32($av as i32),
+                    DataType::Int64 => AnyValue::Int64($av as i64),
+                    DataType::Float32 => AnyValue::Float32($av as f32),
+                    DataType::Float64 => AnyValue::Float64($av as f64),
+                    _ => {
+                        return Err(PolarsError::ComputeError(format!("Cannot AnyValue: {:?} to dtype: {:?}", self, dtype).into()))
+                    }
+                }
+
+            }
+        );
+
+        let new_av = match self {
+            AnyValue::Float32(_) | AnyValue::Float64(_) => {
+                let av = self.extract::<f64>().unwrap();
+                cast_to!(av)
+            }
+            av if av.is_signed() => {
+                let av = av.extract::<i64>().unwrap();
+                cast_to!(av)
+            }
+            av if av.is_unsigned() => {
+                let av = av.extract::<u64>().unwrap();
+                cast_to!(av)
+            }
+            _ => {
+                return Err(PolarsError::ComputeError(
+                    "cannot cast non numeric AnyValue to numeric dtype".into(),
+                ))
+            }
+        };
+        Ok(new_av)
+    }
 }
 
 impl From<AnyValue<'_>> for DataType {

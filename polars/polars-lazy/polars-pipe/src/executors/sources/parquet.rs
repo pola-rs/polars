@@ -50,6 +50,7 @@ impl ParquetSource {
                     .with_n_rows(options.n_rows)
                     .with_row_count(options.row_count)
                     .with_projection(projection)
+                    .use_statistics(options.use_statistics)
                     .batched(chunk_size)?
             }
         } else {
@@ -59,6 +60,7 @@ impl ParquetSource {
                 .with_n_rows(options.n_rows)
                 .with_row_count(options.row_count)
                 .with_projection(projection)
+                .use_statistics(options.use_statistics)
                 .batched(chunk_size)?
         };
 

@@ -204,6 +204,7 @@ class LazyFrame:
         row_count_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
+        use_statistics: bool = True,
     ) -> Self:
         """
         Lazily read from a parquet file or multiple files via glob patterns.
@@ -234,6 +235,7 @@ class LazyFrame:
             _prepare_row_count_args(row_count_name, row_count_offset),
             low_memory,
             cloud_options=storage_options,
+            use_statistics=use_statistics,
         )
         return self
 

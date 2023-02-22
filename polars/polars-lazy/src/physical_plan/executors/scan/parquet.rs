@@ -43,6 +43,7 @@ impl ParquetExec {
             .with_row_count(mem::take(&mut self.options.row_count))
             .set_rechunk(self.options.rechunk)
             .set_low_memory(self.options.low_memory)
+            .use_statistics(self.options.use_statistics)
             ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
     }
 }
