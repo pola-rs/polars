@@ -61,7 +61,7 @@ list_count = ["polars-ops/list_count"]
 trigonometry = []
 sign = []
 timezones = ["polars-time/timezones", "polars-core/timezones", "regex"]
-
+binary_encoding = ["polars-ops/binary_encoding", "dtype-binary"]
 true_div = []
 
 # operations
