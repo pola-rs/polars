@@ -2312,14 +2312,18 @@ def test_partition_by() -> None:
         }
     )
 
-    assert [
-        a.to_dict(False) for a in df.partition_by(["foo", "bar"], maintain_order=True)
-    ] == [
+    expected = [
         {"foo": ["A"], "N": [1], "bar": ["k"]},
         {"foo": ["A"], "N": [2], "bar": ["l"]},
         {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
         {"foo": ["C"], "N": [2], "bar": ["l"]},
     ]
+    assert [
+        a.to_dict(False) for a in df.partition_by(["foo", "bar"], maintain_order=True)
+    ] == expected
+    assert [
+        a.to_dict(False) for a in df.partition_by("foo", "bar", maintain_order=True)
+    ] == expected
 
     assert [a.to_dict(False) for a in df.partition_by("foo", maintain_order=True)] == [
         {"foo": ["A", "A"], "N": [1, 2], "bar": ["k", "l"]},
