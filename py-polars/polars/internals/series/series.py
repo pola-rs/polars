@@ -130,7 +130,12 @@ def wrap_s(s: PySeries) -> Series:
     return Series._from_pyseries(s)
 
 
-@redirect({"is_datelike": "is_temporal"})
+@redirect(
+    {
+        "cleared": "clear",
+        "is_datelike": "is_temporal",
+    }
+)
 @expr_dispatch
 class Series:
     """
@@ -3182,7 +3187,7 @@ class Series:
         self._s.set_at_idx(idx._s, value._s)
         return self
 
-    def cleared(self, n: int = 0) -> Series:
+    def clear(self, n: int = 0) -> Series:
         """
         Create an empty copy of the current Series, with zero to 'n' elements.
 
@@ -3200,13 +3205,13 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [None, True, False])
-        >>> s.cleared()
+        >>> s.clear()
         shape: (0,)
         Series: 'a' [bool]
         [
         ]
 
-        >>> s.cleared(n=2)
+        >>> s.clear(n=2)
         shape: (2,)
         Series: 'a' [bool]
         [
@@ -3228,7 +3233,7 @@ class Series:
 
         See Also
         --------
-        cleared : Create an empty copy of the current Series, with identical
+        clear : Create an empty copy of the current Series, with identical
             schema but no data.
 
         Examples

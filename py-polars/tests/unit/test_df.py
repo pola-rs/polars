@@ -1734,11 +1734,11 @@ def test_cleared() -> None:
     df = pl.DataFrame(
         {"a": [1, 2], "b": [True, False]}, schema_overrides={"a": pl.UInt32}
     )
-    dfc = df.cleared()
+    dfc = df.clear()
     assert dfc.schema == df.schema
     assert dfc.rows() == []
 
-    dfc = df.cleared(3)
+    dfc = df.clear(3)
     assert dfc.schema == df.schema
     assert dfc.rows() == [(None, None), (None, None), (None, None)]
 

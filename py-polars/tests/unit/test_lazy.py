@@ -1467,10 +1467,10 @@ def test_lazy_schema() -> None:
     ).lazy()
     assert lf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
 
-    lfe = lf.cleared()
+    lfe = lf.clear()
     assert lfe.schema == lf.schema
 
-    lfe = lf.cleared(2)
+    lfe = lf.clear(2)
     assert lfe.schema == lf.schema
     assert lfe.collect().rows() == [(None, None, None), (None, None, None)]
 

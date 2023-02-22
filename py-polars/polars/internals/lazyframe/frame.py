@@ -98,7 +98,12 @@ def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
     return LazyFrame._from_pyldf(ldf)
 
 
-@redirect({"with_column": "with_columns"})
+@redirect(
+    {
+        "cleared": "clear",
+        "with_column": "with_columns",
+    }
+)
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -1442,7 +1447,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """Cache the result once the execution of the physical plan hits this node."""
         return self._from_pyldf(self._ldf.cache())
 
-    def cleared(self, n: int = 0) -> Self:
+    def clear(self, n: int = 0) -> Self:
         """
         Create an empty copy of the current LazyFrame, with zero to 'n' rows.
 
@@ -1466,7 +1471,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...         "c": [True, True, False, None],
         ...     }
         ... ).lazy()
-        >>> ldf.cleared().fetch()
+        >>> ldf.clear().fetch()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -1475,7 +1480,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
-        >>> ldf.cleared(2).fetch()
+        >>> ldf.clear(2).fetch()
         shape: (2, 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
@@ -1487,9 +1492,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └──────┴──────┴──────┘
 
         """
-        return self._from_pyldf(
-            pli.DataFrame(schema=self.schema).cleared(n).lazy()._ldf
-        )
+        return self._from_pyldf(pli.DataFrame(schema=self.schema).clear(n).lazy()._ldf)
 
     def clone(self) -> Self:
         """
@@ -1497,7 +1500,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         See Also
         --------
-        cleared : Create an empty copy of the current LazyFrame, with identical
+        clear : Create an empty copy of the current LazyFrame, with identical
             schema but no data.
 
         Examples

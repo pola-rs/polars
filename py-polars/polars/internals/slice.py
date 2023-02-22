@@ -81,7 +81,7 @@ class PolarsSlice:
 
         # check for fast-paths / single-operation calls
         if self.slice_length == 0:
-            return self.obj.cleared()
+            return self.obj.clear()
 
         elif self.is_unbounded and self.stride in (-1, 1):
             return self.obj.reverse() if (self.stride < 0) else self.obj.clone()
@@ -146,7 +146,7 @@ class LazyPolarsSlice:
         if (step > 0 and (s.stop is not None and start >= s.stop)) or (
             step < 0 and (s.stop is not None and s.stop >= s.start >= 0)
         ):
-            return self.obj.cleared()
+            return self.obj.clear()
 
         # ---------------------------------------
         # straight-through mappings for "reverse"

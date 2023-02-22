@@ -1012,7 +1012,7 @@ def test_empty() -> None:
 
     a = pl.Series(name="a", values=[1, 2, 3], dtype=pl.Int16)
     for n in (0, 2, 5):
-        empty_a = a.cleared(n)
+        empty_a = a.clear(n)
         assert a.dtype == empty_a.dtype
         assert a.name == empty_a.name
         assert len(empty_a) == n

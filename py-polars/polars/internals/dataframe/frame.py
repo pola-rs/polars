@@ -156,6 +156,7 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
 
 @redirect(
     {
+        "cleared": "clear",
         "iterrows": "iter_rows",
         "with_column": "with_columns",
     }
@@ -4822,7 +4823,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.drop_in_place(name))
 
-    def cleared(self, n: int = 0) -> Self:
+    def clear(self, n: int = 0) -> Self:
         """
         Create an empty copy of the current DataFrame, with zero to 'n' rows.
 
@@ -4846,7 +4847,7 @@ class DataFrame:
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> df.cleared()
+        >>> df.clear()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -4855,7 +4856,7 @@ class DataFrame:
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
-        >>> df.cleared(n=2)
+        >>> df.clear(n=2)
         shape: (2, 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
@@ -4882,7 +4883,7 @@ class DataFrame:
 
         See Also
         --------
-        cleared : Create an empty copy of the current DataFrame, with identical
+        clear : Create an empty copy of the current DataFrame, with identical
             schema but no data.
 
         Examples
