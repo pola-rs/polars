@@ -2210,9 +2210,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def join_asof(
         self,
         other: LazyFrame,
-        left_on: str | None = None,
-        right_on: str | None = None,
-        on: str | None = None,
+        left_on: str | None | pli.Expr = None,
+        right_on: str | None | pli.Expr = None,
+        on: str | None | pli.Expr = None,
         by_left: str | Sequence[str] | None = None,
         by_right: str | Sequence[str] | None = None,
         by: str | Sequence[str] | None = None,
@@ -2335,7 +2335,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
             )
 
-        if isinstance(on, str):
+        if isinstance(on, (str, pli.Expr)):
             left_on = on
             right_on = on
 
@@ -2362,11 +2362,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         else:
             tolerance_num = tolerance
 
+        if not isinstance(left_on, pli.Expr):
+            left_on = pli.col(left_on)
+        if not isinstance(right_on, pli.Expr):
+            right_on = pli.col(right_on)
+
         return self._from_pyldf(
             self._ldf.join_asof(
                 other._ldf,
-                pli.col(left_on)._pyexpr,
-                pli.col(right_on)._pyexpr,
+                left_on._pyexpr,
+                right_on._pyexpr,
                 by_left_,
                 by_right_,
                 allow_parallel,
