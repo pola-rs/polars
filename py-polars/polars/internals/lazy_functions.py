@@ -69,7 +69,6 @@ if TYPE_CHECKING:
         EpochTimeUnit,
         CorrelationMethod,
         EpochTimeUnit,
-        CorrelationMethod,
         IntoExpr,
         RollingInterpolationMethod,
         TimeUnit,
@@ -1310,15 +1309,13 @@ def cumsum(
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
 
 
-def corr(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-    method: CorrelationMethod = "pearson",
-    ddof: int = 1,
-    propagate_nans: bool = False,
+@deprecate_nonkeyword_arguments(allowed_args=["a", "b", "ddof"])
+def spearman_rank_corr(
+    a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
 ) -> pli.Expr:
     """
-    Compute the pearson's or spearman rank correlation correlation between two columns.
+    Compute the spearman rank correlation between two columns.
+    Missing data will be excluded from the computation.
 
     Parameters
     ----------
