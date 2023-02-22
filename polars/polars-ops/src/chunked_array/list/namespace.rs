@@ -316,6 +316,8 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
         Series::try_from((ca.name(), chunks))
+            .unwrap()
+            .cast(&ca.inner_dtype())
     }
 
     #[cfg(feature = "list_take")]
