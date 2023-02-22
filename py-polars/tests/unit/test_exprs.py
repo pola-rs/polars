@@ -533,6 +533,39 @@ def test_map_dict() -> None:
         "remapped": ["France", "Not specified", "2", "Germany"],
     }
 
+    with pl.StringCache():
+        assert (
+            df.with_columns(
+                pl.col("country_code")
+                .cast(pl.Categorical)
+                .map_dict(country_code_dict, default=pl.col("country_code"))
+                .alias("remapped")
+            )
+        ).to_dict(False) == {
+            "row_nr": [0, 1, 2, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+            "remapped": ["France", "Not specified", "ES", "Germany"],
+        }
+
+    df_categorical_lazy = df.lazy().with_columns(
+        pl.col("country_code").cast(pl.Categorical)
+    )
+
+    with pl.StringCache():
+        assert (
+            df_categorical_lazy.with_columns(
+                pl.col("country_code")
+                .map_dict(country_code_dict, default=pl.col("country_code"))
+                .alias("remapped")
+            )
+            .collect()
+            .to_dict(False)
+        ) == {
+            "row_nr": [0, 1, 2, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+            "remapped": ["France", "Not specified", "ES", "Germany"],
+        }
+
 
 def test_lit_dtypes() -> None:
     def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:

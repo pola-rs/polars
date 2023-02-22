@@ -6172,6 +6172,9 @@ class Expr:
         """
         Replace values in column according to remapping dictionary.
 
+        Needs a global string cache for lazily evaluated queries on columns of
+        type pl.Categorical.
+
         Parameters
         ----------
         remapping
@@ -6296,6 +6299,7 @@ class Expr:
             df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
 
             column = df.columns[0]
+            input_dtype = df.select(column).dtypes[0]
             remap_key_column = f"__POLARS_REMAP_KEY_{column}"
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
@@ -6306,7 +6310,11 @@ class Expr:
                     .join(
                         pli.DataFrame(
                             [
-                                pli.Series(remap_key_column, list(remapping.keys())),
+                                pli.Series(
+                                    remap_key_column,
+                                    list(remapping.keys()),
+                                    dtype=input_dtype,
+                                ),
                                 pli.Series(
                                     remap_value_column, list(remapping.values())
                                 ),
@@ -6331,6 +6339,7 @@ class Expr:
 
         def inner(s: pli.Series) -> pli.Series:
             column = s.name
+            input_dtype = s.dtype
             remap_key_column = f"__POLARS_REMAP_KEY_{column}"
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
@@ -6342,7 +6351,11 @@ class Expr:
                     .join(
                         pli.DataFrame(
                             [
-                                pli.Series(remap_key_column, list(remapping.keys())),
+                                pli.Series(
+                                    remap_key_column,
+                                    list(remapping.keys()),
+                                    dtype=input_dtype,
+                                ),
                                 pli.Series(
                                     remap_value_column, list(remapping.values())
                                 ),
@@ -6360,7 +6373,6 @@ class Expr:
             )
 
         func = inner_with_default if default is not None else inner
-
         return self.map(func)
 
     @property
