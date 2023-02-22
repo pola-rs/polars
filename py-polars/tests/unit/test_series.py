@@ -1011,9 +1011,11 @@ def test_empty() -> None:
     )
 
     a = pl.Series(name="a", values=[1, 2, 3], dtype=pl.Int16)
-    empty_a = a.cleared()
-    assert a.dtype == empty_a.dtype
-    assert len(empty_a) == 0
+    for n in (0, 2, 5):
+        empty_a = a.cleared(n)
+        assert a.dtype == empty_a.dtype
+        assert a.name == empty_a.name
+        assert len(empty_a) == n
 
     with pytest.raises(ValueError, match="ambiguous"):
         not empty_a

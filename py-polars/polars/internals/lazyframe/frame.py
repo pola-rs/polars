@@ -1442,11 +1442,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """Cache the result once the execution of the physical plan hits this node."""
         return self._from_pyldf(self._ldf.cache())
 
-    def cleared(self) -> Self:
+    def cleared(self, n: int = 0) -> Self:
         """
-        Create an empty copy of the current LazyFrame.
+        Create an empty copy of the current LazyFrame, with zero to 'n' rows.
 
-        The copy has an identical schema but no data.
+        Returns a copy with an identical schema but no data.
+
+        Parameters
+        ----------
+        n
+            Number of (empty) rows to return in the cleared frame.
 
         See Also
         --------
@@ -1454,14 +1459,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> ldf = pl.DataFrame(
         ...     {
         ...         "a": [None, 2, 3, 4],
         ...         "b": [0.5, None, 2.5, 13],
         ...         "c": [True, True, False, None],
         ...     }
         ... ).lazy()
-        >>> df.cleared().fetch()
+        >>> ldf.cleared().fetch()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -1470,8 +1475,21 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
+        >>> ldf.cleared(2).fetch()
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ a    ┆ b    ┆ c    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ f64  ┆ bool │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
+
         """
-        return self._from_pyldf(pli.DataFrame(schema=self.schema).lazy()._ldf)
+        return self._from_pyldf(
+            pli.DataFrame(schema=self.schema).cleared(n).lazy()._ldf
+        )
 
     def clone(self) -> Self:
         """
@@ -3144,7 +3162,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         n
-            Number of rows.
+            Number of rows to return.
 
         Examples
         --------

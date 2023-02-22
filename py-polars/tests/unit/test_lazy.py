@@ -1470,6 +1470,10 @@ def test_lazy_schema() -> None:
     lfe = lf.cleared()
     assert lfe.schema == lf.schema
 
+    lfe = lf.cleared(2)
+    assert lfe.schema == lf.schema
+    assert lfe.collect().rows() == [(None, None, None), (None, None, None)]
+
 
 def test_deadlocks_3409() -> None:
     assert (

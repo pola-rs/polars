@@ -3182,11 +3182,16 @@ class Series:
         self._s.set_at_idx(idx._s, value._s)
         return self
 
-    def cleared(self) -> Series:
+    def cleared(self, n: int = 0) -> Series:
         """
-        Create an empty copy of the current Series.
+        Create an empty copy of the current Series, with zero to 'n' elements.
 
-        The copy has identical name/dtype but no data.
+        The copy has an identical name/dtype, but no data.
+
+        Parameters
+        ----------
+        n
+            Number of (empty) elements to return in the cleared frame.
 
         See Also
         --------
@@ -3201,8 +3206,21 @@ class Series:
         [
         ]
 
+        >>> s.cleared(n=2)
+        shape: (2,)
+        Series: 'a' [bool]
+        [
+            null
+            null
+        ]
+
         """
-        return self.limit(0) if len(self) > 0 else self.clone()
+        s = (
+            self.__class__(name=self.name, values=[], dtype=self.dtype)
+            if len(self) > 0
+            else self.clone()
+        )
+        return s.extend_constant(None, n=n) if n > 0 else s
 
     def clone(self) -> Series:
         """
