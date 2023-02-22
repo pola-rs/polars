@@ -162,6 +162,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
         })
     }
 }
+
 impl SqlFunctionVisitor<'_> {
     pub(crate) fn visit_function(&self) -> PolarsResult<Expr> {
         let function = self.0;

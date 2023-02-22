@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Union
 
 if sys.version_info >= (3, 8):
@@ -14,9 +16,6 @@ else:
     from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, time, timedelta
-    from decimal import Decimal
-
     from polars import internals as pli
 
 # Types that qualify as expressions (eg: for use in 'select', 'with_columns'...)
