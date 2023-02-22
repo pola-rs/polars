@@ -1,9 +1,6 @@
 name: Deploy documentation
 
-on:
-  push:
-    tags:
-      - '**'
+on: pull_request
 
 jobs:
   main:
