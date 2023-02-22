@@ -29,7 +29,7 @@ impl PySQLContext {
         self.context.register(name, lf.ldf)
     }
 
-    pub fn execute(&self, query: &str) -> PyResult<PyLazyFrame> {
+    pub fn execute(&mut self, query: &str) -> PyResult<PyLazyFrame> {
         Ok(self
             .context
             .execute(query)

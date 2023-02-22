@@ -15,6 +15,7 @@ check:
 	    -p polars-lazy \
 	    -p polars-arrow \
 	    -p polars-time \
+	    -p polars-error \
 	    -p polars-ops
 
 clippy:
@@ -25,6 +26,7 @@ clippy:
 	    -p polars-arrow \
 	    -p polars-utils \
 	    -p polars-ops \
+	    -p polars-error \
 	    -p polars-time
 
 clippy-default:
@@ -88,7 +90,7 @@ doctest:
 	cargo doc --features=docs-selection -p polars
 
 publish:
-	cargo publish --allow-dirty -p polars-arrow
+	cargo publish --allow-dirty -p polars-error
 	sleep 20
 	cargo publish --allow-dirty -p polars-utils
 	sleep 20

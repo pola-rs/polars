@@ -14,7 +14,7 @@ simd = ["arrow/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
 avx512 = []
 docs = []
-temporal = ["regex", "chrono"]
+temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "private"]
 lazy = ["sort_multiple"]
@@ -24,7 +24,7 @@ lazy = ["sort_multiple"]
 performant = ["polars-arrow/performant"]
 
 # extra utilities for Utf8Chunked
-strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
+strings = ["regex", "polars-arrow/strings", "arrow/compute_substring", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
@@ -165,6 +165,7 @@ num.workspace = true
 object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell.workspace = true
 polars-arrow = { version = "0.27.2", path = "../polars-arrow", features = ["compute"] }
+polars-error = { version = "0.27.2", path = "../polars-error" }
 polars-utils = { version = "0.27.2", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }

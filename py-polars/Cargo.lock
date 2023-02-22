@@ -1569,6 +1569,7 @@ dependencies = [
  "chrono-tz 0.8.1",
  "hashbrown 0.13.2",
  "num",
+ "polars-error",
  "serde",
  "thiserror",
 ]
@@ -1590,6 +1591,7 @@ dependencies = [
  "num",
  "once_cell",
  "polars-arrow",
+ "polars-error",
  "polars-utils",
  "rand",
  "rand_distr",
@@ -1601,6 +1603,16 @@ dependencies = [
  "thiserror",
  "wasm-timer",
  "xxhash-rust",
+]
+
+[[package]]
+name = "polars-error"
+version = "0.27.2"
+dependencies = [
+ "anyhow",
+ "arrow2",
+ "regex",
+ "thiserror",
 ]
 
 [[package]]

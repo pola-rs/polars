@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import numpy as np
 import pytest
 
@@ -290,4 +292,30 @@ def test_overflow_diff() -> None:
     )
     assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(False) == {
         "a": [None, -10, 20]
+    }
+
+
+@typing.no_type_check
+def test_fill_null_unknown_output_type() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                None,
+                2,
+                3,
+                4,
+                5,
+            ]
+        }
+    )
+    assert df.with_columns(
+        np.exp(pl.col("a")).fill_null(pl.lit(1, pl.Float64))
+    ).to_dict(False) == {
+        "a": [
+            1.0,
+            7.38905609893065,
+            20.085536923187668,
+            54.598150033144236,
+            148.4131591025766,
+        ]
     }

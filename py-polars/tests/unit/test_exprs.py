@@ -533,6 +533,39 @@ def test_map_dict() -> None:
         "remapped": ["France", "Not specified", "2", "Germany"],
     }
 
+    with pl.StringCache():
+        assert (
+            df.with_columns(
+                pl.col("country_code")
+                .cast(pl.Categorical)
+                .map_dict(country_code_dict, default=pl.col("country_code"))
+                .alias("remapped")
+            )
+        ).to_dict(False) == {
+            "row_nr": [0, 1, 2, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+            "remapped": ["France", "Not specified", "ES", "Germany"],
+        }
+
+    df_categorical_lazy = df.lazy().with_columns(
+        pl.col("country_code").cast(pl.Categorical)
+    )
+
+    with pl.StringCache():
+        assert (
+            df_categorical_lazy.with_columns(
+                pl.col("country_code")
+                .map_dict(country_code_dict, default=pl.col("country_code"))
+                .alias("remapped")
+            )
+            .collect()
+            .to_dict(False)
+        ) == {
+            "row_nr": [0, 1, 2, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+            "remapped": ["France", "Not specified", "ES", "Germany"],
+        }
+
 
 def test_lit_dtypes() -> None:
     def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:
@@ -586,3 +619,26 @@ def test_incompatible_lit_dtype() -> None:
             datetime(2020, 1, 1, tzinfo=timezone.utc),
             dtype=pl.Datetime("us", "Asia/Kathmandu"),
         )
+
+
+@pytest.mark.parametrize(
+    ("input", "expected"),
+    [
+        (("a",), ["b", "c"]),
+        (("a", "b"), ["c"]),
+        ((["a", "b"],), ["c"]),
+        ((pl.Int64,), ["c"]),
+        ((pl.Utf8, pl.Float32), ["a", "b"]),
+        (([pl.Utf8, pl.Float32],), ["a", "b"]),
+    ],
+)
+def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
+    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8})
+    assert df.select(pl.all().exclude(*input)).columns == expected
+
+
+@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
+    df = pl.DataFrame(schema=["a", "b", "c"])
+    with pytest.raises(TypeError):
+        df.select(pl.all().exclude(*input))

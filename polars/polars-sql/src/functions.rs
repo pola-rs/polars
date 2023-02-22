@@ -335,7 +335,7 @@ fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {
         .collect()
 }
 
-trait FromSqlExpr {
+pub(crate) trait FromSqlExpr {
     fn from_sql_expr(expr: &SqlExpr) -> Result<Self, PolarsError>
     where
         Self: Sized;

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from datetime import date, datetime
 
 import numpy as np
 import pytest
@@ -376,4 +377,18 @@ def test_list_function_group_awareness() -> None:
         "get": [[100], [105], [100]],
         "take": [[[100]], [[105]], [[100]]],
         "slice": [[[100, 103]], [[105, 106, 105]], [[100, 102]]],
+    }
+
+
+def test_list_get_logical_types() -> None:
+    df = pl.DataFrame(
+        {
+            "date_col": [[datetime(2023, 2, 1).date(), datetime(2023, 2, 2).date()]],
+            "datetime_col": [[datetime(2023, 2, 1), datetime(2023, 2, 2)]],
+        }
+    )
+
+    assert df.select(pl.all().arr.get(1).suffix("_element_1")).to_dict(False) == {
+        "date_col_element_1": [date(2023, 2, 2)],
+        "datetime_col_element_1": [datetime(2023, 2, 2, 0, 0)],
     }

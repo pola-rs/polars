@@ -25,6 +25,7 @@ from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 from polars.utils import (
     deprecate_nonkeyword_arguments,
+    deprecated_alias,
     handle_projection_columns,
     normalise_filepath,
 )
@@ -658,6 +659,8 @@ def scan_parquet(
     row_count_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
     low_memory: bool = False,
+    *,
+    use_statistics: bool = True,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file or multiple files via glob patterns.
@@ -688,8 +691,11 @@ def scan_parquet(
         Extra options that make sense for ``fsspec.open()`` or a
         particular storage connection.
         e.g. host, port, username, password, etc.
-    low_memory: bool
+    low_memory
         Reduce memory pressure at the expense of performance.
+    use_statistics
+        Use statistics in the parquet to determine if pages
+        can be skipped from reading.
 
     """
     if isinstance(file, (str, Path)):
@@ -705,6 +711,7 @@ def scan_parquet(
         row_count_offset=row_count_offset,
         storage_options=storage_options,
         low_memory=low_memory,
+        use_statistics=use_statistics,
     )
 
 
@@ -888,6 +895,9 @@ def read_parquet(
     row_count_offset: int = 0,
     low_memory: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
+    *,
+    use_statistics: bool = True,
+    rechunk: bool = True,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -933,6 +943,12 @@ def read_parquet(
     pyarrow_options
         Keyword arguments for `pyarrow.parquet.read_table
         <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
+    use_statistics
+        Use statistics in the parquet to determine if pages
+        can be skipped from reading.
+    rechunk
+        Make sure that all columns are contiguous in memory by
+        aggregating the chunks into a single array.
 
     Returns
     -------
@@ -978,6 +994,8 @@ def read_parquet(
             row_count_name=row_count_name,
             row_count_offset=row_count_offset,
             low_memory=low_memory,
+            use_statistics=use_statistics,
+            rechunk=rechunk,
         )
 
 

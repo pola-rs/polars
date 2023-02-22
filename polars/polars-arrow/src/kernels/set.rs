@@ -5,7 +5,7 @@ use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 
 use crate::array::default_arrays::FromData;
-use crate::error::{PolarsError, Result};
+use crate::error::{PolarsError, PolarsResult};
 use crate::index::IdxSize;
 use crate::kernels::BinaryMaskedSliceIterator;
 use crate::trusted_len::PushUnchecked;
@@ -70,7 +70,7 @@ pub fn set_at_idx_no_null<T, I>(
     idx: I,
     set_value: T,
     data_type: DataType,
-) -> Result<PrimitiveArray<T>>
+) -> PolarsResult<PrimitiveArray<T>>
 where
     T: NativeType,
     I: IntoIterator<Item = IdxSize>,
@@ -79,7 +79,7 @@ where
     buf.extend_from_slice(array.values().as_slice());
     let mut_slice = buf.as_mut_slice();
 
-    idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
+    idx.into_iter().try_for_each::<_, PolarsResult<_>>(|idx| {
         let val = mut_slice
             .get_mut(idx as usize)
             .ok_or_else(|| PolarsError::ComputeError("idx is out of bounds".into()))?;

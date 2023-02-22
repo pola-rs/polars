@@ -2,8 +2,8 @@ name: Deploy documentation
 
 on:
   push:
-    branches:
-      - master
+    tags:
+      - '**'
 
 jobs:
   main:

@@ -62,9 +62,11 @@ pub trait SerReader<R>
 where
     R: Read + Seek,
 {
+    /// Create a new instance of the `[SerReader]`
     fn new(reader: R) -> Self;
 
-    /// Rechunk to a single chunk after Reading file.
+    /// Make sure that all columns are contiguous in memory by
+    /// aggregating the chunks into a single array.
     #[must_use]
     fn set_rechunk(self, _rechunk: bool) -> Self
     where
