@@ -906,3 +906,12 @@ def test_nested_schema_construction() -> None:
     assert df.to_dict(False) == {
         "node_groups": [[{"nodes": [{"name": "a", "time": 0}]}], [{"nodes": []}]]
     }
+
+
+def test_array_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
+    original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
+    pyseries = pl.internals.construction.arrow_to_pyseries("", original_array)
+    assert (
+        pyseries.get_chunks()[0]._get_ptr()
+        == original_array.chunks[0].buffers()[1].address
+    )

@@ -140,7 +140,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
         elif array.num_chunks == 0:
             pys = PySeries.from_arrow(name, pa.array([], array.type))
         else:
-            pys = PySeries.from_arrow(name, array.combine_chunks())
+            pys = PySeries.from_arrow(name, array.chunks[0])
 
         if rechunk:
             pys.rechunk(in_place=True)
