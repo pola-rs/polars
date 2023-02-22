@@ -9,7 +9,7 @@ import polars as pl
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
 def foods_ipc_path() -> str:
-    return str(Path(os.path.dirname(__file__)) / "io" / "files" / "foods1.ipc")
+    return str(Path(os.path.dirname(__file__)) / "read_write" / "files" / "foods1.ipc")
 
 
 def test_sql_groupby(foods_ipc_path: Path) -> None:
