@@ -586,3 +586,26 @@ def test_incompatible_lit_dtype() -> None:
             datetime(2020, 1, 1, tzinfo=timezone.utc),
             dtype=pl.Datetime("us", "Asia/Kathmandu"),
         )
+
+
+@pytest.mark.parametrize(
+    ("input", "expected"),
+    [
+        (("a",), ["b", "c"]),
+        (("a", "b"), ["c"]),
+        ((["a", "b"],), ["c"]),
+        ((pl.Int64,), ["c"]),
+        ((pl.Utf8, pl.Float32), ["a", "b"]),
+        (([pl.Utf8, pl.Float32],), ["a", "b"]),
+    ],
+)
+def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
+    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8})
+    assert df.select(pl.all().exclude(*input)).columns == expected
+
+
+@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
+    df = pl.DataFrame(schema=["a", "b", "c"])
+    with pytest.raises(TypeError):
+        df.select(pl.all().exclude(*input))

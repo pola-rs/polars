@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, c
 
 from polars import internals as pli
 from polars.datatypes import (
-    DataType,
     PolarsDataType,
     Struct,
     UInt32,
@@ -522,30 +521,22 @@ class Expr:
 
     def exclude(
         self,
-        columns: (
-            str
-            | PolarsDataType
-            | Sequence[str]
-            | Sequence[PolarsDataType]
-            | set[PolarsDataType]
-            | frozenset[PolarsDataType]
-        ),
+        columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+        *more_columns: str | PolarsDataType,
     ) -> Self:
         """
-        Exclude certain columns from a wildcard/regex selection.
+        Exclude columns from a multi-column expression.
 
-        You may also use regexes in the exclude list. They must start with `^` and end
-        with `$`.
+        Only works after a wildcard or regex column selection.
 
         Parameters
         ----------
         columns
-            Column(s) to exclude from selection.
-            This can be:
-
-            - a column name, or multiple column names
-            - a regular expression starting with `^` and ending with `$`
-            - a dtype or multiple dtypes
+            The name or datatype of the column(s) to exclude. Accepts regular expression
+            input. Regular expressions should start with ``^`` and end with ``$``.
+        *more_columns
+            Additional names or datatypes of columns to exclude, specified as positional
+            arguments.
 
         Examples
         --------
@@ -611,22 +602,43 @@ class Expr:
         └──────┘
 
         """
+        if more_columns:
+            if isinstance(columns, str):
+                columns_str = [columns]
+                columns_str.extend(more_columns)  # type: ignore[arg-type]
+                return self._from_pyexpr(self._pyexpr.exclude(columns_str))
+            elif is_polars_dtype(columns):
+                dtypes = [columns]
+                dtypes.extend(more_columns)
+                return self._from_pyexpr(self._pyexpr.exclude_dtype(dtypes))
+            else:
+                raise TypeError(
+                    f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
+                )
+
         if isinstance(columns, str):
-            columns = [columns]
-            return self._from_pyexpr(self._pyexpr.exclude(columns))
-        elif isinstance(columns, (set, frozenset)):
-            return self._from_pyexpr(self._pyexpr.exclude_dtype(list(columns)))
-        elif not isinstance(columns, Sequence) or isinstance(columns, DataType):
-            columns = [columns]
-            return self._from_pyexpr(self._pyexpr.exclude_dtype(columns))
+            return self._from_pyexpr(self._pyexpr.exclude([columns]))
+        elif is_polars_dtype(columns):
+            return self._from_pyexpr(self._pyexpr.exclude_dtype([columns]))
+        elif isinstance(columns, Iterable):
+            columns_list = list(columns)
+            if not columns_list:
+                return self
 
-        if not all((isinstance(a, str) or is_polars_dtype(a)) for a in columns):
-            raise ValueError("input should be all string or all DataType")
-
-        if isinstance(columns[0], str):
-            return self._from_pyexpr(self._pyexpr.exclude(columns))
+            item = columns_list[0]
+            if isinstance(item, str):
+                return self._from_pyexpr(self._pyexpr.exclude(columns_list))
+            elif is_polars_dtype(item):
+                return self._from_pyexpr(self._pyexpr.exclude_dtype(columns_list))
+            else:
+                raise TypeError(
+                    "Invalid input for `exclude`. Expected iterable of type `str` or `DataType`,"
+                    f" got iterable of type {type(item)!r}"
+                )
         else:
-            return self._from_pyexpr(self._pyexpr.exclude_dtype(columns))
+            raise TypeError(
+                f"Invalid input for `exclude`. Expected `str` or `DataType`, got {type(columns)!r}"
+            )
 
     def keep_name(self) -> Self:
         """
