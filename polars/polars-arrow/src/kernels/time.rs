@@ -7,7 +7,7 @@ use arrow::temporal_conversions::{
 #[cfg(feature = "timezones")]
 use chrono::{NaiveDateTime, TimeZone};
 
-use crate::error::{PolarsError, Result};
+use crate::error::{PolarsError, PolarsResult};
 use crate::prelude::ArrayRef;
 
 #[cfg(feature = "timezones")]
@@ -65,7 +65,7 @@ pub fn replace_timezone(
     tu: TimeUnit,
     from: String,
     to: String,
-) -> Result<ArrayRef> {
+) -> PolarsResult<ArrayRef> {
     match from.parse::<chrono_tz::Tz>() {
         Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
             Ok(to_tz) => Ok(convert_to_timestamp(from_tz, to_tz, arr, tu)),

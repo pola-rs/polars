@@ -11,6 +11,7 @@ members = [
   "polars/polars-lazy/polars-plan",
   "polars/polars-lazy/polars-pipe",
   "polars/polars-sql",
+  "polars/polars-error",
   "examples/read_csv",
   "examples/read_parquet",
   "examples/read_parquet_cloud",
