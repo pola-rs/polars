@@ -530,13 +530,10 @@ class Series:
             return wrap_s(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
             return wrap_s(getattr(self._s, op_s)(Series(other)._s))
-        if isinstance(other, (date, datetime, timedelta, str)):
-            other = Series("", [other])
-            if "rhs" in op_ffi:
-                return wrap_s(getattr(other._s, op_s)(self._s))
-            else:
-                return wrap_s(getattr(self._s, op_s)(other._s))
-        if isinstance(other, float) and not self.is_float():
+        if (
+            isinstance(other, (float, date, datetime, timedelta, str))
+            and not self.is_float()
+        ):
             _s = sequence_to_pyseries("", [other])
             if "rhs" in op_ffi:
                 return wrap_s(getattr(_s, op_s)(self._s))
