@@ -443,7 +443,6 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal(&df_pl));
     }
-    
     #[test]
     fn create_table() {
         let df = create_sample_df().unwrap();
