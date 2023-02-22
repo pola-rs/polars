@@ -1,10 +1,11 @@
 import typing
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_sqrt_neg_inf() -> None:
@@ -21,6 +22,15 @@ def test_sqrt_neg_inf() -> None:
 
 def test_arithmetic_with_logical_on_series_4920() -> None:
     assert (pl.Series([date(2022, 6, 3)]) - date(2022, 1, 1)).dtype == pl.Duration("ms")
+
+
+def test_arithmetic_datetimes() -> None:
+    result = date(2021, 1, 1) - pl.Series([date(2020, 1, 1)])
+    expected = pl.Series("", [timedelta(days=366)], dtype=pl.Duration("ms"))
+    assert_series_equal(result, expected)
+    result = pl.Series([date(2020, 1, 1)]) - date(2021, 1, 1)
+    expected = pl.Series("", [timedelta(days=-366)], dtype=pl.Duration("ms"))
+    assert_series_equal(result, expected)
 
 
 def test_struct_arithmetic() -> None:
