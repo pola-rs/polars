@@ -4134,7 +4134,7 @@ class DataFrame:
 
     def pipe(
         self,
-        func: Callable[Concatenate[DataFrame, P], T],
+        function: Callable[Concatenate[DataFrame, P], T],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
@@ -4143,7 +4143,7 @@ class DataFrame:
 
         Parameters
         ----------
-        func
+        function
             Callable; will receive the frame as the first parameter,
             followed by any given args/kwargs.
         *args
@@ -4199,7 +4199,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return func(self, *args, **kwargs)
+        return function(self, *args, **kwargs)
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
