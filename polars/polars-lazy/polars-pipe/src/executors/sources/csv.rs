@@ -8,7 +8,7 @@ use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::CsvParserOptions;
 
 use super::*;
-use crate::CHUNK_SIZE;
+use crate::chunk_size;
 
 pub(crate) struct CsvSource {
     #[allow(dead_code)]
@@ -42,9 +42,15 @@ impl CsvSource {
         let schema_ref =
             unsafe { std::mem::transmute::<&Schema, &'static Schema>(schema.as_ref()) };
 
+        let n_cols = if projected_len > 0 {
+            projected_len
+        } else {
+            schema_ref.len()
+        };
         // inversely scale the chunk size by the number of threads so that we reduce memory pressure
         // in streaming
-        let chunk_size = std::cmp::max(CHUNK_SIZE * 12 / POOL.current_num_threads(), 10_000);
+        let chunk_size =
+            std::cmp::max(chunk_size(n_cols) * 12 / POOL.current_num_threads(), 10_000);
 
         let reader = CsvReader::from_path(&path)
             .unwrap()
