@@ -539,4 +539,49 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal(&expected));
     }
+
+    #[test]
+    #[cfg(feature = "parquet")]
+    fn read_parquet_tbl() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            CREATE TABLE foods1 AS
+            SELECT *
+            FROM read_parquet('../../examples/datasets/foods1.parquet')"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let create_tbl_res = df! {
+            "Response" => ["Create Table"]
+        }
+        .unwrap();
+        assert!(df_sql.frame_equal(&create_tbl_res));
+        let df_2 = context
+            .execute(r#"SELECT * FROM foods1"#)
+            .unwrap()
+            .collect()
+            .unwrap();
+        assert_eq!(df_2.height(), 27);
+        assert_eq!(df_2.width(), 4);
+    }
+    #[test]
+    #[cfg(feature = "ipc")]
+    fn read_ipc_tbl() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            CREATE TABLE foods1 AS
+            SELECT *
+            FROM read_ipc('../../examples/datasets/foods1.ipc')"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let create_tbl_res = df! {
+            "Response" => ["Create Table"]
+        }
+        .unwrap();
+        assert!(df_sql.frame_equal(&create_tbl_res));
+        let df_2 = context
+            .execute(r#"SELECT * FROM foods1"#)
+            .unwrap()
+            .collect()
+            .unwrap();
+        assert_eq!(df_2.height(), 27);
+        assert_eq!(df_2.width(), 4);
+    }
 }

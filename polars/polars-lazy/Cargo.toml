@@ -127,6 +127,8 @@ serde = [
   "polars-ops/serde",
 ]
 
+binary_encoding = ["polars-plan/binary_encoding", "dtype-binary"]
+
 # no guarantees whatsoever
 private = ["polars-plan/private"]
 

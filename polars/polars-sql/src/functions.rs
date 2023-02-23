@@ -15,88 +15,212 @@ pub(crate) enum PolarsSqlFunctions {
     // Math functions
     // ----
     /// SQL 'abs' function
+    /// ```sql
+    /// SELECT ABS(column_1) from df;
+    /// ```
     Abs,
     /// SQL 'acos' function
+    /// ```sql
+    /// SELECT ACOS(column_1) from df;
+    /// ```
     Acos,
     /// SQL 'asin' function
+    /// ```sql
+    /// SELECT ASIN(column_1) from df;
+    /// ```
     Asin,
     /// SQL 'atan' function
+    /// ```sql
+    /// SELECT ATAN(column_1) from df;
+    /// ```
     Atan,
     /// SQL 'ceil' function
+    /// ```sql
+    /// SELECT CEIL(column_1) from df;
+    /// ```
     Ceil,
     /// SQL 'exp' function
+    /// ```sql
+    /// SELECT EXP(column_1) from df;
+    /// ```
     Exp,
     /// SQL 'floor' function
+    /// ```sql
+    /// SELECT FLOOR(column_1) from df;
+    /// ```
     Floor,
     /// SQL 'ln' function
+    /// ```sql
+    /// SELECT LN(column_1) from df;
+    /// ```
     Ln,
     /// SQL 'log2' function
+    /// ```sql
+    /// SELECT LOG2(column_1) from df;
+    /// ```
     Log2,
     /// SQL 'log10' function
+    /// ```sql
+    /// SELECT LOG10(column_1) from df;
+    /// ```
     Log10,
     /// SQL 'log' function
+    /// ```sql
+    /// SELECT LOG(column_1, 10) from df;
+    /// ```
     Log,
-
     /// SQL 'pow' function
+    /// ```sql
+    /// SELECT POW(column_1, 2) from df;
+    /// ```
     Pow,
     // ----
     // String functions
     // ----
     /// SQL 'lower' function
+    /// ```sql
+    /// SELECT LOWER(column_1) from df;
+    /// ```
     Lower,
     /// SQL 'upper' function
+    /// ```sql
+    /// SELECT UPPER(column_1) from df;
+    /// ```
     Upper,
     /// SQL 'ltrim' function
+    /// ```sql
+    /// SELECT LTRIM(column_1) from df;
+    /// ```
     LTrim,
     /// SQL 'rtrim' function
+    /// ```sql
+    /// SELECT RTRIM(column_1) from df;
+    /// ```
     RTrim,
     /// SQL 'starts_with' function
+    /// ```sql
+    /// SELECT STARTS_WITH(column_1, 'a') from df;
+    /// SELECT column_2 from df WHERE STARTS_WITH(column_1, 'a');
+    /// ```
     StartsWith,
     /// SQL 'ends_with' function
+    /// ```sql
+    /// SELECT ENDS_WITH(column_1, 'a') from df;
+    /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
+    /// ```
     EndsWith,
     // ----
     // Aggregate functions
     // ----
     /// SQL 'count' function
+    /// ```sql
+    /// SELECT COUNT(column_1) from df;
+    /// SELECT COUNT(*) from df;
+    /// SELECT COUNT(DISTINCT column_1) from df;
+    /// SELECT COUNT(DISTINCT *) from df;
+    /// ```
     Count,
     /// SQL 'sum' function
+    /// ```sql
+    /// SELECT SUM(column_1) from df;
+    /// ```
     Sum,
     /// SQL 'min' function
+    /// ```sql
+    /// SELECT MIN(column_1) from df;
+    /// ```
     Min,
     /// SQL 'max' function
+    /// ```sql
+    /// SELECT MAX(column_1) from df;
+    /// ```
     Max,
     /// SQL 'avg' function
+    /// ```sql
+    /// SELECT AVG(column_1) from df;
+    /// ```
     Avg,
     /// SQL 'stddev' function
+    /// ```sql
+    /// SELECT STDDEV(column_1) from df;
+    /// ```
     StdDev,
     /// SQL 'variance' function
+    /// ```sql
+    /// SELECT VARIANCE(column_1) from df;
+    /// ```
     Variance,
     /// SQL 'first' function
+    /// ```sql
+    /// SELECT FIRST(column_1) from df;
+    /// ```
     First,
     /// SQL 'last' function
+    /// ```sql
+    /// SELECT LAST(column_1) from df;
+    /// ```
     Last,
     // ----
     // Array functions
     // ----
     /// SQL 'array_length' function
+    /// ```sql
+    /// SELECT ARRAY_LENGTH(column_1) from df;
+    /// ```
     ArrayLength,
     /// SQL 'array_lower' function
+    /// Returns the minimum value in an array; equivalent to `array_min`
+    /// ```sql
+    /// SELECT ARRAY_LOWER(column_1) from df;
+    /// ```
     ArrayMin,
     /// SQL 'array_upper' function
+    /// Returns the maximum value in an array; equivalent to `array_max`
+    /// ```sql
+    /// SELECT ARRAY_UPPER(column_1) from df;
+    /// ```
     ArrayMax,
     /// SQL 'array_sum' function
+    /// Returns the sum of all values in an array
+    /// ```sql
+    /// SELECT ARRAY_SUM(column_1) from df;
+    /// ```
     ArraySum,
     /// SQL 'array_mean' function
+    /// Returns the mean of all values in an array
+    /// ```sql
+    /// SELECT ARRAY_MEAN(column_1) from df;
+    /// ```
     ArrayMean,
     /// SQL 'array_reverse' function
+    /// Returns the array with the elements in reverse order
+    /// ```sql
+    /// SELECT ARRAY_REVERSE(column_1) from df;
+    /// ```
     ArrayReverse,
     /// SQL 'array_unique' function
+    /// Returns the array with the unique elements
+    /// ```sql
+    /// SELECT ARRAY_UNIQUE(column_1) from df;
+    /// ```
     ArrayUnique,
     /// SQL 'unnest' function
+    /// unnest/explods an array column into multiple rows
+    /// ```sql
+    /// SELECT unnest(column_1) from df;
+    /// ```
     Explode,
     /// SQL 'array_get' function
+    /// Returns the value at the given index in the array
+    /// ```sql
+    /// SELECT ARRAY_GET(column_1, 1) from df;
+    /// ```
     ArrayGet,
     /// SQL 'array_contains' function
+    /// Returns true if the array contains the value
+    /// ```sql
+    /// SELECT ARRAY_CONTAINS(column_1, 'foo') from df;
+    /// ```
     ArrayContains,
 }
 
