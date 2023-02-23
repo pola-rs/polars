@@ -1874,8 +1874,7 @@ def cumreduce(
 
 
 def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
-    """
-    Evaluate columnwise or elementwise with a bitwise OR operation.
+    """Evaluate columnwise or elementwise with a bitwise OR operation.
 
     Examples
     --------
