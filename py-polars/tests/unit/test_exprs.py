@@ -44,6 +44,21 @@ def test_suffix(fruits_cars: pl.DataFrame) -> None:
     assert out.columns == ["A_reverse", "fruits_reverse", "B_reverse", "cars_reverse"]
 
 
+def test_pipe() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _multiply(expr: pl.Expr, mul: int) -> pl.Expr:
+        return expr * mul
+
+    result = df.select(
+        pl.col("foo").pipe(_multiply, mul=2),
+        pl.col("bar").pipe(_multiply, mul=3),
+    )
+
+    expected = pl.DataFrame({"foo": [2, 4, 6], "bar": [18, None, 24]})
+    assert_frame_equal(result, expected)
+
+
 def test_prefix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().prefix("reverse_")])
