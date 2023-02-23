@@ -3672,7 +3672,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
 
     def explode(
-        self, columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr]
+        self,
+        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        *more_columns: str | pli.Expr,
     ) -> Self:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -3682,6 +3684,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         columns
             Name of the column(s) to explode. Columns must be of datatype List or Utf8.
             Accepts ``col`` expressions as input as well.
+        *more_columns
+            Additional names of columns to explode, specified as positional arguments.
 
         Examples
         --------
@@ -3710,6 +3714,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         columns = pli.selection_to_pyexpr_list(columns)
+        if more_columns:
+            columns.extend(pli.selection_to_pyexpr_list(more_columns))
         return self._from_pyldf(self._ldf.explode(columns))
 
     @deprecate_nonkeyword_arguments(
