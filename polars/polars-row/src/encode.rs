@@ -1,17 +1,29 @@
+use arrow::array::{Array, PrimitiveArray};
+use arrow::datatypes::{DataType as ArrowDataType, DataType};
+use arrow::types::NativeType;
+
+use crate::encodings::fixed::FixedLengthEncoding;
 use crate::row::RowsEncoded;
 use crate::sort_field::SortField;
-use arrow::{
-    array::{
-        PrimitiveArray, Array
-    },
-    datatypes::{DataType as ArrowDataType, DataType}
-};
-use arrow::types::NativeType;
-use crate::{ArrayRef, with_match_arrow_primitive_type};
-use crate::encodings::fixed::FixedLengthEncoding;
+use crate::{with_match_arrow_primitive_type, ArrayRef};
 
-fn encode_primitive<T: NativeType + FixedLengthEncoding>(arr: &PrimitiveArray<T>, field: &SortField,
-                                   out: &mut RowsEncoded
+pub fn convert_columns(columns: &[ArrayRef], fields: Vec<SortField>) -> RowsEncoded {
+    assert_eq!(fields.len(), columns.len());
+
+    let mut rows = allocate_rows_buf(columns, &fields);
+    for (arr, field) in columns.iter().zip(fields.iter()) {
+        encode_array(&**arr, field, &mut rows)
+    }
+
+    // we set fields later so we don't have aliasing borrows.
+    rows.fields = fields;
+    rows
+}
+
+fn encode_primitive<T: NativeType + FixedLengthEncoding>(
+    arr: &PrimitiveArray<T>,
+    field: &SortField,
+    out: &mut RowsEncoded,
 ) {
     if arr.null_count() == 0 {
         crate::encodings::fixed::encode_slice(arr.values().as_slice(), out, field);
@@ -20,11 +32,7 @@ fn encode_primitive<T: NativeType + FixedLengthEncoding>(arr: &PrimitiveArray<T>
     }
 }
 
-fn encode_array(
-    array: &dyn Array,
-    field: &SortField,
-    out: &mut RowsEncoded
-) {
+fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncoded) {
     match array.data_type() {
         DataType::Boolean => todo!(),
         DataType::LargeUtf8 => todo!(),
@@ -37,8 +45,10 @@ fn encode_array(
     };
 }
 
-pub fn allocate_rows_buf(columns: &[ArrayRef], fields: Box<[SortField]>) -> RowsEncoded {
-    let has_variable = fields.iter().any(|f| matches!(f.data_type, ArrowDataType::LargeBinary));
+pub fn allocate_rows_buf(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncoded {
+    let has_variable = fields
+        .iter()
+        .any(|f| matches!(f.data_type, ArrowDataType::LargeBinary));
 
     let num_rows = columns[0].len();
     if has_variable {
@@ -66,7 +76,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], fields: Box<[SortField]>) -> Rows
         for _ in 0..num_rows {
             offsets.push(current_offset);
             current_offset += row_size;
-        };
-        RowsEncoded::new(buf.into(), offsets.into(), fields)
+        }
+        RowsEncoded::new(buf, offsets, None)
     }
 }

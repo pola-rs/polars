@@ -27,6 +27,7 @@ clippy:
 	    -p polars-utils \
 	    -p polars-ops \
 	    -p polars-error \
+	    -p polars-row \
 	    -p polars-time
 
 clippy-default:
@@ -41,6 +42,7 @@ test:  ## Run tests
 	    -p polars-arrow \
 	    -p polars-time \
 	    -p polars-utils \
+	    -p polars-sql \
 	    -- \
 	    --test-threads=2
 

@@ -1,6 +1,7 @@
-use super::*;
-use encodings::fixed::FixedLengthEncoding;
 use arrow::datatypes::DataType as ArrowDataType;
+use encodings::fixed::FixedLengthEncoding;
+
+use super::*;
 
 pub struct SortField {
     /// Whether to sort in descending order
@@ -25,8 +26,7 @@ impl SortField {
             Int64 => i64::ENCODED_LEN,
             Float32 => f32::ENCODED_LEN,
             Float64 => f64::ENCODED_LEN,
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }
-

@@ -1,5 +1,6 @@
-use crate::row::RowsEncoded;
 use polars_utils::slice::*;
+
+use crate::row::RowsEncoded;
 use crate::sort_field::SortField;
 
 /// Encodes a value of a particular fixed width type into bytes
@@ -26,7 +27,6 @@ impl FixedLengthEncoding for bool {
     }
 }
 
-
 // encode as big endian
 macro_rules! encode_unsigned {
     ($n:expr, $t:ty) => {
@@ -48,7 +48,6 @@ encode_unsigned!(1, u8);
 encode_unsigned!(2, u16);
 encode_unsigned!(4, u32);
 encode_unsigned!(8, u64);
-
 
 // toggle the sign bit and then encode as big indian
 macro_rules! encode_signed {
@@ -116,34 +115,37 @@ impl FixedLengthEncoding for f64 {
     }
 }
 
+#[inline]
+fn encode_value<T: FixedLengthEncoding>(
+    value: &T,
+    offset: &mut usize,
+    descending: bool,
+    buf: &mut [u8],
+) {
+    let end_offset = *offset + T::ENCODED_LEN;
+    let dst = unsafe { buf.get_unchecked_release_mut(*offset..end_offset) };
+    // set valid
+    dst[0] = 1;
+    let mut encoded = value.encode();
+
+    // invert bits to reverse order
+    if descending {
+        for v in encoded.as_mut() {
+            *v = !*v
+        }
+    }
+
+    dst[1..].copy_from_slice(encoded.as_ref());
+    *offset = end_offset;
+}
+
 pub(crate) fn encode_slice<T: FixedLengthEncoding>(
     input: &[T],
     out: &mut RowsEncoded,
-    field: &SortField
+    field: &SortField,
 ) {
-    if field.descending {
-        for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
-            let end_offset = *offset + T::ENCODED_LEN;
-            let dst = unsafe { out.buf.get_unchecked_release_mut(*offset..end_offset) };
-            // set valid
-            dst[0] = 1;
-            let mut encoded = value.encode();
-
-            // invert bits to reverse order
-            for v in encoded.as_mut() {
-                *v = !*v
-            }
-            dst[1..].copy_from_slice(encoded.as_ref())
-        }
-    } else {
-        for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
-            let end_offset = *offset + T::ENCODED_LEN;
-            let dst = unsafe { out.buf.get_unchecked_release_mut(*offset..end_offset) };
-            // set valid
-            dst[0] = 1;
-            let mut encoded = value.encode();
-            dst[1..].copy_from_slice(encoded.as_ref())
-        }
+    for (offset, value) in out.offsets.iter_mut().skip(1).zip(input) {
+        encode_value(value, offset, field.descending, &mut out.buf);
     }
 }
 
@@ -155,29 +157,18 @@ fn null_sentinel(field: &SortField) -> u8 {
     }
 }
 
-pub(crate) fn encode_iter<I: Iterator<Item=Option<T>>, T: FixedLengthEncoding>(
+pub(crate) fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     input: I,
     out: &mut RowsEncoded,
-    field: &SortField
+    field: &SortField,
 ) {
-
     for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
         if let Some(value) = opt_value {
-            let end_offset = *offset + T::ENCODED_LEN;
-            let dst = unsafe { out.buf.get_unchecked_release_mut(*offset..end_offset) };
-            // set valid
-            dst[0] = 1;
-            let mut encoded = value.encode();
-
-            if field.descending {
-                // invert bits to reverse order
-                for v in encoded.as_mut() {
-                    *v = !*v
-                }
-            }
-            dst[1..].copy_from_slice(encoded.as_ref())
+            encode_value(&value, offset, field.descending, &mut out.buf);
         } else {
             unsafe { *out.buf.get_unchecked_release_mut(*offset) = null_sentinel(field) };
+            let end_offset = *offset + T::ENCODED_LEN;
+            *offset = end_offset;
         }
     }
 }
