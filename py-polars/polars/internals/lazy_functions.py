@@ -1535,7 +1535,8 @@ def apply(
     │ 4   ┆ 7   │
     └─────┴─────┘
 
-    calculate product of a
+    Calculate product of ``a``.
+
     >>> df.with_columns(pl.col("a").apply(lambda x: x * x).alias("product_a"))
     shape: (4, 3)
     ┌─────┬─────┬───────────┐
@@ -1607,7 +1608,8 @@ def fold(
     │ 3   ┆ 5   ┆ 7   │
     └─────┴─────┴─────┘
 
-    Horizontally sums over all columns and adds 1
+    Horizontally sum over all columns and add 1.
+
     >>> df.select(
     ...     pl.fold(acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
     ...         "sum"
@@ -1624,7 +1626,8 @@ def fold(
     │ 16  │
     └─────┘
 
-    You can also apply a condition/predicate on all columns :
+    You can also apply a condition/predicate on all columns:
+
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 2, 3],
@@ -1708,7 +1711,8 @@ def reduce(
     │ 3   ┆ 2   │
     └─────┴─────┘
 
-    Horizontally sums over all columns
+    Horizontally sum over all columns.
+
     >>> df.select(
     ...     pl.reduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
     ... )
@@ -1874,7 +1878,8 @@ def cumreduce(
 
 
 def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
-    """Evaluate columnwise or elementwise with a bitwise OR operation.
+    """
+    Evaluate columnwise or elementwise with a bitwise OR operation.
 
     Examples
     --------
@@ -1897,8 +1902,9 @@ def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
     │ true  ┆ false ┆ false │
     └───────┴───────┴───────┘
 
-    compares the values (in binary format) and return true if any value in the column
-    is true
+    Compares the values (in binary format) and return true if any value in the column
+    is true.
+
     >>> df.select(pl.any("*"))
     shape: (1, 3)
     ┌──────┬───────┬──────┐
