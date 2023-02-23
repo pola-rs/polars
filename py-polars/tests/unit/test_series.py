@@ -537,6 +537,18 @@ def test_arrow() -> None:
     out = a.to_arrow()
     assert out == pa.array([1, 2, 3, None])
 
+    b = pl.Series("b", [1.0, 2.0, 3.0, None])
+    out = b.to_arrow()
+    assert out == pa.array([1.0, 2.0, 3.0, None])
+
+    c = pl.Series("c", ["A", "BB", "CCC", None])
+    out = c.to_arrow()
+    assert out == pa.array(["A", "BB", "CCC", None], type=pa.large_string())
+
+    d = pl.Series("d", [None, None, None], pl.Null)
+    out = d.to_arrow()
+    assert out == pa.nulls(3)
+
     s = cast(
         pl.Series,
         pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))),
@@ -961,6 +973,9 @@ def test_repeat() -> None:
     s = pl.repeat(True, 5, eager=True)
     assert s.dtype == pl.Boolean
     assert s.len() == 5
+    s = pl.repeat(None, 7, eager=True)
+    assert s.dtype == pl.Null
+    assert s.len() == 7
 
 
 def test_shape() -> None:
