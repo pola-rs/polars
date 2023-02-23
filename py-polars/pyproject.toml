@@ -35,7 +35,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
-Documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/"
+Documentation = "https://pola-rs.github.io/polars/py-polars/reference/index.html"
 Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
