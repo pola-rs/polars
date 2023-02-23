@@ -1,2 +1,2 @@
-mod fixed;
+pub(super) mod fixed;
 

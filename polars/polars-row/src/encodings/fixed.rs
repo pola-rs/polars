@@ -1,3 +1,4 @@
+use crate::row::RowsEncoded;
 
 /// Encodes a value of a particular fixed width type into bytes
 pub trait FixedLengthEncoding: Copy {
@@ -113,4 +114,10 @@ impl FixedLengthEncoding for f64 {
     }
 }
 
-pub(super) fn encode<T:>()
+
+pub(crate) fn encode_slice<T: FixedLengthEncoding>(
+    input: &[T],
+    out: &mut RowsEncoded
+) {
+
+}

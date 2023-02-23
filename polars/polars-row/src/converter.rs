@@ -1,22 +1,8 @@
 use arrow::array::*;
-use arrow::datatypes::*;
+use arrow::datatypes::DataType as ArrowDataType;
+use crate::sort_field::SortField;
 
 use super::*;
-
-/// Options that define the sort order of a given column
-pub struct SortOptions {
-    /// Whether to sort in descending order
-    pub descending: bool,
-    /// Whether to sort nulls first
-    pub nulls_first: bool,
-}
-
-pub struct SortField {
-    /// Sort options
-    options: SortOptions,
-    /// Data type
-    data_type: DataType,
-}
 
 pub struct RowConverter {
     fields: Vec<SortField>,

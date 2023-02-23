@@ -269,6 +269,8 @@
 mod converter;
 mod encode;
 mod encodings;
+mod row;
+mod sort_field;
 
 use arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;

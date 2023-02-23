@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 arrow.workspace = true
+polars-error = { version = "0.27.2", path = "../polars-error" }
