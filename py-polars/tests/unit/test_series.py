@@ -2516,3 +2516,10 @@ def test_numpy_series_arithmetic() -> None:
     result_pow2 = sx**y
     expected = pl.Series([1.0, 16.0], dtype=pl.Float64)
     assert_series_equal(result_pow2, expected)  # type: ignore[arg-type]
+
+
+def test_from_epoch_seq_input() -> None:
+    seq_input = [1147880044]
+    expected = pl.Series([datetime(2006, 5, 17, 15, 34, 4)])
+    result = pl.from_epoch(seq_input)
+    assert_series_equal(result, expected)
