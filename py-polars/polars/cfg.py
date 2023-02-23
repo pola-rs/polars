@@ -268,7 +268,7 @@ class Config:
         └─────┴─────┴─────┴─────┴─────┴─────┘
 
         >>> with pl.Config() as cfg:
-        ...     pl.cfg.Config.set_tbl_cols(10)  # doctest: +IGNORE_RESULT
+        ...     cfg.set_tbl_cols(10)  # doctest: +IGNORE_RESULT
         ...     df
         ...
         shape: (1, 100)
