@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os.path
 from typing import cast
 
 import polars as pl
@@ -62,3 +63,17 @@ def test_from_different_chunks() -> None:
     out = df.to_pandas()
     assert list(out.columns) == ["a", "b"]
     assert out.shape == (5, 2)
+
+
+def test_unit_io_subdir_has_no_init() -> None:
+    # --------------------------------------------------------------------------------
+    # If this test fails it means an '__init__.py' was added to 'tests/unit/io'.
+    # See https://github.com/pola-rs/polars/pull/6889 for why this can cause issues.
+    # --------------------------------------------------------------------------------
+    # TLDR: it can mask the builtin 'io' module, causing a fatal python error.
+    # --------------------------------------------------------------------------------
+    io_dir = os.path.dirname(__file__)
+    assert io_dir.endswith("unit/io")
+    assert not os.path.exists(
+        f"{io_dir}/__init__.py"
+    ), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"
