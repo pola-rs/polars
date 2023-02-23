@@ -49,5 +49,5 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          target-folder: py-polars
-          clean-exclude: dev/**
+          # Keeping the html subfolder here for backwards compatibility
+          target-folder: py-polars/html
