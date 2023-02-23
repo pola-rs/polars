@@ -5138,7 +5138,9 @@ class DataFrame:
         )
 
     def explode(
-        self, columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr]
+        self,
+        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        *more_columns: str | pli.Expr,
     ) -> Self:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -5148,6 +5150,8 @@ class DataFrame:
         columns
             Name of the column(s) to explode. Columns must be of datatype List or Utf8.
             Accepts ``col`` expressions as input as well.
+        *more_columns
+            Additional names of columns to explode, specified as positional arguments.
 
         Returns
         -------
@@ -5192,7 +5196,10 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy().explode(columns).collect(no_optimization=True)._df
+            self.lazy()
+            .explode(columns, *more_columns)
+            .collect(no_optimization=True)
+            ._df
         )
 
     @deprecated_alias(aggregate_fn="aggregate_function")
