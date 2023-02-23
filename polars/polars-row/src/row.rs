@@ -1,9 +1,9 @@
 use crate::sort_field::SortField;
 
 pub struct RowsEncoded {
-    buf: Box<[u8]>,
-    offsets: Box<[usize]>,
-    fields: Box<[SortField]>
+    pub(crate) buf: Box<[u8]>,
+    pub(crate) offsets: Box<[usize]>,
+    pub(crate) fields: Box<[SortField]>
 }
 
 impl RowsEncoded {
@@ -13,13 +13,5 @@ impl RowsEncoded {
             offsets,
             fields
         }
-    }
-
-    pub(crate) fn offsets(&self) -> &[usize] {
-        &*self.offsets
-    }
-
-    pub(crate) fn offsets_mut(&mut self) -> &mut [usize] {
-        &mut *self.offsets
     }
 }

@@ -1,10 +1,40 @@
 use crate::row::RowsEncoded;
 use crate::sort_field::SortField;
-use arrow::datatypes::DataType as ArrowDataType;
-use crate::ArrayRef;
+use arrow::{
+    array::{
+        PrimitiveArray, Array
+    },
+    datatypes::{DataType as ArrowDataType, DataType}
+};
+use arrow::types::NativeType;
+use crate::{ArrayRef, with_match_arrow_primitive_type};
+use crate::encodings::fixed::FixedLengthEncoding;
 
-fn encode_column() {
-    todo!()
+fn encode_primitive<T: NativeType + FixedLengthEncoding>(arr: &PrimitiveArray<T>, field: &SortField,
+                                   out: &mut RowsEncoded
+) {
+    if arr.null_count() == 0 {
+        crate::encodings::fixed::encode_slice(arr.values().as_slice(), out, field);
+    } else {
+        crate::encodings::fixed::encode_iter(arr.into_iter().map(|v| v.copied()), out, field);
+    }
+}
+
+fn encode_array(
+    array: &dyn Array,
+    field: &SortField,
+    out: &mut RowsEncoded
+) {
+    match array.data_type() {
+        DataType::Boolean => todo!(),
+        DataType::LargeUtf8 => todo!(),
+        dt => {
+            with_match_arrow_primitive_type!(dt, |$T| {
+                let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+                encode_primitive(array, field, out);
+            })
+        }
+    };
 }
 
 pub fn allocate_rows_buf(columns: &[ArrayRef], fields: Box<[SortField]>) -> RowsEncoded {

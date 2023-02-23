@@ -4,9 +4,9 @@ use arrow::datatypes::DataType as ArrowDataType;
 
 pub struct SortField {
     /// Whether to sort in descending order
-    descending: bool,
+    pub(crate) descending: bool,
     /// Whether to sort nulls first
-    nulls_first: bool,
+    pub(crate) nulls_first: bool,
     /// Data type
     pub(crate) data_type: ArrowDataType,
 }
