@@ -755,10 +755,13 @@ def sequence_to_pydf(
     if len(data) == 0:
         return dict_to_pydf({}, schema=schema, schema_overrides=schema_overrides)
 
-    if isinstance(data[0], Generator):
-        data = [list(row) for row in data]
+    first_element: Any = data[0]
 
-    if isinstance(data[0], pli.Series):
+    if isinstance(first_element, Generator):
+        data = [list(row) for row in data]
+        first_element = data[0]
+
+    if isinstance(first_element, pli.Series):
         series_names = [s.name for s in data]
         column_names, schema_overrides = _unpack_schema(
             schema or series_names,
@@ -774,7 +777,7 @@ def sequence_to_pydf(
                 s = s.cast(new_dtype)
             data_series.append(s._s)
 
-    elif isinstance(data[0], dict):
+    elif isinstance(first_element, dict):
         column_names, schema_overrides = _unpack_schema(
             schema, schema_overrides=schema_overrides
         )
@@ -796,19 +799,20 @@ def sequence_to_pydf(
         return pydf
 
     elif (
-        isinstance(data[0], (list, tuple, Sequence)) and not isinstance(data[0], str)
+        isinstance(first_element, (list, tuple, Sequence))
+        and not isinstance(first_element, str)
     ) or (
-        _check_for_numpy(data[0])
-        and isinstance(data[0], np.ndarray)
-        and data[0].ndim == 1
+        _check_for_numpy(first_element)
+        and isinstance(first_element, np.ndarray)
+        and first_element.ndim == 1
     ):
-        if is_namedtuple(data[0]):
+        if is_namedtuple(first_element):
             if schema is None:
-                schema = data[0]._fields  # type: ignore[union-attr]
-                if len(data[0].__annotations__) == len(schema):
+                schema = first_element._fields  # type: ignore[union-attr]
+                if len(first_element.__annotations__) == len(schema):
                     schema = [
                         (name, py_type_to_dtype(tp, raise_unmatched=False))
-                        for name, tp in data[0].__annotations__.items()
+                        for name, tp in first_element.__annotations__.items()
                     ]
             elif orient is None:
                 orient = "row"
@@ -816,11 +820,13 @@ def sequence_to_pydf(
         if orient is None:
             # note: limit type-checking to smaller data; larger values are much more
             # likely to indicate col orientation anyway, so minimise extra checks.
-            if len(data[0]) > 1000:
+            if len(first_element) > 1000:
                 orient = "col" if schema and len(schema) == len(data) else "row"
             elif (schema is not None and len(schema) == len(data)) or not schema:
                 # check if element types in the first 'row' resolve to a single dtype.
-                row_types = {type(value) for value in data[0] if value is not None}
+                row_types = {
+                    type(value) for value in first_element if value is not None
+                }
                 if int in row_types and float in row_types:
                     row_types.discard(int)
                 orient = "col" if len(row_types) == 1 else "row"
@@ -829,14 +835,14 @@ def sequence_to_pydf(
 
         if orient == "row":
             column_names, schema_overrides = _unpack_schema(
-                schema, schema_overrides=schema_overrides, n_expected=len(data[0])
+                schema, schema_overrides=schema_overrides, n_expected=len(first_element)
             )
             schema_override = (
                 include_unknowns(schema_overrides, column_names)
                 if schema_overrides
                 else {}
             )
-            if column_names and len(data[0]) != len(column_names):
+            if column_names and len(first_element) != len(column_names):
                 raise ShapeError("The row data does not match the number of columns")
 
             for col, tp in schema_override.items():
@@ -867,7 +873,7 @@ def sequence_to_pydf(
                 f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
             )
 
-    elif is_dataclass(data[0]):
+    elif is_dataclass(first_element):
         if schema:
             column_names, schema_overrides = _unpack_schema(
                 schema, schema_overrides=schema_overrides
@@ -879,7 +885,7 @@ def sequence_to_pydf(
             column_names = []
             schema_override = {
                 col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
-                for col, tp in dataclass_type_hints(data[0].__class__).items()
+                for col, tp in dataclass_type_hints(first_element.__class__).items()
             }
             schema_override.update(schema_overrides or {})
 
@@ -899,8 +905,8 @@ def sequence_to_pydf(
             )
         return pydf
 
-    elif _check_for_pandas(data[0]) and isinstance(
-        data[0], (pd.Series, pd.DatetimeIndex)
+    elif _check_for_pandas(first_element) and isinstance(
+        first_element, (pd.Series, pd.DatetimeIndex)
     ):
         if schema is None:
             column_names = []
