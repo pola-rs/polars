@@ -81,6 +81,7 @@ impl SqlExprVisitor {
             SqlExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
             SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any()),
             SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all()),
+            SqlExpr::Nested(expr) => self.visit_expr(expr),
             other => Err(PolarsError::ComputeError(
                 format!("SQL Expr {:?} was not supported in polars-sql yet!", other).into(),
             )),

@@ -43,6 +43,19 @@ mod test {
     }
 
     #[test]
+    fn test_nested_expr() -> PolarsResult<()> {
+        let df = create_sample_df()?;
+        let mut context = SQLContext::try_new()?;
+        context.register("df", df.clone().lazy());
+        let df_sql = context
+            .execute(r#"SELECT * FROM df WHERE (a > 3)"#)?
+            .collect()?;
+        let df_pl = df.lazy().filter(col("a").gt(lit(3))).collect()?;
+        assert_eq!(df_sql, df_pl);
+        Ok(())
+    }
+
+    #[test]
     fn test_groupby_simple() -> PolarsResult<()> {
         let df = create_sample_df()?;
         let mut context = SQLContext::try_new()?;
