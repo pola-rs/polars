@@ -687,7 +687,7 @@ impl Series {
             use DataType::*;
             match self.dtype() {
                 Boolean => self.cast(&DataType::Int64).unwrap().product(),
-                Int8 | UInt8 | Int16 | UInt16 => {
+                Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 | UInt64 => {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 }
