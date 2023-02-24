@@ -10,7 +10,6 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import dtype_to_py_type
 from polars.testing import assert_series_equal
 
 
@@ -204,6 +203,21 @@ def test_arrow_list_roundtrip() -> None:
     # https://github.com/pola-rs/polars/issues/1064
     tbl = pa.table({"a": [1], "b": [[1, 2]]})
     arw = pl.from_arrow(tbl).to_arrow()
+
+    assert arw.shape == tbl.shape
+    assert arw.schema.names == tbl.schema.names
+    for c1, c2 in zip(arw.columns, tbl.columns):
+        assert c1.to_pylist() == c2.to_pylist()
+
+
+def test_arrow_null_roundtrip() -> None:
+    tbl = pa.table({"a": [None, None], "b": [[None, None], [None, None]]})
+    df = pl.from_arrow(tbl)
+
+    if isinstance(df, pl.DataFrame):
+        assert df.dtypes == [pl.Null, pl.List(pl.Null)]
+
+    arw = df.to_arrow()
 
     assert arw.shape == tbl.shape
     assert arw.schema.names == tbl.schema.names
@@ -603,7 +617,7 @@ def test_from_null_column() -> None:
 
     assert df.shape == (2, 1)
     assert df.columns == ["n/a"]
-    assert dtype_to_py_type(df.dtypes[0]) is None
+    assert df.dtypes[0] is pl.Null
 
 
 def test_to_pandas_series() -> None:

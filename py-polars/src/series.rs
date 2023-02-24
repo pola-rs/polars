@@ -297,6 +297,10 @@ impl PySeries {
                 ca.rename(name);
                 ca.into_series().into()
             }
+            DataType::Null => {
+                let s = Series::new_null(name, n);
+                PySeries::new(s)
+            }
             dt => {
                 panic!("cannot create repeat with dtype: {dt:?}");
             }

@@ -154,7 +154,7 @@ fn repeat(value: &PyAny, n_times: PyExpr) -> PyResult<PyExpr> {
     } else if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();
 
-        if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
+        if val >= 0 && val <= i32::MAX as i64 || val < 0 && val >= i32::MIN as i64 {
             Ok(polars_rs::lazy::dsl::repeat(val as i32, n_times.inner).into())
         } else {
             Ok(polars_rs::lazy::dsl::repeat(val, n_times.inner).into())

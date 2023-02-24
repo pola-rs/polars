@@ -63,6 +63,10 @@ impl SeriesTrait for NullChunked {
         &self.chunks
     }
 
+    fn chunk_lengths(&self) -> ChunkIdIter {
+        self.chunks.iter().map(|chunk| chunk.len())
+    }
+
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], _sorted: IsSorted) -> Series {
         NullChunked::new(self.name.clone(), by.len()).into_series()

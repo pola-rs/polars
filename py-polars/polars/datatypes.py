@@ -85,6 +85,7 @@ PythonDataType: TypeAlias = Union[
     Type[Tuple[Any, ...]],
     Type[bytes],
     Type[Decimal],
+    Type[None],
 ]
 
 SchemaDefinition: TypeAlias = Union[
@@ -549,6 +550,7 @@ class _DataTypeMappings:
             Decimal: Float64,
             bytes: Binary,
             object: Object,
+            None.__class__: Null,
         }
 
     @property
@@ -578,8 +580,7 @@ class _DataTypeMappings:
             Time: time,
             Binary: bytes,
             List: list,
-            # don't really know what type could be used in python
-            Null: None,  # type: ignore[dict-item]
+            Null: None.__class__,
         }
 
     @property
@@ -611,6 +612,7 @@ class _DataTypeMappings:
             time: pa.time64("us"),
             datetime: pa.timestamp("us"),
             timedelta: pa.duration("us"),
+            None.__class__: pa.null(),
         }
 
     @property
@@ -639,6 +641,7 @@ class _DataTypeMappings:
             Duration("us"): pa.duration("us"),
             Duration("ns"): pa.duration("ns"),
             Time: pa.time64("us"),
+            Null: pa.null(),
         }
 
 
@@ -811,7 +814,7 @@ def maybe_cast(
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):
         try:
-            el = py_type(el)  # type: ignore[call-arg]
+            el = py_type(el)  # type: ignore[call-arg, misc]
         except Exception:
             raise ValueError(
                 f"Cannot convert Python type {type(el)} to {dtype}"
