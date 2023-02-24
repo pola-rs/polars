@@ -3,7 +3,6 @@ use std::ops::BitAnd;
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_error::PolarsResult;
 
 use crate::trusted_len::{FromIteratorReversed, PushUnchecked, TrustedLen};
 
@@ -154,7 +153,6 @@ impl<T: NativeType> FromTrustedLenIterator<Option<T>> for PrimitiveArray<T> {
         unsafe { PrimitiveArray::from_trusted_len_iter_unchecked(iter) }
     }
 }
-
 
 macro_rules! with_match_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*

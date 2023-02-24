@@ -969,8 +969,8 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("bin", [["110", "101", "010", "invalid"]])
-        >>> s.str.parse_int(2)
+        >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
+        >>> s.str.parse_int(2, False)
         shape: (4,)
         Series: 'bin' [i32]
         [
