@@ -1727,7 +1727,21 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
     assert eager_result.shape == lazy_result.shape
 
 
-@pytest.mark.parametrize("dtype", list(NUMERIC_DTYPES))
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.Float32,
+        pl.Float64,
+    ],
+)
 @pytest.mark.parametrize(
     "func",
     [
