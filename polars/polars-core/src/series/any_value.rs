@@ -297,6 +297,8 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]
             ObjectOwned(o) => DataType::Object(o.0.type_name()),
+            #[cfg(feature = "dtype-i128")]
+            Decimal(_, prec, scale) => DataType::Decimal128(Some((*prec, *scale))),
         }
     }
 }

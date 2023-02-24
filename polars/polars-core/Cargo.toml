@@ -88,7 +88,7 @@ dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-i128 = []
+dtype-i128 = ["dep:itoap"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
@@ -159,6 +159,7 @@ chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
 hashbrown.workspace = true
 indexmap = { version = "1", features = ["std"] }
+itoap = { version = "1", optional = true }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits.workspace = true
 object_store = { version = "0.5.3", default-features = false, optional = true }

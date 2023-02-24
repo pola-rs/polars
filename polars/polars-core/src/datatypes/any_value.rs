@@ -82,6 +82,9 @@ pub enum AnyValue<'a> {
     Utf8Owned(smartstring::alias::String),
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
+    /// A 128-bit fixed point decimal number.
+    #[cfg(feature = "dtype-i128")]
+    Decimal(i128, usize, usize),
 }
 
 #[cfg(feature = "serde")]

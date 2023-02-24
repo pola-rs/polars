@@ -881,6 +881,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fad582f4b9e86b6caa621cabeb0963332d92eea04729ab12892c2533951e6440"
 
 [[package]]
+name = "itoap"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9028f49264629065d057f340a86acb84867925865f73bbf8d47b4d149a7e88b8"
+
+[[package]]
 name = "jemalloc-sys"
 version = "0.5.3+5.3.0-patched"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1496,6 +1502,7 @@ dependencies = [
  "comfy-table",
  "hashbrown 0.13.2",
  "indexmap",
+ "itoap",
  "ndarray",
  "num-traits",
  "once_cell",
