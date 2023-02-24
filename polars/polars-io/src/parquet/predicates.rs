@@ -41,7 +41,7 @@ impl ColumnStats {
 
         let use_min_max = dtype.is_numeric() || matches!(dtype, DataType::Utf8);
 
-        #[cfg(feature = "dtype-struct")]
+        #[cfg(feature = "dtype-binary")]
         let use_min_max = use_min_max || matches!(dtype, DataType::Binary);
 
         if use_min_max {
