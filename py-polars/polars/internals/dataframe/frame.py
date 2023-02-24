@@ -1258,7 +1258,10 @@ class DataFrame:
 
     def _div(self, other: Any, floordiv: bool) -> Self:
         if isinstance(other, pli.Series):
-            other = other.to_frame()
+            if floordiv:
+                return self.select(pli.all() // pli.lit(other))
+            return self.select(pli.all() / pli.lit(other))
+
         elif not isinstance(other, DataFrame):
             s = _prepare_other_arg(other, length=len(self))
             other = DataFrame([s.rename(f"n{i}") for i in range(len(self.columns))])
@@ -1266,6 +1269,7 @@ class DataFrame:
         orig_dtypes = other.dtypes
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
+
         df = (
             df
             if not floordiv

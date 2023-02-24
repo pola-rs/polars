@@ -2035,6 +2035,24 @@ def test_arithmetic() -> None:
         _ = df + [1]  # type: ignore[operator]
 
 
+def test_df_series_division() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [2, 2, 4, 4, 6, 6],
+            "b": [2, 2, 10, 5, 6, 6],
+        }
+    )
+    s = pl.Series([2, 2, 2, 2, 2, 2])
+    assert (df / s).to_dict(False) == {
+        "a": [1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+        "b": [1.0, 1.0, 5.0, 2.5, 3.0, 3.0],
+    }
+    assert (df // s).to_dict(False) == {
+        "a": [1, 1, 2, 2, 3, 3],
+        "b": [1, 1, 5, 2, 3, 3],
+    }
+
+
 def test_add_string() -> None:
     df = pl.DataFrame({"a": ["hi", "there"], "b": ["hello", "world"]})
     expected = pl.DataFrame(
