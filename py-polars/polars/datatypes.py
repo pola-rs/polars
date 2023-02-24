@@ -132,6 +132,9 @@ class DataTypeClass(type):
     def _string_repr(cls) -> str:
         return dtype_str_repr(cls)
 
+    def base_type(cls) -> PolarsDataType:
+        return cls
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -150,7 +153,7 @@ class DataType(metaclass=DataTypeClass):
         return dtype_str_repr(self)
 
     @classmethod
-    def base_type(cls) -> type:
+    def base_type(cls) -> PolarsDataType:
         """
         Return this DataType's fundamental/root type class.
 

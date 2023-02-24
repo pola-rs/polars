@@ -49,7 +49,7 @@ def test_dtype_base_type() -> None:
         is pl.Struct
     )
     for dtype in datatypes.DATETIME_DTYPES:
-        assert dtype.base_type() is pl.Datetime  # type: ignore[union-attr]
+        assert dtype.base_type() is pl.Datetime
 
 
 def test_get_idx_type() -> None:
