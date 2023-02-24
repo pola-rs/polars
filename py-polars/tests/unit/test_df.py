@@ -2066,7 +2066,7 @@ def test_add_string() -> None:
     assert_frame_equal(("hello " + df), expected)
 
 
-def test_get_item() -> None:
+def test_getitem() -> None:
     """Test all the methods to use [] on a dataframe."""
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
 
@@ -2075,7 +2075,8 @@ def test_get_item() -> None:
         df.select(pl.col("a")), pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0]})
     )
 
-    # tuple. The first element refers to the rows, the second element to columns
+    # multiple slices.
+    # The first element refers to the rows, the second element to columns
     assert_frame_equal(df[:, :], df)
 
     # str, always refers to a column name
@@ -2083,6 +2084,32 @@ def test_get_item() -> None:
 
     # int, always refers to a row index (zero-based): index=1 => second row
     assert_frame_equal(df[1], pl.DataFrame({"a": [2.0], "b": [4]}))
+
+    # int, int.
+    # The first element refers to the rows, the second element to columns
+    assert df[2, 1] == 5
+    assert df[2, -2] == 3.0
+
+    with pytest.raises(ValueError):
+        # Column index out of bounds
+        df[2, 2]
+
+    with pytest.raises(ValueError):
+        # Column index out of bounds
+        df[2, -3]
+
+    # int, list[int].
+    # The first element refers to the rows, the second element to columns
+    assert_frame_equal(df[2, [1, 0]], pl.DataFrame({"b": [5], "a": [3.0]}))
+    assert_frame_equal(df[2, [-1, -2]], pl.DataFrame({"b": [5], "a": [3.0]}))
+
+    with pytest.raises(ValueError):
+        # Column index out of bounds
+        df[2, [2, 0]]
+
+    with pytest.raises(ValueError):
+        # Column index out of bounds
+        df[2, [2, -3]]
 
     # range, refers to rows
     assert_frame_equal(df[range(1, 3)], pl.DataFrame({"a": [2.0, 3.0], "b": [4, 5]}))
