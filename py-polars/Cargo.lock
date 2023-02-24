@@ -1557,6 +1557,7 @@ dependencies = [
  "once_cell",
  "polars-arrow",
  "polars-error",
+ "polars-row",
  "polars-utils",
  "rand",
  "rand_distr",
@@ -1679,6 +1680,15 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+]
+
+[[package]]
+name = "polars-row"
+version = "0.27.2"
+dependencies = [
+ "arrow2",
+ "polars-error",
+ "polars-utils",
 ]
 
 [[package]]

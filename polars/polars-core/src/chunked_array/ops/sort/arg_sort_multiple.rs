@@ -79,7 +79,7 @@ pub(crate) fn argsort_multiple_row_fmt(
     let mut fields = Vec::with_capacity(by.len());
 
     for (by, descending) in by.iter().zip(descending) {
-        let by = convert_sort_column(by)?;
+        let by = convert_sort_column_multi_sort(by)?;
         let data_type = by.dtype().to_arrow();
         let by = by.rechunk();
         cols.push(by.chunks()[0].clone());

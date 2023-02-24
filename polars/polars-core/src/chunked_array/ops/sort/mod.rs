@@ -730,12 +730,16 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 }
 
 #[cfg(feature = "sort_multiple")]
-pub(crate) fn convert_sort_column(s: &Series) -> PolarsResult<Series> {
+pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series> {
+    use DataType::*;
     let out = match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => s.rechunk(),
+        Categorical(_) => s.rechunk(),
         #[cfg(feature = "dtype-binary")]
-        DataType::Binary => s.clone(),
+        Binary => s.clone(),
+        Utf8 => s.clone(),
+        // TODO! remove this. With row ordering we can do this easily
+        Boolean => s.cast(&UInt8).unwrap(),
         _ => {
             let phys = s.to_physical_repr().into_owned();
             if !phys.dtype().is_numeric() {
@@ -758,7 +762,7 @@ pub(crate) fn prepare_arg_sort(
 
     let mut columns = columns
         .iter()
-        .map(convert_sort_column)
+        .map(convert_sort_column_multi_sort)
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let first = columns.remove(0);
