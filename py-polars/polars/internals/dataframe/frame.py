@@ -1567,12 +1567,23 @@ class DataFrame:
 
             # df[:, 1]
             if isinstance(col_selection, int):
+                if (col_selection >= 0 and col_selection >= self.width) or (
+                    col_selection < 0 and col_selection < -self.width
+                ):
+                    raise ValueError(
+                        f'Column index "{col_selection}" is out of bounds.'
+                    )
                 series = self.to_series(col_selection)
                 return series[row_selection]
 
             if isinstance(col_selection, list):
                 # df[:, [1, 2]]
                 if is_int_sequence(col_selection):
+                    for i in col_selection:
+                        if (i >= 0 and i >= self.width) or (i < 0 and i < -self.width):
+                            raise ValueError(
+                                f'Column index "{col_selection}" is out of bounds.'
+                            )
                     series_list = [self.to_series(i) for i in col_selection]
                     df = self.__class__(series_list)
                     return df[row_selection]
