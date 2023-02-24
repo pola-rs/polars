@@ -63,13 +63,25 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     #[cfg(feature = "string_from_radix")]
     // Parse a string number with base _radix_ into a decimal (i32)
-    fn parse_int(&self, radix: Option<u32>) -> Int32Chunked {
+    fn parse_int(&self, radix: Option<u32>, strict: bool) -> PolarsResult<Int32Chunked> {
         use polars_arrow::utils::CustomIterTools;
         let ca = self.as_utf8();
-        let f = |opt_s: Option<&str>| -> Option<i32> {
-            opt_s.and_then(|s| <i32 as Num>::from_str_radix(s, radix.unwrap_or(2)).ok())
-        };
-        ca.into_iter().map(f).collect_trusted()
+        let radix = radix.unwrap_or(2);
+        if strict {
+            let f = |opt_s: Option<&str>| -> PolarsResult<Option<i32>> {
+                opt_s
+                    .map(|s| <i32 as Num>::from_str_radix(s, radix))
+                    .transpose()
+                    .map_err(|err| PolarsError::ComputeError(err.to_string().into()))
+            };
+            let ca: PolarsResult<Int32Chunked> = ca.into_iter().map(f).collect();
+            ca
+        } else {
+            let f = |opt_s: Option<&str>| -> Option<i32> {
+                opt_s.and_then(|s| <i32 as Num>::from_str_radix(s, radix).ok())
+            };
+            Ok(ca.into_iter().map(f).collect_trusted())
+        }
     }
 
     /// Get the length of the string values as number of chars.

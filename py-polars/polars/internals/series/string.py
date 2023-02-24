@@ -947,7 +947,7 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2) -> pli.Series:
+    def parse_int(self, radix: int = 2, strict: bool = True) -> pli.Series:
         r"""
         Parse integers with base radix from strings.
 
@@ -959,30 +959,36 @@ class StringNameSpace:
             Positive integer which is the base of the string we are parsing.
             Default: 2
 
+        strict
+            Bool, Defult=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
+
         Returns
         -------
-        Series: Column of parsed integers in i32 format
+        Series of parsed integers in i32 format
 
         Examples
         --------
-        >>> s = pl.Series("bin", ["110", "101", "010"])
+        >>> s = pl.Series("bin", [["110", "101", "010", "invalid"]])
         >>> s.str.parse_int(2)
-        shape: (3,)
+        shape: (4,)
         Series: 'bin' [i32]
         [
                 6
                 5
                 2
+                null
         ]
 
-        >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe"])
+        >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe", None])
         >>> s.str.parse_int(16)
-        shape: (3,)
+        shape: (4,)
         Series: 'hex' [i32]
         [
                 64030
                 65280
                 51966
+                null
         ]
 
         """
