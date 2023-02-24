@@ -960,22 +960,41 @@ def test_object() -> None:
 
 
 def test_repeat() -> None:
-    s = pl.repeat(1, 10, eager=True)
+    s = pl.repeat(2**31 - 1, 3, eager=True)
+    assert s.dtype == pl.Int32
+    assert s.len() == 3
+    assert s.to_list() == [2**31 - 1] * 3
+    s = pl.repeat(-(2**31), 4, eager=True)
+    assert s.dtype == pl.Int32
+    assert s.len() == 4
+    assert s.to_list() == [-(2**31)] * 4
+    s = pl.repeat(2**31, 5, eager=True)
     assert s.dtype == pl.Int64
-    assert s.len() == 10
-    s = pl.repeat("foo", 10, eager=True)
+    assert s.len() == 5
+    assert s.to_list() == [2**31] * 5
+    s = pl.repeat(-(2**31) - 1, 3, eager=True)
+    assert s.dtype == pl.Int64
+    assert s.len() == 3
+    assert s.to_list() == [-(2**31) - 1] * 3
+    s = pl.repeat("foo", 2, eager=True)
     assert s.dtype == pl.Utf8
-    assert s.len() == 10
+    assert s.len() == 2
+    assert s.to_list() == ["foo"] * 2
     s = pl.repeat(1.0, 5, eager=True)
     assert s.dtype == pl.Float64
     assert s.len() == 5
-    assert s.to_list() == [1.0, 1.0, 1.0, 1.0, 1.0]
-    s = pl.repeat(True, 5, eager=True)
+    assert s.to_list() == [1.0] * 5
+    s = pl.repeat(True, 4, eager=True)
     assert s.dtype == pl.Boolean
-    assert s.len() == 5
+    assert s.len() == 4
+    assert s.to_list() == [True] * 4
     s = pl.repeat(None, 7, eager=True)
     assert s.dtype == pl.Null
     assert s.len() == 7
+    assert s.to_list() == [None] * 7
+    s = pl.repeat(0, 0, eager=True)
+    assert s.dtype == pl.Int32
+    assert s.len() == 0
 
 
 def test_shape() -> None:
