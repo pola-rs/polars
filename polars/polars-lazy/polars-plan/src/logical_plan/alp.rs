@@ -481,12 +481,12 @@ impl ALogicalPlan {
         match self {
             Melt { .. }
             | Slice { .. }
-            | Sort { .. }
             | Explode { .. }
             | Cache { .. }
             | Distinct { .. }
             | Union { .. }
             | MapFunction { .. } => {}
+            Sort { by_column, .. } => container.extend_from_slice(by_column),
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
             LocalProjection { expr, .. } => container.extend_from_slice(expr),
