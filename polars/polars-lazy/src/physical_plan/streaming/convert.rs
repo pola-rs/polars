@@ -327,6 +327,7 @@ pub(crate) fn insert_streaming_nodes(
                 #[cfg(not(feature = "dtype-categorical"))]
                 let string_cache = true;
 
+                #[allow(unused_variables)]
                 fn allowed_dtype(dt: &DataType, string_cache: bool) -> bool {
                     match dt {
                         #[cfg(feature = "object")]
