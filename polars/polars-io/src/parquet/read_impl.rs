@@ -36,6 +36,9 @@ fn column_idx_to_series(
         ArrowDataType::Utf8 => {
             field.data_type = ArrowDataType::LargeUtf8;
         }
+        ArrowDataType::Binary => {
+            field.data_type = ArrowDataType::LargeBinary;
+        }
         ArrowDataType::List(fld) => field.data_type = ArrowDataType::LargeList(fld),
         _ => {}
     }

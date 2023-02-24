@@ -38,7 +38,13 @@ impl ColumnStats {
         let min_val = &*self.0.min_value;
 
         let dtype = DataType::from(min_val.data_type());
-        if dtype.is_numeric() || matches!(dtype, DataType::Utf8) {
+
+        let use_min_max = dtype.is_numeric() || matches!(dtype, DataType::Utf8);
+
+        #[cfg(feature = "dtype-struct")]
+        let use_min_max = use_min_max || matches!(dtype, DataType::Binary);
+
+        if use_min_max {
             let arr = concatenate(&[min_val, max_val]).unwrap();
             let s = Series::try_from(("", arr)).unwrap();
             if s.null_count() > 0 {
