@@ -228,6 +228,10 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        // best leave as is.
+        if matches!(dtype, DataType::Unknown) {
+            return Ok(self.clone());
+        }
         match self.0.cast(dtype) {
             Ok(out) => Ok(out),
             Err(err) => {

@@ -581,6 +581,13 @@ def test_map_dict() -> None:
             "remapped": ["France", "Not specified", "ES", "Germany"],
         }
 
+    # 7132
+    df = pl.DataFrame({"text": ["abc"]})
+    mapper = {"abc": "123"}
+    assert df.select(pl.col("text").map_dict(mapper).str.replace_all("1", "-")).to_dict(
+        False
+    ) == {"text": ["-23"]}
+
 
 def test_lit_dtypes() -> None:
     def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:
