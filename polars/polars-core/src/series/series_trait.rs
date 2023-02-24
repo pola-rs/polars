@@ -156,7 +156,7 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
         fn add_to(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(self)
+            invalid_operation!(self)
         }
         fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
             invalid_operation_panic!(self)
@@ -165,7 +165,7 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
         fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(self)
+            invalid_operation!(self)
         }
         fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
             invalid_operation!(self)
