@@ -440,20 +440,18 @@ impl ChunkTake for ListChunked {
                 let array = match ca_self.chunks.len() {
                     1 => Box::new(take_list_unchecked(chunks.next().unwrap(), array)) as ArrayRef,
                     _ => {
-                        return if !array.has_validity() {
+                        if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
                             let mut ca: ListChunked =
                                 take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
-                            ca.rename(ca_self.name());
-                            ca
+                            ca.chunks.pop().unwrap()
                         } else {
                             let iter = array
                                 .into_iter()
                                 .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
                             let mut ca: ListChunked =
                                 take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
-                            ca.rename(ca_self.name());
-                            ca
+                            ca.chunks.pop().unwrap()
                         }
                     }
                 };
@@ -466,8 +464,7 @@ impl ChunkTake for ListChunked {
                     ca_self.take_unchecked((&idx.into_inner()).into())
                 } else {
                     let mut ca: ListChunked = take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
-                    ca.rename(ca_self.name());
-                    ca
+                    self.finish_from_array(ca.chunks.pop().unwrap())
                 }
             }
             TakeIdx::IterNulls(iter) => {
@@ -477,8 +474,7 @@ impl ChunkTake for ListChunked {
                 } else {
                     let mut ca: ListChunked =
                         take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
-                    ca.rename(ca_self.name());
-                    ca
+                    self.finish_from_array(ca.chunks.pop().unwrap())
                 }
             }
         }

@@ -392,3 +392,16 @@ def test_list_get_logical_types() -> None:
         "date_col_element_1": [date(2023, 2, 2)],
         "datetime_col_element_1": [datetime(2023, 2, 2, 0, 0)],
     }
+
+
+def test_list_take_logical_type() -> None:
+    df = pl.DataFrame(
+        {"foo": [["foo", "foo", "bar"]], "bar": [[5.0, 10.0, 12.0]]}
+    ).with_columns(pl.col("foo").cast(pl.List(pl.Categorical)))
+
+    df = pl.concat([df, df], rechunk=False)
+    assert df.n_chunks() == 2
+    assert df.select(pl.all().take([0, 1])).to_dict(False) == {
+        "foo": [["foo", "foo", "bar"], ["foo", "foo", "bar"]],
+        "bar": [[5.0, 10.0, 12.0], [5.0, 10.0, 12.0]],
+    }
