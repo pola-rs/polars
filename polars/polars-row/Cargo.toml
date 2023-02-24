@@ -1,0 +1,11 @@
+[package]
+name = "polars-row"
+version = "0.27.2"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arrow.workspace = true
+polars-error = { version = "0.27.2", path = "../polars-error" }
+polars-utils = { version = "0.27.2", path = "../polars-utils" }

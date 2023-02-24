@@ -34,6 +34,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "sort_multiple")]
+use crate::prelude::sort::argsort_multiple_row_fmt;
+#[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_arg_sort;
 use crate::series::IsSorted;
 #[cfg(feature = "row_hash")]
@@ -1839,8 +1841,13 @@ impl DataFrame {
             _ => {
                 #[cfg(feature = "sort_multiple")]
                 {
-                    let (first, by_column, descending) = prepare_arg_sort(by_column, descending)?;
-                    first.arg_sort_multiple(&by_column, &descending)?
+                    if std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
+                        argsort_multiple_row_fmt(&by_column, &descending, nulls_last, parallel)?
+                    } else {
+                        let (first, by_column, descending) =
+                            prepare_arg_sort(by_column, descending)?;
+                        first.arg_sort_multiple(&by_column, &descending)?
+                    }
                 }
                 #[cfg(not(feature = "sort_multiple"))]
                 {

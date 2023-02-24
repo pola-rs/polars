@@ -12,7 +12,7 @@ from polars.datatypes import (
     Float64,
     dtype_to_py_type,
 )
-from polars.exceptions import InvalidAssert, PanicException
+from polars.exceptions import ComputeError, InvalidAssert
 from polars.utils import deprecate_nonkeyword_arguments, deprecated_alias
 
 
@@ -96,7 +96,7 @@ def assert_frame_equal(
         try:
             left = left.sort(by=left.columns)
             right = right.sort(by=left.columns)
-        except PanicException as exc:
+        except ComputeError as exc:
             raise InvalidAssert(
                 "Cannot set 'check_row_order=False' on frame with unsortable columns."
             ) from exc
