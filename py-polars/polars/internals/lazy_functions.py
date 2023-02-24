@@ -11,6 +11,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
+    Int32,
     Int64,
     PolarsDataType,
     SchemaDict,
@@ -2791,6 +2792,12 @@ def repeat(
         if name is None:
             name = ""
         dtype = py_type_to_dtype(type(value))
+        if (
+            dtype == Int64
+            and isinstance(value, int)
+            and -(2**31) <= value <= 2**31 - 1
+        ):
+            dtype = Int32
         s = pli.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
         return s
     else:
