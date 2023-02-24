@@ -793,7 +793,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_parse_int(&self, radix: Option<u32>, strict: bool) -> PyExpr {
+    pub fn str_parse_int(&self, radix: u32, strict: bool) -> PyExpr {
         self.inner
             .clone()
             .str()

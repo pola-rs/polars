@@ -63,10 +63,9 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     #[cfg(feature = "string_from_radix")]
     // Parse a string number with base _radix_ into a decimal (i32)
-    fn parse_int(&self, radix: Option<u32>, strict: bool) -> PolarsResult<Int32Chunked> {
+    fn parse_int(&self, radix: u32, strict: bool) -> PolarsResult<Int32Chunked> {
         use polars_arrow::utils::CustomIterTools;
         let ca = self.as_utf8();
-        let radix = radix.unwrap_or(2);
         if strict {
             let f = |opt_s: Option<&str>| -> PolarsResult<Option<i32>> {
                 opt_s

@@ -59,7 +59,7 @@ pub enum StringFunction {
     RStrip(Option<String>),
     LStrip(Option<String>),
     #[cfg(feature = "string_from_radix")]
-    FromRadix(Option<u32>, bool),
+    FromRadix(u32, bool),
 }
 
 impl Display for StringFunction {
@@ -538,7 +538,7 @@ pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Se
 }
 
 #[cfg(feature = "string_from_radix")]
-pub(super) fn from_radix(s: &Series, radix: Option<u32>, strict: bool) -> PolarsResult<Series> {
+pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.parse_int(radix, strict).map(|ok| ok.into_series())
 }
