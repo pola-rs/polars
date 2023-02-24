@@ -130,7 +130,12 @@ def wrap_s(s: PySeries) -> Series:
     return Series._from_pyseries(s)
 
 
-@redirect({"is_datelike": "is_temporal"})
+@redirect(
+    {
+        "cleared": "clear",
+        "is_datelike": "is_temporal",
+    }
+)
 @expr_dispatch
 class Series:
     """
@@ -525,11 +530,10 @@ class Series:
             return wrap_s(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
             return wrap_s(getattr(self._s, op_s)(Series(other)._s))
-        # recurse; the 'if' statement above will ensure we return early
-        if isinstance(other, (date, datetime, timedelta, str)):
-            other = Series("", [other])
-            return self._arithmetic(other, op_s, op_ffi)
-        if isinstance(other, float) and not self.is_float():
+        if (
+            isinstance(other, (float, date, datetime, timedelta, str))
+            and not self.is_float()
+        ):
             _s = sequence_to_pyseries("", [other])
             if "rhs" in op_ffi:
                 return wrap_s(getattr(_s, op_s)(self._s))
@@ -3182,11 +3186,16 @@ class Series:
         self._s.set_at_idx(idx._s, value._s)
         return self
 
-    def cleared(self) -> Series:
+    def clear(self, n: int = 0) -> Series:
         """
-        Create an empty copy of the current Series.
+        Create an empty copy of the current Series, with zero to 'n' elements.
 
-        The copy has identical name/dtype but no data.
+        The copy has an identical name/dtype, but no data.
+
+        Parameters
+        ----------
+        n
+            Number of (empty) elements to return in the cleared frame.
 
         See Also
         --------
@@ -3195,14 +3204,27 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [None, True, False])
-        >>> s.cleared()
+        >>> s.clear()
         shape: (0,)
         Series: 'a' [bool]
         [
         ]
 
+        >>> s.clear(n=2)
+        shape: (2,)
+        Series: 'a' [bool]
+        [
+            null
+            null
+        ]
+
         """
-        return self.limit(0) if len(self) > 0 else self.clone()
+        s = (
+            self.__class__(name=self.name, values=[], dtype=self.dtype)
+            if len(self) > 0
+            else self.clone()
+        )
+        return s.extend_constant(None, n=n) if n > 0 else s
 
     def clone(self) -> Series:
         """
@@ -3210,7 +3232,7 @@ class Series:
 
         See Also
         --------
-        cleared : Create an empty copy of the current Series, with identical
+        clear : Create an empty copy of the current Series, with identical
             schema but no data.
 
         Examples

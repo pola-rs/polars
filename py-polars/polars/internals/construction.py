@@ -140,7 +140,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
         elif array.num_chunks == 0:
             pys = PySeries.from_arrow(name, pa.array([], array.type))
         else:
-            pys = PySeries.from_arrow(name, array.combine_chunks())
+            pys = PySeries.from_arrow(name, array.chunks[0])
 
         if rechunk:
             pys.rechunk(in_place=True)
@@ -360,7 +360,7 @@ def sequence_to_pyseries(
                     nan_to_null=nan_to_null,
                     strict=strict,
                 )
-                return s if values else pli.Series._from_pyseries(s)[:0]._s
+                return s if values else pli.Series._from_pyseries(s).head(0)._s
 
             # logs will show a panic if we infer wrong dtype and it's hard to error
             # from the rust side. to reduce the likelihood of this happening we
@@ -617,7 +617,7 @@ def _unpack_schema(
             column_dtypes[col] = py_type_to_dtype(dtype)
 
     return (
-        column_names or None,  # type: ignore[return-value]
+        column_names,  # type: ignore[return-value]
         column_dtypes,
     )
 
@@ -786,7 +786,7 @@ def sequence_to_pydf(
         pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
 
         if column_names and set(column_names).intersection(pydf.columns()):
-            column_names = None
+            column_names = []
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
                 pydf,
@@ -878,7 +878,7 @@ def sequence_to_pydf(
                 col: schema_overrides.get(col, Unknown) for col in column_names
             }
         else:
-            column_names = None
+            column_names = []
             schema_override = {
                 col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
                 for col, tp in dataclass_type_hints(data[0].__class__).items()
@@ -905,7 +905,7 @@ def sequence_to_pydf(
         data[0], (pd.Series, pd.DatetimeIndex)
     ):
         if schema is None:
-            column_names = None
+            column_names = []
         else:
             column_names, schema_overrides = _unpack_schema(
                 schema, schema_overrides=schema_overrides, n_expected=1
@@ -921,7 +921,7 @@ def sequence_to_pydf(
                 pyseries = pyseries.cast(dtype, strict=True)
             data_series.append(pyseries)
 
-        column_names = None
+        column_names = []
     else:
         column_names, schema_overrides = _unpack_schema(
             schema, schema_overrides=schema_overrides, n_expected=1
@@ -1038,7 +1038,7 @@ def arrow_to_pydf(
         (schema or data.column_names), schema_overrides=schema_overrides
     )
     try:
-        if column_names and column_names != data.column_names:
+        if column_names != data.column_names:
             data = data.rename_columns(column_names)
     except pa.lib.ArrowInvalid as e:
         raise ValueError("Dimensions of columns arg must match data dimensions.") from e
@@ -1145,16 +1145,15 @@ def iterable_to_pydf(
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an iterable/generator."""
-    original_schema, column_names = schema, None
+    original_schema = schema
+    column_names: list[str] = []
     dtypes_by_idx: dict[int, PolarsDataType] = {}
     if schema is not None:
         column_names, schema_overrides = _unpack_schema(
             schema, schema_overrides=schema_overrides
         )
     elif schema_overrides:
-        _column_names, schema_overrides = _unpack_schema(
-            schema, schema_overrides=schema_overrides
-        )
+        _, schema_overrides = _unpack_schema(schema, schema_overrides=schema_overrides)
 
     if not isinstance(data, Generator):
         data = iter(data)
@@ -1168,9 +1167,9 @@ def iterable_to_pydf(
 
         return pli.DataFrame(
             {
-                (
-                    f"column_{idx}" if column_names is None else column_names[idx]
-                ): pli.Series(coldata, dtype=dtypes_by_idx.get(idx))
+                (column_names[idx] if column_names else f"column_{idx}"): pli.Series(
+                    coldata, dtype=dtypes_by_idx.get(idx)
+                )
                 for idx, coldata in enumerate(data)
             }
         )._df

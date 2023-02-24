@@ -56,7 +56,7 @@ where
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
-                    self.is_null()
+                    rhs.is_null()
                 }
             }
             _ => {
@@ -81,7 +81,7 @@ where
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
-                    self.is_not_null()
+                    rhs.is_not_null()
                 }
             }
             _ => {
@@ -488,7 +488,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             if let Some(value) = self.get(0) {
                 rhs.equal(value)
             } else {
-                self.is_null()
+                rhs.is_null()
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -508,7 +508,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             if let Some(value) = self.get(0) {
                 rhs.not_equal(value)
             } else {
-                self.is_not_null()
+                rhs.is_not_null()
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);

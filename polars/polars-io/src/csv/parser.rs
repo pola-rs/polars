@@ -589,10 +589,11 @@ pub(super) fn parse_lines<'a>(
                                             "Could not parse `{}` as dtype {:?} at column {}.\n\
                                             The current offset in the file is {} bytes.\n\
                                             \n\
-                                            Consider specifying the correct dtype, increasing\n\
-                                            the number of records used to infer the schema,\n\
-                                            enabling the `ignore_errors` flag, or adding\n\
-                                            `{}` to the `null_values` list.",
+                                            You might want to try:\n\
+                                            - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
+                                            - specifying the correct dtype with the `dtypes` argument\n\
+                                            - setting `ignore_errors` to `True`,\n\
+                                            - adding `{}` to the `null_values` list.",
                                             &unparsable,
                                             buf.dtype(),
                                             idx,

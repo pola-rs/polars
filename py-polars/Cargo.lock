@@ -21,7 +21,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c99f64d1e06488f620f932677e24bc6e2897582980441ae90a671415bd7ec2f"
 dependencies = [
  "cfg-if",
- "const-random",
  "getrandom",
  "once_cell",
  "version_check",
@@ -85,12 +84,12 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.16.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=2023_02_14#56dd867e7df49a196b902b43cc4e0f3974ede9c6"
+source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-02-22#bbeb28ac4384930d342ee8b3152de93fc89dca31"
 dependencies = [
  "ahash",
  "arrow-format",
  "avro-schema",
- "base64 0.13.1",
+ "base64",
  "bytemuck",
  "chrono",
  "chrono-tz 0.6.3",
@@ -170,12 +169,6 @@ dependencies = [
  "serde_json",
  "snap",
 ]
-
-[[package]]
-name = "base64"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
@@ -374,28 +367,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "const-random"
-version = "0.1.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "368a7a772ead6ce7e1de82bfb04c485f3db8ec744f72925af5735e29a22cc18e"
-dependencies = [
- "const-random-macro",
- "proc-macro-hack",
-]
-
-[[package]]
-name = "const-random-macro"
-version = "0.1.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d7d6ab3c3a2282db210df5f02c4dab6e0a7057af0fb7ebd4070f30fe05c0ddb"
-dependencies = [
- "getrandom",
- "once_cell",
- "proc-macro-hack",
- "tiny-keccak",
-]
-
-[[package]]
 name = "core-foundation-sys"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -492,12 +463,6 @@ checksum = "2ae1b35a484aa10e07fe0638d02301c5ad24de82d310ccbd2f3693da5f09bf1c"
 dependencies = [
  "winapi",
 ]
-
-[[package]]
-name = "crunchy"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
 
 [[package]]
 name = "ctor"
@@ -1569,6 +1534,7 @@ dependencies = [
  "chrono-tz 0.8.1",
  "hashbrown 0.13.2",
  "num",
+ "polars-error",
  "serde",
  "thiserror",
 ]
@@ -1590,6 +1556,8 @@ dependencies = [
  "num",
  "once_cell",
  "polars-arrow",
+ "polars-error",
+ "polars-row",
  "polars-utils",
  "rand",
  "rand_distr",
@@ -1601,6 +1569,16 @@ dependencies = [
  "thiserror",
  "wasm-timer",
  "xxhash-rust",
+]
+
+[[package]]
+name = "polars-error"
+version = "0.27.2"
+dependencies = [
+ "anyhow",
+ "arrow2",
+ "regex",
+ "thiserror",
 ]
 
 [[package]]
@@ -1657,7 +1635,7 @@ name = "polars-ops"
 version = "0.27.2"
 dependencies = [
  "arrow2",
- "base64 0.21.0",
+ "base64",
  "hex",
  "jsonpath_lib",
  "memchr",
@@ -1702,6 +1680,15 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+]
+
+[[package]]
+name = "polars-row"
+version = "0.27.2"
+dependencies = [
+ "arrow2",
+ "polars-error",
+ "polars-utils",
 ]
 
 [[package]]
@@ -1750,12 +1737,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 
 [[package]]
-name = "proc-macro-hack"
-version = "0.5.20+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc375e1527247fe1a97d8b7156678dfe7c1af2fc075c9a4db3690ecd2a148068"
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1766,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.16.7"
+version = "0.16.8"
 dependencies = [
  "ahash",
  "bincode",
@@ -2260,15 +2241,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tiny-keccak"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
-dependencies = [
- "crunchy",
 ]
 
 [[package]]

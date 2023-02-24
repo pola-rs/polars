@@ -216,3 +216,19 @@ def test_parquet_struct_categorical() -> None:
         with pl.StringCache():
             out = pl.read_parquet(file_path).select(pl.col("b").value_counts())
         assert out.to_dict(False) == {"b": [{"b": "foo", "counts": 1}]}
+
+
+def test_glob_n_rows(io_files_path: Path) -> None:
+    file_path = io_files_path / "foods*.parquet"
+    df = pl.scan_parquet(file_path, n_rows=40).collect()
+
+    # 27 rows from foods1.parquet and 13 from foods2.parquet
+    assert df.shape == (40, 4)
+
+    # take first and last rows
+    assert df[[0, 39]].to_dict(False) == {
+        "category": ["vegetables", "seafood"],
+        "calories": [45, 146],
+        "fats_g": [0.5, 6.0],
+        "sugars_g": [2, 2],
+    }

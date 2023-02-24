@@ -9,7 +9,7 @@ use sqlparser::ast::{
 use crate::context::TABLES;
 use crate::functions::SqlFunctionVisitor;
 
-fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
+pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
         SQLDataType::Char(_)
         | SQLDataType::Varchar(_)
@@ -81,6 +81,7 @@ impl SqlExprVisitor {
             SqlExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
             SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any()),
             SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all()),
+            SqlExpr::Nested(expr) => self.visit_expr(expr),
             other => Err(PolarsError::ComputeError(
                 format!("SQL Expr {:?} was not supported in polars-sql yet!", other).into(),
             )),

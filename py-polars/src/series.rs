@@ -285,6 +285,12 @@ impl PySeries {
                 ca.rename(name);
                 ca.into_inner().into_series().into()
             }
+            DataType::Int32 => {
+                let val = val.extract::<i32>().unwrap();
+                let mut ca: NoNull<Int32Chunked> = (0..n).map(|_| val).collect_trusted();
+                ca.rename(name);
+                ca.into_inner().into_series().into()
+            }
             DataType::Float64 => {
                 let val = val.extract::<f64>().unwrap();
                 let mut ca: NoNull<Float64Chunked> = (0..n).map(|_| val).collect_trusted();
@@ -296,6 +302,10 @@ impl PySeries {
                 let mut ca: BooleanChunked = (0..n).map(|_| val).collect_trusted();
                 ca.rename(name);
                 ca.into_series().into()
+            }
+            DataType::Null => {
+                let s = Series::new_null(name, n);
+                PySeries::new(s)
             }
             dt => {
                 panic!("cannot create repeat with dtype: {dt:?}");

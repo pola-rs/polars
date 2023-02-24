@@ -231,7 +231,8 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory))]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory, use_statistics, rechunk))]
+    #[allow(clippy::too_many_arguments)]
     pub fn read_parquet(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -240,6 +241,8 @@ impl PyDataFrame {
         parallel: Wrap<ParallelStrategy>,
         row_count: Option<(String, IdxSize)>,
         low_memory: bool,
+        use_statistics: bool,
+        rechunk: bool,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -254,6 +257,8 @@ impl PyDataFrame {
                     .with_n_rows(n_rows)
                     .with_row_count(row_count)
                     .set_low_memory(low_memory)
+                    .use_statistics(use_statistics)
+                    .set_rechunk(rechunk)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f.into_inner())
@@ -262,6 +267,8 @@ impl PyDataFrame {
                 .read_parallel(parallel.0)
                 .with_n_rows(n_rows)
                 .with_row_count(row_count)
+                .use_statistics(use_statistics)
+                .set_rechunk(rechunk)
                 .finish(),
         };
         let df = result.map_err(PyPolarsErr::from)?;
@@ -1131,11 +1138,11 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn partition_by(&self, groups: Vec<String>, stable: bool) -> PyResult<Vec<Self>> {
-        let out = if stable {
-            self.df.partition_by_stable(groups)
+    pub fn partition_by(&self, by: Vec<String>, maintain_order: bool) -> PyResult<Vec<Self>> {
+        let out = if maintain_order {
+            self.df.partition_by_stable(by)
         } else {
-            self.df.partition_by(groups)
+            self.df.partition_by(by)
         }
         .map_err(PyPolarsErr::from)?;
         // Safety:

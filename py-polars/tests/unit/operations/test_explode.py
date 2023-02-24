@@ -14,6 +14,14 @@ def test_explode_string() -> None:
     assert_series_equal(result, expected)
 
 
+def test_explode_multiple() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [[5, 6], [7, 8]]})
+
+    expected = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    assert_frame_equal(df.explode(["a", "b"]), expected)
+    assert_frame_equal(df.explode("a", "b"), expected)
+
+
 def test_groupby_flatten_list() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": [[1, 2], [2, 3], [4]]})
     result = df.groupby("group", maintain_order=True).agg(pl.col("values").flatten())

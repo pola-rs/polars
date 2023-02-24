@@ -1467,8 +1467,12 @@ def test_lazy_schema() -> None:
     ).lazy()
     assert lf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
 
-    lfe = lf.cleared()
+    lfe = lf.clear()
     assert lfe.schema == lf.schema
+
+    lfe = lf.clear(2)
+    assert lfe.schema == lf.schema
+    assert lfe.collect().rows() == [(None, None, None), (None, None, None)]
 
 
 def test_deadlocks_3409() -> None:
@@ -1721,3 +1725,50 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
         int8_df.lazy().select(pl.col("x").diff()).select(pl.col(pl.Int16)).collect()
     )
     assert eager_result.shape == lazy_result.shape
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.Float32,
+        pl.Float64,
+    ],
+)
+@pytest.mark.parametrize(
+    "func",
+    [
+        pl.col("x").arg_max(),
+        pl.col("x").arg_min(),
+        pl.col("x").max(),
+        pl.col("x").mean(),
+        pl.col("x").min(),
+        pl.col("x").nan_max(),
+        pl.col("x").nan_min(),
+        pl.col("x").product(),
+        pl.col("x").quantile(0.5),
+        pl.col("x").std(),
+        pl.col("x").sum(),
+        pl.col("x").var(),
+    ],
+)
+def test_compare_aggregation_between_lazy_and_eager_6904(
+    dtype: pl.PolarsDataType, func: pl.Expr
+) -> None:
+    df = pl.DataFrame(
+        {
+            "x": pl.Series(values=[1, 2, 3] * 2, dtype=dtype),
+            "y": pl.Series(values=["a"] * 3 + ["b"] * 3),
+        }
+    )
+    result_eager = df.select(func.over("y")).select("x")
+    dtype_eager = result_eager["x"].dtype
+    result_lazy = df.lazy().select(func.over("y")).select(pl.col(dtype_eager)).collect()
+    assert result_eager.frame_equal(result_lazy)

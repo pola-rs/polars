@@ -720,8 +720,12 @@ def test_custom_groupby() -> None:
 
 def test_multiple_columns_drop() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    # List input
     out = df.drop(["a", "b"])
     assert out.columns == ["c"]
+    # Positional input
+    out = df.drop("b", "c")
+    assert out.columns == ["a"]
 
 
 def test_concat() -> None:
@@ -1726,6 +1730,19 @@ def test_df_schema_unique() -> None:
         df.rename({"b": "a"})
 
 
+def test_cleared() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2], "b": [True, False]}, schema_overrides={"a": pl.UInt32}
+    )
+    dfc = df.clear()
+    assert dfc.schema == df.schema
+    assert dfc.rows() == []
+
+    dfc = df.clear(3)
+    assert dfc.schema == df.schema
+    assert dfc.rows() == [(None, None), (None, None), (None, None)]
+
+
 def test_empty_projection() -> None:
     empty_df = pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([])
     assert empty_df.rows() == []
@@ -2016,6 +2033,24 @@ def test_arithmetic() -> None:
     # cannot do arithmetic with a sequence
     with pytest.raises(ValueError, match="Operation not supported"):
         _ = df + [1]  # type: ignore[operator]
+
+
+def test_df_series_division() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [2, 2, 4, 4, 6, 6],
+            "b": [2, 2, 10, 5, 6, 6],
+        }
+    )
+    s = pl.Series([2, 2, 2, 2, 2, 2])
+    assert (df / s).to_dict(False) == {
+        "a": [1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+        "b": [1.0, 1.0, 5.0, 2.5, 3.0, 3.0],
+    }
+    assert (df // s).to_dict(False) == {
+        "a": [1, 1, 2, 2, 3, 3],
+        "b": [1, 1, 5, 2, 3, 3],
+    }
 
 
 def test_add_string() -> None:
@@ -2312,14 +2347,18 @@ def test_partition_by() -> None:
         }
     )
 
-    assert [
-        a.to_dict(False) for a in df.partition_by(["foo", "bar"], maintain_order=True)
-    ] == [
+    expected = [
         {"foo": ["A"], "N": [1], "bar": ["k"]},
         {"foo": ["A"], "N": [2], "bar": ["l"]},
         {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
         {"foo": ["C"], "N": [2], "bar": ["l"]},
     ]
+    assert [
+        a.to_dict(False) for a in df.partition_by(["foo", "bar"], maintain_order=True)
+    ] == expected
+    assert [
+        a.to_dict(False) for a in df.partition_by("foo", "bar", maintain_order=True)
+    ] == expected
 
     assert [a.to_dict(False) for a in df.partition_by("foo", maintain_order=True)] == [
         {"foo": ["A", "A"], "N": [1, 2], "bar": ["k", "l"]},

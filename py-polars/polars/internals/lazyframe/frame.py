@@ -98,7 +98,12 @@ def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
     return LazyFrame._from_pyldf(ldf)
 
 
-@redirect({"with_column": "with_columns"})
+@redirect(
+    {
+        "cleared": "clear",
+        "with_column": "with_columns",
+    }
+)
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -204,6 +209,7 @@ class LazyFrame:
         row_count_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
+        use_statistics: bool = True,
     ) -> Self:
         """
         Lazily read from a parquet file or multiple files via glob patterns.
@@ -234,6 +240,7 @@ class LazyFrame:
             _prepare_row_count_args(row_count_name, row_count_offset),
             low_memory,
             cloud_options=storage_options,
+            use_statistics=use_statistics,
         )
         return self
 
@@ -1440,11 +1447,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """Cache the result once the execution of the physical plan hits this node."""
         return self._from_pyldf(self._ldf.cache())
 
-    def cleared(self) -> Self:
+    def clear(self, n: int = 0) -> Self:
         """
-        Create an empty copy of the current LazyFrame.
+        Create an empty copy of the current LazyFrame, with zero to 'n' rows.
 
-        The copy has an identical schema but no data.
+        Returns a copy with an identical schema but no data.
+
+        Parameters
+        ----------
+        n
+            Number of (empty) rows to return in the cleared frame.
 
         See Also
         --------
@@ -1452,14 +1464,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> ldf = pl.DataFrame(
         ...     {
         ...         "a": [None, 2, 3, 4],
         ...         "b": [0.5, None, 2.5, 13],
         ...         "c": [True, True, False, None],
         ...     }
         ... ).lazy()
-        >>> df.cleared().fetch()
+        >>> ldf.clear().fetch()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -1468,8 +1480,19 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
+        >>> ldf.clear(2).fetch()
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ a    ┆ b    ┆ c    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ f64  ┆ bool │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
+
         """
-        return self._from_pyldf(pli.DataFrame(schema=self.schema).lazy()._ldf)
+        return self._from_pyldf(pli.DataFrame(schema=self.schema).clear(n).lazy()._ldf)
 
     def clone(self) -> Self:
         """
@@ -1477,7 +1500,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         See Also
         --------
-        cleared : Create an empty copy of the current LazyFrame, with identical
+        clear : Create an empty copy of the current LazyFrame, with identical
             schema but no data.
 
         Examples
@@ -2210,9 +2233,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def join_asof(
         self,
         other: LazyFrame,
-        left_on: str | None = None,
-        right_on: str | None = None,
-        on: str | None = None,
+        left_on: str | None | pli.Expr = None,
+        right_on: str | None | pli.Expr = None,
+        on: str | None | pli.Expr = None,
         by_left: str | Sequence[str] | None = None,
         by_right: str | Sequence[str] | None = None,
         by: str | Sequence[str] | None = None,
@@ -2335,7 +2358,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
             )
 
-        if isinstance(on, str):
+        if isinstance(on, (str, pli.Expr)):
             left_on = on
             right_on = on
 
@@ -2362,11 +2385,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         else:
             tolerance_num = tolerance
 
+        if not isinstance(left_on, pli.Expr):
+            left_on = pli.col(left_on)
+        if not isinstance(right_on, pli.Expr):
+            right_on = pli.col(right_on)
+
         return self._from_pyldf(
             self._ldf.join_asof(
                 other._ldf,
-                pli.col(left_on)._pyexpr,
-                pli.col(right_on)._pyexpr,
+                left_on._pyexpr,
+                right_on._pyexpr,
                 by_left_,
                 by_right_,
                 allow_parallel,
@@ -2761,7 +2789,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    def drop(self, columns: str | Sequence[str]) -> Self:
+    def drop(self, columns: str | Sequence[str], *more_columns: str) -> Self:
         """
         Remove columns from the dataframe.
 
@@ -2769,17 +2797,21 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ----------
         columns
             Name of the column(s) that should be removed from the dataframe.
+        *more_columns
+            Additional columns to drop, specified as positional arguments.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        Drop a single column by passing the name of that column.
+
+        >>> ldf = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... ).lazy()
-        >>> df.drop("ham").collect()
+        >>> ldf.drop("ham").collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -2791,10 +2823,41 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         │ 3   ┆ 8.0 │
         └─────┴─────┘
 
+        Drop multiple columns by passing a list of column names.
+
+        >>> ldf.drop(["bar", "ham"]).collect()
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        Or use positional arguments to drop multiple columns in the same way.
+
+        >>> ldf.drop("foo", "bar").collect()
+        shape: (3, 1)
+        ┌─────┐
+        │ ham │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        │ b   │
+        │ c   │
+        └─────┘
+
         """
         if isinstance(columns, str):
             columns = [columns]
-        return self._from_pyldf(self._ldf.drop_columns(columns))
+        if more_columns:
+            columns = list(columns)
+            columns.extend(more_columns)
+        return self._from_pyldf(self._ldf.drop(columns))
 
     def rename(self, mapping: dict[str, str]) -> Self:
         """
@@ -3102,7 +3165,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         n
-            Number of rows.
+            Number of rows to return.
 
         Examples
         --------
@@ -3609,7 +3672,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
 
     def explode(
-        self, columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr]
+        self,
+        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        *more_columns: str | pli.Expr,
     ) -> Self:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -3619,6 +3684,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         columns
             Name of the column(s) to explode. Columns must be of datatype List or Utf8.
             Accepts ``col`` expressions as input as well.
+        *more_columns
+            Additional names of columns to explode, specified as positional arguments.
 
         Examples
         --------
@@ -3647,6 +3714,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         columns = pli.selection_to_pyexpr_list(columns)
+        if more_columns:
+            columns.extend(pli.selection_to_pyexpr_list(more_columns))
         return self._from_pyldf(self._ldf.explode(columns))
 
     @deprecate_nonkeyword_arguments(

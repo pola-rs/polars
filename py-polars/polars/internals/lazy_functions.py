@@ -11,6 +11,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
+    Int32,
     Int64,
     PolarsDataType,
     SchemaDict,
@@ -1441,6 +1442,36 @@ def map(
     -------
     Expr
 
+    Examples
+    --------
+    >>> def test_func(a, b, c):
+    ...     return a + b + c
+    ...
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3, 4],
+    ...         "b": [4, 5, 6, 7],
+    ...     }
+    ... )
+    >>>
+    >>> df.with_columns(
+    ...     (
+    ...         pl.struct(["a", "b"]).map(
+    ...             lambda x: test_func(x.struct.field("a"), x.struct.field("b"), 1)
+    ...         )
+    ...     ).alias("a+b+c")
+    ... )
+    shape: (4, 3)
+    ┌─────┬─────┬───────┐
+    │ a   ┆ b   ┆ a+b+c │
+    │ --- ┆ --- ┆ ---   │
+    │ i64 ┆ i64 ┆ i64   │
+    ╞═════╪═════╪═══════╡
+    │ 1   ┆ 4   ┆ 6     │
+    │ 2   ┆ 5   ┆ 8     │
+    │ 3   ┆ 6   ┆ 10    │
+    │ 4   ┆ 7   ┆ 12    │
+    └─────┴─────┴───────┘
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
@@ -1484,6 +1515,41 @@ def apply(
     -------
     Expr
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [7, 2, 3, 4],
+    ...         "b": [2, 5, 6, 7],
+    ...     }
+    ... )
+    >>> df
+    shape: (4, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 7   ┆ 2   │
+    │ 2   ┆ 5   │
+    │ 3   ┆ 6   │
+    │ 4   ┆ 7   │
+    └─────┴─────┘
+
+    Calculate product of ``a``.
+
+    >>> df.with_columns(pl.col("a").apply(lambda x: x * x).alias("product_a"))
+    shape: (4, 3)
+    ┌─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ product_a │
+    │ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ i64       │
+    ╞═════╪═════╪═══════════╡
+    │ 7   ┆ 2   ┆ 49        │
+    │ 2   ┆ 5   ┆ 4         │
+    │ 3   ┆ 6   ┆ 9         │
+    │ 4   ┆ 7   ┆ 16        │
+    └─────┴─────┴───────────┘
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
@@ -1522,6 +1588,80 @@ def fold(
     If you simply want the first encountered expression as accumulator,
     consider using ``reduce``.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [3, 4, 5],
+    ...         "c": [5, 6, 7],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    │ 2   ┆ 4   ┆ 6   │
+    │ 3   ┆ 5   ┆ 7   │
+    └─────┴─────┴─────┘
+
+    Horizontally sum over all columns and add 1.
+
+    >>> df.select(
+    ...     pl.fold(acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
+    ...         "sum"
+    ...     ),
+    ... )
+    shape: (3, 1)
+    ┌─────┐
+    │ sum │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 10  │
+    │ 13  │
+    │ 16  │
+    └─────┘
+
+    You can also apply a condition/predicate on all columns:
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [0, 1, 2],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 0   │
+    │ 2   ┆ 1   │
+    │ 3   ┆ 2   │
+    └─────┴─────┘
+
+    >>> df.filter(
+    ...     pl.fold(
+    ...         acc=pl.lit(True),
+    ...         f=lambda acc, x: acc & x,
+    ...         exprs=pl.col("*") > 1,
+    ...     )
+    ... )
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 3   ┆ 2   │
+    └─────┴─────┘
     """
     # in case of pl.col("*")
     acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
@@ -1551,6 +1691,42 @@ def reduce(
     Notes
     -----
     See ``fold`` for the version with an explicit accumulator.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [0, 1, 2],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 0   │
+    │ 2   ┆ 1   │
+    │ 3   ┆ 2   │
+    └─────┴─────┘
+
+    Horizontally sum over all columns.
+
+    >>> df.select(
+    ...     pl.reduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
+    ... )
+    shape: (3, 1)
+    ┌─────┐
+    │ sum │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 3   │
+    │ 5   │
+    └─────┘
 
     """
     # in case of pl.col("*")
@@ -1592,6 +1768,43 @@ def cumfold(
     If you simply want the first encountered expression as accumulator,
     consider using ``cumreduce``.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [3, 4, 5],
+    ...         "c": [5, 6, 7],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    │ 2   ┆ 4   ┆ 6   │
+    │ 3   ┆ 5   ┆ 7   │
+    └─────┴─────┴─────┘
+
+    >>> df.select(
+    ...     pl.cumfold(
+    ...         acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")
+    ...     ).alias("cumfold"),
+    ... )
+    shape: (3, 1)
+    ┌───────────┐
+    │ cumfold   │
+    │ ---       │
+    │ struct[3] │
+    ╞═══════════╡
+    │ {2,5,10}  │
+    │ {3,7,13}  │
+    │ {4,9,16}  │
+    └───────────┘
+
     """  # noqa: W505
     # in case of pl.col("*")
     acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
@@ -1620,6 +1833,42 @@ def cumreduce(
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [3, 4, 5],
+    ...         "c": [5, 6, 7],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    │ 2   ┆ 4   ┆ 6   │
+    │ 3   ┆ 5   ┆ 7   │
+    └─────┴─────┴─────┘
+
+    >>> df.select(
+    ...     pl.cumreduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
+    ...         "cumreduce"
+    ...     ),
+    ... )
+    shape: (3, 1)
+    ┌───────────┐
+    │ cumreduce │
+    │ ---       │
+    │ struct[3] │
+    ╞═══════════╡
+    │ {1,4,9}   │
+    │ {2,6,12}  │
+    │ {3,8,15}  │
+    └───────────┘
     """  # noqa: W505
     # in case of pl.col("*")
     if isinstance(exprs, pli.Expr):
@@ -1630,7 +1879,44 @@ def cumreduce(
 
 
 def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
-    """Evaluate columnwise or elementwise with a bitwise OR operation."""
+    """
+    Evaluate columnwise or elementwise with a bitwise OR operation.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [True, False, True],
+    ...         "b": [False, False, False],
+    ...         "c": [False, True, False],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ┌───────┬───────┬───────┐
+    │ a     ┆ b     ┆ c     │
+    │ ---   ┆ ---   ┆ ---   │
+    │ bool  ┆ bool  ┆ bool  │
+    ╞═══════╪═══════╪═══════╡
+    │ true  ┆ false ┆ false │
+    │ false ┆ false ┆ true  │
+    │ true  ┆ false ┆ false │
+    └───────┴───────┴───────┘
+
+    Compares the values (in binary format) and return true if any value in the column
+    is true.
+
+    >>> df.select(pl.any("*"))
+    shape: (1, 3)
+    ┌──────┬───────┬──────┐
+    │ a    ┆ b     ┆ c    │
+    │ ---  ┆ ---   ┆ ---  │
+    │ bool ┆ bool  ┆ bool │
+    ╞══════╪═══════╪══════╡
+    │ true ┆ false ┆ true │
+    └──────┴───────┴──────┘
+
+    """
     if isinstance(name, str):
         return col(name).any()
     else:
@@ -1640,34 +1926,27 @@ def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
 
 
 def exclude(
-    columns: (
-        str
-        | PolarsDataType
-        | Sequence[str]
-        | Sequence[PolarsDataType]
-        | set[PolarsDataType]
-        | frozenset[PolarsDataType]
-    ),
+    columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+    *more_columns: str | PolarsDataType,
 ) -> pli.Expr:
     """
-    Exclude certain columns from a wildcard/regex selection.
+    Represent all columns except for the given columns.
 
-    Syntactic sugar for:
-
-    >>> pl.all().exclude(columns)  # doctest: +SKIP
+    Syntactic sugar for ``pl.all().exclude(columns)``.
 
     Parameters
     ----------
     columns
-        Column(s) to exclude from selection
-        This can be:
-
-        - a column name, or multiple column names
-        - a regular expression starting with `^` and ending with `$`
-        - a dtype or multiple dtypes
+        The name or datatype of the column(s) to exclude. Accepts regular expression
+        input. Regular expressions should start with ``^`` and end with ``$``.
+    *more_columns
+        Additional names or datatypes of columns to exclude, specified as positional
+        arguments.
 
     Examples
     --------
+    Exclude by column name(s):
+
     >>> df = pl.DataFrame(
     ...     {
     ...         "aa": [1, 2, 3],
@@ -1675,20 +1954,6 @@ def exclude(
     ...         "cc": [None, 2.5, 1.5],
     ...     }
     ... )
-    >>> df
-    shape: (3, 3)
-    ┌─────┬──────┬──────┐
-    │ aa  ┆ ba   ┆ cc   │
-    │ --- ┆ ---  ┆ ---  │
-    │ i64 ┆ str  ┆ f64  │
-    ╞═════╪══════╪══════╡
-    │ 1   ┆ a    ┆ null │
-    │ 2   ┆ b    ┆ 2.5  │
-    │ 3   ┆ null ┆ 1.5  │
-    └─────┴──────┴──────┘
-
-    Exclude by column name(s):
-
     >>> df.select(pl.exclude("ba"))
     shape: (3, 2)
     ┌─────┬──────┐
@@ -1730,7 +1995,7 @@ def exclude(
     └──────┘
 
     """
-    return col("*").exclude(columns)
+    return col("*").exclude(columns, *more_columns)
 
 
 def all(name: str | Sequence[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
@@ -2527,6 +2792,12 @@ def repeat(
         if name is None:
             name = ""
         dtype = py_type_to_dtype(type(value))
+        if (
+            dtype == Int64
+            and isinstance(value, int)
+            and -(2**31) <= value <= 2**31 - 1
+        ):
+            dtype = Int32
         s = pli.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
         return s
     else:

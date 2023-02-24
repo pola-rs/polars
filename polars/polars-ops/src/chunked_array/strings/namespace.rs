@@ -7,11 +7,12 @@ use base64::Engine as _;
 use polars_arrow::export::arrow::compute::substring::substring;
 use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
+#[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::{escape, NoExpand, Regex};
 
 use super::*;
-#[cfg(feature = "string_encoding")]
+#[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {

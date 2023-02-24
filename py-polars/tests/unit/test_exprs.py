@@ -44,6 +44,21 @@ def test_suffix(fruits_cars: pl.DataFrame) -> None:
     assert out.columns == ["A_reverse", "fruits_reverse", "B_reverse", "cars_reverse"]
 
 
+def test_pipe() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _multiply(expr: pl.Expr, mul: int) -> pl.Expr:
+        return expr * mul
+
+    result = df.select(
+        pl.col("foo").pipe(_multiply, mul=2),
+        pl.col("bar").pipe(_multiply, mul=3),
+    )
+
+    expected = pl.DataFrame({"foo": [2, 4, 6], "bar": [18, None, 24]})
+    assert_frame_equal(result, expected)
+
+
 def test_prefix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().prefix("reverse_")])
@@ -533,6 +548,46 @@ def test_map_dict() -> None:
         "remapped": ["France", "Not specified", "2", "Germany"],
     }
 
+    with pl.StringCache():
+        assert (
+            df.with_columns(
+                pl.col("country_code")
+                .cast(pl.Categorical)
+                .map_dict(country_code_dict, default=pl.col("country_code"))
+                .alias("remapped")
+            )
+        ).to_dict(False) == {
+            "row_nr": [0, 1, 2, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+            "remapped": ["France", "Not specified", "ES", "Germany"],
+        }
+
+    df_categorical_lazy = df.lazy().with_columns(
+        pl.col("country_code").cast(pl.Categorical)
+    )
+
+    with pl.StringCache():
+        assert (
+            df_categorical_lazy.with_columns(
+                pl.col("country_code")
+                .map_dict(country_code_dict, default=pl.col("country_code"))
+                .alias("remapped")
+            )
+            .collect()
+            .to_dict(False)
+        ) == {
+            "row_nr": [0, 1, 2, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+            "remapped": ["France", "Not specified", "ES", "Germany"],
+        }
+
+    # 7132
+    df = pl.DataFrame({"text": ["abc"]})
+    mapper = {"abc": "123"}
+    assert df.select(pl.col("text").map_dict(mapper).str.replace_all("1", "-")).to_dict(
+        False
+    ) == {"text": ["-23"]}
+
 
 def test_lit_dtypes() -> None:
     def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:
@@ -586,3 +641,26 @@ def test_incompatible_lit_dtype() -> None:
             datetime(2020, 1, 1, tzinfo=timezone.utc),
             dtype=pl.Datetime("us", "Asia/Kathmandu"),
         )
+
+
+@pytest.mark.parametrize(
+    ("input", "expected"),
+    [
+        (("a",), ["b", "c"]),
+        (("a", "b"), ["c"]),
+        ((["a", "b"],), ["c"]),
+        ((pl.Int64,), ["c"]),
+        ((pl.Utf8, pl.Float32), ["a", "b"]),
+        (([pl.Utf8, pl.Float32],), ["a", "b"]),
+    ],
+)
+def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
+    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8})
+    assert df.select(pl.all().exclude(*input)).columns == expected
+
+
+@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
+    df = pl.DataFrame(schema=["a", "b", "c"])
+    with pytest.raises(TypeError):
+        df.select(pl.all().exclude(*input))

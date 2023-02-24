@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import numpy as np
 import pytest
 
@@ -289,3 +291,67 @@ def test_overflow_diff() -> None:
     assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(False) == {
         "a": [None, -10, 20]
     }
+
+
+@typing.no_type_check
+def test_fill_null_unknown_output_type() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                None,
+                2,
+                3,
+                4,
+                5,
+            ]
+        }
+    )
+    assert df.with_columns(
+        np.exp(pl.col("a")).fill_null(pl.lit(1, pl.Float64))
+    ).to_dict(False) == {
+        "a": [
+            1.0,
+            7.38905609893065,
+            20.085536923187668,
+            54.598150033144236,
+            148.4131591025766,
+        ]
+    }
+
+
+def test_repeat() -> None:
+    s = pl.select(pl.repeat(2**31 - 1, 3)).to_series()
+    assert s.dtype == pl.Int32
+    assert s.len() == 3
+    assert s.to_list() == [2**31 - 1] * 3
+    s = pl.select(pl.repeat(-(2**31), 4)).to_series()
+    assert s.dtype == pl.Int32
+    assert s.len() == 4
+    assert s.to_list() == [-(2**31)] * 4
+    s = pl.select(pl.repeat(2**31, 5)).to_series()
+    assert s.dtype == pl.Int64
+    assert s.len() == 5
+    assert s.to_list() == [2**31] * 5
+    s = pl.select(pl.repeat(-(2**31) - 1, 3)).to_series()
+    assert s.dtype == pl.Int64
+    assert s.len() == 3
+    assert s.to_list() == [-(2**31) - 1] * 3
+    s = pl.select(pl.repeat("foo", 2)).to_series()
+    assert s.dtype == pl.Utf8
+    assert s.len() == 2
+    assert s.to_list() == ["foo"] * 2
+    s = pl.select(pl.repeat(1.0, 5)).to_series()
+    assert s.dtype == pl.Float64
+    assert s.len() == 5
+    assert s.to_list() == [1.0] * 5
+    s = pl.select(pl.repeat(True, 4)).to_series()
+    assert s.dtype == pl.Boolean
+    assert s.len() == 4
+    assert s.to_list() == [True] * 4
+    s = pl.select(pl.repeat(None, 7)).to_series()
+    assert s.dtype == pl.Null
+    assert s.len() == 7
+    assert s.to_list() == [None] * 7
+    s = pl.select(pl.repeat(0, 0)).to_series()
+    assert s.dtype == pl.Int32
+    assert s.len() == 0

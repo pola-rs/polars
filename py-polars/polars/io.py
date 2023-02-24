@@ -132,7 +132,7 @@ def read_csv(
     skip_rows
         Start reading after ``skip_rows`` lines.
     dtypes
-        Overwrite dtypes during inference.
+        Overwrite dtypes for specific or all columns during schema inference.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -145,8 +145,11 @@ def read_csv(
         utf8 values to be treated as the empty string you can set this param True.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
-        First try ``infer_schema_length=0`` to read all columns as
-        ``pl.Utf8`` to check which values might cause an issue.
+        Before using this option, try to increase the number of lines used for schema
+        inference with e.g ```infer_schema_length=10000`` or override automatic dtype
+        inference for specific columns with the ``dtypes`` option or use
+        ``infer_schema_length=0`` to read all columns as ``pl.Utf8`` to check which
+        values might cause an issue.
     try_parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
@@ -156,6 +159,9 @@ def read_csv(
         Defaults to the number of physical cpu's of your system.
     infer_schema_length
         Maximum number of lines to read to infer schema.
+        If schema is inferred wrongly (e.g. as ``pl.Int64`` instead of ``pl.Float64``),
+        try to increase the number of lines used to infer the schema or override
+        inferred dtype for those columns with ``dtypes``.
         If set to 0, all columns will be read as ``pl.Utf8``.
         If set to ``None``, a full table scan will be done (slow).
     batch_size
@@ -659,6 +665,8 @@ def scan_parquet(
     row_count_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
     low_memory: bool = False,
+    *,
+    use_statistics: bool = True,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file or multiple files via glob patterns.
@@ -689,8 +697,11 @@ def scan_parquet(
         Extra options that make sense for ``fsspec.open()`` or a
         particular storage connection.
         e.g. host, port, username, password, etc.
-    low_memory: bool
+    low_memory
         Reduce memory pressure at the expense of performance.
+    use_statistics
+        Use statistics in the parquet to determine if pages
+        can be skipped from reading.
 
     """
     if isinstance(file, (str, Path)):
@@ -706,6 +717,7 @@ def scan_parquet(
         row_count_offset=row_count_offset,
         storage_options=storage_options,
         low_memory=low_memory,
+        use_statistics=use_statistics,
     )
 
 
@@ -721,7 +733,7 @@ def scan_ndjson(
     row_count_offset: int = 0,
 ) -> LazyFrame:
     """
-    Lazily read from a newline delimited JSON file.
+    Lazily read from a newline delimited JSON file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
@@ -889,6 +901,9 @@ def read_parquet(
     row_count_offset: int = 0,
     low_memory: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
+    *,
+    use_statistics: bool = True,
+    rechunk: bool = True,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -934,6 +949,12 @@ def read_parquet(
     pyarrow_options
         Keyword arguments for `pyarrow.parquet.read_table
         <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
+    use_statistics
+        Use statistics in the parquet to determine if pages
+        can be skipped from reading.
+    rechunk
+        Make sure that all columns are contiguous in memory by
+        aggregating the chunks into a single array.
 
     Returns
     -------
@@ -979,6 +1000,8 @@ def read_parquet(
             row_count_name=row_count_name,
             row_count_offset=row_count_offset,
             low_memory=low_memory,
+            use_statistics=use_statistics,
+            rechunk=rechunk,
         )
 
 

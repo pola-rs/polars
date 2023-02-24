@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
-use polars_io::is_cloud_url;
+use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
@@ -62,14 +62,27 @@ pub trait LazyFileListReader: Clone {
                 ));
             }
 
-            self.concat_impl(lfs)
+            let mut lf = self.concat_impl(lfs)?;
+            if let Some(n_rows) = self.n_rows() {
+                lf = lf.slice(0, n_rows as IdxSize)
+            };
+            if let Some(rc) = self.row_count() {
+                lf = lf.with_row_count(&rc.name, Some(rc.offset))
+            };
+
+            Ok(lf)
         } else {
             self.finish_no_glob()
         }
     }
 
     /// Recommended concatenation of [LazyFrame]s from many input files.
-    fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame>;
+    ///
+    /// This method should not take into consideration [LazyFileListReader::n_rows]
+    /// nor [LazyFileListReader::row_count].
+    fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
+        concat_impl(&lfs, self.rechunk(), true, true)
+    }
 
     /// Get the final [LazyFrame].
     /// This method assumes, that path is *not* a glob.
@@ -92,6 +105,13 @@ pub trait LazyFileListReader: Clone {
     /// Rechunk the memory to contiguous chunks when parsing is done.
     #[must_use]
     fn with_rechunk(self, toggle: bool) -> Self;
+
+    /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
+    /// be guaranteed.
+    fn n_rows(&self) -> Option<usize>;
+
+    /// Add a `row_count` column.
+    fn row_count(&self) -> Option<&RowCount>;
 
     /// [CloudOptions] used to list files.
     fn cloud_options(&self) -> Option<&CloudOptions> {

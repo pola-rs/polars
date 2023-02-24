@@ -8,11 +8,11 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-default = []
 cli = ["csv", "polars-lazy/fmt", "atty", "rustyline", "jemallocator"]
 csv = ["polars-lazy/csv-file"]
-parquet = ["polars-lazy/parquet", "polars-lazy/dtype-binary"]
+default = []
 ipc = ["polars-lazy/ipc"]
+parquet = ["polars-lazy/parquet", "polars-lazy/dtype-binary"]
 
 [dependencies]
 atty = { version = "0.2", optional = true }

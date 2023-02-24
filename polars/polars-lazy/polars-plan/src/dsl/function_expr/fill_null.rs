@@ -4,19 +4,15 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
     let array = &s[0];
     let fill_value = &s[1];
 
-    if matches!(super_type, DataType::Unknown) {
-        return Err(PolarsError::SchemaMisMatch(
-            format!(
-                "Cannot 'fill_null' a 'Series' of dtype: '{}' with an argument of dtype: '{}'",
-                array.dtype(),
-                fill_value.dtype()
-            )
-            .into(),
-        ));
+    let (array, fill_value) = if matches!(super_type, DataType::Unknown) {
+        let fill_value = fill_value.cast(array.dtype()).map_err(|_|{
+                let msg = "'fill_null' supertype could not be determined. Set the correct literal value or ensure the type of the expression is known .";
+            PolarsError::SchemaMisMatch(msg.into())
+        })?;
+        (array.clone(), fill_value)
+    } else {
+        (array.cast(super_type)?, fill_value.cast(super_type)?)
     };
-
-    let array = array.cast(super_type)?;
-    let fill_value = fill_value.cast(super_type)?;
 
     if !array.null_count() == 0 {
         Ok(array)

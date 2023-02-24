@@ -303,6 +303,17 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         self
     }
 
+    /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
+    /// be guaranteed.
+    fn n_rows(&self) -> Option<usize> {
+        self.n_rows
+    }
+
+    /// Add a `row_count` column.
+    fn row_count(&self) -> Option<&RowCount> {
+        self.row_count.as_ref()
+    }
+
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
         // set to false, as the csv parser has full thread utilization
         concat_impl(&lfs, self.rechunk(), false, true)

@@ -156,6 +156,7 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
 
 @redirect(
     {
+        "cleared": "clear",
         "iterrows": "iter_rows",
         "with_column": "with_columns",
     }
@@ -804,6 +805,8 @@ class DataFrame:
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         low_memory: bool = False,
+        use_statistics: bool = True,
+        rechunk: bool = True,
     ) -> Self:
         """
         Read into a DataFrame from a parquet file.
@@ -853,6 +856,8 @@ class DataFrame:
             parallel,
             _prepare_row_count_args(row_count_name, row_count_offset),
             low_memory=low_memory,
+            use_statistics=use_statistics,
+            rechunk=rechunk,
         )
         return self
 
@@ -1253,7 +1258,10 @@ class DataFrame:
 
     def _div(self, other: Any, floordiv: bool) -> Self:
         if isinstance(other, pli.Series):
-            other = other.to_frame()
+            if floordiv:
+                return self.select(pli.all() // pli.lit(other))
+            return self.select(pli.all() / pli.lit(other))
+
         elif not isinstance(other, DataFrame):
             s = _prepare_other_arg(other, length=len(self))
             other = DataFrame([s.rename(f"n{i}") for i in range(len(self.columns))])
@@ -1261,6 +1269,7 @@ class DataFrame:
         orig_dtypes = other.dtypes
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
+
         df = (
             df
             if not floordiv
@@ -4204,9 +4213,9 @@ class DataFrame:
     def join_asof(
         self,
         other: DataFrame,
-        left_on: str | None = None,
-        right_on: str | None = None,
-        on: str | None = None,
+        left_on: str | None | pli.Expr = None,
+        right_on: str | None | pli.Expr = None,
+        on: str | None | pli.Expr = None,
         by_left: str | Sequence[str] | None = None,
         by_right: str | Sequence[str] | None = None,
         by: str | Sequence[str] | None = None,
@@ -4717,7 +4726,7 @@ class DataFrame:
         self._df.extend(other._df)
         return self
 
-    def drop(self, columns: str | Sequence[str]) -> Self:
+    def drop(self, columns: str | Sequence[str], *more_columns: str) -> Self:
         """
         Remove columns from the dataframe.
 
@@ -4725,9 +4734,13 @@ class DataFrame:
         ----------
         columns
             Name of the column(s) that should be removed from the dataframe.
+        *more_columns
+            Additional columns to drop, specified as positional arguments.
 
         Examples
         --------
+        Drop a single column by passing the name of that column.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -4747,19 +4760,51 @@ class DataFrame:
         │ 3   ┆ 8.0 │
         └─────┴─────┘
 
+        Drop multiple columns by passing a list of column names.
+
+        >>> df.drop(["bar", "ham"])
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        Or use positional arguments to drop multiple columns in the same way.
+
+        >>> df.drop("foo", "bar")
+        shape: (3, 1)
+        ┌─────┐
+        │ ham │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        │ b   │
+        │ c   │
+        └─────┘
+
         """
         return self._from_pydf(
-            self.lazy().drop(columns).collect(no_optimization=True)._df
+            self.lazy().drop(columns, *more_columns).collect(no_optimization=True)._df
         )
 
     def drop_in_place(self, name: str) -> pli.Series:
         """
-        Drop in place.
+        Drop a single column in-place and return the dropped column.
 
         Parameters
         ----------
         name
-            Column to drop.
+            Name of the column to drop.
+
+        Returns
+        -------
+        The dropped column.
 
         Examples
         --------
@@ -4782,11 +4827,16 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.drop_in_place(name))
 
-    def cleared(self) -> Self:
+    def clear(self, n: int = 0) -> Self:
         """
-        Create an empty copy of the current DataFrame.
+        Create an empty copy of the current DataFrame, with zero to 'n' rows.
 
         Returns a DataFrame with identical schema but no data.
+
+        Parameters
+        ----------
+        n
+            Number of (empty) rows to return in the cleared frame.
 
         See Also
         --------
@@ -4801,7 +4851,7 @@ class DataFrame:
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> df.cleared()
+        >>> df.clear()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -4810,8 +4860,26 @@ class DataFrame:
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
+        >>> df.clear(n=2)
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ a    ┆ b    ┆ c    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ f64  ┆ bool │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
+
         """
-        return self.head(0) if len(self) > 0 else self.clone()
+        if n > 0 or len(self) > 0:
+            return self.__class__(
+                {
+                    nm: pli.Series(name=nm, dtype=tp).extend_constant(None, n)
+                    for nm, tp in self.schema.items()
+                }
+            )
+        return self.clone()
 
     def clone(self) -> Self:
         """
@@ -4819,7 +4887,7 @@ class DataFrame:
 
         See Also
         --------
-        cleared : Create an empty copy of the current DataFrame, with identical
+        clear : Create an empty copy of the current DataFrame, with identical
             schema but no data.
 
         Examples
@@ -5074,7 +5142,9 @@ class DataFrame:
         )
 
     def explode(
-        self, columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr]
+        self,
+        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        *more_columns: str | pli.Expr,
     ) -> Self:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -5084,6 +5154,8 @@ class DataFrame:
         columns
             Name of the column(s) to explode. Columns must be of datatype List or Utf8.
             Accepts ``col`` expressions as input as well.
+        *more_columns
+            Additional names of columns to explode, specified as positional arguments.
 
         Returns
         -------
@@ -5128,18 +5200,22 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy().explode(columns).collect(no_optimization=True)._df
+            self.lazy()
+            .explode(columns, *more_columns)
+            .collect(no_optimization=True)
+            ._df
         )
 
+    @deprecated_alias(aggregate_fn="aggregate_function")
     @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "values", "index", "columns", "aggregate_fn"]
+        allowed_args=["self", "values", "index", "columns", "aggregate_function"]
     )
     def pivot(
         self,
         values: Sequence[str] | str,
         index: Sequence[str] | str,
         columns: Sequence[str] | str,
-        aggregate_fn: PivotAgg | pli.Expr = "first",
+        aggregate_function: PivotAgg | pli.Expr = "first",
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
@@ -5157,7 +5233,7 @@ class DataFrame:
         columns
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
-        aggregate_fn : {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
+        aggregate_function : {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
             A predefined aggregate function str or an expression.
         maintain_order
             Sort the grouped keys so that the output order is predictable.
@@ -5190,7 +5266,7 @@ class DataFrame:
         │ two ┆ 4   ┆ 5   ┆ 6   │
         └─────┴─────┴─────┴─────┘
 
-        """
+        """  # noqa: W505
         if isinstance(values, str):
             values = [values]
         if isinstance(index, str):
@@ -5198,26 +5274,26 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(aggregate_fn, str):
-            if aggregate_fn == "first":
-                aggregate_fn = pli.element().first()
-            elif aggregate_fn == "sum":
-                aggregate_fn = pli.element().sum()
-            elif aggregate_fn == "max":
-                aggregate_fn = pli.element().max()
-            elif aggregate_fn == "min":
-                aggregate_fn = pli.element().min()
-            elif aggregate_fn == "mean":
-                aggregate_fn = pli.element().mean()
-            elif aggregate_fn == "median":
-                aggregate_fn = pli.element().median()
-            elif aggregate_fn == "last":
-                aggregate_fn = pli.element().last()
-            elif aggregate_fn == "count":
-                aggregate_fn = pli.count()
+        if isinstance(aggregate_function, str):
+            if aggregate_function == "first":
+                aggregate_function = pli.element().first()
+            elif aggregate_function == "sum":
+                aggregate_function = pli.element().sum()
+            elif aggregate_function == "max":
+                aggregate_function = pli.element().max()
+            elif aggregate_function == "min":
+                aggregate_function = pli.element().min()
+            elif aggregate_function == "mean":
+                aggregate_function = pli.element().mean()
+            elif aggregate_function == "median":
+                aggregate_function = pli.element().median()
+            elif aggregate_function == "last":
+                aggregate_function = pli.element().last()
+            elif aggregate_function == "count":
+                aggregate_function = pli.count()
             else:
                 raise ValueError(
-                    f"Argument aggregate fn: '{aggregate_fn}' " f"was not expected."
+                    f"Invalid input for `aggregate_function` argument: {aggregate_function!r}"
                 )
 
         return self._from_pydf(
@@ -5225,7 +5301,7 @@ class DataFrame:
                 values,
                 index,
                 columns,
-                aggregate_fn._pyexpr,
+                aggregate_function._pyexpr,
                 maintain_order,
                 sort_columns,
                 separator,
@@ -5425,8 +5501,8 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        groups: str | Sequence[str],
-        *,
+        by: str | Iterable[str],
+        *more_by: str,
         maintain_order: bool = ...,
         as_dict: Literal[False] = ...,
     ) -> list[Self]:
@@ -5435,130 +5511,156 @@ class DataFrame:
     @overload
     def partition_by(
         self,
-        groups: str | Sequence[str],
-        *,
+        by: str | Iterable[str],
+        *more_by: str,
         maintain_order: bool = ...,
         as_dict: Literal[True],
     ) -> dict[Any, Self]:
         ...
 
-    @overload
+    @deprecated_alias(groups="by")
     def partition_by(
         self,
-        groups: str | Sequence[str],
-        *,
-        maintain_order: bool,
-        as_dict: bool,
-    ) -> list[Self] | dict[Any, Self]:
-        ...
-
-    def partition_by(
-        self,
-        groups: str | Sequence[str],
-        *,
+        by: str | Iterable[str],
+        *more_by: str,
         maintain_order: bool = True,
         as_dict: bool = False,
     ) -> list[Self] | dict[Any, Self]:
         """
-        Split into multiple DataFrames partitioned by groups.
+        Group by the given columns and return the groups as separate dataframes.
 
         Parameters
         ----------
-        groups
-            Groups to partition by.
+        by
+            Name of the column(s) to group by.
+        *more_by
+            Additional names of columns to group by, specified as positional arguments.
         maintain_order
-            Keep predictable output order. This is slower as it requires an extra sort
-            operation.
+            Ensure that the order of the groups is consistent with the input data.
+            This is slower than a default partition by operation.
         as_dict
-            If True, return the partitions in a dictionary keyed by the distinct group
-            values instead of a list.
+            Return a dictionary instead of a list. The dictionary keys are the distinct
+            group values that identify that group.
 
         Examples
         --------
+        Pass a single column name to partition by that column.
+
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": ["A", "A", "B", "B", "C"],
-        ...         "N": [1, 2, 2, 4, 2],
-        ...         "bar": ["k", "l", "m", "m", "l"],
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...         "b": [1, 2, 1, 3, 3],
+        ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.partition_by(groups="foo", maintain_order=True)
+        >>> df.partition_by("a")  # doctest: +IGNORE_RESULT
         [shape: (2, 3)
-         ┌─────┬─────┬─────┐
-         │ foo ┆ N   ┆ bar │
-         │ --- ┆ --- ┆ --- │
-         │ str ┆ i64 ┆ str │
-         ╞═════╪═════╪═════╡
-         │ A   ┆ 1   ┆ k   │
-         │ A   ┆ 2   ┆ l   │
-         └─────┴─────┴─────┘,
-         shape: (2, 3)
-         ┌─────┬─────┬─────┐
-         │ foo ┆ N   ┆ bar │
-         │ --- ┆ --- ┆ --- │
-         │ str ┆ i64 ┆ str │
-         ╞═════╪═════╪═════╡
-         │ B   ┆ 2   ┆ m   │
-         │ B   ┆ 4   ┆ m   │
-         └─────┴─────┴─────┘,
-         shape: (1, 3)
-         ┌─────┬─────┬─────┐
-         │ foo ┆ N   ┆ bar │
-         │ --- ┆ --- ┆ --- │
-         │ str ┆ i64 ┆ str │
-         ╞═════╪═════╪═════╡
-         │ C   ┆ 2   ┆ l   │
-         └─────┴─────┴─────┘]
-        >>> df.partition_by(groups="foo", maintain_order=True, as_dict=True)
-        {'A': shape: (2, 3)
         ┌─────┬─────┬─────┐
-        │ foo ┆ N   ┆ bar │
+        │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ str │
+        │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ A   ┆ 1   ┆ k   │
-        │ A   ┆ 2   ┆ l   │
-        └─────┴─────┴─────┘, 'B': shape: (2, 3)
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 1   ┆ 3   │
+        └─────┴─────┴─────┘, shape: (2, 3)
         ┌─────┬─────┬─────┐
-        │ foo ┆ N   ┆ bar │
+        │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ str │
+        │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ B   ┆ 2   ┆ m   │
-        │ B   ┆ 4   ┆ m   │
-        └─────┴─────┴─────┘, 'C': shape: (1, 3)
+        │ b   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 2   │
+        └─────┴─────┴─────┘, shape: (1, 3)
         ┌─────┬─────┬─────┐
-        │ foo ┆ N   ┆ bar │
+        │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ str │
+        │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
-        │ C   ┆ 2   ┆ l   │
+        │ c   ┆ 3   ┆ 1   │
+        └─────┴─────┴─────┘]
+
+        Partition by multiple columns by either passing a list of column names, or by
+        specifying each column name as a positional argument.
+
+        >>> df.partition_by("a", "b")  # doctest: +IGNORE_RESULT
+        [shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 1   ┆ 3   │
+        └─────┴─────┴─────┘, shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 2   ┆ 4   │
+        └─────┴─────┴─────┘, shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 3   ┆ 2   │
+        └─────┴─────┴─────┘, shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ c   ┆ 3   ┆ 1   │
+        └─────┴─────┴─────┘]
+
+        Return the partitions as a dictionary by specifying ``as_dict=True``.
+
+        >>> df.partition_by("a", as_dict=True)  # doctest: +IGNORE_RESULT
+        {'a': shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 5   │
+        │ a   ┆ 1   ┆ 3   │
+        └─────┴─────┴─────┘, 'b': shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 2   ┆ 4   │
+        │ b   ┆ 3   ┆ 2   │
+        └─────┴─────┴─────┘, 'c': shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘}
 
         """
-        if isinstance(groups, str):
-            groups = [groups]
-        elif not isinstance(groups, list):
-            groups = list(groups)
+        if isinstance(by, str):
+            by = [by]
+        elif not isinstance(by, list):
+            by = list(by)
+        if more_by:
+            by.extend(more_by)
+
+        partitions = [
+            self._from_pydf(_df) for _df in self._df.partition_by(by, maintain_order)
+        ]
 
         if as_dict:
-            out: dict[Any, Self] = {}
-            if len(groups) == 1:
-                for _df in self._df.partition_by(groups, maintain_order):
-                    df = self._from_pydf(_df)
-                    out[df[groups][0, 0]] = df
+            if len(by) == 1:
+                return {df[by][0, 0]: df for df in partitions}
             else:
-                for _df in self._df.partition_by(groups, maintain_order):
-                    df = self._from_pydf(_df)
-                    out[df[groups].row(0)] = df
+                return {df[by].row(0): df for df in partitions}
 
-            return out
-
-        else:
-            return [
-                self._from_pydf(_df)
-                for _df in self._df.partition_by(groups, maintain_order)
-            ]
+        return partitions
 
     def shift(self, periods: int) -> Self:
         """

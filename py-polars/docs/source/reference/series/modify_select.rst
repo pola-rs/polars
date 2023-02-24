@@ -12,7 +12,7 @@ Manipulation/selection
     Series.argsort
     Series.cast
     Series.ceil
-    Series.cleared
+    Series.clear
     Series.clip
     Series.clip_max
     Series.clip_min

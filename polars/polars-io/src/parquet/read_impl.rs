@@ -96,6 +96,7 @@ fn rg_to_dfs(
     row_count: Option<RowCount>,
     parallel: ParallelStrategy,
     projection: &[usize],
+    use_statistics: bool,
 ) -> PolarsResult<Vec<DataFrame>> {
     let mut dfs = Vec::with_capacity(row_group_end - row_group_start);
 
@@ -103,7 +104,7 @@ fn rg_to_dfs(
         let md = &file_metadata.row_groups[rg];
         let current_row_count = md.num_rows() as IdxSize;
 
-        if !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg)? {
+        if use_statistics && !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg)? {
             *previous_row_count += current_row_count;
             continue;
         }
@@ -171,6 +172,7 @@ fn rg_to_dfs_par(
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     row_count: Option<RowCount>,
     projection: &[usize],
+    use_statistics: bool,
 ) -> PolarsResult<Vec<DataFrame>> {
     // compute the limits per row group and the row count offsets
     let row_groups = file_metadata
@@ -194,7 +196,8 @@ fn rg_to_dfs_par(
         .into_par_iter()
         .map(|(rg_idx, md, local_limit, row_count_start)| {
             if local_limit == 0
-                || !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg_idx)?
+                || use_statistics
+                    && !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg_idx)?
             {
                 return Ok(None);
             }
@@ -236,6 +239,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     mut parallel: ParallelStrategy,
     row_count: Option<RowCount>,
+    use_statistics: bool,
 ) -> PolarsResult<DataFrame> {
     let file_metadata = metadata
         .map(Ok)
@@ -274,6 +278,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             row_count,
             parallel,
             &projection,
+            use_statistics,
         )?,
         ParallelStrategy::RowGroups => rg_to_dfs_par(
             &store,
@@ -286,6 +291,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             predicate,
             row_count,
             &projection,
+            use_statistics,
         )?,
         // auto should already be replaced by Columns or RowGroups
         ParallelStrategy::Auto => unimplemented!(),
@@ -349,6 +355,7 @@ pub struct BatchedParquetReader {
     chunks_fifo: VecDeque<DataFrame>,
     parallel: ParallelStrategy,
     chunk_size: usize,
+    use_statistics: bool,
 }
 
 impl BatchedParquetReader {
@@ -359,6 +366,7 @@ impl BatchedParquetReader {
         projection: Option<Vec<usize>>,
         row_count: Option<RowCount>,
         chunk_size: usize,
+        use_statistics: bool,
     ) -> PolarsResult<Self> {
         let schema = read::schema::infer_schema(&metadata)?;
         let n_row_groups = metadata.row_groups.len();
@@ -385,6 +393,7 @@ impl BatchedParquetReader {
             chunks_fifo: VecDeque::with_capacity(POOL.current_num_threads()),
             parallel,
             chunk_size,
+            use_statistics,
         })
     }
 
@@ -410,6 +419,7 @@ impl BatchedParquetReader {
                         self.row_count.clone(),
                         ParallelStrategy::Columns,
                         &self.projection,
+                        self.use_statistics,
                     )?;
                     self.row_group_offset += n;
                     dfs
@@ -426,6 +436,7 @@ impl BatchedParquetReader {
                         None,
                         self.row_count.clone(),
                         &self.projection,
+                        self.use_statistics,
                     )?;
                     self.row_group_offset += n;
                     dfs

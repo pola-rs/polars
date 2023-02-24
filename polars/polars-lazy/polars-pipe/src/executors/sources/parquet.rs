@@ -11,8 +11,8 @@ use polars_io::{is_cloud_url, SerReader};
 use polars_plan::prelude::ParquetOptions;
 use polars_utils::IdxSize;
 
+use crate::chunk_size;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
-use crate::CHUNK_SIZE;
 
 pub struct ParquetSource {
     batched_reader: BatchedParquetReader,
@@ -35,7 +35,9 @@ impl ParquetSource {
                 .collect()
         });
 
-        let chunk_size = std::cmp::max(CHUNK_SIZE * 12 / POOL.current_num_threads(), 10_000);
+        let n_cols = projection.as_ref().map(|v| v.len()).unwrap_or(schema.len());
+        let chunk_size =
+            std::cmp::max(chunk_size(n_cols) * 12 / POOL.current_num_threads(), 10_000);
         let batched_reader = if is_cloud_url(&path) {
             #[cfg(not(feature = "async"))]
             {
@@ -50,6 +52,7 @@ impl ParquetSource {
                     .with_n_rows(options.n_rows)
                     .with_row_count(options.row_count)
                     .with_projection(projection)
+                    .use_statistics(options.use_statistics)
                     .batched(chunk_size)?
             }
         } else {
@@ -59,6 +62,7 @@ impl ParquetSource {
                 .with_n_rows(options.n_rows)
                 .with_row_count(options.row_count)
                 .with_projection(projection)
+                .use_statistics(options.use_statistics)
                 .batched(chunk_size)?
         };
 

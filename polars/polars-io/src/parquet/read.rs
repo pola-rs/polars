@@ -48,6 +48,7 @@ pub struct ParquetReader<R: Read + Seek> {
     row_count: Option<RowCount>,
     low_memory: bool,
     metadata: Option<FileMetaData>,
+    use_statistics: bool,
 }
 
 impl<R: MmapBytesReader> ParquetReader<R> {
@@ -72,6 +73,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             predicate,
             self.parallel,
             self.row_count,
+            self.use_statistics,
         )
         .map(|mut df| {
             if rechunk {
@@ -126,11 +128,20 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         let schema = read::infer_schema(metadata)?;
         Ok(schema.fields.iter().into())
     }
+
+    /// Use statistics in the parquet to determine if pages
+    /// can be skipped from reading.
+    pub fn use_statistics(mut self, toggle: bool) -> Self {
+        self.use_statistics = toggle;
+        self
+    }
+
     /// Number of rows in the parquet file.
     pub fn num_rows(&mut self) -> PolarsResult<usize> {
         let metadata = self.get_metadata()?;
         Ok(metadata.num_rows)
     }
+
     fn get_metadata(&mut self) -> PolarsResult<&FileMetaData> {
         if self.metadata.is_none() {
             self.metadata = Some(read::read_metadata(&mut self.reader)?);
@@ -151,6 +162,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
             self.projection,
             self.row_count,
             chunk_size,
+            self.use_statistics,
         )
     }
 }
@@ -168,6 +180,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             row_count: None,
             low_memory: false,
             metadata: None,
+            use_statistics: true,
         }
     }
 
@@ -193,6 +206,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             None,
             self.parallel,
             self.row_count,
+            self.use_statistics,
         )
         .map(|mut df| {
             if self.rechunk {
@@ -213,6 +227,7 @@ pub struct ParquetAsyncReader {
     projection: Option<Vec<usize>>,
     row_count: Option<RowCount>,
     low_memory: bool,
+    use_statistics: bool,
 }
 
 #[cfg(feature = "async")]
@@ -228,6 +243,7 @@ impl ParquetAsyncReader {
             projection: None,
             row_count: None,
             low_memory: false,
+            use_statistics: true,
         })
     }
 
@@ -275,6 +291,13 @@ impl ParquetAsyncReader {
         self
     }
 
+    /// Use statistics in the parquet to determine if pages
+    /// can be skipped from reading.
+    pub fn use_statistics(mut self, toggle: bool) -> Self {
+        self.use_statistics = toggle;
+        self
+    }
+
     #[tokio::main(flavor = "current_thread")]
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.to_owned();
@@ -290,6 +313,7 @@ impl ParquetAsyncReader {
             self.projection,
             self.row_count,
             chunk_size,
+            self.use_statistics,
         )
     }
 }

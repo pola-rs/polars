@@ -125,6 +125,7 @@ impl LogicalPlanBuilder {
         rechunk: bool,
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
+        use_statistics: bool,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
@@ -170,6 +171,7 @@ impl LogicalPlanBuilder {
                 rechunk,
                 file_counter: Default::default(),
                 low_memory,
+                use_statistics,
             },
             cloud_options,
         }
