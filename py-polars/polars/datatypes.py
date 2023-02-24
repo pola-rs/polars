@@ -149,6 +149,22 @@ class DataType(metaclass=DataTypeClass):
     def _string_repr(self) -> str:
         return dtype_str_repr(self)
 
+    @classmethod
+    def base_type(cls) -> type:
+        """
+        Return this DataType's fundamental/root type class.
+
+        Examples
+        --------
+        >>> pl.Datetime("ns").base_type()
+        Datetime
+        >>> pl.List(pl.Int32).base_type()
+        List
+        >>> pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]).base_type()
+        Struct
+        """
+        return cls
+
 
 class NumericType(DataType):
     """Base class for numeric data types."""
