@@ -151,7 +151,7 @@ class LazyFrame:
 
     Notes
     -----
-    Initialising ``LazyFrame`` is equivalent to ``DataFrame(...).lazy()``.
+    Initialising ``LazyFrame(...)`` directly is equivalent to ``DataFrame(...).lazy()``.
 
     Examples
     --------

@@ -54,7 +54,8 @@ from polars.testing.asserts import is_categorical_dtype
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
-    from polars.datatypes import PolarsDataType
+    from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
+
 
 # Default profile (eg: running locally)
 common_settings = {"print_blob": True, "deadline": None}
@@ -212,7 +213,7 @@ class column:
 def columns(
     cols: int | Sequence[str] | None = None,
     *,
-    dtype: PolarsDataType | Sequence[PolarsDataType] | None = None,
+    dtype: OneOrMoreDataTypes | None = None,
     min_cols: int | None = 0,
     max_cols: int | None = MAX_COLS,
     unique: bool = False,

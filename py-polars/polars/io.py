@@ -1247,7 +1247,7 @@ def read_excel(
 
     """
     try:
-        import xlsx2csv  # type: ignore[import]
+        import xlsx2csv
     except ImportError:
         raise ImportError(
             "xlsx2csv is not installed. Please run `pip install xlsx2csv`."

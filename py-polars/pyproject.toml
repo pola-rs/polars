@@ -78,6 +78,10 @@ module = [
   "connectorx",
   "deltalake",
   "IPython.*",
+  "xlsx2csv",
+  "xlsxwriter",
+  "xlsxwriter.utility",
+  "xlsxwriter.worksheet",
   "zoneinfo",
 ]
 ignore_missing_imports = true
