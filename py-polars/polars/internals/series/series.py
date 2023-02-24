@@ -2513,8 +2513,8 @@ class Series:
 
         See Also
         --------
-        ListNameSpace.explode : Explode a list column
-        StringNameSpace.explode : Explode a string column
+        ListNameSpace.explode : Explode a list column.
+        StringNameSpace.explode : Explode a string column.
 
         """
 
@@ -4944,6 +4944,22 @@ class Series:
             If a single dimension is given, results in a flat Series of shape (len,).
             If a multiple dimensions are given, results in a Series of Lists with shape
             (rows, cols).
+
+        See Also
+        --------
+        ListNameSpace.explode : Explode a list column.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        >>> s.reshape((3, 3))
+        shape: (3,)
+        Series: 'foo' [list[i64]]
+        [
+                [1, 2, 3]
+                [4, 5, 6]
+                [7, 8, 9]
+        ]
 
         """
 

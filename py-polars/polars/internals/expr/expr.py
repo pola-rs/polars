@@ -3377,8 +3377,8 @@ class Expr:
 
         See Also
         --------
-        ExprListNameSpace.explode : Explode a list column
-        ExprStringNameSpace.explode : Explode a string column
+        ExprListNameSpace.explode : Explode a list column.
+        ExprStringNameSpace.explode : Explode a string column.
 
         """
         warnings.warn(
@@ -5514,6 +5514,10 @@ class Expr:
             If a single dimension is given, results in a flat Series of shape (len,).
             If a multiple dimensions are given, results in a Series of Lists with shape
             (rows, cols).
+
+        See Also
+        --------
+        ExprListNameSpace.explode : Explode a list column.
 
         Examples
         --------
