@@ -727,7 +727,7 @@ def scan_ndjson(
     row_count_offset: int = 0,
 ) -> LazyFrame:
     """
-    Lazily read from a newline delimited JSON file.
+    Lazily read from a newline delimited JSON file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
