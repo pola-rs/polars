@@ -14,7 +14,7 @@ macro_rules! check_filter_len {
                 format!(
                     "Filter's length differs from that of the ChunkedArray/ Series. \
                 Length Self: {} Length mask: {}\
-                Self: {:?}; mask: {:?}",
+                 Self: {:?}; mask: {:?}",
                     $self.len(),
                     $filter.len(),
                     $self,

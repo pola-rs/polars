@@ -239,6 +239,7 @@ fn test_csv_globbing() -> PolarsResult<()> {
 
 #[test]
 #[cfg(not(target_os = "windows"))]
+#[cfg(feature = "json")]
 fn test_ndjson_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();

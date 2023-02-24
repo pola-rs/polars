@@ -127,14 +127,14 @@ impl PhysicalExpr for BinaryExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let (result_a, result_b) = POOL.install(|| {
-            rayon::join(
-                || self.left.evaluate_on_groups(df, groups, state),
-                || self.right.evaluate_on_groups(df, groups, state),
-            )
-        });
-        let mut ac_l = result_a?;
-        let mut ac_r = result_b?;
+        // let (result_a, result_b) = POOL.install(|| {
+        //     rayon::join(
+        //         || self.left.evaluate_on_groups(df, groups, state),
+        //         || self.right.evaluate_on_groups(df, groups, state),
+        //     )
+        // });
+        let mut ac_l = self.left.evaluate_on_groups(df, groups, state)?;
+        let mut ac_r = self.right.evaluate_on_groups(df, groups, state)?;
 
         match (
             ac_l.agg_state(),
@@ -431,6 +431,7 @@ impl PhysicalExpr for BinaryExpr {
                     .collect::<PolarsResult<ListChunked>>()?;
                 out.rename(ac_l.series().name());
                 ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
+                ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
                 Ok(ac_l)
             }
         }

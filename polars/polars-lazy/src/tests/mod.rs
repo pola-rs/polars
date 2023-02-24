@@ -93,7 +93,12 @@ fn init_files() {
                     ".ipc" => {
                         IpcWriter::new(f).finish(&mut df).unwrap();
                     }
-                    ".ndjson" => JsonWriter::new(f).finish(&mut df).unwrap(),
+                    ".ndjson" => {
+                        #[cfg(feature = "json")]
+                        {
+                            JsonWriter::new(f).finish(&mut df).unwrap()
+                        }
+                    }
                     _ => panic!(),
                 }
             }
