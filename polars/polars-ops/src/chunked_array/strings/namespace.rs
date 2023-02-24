@@ -62,12 +62,12 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     #[cfg(feature = "string_from_radix")]
-    // Parse a string number with base _radix_ into a decimal (i64)
-    fn parse_int(&self, radix: Option<u32>) -> Int64Chunked {
+    // Parse a string number with base _radix_ into a decimal (i32)
+    fn parse_int(&self, radix: Option<u32>) -> Int32Chunked {
         use polars_arrow::utils::CustomIterTools;
         let ca = self.as_utf8();
-        let f = |opt_s: Option<&str>| -> Option<i64> {
-            opt_s.and_then(|s| <i64 as Num>::from_str_radix(s, radix.unwrap_or(2)).ok())
+        let f = |opt_s: Option<&str>| -> Option<i32> {
+            opt_s.and_then(|s| <i32 as Num>::from_str_radix(s, radix.unwrap_or(2)).ok())
         };
         ca.into_iter().map(f).collect_trusted()
     }

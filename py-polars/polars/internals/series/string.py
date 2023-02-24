@@ -961,14 +961,14 @@ class StringNameSpace:
 
         Returns
         -------
-        Series: Column of parsed integers in i64 format
+        Series: Column of parsed integers in i32 format
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010"])
         >>> s.str.parse_int(2)
         shape: (3,)
-        Series: 'bin' [i64]
+        Series: 'bin' [i32]
         [
                 6
                 5
@@ -978,7 +978,7 @@ class StringNameSpace:
         >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe"])
         >>> s.str.parse_int(16)
         shape: (3,)
-        Series: 'hex' [i64]
+        Series: 'hex' [i32]
         [
                 64030
                 65280

@@ -1261,7 +1261,7 @@ class ExprStringNameSpace:
 
         Returns
         -------
-        Expr: Series of parsed integers in i64 format
+        Expr: Series of parsed integers in i32 format
 
         Examples
         --------
@@ -1271,7 +1271,7 @@ class ExprStringNameSpace:
         ┌─────┐
         │ bin │
         │ --- │
-        │ i64 │
+        │ i32 │
         ╞═════╡
         │ 6   │
         │ 5   │
@@ -1284,7 +1284,7 @@ class ExprStringNameSpace:
         ┌───────┐
         │ hex   │
         │ ---   │
-        │ i64   │
+        │ i32   │
         ╞═══════╡
         │ 64030 │
         │ 65280 │
