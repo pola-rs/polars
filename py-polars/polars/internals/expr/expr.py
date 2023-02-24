@@ -5,7 +5,16 @@ import os
 import random
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterable,
+    NoReturn,
+    Sequence,
+    TypeVar,
+    cast,
+)
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -48,9 +57,13 @@ if TYPE_CHECKING:
     from polars.polars import PyExpr
 
     if sys.version_info >= (3, 11):
-        from typing import Self
+        from typing import Concatenate, ParamSpec, Self
     else:
-        from typing_extensions import Self
+        from typing_extensions import Concatenate, ParamSpec, Self
+
+    T = TypeVar("T")
+    P = ParamSpec("P")
+
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
@@ -683,6 +696,46 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.keep_name())
+
+    def pipe(
+        self,
+        function: Callable[Concatenate[Expr, P], T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        r"""
+        Offers a structured way to apply a sequence of user-defined functions (UDFs).
+
+        Parameters
+        ----------
+        function
+            Callable; will receive the expression as the first parameter,
+            followed by any given args/kwargs.
+        args
+            Arguments to pass to the UDF.
+        kwargs
+            Keyword arguments to pass to the UDF.
+
+        Examples
+        --------
+        >>> def extract_number(expr):
+        ...     return expr.str.extract(r"\d+", 0).cast(pl.Int64)
+        ...
+        >>> df = pl.DataFrame({"a": ["a: 1", "b: 2", "c: 3"]})
+        >>> df.with_columns(pl.col("a").pipe(extract_number))
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        """
+        return function(self, *args, **kwargs)
 
     def prefix(self, prefix: str) -> Self:
         """
