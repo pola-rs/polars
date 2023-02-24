@@ -5,11 +5,11 @@ use super::*;
 
 pub struct SortField {
     /// Whether to sort in descending order
-    pub(crate) descending: bool,
+    pub descending: bool,
     /// Whether to sort nulls first
-    pub(crate) nulls_first: bool,
+    pub nulls_last: bool,
     /// Data type
-    pub(crate) data_type: ArrowDataType,
+    pub data_type: ArrowDataType,
 }
 
 impl SortField {

@@ -151,9 +151,10 @@ pub(crate) fn encode_slice<T: FixedLengthEncoding>(
 
 #[inline]
 fn null_sentinel(field: &SortField) -> u8 {
-    match field.nulls_first {
-        true => 0,
-        false => 0xFF,
+    if field.nulls_last {
+        0xFF
+    } else {
+        0
     }
 }
 
