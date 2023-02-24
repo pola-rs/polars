@@ -252,7 +252,9 @@ def test_list_struct_explode_6905() -> None:
 
 
 def test_explode_binary() -> None:
-    assert pl.Series([[1, 2], [3]]).cast(pl.List(pl.Binary)).explode().to_list() == [
+    assert pl.Series([[1, 2], [3]]).cast(
+        pl.List(pl.Binary)
+    ).arr.explode().to_list() == [
         b"1",
         b"2",
         b"3",
