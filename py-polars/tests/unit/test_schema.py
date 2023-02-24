@@ -370,3 +370,11 @@ def test_int_operator_stability() -> None:
         assert pl.select(pl.lit(s) - 2).dtypes == [dt]
         assert pl.select(pl.lit(s) * 2).dtypes == [dt]
         assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
+
+
+def test_deep_subexpression_f32_schema_7129() -> None:
+    df = pl.DataFrame({"a": [1.1, 2.3, 3.4, 4.5]}, schema={"a": pl.Float32()})
+    assert df.with_columns(pl.col("a") - pl.col("a").median()).dtypes == [pl.Float32]
+    assert df.with_columns(
+        (pl.col("a") - pl.col("a").mean()) / (pl.col("a").std() + 0.001)
+    ).dtypes == [pl.Float32]
