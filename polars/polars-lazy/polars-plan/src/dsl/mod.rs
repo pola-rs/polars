@@ -963,6 +963,7 @@ impl Expr {
                 match dt {
                     Float32 => Float32,
                     Float64 => Float64,
+                    UInt64 => UInt64,
                     _ => Int64,
                 }
             }),
