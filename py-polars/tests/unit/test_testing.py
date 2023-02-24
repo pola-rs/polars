@@ -93,6 +93,31 @@ def test_compare_series_nulls() -> None:
         assert_series_equal(srs1, srs2, check_exact=True)
 
 
+def test_series_cmp_fast_paths() -> None:
+    assert (
+        pl.Series([None], dtype=pl.Int32) != pl.Series([1, 2], dtype=pl.Int32)
+    ).to_list() == [True, True]
+    assert (
+        pl.Series([None], dtype=pl.Int32) == pl.Series([1, 2], dtype=pl.Int32)
+    ).to_list() == [False, False]
+
+    assert (
+        pl.Series([None], dtype=pl.Utf8) != pl.Series(["a", "b"], dtype=pl.Utf8)
+    ).to_list() == [True, True]
+    assert (
+        pl.Series([None], dtype=pl.Utf8) == pl.Series(["a", "b"], dtype=pl.Utf8)
+    ).to_list() == [False, False]
+
+    assert (
+        pl.Series([None], dtype=pl.Boolean)
+        != pl.Series([True, False], dtype=pl.Boolean)
+    ).to_list() == [True, True]
+    assert (
+        pl.Series([None], dtype=pl.Boolean)
+        == pl.Series([False, False], dtype=pl.Boolean)
+    ).to_list() == [False, False]
+
+
 def test_compare_series_value_mismatch_string() -> None:
     srs1 = pl.Series(["hello", "no"])
     srs2 = pl.Series(["hello", "yes"])
