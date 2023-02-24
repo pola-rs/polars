@@ -1745,7 +1745,9 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
         pl.col("x").var(),
     ],
 )
-def test_compare_aggregation_between_lazy_and_eager_6904(dtype, func) -> None:
+def test_compare_aggregation_between_lazy_and_eager_6904(
+    dtype: pl.PolarsDataType, func: pl.Expr
+) -> None:
     df = pl.DataFrame(
         {
             "x": pl.Series(values=[1, 2, 3] * 2, dtype=dtype),
