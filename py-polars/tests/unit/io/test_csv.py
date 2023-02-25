@@ -1025,6 +1025,15 @@ def test_duplicated_columns() -> None:
     assert pl.read_csv(csv.encode(), new_columns=new).columns == new
 
 
+def test_error_message() -> None:
+    data = io.StringIO("target,wind,energy,miso\n" "1,2,3,4\n" "1,2,1e5,1\n")
+    with pytest.raises(
+        ComputeError,
+        match=r"Could not parse `1e5` as dtype Int64 at column 'energy' \(column number 3\)",
+    ):
+        pl.read_csv(data, infer_schema_length=1)
+
+
 def test_csv_categorical_lifetime() -> None:
     # escaped strings do some heap allocates in the builder
     # this tests of the lifetimes remains valid
