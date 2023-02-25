@@ -525,6 +525,32 @@ impl ToPyObject for Wrap<&DateChunked> {
     }
 }
 
+fn abs_decimal_from_digits(digits: &[u8], exp: i32) -> Option<(i128, usize)> {
+    const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
+    let mut v = digits
+        .iter()
+        .take(38)
+        .copied()
+        .map(i128::from)
+        .reduce(|acc, d| acc * 10 + d)?;
+    for &d in &digits[38..] {
+        v = v
+            .checked_mul(10)
+            .and_then(|v| v.checked_add(i128::from(d)))?;
+    }
+    // we only support non-negative scale (=> non-positive exponent)
+    let scale = if exp > 0 {
+        // the decimal may be in a non-canonical representation, try to fix it first
+        v = 10_i128
+            .checked_pow(exp as u32)
+            .and_then(|factor| v.checked_mul(factor))?;
+        0
+    } else {
+        (-exp) as usize
+    };
+    (v <= MAX_ABS_DEC).then_some((v, scale))
+}
+
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         if ob.is_instance_of::<PyBool>().unwrap() {
@@ -648,6 +674,21 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     let v = time.extract::<i64>().unwrap();
                     Ok(Wrap(AnyValue::Time(v)))
                 }),
+                "Decimal" => {
+                    // note: there seems to be no way to extract precision from decimal.Decimal
+                    let (sign, digits, exp): (i8, &'s [u8], i32) =
+                        ob.call_method0("as_tuple").unwrap().extract().unwrap();
+                    let (mut v, scale) = abs_decimal_from_digits(digits, exp).ok_or_else(|| {
+                        PyErr::from(PyPolarsErr::Other(
+                            "Decimal is too large to fit in Decimal128".into(),
+                        ))
+                    })?;
+                    if sign > 0 {
+                        // note: Decimal('-0') will be mapped to simply '0'
+                        v = -v; // won't overflow since -i128::MAX > i128::MIN
+                    }
+                    Ok(Wrap(AnyValue::Decimal(v, 38, scale)))
+                }
                 _ => Err(PyErr::from(PyPolarsErr::Other(format!(
                     "object type not supported {ob:?}",
                 )))),
