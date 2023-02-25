@@ -154,6 +154,16 @@ impl<T: NativeType> FromTrustedLenIterator<Option<T>> for PrimitiveArray<T> {
     }
 }
 
+impl<T: NativeType> FromTrustedLenIterator<T> for PrimitiveArray<T> {
+    fn from_iter_trusted_length<I: IntoIterator<Item = T>>(iter: I) -> Self
+    where
+        I::IntoIter: TrustedLen,
+    {
+        let iter = iter.into_iter();
+        unsafe { PrimitiveArray::from_trusted_len_values_iter_unchecked(iter) }
+    }
+}
+
 macro_rules! with_match_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
