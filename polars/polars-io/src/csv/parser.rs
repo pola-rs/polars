@@ -584,7 +584,7 @@ pub(super) fn parse_lines<'a>(
                                 .map_err(|_| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
-                                    let column_name = schema.get_index((idx as usize).try_into().unwrap()).unwrap().0;
+                                    let column_name = schema.get_index(idx as usize).unwrap().0;
                                     PolarsError::ComputeError(
                                         format!(
                                             "Could not parse `{}` as dtype {:?} at column '{}' (column number {}).\n\
