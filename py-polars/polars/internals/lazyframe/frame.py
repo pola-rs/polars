@@ -34,6 +34,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     PolarsDataType,
+    SchemaDefinition,
     SchemaDict,
     Time,
     UInt8,
@@ -64,14 +65,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
-    from polars.dependencies import pyarrow as pa
+    import pyarrow as pa
+
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
         CsvEncoding,
         FillNullStrategy,
+        FrameInitTypes,
         IntoExpr,
         JoinStrategy,
+        Orientation,
         ParallelStrategy,
         PolarsExprType,
         PythonLiteral,
@@ -108,19 +112,178 @@ class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
 
+    This allows for whole-query optimisation in addition to parallelism, and
+    is the preferred (and highest-performance) mode of operation for polars.
+
+    Parameters
+    ----------
+    data : dict, Sequence, ndarray, Series, or pandas.DataFrame
+        Two-dimensional data in various forms; dict input must contain Sequences,
+        Generators, or a ``range``. Sequence may contain Series or other Sequences.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the schema param will be overridden.
+        underlying data, the names given here will overwrite them.
+
+        The number of entries in the schema should match the underlying data
+        dimensions, unless a sequence of dictionaries is being passed, in which case
+        a _partial_ schema can be declared to prevent specific fields from being loaded.
+    orient : {'col', 'row'}, default None
+        Whether to interpret two-dimensional data as columns or as rows. If None,
+        the orientation is inferred by matching the columns and data dimensions. If
+        this does not yield conclusive results, column orientation is used.
+    infer_schema_length : int, default None
+        Maximum number of rows to read for schema inference; only applies if the input
+        data is a sequence or generator of rows; other input is read as-is.
+    nan_to_null : bool, default False
+        If the data comes from one or more numpy arrays, can optionally convert input
+        data np.nan values to null instead. This is a no-op for all other input data.
+
     Notes
     -----
-    LazyFrames are instantiated by calling :meth:`~DataFrame.lazy()` on an
-    existing DataFrame; they are also created when calling the various "scan"
-    :doc:`IO methods </reference/io>`, and are the preferred way to operate
-    on data with polars.
+    Initialising ``LazyFrame`` is equivalent to ``DataFrame(...).lazy()``.
 
-    >>> ldf = pl.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]}).lazy()
+    Examples
+    --------
+    Constructing a LazyFrame directly from a dictionary:
+
+    >>> data = {"a": [1, 2], "b": [3, 4]}
+    >>> ldf = pl.LazyFrame(data)
+    >>> ldf.collect()
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    │ 2   ┆ 4   │
+    └─────┴─────┘
+
+    Notice that the dtypes are automatically inferred as polars Int64:
+
+    >>> ldf.dtypes
+    [Int64, Int64]
+
+    To specify a more detailed/specific frame schema you can supply the `schema`
+    parameter with a dictionary of (name,dtype) pairs...
+
+    >>> data = {"col1": [0, 2], "col2": [3, 7]}
+    >>> ldf2 = pl.LazyFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
+    >>> ldf2.collect()
+    shape: (2, 2)
+    ┌──────┬──────┐
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 0.0  ┆ 3    │
+    │ 2.0  ┆ 7    │
+    └──────┴──────┘
+
+    ...a sequence of (name,dtype) pairs...
+
+    >>> data = {"col1": [1, 2], "col2": [3, 4]}
+    >>> ldf3 = pl.LazyFrame(data, schema=[("col1", pl.Float32), ("col2", pl.Int64)])
+    >>> ldf3.collect()
+    shape: (2, 2)
+    ┌──────┬──────┐
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 1.0  ┆ 3    │
+    │ 2.0  ┆ 4    │
+    └──────┴──────┘
+
+    ...or a list of typed Series.
+
+    >>> data = [
+    ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
+    ...     pl.Series("col2", [3, 4], dtype=pl.Int64),
+    ... ]
+    >>> ldf4 = pl.LazyFrame(data)
+    >>> ldf4.collect()
+    shape: (2, 2)
+    ┌──────┬──────┐
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 1.0  ┆ 3    │
+    │ 2.0  ┆ 4    │
+    └──────┴──────┘
+
+    Constructing a LazyFrame from a numpy ndarray, specifying column names:
+
+    >>> import numpy as np
+    >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
+    >>> ldf5 = pl.LazyFrame(data, schema=["a", "b"], orient="col")
+    >>> ldf5.collect()
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    │ 2   ┆ 4   │
+    └─────┴─────┘
+
+    Constructing a LazyFrame from a list of lists, row orientation inferred:
+
+    >>> data = [[1, 2, 3], [4, 5, 6]]
+    >>> ldf6 = pl.LazyFrame(data, schema=["a", "b", "c"])
+    >>> ldf6.collect()
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 2   ┆ 3   │
+    │ 4   ┆ 5   ┆ 6   │
+    └─────┴─────┴─────┘
 
     """
 
     _ldf: PyLazyFrame
     _accessors: set[str] = set()
+
+    def __init__(
+        self,
+        data: FrameInitTypes | None = None,
+        schema: SchemaDefinition | None = None,
+        *,
+        schema_overrides: SchemaDict | None = None,
+        orient: Orientation | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
+        nan_to_null: bool = False,
+    ):
+        from polars.internals.dataframe import DataFrame
+
+        self._ldf = (
+            DataFrame(
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                orient=orient,
+                infer_schema_length=infer_schema_length,
+                nan_to_null=nan_to_null,
+            )
+            .lazy()
+            ._ldf
+        )
 
     @classmethod
     def _from_pyldf(cls, ldf: PyLazyFrame) -> Self:

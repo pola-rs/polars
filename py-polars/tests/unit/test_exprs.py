@@ -29,6 +29,35 @@ from polars.datatypes import (
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
+def test_col_select() -> None:
+    df = pl.DataFrame(
+        {
+            "ham": [1, 2, 3],
+            "hamburger": [11, 22, 33],
+            "foo": [3, 2, 1],
+            "bar": ["a", "b", "c"],
+        }
+    )
+
+    # Single column
+    assert df.select(pl.col("foo")).columns == ["foo"]
+    # Regex
+    assert df.select(pl.col("*")).columns == ["ham", "hamburger", "foo", "bar"]
+    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
+    assert df.select(pl.col("*").exclude("ham")).columns == ["hamburger", "foo", "bar"]
+    # Multiple inputs
+    assert df.select(pl.col(["hamburger", "foo"])).columns == ["hamburger", "foo"]
+    assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
+    assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
+    # Dtypes
+    assert df.select(pl.col(pl.Utf8)).columns == ["bar"]
+    assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
+        "ham",
+        "hamburger",
+        "foo",
+    ]
+
+
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(pl.max([pl.col("A"), pl.col("B")]))
@@ -466,6 +495,14 @@ def test_logical_boolean() -> None:
 
     with pytest.raises(ValueError, match="ambiguous"):
         pl.col("colx") or pl.col("coly")
+
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        df.select([(pl.col("a") > pl.col("b")) and (pl.col("b") > pl.col("b"))])
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
 
 
 # https://github.com/pola-rs/polars/issues/4951
