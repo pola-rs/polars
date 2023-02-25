@@ -758,7 +758,7 @@ fn read_chunk(
             ignore_errors,
             chunk_size,
             schema.len(),
-            &schema,
+            schema,
         )?;
     }
 
