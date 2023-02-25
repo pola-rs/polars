@@ -1667,6 +1667,17 @@ def test_arg_sort() -> None:
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
+def test_argsort_deprecated() -> None:
+    s = pl.Series("a", [5, 3, 4, 1, 2])
+    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
+    with pytest.deprecated_call():
+        assert_series_equal(s.argsort(), expected)
+
+    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
+    with pytest.deprecated_call():
+        assert_series_equal(s.argsort(descending=True), expected_descending)
+
+
 def test_arg_min_and_arg_max() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
     assert s.arg_min() == 3
