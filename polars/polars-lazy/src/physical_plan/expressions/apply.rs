@@ -84,6 +84,7 @@ impl ApplyExpr {
         }
     }
 
+    /// evaluates and flattens `Option<Series>` to `Series`.
     fn eval_and_flatten(&self, inputs: &mut [Series]) -> PolarsResult<Series> {
         self.function.call_udf(inputs).map(|opt_out| {
             opt_out.unwrap_or_else(|| {
@@ -143,38 +144,25 @@ impl ApplyExpr {
         ca.rename(&name);
         self.finish_apply_groups(ac, ca)
     }
+
+    /// Apply elementwise e.g. ignore the group/list indices
     fn apply_single_flattened<'a>(
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        // make sure the groups are updated because we are about to throw away
-        // the series' length information
-        let set_update_groups = match ac.update_groups {
-            UpdateGroups::WithSeriesLen => {
-                ac.groups();
-                true
+        let (s, aggregated) = match ac.agg_state() {
+            AggState::AggregatedList(s) => {
+                let ca = s.list().unwrap();
+                let out = ca.apply_to_inner(&|s| self.eval_and_flatten(&mut [s]))?;
+                (out.into_series(), true)
             }
-            UpdateGroups::WithSeriesLenOwned(_) => false,
-            UpdateGroups::No | UpdateGroups::WithGroupsLen => false,
+            AggState::AggregatedFlat(s) => (self.eval_and_flatten(&mut [s.clone()])?, true),
+            AggState::NotAggregated(s) | AggState::Literal(s) => {
+                (self.eval_and_flatten(&mut [s.clone()])?, false)
+            }
         };
 
-        if let UpdateGroups::WithSeriesLen = ac.update_groups {
-            ac.groups();
-        }
-
-        let input = ac.flat_naive().into_owned();
-        let input_len = input.len();
-        let s = self.eval_and_flatten(&mut [input])?;
-
-        check_map_output_len(input_len, s.len(), &self.expr)?;
-        ac.with_series(s, false, None)?;
-
-        if set_update_groups {
-            // The flat_naive orders by groups, so we must create new groups
-            // not by series length as we don't have an agg_list, but by original
-            // groups length
-            ac.update_groups = UpdateGroups::WithGroupsLen;
-        }
+        ac.with_series(s, aggregated, Some(&self.expr))?;
         Ok(ac)
     }
 }
@@ -228,24 +216,14 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match (state.has_overlapping_groups(), self.collect_groups) {
-                (_, ApplyOptions::ApplyList) => {
+            match self.collect_groups {
+                ApplyOptions::ApplyList => {
                     let s = self.eval_and_flatten(&mut [ac.aggregated()])?;
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 }
-                // - series is aggregated flat/reduction: sum/min/mean etc.
-                // - apply options is apply_flat -> elementwise
-                // we can simply apply the function in a vectorized manner.
-                (_, ApplyOptions::ApplyFlat) if ac.is_aggregated_flat() => {
-                    let s = ac.aggregated();
-                    let s = self.eval_and_flatten(&mut [s])?;
-                    ac.with_series(s, true, Some(&self.expr))?;
-                    Ok(ac)
-                }
-                // overlapping groups always take this branch as explode/flat_naive bloats data size
-                (_, ApplyOptions::ApplyGroups) | (true, _) => self.apply_single_group_aware(ac),
-                (_, ApplyOptions::ApplyFlat) => self.apply_single_flattened(ac),
+                ApplyOptions::ApplyGroups => self.apply_single_group_aware(ac),
+                ApplyOptions::ApplyFlat => self.apply_single_flattened(ac),
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
