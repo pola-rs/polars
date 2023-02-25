@@ -6843,7 +6843,9 @@ class DataFrame:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            If set to True, the order of the sampled rows will be shuffled. If
+            set to False (default), the order of the returned rows will be
+            neither stable nor fully random.
         seed
             Seed for the random number generator. If set to None (default), a random
             seed is generated using the ``random`` module.
