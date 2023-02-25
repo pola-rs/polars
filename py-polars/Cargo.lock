@@ -1710,6 +1710,7 @@ dependencies = [
  "bincode",
  "built",
  "jemallocator",
+ "lexical-core",
  "libc",
  "mimalloc",
  "ndarray",

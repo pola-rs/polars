@@ -179,6 +179,21 @@ fn struct_dict<'a>(
     dict.into_py(py)
 }
 
+fn decimal_to_digits(v: i128, buf: &mut [u8]) -> usize {
+    const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
+    if buf.len() < 48 {
+        panic!("decimal_to_digits: buffer size < 48");
+    }
+    let len = lexical_core::write(v, buf).len();
+    let ptr = buf.as_mut_ptr() as *mut i128;
+    unsafe {
+        *ptr -= ZEROS;
+        *ptr.add(1) -= ZEROS;
+        *ptr.add(2) -= ZEROS;
+    }
+    len
+}
+
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
         let pl = POLARS.as_ref(py);
@@ -251,6 +266,15 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),
+            AnyValue::Decimal(v, prec, scale) => {
+                let convert = utils.getattr("_to_python_decimal").unwrap();
+                let mut buf = [0_u8; 48];
+                let n_digits = decimal_to_digits(v.abs(), &mut buf);
+                convert
+                    .call1((v.is_negative() as u8, &buf[..n_digits], prec, scale))
+                    .unwrap()
+                    .into_py(py)
+            }
         }
     }
 }
