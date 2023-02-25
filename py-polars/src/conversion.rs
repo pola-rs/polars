@@ -27,7 +27,7 @@ use crate::lazy::dataframe::PyLazyFrame;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
-use crate::py_modules::POLARS;
+use crate::py_modules::{POLARS, UTILS};
 use crate::series::PySeries;
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
@@ -180,6 +180,8 @@ fn struct_dict<'a>(
 
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
+        let pl = POLARS.as_ref(py);
+        let utils = UTILS.as_ref(py);
         match self.0 {
             AnyValue::UInt8(v) => v.into_py(py),
             AnyValue::UInt16(v) => v.into_py(py),
@@ -204,15 +206,11 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 s.into_py(py)
             }
             AnyValue::Date(v) => {
-                let pl = PyModule::import(py, "polars").unwrap();
-                let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_date_dtype = pl.getattr("Date").unwrap();
                 convert.call1((v, py_date_dtype)).unwrap().into_py(py)
             }
             AnyValue::Datetime(v, tu, tz) => {
-                let pl = PyModule::import(py, "polars").unwrap();
-                let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
                 let tu = match tu {
@@ -226,8 +224,6 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .into_py(py)
             }
             AnyValue::Duration(v, tu) => {
-                let pl = PyModule::import(py, "polars").unwrap();
-                let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_timedelta").unwrap();
                 match tu {
                     TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
@@ -236,8 +232,6 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 }
             }
             AnyValue::Time(v) => {
-                let pl = PyModule::import(py, "polars").unwrap();
-                let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_time").unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             }
@@ -455,12 +449,9 @@ impl ToPyObject for Wrap<&StructChunked> {
 
 impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
-        let pl_utils = pl.getattr("utils").unwrap();
-        let convert = pl_utils.getattr("_to_python_timedelta").unwrap();
-
+        let utils = UTILS.as_ref(py);
+        let convert = utils.getattr("_to_python_timedelta").unwrap();
         let tu = Wrap(self.0.time_unit()).to_object(py);
-
         let iter = self
             .0
             .into_iter()
@@ -471,14 +462,11 @@ impl ToPyObject for Wrap<&DurationChunked> {
 
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
-        let utils = pl.getattr("utils").unwrap();
+        let (pl, utils) = (POLARS.as_ref(py), UTILS.as_ref(py));
         let convert = utils.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Datetime").unwrap();
-
         let tu = Wrap(self.0.time_unit()).to_object(py);
         let tz = self.0.time_zone().to_object(py);
-
         let iter = self
             .0
             .into_iter()
@@ -489,9 +477,8 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
 
 impl ToPyObject for Wrap<&TimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
-        let pl_utils = pl.getattr("utils").unwrap();
-        let convert = pl_utils.getattr("_to_python_time").unwrap();
+        let utils = UTILS.as_ref(py);
+        let convert = utils.getattr("_to_python_time").unwrap();
         let iter = self
             .0
             .into_iter()
@@ -502,11 +489,9 @@ impl ToPyObject for Wrap<&TimeChunked> {
 
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
-        let utils = pl.getattr("utils").unwrap();
+        let (pl, utils) = (POLARS.as_ref(py), UTILS.as_ref(py));
         let convert = utils.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Date").unwrap();
-
         let iter = self
             .0
             .into_iter()
@@ -525,43 +510,6 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
-        } else if ob.get_type().name()?.eq("datetime") {
-            Python::with_gil(|py| {
-                // windows
-                #[cfg(target_arch = "windows")]
-                {
-                    let kwargs = PyDict::new(py);
-                    kwargs.set_item("tzinfo", py.None())?;
-                    let dt = ob.call_method("replace", (), Some(kwargs))?;
-
-                    let pypolars = PyModule::import(py, "polars").unwrap();
-                    let localize = pypolars
-                        .getattr("utils")
-                        .unwrap()
-                        .getattr("_localize")
-                        .unwrap();
-                    let loc_tz = localize.call1((dt, "UTC"));
-
-                    loc_tz.call_method0("timestamp")?;
-                    // s to us
-                    let v = (ts.extract::<f64>()? * 1000_000.0) as i64;
-                    Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                }
-                // unix
-                #[cfg(not(target_arch = "windows"))]
-                {
-                    let datetime = PyModule::import(py, "datetime")?;
-                    let timezone = datetime.getattr("timezone")?;
-                    let kwargs = PyDict::new(py);
-                    kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
-                    let dt = ob.call_method("replace", (), Some(kwargs))?;
-                    let ts = dt.call_method0("timestamp")?;
-                    // s to us
-                    let v = (ts.extract::<f64>()? * 1_000_000.0) as i64;
-                    // choose "us" as that is python's default unit
-                    Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                }
-            })
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
         } else if ob.is_instance_of::<PyDict>()? {
@@ -596,42 +544,76 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
             Ok(Wrap(AnyValue::List(series)))
-        } else if ob.get_type().name()?.eq("date") {
-            Python::with_gil(|py| {
-                let date = py_modules::UTILS
-                    .getattr(py, "_date_to_pl_date")
-                    .unwrap()
-                    .call1(py, (ob,))
-                    .unwrap();
-                let v = date.extract::<i32>(py).unwrap();
-                Ok(Wrap(AnyValue::Date(v)))
-            })
-        } else if ob.get_type().name()?.eq("timedelta") {
-            Python::with_gil(|py| {
-                let td = py_modules::UTILS
-                    .getattr(py, "_timedelta_to_pl_timedelta")
-                    .unwrap()
-                    .call1(py, (ob, "us"))
-                    .unwrap();
-                let v = td.extract::<i64>(py).unwrap();
-                Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
-            })
-        } else if ob.get_type().name()?.eq("time") {
-            Python::with_gil(|py| {
-                let time = py_modules::UTILS
-                    .getattr(py, "_time_to_pl_time")
-                    .unwrap()
-                    .call1(py, (ob,))
-                    .unwrap();
-                let v = time.extract::<i64>(py).unwrap();
-                Ok(Wrap(AnyValue::Time(v)))
-            })
         } else if let Ok(v) = ob.extract::<&'s [u8]>() {
             Ok(AnyValue::Binary(v).into())
         } else {
-            Err(PyErr::from(PyPolarsErr::Other(format!(
-                "object type not supported {ob:?}",
-            ))))
+            let type_name = ob.get_type().name()?;
+            match type_name {
+                "datetime" => {
+                    Python::with_gil(|py| {
+                        // windows
+                        #[cfg(target_arch = "windows")]
+                        {
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("tzinfo", py.None())?;
+                            let dt = ob.call_method("replace", (), Some(kwargs))?;
+                            let localize = UTILS.getattr("_localize").unwrap();
+                            let loc_tz = localize.call1((dt, "UTC"));
+                            loc_tz.call_method0("timestamp")?;
+                            // s to us
+                            let v = (ts.extract::<f64>()? * 1000_000.0) as i64;
+                            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
+                        }
+                        // unix
+                        #[cfg(not(target_arch = "windows"))]
+                        {
+                            let datetime = PyModule::import(py, "datetime")?;
+                            let timezone = datetime.getattr("timezone")?;
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
+                            let dt = ob.call_method("replace", (), Some(kwargs))?;
+                            let ts = dt.call_method0("timestamp")?;
+                            // s to us
+                            let v = (ts.extract::<f64>()? * 1_000_000.0) as i64;
+                            // choose "us" as that is python's default unit
+                            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
+                        }
+                    })
+                }
+                "date" => Python::with_gil(|py| {
+                    let date = UTILS
+                        .as_ref(py)
+                        .getattr("_date_to_pl_date")
+                        .unwrap()
+                        .call1((ob,))
+                        .unwrap();
+                    let v = date.extract::<i32>().unwrap();
+                    Ok(Wrap(AnyValue::Date(v)))
+                }),
+                "timedelta" => Python::with_gil(|py| {
+                    let td = UTILS
+                        .as_ref(py)
+                        .getattr("_timedelta_to_pl_timedelta")
+                        .unwrap()
+                        .call1((ob, "us"))
+                        .unwrap();
+                    let v = td.extract::<i64>().unwrap();
+                    Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
+                }),
+                "time" => Python::with_gil(|py| {
+                    let time = UTILS
+                        .as_ref(py)
+                        .getattr("_time_to_pl_time")
+                        .unwrap()
+                        .call1((ob,))
+                        .unwrap();
+                    let v = time.extract::<i64>().unwrap();
+                    Ok(Wrap(AnyValue::Time(v)))
+                }),
+                _ => Err(PyErr::from(PyPolarsErr::Other(format!(
+                    "object type not supported {ob:?}",
+                )))),
+            }
         }
     }
 }
