@@ -305,3 +305,15 @@ def test_apply_pass_name() -> None:
             pl.col("foo").apply(applyer, pass_name=True),
         ]
     ).to_dict(False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}
+
+
+def test_apply_binary() -> None:
+    assert pl.DataFrame({"bin": [b"\x11" * 12, b"\x22" * 12, b"\xaa" * 12]}).select(
+        pl.col("bin").apply(bytes.hex)
+    ).to_dict(False) == {
+        "bin": [
+            "111111111111111111111111",
+            "222222222222222222222222",
+            "aaaaaaaaaaaaaaaaaaaaaaaa",
+        ]
+    }

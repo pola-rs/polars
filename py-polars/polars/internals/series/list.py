@@ -351,6 +351,10 @@ class ListNameSpace:
         -------
         Exploded column with the datatype of the list elements.
 
+        See Also
+        --------
+        Series.reshape : Reshape this Series to a flat Series or a Series of Lists.
+
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])

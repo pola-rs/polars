@@ -841,6 +841,7 @@ impl PySeries {
                     | DataType::Date
                     | DataType::Duration(_)
                     | DataType::Categorical(_)
+                    | DataType::Binary
                     | DataType::Time
             ) || !skip_nulls
             {

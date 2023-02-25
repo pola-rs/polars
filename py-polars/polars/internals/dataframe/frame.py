@@ -106,6 +106,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         CsvEncoding,
         FillNullStrategy,
+        FrameInitTypes,
         IntoExpr,
         IpcCompression,
         JoinStrategy,
@@ -216,13 +217,13 @@ class DataFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Notice that the dtype is automatically inferred as a polars Int64:
+    Notice that the dtypes are automatically inferred as polars Int64:
 
     >>> df.dtypes
     [Int64, Int64]
 
-    To specify the frame schema you supply the `schema` parameter with a dictionary
-    of (name,dtype) pairs...
+    To specify a more detailed/specific frame schema you can supply the `schema`
+    parameter with a dictionary of (name,dtype) pairs...
 
     >>> data = {"col1": [0, 2], "col2": [3, 7]}
     >>> df2 = pl.DataFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
@@ -320,15 +321,7 @@ class DataFrame:
     @deprecated_alias(columns="schema")
     def __init__(
         self,
-        data: (
-            Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series]
-            | Sequence[Any]
-            | np.ndarray[Any, Any]
-            | pa.Table
-            | pd.DataFrame
-            | pli.Series
-            | None
-        ) = None,
+        data: FrameInitTypes | None = None,
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
@@ -1567,12 +1560,23 @@ class DataFrame:
 
             # df[:, 1]
             if isinstance(col_selection, int):
+                if (col_selection >= 0 and col_selection >= self.width) or (
+                    col_selection < 0 and col_selection < -self.width
+                ):
+                    raise ValueError(
+                        f'Column index "{col_selection}" is out of bounds.'
+                    )
                 series = self.to_series(col_selection)
                 return series[row_selection]
 
             if isinstance(col_selection, list):
                 # df[:, [1, 2]]
                 if is_int_sequence(col_selection):
+                    for i in col_selection:
+                        if (i >= 0 and i >= self.width) or (i < 0 and i < -self.width):
+                            raise ValueError(
+                                f'Column index "{col_selection}" is out of bounds.'
+                            )
                     series_list = [self.to_series(i) for i in col_selection]
                     df = self.__class__(series_list)
                     return df[row_selection]
