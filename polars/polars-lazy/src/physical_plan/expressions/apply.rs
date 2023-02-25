@@ -146,7 +146,7 @@ impl ApplyExpr {
     }
 
     /// Apply elementwise e.g. ignore the group/list indices
-    fn apply_single_flattened<'a>(
+    fn apply_single_elementwise<'a>(
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
@@ -164,6 +164,55 @@ impl ApplyExpr {
 
         ac.with_series(s, aggregated, Some(&self.expr))?;
         Ok(ac)
+    }
+    fn apply_multiple_group_aware<'a>(
+        &self,
+        mut acs: Vec<AggregationContext<'a>>,
+        df: &DataFrame,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let mut container = vec![Default::default(); acs.len()];
+        let schema = self.get_input_schema(df);
+        let field = self.to_field(&schema)?;
+
+        // aggregate representation of the aggregation contexts
+        // then unpack the lists and finally create iterators from this list chunked arrays.
+        let mut iters = acs
+            .iter_mut()
+            .map(|ac| ac.iter_groups())
+            .collect::<Vec<_>>();
+
+        // length of the items to iterate over
+        let len = iters[0].size_hint().0;
+
+        if len == 0 {
+            let out = Series::full_null(field.name(), 0, &field.dtype);
+
+            drop(iters);
+            // take the first aggregation context that as that is the input series
+            let mut ac = acs.swap_remove(0);
+            ac.with_series(out, true, Some(&self.expr))?;
+            return Ok(ac);
+        }
+
+        let mut ca: ListChunked = (0..len)
+            .map(|_| {
+                container.clear();
+                for iter in &mut iters {
+                    match iter.next().unwrap() {
+                        None => return Ok(None),
+                        Some(s) => container.push(s.deep_clone()),
+                    }
+                }
+                self.function.call_udf(&mut container)
+            })
+            .collect::<PolarsResult<_>>()?;
+
+        ca.rename(&field.name);
+        drop(iters);
+
+        // take the first aggregation context that as that is the input series
+        let ac = acs.swap_remove(0);
+        self.finish_apply_groups(ac, ca)
     }
 }
 
@@ -223,13 +272,13 @@ impl PhysicalExpr for ApplyExpr {
                     Ok(ac)
                 }
                 ApplyOptions::ApplyGroups => self.apply_single_group_aware(ac),
-                ApplyOptions::ApplyFlat => self.apply_single_flattened(ac),
+                ApplyOptions::ApplyFlat => self.apply_single_elementwise(ac),
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match (state.has_overlapping_groups(), self.collect_groups) {
-                (_, ApplyOptions::ApplyList) => {
+            match self.collect_groups {
+                ApplyOptions::ApplyList => {
                     let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let s = self.eval_and_flatten(&mut s)?;
                     // take the first aggregation context that as that is the input series
@@ -238,72 +287,16 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 }
-
-                // overlapping groups always take this branch as explode bloats data size
-                (_, ApplyOptions::ApplyGroups) | (true, _) => {
-                    // if
-                    // - there are overlapping groups
-                    // - can do elementwise operations
-                    // - we don't have to explode
-                    // then apply flat
-                    if let (
-                        true,
-                        ApplyOptions::ApplyFlat,
-                        AggState::AggregatedFlat(_) | AggState::NotAggregated(_),
-                    ) = (
-                        state.has_overlapping_groups(),
-                        self.collect_groups,
-                        acs[0].agg_state(),
-                    ) {
-                        apply_multiple_flat(acs, self.function.as_ref(), &self.expr)
+                ApplyOptions::ApplyGroups => self.apply_multiple_group_aware(acs, df),
+                ApplyOptions::ApplyFlat => {
+                    if acs
+                        .iter()
+                        .any(|ac| matches!(ac.agg_state(), AggState::AggregatedList(_)))
+                    {
+                        self.apply_multiple_group_aware(acs, df)
                     } else {
-                        let mut container = vec![Default::default(); acs.len()];
-                        let schema = self.get_input_schema(df);
-                        let field = self.to_field(&schema)?;
-
-                        // aggregate representation of the aggregation contexts
-                        // then unpack the lists and finally create iterators from this list chunked arrays.
-                        let mut iters = acs
-                            .iter_mut()
-                            .map(|ac| ac.iter_groups())
-                            .collect::<Vec<_>>();
-
-                        // length of the items to iterate over
-                        let len = iters[0].size_hint().0;
-
-                        if len == 0 {
-                            let out = Series::full_null(field.name(), 0, &field.dtype);
-
-                            drop(iters);
-                            // take the first aggregation context that as that is the input series
-                            let mut ac = acs.swap_remove(0);
-                            ac.with_series(out, true, Some(&self.expr))?;
-                            return Ok(ac);
-                        }
-
-                        let mut ca: ListChunked = (0..len)
-                            .map(|_| {
-                                container.clear();
-                                for iter in &mut iters {
-                                    match iter.next().unwrap() {
-                                        None => return Ok(None),
-                                        Some(s) => container.push(s.deep_clone()),
-                                    }
-                                }
-                                self.function.call_udf(&mut container)
-                            })
-                            .collect::<PolarsResult<_>>()?;
-
-                        ca.rename(&field.name);
-                        drop(iters);
-
-                        // take the first aggregation context that as that is the input series
-                        let ac = acs.swap_remove(0);
-                        self.finish_apply_groups(ac, ca)
+                        apply_multiple_elementwise(acs, self.function.as_ref(), &self.expr)
                     }
-                }
-                (_, ApplyOptions::ApplyFlat) => {
-                    apply_multiple_flat(acs, self.function.as_ref(), &self.expr)
                 }
             }
         }
@@ -337,7 +330,7 @@ impl PhysicalExpr for ApplyExpr {
     }
 }
 
-fn apply_multiple_flat<'a>(
+fn apply_multiple_elementwise<'a>(
     mut acs: Vec<AggregationContext<'a>>,
     function: &dyn SeriesUdf,
     expr: &Expr,
