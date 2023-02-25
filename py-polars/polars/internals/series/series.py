@@ -4,6 +4,7 @@ import contextlib
 import math
 import os
 import typing
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -2048,6 +2049,12 @@ class Series:
             Place null values last instead of first.
 
         """
+        warnings.warn(
+            "`Series.argsort()` is deprecated in favor of `Series.arg_sort()`",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.arg_sort(descending, nulls_last)
 
     def arg_unique(self) -> Series:
         """
