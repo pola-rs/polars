@@ -15,18 +15,13 @@ use polars_pipe::pipeline::{
 use polars_pipe::SExecutionContext;
 use polars_plan::prelude::*;
 
+use super::*;
 use crate::physical_plan::planner::create_physical_expr;
 use crate::physical_plan::state::ExecutionState;
+use crate::physical_plan::streaming::tree::*;
 use crate::physical_plan::PhysicalExpr;
 
 pub struct Wrap(Arc<dyn PhysicalExpr>);
-
-type IsSink = bool;
-// a rhs of a join will be replaced later
-type IsRhsJoin = bool;
-
-const IS_SINK: bool = true;
-const IS_RHS_JOIN: bool = true;
 
 impl PhysicalPipedExpr for Wrap {
     fn evaluate(&self, chunk: &DataChunk, state: &dyn Any) -> PolarsResult<Series> {
@@ -368,7 +363,7 @@ pub(crate) fn insert_streaming_nodes(
     }
     let mut inserted = false;
     for tree in pipeline_trees {
-        if !tree.is_empty() {
+        if is_valid_tree(&tree) {
             let mut pipelines = VecDeque::with_capacity(tree.len());
 
             // if join is
@@ -484,16 +479,6 @@ pub(crate) fn insert_streaming_nodes(
     }
 
     Ok(inserted)
-}
-
-#[derive(Default, Debug, Clone)]
-struct Branch {
-    streamable: bool,
-    sources: Vec<Node>,
-    // joins seen in whole branch (we count a union as joins with multiple counts)
-    join_count: IdxSize,
-    // node is operator/sink
-    operators_sinks: Vec<(IsSink, IsRhsJoin, Node)>,
 }
 
 impl SExecutionContext for ExecutionState {
