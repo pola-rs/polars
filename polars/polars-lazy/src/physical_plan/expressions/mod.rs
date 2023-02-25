@@ -186,9 +186,7 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn is_aggregated(&self) -> bool {
         !self.is_not_aggregated()
     }
-    pub(crate) fn is_aggregated_flat(&self) -> bool {
-        matches!(self.state, AggState::AggregatedFlat(_))
-    }
+
     pub(crate) fn is_literal(&self) -> bool {
         matches!(self.state, AggState::Literal(_))
     }
