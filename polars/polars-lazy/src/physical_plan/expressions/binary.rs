@@ -5,7 +5,6 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
-use rayon::prelude::*;
 
 use crate::physical_plan::errors::expression_err;
 use crate::physical_plan::state::ExecutionState;
@@ -127,14 +126,14 @@ impl PhysicalExpr for BinaryExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        // let (result_a, result_b) = POOL.install(|| {
-        //     rayon::join(
-        //         || self.left.evaluate_on_groups(df, groups, state),
-        //         || self.right.evaluate_on_groups(df, groups, state),
-        //     )
-        // });
-        let mut ac_l = self.left.evaluate_on_groups(df, groups, state)?;
-        let mut ac_r = self.right.evaluate_on_groups(df, groups, state)?;
+        let (result_a, result_b) = POOL.install(|| {
+            rayon::join(
+                || self.left.evaluate_on_groups(df, groups, state),
+                || self.right.evaluate_on_groups(df, groups, state),
+            )
+        });
+        let mut ac_l = result_a?;
+        let mut ac_r = result_b?;
 
         match (
             ac_l.agg_state(),
@@ -393,29 +392,6 @@ impl PhysicalExpr for BinaryExpr {
 
                     Ok(ac_l)
                 }
-            }
-            // overlapping groups, we iterate the separate groups, so that we don't have to explode
-            // If both sides are aggregated to a list, we can apply in parallel
-            (AggState::AggregatedList(_), AggState::AggregatedList(_), true) => {
-                let l = ac_l.aggregated();
-                let r = ac_r.aggregated();
-
-                let mut l = l.list()?.clone();
-                let mut r = r.list()?.clone();
-
-                let mut out = POOL.install(|| {
-                    l.par_iter_indexed()
-                        .zip(r.par_iter_indexed())
-                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                            (Some(l), Some(r)) => apply_operator(&l, &r, self.op).map(Some),
-                            _ => Ok(None),
-                        })
-                        .collect::<PolarsResult<ListChunked>>()
-                })?;
-
-                out.rename(ac_l.series().name());
-                ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
-                Ok(ac_l)
             }
             // overlapping groups, we iterate the separate groups, so that we don't have to explode
             (_l, _r, true) => {
