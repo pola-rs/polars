@@ -25,12 +25,6 @@ impl GroupByDynamicExec {
     ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();
 
-        // if the periods are larger than the intervals,
-        // the groups overlap
-        if self.options.every < self.options.period {
-            state.set_has_overlapping_groups();
-        }
-
         let keys = self
             .keys
             .iter()
