@@ -258,11 +258,11 @@ def test_shift_and_fill() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
     # use exprs
-    out = ldf.with_columns(pl.col("a").shift_and_fill(-2, pl.col("b").mean())).collect()
+    out = ldf.with_columns(pl.col("a").shift_and_fill(pl.col("b").mean(), periods=-2)).collect()
     assert out["a"].null_count() == 0
 
     # use df method
-    out = ldf.shift_and_fill(2, pl.col("b").std()).collect()
+    out = ldf.shift_and_fill(pl.col("b").std(), periods=2).collect()
     assert out["a"].null_count() == 0
 
 

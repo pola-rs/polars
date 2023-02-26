@@ -4017,16 +4017,21 @@ class Series:
 
         """
 
-    def shift_and_fill(self, periods: int, fill_value: int | Expr) -> Series:
+    def shift_and_fill(
+        self,
+        fill_value: int | pli.Expr,
+        *,
+        periods: int = 1,
+    ) -> Series:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             Fill None values with the result of this expression.
+        periods
+            Number of places to shift (may be negative).
 
         """
 

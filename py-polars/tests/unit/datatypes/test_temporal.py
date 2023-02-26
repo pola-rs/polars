@@ -1807,7 +1807,7 @@ def test_supertype_timezones_4174() -> None:
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
-    df.with_columns(df["dt_London"].shift_and_fill(1, date_to_fill))
+    df.with_columns(df["dt_London"].shift_and_fill(date_to_fill, periods=1))
 
 
 @pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
@@ -1832,7 +1832,7 @@ def test_shift_and_fill_group_logicals() -> None:
         schema=["d", "s"],
     )
     assert df.select(
-        pl.col("d").shift_and_fill(-1, pl.col("d").max()).over("s")
+        pl.col("d").shift_and_fill(pl.col("d").max(), periods=-1).over("s")
     ).dtypes == [pl.Date]
 
 

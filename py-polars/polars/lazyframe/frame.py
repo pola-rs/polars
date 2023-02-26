@@ -3283,18 +3283,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def shift_and_fill(
         self,
-        periods: int,
         fill_value: Expr | int | str | float,
+        *,
+        periods: int = 1,
     ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             fill None values with the result of this expression.
+        periods
+            Number of places to shift (may be negative).
 
         Examples
         --------
@@ -3304,7 +3305,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.shift_and_fill(periods=1, fill_value=0).collect()
+        >>> lf.shift_and_fill(fill_value=0, periods=1).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
