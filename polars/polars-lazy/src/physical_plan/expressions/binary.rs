@@ -1,9 +1,7 @@
-use std::convert::TryFrom;
 use std::sync::Arc;
 
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
-use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
 
 use crate::physical_plan::errors::expression_err;
@@ -93,6 +91,99 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
     }
 }
 
+impl BinaryExpr {
+    fn null_propagate(&self, ac_l: &mut AggregationContext, ac_r: &AggregationContext) -> bool {
+        // this null prop can exist due to:
+        // assuming 2 rows
+        //
+        // expr = col().filter(false)
+        //
+        // this would null propagate
+        // (expr - expr.mean()) -> [None, None]
+        //
+        // but adding another aggregation is valid:
+        // (expr - expr.mean()).mean()
+        match ac_l.agg_state() {
+            AggState::AggregatedFlat(s) if s.null_count() == s.len() => {
+                let s = s.clone();
+                ac_l.with_update_groups(UpdateGroups::No);
+                ac_l.with_series(s, true, Some(&self.expr)).unwrap();
+                ac_l.null_propagated = true;
+                return true;
+            }
+            _ => {}
+        }
+        match ac_r.agg_state() {
+            AggState::AggregatedFlat(s) if s.null_count() == s.len() => {
+                ac_l.with_update_groups(UpdateGroups::No);
+                ac_l.with_series(s.clone(), true, Some(&self.expr)).unwrap();
+                ac_l.null_propagated = true;
+                return true;
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn apply_elementwise<'a>(
+        &self,
+        mut ac_l: AggregationContext<'a>,
+        ac_r: AggregationContext,
+        aggregated: bool,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        if self.null_propagate(&mut ac_l, &ac_r) {
+            return Ok(ac_l);
+        }
+
+        // we want to be able to mutate in place
+        // so we take the lhs to make sure that we drop
+        let lhs = ac_l.series().clone();
+        let rhs = ac_r.series().clone();
+
+        // drop lhs so that we might operate in place
+        {
+            let _ = ac_l.take();
+        }
+
+        let out = apply_operator_owned(lhs, rhs, self.op)?;
+
+        ac_l.with_series(out, aggregated, Some(&self.expr))?;
+        Ok(ac_l)
+    }
+
+    fn apply_group_aware<'a>(
+        &self,
+        mut ac_l: AggregationContext<'a>,
+        mut ac_r: AggregationContext,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        if self.null_propagate(&mut ac_l, &ac_r) {
+            return Ok(ac_l);
+        }
+
+        let name = ac_l.series().name().to_string();
+        let mut ca: ListChunked = ac_l
+            .iter_groups()
+            .zip(ac_r.iter_groups())
+            .map(|(l, r)| {
+                match (l, r) {
+                    (Some(l), Some(r)) => {
+                        let l = l.as_ref();
+                        let r = r.as_ref();
+                        Some(apply_operator(l, r, self.op))
+                    }
+                    _ => None,
+                }
+                .transpose()
+            })
+            .collect::<PolarsResult<_>>()?;
+        ca.rename(&name);
+
+        ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
+        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
+        Ok(ac_l)
+    }
+}
+
 impl PhysicalExpr for BinaryExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
@@ -133,283 +224,30 @@ impl PhysicalExpr for BinaryExpr {
             )
         });
         let mut ac_l = result_a?;
-        let mut ac_r = result_b?;
+        let ac_r = result_b?;
 
-        match (
-            ac_l.agg_state(),
-            ac_r.agg_state(),
-            state.has_overlapping_groups(),
-        ) {
-            // Some aggregations must return boolean masks that fit the group. That's why not all literals can take this path.
-            // only literals that are used in arithmetic
+        match (ac_l.agg_state(), ac_r.agg_state()) {
             (
-                AggState::AggregatedFlat(lhs) | AggState::Literal(lhs),
-                AggState::AggregatedFlat(rhs) | AggState::Literal(rhs),
-                _,
-            ) => {
-                // we want to be able to mutate in place
-                // so we take the lhs to make sure that we drop
-                let lhs = lhs.clone();
-                let rhs = rhs.clone();
-
-                // drop lhs so that we might operate in place
-                {
-                    let _ = ac_l.take();
-                }
-
-                let out = apply_operator_owned(lhs, rhs, self.op)?;
-
-                ac_l.with_series(out, true, Some(&self.expr))?;
-                Ok(ac_l)
-            }
-            // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
-
-            // if the groups_len == df.len we can just apply all flat.
-            // within an aggregation a `col().first() - lit(0)` must still produce a boolean array of group length,
-            // that's why a literal also takes this branch
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_), _overlapping_groups)
-                if s.len() != df.height() =>
-            {
-                // this is a flat series of len eq to group tuples
-                let l = ac_l.aggregated_arity_operation();
-                let l = l.as_ref();
-                let arr_l = &l.chunks()[0];
-
-                // we create a dummy Series that is not cloned nor moved
-                // so we can swap the ArrayRef during the hot loop
-                // this prevents a series Arc alloc and a vec alloc per iteration
-                let dummy = Series::try_from(("dummy", vec![arr_l.clone()])).unwrap();
-                // keep logical type info
-                let mut dummy = dummy.cast(l.dtype()).unwrap();
-                let mut us = UnstableSeries::new(&mut dummy);
-
-                // this is now a list
-                let r = ac_r.aggregated_arity_operation();
-                let r = r.list().unwrap();
-
-                let mut ca: ListChunked = r
-                    .amortized_iter()
-                    .enumerate()
-                    .map(|(idx, opt_s)| {
-                        opt_s
-                            .map(|s| {
-                                let r = s.as_ref();
-                                // TODO: optimize this?
-
-                                // Safety:
-                                // we are in bounds
-                                let mut arr = unsafe { arr_l.sliced_unchecked(idx, 1) };
-                                us.swap(&mut arr);
-
-                                let l = us.as_ref();
-
-                                apply_operator(l, r, self.op)
-                            })
-                            .transpose()
-                    })
-                    .collect::<PolarsResult<_>>()?;
-                ca.rename(l.name());
-
-                ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
-                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
-                Ok(ac_l)
-            }
-            // if the groups_len == df.len we can just apply all flat.
+                AggState::Literal(_) | AggState::NotAggregated(_),
+                AggState::Literal(_) | AggState::NotAggregated(_),
+            ) => self.apply_elementwise(ac_l, ac_r, false),
             (
-                AggState::AggregatedList(_) | AggState::NotAggregated(_),
-                AggState::AggregatedFlat(s),
-                _overlapping_groups,
-            ) if s.len() != df.height() => {
-                // this is now a list
-                let l = ac_l.aggregated_arity_operation();
-                let l = l.list().unwrap();
-
-                // this is a flat series of len eq to group tuples
-                let r = ac_r.aggregated_arity_operation();
-                assert_eq!(l.len(), groups.len());
-                let r = r.as_ref();
-                let arr_r = &r.chunks()[0];
-
-                // we create a dummy Series that is not cloned nor moved
-                // so we can swap the ArrayRef during the hot loop
-                // this prevents a series Arc alloc and a vec alloc per iteration
-                let dummy = Series::try_from(("dummy", vec![arr_r.clone()])).unwrap();
-                // keep logical type info
-                let mut dummy = dummy.cast(r.dtype()).unwrap();
-                let mut us = UnstableSeries::new(&mut dummy);
-
-                let mut ca: ListChunked = l
-                    .amortized_iter()
-                    .enumerate()
-                    .map(|(idx, opt_s)| {
-                        opt_s
-                            .map(|s| {
-                                let l = s.as_ref();
-                                // TODO: optimize this? Its slow.
-                                // Safety:
-                                // we are in bounds
-                                let mut arr = unsafe { arr_r.sliced_unchecked(idx, 1) };
-                                us.swap(&mut arr);
-                                let r = us.as_ref();
-
-                                apply_operator(l, r, self.op)
-                            })
-                            .transpose()
-                    })
-                    .collect::<PolarsResult<_>>()?;
-                ca.rename(l.name());
-
-                ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
-                // Todo! maybe always update with groups len here?
-                if matches!(ac_l.update_groups, UpdateGroups::WithSeriesLen)
-                    || matches!(ac_r.update_groups, UpdateGroups::WithSeriesLen)
-                {
-                    ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-                } else {
-                    ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
-                }
-                Ok(ac_l)
+                AggState::AggregatedFlat(_) | AggState::Literal(_),
+                AggState::AggregatedFlat(_) | AggState::Literal(_),
+            ) => self.apply_elementwise(ac_l, ac_r, true),
+            (AggState::AggregatedFlat(_), AggState::NotAggregated(_))
+            | (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
+                self.apply_group_aware(ac_l, ac_r)
             }
-
-            // # Align data in sort order and apply flattened.
-            // 1 we sort/aggregate by groups
-            // 2 then we flatten/explode and do the binary operation.
-            // 3 then we use the original groups length to restore the groups
-            //
-            // Overlapping groups may not take this branch.
-            // when groups overlap, step 2 creates more values than rows
-            // and the original group lengths will be incorrect
-            (
-                AggState::AggregatedList(_) | AggState::AggregatedFlat(_),
-                AggState::NotAggregated(_) | AggState::Literal(_),
-                false,
-            )
-            | (
-                AggState::NotAggregated(_) | AggState::Literal(_),
-                AggState::AggregatedList(_) | AggState::AggregatedFlat(_),
-                false,
-            ) => {
-                ac_l.sort_by_groups();
-                ac_r.sort_by_groups();
-
-                let lhs = ac_l.flat_naive().as_ref().clone();
-                let rhs = ac_r.flat_naive().as_ref().clone();
-
-                match null_propagate_empty(ac_l.series(), ac_r.series()) {
-                    Some(null_prop) => {
-                        ac_l.with_update_groups(UpdateGroups::No);
-                        // this null prop can exist due to:
-                        // assuming 2 rows
-                        //
-                        // expr = col().filter(false)
-                        //
-                        // this would null propagate
-                        // (expr - expr.mean()) -> [None, None]
-                        //
-                        // but adding another aggregation is valid:
-                        // (expr - expr.mean()).mean()
-                        ac_l.with_series(null_prop, true, Some(&self.expr))?;
-                        ac_l.null_propagated = true;
-                    }
-                    None => {
-                        let out = null_propagate_empty(ac_l.series(), ac_r.series())
-                            .map(Ok)
-                            .unwrap_or_else(|| apply_operator_owned(lhs, rhs, self.op))?;
-
-                        // drop lhs so that we might operate in place
-                        {
-                            let _ = ac_l.take();
-                        }
-
-                        // we flattened the series, so that sorts by group
-                        ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
-                        ac_l.with_series(out, false, None)?;
-                    }
-                }
-                Ok(ac_l)
-            }
-            // # Flatten the Series and apply the operators.
-            //
-            // Overlapping groups may not take this branch.
-            // the explode call would create more data and is expensive
-            (AggState::AggregatedList(_), AggState::AggregatedList(_), false) => {
-                let lhs = ac_l.flat_naive().as_ref().clone();
-                let rhs = ac_r.flat_naive().as_ref().clone();
-
-                // drop lhs so that we might operate in place
-                {
-                    let _ = ac_l.take();
-                }
-
-                let out = apply_operator_owned(lhs, rhs, self.op)?;
-
-                ac_l.combine_groups(ac_r).with_series(out, false, None)?;
-                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
-                Ok(ac_l)
-            }
-            // Both are or a flat series (if groups do not overlap)
-            // so we can flatten the Series and apply the operators
-            (_l, _r, false) => {
-                // Check if the group state of `ac_a` differs from the original `GroupTuples`.
-                // If this is the case we might need to align the groups. But only if `ac_b` is not a
-                // `Literal` as literals don't have any groups, the changed group order does not matter
-                // in that case
-                let different_group_state =
-                    |ac_a: &AggregationContext, ac_b: &AggregationContext| {
-                        (ac_a.update_groups != UpdateGroups::No)
-                            && !matches!(ac_b.agg_state(), AggState::Literal(_))
-                    };
-
-                // the groups state differs, so we aggregate both and flatten again to make them align
-                if different_group_state(&ac_l, &ac_r) || different_group_state(&ac_r, &ac_l) {
-                    // use the aggregated state to determine the new groups
-                    let lhs = ac_l.aggregated();
-                    ac_l.with_update_groups(UpdateGroups::WithSeriesLenOwned(lhs.clone()));
-
-                    // we should only explode lists
-                    // not aggregated flat states
-                    let flatten = |s: Series| match s.dtype() {
-                        DataType::List(_) => s.explode(),
-                        _ => Ok(s),
-                    };
-
-                    let out =
-                        apply_operator(&flatten(lhs)?, &flatten(ac_r.aggregated())?, self.op)?;
-                    ac_l.with_series(out, false, None)?;
-                    Ok(ac_l)
-                } else {
-                    let lhs = ac_l.flat_naive().as_ref().clone();
-                    let rhs = ac_r.flat_naive().as_ref().clone();
-
-                    // drop lhs so that we might operate in place
-                    {
-                        let _ = ac_l.take();
-                    }
-
-                    let out = apply_operator_owned(lhs, rhs, self.op)?;
-
-                    ac_l.combine_groups(ac_r).with_series(out, false, None)?;
-
-                    Ok(ac_l)
-                }
-            }
-            // overlapping groups, we iterate the separate groups, so that we don't have to explode
-            (_l, _r, true) => {
-                let mut out = ac_l
-                    .iter_groups()
-                    .zip(ac_r.iter_groups())
-                    .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                        (Some(l), Some(r)) => {
-                            apply_operator(l.as_ref(), r.as_ref(), self.op).map(Some)
-                        }
-                        _ => Ok(None),
-                    })
-                    .collect::<PolarsResult<ListChunked>>()?;
-                out.rename(ac_l.series().name());
+            (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {
+                let lhs = lhs.list().unwrap();
+                let rhs = rhs.list().unwrap();
+                let out =
+                    lhs.apply_to_inner(&|lhs| apply_operator(&lhs, &rhs.get_inner(), self.op))?;
                 ac_l.with_series(out.into_series(), true, Some(&self.expr))?;
-                ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
                 Ok(ac_l)
             }
+            _ => self.apply_group_aware(ac_l, ac_r),
         }
     }
 
@@ -650,29 +488,5 @@ impl PartitionedAggregation for BinaryExpr {
         _state: &ExecutionState,
     ) -> PolarsResult<Series> {
         Ok(partitioned)
-    }
-}
-
-//  A    B
-// []    null
-// []    null
-//
-// A - B should return null
-fn null_propagate_empty(lhs: &Series, rhs: &Series) -> Option<Series> {
-    match (lhs.dtype(), rhs.dtype()) {
-        (DataType::List(_), _) => {
-            let lhs = lhs.list().unwrap();
-            if !lhs.is_empty() {
-                let flat = lhs.explode().unwrap();
-                if rhs.null_count() == rhs.len()
-                    && (flat.null_count() == rhs.len() || flat.is_empty())
-                {
-                    return Some(rhs.clone());
-                }
-            }
-            None
-        }
-        (_, DataType::List(_)) => null_propagate_empty(rhs, lhs),
-        _ => None,
     }
 }
