@@ -84,7 +84,7 @@ impl_polars_datatype!(Int64Type, Int64, i64);
 impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 impl_polars_datatype!(DecimalType, Unknown, i128);
 impl_polars_datatype!(DatetimeType, Unknown, i64);
 impl_polars_datatype!(DurationType, Unknown, i64);
@@ -118,14 +118,14 @@ impl PolarsDataType for ListType {
     }
 }
 
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 pub struct Int128Type {}
 
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 impl PolarsDataType for Int128Type {
     fn get_dtype() -> DataType {
         // we cannot know precision/scale statically
-        DataType::Decimal128(None)
+        DataType::Decimal(None)
     }
 }
 
@@ -160,7 +160,7 @@ pub type Int8Chunked = ChunkedArray<Int8Type>;
 pub type Int16Chunked = ChunkedArray<Int16Type>;
 pub type Int32Chunked = ChunkedArray<Int32Type>;
 pub type Int64Chunked = ChunkedArray<Int64Type>;
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 pub type Int128Chunked = ChunkedArray<Int128Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
@@ -215,7 +215,7 @@ impl NumericNative for u32 {
 impl NumericNative for u64 {
     type POLARSTYPE = UInt64Type;
 }
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 impl NumericNative for i128 {
     type POLARSTYPE = Int128Type;
 }
@@ -253,7 +253,7 @@ impl PolarsNumericType for Int32Type {
 impl PolarsNumericType for Int64Type {
     type Native = i64;
 }
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 impl PolarsNumericType for Int128Type {
     type Native = i128;
 }

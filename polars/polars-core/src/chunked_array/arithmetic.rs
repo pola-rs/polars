@@ -4,7 +4,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::array::PrimitiveArray;
 use arrow::compute::arithmetics::basic;
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 use arrow::compute::arithmetics::decimal;
 use arrow::compute::arity_assign;
 use arrow::types::NativeType;
@@ -61,7 +61,7 @@ macro_rules! native_array_arithmetics {
 
 native_array_arithmetics!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 impl ArrayArithmetics for i128 {
     fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
         decimal::add(lhs, rhs)

@@ -773,7 +773,7 @@ impl Display for AnyValue<'_> {
             }
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
-            #[cfg(feature = "dtype-i128")]
+            #[cfg(feature = "dtype-decimal")]
             AnyValue::Decimal(v, _, scale) => fmt_decimal(f, *v, *scale),
         }
     }
@@ -945,7 +945,7 @@ impl<T: PolarsObject> FmtList for ObjectChunked<T> {
     }
 }
 
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 mod decimal {
     use std::fmt::Formatter;
     use std::{fmt, ptr, str};
@@ -1059,7 +1059,7 @@ mod decimal {
     }
 }
 
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 pub use decimal::fmt_decimal;
 
 #[cfg(all(

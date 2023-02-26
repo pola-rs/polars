@@ -180,7 +180,7 @@ dtype-full = [
   "dtype-time",
   "dtype-i8",
   "dtype-i16",
-  "dtype-i128",
+  "dtype-decimal",
   "dtype-u8",
   "dtype-u16",
   "dtype-categorical",
@@ -218,7 +218,7 @@ dtype-duration = [
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time", "polars-ops/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8", "polars-ops/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16", "polars-ops/dtype-i16"]
-dtype-i128 = ["polars-core/dtype-i128", "polars-lazy/dtype-i128", "polars-ops/dtype-i128"]
+dtype-decimal = ["polars-core/dtype-decimal", "polars-lazy/dtype-decimal", "polars-ops/dtype-decimal"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8", "polars-ops/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16", "polars-ops/dtype-u16"]
 dtype-categorical = [

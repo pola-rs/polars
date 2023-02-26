@@ -83,7 +83,7 @@ pub enum AnyValue<'a> {
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
     /// A 128-bit fixed point decimal number.
-    #[cfg(feature = "dtype-i128")]
+    #[cfg(feature = "dtype-decimal")]
     Decimal(i128, usize, usize),
 }
 

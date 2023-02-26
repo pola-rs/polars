@@ -10,7 +10,7 @@ mod categorical;
 mod dates_time;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
-#[cfg(feature = "dtype-i128")]
+#[cfg(feature = "dtype-decimal")]
 mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
