@@ -10,7 +10,7 @@ edition = "2021"
 [target.'cfg(any(not(target_os = "linux"), all(use_mimalloc, not(target_os = "windows")))'.dependencies]
 mimalloc = { version = "*", default-features = false }
 
-[target.'cfg(all(target_os = "linux", any(not(use_mimalloc), target_os = "windows"))'.dependencies]
+[target.'cfg(all(target_os = "linux", any(not(use_mimalloc), target_os = "windows")))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [dependencies]
