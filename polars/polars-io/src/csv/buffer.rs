@@ -98,7 +98,7 @@ where
                         return self.parse_bytes(
                             bytes,
                             ignore_errors,
-                            needs_escaping,
+                            false, // escaping was already done
                             _missing_is_null,
                         );
                     }
