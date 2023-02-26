@@ -16,9 +16,36 @@ impl LogicalType for DecimalChunked {
         self.2.as_ref().unwrap()
     }
 
+    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        self.0
+            .get_any_value(i)
+            .map(|av| av.into_decimal(self.precision(), self.scale()))
+    }
+
+    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        self.0
+            .get_any_value_unchecked(i)
+            .into_decimal(self.precision(), self.scale())
+    }
+
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        // TODO: proper cast for various numeric types
-        self.0.cast(dtype)
+        let (prec_src, scale_src) = (self.precision(), self.scale());
+        if let &DataType::Decimal(prec_dst, scale_dst) = dtype {
+            // for now, let's just allow same-scale conversions
+            // where precision is either the same or bigger or gets converted to `None`
+            // (these are the easy cases requiring no checks and arithmetics which we can add later)
+            let is_widen = match (prec_src, prec_dst) {
+                (Some(prec_src), Some(prec_dst)) => prec_dst >= prec_src,
+                (_, None) => true,
+                _ => false,
+            };
+            if scale_src == scale_dst && is_widen {
+                return self.0.cast(dtype); // no conversion or checks needed
+            }
+        }
+        Err(PolarsError::InvalidOperation(
+            format!("Cannot cast {} to {}", self.2.as_ref().unwrap(), dtype).into(),
+        ))
     }
 }
 

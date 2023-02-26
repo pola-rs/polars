@@ -103,6 +103,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let v = arr.value_unchecked(idx);
             AnyValue::Time(v)
         }
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(prec, scale) => {
+            let arr = &*(arr as *const dyn Array as *const Int128Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Decimal(v, *prec, *scale)
+        }
         #[cfg(feature = "object")]
         DataType::Object(_) => {
             // We should almost never hit this. The only known exception is when we put objects in
