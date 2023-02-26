@@ -575,6 +575,7 @@ impl<'a> CoreReader<'a> {
                                 ignore_errors,
                                 chunk_size,
                                 self.schema.len(),
+                                &self.schema,
                             )?;
 
                             let mut local_df = DataFrame::new_no_checks(
@@ -757,6 +758,7 @@ fn read_chunk(
             ignore_errors,
             chunk_size,
             schema.len(),
+            schema,
         )?;
     }
 

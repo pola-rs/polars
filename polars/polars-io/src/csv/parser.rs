@@ -486,8 +486,9 @@ pub(super) fn parse_lines<'a>(
     buffers: &mut [Buffer<'a>],
     ignore_errors: bool,
     n_lines: usize,
-    // length or original schema
+    // length of original schema
     schema_len: usize,
+    schema: &Schema,
 ) -> PolarsResult<usize> {
     assert!(
         !projection.is_empty(),
@@ -545,13 +546,12 @@ pub(super) fn parse_lines<'a>(
                     break;
                 }
                 Some((mut field, needs_escaping)) => {
-                    idx += 1;
                     let field_len = field.len();
 
                     // +1 is the split character that is consumed by the iterator.
                     read_sol += field_len + 1;
 
-                    if (idx - 1) == next_projected as u32 {
+                    if idx == next_projected as u32 {
                         // the iterator is finished when it encounters a `\n`
                         // this could be preceded by a '\r'
                         if field_len > 0 && field[field_len - 1] == b'\r' {
@@ -584,9 +584,10 @@ pub(super) fn parse_lines<'a>(
                                 .map_err(|_| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
+                                    let column_name = schema.get_index(idx as usize).unwrap().0;
                                     PolarsError::ComputeError(
                                         format!(
-                                            "Could not parse `{}` as dtype {:?} at column {}.\n\
+                                            "Could not parse `{}` as dtype {:?} at column '{}' (column number {}).\n\
                                             The current offset in the file is {} bytes.\n\
                                             \n\
                                             You might want to try:\n\
@@ -596,7 +597,8 @@ pub(super) fn parse_lines<'a>(
                                             - adding `{}` to the `null_values` list.",
                                             &unparsable,
                                             buf.dtype(),
-                                            idx,
+                                            column_name,
+                                            idx+1,
                                             bytes_offset,
                                             &unparsable,
                                         )
@@ -624,6 +626,7 @@ pub(super) fn parse_lines<'a>(
                             }
                         }
                     }
+                    idx += 1;
                 }
             }
         }
