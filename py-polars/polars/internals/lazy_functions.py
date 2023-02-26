@@ -2152,29 +2152,63 @@ def arange(
 @deprecated_alias(reverse="descending")
 @deprecate_nonkeyword_arguments()
 def arg_sort_by(
-    exprs: pli.Expr | str | Sequence[pli.Expr | str],
-    descending: Sequence[bool] | bool = False,
+    exprs: IntoExpr | Iterable[IntoExpr],
+    descending: bool | Sequence[bool] = False,
 ) -> pli.Expr:
     """
-    Find the indexes that would sort the columns.
-
-    Argsort by multiple columns. The first column will be used for the ordering.
-    If there are duplicates in the first column, the second column will be used to
-    determine the ordering and so on.
+    Return the row indices that would sort the columns.
 
     Parameters
     ----------
     exprs
-        Columns use to determine the ordering.
+        Column(s) to arg sort by. Accepts expression input. Strings are parsed as column
+        names.
     descending
-        Sort descending; default is ascending.
+        Sort in descending order. When sorting by multiple columns, can be specified
+        per column by passing a sequence of booleans.
+
+    Examples
+    --------
+    Pass a single column name to compute the arg sort by that column.
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [0, 1, 1, 0],
+    ...         "b": [3, 2, 3, 2],
+    ...     }
+    ... )
+    >>> df.select(pl.arg_sort_by("a"))
+    shape: (4, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 0   │
+    │ 3   │
+    │ 1   │
+    │ 2   │
+    └─────┘
+
+    Compute the arg sort by multiple columns by passing a list of columns.
+
+    >>> df.select(pl.arg_sort_by(["a", "b"], descending=True))
+    shape: (4, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 2   │
+    │ 1   │
+    │ 0   │
+    │ 3   │
+    └─────┘
 
     """
-    if isinstance(exprs, str) or not isinstance(exprs, Sequence):
-        exprs = [exprs]
+    exprs = pli.selection_to_pyexpr_list(exprs)
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
-    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(py_arg_sort_by(exprs, descending))
 
 
@@ -2206,7 +2240,7 @@ def argsort_by(
         DeprecationWarning,
         stacklevel=2,
     )
-    return pli.arg_sort_by(exprs, descending)
+    return pli.arg_sort_by(exprs, descending=descending)
 
 
 def duration(
