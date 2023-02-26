@@ -339,9 +339,7 @@ impl PhysicalExpr for ApplyExpr {
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         let function = match &self.expr {
-            Expr::Function {
-                function, ..
-            } => function,
+            Expr::Function { function, .. } => function,
             _ => return None,
         };
 
