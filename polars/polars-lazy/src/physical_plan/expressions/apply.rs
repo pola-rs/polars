@@ -335,27 +335,53 @@ fn apply_multiple_elementwise<'a>(
     function: &dyn SeriesUdf,
     expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
-    let mut s = acs
-        .iter_mut()
-        .map(|ac| {
-            // make sure the groups are updated because we are about to throw away
-            // the series length information
-            if let UpdateGroups::WithSeriesLen = ac.update_groups {
-                ac.groups();
-            }
+    match acs.first().unwrap().agg_state() {
+        // a fast path that doesn't drop groups of the first arg
+        // this doesn't require group re-computation
+        AggState::AggregatedList(s) => {
+            let ca = s.list().unwrap();
 
-            ac.flat_naive().into_owned()
-        })
-        .collect::<Vec<_>>();
+            let other = acs[1..]
+                .iter()
+                .map(|ac| ac.flat_naive().into_owned())
+                .collect::<Vec<_>>();
 
-    let input_len = s[0].len();
-    let s = function.call_udf(&mut s)?.unwrap();
-    check_map_output_len(input_len, s.len(), expr)?;
+            let out = ca.apply_to_inner(&|s| {
+                let mut args = vec![s];
+                args.extend_from_slice(&other);
+                let out = function.call_udf(&mut args)?.unwrap();
+                Ok(out)
+            })?;
+            let mut ac = acs.swap_remove(0);
+            ac.with_series(out.into_series(), true, None)?;
+            Ok(ac)
+        }
+        _ => {
+            let mut s = acs
+                .iter_mut()
+                .enumerate()
+                .map(|(i, ac)| {
+                    // make sure the groups are updated because we are about to throw away
+                    // the series length information
+                    // only on first iteration
+                    if let (0, UpdateGroups::WithSeriesLen) = (i, &ac.update_groups) {
+                        ac.groups();
+                    }
 
-    // take the first aggregation context that as that is the input series
-    let mut ac = acs.swap_remove(0);
-    ac.with_series(s, false, None)?;
-    Ok(ac)
+                    ac.flat_naive().into_owned()
+                })
+                .collect::<Vec<_>>();
+
+            let input_len = s[0].len();
+            let s = function.call_udf(&mut s)?.unwrap();
+            check_map_output_len(input_len, s.len(), expr)?;
+
+            // take the first aggregation context that as that is the input series
+            let mut ac = acs.swap_remove(0);
+            ac.with_series(s, false, None)?;
+            Ok(ac)
+        }
+    }
 }
 
 #[cfg(feature = "parquet")]

@@ -30,15 +30,32 @@ impl ListChunked {
         fld.coerce(DataType::List(Box::new(inner_dtype)))
     }
 
+    /// Get the inner values as `Series`, ignoring the list offsets.
+    pub fn get_inner(&self) -> Series {
+        let ca = self.rechunk();
+        let inner_dtype = self.inner_dtype().to_arrow();
+        let arr = ca.downcast_iter().next().unwrap();
+        unsafe {
+            Series::try_from_arrow_unchecked(
+                self.name(),
+                vec![(*arr.values()).clone()],
+                &inner_dtype,
+            )
+            .unwrap()
+        }
+    }
+
     /// Ignore the list indices and apply `func` to the inner type as `Series`.
     pub fn apply_to_inner(
         &self,
         func: &dyn Fn(Series) -> PolarsResult<Series>,
     ) -> PolarsResult<ListChunked> {
+        // generated Series will have wrong length otherwise.
+        let ca = self.rechunk();
         let inner_dtype = self.inner_dtype().to_arrow();
 
-        let chunks = self.downcast_iter().map(|arr| {
-            let elements = unsafe { Series::try_from_arrow_unchecked("", vec![(*arr.values()).clone()], &inner_dtype).unwrap() } ;
+        let chunks = ca.downcast_iter().map(|arr| {
+            let elements = unsafe { Series::try_from_arrow_unchecked(self.name(), vec![(*arr.values()).clone()], &inner_dtype).unwrap() } ;
 
             let expected_len = elements.len();
             let out: Series = func(elements)?;
