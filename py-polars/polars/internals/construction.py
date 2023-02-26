@@ -51,7 +51,6 @@ from polars.dependencies import (
     _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
-    _check_for_pandas,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd

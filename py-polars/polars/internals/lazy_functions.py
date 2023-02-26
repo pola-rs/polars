@@ -2093,7 +2093,7 @@ def arange(
     high: int | pli.Expr | pli.Series,
     step: int = ...,
     *,
-    eager: bool = False,
+    eager: bool = ...,
     dtype: PolarsDataType | None = ...,
 ) -> pli.Expr | pli.Series:
     ...
@@ -2126,7 +2126,8 @@ def arange(
     step
         Step size of the range.
     eager
-        If eager evaluation is `True`, a Series is returned instead of an Expr.
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     dtype
         Apply an explicit integer dtype to the resulting expression (default is Int64).
 
@@ -2642,60 +2643,72 @@ def select(
 
 
 @overload
-def struct(
-    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
-    eager: Literal[True],
-    schema: SchemaDict | None = None,
-) -> pli.Series:
-    ...
-
-
-@overload
-def struct(
-    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
-    eager: Literal[False],
-    schema: SchemaDict | None = None,
+def struct(  # type: ignore[misc]
+    exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    eager: Literal[False] = ...,
+    schema: SchemaDict | None = ...,
+    **named_exprs: IntoExpr,
 ) -> pli.Expr:
     ...
 
 
 @overload
 def struct(
-    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
-    eager: bool = False,
-    schema: SchemaDict | None = None,
+    exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    eager: Literal[True] = ...,
+    schema: SchemaDict | None = ...,
+    **named_exprs: IntoExpr,
+) -> pli.Series:
+    ...
+
+
+@overload
+def struct(
+    exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    eager: bool = ...,
+    schema: SchemaDict | None = ...,
+    **named_exprs: IntoExpr,
 ) -> pli.Expr | pli.Series:
     ...
 
 
-@deprecate_nonkeyword_arguments()
+@deprecate_nonkeyword_arguments(allowed_args=["exprs"])
 def struct(
-    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
+    exprs: IntoExpr | Iterable[IntoExpr] = None,
     eager: bool = False,
     schema: SchemaDict | None = None,
+    **named_exprs: IntoExpr,
 ) -> pli.Expr | pli.Series:
     """
-    Collect several columns into a Series of dtype Struct.
+    Collect columns into a struct column.
 
     Parameters
     ----------
     exprs
-        Columns/Expressions to collect into a Struct.
+        Column(s) to collect into a struct column. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
     eager
-        Evaluate immediately.
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     schema
-        Optional schema dict that explicitly defines the struct field dtypes.
+        Optional schema that explicitly defines the struct field dtypes.
+    **named_exprs
+        Additional column(s) to collect into the struct column, specified as keyword
+        arguments. The columns will be renamed to the keyword used.
 
     Examples
     --------
-    >>> pl.DataFrame(
+    Collect all columns of a dataframe into a struct by passing ``pl.all()``.
+
+    >>> df = pl.DataFrame(
     ...     {
     ...         "int": [1, 2],
     ...         "str": ["a", "b"],
     ...         "bool": [True, None],
     ...         "list": [[1, 2], [3]],
     ...     }
-    ... ).select([pl.struct(pl.all()).alias("my_struct")])
+    ... )
+    >>> df.select(pl.struct(pl.all()).alias("my_struct"))
     shape: (2, 1)
     ┌─────────────────────┐
     │ my_struct           │
@@ -2706,31 +2719,40 @@ def struct(
     │ {2,"b",null,[3]}    │
     └─────────────────────┘
 
-    Only collect specific columns as a struct:
+    Collect selected columns into a struct by passing a list of columns.
 
-    >>> df = pl.DataFrame(
-    ...     {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
-    ... )
-    >>> df.with_columns(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
-    shape: (4, 4)
-    ┌─────┬───────┬─────┬─────────────┐
-    │ a   ┆ b     ┆ c   ┆ a_and_b     │
-    │ --- ┆ ---   ┆ --- ┆ ---         │
-    │ i64 ┆ str   ┆ i64 ┆ struct[2]   │
-    ╞═════╪═══════╪═════╪═════════════╡
-    │ 1   ┆ one   ┆ 9   ┆ {1,"one"}   │
-    │ 2   ┆ two   ┆ 8   ┆ {2,"two"}   │
-    │ 3   ┆ three ┆ 7   ┆ {3,"three"} │
-    │ 4   ┆ four  ┆ 6   ┆ {4,"four"}  │
-    └─────┴───────┴─────┴─────────────┘
+    >>> df.select(pl.struct(["int", False]).alias("my_struct"))
+    shape: (2, 1)
+    ┌───────────┐
+    │ my_struct │
+    │ ---       │
+    │ struct[2] │
+    ╞═══════════╡
+    │ {1,false} │
+    │ {2,false} │
+    └───────────┘
+
+    Use keyword arguments to easily name each struct field.
+
+    >>> df.select(pl.struct(p="int", q="bool").alias("my_struct")).schema
+    {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
+    exprs = pli.selection_to_pyexpr_list(exprs)
+    if named_exprs:
+        exprs.extend(
+            pli.expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+            for name, expr in named_exprs.items()
+        )
+
+    expr = pli.wrap_expr(_as_struct(exprs))
+    if schema:
+        expr = expr.cast(Struct(schema))
+
     if eager:
-        s = pli.select(struct(exprs, eager=False)).to_series()
-        return s.cast(Struct(schema)) if schema else s
+        return pli.select(expr).to_series()
     else:
-        e = pli.wrap_expr(_as_struct(pli.selection_to_pyexpr_list(exprs)))
-        return e.cast(Struct(schema)) if schema else e
+        return expr
 
 
 @overload
@@ -2783,7 +2805,8 @@ def repeat(
     n
         repeat `n` times
     eager
-        Run eagerly and collect into a `Series`
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     name
         Only used in `eager` mode. As expression, us `alias`
 
@@ -2808,8 +2831,7 @@ def repeat(
 
 @overload
 def arg_where(
-    condition: pli.Expr | pli.Series,
-    eager: Literal[False] = ...,
+    condition: pli.Expr | pli.Series, eager: Literal[False] = ...
 ) -> pli.Expr:
     ...
 
@@ -2835,7 +2857,8 @@ def arg_where(
     condition
         Boolean expression to evaluate
     eager
-        Whether to apply this function eagerly (as opposed to lazily).
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
 
     Examples
     --------
