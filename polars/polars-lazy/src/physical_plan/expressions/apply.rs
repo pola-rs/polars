@@ -411,9 +411,12 @@ impl StatsEvaluator for ApplyExpr {
             }
             #[cfg(feature = "is_in")]
             FunctionExpr::IsIn => {
-                let root = expr_to_leaf_column_name(&self.expr)?;
+                let root = match expr_to_leaf_column_name(&input[0]) {
+                    Ok(root) => root,
+                    Err(_) => return Ok(true),
+                };
 
-                let input: &Series = match &input[0] {
+                let input: &Series = match &input[1] {
                     Expr::Literal(LiteralValue::Series(s)) => s,
                     _ => return Ok(true),
                 };
