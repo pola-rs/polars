@@ -1760,6 +1760,21 @@ def test_strptime_with_invalid_tz() -> None:
         pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z", tz_aware=True
         )
+    with pytest.raises(
+        ComputeError,
+        match="Cannot use strptime with both 'utc=True' and tz-aware Datetime.",
+    ):
+        pl.Series(["2020-01-01 03:00:00"]).str.strptime(
+            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S", utc=True
+        )
+
+
+def test_strptime_unguessable_format():
+    with pytest.raises(
+        ComputeError,
+        match="Could not find an appropriate format to parse dates, please define a fmt",
+    ):
+        pl.Series(["foobar"]).str.strptime(pl.Datetime)
 
 
 def test_convert_time_zone_invalid() -> None:

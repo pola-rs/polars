@@ -326,12 +326,6 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
         (false, _) => false,
     };
-    #[cfg(feature = "timezones")]
-    if !tz_aware && options.utc {
-        return Err(PolarsError::ComputeError(
-            "Cannot use 'utc=True' with tz-naive data. Parse the data as naive, and then use `.dt.convert_time_zone('UTC')`.".into(),
-        ));
-    }
     let ca = s.utf8()?;
 
     let out = match &options.date_dtype {
@@ -344,11 +338,25 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
             }
         }
         DataType::Datetime(tu, tz) => {
-            if tz.is_some() && tz_aware {
-                return Err(PolarsError::ComputeError(
-                    "Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime. Please drop time zone from the dtype.".into(),
-                ));
-            }
+            let tz = match (tz, tz_aware, options.utc) {
+                (Some(tz), false, false) => Some(tz.clone()),
+                (Some(_), true, _) => {
+                    return Err(PolarsError::ComputeError(
+                        "Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime. \
+                                               Please drop time zone from the dtype."
+                            .into(),
+                    ))
+                }
+                (Some(_), _, true) => {
+                    return Err(PolarsError::ComputeError(
+                        "Cannot use strptime with both 'utc=True' and tz-aware Datetime. \
+                                               Please drop time zone from the dtype."
+                            .into(),
+                    ))
+                }
+                (None, _, true) => Some("UTC".to_string()),
+                (None, _, false) => None,
+            };
             if options.exact {
                 ca.as_datetime(
                     options.fmt.as_deref(),
