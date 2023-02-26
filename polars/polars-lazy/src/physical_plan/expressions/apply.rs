@@ -338,16 +338,18 @@ impl PhysicalExpr for ApplyExpr {
     }
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        if matches!(
-            self.expr,
+        let function = match &self.expr {
             Expr::Function {
-                function: FunctionExpr::IsNull,
-                ..
-            }
-        ) {
-            Some(self)
-        } else {
-            None
+                function, ..
+            } => function,
+            _ => return None,
+        };
+
+        match function {
+            FunctionExpr::IsNull => Some(self),
+            #[cfg(feature = "is_in")]
+            FunctionExpr::IsIn => Some(self),
+            _ => None,
         }
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
@@ -409,6 +411,7 @@ impl StatsEvaluator for ApplyExpr {
                     None => Ok(true),
                 }
             }
+            #[cfg(feature = "is_in")]
             FunctionExpr::IsIn => {
                 let root = expr_to_leaf_column_name(&self.expr)?;
 
