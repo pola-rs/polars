@@ -1769,7 +1769,7 @@ def test_strptime_with_invalid_tz() -> None:
         )
 
 
-def test_strptime_unguessable_format():
+def test_strptime_unguessable_format() -> None:
     with pytest.raises(
         ComputeError,
         match="Could not find an appropriate format to parse dates, please define a fmt",
