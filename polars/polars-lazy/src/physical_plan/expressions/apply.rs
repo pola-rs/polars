@@ -390,27 +390,71 @@ fn apply_multiple_flat<'a>(
 #[cfg(feature = "parquet")]
 impl StatsEvaluator for ApplyExpr {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
-        if matches!(
-            self.expr,
+        let (function, input) = match &self.expr {
             Expr::Function {
-                function: FunctionExpr::IsNull,
-                ..
-            }
-        ) {
-            let root = expr_to_leaf_column_name(&self.expr)?;
+                function, input, ..
+            } => (function, input),
+            _ => return Ok(true),
+        };
 
-            let read = true;
-            let skip = false;
+        match function {
+            FunctionExpr::IsNull => {
+                let root = expr_to_leaf_column_name(&self.expr)?;
 
-            match stats.get_stats(&root).ok() {
-                Some(st) => match st.null_count() {
-                    Some(0) => Ok(skip),
-                    _ => Ok(read),
-                },
-                None => Ok(read),
+                match stats.get_stats(&root).ok() {
+                    Some(st) => match st.null_count() {
+                        Some(0) => Ok(false),
+                        _ => Ok(true),
+                    },
+                    None => Ok(true),
+                }
             }
-        } else {
-            Ok(true)
+            FunctionExpr::IsIn => {
+                let root = expr_to_leaf_column_name(&self.expr)?;
+
+                let input = match input[0] {
+                    Expr::Literal(LiteralValue::Series(s)) => s,
+                    _ => return Ok(true),
+                };
+
+                match stats.get_stats(&root).ok() {
+                    Some(st) => {
+                        let min = match st.to_min() {
+                            Some(min) => min,
+                            None => return Ok(true),
+                        };
+
+                        let max = match st.to_max() {
+                            Some(max) => max,
+                            None => return Ok(true),
+                        };
+
+                        // all wanted values are smaller than minimum
+                        // don't need to read
+                        if ChunkCompare::<&Series>::lt(input, min)
+                            .ok()
+                            .map(|ca| ca.all())
+                            == Some(true)
+                        {
+                            return Ok(false);
+                        }
+
+                        // all wanted values are bigger than maximum
+                        // don't need to read
+                        if ChunkCompare::<&Series>::gt(input, max)
+                            .ok()
+                            .map(|ca| ca.all())
+                            == Some(true)
+                        {
+                            return Ok(false);
+                        }
+
+                        Ok(true)
+                    }
+                    None => Ok(true),
+                }
+            }
+            _ => Ok(true),
         }
     }
 }

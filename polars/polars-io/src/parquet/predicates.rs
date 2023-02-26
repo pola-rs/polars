@@ -39,12 +39,7 @@ impl ColumnStats {
 
         let dtype = DataType::from(min_val.data_type());
 
-        let use_min_max = dtype.is_numeric() || matches!(dtype, DataType::Utf8);
-
-        #[cfg(feature = "dtype-binary")]
-        let use_min_max = use_min_max || matches!(dtype, DataType::Binary);
-
-        if use_min_max {
+        if Self::use_min_max(dtype) {
             let arr = concatenate(&[min_val, max_val]).unwrap();
             let s = Series::try_from(("", arr)).unwrap();
             if s.null_count() > 0 {
@@ -55,6 +50,47 @@ impl ColumnStats {
         } else {
             None
         }
+    }
+
+    pub fn to_min(&self) -> Option<Series> {
+        let min_val = self.0.min_value.clone();
+        let dtype = DataType::from(min_val.data_type());
+
+        if !Self::use_min_max(dtype) || min_val.len() != 1 {
+            return None;
+        }
+
+        let s = Series::try_from(("", min_val)).unwrap();
+        if s.null_count() > 0 {
+            None
+        } else {
+            Some(s)
+        }
+    }
+
+    pub fn to_max(&self) -> Option<Series> {
+        let max_val = self.0.max_value.clone();
+        let dtype = DataType::from(max_val.data_type());
+
+        if !Self::use_min_max(dtype) || max_val.len() != 1 {
+            return None;
+        }
+
+        let s = Series::try_from(("", max_val)).unwrap();
+        if s.null_count() > 0 {
+            None
+        } else {
+            Some(s)
+        }
+    }
+
+    fn use_min_max(dtype: DataType) -> bool {
+        let use_min_max = dtype.is_numeric() || matches!(dtype, DataType::Utf8);
+
+        #[cfg(feature = "dtype-binary")]
+        let use_min_max = use_min_max || matches!(dtype, DataType::Binary);
+
+        use_min_max
     }
 }
 
