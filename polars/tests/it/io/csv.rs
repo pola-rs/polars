@@ -1087,6 +1087,9 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
 "#;
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish()?;
-    assert_eq!(df.column("DEF")?.null_count(), 0);
+    let col_1 = df.column("ABC").unwrap();
+    let col_2 = df.column("DEF").unwrap();
+    assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
+    assert_eq!(col_2.get(0)?, AnyValue::Float64(4.1));
     Ok(())
 }

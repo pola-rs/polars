@@ -79,7 +79,6 @@ where
         if bytes.is_empty() {
             self.append_null()
         } else {
-            let first_byte = bytes[0];
             let bytes = if needs_escaping {
                 &bytes[1..bytes.len() - 1]
             } else {
@@ -99,7 +98,7 @@ where
                         return self.parse_bytes(
                             bytes,
                             ignore_errors,
-                            needs_escaping && is_whitespace(first_byte), // we only need to do escaping if the first byte was not whitespace
+                            false, // escaping was already done
                             _missing_is_null,
                         );
                     }
