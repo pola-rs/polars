@@ -11,6 +11,7 @@ from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
+    _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
     deprecate_nonkeyword_arguments,
     parse_version,
@@ -61,6 +62,26 @@ def test_timedelta_to_pl_timedelta() -> None:
     assert out == 86_400_000
     out = _timedelta_to_pl_timedelta(timedelta(days=1), tu=None)
     assert out == 86_400_000_000
+
+
+@pytest.mark.parametrize(
+    ("td", "expected"),
+    [
+        (timedelta(days=1), "1d"),
+        (timedelta(days=-1), "-1d"),
+        (timedelta(seconds=1), "1s"),
+        (timedelta(seconds=-1), "-1s"),
+        (timedelta(microseconds=1), "1us"),
+        (timedelta(microseconds=-1), "-1us"),
+        (timedelta(days=1, seconds=1), "1d1s"),
+        (timedelta(days=-1, seconds=-1), "-1d1s"),
+        (timedelta(days=1, microseconds=1), "1d1us"),
+        (timedelta(days=-1, microseconds=-1), "-1d1us"),
+    ],
+)
+def test_timedelta_to_pl_duration(td: timedelta, expected: str) -> None:
+    out = _timedelta_to_pl_duration(td)
+    assert out == expected
 
 
 def test_estimated_size() -> None:
