@@ -38,7 +38,10 @@ pub mod utils;
 #[cfg(all(target_os = "linux", any(not(use_mimalloc), target_os = "windows")))]
 use jemallocator::Jemalloc;
 use lazy::ToExprs;
-#[cfg(any(not(target_os = "linux"), all(use_mimalloc, not(target_os = "windows"))))]
+#[cfg(any(
+    not(target_os = "linux"),
+    all(use_mimalloc, not(target_os = "windows"))
+))]
 use mimalloc::MiMalloc;
 use polars_core::datatypes::{TimeUnit, TimeZone};
 use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
@@ -71,7 +74,10 @@ use crate::series::PySeries;
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(any(not(target_os = "linux"), all(use_mimalloc, not(target_os = "windows"))))]
+#[cfg(any(
+    not(target_os = "linux"),
+    all(use_mimalloc, not(target_os = "windows"))
+))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pyfunction]
