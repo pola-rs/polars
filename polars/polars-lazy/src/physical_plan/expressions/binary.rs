@@ -154,7 +154,7 @@ impl BinaryExpr {
     fn apply_group_aware<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
-        mut ac_r: AggregationContext,
+        mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
         if self.null_propagate(&mut ac_l, &ac_r) {
             return Ok(ac_l);
@@ -178,8 +178,22 @@ impl BinaryExpr {
             .collect::<PolarsResult<_>>()?;
         ca.rename(&name);
 
+        // try if we can reuse the groups
+        use AggState::*;
+        match (ac_l.agg_state(), ac_r.agg_state()) {
+            // no need to change update groups
+            (AggregatedList(_), _) => {}
+            // we can take the groups of the rhs
+            (_, AggregatedList(_)) if matches!(ac_r.update_groups, UpdateGroups::No) => {
+                ac_l.groups = ac_r.groups
+            }
+            // we must update the groups
+            _ => {
+                ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
+            }
+        }
+
         ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
-        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac_l)
     }
 }
