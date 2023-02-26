@@ -2377,17 +2377,22 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
+@deprecated_alias(sep="separator")
 @deprecate_nonkeyword_arguments()
-def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
+def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> pli.Expr:
     """
-    Horizontally concat Utf8 Series in linear time. Non-Utf8 columns are cast to Utf8.
+    Horizontally concatenate columns into a single string column.
+
+    Operates in linear time.
 
     Parameters
     ----------
     exprs
-        Columns to concat into a Utf8 Series.
-    sep
-        String value that will be used to separate the values.
+        Columns to concatenate into a single string column. Accepts expression input.
+        Strings are parsed as column names, other non-expression inputs are parsed as
+        literals. Non-``Utf8`` columns are cast to ``Utf8``.
+    separator
+        String that will be used to separate the values of each column.
 
     Examples
     --------
@@ -2399,16 +2404,14 @@ def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli
     ...     }
     ... )
     >>> df.with_columns(
-    ...     [
-    ...         pl.concat_str(
-    ...             [
-    ...                 pl.col("a") * 2,
-    ...                 pl.col("b"),
-    ...                 pl.col("c"),
-    ...             ],
-    ...             sep=" ",
-    ...         ).alias("full_sentence"),
-    ...     ]
+    ...     pl.concat_str(
+    ...         [
+    ...             pl.col("a") * 2,
+    ...             pl.col("b"),
+    ...             pl.col("c"),
+    ...         ],
+    ...         separator=" ",
+    ...     ).alias("full_sentence"),
     ... )
     shape: (3, 4)
     ┌─────┬──────┬──────┬───────────────┐
@@ -2423,7 +2426,7 @@ def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_concat_str(exprs, sep))
+    return pli.wrap_expr(_concat_str(exprs, separator))
 
 
 def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
@@ -2477,7 +2480,7 @@ def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
         if len(s) > 0:
             exprs.append(lit(s))
 
-    return concat_str(exprs, sep="")
+    return concat_str(exprs, separator="")
 
 
 def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.Expr:
