@@ -8,7 +8,7 @@ use std::ops::Add;
 use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
-use num::{Float, ToPrimitive};
+use num_traits::{Float, ToPrimitive};
 use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 pub use quantile::*;
 pub use var::*;

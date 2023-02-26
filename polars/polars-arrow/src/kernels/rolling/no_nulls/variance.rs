@@ -1,5 +1,5 @@
 use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
-use num::pow::Pow;
+use num_traits::pow::Pow;
 
 use super::mean::MeanWindow;
 use super::*;

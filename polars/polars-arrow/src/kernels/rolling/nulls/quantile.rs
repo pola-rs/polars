@@ -16,8 +16,8 @@ where
     T: std::iter::Sum<T>
         + NativeType
         + Copy
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
+        + PartialOrd
+        + ToPrimitive
         + NumCast
         + Add<Output = T>
         + Sub<Output = T>
@@ -148,8 +148,8 @@ where
         + std::iter::Sum<T>
         + Zero
         + AddAssign
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
+        + PartialOrd
+        + ToPrimitive
         + NumCast
         + Default
         + Add<Output = T>
@@ -213,8 +213,8 @@ where
         + Zero
         + AddAssign
         + Copy
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
+        + PartialOrd
+        + ToPrimitive
         + NumCast
         + Default
         + Add<Output = T>
@@ -249,8 +249,8 @@ where
         + Zero
         + AddAssign
         + Copy
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
+        + PartialOrd
+        + ToPrimitive
         + NumCast
         + Default
         + Add<Output = T>

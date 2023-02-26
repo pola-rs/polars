@@ -30,7 +30,7 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 pub use dtype::*;
 pub use field::*;
-use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};

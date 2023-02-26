@@ -4,7 +4,7 @@ mod groups;
 use std::borrow::Cow;
 
 use asof::*;
-use num::Bounded;
+use num_traits::Bounded;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

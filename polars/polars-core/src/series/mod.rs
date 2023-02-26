@@ -23,7 +23,7 @@ use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
 pub use iterator::SeriesIter;
-use num::NumCast;
+use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 

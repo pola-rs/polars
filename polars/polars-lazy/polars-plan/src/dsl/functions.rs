@@ -6,8 +6,6 @@ use std::ops::{BitAnd, BitOr};
 
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
-#[cfg(feature = "rank")]
-use polars_core::utils::coalesce_nulls_series;
 #[cfg(feature = "dtype-struct")]
 use polars_core::utils::get_supertype;
 
@@ -179,6 +177,7 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
 ///     and thus lead to the highest rank.
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
 pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> Expr {
+    use polars_core::utils::coalesce_nulls_series;
     use polars_ops::prelude::nan_propagating_aggregate::nan_max_s;
 
     let function = move |a: Series, b: Series| {
