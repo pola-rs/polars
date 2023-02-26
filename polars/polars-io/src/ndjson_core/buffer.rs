@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 use arrow::types::NativeType;
-use num::traits::NumCast;
+use num_traits::NumCast;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -136,10 +136,10 @@ pub(crate) fn init_buffers(
 
 fn deserialize_number<T: NativeType + NumCast>(value: &Value) -> Option<T> {
     match value {
-        Value::Static(StaticNode::F64(f)) => num::traits::cast::<f64, T>(*f),
-        Value::Static(StaticNode::I64(i)) => num::traits::cast::<i64, T>(*i),
-        Value::Static(StaticNode::U64(u)) => num::traits::cast::<u64, T>(*u),
-        Value::Static(StaticNode::Bool(b)) => num::traits::cast::<i32, T>(*b as i32),
+        Value::Static(StaticNode::F64(f)) => num_traits::cast(*f),
+        Value::Static(StaticNode::I64(i)) => num_traits::cast(*i),
+        Value::Static(StaticNode::U64(u)) => num_traits::cast(*u),
+        Value::Static(StaticNode::Bool(b)) => num_traits::cast(*b as i32),
         _ => None,
     }
 }

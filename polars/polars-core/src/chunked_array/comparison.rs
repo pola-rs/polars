@@ -6,7 +6,7 @@ use arrow::compute::comparison;
 #[cfg(feature = "dtype-binary")]
 use arrow::scalar::BinaryScalar;
 use arrow::scalar::{PrimitiveScalar, Scalar, Utf8Scalar};
-use num::{NumCast, ToPrimitive};
+use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;

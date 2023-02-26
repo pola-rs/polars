@@ -1,5 +1,5 @@
 use memchr::memchr2_iter;
-use num::traits::Pow;
+use num_traits::Pow;
 use polars_core::prelude::*;
 
 use super::buffer::*;

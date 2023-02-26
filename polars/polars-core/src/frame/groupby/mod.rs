@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::RandomState;
-use num::NumCast;
+use num_traits::NumCast;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
@@ -901,7 +901,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 
 #[cfg(test)]
 mod test {
-    use num::traits::FloatConst;
+    use num_traits::FloatConst;
 
     use crate::frame::groupby::{groupby, groupby_threaded_num};
     use crate::prelude::*;

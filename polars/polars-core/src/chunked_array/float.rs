@@ -1,4 +1,4 @@
-use num::Float;
+use num_traits::Float;
 use polars_arrow::kernels::float::*;
 use polars_arrow::kernels::set::set_at_nulls;
 

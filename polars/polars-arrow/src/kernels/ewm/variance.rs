@@ -2,7 +2,7 @@ use std::ops::{AddAssign, DivAssign, MulAssign};
 
 use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
-use num::Float;
+use num_traits::Float;
 
 use crate::trusted_len::TrustedLen;
 use crate::utils::CustomIterTools;

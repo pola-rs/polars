@@ -1,3 +1,5 @@
+use num_traits::NumCast;
+
 use super::*;
 #[cfg(feature = "chunked_ids")]
 use crate::utils::create_chunked_index_mapping;
@@ -283,7 +285,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType + Sync,
-    T::Native: Eq + Hash + num::NumCast,
+    T::Native: Eq + Hash + NumCast,
 {
     fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);

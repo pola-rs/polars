@@ -4,7 +4,7 @@ pub use arrow;
 #[cfg(feature = "temporal")]
 pub use chrono;
 #[cfg(feature = "private")]
-pub use num;
+pub use num_traits as num;
 #[cfg(feature = "private")]
 pub use once_cell;
 #[cfg(feature = "private")]
