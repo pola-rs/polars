@@ -412,7 +412,7 @@ impl StatsEvaluator for ApplyExpr {
             FunctionExpr::IsIn => {
                 let root = expr_to_leaf_column_name(&self.expr)?;
 
-                let input = match input[0] {
+                let input: &Series = match &input[0] {
                     Expr::Literal(LiteralValue::Series(s)) => s,
                     _ => return Ok(true),
                 };
@@ -431,7 +431,7 @@ impl StatsEvaluator for ApplyExpr {
 
                         // all wanted values are smaller than minimum
                         // don't need to read
-                        if ChunkCompare::<&Series>::lt(input, min)
+                        if ChunkCompare::<&Series>::lt(input, &min)
                             .ok()
                             .map(|ca| ca.all())
                             == Some(true)
@@ -441,7 +441,7 @@ impl StatsEvaluator for ApplyExpr {
 
                         // all wanted values are bigger than maximum
                         // don't need to read
-                        if ChunkCompare::<&Series>::gt(input, max)
+                        if ChunkCompare::<&Series>::gt(input, &max)
                             .ok()
                             .map(|ca| ca.all())
                             == Some(true)
