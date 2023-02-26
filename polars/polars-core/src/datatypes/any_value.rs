@@ -84,7 +84,7 @@ pub enum AnyValue<'a> {
     BinaryOwned(Vec<u8>),
     /// A 128-bit fixed point decimal number.
     #[cfg(feature = "dtype-decimal")]
-    Decimal(i128, usize, usize),
+    Decimal(i128, Option<usize>, usize), // TODO: do we even need precision here?
 }
 
 #[cfg(feature = "serde")]

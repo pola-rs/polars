@@ -46,7 +46,7 @@ impl From<&DataType> for PyDataType {
             DataType::UInt64 => UInt64,
             DataType::Float32 => Float32,
             DataType::Float64 => Float64,
-            DataType::Decimal(_) => todo!(),
+            DataType::Decimal(_, _) => todo!(),
             DataType::Boolean => Bool,
             DataType::Utf8 => Utf8,
             DataType::Binary => Binary,

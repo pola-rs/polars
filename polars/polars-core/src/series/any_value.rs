@@ -298,7 +298,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             #[cfg(feature = "object")]
             ObjectOwned(o) => DataType::Object(o.0.type_name()),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, prec, scale) => DataType::Decimal(Some((*prec, *scale))),
+            Decimal(_, prec, scale) => DataType::Decimal(*prec, *scale),
         }
     }
 }

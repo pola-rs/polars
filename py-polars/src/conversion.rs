@@ -294,7 +294,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::UInt64 => pl.getattr("UInt64").unwrap().into(),
             DataType::Float32 => pl.getattr("Float32").unwrap().into(),
             DataType::Float64 => pl.getattr("Float64").unwrap().into(),
-            DataType::Decimal(_) => todo!(),
+            DataType::Decimal(_, _) => todo!(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
@@ -687,7 +687,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         // note: Decimal('-0') will be mapped to simply '0'
                         v = -v; // won't overflow since -i128::MAX > i128::MIN
                     }
-                    Ok(Wrap(AnyValue::Decimal(v, 38, scale)))
+                    Ok(Wrap(AnyValue::Decimal(v, None, scale)))
                 }
                 _ => Err(PyErr::from(PyPolarsErr::Other(format!(
                     "object type not supported {ob:?}",

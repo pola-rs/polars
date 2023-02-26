@@ -16,9 +16,9 @@ pub enum DataType {
     Float32,
     Float64,
     #[cfg(feature = "dtype-decimal")]
-    /// Fixed point decimal type with non-negative scale and optional precision (>= 1 if provided).
+    /// Fixed point decimal type optional precision and non-negative scale.
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
-    Decimal(Option<(usize, usize)>),
+    Decimal(Option<usize>, usize),
     /// String data
     Utf8,
     Binary,
@@ -203,7 +203,7 @@ impl DataType {
             Float32 => ArrowDataType::Float32,
             Float64 => ArrowDataType::Float64,
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_) => todo!(),
+            Decimal(_, _) => todo!(),
             Utf8 => ArrowDataType::LargeUtf8,
             Binary => ArrowDataType::LargeBinary,
             Date => ArrowDataType::Date32,
@@ -257,7 +257,7 @@ impl Display for DataType {
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_) => "i128",
+            DataType::Decimal(_, _) => "i128",
             DataType::Utf8 => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",

@@ -4,9 +4,9 @@ use crate::prelude::*;
 pub type DecimalChunked = Logical<DecimalType, Int128Type>;
 
 impl Int128Chunked {
-    pub fn into_decimal(self, precision: usize, scale: usize) -> DecimalChunked {
+    pub fn into_decimal(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
         let mut dt = DecimalChunked::new_logical(self);
-        dt.2 = Some(DataType::Decimal(Some((precision, scale))));
+        dt.2 = Some(DataType::Decimal(precision, scale));
         dt
     }
 }
@@ -23,15 +23,16 @@ impl LogicalType for DecimalChunked {
 }
 
 impl DecimalChunked {
-    pub fn precision(&self) -> usize {
+    pub fn precision(&self) -> Option<usize> {
         match self.2.as_ref().unwrap() {
-            DataType::Decimal(Some((precision, _))) => *precision,
+            DataType::Decimal(precision, _) => *precision,
             _ => unreachable!(),
         }
     }
+
     pub fn scale(&self) -> usize {
         match self.2.as_ref().unwrap() {
-            DataType::Decimal(Some((_, scale))) => *scale,
+            DataType::Decimal(_, scale) => *scale,
             _ => unreachable!(),
         }
     }
