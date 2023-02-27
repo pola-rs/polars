@@ -1448,6 +1448,7 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
         pl.col("x").arg_min(),
         pl.col("x").max(),
         pl.col("x").mean(),
+        pl.col("x").median(),
         pl.col("x").min(),
         pl.col("x").nan_max(),
         pl.col("x").nan_min(),
