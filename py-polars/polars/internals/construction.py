@@ -1420,10 +1420,6 @@ def pandas_to_pydf(
 def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
     import pyarrow.compute as pc
 
-    # note: Decimal256 could not be cast to float
-    if isinstance(array.type, pa.Decimal128Type):
-        array = pc.cast(array, pa.float64())
-
     if hasattr(array, "num_chunks") and array.num_chunks > 1 and rechunk:
         # small integer keys can often not be combined, so let's already cast
         # to the uint32 used by polars

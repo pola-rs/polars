@@ -126,6 +126,10 @@ impl Series {
             DataType::Duration(tu) => any_values_to_primitive::<Int64Type>(av)
                 .into_duration(*tu)
                 .into_series(),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(prec, scale) => any_values_to_primitive::<Int128Type>(av)
+                .into_decimal(*prec, *scale)
+                .into_series(),
             DataType::List(inner) => any_values_to_list(av, inner).into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(dtype_fields) => {

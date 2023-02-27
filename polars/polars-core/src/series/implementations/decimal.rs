@@ -18,12 +18,16 @@ impl SeriesWrap<DecimalChunked> {
 }
 
 impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
+    fn compute_len(&mut self) {
+        self.0.compute_len()
+    }
+
     fn _field(&self) -> Cow<Field> {
-        Cow::Borrowed(self.0.field.as_ref())
+        Cow::Owned(self.0.field())
     }
 
     fn _dtype(&self) -> &DataType {
-        &self.0.field.dtype
+        self.0.dtype()
     }
 }
 
@@ -154,8 +158,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.cast(data_type)
     }
 
-    fn get(&self, _index: usize) -> PolarsResult<AnyValue> {
-        todo!()
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+        self.0.get_any_value(index)
     }
 
     fn null_count(&self) -> usize {

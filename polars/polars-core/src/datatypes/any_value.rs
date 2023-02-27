@@ -387,6 +387,8 @@ impl<'a> AnyValue<'a> {
             Time(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(v, _, _) => NumCast::from(*v),
             Boolean(v) => {
                 if *v {
                     NumCast::from(1)

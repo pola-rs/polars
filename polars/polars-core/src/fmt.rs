@@ -279,6 +279,11 @@ impl Debug for Series {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.duration().unwrap(), &dt, self.name(), "Series")
             }
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.decimal().unwrap(), &dt, self.name(), "Series")
+            }
             DataType::List(_) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")

@@ -62,6 +62,10 @@ impl Series {
             Datetime(tu, tz) => Int64Chunked::from_chunks(name, chunks)
                 .into_datetime(*tu, tz.clone())
                 .into_series(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(prec, scale) => Int128Chunked::from_chunks(name, chunks)
+                .into_decimal(*prec, *scale)
+                .into_series(),
             List(_) => ListChunked::from_chunks(name, chunks).cast(dtype).unwrap(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
@@ -336,7 +340,17 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, true)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             }
-            ArrowDataType::Decimal(_, _) | ArrowDataType::Decimal256(_, _) => {
+            #[cfg(feature = "dtype-decimal")]
+            ArrowDataType::Decimal(prec, scale) => {
+                let (prec, scale) = (Some(*prec), *scale);
+                let chunks = cast_chunks(&chunks, &DataType::Decimal(prec, scale), false).unwrap();
+                // or DecimalChunked?
+                Ok(Int128Chunked::from_chunks(name, chunks)
+                    .into_decimal(prec, scale)
+                    .into_series())
+            }
+            #[allow(unreachable_patterns)]
+            ArrowDataType::Decimal256(_, _) | ArrowDataType::Decimal(_, _) => {
                 if verbose() {
                     eprintln!(
                         "Polars does not support decimal types so the 'Series' are read as Float64"

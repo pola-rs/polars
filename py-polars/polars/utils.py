@@ -142,7 +142,9 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int
     else:
         raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
 
-_create_decimal = [None] + [Context(prec=p).create_decimal for p in range(1, 63)]
+
+_create_decimal = [Decimal] + [Context(prec=p).create_decimal for p in range(1, 63)]
+
 
 def _to_python_decimal(sign: int, digits: tuple[int], prec: int, scale: int) -> Decimal:
     args = (sign, digits, scale)
@@ -150,6 +152,7 @@ def _to_python_decimal(sign: int, digits: tuple[int], prec: int, scale: int) -> 
         return _create_decimal[prec](args)
     else:
         return Context(prec=prec).create_decimal(args)
+
 
 def _is_generator(val: object) -> bool:
     return (

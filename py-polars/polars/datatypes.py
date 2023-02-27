@@ -6,7 +6,7 @@ import functools
 import re
 import sys
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal as PyDecimal
 from inspect import isclass
 from typing import (
     TYPE_CHECKING,
@@ -85,7 +85,7 @@ PythonDataType: TypeAlias = Union[
     Type[ListType[Any]],
     Type[Tuple[Any, ...]],
     Type[bytes],
-    Type[Decimal],
+    Type[PyDecimal],
     Type[None],
 ]
 
@@ -284,12 +284,16 @@ class List(NestedType):
 
 class Decimal(DataType):
     """Decimal 128-bit type with an optional precision and non-negative scale."""
-    precision: Optional[int]
+
+    prec: int | None
     scale: int
 
-    def __init__(self, precision: Optional[int], scale: int):
-        self.precision = precision
+    def __init__(self, prec: int | None, scale: int):
+        self.prec = prec
         self.scale = scale
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(prec={self.prec}, scale={self.scale})"
 
 
 class Date(TemporalType):
@@ -577,7 +581,7 @@ class _DataTypeMappings:
             time: Time,
             list: List,
             tuple: List,
-            Decimal: Float64,
+            PyDecimal: Decimal,
             bytes: Binary,
             object: Object,
             None.__class__: Null,
@@ -610,6 +614,7 @@ class _DataTypeMappings:
             Time: time,
             Binary: bytes,
             List: list,
+            Decimal: PyDecimal,
             Null: None.__class__,
         }
 

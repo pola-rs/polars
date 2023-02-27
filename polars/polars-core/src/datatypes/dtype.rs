@@ -203,7 +203,8 @@ impl DataType {
             Float32 => ArrowDataType::Float32,
             Float64 => ArrowDataType::Float64,
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => todo!(),
+            // note: what else can we do here other than setting prec to 38?..
+            Decimal(prec, scale) => ArrowDataType::Decimal((*prec).unwrap_or(38), *scale),
             Utf8 => ArrowDataType::LargeUtf8,
             Binary => ArrowDataType::LargeBinary,
             Date => ArrowDataType::Date32,
@@ -257,7 +258,12 @@ impl Display for DataType {
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => "i128",
+            DataType::Decimal(prec, scale) => {
+                return f.write_str(&match prec {
+                    Some(prec) => format!("decimal[{}, {}]", prec, scale),
+                    None => format!("decimal[*, {}]", scale),
+                })
+            }
             DataType::Utf8 => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
