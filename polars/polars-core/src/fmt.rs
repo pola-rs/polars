@@ -75,7 +75,7 @@ macro_rules! format_array {
                 .map_or(LIMIT, |n: i64| if n < 0 { $a.len() } else { n as usize });
             std::cmp::min(limit, $a.len())
         };
-        let write_fn = |v, f: &mut Formatter| {
+        let write_fn = |v, f: &mut Formatter| -> fmt::Result {
             if truncate {
                 let v = format!("{}", v);
                 let v_trunc = &v[..v
