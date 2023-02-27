@@ -1458,6 +1458,10 @@ def corr(
         return pli.wrap_expr(
             pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
         )
+    else:
+        raise ValueError(
+            "method must be one of {'pearson', 'spearman'}," f" got {method!r}"
+        )
 
 
 def cov(a: str | pli.Expr, b: str | pli.Expr) -> pli.Expr:
