@@ -56,8 +56,7 @@ impl ChunkShift<BooleanType> for BooleanChunked {
 
 impl ChunkShiftFill<Utf8Type, Option<&str>> for Utf8Chunked {
     fn shift_and_fill(&self, periods: i64, fill_value: Option<&str>) -> Utf8Chunked {
-        let ca = self.cast(&DataType::Binary).unwrap();
-        let ca = ca.binary().unwrap();
+        let ca = self.as_binary();
         unsafe {
             ca.shift_and_fill(periods, fill_value.map(|v| v.as_bytes()))
                 .to_utf8()

@@ -246,13 +246,11 @@ vec_hash_int!(UInt8Chunked, fx_hash_8_bit);
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
-        let ca = self.cast(&DataType::Binary).unwrap();
-        ca.vec_hash(random_state, buf).unwrap();
+        self.as_binary().vec_hash(random_state, buf)
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        let ca = self.cast(&DataType::Binary).unwrap();
-        ca.vec_hash_combine(random_state, hashes).unwrap();
+        self.as_binary().vec_hash_combine(random_state, hashes)
     }
 }
 

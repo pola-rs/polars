@@ -73,10 +73,8 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
 
 impl ChunkFilter<Utf8Type> for Utf8Chunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<Utf8Type>> {
-        let ca = self.cast(&DataType::Binary).unwrap();
-        let out = ca.filter(filter)?;
-        let out = unsafe { out.cast_unchecked(&DataType::Utf8) }.unwrap();
-        out.utf8().cloned()
+        let out = self.as_binary().filter(filter)?;
+        unsafe { Ok(out.to_utf8()) }
     }
 }
 
