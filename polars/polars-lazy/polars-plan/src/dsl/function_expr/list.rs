@@ -141,13 +141,22 @@ pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
-    let first_ca = match first.list().ok() {
+    let mut first_ca = match first.list().ok() {
         Some(ca) => ca,
         None => {
             first = first.reshape(&[-1, 1]).unwrap();
             first.list().unwrap()
         }
-    };
+    }
+    .clone();
+
+    if first_ca.len() == 1 && !other.is_empty() {
+        let max_len = other.iter().map(|s| s.len()).max().unwrap();
+        if max_len > 1 {
+            first_ca = first_ca.new_from_index(0, max_len)
+        }
+    }
+
     first_ca.lst_concat(other).map(|ca| Some(ca.into_series()))
 }
 
