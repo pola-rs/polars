@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.16.8"
+version = "0.16.9"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -92,7 +92,6 @@ all = [
   "propagate_nans",
   "polars/groupby_list",
   "sql",
-  "polars/dtype-binary",
   "binary_encoding",
   "streaming",
   "performant",

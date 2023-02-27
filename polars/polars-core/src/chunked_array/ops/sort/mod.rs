@@ -8,9 +8,10 @@ use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 
+pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
-use num::Float;
+use num_traits::Float;
 use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::{FromData, ValueSize};
@@ -23,6 +24,7 @@ use crate::prelude::sort::arg_sort_multiple::{arg_sort_multiple_impl, args_valid
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
+use crate::POOL;
 
 /// Reverse sorting when there are no nulls
 fn order_descending<T: Ord>(a: &T, b: &T) -> Ordering {
@@ -58,14 +60,14 @@ fn sort_branch<T, Fd, Fr>(
     parallel: bool,
 ) where
     T: PartialOrd + Send,
-    Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
-    Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
+    Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync + Send,
+    Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync + Send,
 {
     if parallel {
-        match descending {
+        POOL.install(|| match descending {
             true => slice.par_sort_unstable_by(descending_order_fn),
             false => slice.par_sort_unstable_by(ascending_order_fn),
-        }
+        })
     } else {
         match descending {
             true => slice.sort_unstable_by(descending_order_fn),
@@ -97,14 +99,14 @@ pub fn arg_sort_branch<T, Fd, Fr>(
     parallel: bool,
 ) where
     T: PartialOrd + Send,
-    Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
-    Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
+    Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync + Send,
+    Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync + Send,
 {
     if parallel {
-        match descending {
+        POOL.install(|| match descending {
             true => slice.par_sort_by(descending_order_fn),
             false => slice.par_sort_by(ascending_order_fn),
-        }
+        })
     } else {
         match descending {
             true => slice.sort_by(descending_order_fn),
@@ -516,13 +518,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort::arg_sort(
-            self.name(),
-            self.downcast_iter().map(|arr| arr.iter()),
-            options,
-            self.null_count(),
-            self.len(),
-        )
+        self.as_binary().arg_sort(options)
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -535,22 +531,10 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     /// uphold this contract. If not, it will panic.
     ///
     fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        args_validate(self, other, descending)?;
-
-        let mut count: IdxSize = 0;
-        let vals: Vec<_> = self
-            .into_iter()
-            .map(|v| {
-                let i = count;
-                count += 1;
-                (i, v)
-            })
-            .collect_trusted();
-        arg_sort_multiple_impl(vals, other, descending)
+        self.as_binary().arg_sort_multiple(other, descending)
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkSort<BinaryType> for BinaryChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<BinaryType> {
         sort_with_fast_path!(self, options);
@@ -728,6 +712,37 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 }
 
 #[cfg(feature = "sort_multiple")]
+pub(crate) fn convert_sort_column_multi_sort(
+    s: &Series,
+    row_ordering: bool,
+) -> PolarsResult<Series> {
+    use DataType::*;
+    let out = match s.dtype() {
+        #[cfg(feature = "dtype-categorical")]
+        Categorical(_) => s.rechunk(),
+        Binary => s.clone(),
+        Utf8 => s.cast(&Binary).unwrap(),
+        Boolean => {
+            if row_ordering {
+                s.clone()
+            } else {
+                s.cast(&UInt8).unwrap()
+            }
+        }
+        _ => {
+            let phys = s.to_physical_repr().into_owned();
+            if !phys.dtype().is_numeric() {
+                return Err(PolarsError::ComputeError(
+                    format!("Cannot sort column of dtype: {:?}", s.dtype()).into(),
+                ));
+            }
+            phys
+        }
+    };
+    Ok(out)
+}
+
+#[cfg(feature = "sort_multiple")]
 pub(crate) fn prepare_arg_sort(
     columns: Vec<Series>,
     mut descending: Vec<bool>,
@@ -736,24 +751,8 @@ pub(crate) fn prepare_arg_sort(
 
     let mut columns = columns
         .iter()
-        .map(|s| {
-            use DataType::*;
-            match s.dtype() {
-                Float32 | Float64 | Int32 | Int64 | Utf8 | UInt32 | UInt64 => s.clone(),
-                #[cfg(feature = "dtype-categorical")]
-                Categorical(_) => s.rechunk(),
-                _ => {
-                    // small integers i8, u8 etc are casted to reduce compiler bloat
-                    // not that we don't expect any logical types at this point
-                    if s.bit_repr_is_large() {
-                        s.cast(&DataType::Int64).unwrap()
-                    } else {
-                        s.cast(&DataType::Int32).unwrap()
-                    }
-                }
-            }
-        })
-        .collect::<Vec<_>>();
+        .map(|s| convert_sort_column_multi_sort(s, false))
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let first = columns.remove(0);
 

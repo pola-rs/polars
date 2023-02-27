@@ -7,11 +7,12 @@ use base64::Engine as _;
 use polars_arrow::export::arrow::compute::substring::substring;
 use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
+#[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::{escape, NoExpand, Regex};
 
 use super::*;
-#[cfg(feature = "string_encoding")]
+#[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
@@ -22,15 +23,13 @@ fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Optio
 pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(not(feature = "binary_encoding"))]
     fn hex_decode(&self) -> PolarsResult<Utf8Chunked> {
-        panic!("activate 'dtype-binary' feature")
+        panic!("activate 'binary_encoding' feature")
     }
 
     #[cfg(feature = "binary_encoding")]
     fn hex_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
         let ca = self.as_utf8();
-        ca.cast_unchecked(&DataType::Binary)?
-            .binary()?
-            .hex_decode(strict)
+        ca.as_binary().hex_decode(strict)
     }
 
     #[must_use]
@@ -42,15 +41,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     #[cfg(not(feature = "binary_encoding"))]
     fn base64_decode(&self) -> PolarsResult<Utf8Chunked> {
-        panic!("activate 'dtype-binary' feature")
+        panic!("activate 'binary_encoding' feature")
     }
 
     #[cfg(feature = "binary_encoding")]
     fn base64_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
         let ca = self.as_utf8();
-        ca.cast_unchecked(&DataType::Binary)?
-            .binary()?
-            .base64_decode(strict)
+        ca.as_binary().base64_decode(strict)
     }
 
     #[must_use]

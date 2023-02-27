@@ -83,23 +83,41 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
     if td is None or isinstance(td, str):
         return td
     else:
-        d = td.days and f"{td.days}d" or ""
-        s = td.seconds and f"{td.seconds}s" or ""
-        us = td.microseconds and f"{td.microseconds}us" or ""
+        if td.days >= 0:
+            d = td.days and f"{td.days}d" or ""
+            s = td.seconds and f"{td.seconds}s" or ""
+            us = td.microseconds and f"{td.microseconds}us" or ""
+        else:
+            if not td.seconds and not td.microseconds:
+                d = td.days and f"{td.days}d" or ""
+                s = ""
+                us = ""
+            else:
+                corrected_d = td.days + 1
+                d = corrected_d and f"{corrected_d}d" or "-"
+                corrected_seconds = 24 * 3600 - (td.seconds + (td.microseconds > 0))
+                s = corrected_seconds and f"{corrected_seconds}s" or ""
+                us = td.microseconds and f"{10**6 - td.microseconds}us" or ""
+
         return f"{d}{s}{us}"
 
 
 def _datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
+    dt = dt.replace(tzinfo=timezone.utc)
     if tu == "ns":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+        nanos = dt.microsecond * 1000
+        return int(dt.timestamp()) * 1_000_000_000 + nanos
     elif tu == "us":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
+        micros = dt.microsecond
+        return int(dt.timestamp()) * 1_000_000 + micros
     elif tu == "ms":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
+        millis = dt.microsecond // 1000
+        return int(dt.timestamp()) * 1_000 + millis
     elif tu is None:
         # python has us precision
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
+        micros = dt.microsecond
+        return int(dt.timestamp()) * 1_000_000 + micros
     else:
         raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
 

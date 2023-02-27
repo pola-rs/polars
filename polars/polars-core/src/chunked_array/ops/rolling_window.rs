@@ -28,7 +28,8 @@ mod inner_mod {
 
     use arrow::array::{Array, PrimitiveArray};
     use arrow::bitmap::MutableBitmap;
-    use num::{Float, Zero};
+    use num_traits::pow::Pow;
+    use num_traits::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
     use polars_arrow::data_types::IsFloat;
     use polars_arrow::trusted_len::PushUnchecked;
@@ -182,7 +183,7 @@ mod inner_mod {
     where
         ChunkedArray<T>: IntoSeries,
         T: PolarsFloatType,
-        T::Native: Float + IsFloat + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
+        T::Native: Float + IsFloat + SubAssign + Pow<T::Native, Output = T::Native>,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         pub fn rolling_apply_float<F>(&self, window_size: usize, mut f: F) -> PolarsResult<Self>

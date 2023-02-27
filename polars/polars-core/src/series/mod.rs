@@ -23,7 +23,7 @@ use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
 pub use iterator::SeriesIter;
-use num::NumCast;
+use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
@@ -228,6 +228,10 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        // best leave as is.
+        if matches!(dtype, DataType::Unknown) {
+            return Ok(self.clone());
+        }
         match self.0.cast(dtype) {
             Ok(out) => Ok(out),
             Err(err) => {
@@ -687,12 +691,16 @@ impl Series {
             use DataType::*;
             match self.dtype() {
                 Boolean => self.cast(&DataType::Int64).unwrap().product(),
-                Int8 | UInt8 | Int16 | UInt16 => {
+                Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 }
                 Int64 => {
                     let ca = self.i64().unwrap();
+                    ca.prod_as_series()
+                }
+                UInt64 => {
+                    let ca = self.u64().unwrap();
                     ca.prod_as_series()
                 }
                 Float32 => {

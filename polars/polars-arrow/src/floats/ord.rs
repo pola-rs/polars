@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use num_traits::ToPrimitive;
+
 use crate::data_types::IsFloat;
 use crate::kernels::rolling::compare_fn_nan_max;
 
@@ -33,7 +35,7 @@ impl<T: IsFloat + PartialEq> PartialEq for OrdFloat<T> {
 
 impl<T: PartialEq + IsFloat> Eq for OrdFloat<T> {}
 
-impl<T: num::ToPrimitive> num::ToPrimitive for OrdFloat<T> {
+impl<T: ToPrimitive> ToPrimitive for OrdFloat<T> {
     fn to_isize(&self) -> Option<isize> {
         self.0.to_isize()
     }

@@ -3,10 +3,8 @@ use std::ops::Not;
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::compute;
 use arrow::compute::comparison;
-#[cfg(feature = "dtype-binary")]
-use arrow::scalar::BinaryScalar;
-use arrow::scalar::{PrimitiveScalar, Scalar, Utf8Scalar};
-use num::{NumCast, ToPrimitive};
+use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
+use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
@@ -56,7 +54,7 @@ where
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
-                    self.is_null()
+                    rhs.is_null()
                 }
             }
             _ => {
@@ -81,7 +79,7 @@ where
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
-                    self.is_not_null()
+                    rhs.is_not_null()
                 }
             }
             _ => {
@@ -488,7 +486,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             if let Some(value) = self.get(0) {
                 rhs.equal(value)
             } else {
-                self.is_null()
+                rhs.is_null()
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -508,7 +506,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             if let Some(value) = self.get(0) {
                 rhs.not_equal(value)
             } else {
-                self.is_not_null()
+                rhs.is_not_null()
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -609,7 +607,6 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl BinaryChunked {
     fn comparison(
         &self,
@@ -628,7 +625,6 @@ impl BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     type Item = BooleanChunked;
 
@@ -849,7 +845,6 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl BinaryChunked {
     fn binary_compare_scalar(
         &self,
@@ -861,7 +856,6 @@ impl BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkCompare<&[u8]> for BinaryChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &[u8]) -> BooleanChunked {
@@ -1012,7 +1006,6 @@ impl ChunkEqualElement for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkEqualElement for BinaryChunked {
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         let ca_other = other.as_ref().as_ref();

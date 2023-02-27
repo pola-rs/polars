@@ -93,7 +93,6 @@ dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
 dtype-struct = []
-dtype-binary = []
 
 parquet = ["arrow/io_parquet"]
 
@@ -161,11 +160,12 @@ comfy-table = { version = "6.1.4", optional = true, default_features = false }
 hashbrown.workspace = true
 indexmap = { version = "1", features = ["std"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
-num.workspace = true
+num-traits.workspace = true
 object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell.workspace = true
 polars-arrow = { version = "0.27.2", path = "../polars-arrow", features = ["compute"] }
 polars-error = { version = "0.27.2", path = "../polars-error" }
+polars-row = { version = "0.27.2", path = "../polars-row" }
 polars-utils = { version = "0.27.2", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }

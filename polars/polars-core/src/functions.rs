@@ -8,7 +8,7 @@ use std::ops::Add;
 use ahash::AHashSet;
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num::{Float, NumCast, ToPrimitive};
+use num_traits::{Float, NumCast, ToPrimitive};
 #[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
 

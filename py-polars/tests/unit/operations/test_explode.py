@@ -14,6 +14,14 @@ def test_explode_string() -> None:
     assert_series_equal(result, expected)
 
 
+def test_explode_multiple() -> None:
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [[5, 6], [7, 8]]})
+
+    expected = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+    assert_frame_equal(df.explode(["a", "b"]), expected)
+    assert_frame_equal(df.explode("a", "b"), expected)
+
+
 def test_groupby_flatten_list() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": [[1, 2], [2, 3], [4]]})
     result = df.groupby("group", maintain_order=True).agg(pl.col("values").flatten())
@@ -240,4 +248,14 @@ def test_list_struct_explode_6905() -> None:
         {"params": None},
         {"params": [1]},
         {"params": []},
+    ]
+
+
+def test_explode_binary() -> None:
+    assert pl.Series([[1, 2], [3]]).cast(
+        pl.List(pl.Binary)
+    ).arr.explode().to_list() == [
+        b"1",
+        b"2",
+        b"3",
     ]

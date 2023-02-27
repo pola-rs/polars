@@ -98,6 +98,8 @@ pub struct ParquetWriter<W> {
     row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
     data_pagesize_limit: Option<usize>,
+    /// Serialize columns in parallel
+    parallel: bool,
 }
 
 impl<W> ParquetWriter<W>
@@ -115,6 +117,7 @@ where
             statistics: false,
             row_group_size: None,
             data_pagesize_limit: None,
+            parallel: true,
         }
     }
 
@@ -146,6 +149,12 @@ where
         self
     }
 
+    /// Serialize columns in parallel
+    pub fn set_parallel(mut self, parallel: bool) -> Self {
+        self.parallel = parallel;
+        self
+    }
+
     fn materialize_options(&self) -> WriteOptions {
         WriteOptions {
             write_statistics: self.statistics,
@@ -169,6 +178,7 @@ where
             parquet_schema,
             encodings,
             options,
+            parallel: self.parallel,
         })
     }
 
@@ -195,12 +205,14 @@ fn prepare_rg_iter<'a>(
     parquet_schema: &'a SchemaDescriptor,
     encodings: &'a [Vec<Encoding>],
     options: WriteOptions,
+    parallel: bool,
 ) -> impl Iterator<Item = Result<RowGroupIter<'a, ArrowError>, ArrowError>> + 'a {
     let rb_iter = df.iter_chunks();
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
         _ => {
-            let row_group = create_serializer(batch, parquet_schema.fields(), encodings, options);
+            let row_group =
+                create_serializer(batch, parquet_schema.fields(), encodings, options, parallel);
 
             Some(row_group)
         }
@@ -229,6 +241,7 @@ pub struct BatchedWriter<W: Write> {
     parquet_schema: SchemaDescriptor,
     encodings: Vec<Vec<Encoding>>,
     options: WriteOptions,
+    parallel: bool,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -237,8 +250,13 @@ impl<W: Write> BatchedWriter<W> {
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let row_group_iter =
-            prepare_rg_iter(df, &self.parquet_schema, &self.encodings, self.options);
+        let row_group_iter = prepare_rg_iter(
+            df,
+            &self.parquet_schema,
+            &self.encodings,
+            self.options,
+            self.parallel,
+        );
         for group in row_group_iter {
             self.writer.write(group?)?;
         }
@@ -257,42 +275,54 @@ fn create_serializer<'a>(
     fields: &[ParquetType],
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
+    parallel: bool,
 ) -> Result<RowGroupIter<'a, ArrowError>, ArrowError> {
-    let columns = POOL.install(|| {
-        batch
-            .columns()
-            .par_iter()
-            .zip(fields)
-            .zip(encodings)
-            .flat_map(move |((array, type_), encoding)| {
-                let encoded_columns =
-                    array_to_columns(array, type_.clone(), options, encoding).unwrap();
+    let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
+        let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
 
-                encoded_columns
-                    .into_iter()
-                    .map(|encoded_pages| {
-                        // iterator over pages
-                        let pages = DynStreamingIterator::new(
-                            Compressor::new_from_vec(
-                                encoded_pages.map(|result| {
-                                    result.map_err(|e| {
-                                        ParquetError::FeatureNotSupported(format!(
-                                            "reraised in polars: {e}",
-                                        ))
-                                    })
-                                }),
-                                options.compression,
-                                vec![],
-                            )
-                            .map_err(|e| ArrowError::External(format!("{e}"), Box::new(e))),
-                        );
+        encoded_columns
+            .into_iter()
+            .map(|encoded_pages| {
+                // iterator over pages
+                let pages = DynStreamingIterator::new(
+                    Compressor::new_from_vec(
+                        encoded_pages.map(|result| {
+                            result.map_err(|e| {
+                                ParquetError::FeatureNotSupported(format!(
+                                    "reraised in polars: {e}",
+                                ))
+                            })
+                        }),
+                        options.compression,
+                        vec![],
+                    )
+                    .map_err(|e| ArrowError::External(format!("{e}"), Box::new(e))),
+                );
 
-                        Ok(pages)
-                    })
-                    .collect::<Vec<_>>()
+                Ok(pages)
             })
             .collect::<Vec<_>>()
-    });
+    };
+
+    let columns = if parallel {
+        POOL.install(|| {
+            batch
+                .columns()
+                .par_iter()
+                .zip(fields)
+                .zip(encodings)
+                .flat_map(func)
+                .collect::<Vec<_>>()
+        })
+    } else {
+        batch
+            .columns()
+            .iter()
+            .zip(fields)
+            .zip(encodings)
+            .flat_map(func)
+            .collect::<Vec<_>>()
+    };
 
     let row_group = DynIter::new(columns.into_iter());
 

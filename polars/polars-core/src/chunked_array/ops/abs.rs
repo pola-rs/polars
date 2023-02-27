@@ -1,4 +1,4 @@
-use num::Signed;
+use num_traits::Signed;
 
 use crate::prelude::*;
 

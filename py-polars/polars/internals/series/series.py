@@ -4,6 +4,7 @@ import contextlib
 import math
 import os
 import typing
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -530,11 +531,10 @@ class Series:
             return wrap_s(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
             return wrap_s(getattr(self._s, op_s)(Series(other)._s))
-        # recurse; the 'if' statement above will ensure we return early
-        if isinstance(other, (date, datetime, timedelta, str)):
-            other = Series("", [other])
-            return self._arithmetic(other, op_s, op_ffi)
-        if isinstance(other, float) and not self.is_float():
+        if (
+            isinstance(other, (float, date, datetime, timedelta, str))
+            and not self.is_float()
+        ):
             _s = sequence_to_pyseries("", [other])
             if "rhs" in op_ffi:
                 return wrap_s(getattr(_s, op_s)(self._s))
@@ -1416,6 +1416,99 @@ class Series:
         """
         return pli.wrap_df(self._s.to_dummies(separator))
 
+    def cut(
+        self,
+        bins: list[float],
+        labels: list[str] | None = None,
+        break_point_label: str = "break_point",
+        category_label: str = "category",
+    ) -> pli.DataFrame:
+        """
+        Bin values into discrete values.
+
+        Parameters
+        ----------
+        bins
+            Bins to create.
+        labels
+            Labels to assign to the bins. If given the length of labels must be
+            len(bins) + 1.
+        break_point_label
+            Name given to the breakpoint column.
+        category_label
+            Name given to the category column.
+
+        Returns
+        -------
+        DataFrame
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
+        >>> a.cut(bins=[-1, 1])
+        shape: (12, 3)
+        ┌──────┬─────────────┬──────────────┐
+        │ a    ┆ break_point ┆ category     │
+        │ ---  ┆ ---         ┆ ---          │
+        │ f64  ┆ f64         ┆ cat          │
+        ╞══════╪═════════════╪══════════════╡
+        │ -3.0 ┆ -1.0        ┆ (-inf, -1.0] │
+        │ -2.5 ┆ -1.0        ┆ (-inf, -1.0] │
+        │ -2.0 ┆ -1.0        ┆ (-inf, -1.0] │
+        │ -1.5 ┆ -1.0        ┆ (-inf, -1.0] │
+        │ ...  ┆ ...         ┆ ...          │
+        │ 1.0  ┆ 1.0         ┆ (-1.0, 1.0]  │
+        │ 1.5  ┆ inf         ┆ (1.0, inf]   │
+        │ 2.0  ┆ inf         ┆ (1.0, inf]   │
+        │ 2.5  ┆ inf         ┆ (1.0, inf]   │
+        └──────┴─────────────┴──────────────┘
+
+        """
+        var_nm = self.name
+
+        cuts_df = pli.DataFrame(
+            [
+                pli.Series(
+                    name=break_point_label, values=bins, dtype=Float64
+                ).extend_constant(float("inf"), 1)
+            ]
+        )
+
+        if labels:
+            if len(labels) != len(bins) + 1:
+                raise ValueError("expected more labels")
+            cuts_df = cuts_df.with_columns(
+                pli.Series(name=category_label, values=labels)
+            )
+        else:
+            cuts_df = cuts_df.with_columns(
+                pli.format(
+                    "({}, {}]",
+                    pli.col(break_point_label).shift_and_fill(1, float("-inf")),
+                    pli.col(break_point_label),
+                ).alias(category_label)
+            )
+
+        cuts_df = cuts_df.with_columns(pli.col(category_label).cast(Categorical))
+
+        result = (
+            self.cast(Float64)
+            .sort()
+            .to_frame()
+            .join_asof(
+                cuts_df,
+                left_on=var_nm,
+                right_on=break_point_label,
+                strategy="forward",
+            )
+        )
+        return result
+
     def value_counts(self, sort: bool = False) -> pli.DataFrame:
         """
         Count the unique values in a Series.
@@ -2049,6 +2142,12 @@ class Series:
             Place null values last instead of first.
 
         """
+        warnings.warn(
+            "`Series.argsort()` is deprecated in favor of `Series.arg_sort()`",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.arg_sort(descending, nulls_last)
 
     def arg_unique(self) -> Series:
         """
@@ -2514,8 +2613,8 @@ class Series:
 
         See Also
         --------
-        ListNameSpace.explode : Explode a list column
-        StringNameSpace.explode : Explode a string column
+        ListNameSpace.explode : Explode a list column.
+        StringNameSpace.explode : Explode a string column.
 
         """
 
@@ -4945,6 +5044,22 @@ class Series:
             If a single dimension is given, results in a flat Series of shape (len,).
             If a multiple dimensions are given, results in a Series of Lists with shape
             (rows, cols).
+
+        See Also
+        --------
+        ListNameSpace.explode : Explode a list column.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        >>> s.reshape((3, 3))
+        shape: (3,)
+        Series: 'foo' [list[i64]]
+        [
+                [1, 2, 3]
+                [4, 5, 6]
+                [7, 8, 9]
+        ]
 
         """
 

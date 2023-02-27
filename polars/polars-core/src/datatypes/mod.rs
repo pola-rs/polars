@@ -30,7 +30,7 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 pub use dtype::*;
 pub use field::*;
-use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
@@ -49,7 +49,6 @@ use crate::utils::Wrap;
 
 pub struct Utf8Type {}
 
-#[cfg(feature = "dtype-binary")]
 pub struct BinaryType {}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -98,7 +97,6 @@ impl PolarsDataType for Utf8Type {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl PolarsDataType for BinaryType {
     fn get_dtype() -> DataType {
         DataType::Binary
@@ -150,7 +148,6 @@ impl<T> PolarsSingleType for T where T: NativeType + PolarsDataType {}
 
 impl PolarsSingleType for Utf8Type {}
 
-#[cfg(feature = "dtype-binary")]
 impl PolarsSingleType for BinaryType {}
 
 pub type ListChunked = ChunkedArray<ListType>;
@@ -168,7 +165,6 @@ pub type Int128Chunked = ChunkedArray<Int128Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
-#[cfg(feature = "dtype-binary")]
 pub type BinaryChunked = ChunkedArray<BinaryType>;
 
 pub trait NumericNative:

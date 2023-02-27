@@ -52,6 +52,11 @@ impl ValueSize for ArrayRef {
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .get_values_size(),
+            DataType::LargeBinary => self
+                .as_any()
+                .downcast_ref::<BinaryArray<i64>>()
+                .unwrap()
+                .get_values_size(),
             _ => unimplemented!(),
         }
     }

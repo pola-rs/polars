@@ -218,7 +218,7 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             }
             _ => {
-                let ca = self.cast_unchecked(&DataType::UInt32).unwrap();
+                let ca = unsafe { self.cast_unchecked(&DataType::UInt32).unwrap() };
                 let ca = ca.u32().unwrap();
                 num_groups_proxy(ca, multithreaded, sorted)
             }
@@ -246,56 +246,10 @@ impl IntoGroupsProxy for BooleanChunked {
 impl IntoGroupsProxy for Utf8Chunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        let hb = RandomState::default();
-        let null_h = get_null_hash_value(hb.clone());
-
-        let out = if multithreaded {
-            let n_partitions = _set_partition_size();
-
-            let split = _split_offsets(self.len(), n_partitions);
-
-            let str_hashes = POOL.install(|| {
-                split
-                    .into_par_iter()
-                    .map(|(offset, len)| {
-                        let ca = self.slice(offset as i64, len);
-                        ca.into_iter()
-                            .map(|opt_s| {
-                                let hash = match opt_s {
-                                    Some(s) => hb.hash_single(s),
-                                    None => null_h,
-                                };
-                                // Safety:
-                                // the underlying data is tied to self
-                                unsafe {
-                                    std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(
-                                        BytesHash::new_from_str(opt_s, hash),
-                                    )
-                                }
-                            })
-                            .collect_trusted::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>()
-            });
-            groupby_threaded_num(str_hashes, 0, n_partitions as u64, sorted)
-        } else {
-            let str_hashes = self
-                .into_iter()
-                .map(|opt_s| {
-                    let hash = match opt_s {
-                        Some(s) => hb.hash_single(s),
-                        None => null_h,
-                    };
-                    BytesHash::new_from_str(opt_s, hash)
-                })
-                .collect_trusted::<Vec<_>>();
-            groupby(str_hashes.iter(), sorted)
-        };
-        Ok(out)
+        self.as_binary().group_tuples(multithreaded, sorted)
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl IntoGroupsProxy for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {

@@ -27,6 +27,7 @@ clippy:
 	    -p polars-utils \
 	    -p polars-ops \
 	    -p polars-error \
+	    -p polars-row \
 	    -p polars-time
 
 clippy-default:

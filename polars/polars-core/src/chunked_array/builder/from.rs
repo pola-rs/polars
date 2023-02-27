@@ -45,7 +45,6 @@ impl From<(&str, Utf8Array<i64>)> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl From<(&str, BinaryArray<i64>)> for BinaryChunked {
     fn from(tpl: (&str, BinaryArray<i64>)) -> Self {
         let name = tpl.0;

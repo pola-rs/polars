@@ -17,6 +17,7 @@ Manipulation/selection
     Series.clip_max
     Series.clip_min
     Series.clone
+    Series.cut
     Series.drop_nans
     Series.drop_nulls
     Series.explode

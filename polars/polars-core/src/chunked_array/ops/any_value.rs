@@ -1,8 +1,6 @@
 use std::convert::TryFrom;
 
 #[cfg(feature = "dtype-categorical")]
-use polars_arrow::is_valid::IsValid;
-#[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 
 #[cfg(feature = "object")]
@@ -37,7 +35,6 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
     // TODO: insert types
     match dtype {
         DataType::Utf8 => downcast_and_pack!(LargeStringArray, Utf8),
-        #[cfg(feature = "dtype-binary")]
         DataType::Binary => downcast_and_pack!(LargeBinaryArray, Binary),
         DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
         DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
@@ -130,6 +127,7 @@ impl<'a> AnyValue<'a> {
                         // so we set the array pointer with values of the dictionary array.
                         #[cfg(feature = "dtype-categorical")]
                         {
+                            use polars_arrow::is_valid::{IsValid as _};
                             if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
                                 let keys = arr.keys();
                                 let values = arr.values();
@@ -230,7 +228,6 @@ impl ChunkAnyValue for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkAnyValue for BinaryChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {

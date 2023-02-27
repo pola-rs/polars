@@ -132,7 +132,7 @@ def read_csv(
     skip_rows
         Start reading after ``skip_rows`` lines.
     dtypes
-        Overwrite dtypes during inference.
+        Overwrite dtypes for specific or all columns during schema inference.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -145,8 +145,11 @@ def read_csv(
         utf8 values to be treated as the empty string you can set this param True.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
-        First try ``infer_schema_length=0`` to read all columns as
-        ``pl.Utf8`` to check which values might cause an issue.
+        Before using this option, try to increase the number of lines used for schema
+        inference with e.g ```infer_schema_length=10000`` or override automatic dtype
+        inference for specific columns with the ``dtypes`` option or use
+        ``infer_schema_length=0`` to read all columns as ``pl.Utf8`` to check which
+        values might cause an issue.
     try_parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
@@ -156,6 +159,9 @@ def read_csv(
         Defaults to the number of physical cpu's of your system.
     infer_schema_length
         Maximum number of lines to read to infer schema.
+        If schema is inferred wrongly (e.g. as ``pl.Int64`` instead of ``pl.Float64``),
+        try to increase the number of lines used to infer the schema or override
+        inferred dtype for those columns with ``dtypes``.
         If set to 0, all columns will be read as ``pl.Utf8``.
         If set to ``None``, a full table scan will be done (slow).
     batch_size
@@ -727,7 +733,7 @@ def scan_ndjson(
     row_count_offset: int = 0,
 ) -> LazyFrame:
     """
-    Lazily read from a newline delimited JSON file.
+    Lazily read from a newline delimited JSON file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
@@ -843,6 +849,12 @@ def read_ipc(
     Returns
     -------
     DataFrame
+
+    Warnings
+    --------
+    If ``memory_map`` is set, the bytes on disk are mapped 1:1 to memory.
+    That means that you cannot write to the same filename.
+    E.g. ``pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`` will fail.
 
     """
     if use_pyarrow and n_rows and not memory_map:

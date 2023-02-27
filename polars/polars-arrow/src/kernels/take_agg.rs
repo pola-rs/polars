@@ -1,7 +1,7 @@
 //! kernels that combine take and aggregations.
 use arrow::array::{PrimitiveArray, Utf8Array};
 use arrow::types::NativeType;
-use num::{NumCast, ToPrimitive};
+use num_traits::{NumCast, ToPrimitive};
 
 use crate::array::PolarsArray;
 use crate::index::IdxSize;

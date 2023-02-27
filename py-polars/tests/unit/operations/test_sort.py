@@ -448,3 +448,11 @@ def test_sort_args() -> None:
 
     with pytest.raises(ValueError):
         df.sort("a", "b", nulls_last=True)
+
+
+def test_sort_type_coersion_6892() -> None:
+    df = pl.DataFrame({"a": [2, 1], "b": [2, 3]})
+    assert df.lazy().sort(pl.col("a") // 2).collect().to_dict(False) == {
+        "a": [1, 2],
+        "b": [3, 2],
+    }

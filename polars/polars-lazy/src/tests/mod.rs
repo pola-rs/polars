@@ -76,22 +76,30 @@ fn init_files() {
         "../../examples/datasets/foods1.csv",
         "../../examples/datasets/foods2.csv",
     ] {
-        let out_path1 = path.replace(".csv", ".parquet");
-        let out_path2 = path.replace(".csv", ".ipc");
+        for ext in [".parquet", ".ipc", ".ndjson"] {
+            let out_path = path.replace(".csv", ext);
 
-        for out_path in [out_path1, out_path2] {
             if std::fs::metadata(&out_path).is_err() {
                 let mut df = CsvReader::from_path(path).unwrap().finish().unwrap();
+                let f = std::fs::File::create(&out_path).unwrap();
 
-                if out_path.ends_with("parquet") {
-                    let f = std::fs::File::create(&out_path).unwrap();
-                    ParquetWriter::new(f)
-                        .with_statistics(true)
-                        .finish(&mut df)
-                        .unwrap();
-                } else {
-                    let f = std::fs::File::create(&out_path).unwrap();
-                    IpcWriter::new(f).finish(&mut df).unwrap();
+                match ext {
+                    ".parquet" => {
+                        ParquetWriter::new(f)
+                            .with_statistics(true)
+                            .finish(&mut df)
+                            .unwrap();
+                    }
+                    ".ipc" => {
+                        IpcWriter::new(f).finish(&mut df).unwrap();
+                    }
+                    ".ndjson" => {
+                        #[cfg(feature = "json")]
+                        {
+                            JsonWriter::new(f).finish(&mut df).unwrap()
+                        }
+                    }
+                    _ => panic!(),
                 }
             }
         }

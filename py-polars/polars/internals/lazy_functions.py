@@ -11,6 +11,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
+    Int32,
     Int64,
     PolarsDataType,
     SchemaDict,
@@ -1515,6 +1516,36 @@ def map(
     -------
     Expr
 
+    Examples
+    --------
+    >>> def test_func(a, b, c):
+    ...     return a + b + c
+    ...
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3, 4],
+    ...         "b": [4, 5, 6, 7],
+    ...     }
+    ... )
+    >>>
+    >>> df.with_columns(
+    ...     (
+    ...         pl.struct(["a", "b"]).map(
+    ...             lambda x: test_func(x.struct.field("a"), x.struct.field("b"), 1)
+    ...         )
+    ...     ).alias("a+b+c")
+    ... )
+    shape: (4, 3)
+    ┌─────┬─────┬───────┐
+    │ a   ┆ b   ┆ a+b+c │
+    │ --- ┆ --- ┆ ---   │
+    │ i64 ┆ i64 ┆ i64   │
+    ╞═════╪═════╪═══════╡
+    │ 1   ┆ 4   ┆ 6     │
+    │ 2   ┆ 5   ┆ 8     │
+    │ 3   ┆ 6   ┆ 10    │
+    │ 4   ┆ 7   ┆ 12    │
+    └─────┴─────┴───────┘
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
@@ -1558,6 +1589,41 @@ def apply(
     -------
     Expr
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [7, 2, 3, 4],
+    ...         "b": [2, 5, 6, 7],
+    ...     }
+    ... )
+    >>> df
+    shape: (4, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 7   ┆ 2   │
+    │ 2   ┆ 5   │
+    │ 3   ┆ 6   │
+    │ 4   ┆ 7   │
+    └─────┴─────┘
+
+    Calculate product of ``a``.
+
+    >>> df.with_columns(pl.col("a").apply(lambda x: x * x).alias("product_a"))
+    shape: (4, 3)
+    ┌─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ product_a │
+    │ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ i64       │
+    ╞═════╪═════╪═══════════╡
+    │ 7   ┆ 2   ┆ 49        │
+    │ 2   ┆ 5   ┆ 4         │
+    │ 3   ┆ 6   ┆ 9         │
+    │ 4   ┆ 7   ┆ 16        │
+    └─────┴─────┴───────────┘
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
@@ -1596,6 +1662,80 @@ def fold(
     If you simply want the first encountered expression as accumulator,
     consider using ``reduce``.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [3, 4, 5],
+    ...         "c": [5, 6, 7],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    │ 2   ┆ 4   ┆ 6   │
+    │ 3   ┆ 5   ┆ 7   │
+    └─────┴─────┴─────┘
+
+    Horizontally sum over all columns and add 1.
+
+    >>> df.select(
+    ...     pl.fold(acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
+    ...         "sum"
+    ...     ),
+    ... )
+    shape: (3, 1)
+    ┌─────┐
+    │ sum │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 10  │
+    │ 13  │
+    │ 16  │
+    └─────┘
+
+    You can also apply a condition/predicate on all columns:
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [0, 1, 2],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 0   │
+    │ 2   ┆ 1   │
+    │ 3   ┆ 2   │
+    └─────┴─────┘
+
+    >>> df.filter(
+    ...     pl.fold(
+    ...         acc=pl.lit(True),
+    ...         f=lambda acc, x: acc & x,
+    ...         exprs=pl.col("*") > 1,
+    ...     )
+    ... )
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 3   ┆ 2   │
+    └─────┴─────┘
     """
     # in case of pl.col("*")
     acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
@@ -1625,6 +1765,42 @@ def reduce(
     Notes
     -----
     See ``fold`` for the version with an explicit accumulator.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [0, 1, 2],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 0   │
+    │ 2   ┆ 1   │
+    │ 3   ┆ 2   │
+    └─────┴─────┘
+
+    Horizontally sum over all columns.
+
+    >>> df.select(
+    ...     pl.reduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
+    ... )
+    shape: (3, 1)
+    ┌─────┐
+    │ sum │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 3   │
+    │ 5   │
+    └─────┘
 
     """
     # in case of pl.col("*")
@@ -1666,6 +1842,43 @@ def cumfold(
     If you simply want the first encountered expression as accumulator,
     consider using ``cumreduce``.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [3, 4, 5],
+    ...         "c": [5, 6, 7],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    │ 2   ┆ 4   ┆ 6   │
+    │ 3   ┆ 5   ┆ 7   │
+    └─────┴─────┴─────┘
+
+    >>> df.select(
+    ...     pl.cumfold(
+    ...         acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")
+    ...     ).alias("cumfold"),
+    ... )
+    shape: (3, 1)
+    ┌───────────┐
+    │ cumfold   │
+    │ ---       │
+    │ struct[3] │
+    ╞═══════════╡
+    │ {2,5,10}  │
+    │ {3,7,13}  │
+    │ {4,9,16}  │
+    └───────────┘
+
     """  # noqa: W505
     # in case of pl.col("*")
     acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
@@ -1694,6 +1907,42 @@ def cumreduce(
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
 
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": [3, 4, 5],
+    ...         "c": [5, 6, 7],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    │ 2   ┆ 4   ┆ 6   │
+    │ 3   ┆ 5   ┆ 7   │
+    └─────┴─────┴─────┘
+
+    >>> df.select(
+    ...     pl.cumreduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
+    ...         "cumreduce"
+    ...     ),
+    ... )
+    shape: (3, 1)
+    ┌───────────┐
+    │ cumreduce │
+    │ ---       │
+    │ struct[3] │
+    ╞═══════════╡
+    │ {1,4,9}   │
+    │ {2,6,12}  │
+    │ {3,8,15}  │
+    └───────────┘
     """  # noqa: W505
     # in case of pl.col("*")
     if isinstance(exprs, pli.Expr):
@@ -1704,7 +1953,44 @@ def cumreduce(
 
 
 def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
-    """Evaluate columnwise or elementwise with a bitwise OR operation."""
+    """
+    Evaluate columnwise or elementwise with a bitwise OR operation.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [True, False, True],
+    ...         "b": [False, False, False],
+    ...         "c": [False, True, False],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ┌───────┬───────┬───────┐
+    │ a     ┆ b     ┆ c     │
+    │ ---   ┆ ---   ┆ ---   │
+    │ bool  ┆ bool  ┆ bool  │
+    ╞═══════╪═══════╪═══════╡
+    │ true  ┆ false ┆ false │
+    │ false ┆ false ┆ true  │
+    │ true  ┆ false ┆ false │
+    └───────┴───────┴───────┘
+
+    Compares the values (in binary format) and return true if any value in the column
+    is true.
+
+    >>> df.select(pl.any("*"))
+    shape: (1, 3)
+    ┌──────┬───────┬──────┐
+    │ a    ┆ b     ┆ c    │
+    │ ---  ┆ ---   ┆ ---  │
+    │ bool ┆ bool  ┆ bool │
+    ╞══════╪═══════╪══════╡
+    │ true ┆ false ┆ true │
+    └──────┴───────┴──────┘
+
+    """
     if isinstance(name, str):
         return col(name).any()
     else:
@@ -1881,7 +2167,7 @@ def arange(
     high: int | pli.Expr | pli.Series,
     step: int = ...,
     *,
-    eager: bool = False,
+    eager: bool = ...,
     dtype: PolarsDataType | None = ...,
 ) -> pli.Expr | pli.Series:
     ...
@@ -1914,7 +2200,8 @@ def arange(
     step
         Step size of the range.
     eager
-        If eager evaluation is `True`, a Series is returned instead of an Expr.
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     dtype
         Apply an explicit integer dtype to the resulting expression (default is Int64).
 
@@ -1939,29 +2226,63 @@ def arange(
 @deprecated_alias(reverse="descending")
 @deprecate_nonkeyword_arguments()
 def arg_sort_by(
-    exprs: pli.Expr | str | Sequence[pli.Expr | str],
-    descending: Sequence[bool] | bool = False,
+    exprs: IntoExpr | Iterable[IntoExpr],
+    descending: bool | Sequence[bool] = False,
 ) -> pli.Expr:
     """
-    Find the indexes that would sort the columns.
-
-    Argsort by multiple columns. The first column will be used for the ordering.
-    If there are duplicates in the first column, the second column will be used to
-    determine the ordering and so on.
+    Return the row indices that would sort the columns.
 
     Parameters
     ----------
     exprs
-        Columns use to determine the ordering.
+        Column(s) to arg sort by. Accepts expression input. Strings are parsed as column
+        names.
     descending
-        Sort descending; default is ascending.
+        Sort in descending order. When sorting by multiple columns, can be specified
+        per column by passing a sequence of booleans.
+
+    Examples
+    --------
+    Pass a single column name to compute the arg sort by that column.
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [0, 1, 1, 0],
+    ...         "b": [3, 2, 3, 2],
+    ...     }
+    ... )
+    >>> df.select(pl.arg_sort_by("a"))
+    shape: (4, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 0   │
+    │ 3   │
+    │ 1   │
+    │ 2   │
+    └─────┘
+
+    Compute the arg sort by multiple columns by passing a list of columns.
+
+    >>> df.select(pl.arg_sort_by(["a", "b"], descending=True))
+    shape: (4, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 2   │
+    │ 1   │
+    │ 0   │
+    │ 3   │
+    └─────┘
 
     """
-    if isinstance(exprs, str) or not isinstance(exprs, Sequence):
-        exprs = [exprs]
+    exprs = pli.selection_to_pyexpr_list(exprs)
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
-    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(py_arg_sort_by(exprs, descending))
 
 
@@ -1993,7 +2314,7 @@ def argsort_by(
         DeprecationWarning,
         stacklevel=2,
     )
-    return pli.arg_sort_by(exprs, descending)
+    return pli.arg_sort_by(exprs, descending=descending)
 
 
 def duration(
@@ -2164,17 +2485,22 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
+@deprecated_alias(sep="separator")
 @deprecate_nonkeyword_arguments()
-def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
+def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> pli.Expr:
     """
-    Horizontally concat Utf8 Series in linear time. Non-Utf8 columns are cast to Utf8.
+    Horizontally concatenate columns into a single string column.
+
+    Operates in linear time.
 
     Parameters
     ----------
     exprs
-        Columns to concat into a Utf8 Series.
-    sep
-        String value that will be used to separate the values.
+        Columns to concatenate into a single string column. Accepts expression input.
+        Strings are parsed as column names, other non-expression inputs are parsed as
+        literals. Non-``Utf8`` columns are cast to ``Utf8``.
+    separator
+        String that will be used to separate the values of each column.
 
     Examples
     --------
@@ -2186,16 +2512,14 @@ def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli
     ...     }
     ... )
     >>> df.with_columns(
-    ...     [
-    ...         pl.concat_str(
-    ...             [
-    ...                 pl.col("a") * 2,
-    ...                 pl.col("b"),
-    ...                 pl.col("c"),
-    ...             ],
-    ...             sep=" ",
-    ...         ).alias("full_sentence"),
-    ...     ]
+    ...     pl.concat_str(
+    ...         [
+    ...             pl.col("a") * 2,
+    ...             pl.col("b"),
+    ...             pl.col("c"),
+    ...         ],
+    ...         separator=" ",
+    ...     ).alias("full_sentence"),
     ... )
     shape: (3, 4)
     ┌─────┬──────┬──────┬───────────────┐
@@ -2210,7 +2534,7 @@ def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_concat_str(exprs, sep))
+    return pli.wrap_expr(_concat_str(exprs, separator))
 
 
 def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
@@ -2264,7 +2588,7 @@ def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
         if len(s) > 0:
             exprs.append(lit(s))
 
-    return concat_str(exprs, sep="")
+    return concat_str(exprs, separator="")
 
 
 def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.Expr:
@@ -2430,60 +2754,72 @@ def select(
 
 
 @overload
-def struct(
-    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
-    eager: Literal[True],
-    schema: SchemaDict | None = None,
-) -> pli.Series:
-    ...
-
-
-@overload
-def struct(
-    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
-    eager: Literal[False],
-    schema: SchemaDict | None = None,
+def struct(  # type: ignore[misc]
+    exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    eager: Literal[False] = ...,
+    schema: SchemaDict | None = ...,
+    **named_exprs: IntoExpr,
 ) -> pli.Expr:
     ...
 
 
 @overload
 def struct(
-    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
-    eager: bool = False,
-    schema: SchemaDict | None = None,
+    exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    eager: Literal[True] = ...,
+    schema: SchemaDict | None = ...,
+    **named_exprs: IntoExpr,
+) -> pli.Series:
+    ...
+
+
+@overload
+def struct(
+    exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    eager: bool = ...,
+    schema: SchemaDict | None = ...,
+    **named_exprs: IntoExpr,
 ) -> pli.Expr | pli.Series:
     ...
 
 
-@deprecate_nonkeyword_arguments()
+@deprecate_nonkeyword_arguments(allowed_args=["exprs"])
 def struct(
-    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
+    exprs: IntoExpr | Iterable[IntoExpr] = None,
     eager: bool = False,
     schema: SchemaDict | None = None,
+    **named_exprs: IntoExpr,
 ) -> pli.Expr | pli.Series:
     """
-    Collect several columns into a Series of dtype Struct.
+    Collect columns into a struct column.
 
     Parameters
     ----------
     exprs
-        Columns/Expressions to collect into a Struct.
+        Column(s) to collect into a struct column. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
     eager
-        Evaluate immediately.
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     schema
-        Optional schema dict that explicitly defines the struct field dtypes.
+        Optional schema that explicitly defines the struct field dtypes.
+    **named_exprs
+        Additional column(s) to collect into the struct column, specified as keyword
+        arguments. The columns will be renamed to the keyword used.
 
     Examples
     --------
-    >>> pl.DataFrame(
+    Collect all columns of a dataframe into a struct by passing ``pl.all()``.
+
+    >>> df = pl.DataFrame(
     ...     {
     ...         "int": [1, 2],
     ...         "str": ["a", "b"],
     ...         "bool": [True, None],
     ...         "list": [[1, 2], [3]],
     ...     }
-    ... ).select([pl.struct(pl.all()).alias("my_struct")])
+    ... )
+    >>> df.select(pl.struct(pl.all()).alias("my_struct"))
     shape: (2, 1)
     ┌─────────────────────┐
     │ my_struct           │
@@ -2494,31 +2830,40 @@ def struct(
     │ {2,"b",null,[3]}    │
     └─────────────────────┘
 
-    Only collect specific columns as a struct:
+    Collect selected columns into a struct by passing a list of columns.
 
-    >>> df = pl.DataFrame(
-    ...     {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
-    ... )
-    >>> df.with_columns(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
-    shape: (4, 4)
-    ┌─────┬───────┬─────┬─────────────┐
-    │ a   ┆ b     ┆ c   ┆ a_and_b     │
-    │ --- ┆ ---   ┆ --- ┆ ---         │
-    │ i64 ┆ str   ┆ i64 ┆ struct[2]   │
-    ╞═════╪═══════╪═════╪═════════════╡
-    │ 1   ┆ one   ┆ 9   ┆ {1,"one"}   │
-    │ 2   ┆ two   ┆ 8   ┆ {2,"two"}   │
-    │ 3   ┆ three ┆ 7   ┆ {3,"three"} │
-    │ 4   ┆ four  ┆ 6   ┆ {4,"four"}  │
-    └─────┴───────┴─────┴─────────────┘
+    >>> df.select(pl.struct(["int", False]).alias("my_struct"))
+    shape: (2, 1)
+    ┌───────────┐
+    │ my_struct │
+    │ ---       │
+    │ struct[2] │
+    ╞═══════════╡
+    │ {1,false} │
+    │ {2,false} │
+    └───────────┘
+
+    Use keyword arguments to easily name each struct field.
+
+    >>> df.select(pl.struct(p="int", q="bool").alias("my_struct")).schema
+    {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
+    exprs = pli.selection_to_pyexpr_list(exprs)
+    if named_exprs:
+        exprs.extend(
+            pli.expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+            for name, expr in named_exprs.items()
+        )
+
+    expr = pli.wrap_expr(_as_struct(exprs))
+    if schema:
+        expr = expr.cast(Struct(schema))
+
     if eager:
-        s = pli.select(struct(exprs, eager=False)).to_series()
-        return s.cast(Struct(schema)) if schema else s
+        return pli.select(expr).to_series()
     else:
-        e = pli.wrap_expr(_as_struct(pli.selection_to_pyexpr_list(exprs)))
-        return e.cast(Struct(schema)) if schema else e
+        return expr
 
 
 @overload
@@ -2571,7 +2916,8 @@ def repeat(
     n
         repeat `n` times
     eager
-        Run eagerly and collect into a `Series`
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     name
         Only used in `eager` mode. As expression, us `alias`
 
@@ -2580,6 +2926,12 @@ def repeat(
         if name is None:
             name = ""
         dtype = py_type_to_dtype(type(value))
+        if (
+            dtype == Int64
+            and isinstance(value, int)
+            and -(2**31) <= value <= 2**31 - 1
+        ):
+            dtype = Int32
         s = pli.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
         return s
     else:
@@ -2590,8 +2942,7 @@ def repeat(
 
 @overload
 def arg_where(
-    condition: pli.Expr | pli.Series,
-    eager: Literal[False] = ...,
+    condition: pli.Expr | pli.Series, eager: Literal[False] = ...
 ) -> pli.Expr:
     ...
 
@@ -2617,7 +2968,8 @@ def arg_where(
     condition
         Boolean expression to evaluate
     eager
-        Whether to apply this function eagerly (as opposed to lazily).
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
 
     Examples
     --------

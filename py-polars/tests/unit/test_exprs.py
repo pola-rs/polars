@@ -29,6 +29,35 @@ from polars.datatypes import (
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
+def test_col_select() -> None:
+    df = pl.DataFrame(
+        {
+            "ham": [1, 2, 3],
+            "hamburger": [11, 22, 33],
+            "foo": [3, 2, 1],
+            "bar": ["a", "b", "c"],
+        }
+    )
+
+    # Single column
+    assert df.select(pl.col("foo")).columns == ["foo"]
+    # Regex
+    assert df.select(pl.col("*")).columns == ["ham", "hamburger", "foo", "bar"]
+    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
+    assert df.select(pl.col("*").exclude("ham")).columns == ["hamburger", "foo", "bar"]
+    # Multiple inputs
+    assert df.select(pl.col(["hamburger", "foo"])).columns == ["hamburger", "foo"]
+    assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
+    assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
+    # Dtypes
+    assert df.select(pl.col(pl.Utf8)).columns == ["bar"]
+    assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
+        "ham",
+        "hamburger",
+        "foo",
+    ]
+
+
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(pl.max([pl.col("A"), pl.col("B")]))
@@ -42,6 +71,21 @@ def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().suffix("_reverse")])
     assert out.columns == ["A_reverse", "fruits_reverse", "B_reverse", "cars_reverse"]
+
+
+def test_pipe() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _multiply(expr: pl.Expr, mul: int) -> pl.Expr:
+        return expr * mul
+
+    result = df.select(
+        pl.col("foo").pipe(_multiply, mul=2),
+        pl.col("bar").pipe(_multiply, mul=3),
+    )
+
+    expected = pl.DataFrame({"foo": [2, 4, 6], "bar": [18, None, 24]})
+    assert_frame_equal(result, expected)
 
 
 def test_prefix(fruits_cars: pl.DataFrame) -> None:
@@ -452,6 +496,14 @@ def test_logical_boolean() -> None:
     with pytest.raises(ValueError, match="ambiguous"):
         pl.col("colx") or pl.col("coly")
 
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        df.select([(pl.col("a") > pl.col("b")) and (pl.col("b") > pl.col("b"))])
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
+
 
 # https://github.com/pola-rs/polars/issues/4951
 def test_ewm_with_multiple_chunks() -> None:
@@ -565,6 +617,13 @@ def test_map_dict() -> None:
             "country_code": ["FR", None, "ES", "DE"],
             "remapped": ["France", "Not specified", "ES", "Germany"],
         }
+
+    # 7132
+    df = pl.DataFrame({"text": ["abc"]})
+    mapper = {"abc": "123"}
+    assert df.select(pl.col("text").map_dict(mapper).str.replace_all("1", "-")).to_dict(
+        False
+    ) == {"text": ["-23"]}
 
 
 def test_lit_dtypes() -> None:

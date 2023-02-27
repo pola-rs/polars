@@ -24,17 +24,13 @@ bitflags! {
         const VERBOSE = 0x01;
         /// Indicates that window expression's [`GroupTuples`] may be cached.
         const CACHE_WINDOW_EXPR = 0x02;
-        /// Indicates that a groupby operations groups may overlap.
-        /// If this is the case, an `explode` will yield more values than rows in original `df`,
-        /// this breaks some assumptions
-        const OVERLAPPING_GROUPS = 0x04;
         /// A `sort()` in a window function is one level flatter
         /// Assume we have column a : i32
         /// than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
         /// whereas a window function returns array: i32
         /// So a `sort().list()` in a groupby returns: list[list[i32]]
         /// whereas in a window function would return: list[i32]
-        const FINALIZE_WINDOW_AS_LIST = 0x08;
+        const FINALIZE_WINDOW_AS_LIST = 0x04;
     }
 }
 
@@ -229,21 +225,6 @@ impl ExecutionState {
     pub(super) fn cache_window(&self) -> bool {
         let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
         flags.contains(StateFlags::CACHE_WINDOW_EXPR)
-    }
-
-    /// Indicates that a groupby operations groups may overlap.
-    /// If this is the case, an `explode` will yield more values than rows in original `df`,
-    /// this breaks some assumptions
-    pub(super) fn has_overlapping_groups(&self) -> bool {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
-        flags.contains(StateFlags::OVERLAPPING_GROUPS)
-    }
-    #[cfg(feature = "dynamic_groupby")]
-    pub(super) fn set_has_overlapping_groups(&self) {
-        self.set_flags(&|mut flags| {
-            flags |= StateFlags::OVERLAPPING_GROUPS;
-            flags
-        })
     }
 
     /// More verbose logging

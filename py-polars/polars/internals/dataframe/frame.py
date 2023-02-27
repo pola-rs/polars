@@ -106,6 +106,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         CsvEncoding,
         FillNullStrategy,
+        FrameInitTypes,
         IntoExpr,
         IpcCompression,
         JoinStrategy,
@@ -216,13 +217,13 @@ class DataFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Notice that the dtype is automatically inferred as a polars Int64:
+    Notice that the dtypes are automatically inferred as polars Int64:
 
     >>> df.dtypes
     [Int64, Int64]
 
-    To specify the frame schema you supply the `schema` parameter with a dictionary
-    of (name,dtype) pairs...
+    To specify a more detailed/specific frame schema you can supply the `schema`
+    parameter with a dictionary of (name,dtype) pairs...
 
     >>> data = {"col1": [0, 2], "col2": [3, 7]}
     >>> df2 = pl.DataFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
@@ -320,15 +321,7 @@ class DataFrame:
     @deprecated_alias(columns="schema")
     def __init__(
         self,
-        data: (
-            Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series]
-            | Sequence[Any]
-            | np.ndarray[Any, Any]
-            | pa.Table
-            | pd.DataFrame
-            | pli.Series
-            | None
-        ) = None,
+        data: FrameInitTypes | None = None,
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
@@ -1258,7 +1251,10 @@ class DataFrame:
 
     def _div(self, other: Any, floordiv: bool) -> Self:
         if isinstance(other, pli.Series):
-            other = other.to_frame()
+            if floordiv:
+                return self.select(pli.all() // pli.lit(other))
+            return self.select(pli.all() / pli.lit(other))
+
         elif not isinstance(other, DataFrame):
             s = _prepare_other_arg(other, length=len(self))
             other = DataFrame([s.rename(f"n{i}") for i in range(len(self.columns))])
@@ -1266,6 +1262,7 @@ class DataFrame:
         orig_dtypes = other.dtypes
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
         df = self._from_pydf(self._df.div_df(other._df))
+
         df = (
             df
             if not floordiv
@@ -1563,12 +1560,23 @@ class DataFrame:
 
             # df[:, 1]
             if isinstance(col_selection, int):
+                if (col_selection >= 0 and col_selection >= self.width) or (
+                    col_selection < 0 and col_selection < -self.width
+                ):
+                    raise ValueError(
+                        f'Column index "{col_selection}" is out of bounds.'
+                    )
                 series = self.to_series(col_selection)
                 return series[row_selection]
 
             if isinstance(col_selection, list):
                 # df[:, [1, 2]]
                 if is_int_sequence(col_selection):
+                    for i in col_selection:
+                        if (i >= 0 and i >= self.width) or (i < 0 and i < -self.width):
+                            raise ValueError(
+                                f'Column index "{col_selection}" is out of bounds.'
+                            )
                     series_list = [self.to_series(i) for i in col_selection]
                     df = self.__class__(series_list)
                     return df[row_selection]
@@ -5138,7 +5146,9 @@ class DataFrame:
         )
 
     def explode(
-        self, columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr]
+        self,
+        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
+        *more_columns: str | pli.Expr,
     ) -> Self:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -5148,6 +5158,8 @@ class DataFrame:
         columns
             Name of the column(s) to explode. Columns must be of datatype List or Utf8.
             Accepts ``col`` expressions as input as well.
+        *more_columns
+            Additional names of columns to explode, specified as positional arguments.
 
         Returns
         -------
@@ -5192,7 +5204,10 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy().explode(columns).collect(no_optimization=True)._df
+            self.lazy()
+            .explode(columns, *more_columns)
+            .collect(no_optimization=True)
+            ._df
         )
 
     @deprecated_alias(aggregate_fn="aggregate_function")
@@ -6828,7 +6843,9 @@ class DataFrame:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            If set to True, the order of the sampled rows will be shuffled. If
+            set to False (default), the order of the returned rows will be
+            neither stable nor fully random.
         seed
             Seed for the random number generator. If set to None (default), a random
             seed is generated using the ``random`` module.

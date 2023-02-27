@@ -53,7 +53,6 @@ dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "t
 dtype-time = ["polars-core/dtype-time", "polars-time/dtype-time"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
-dtype-binary = ["polars-core/dtype-binary"]
 object = ["polars-core/object"]
 date_offset = ["polars-time"]
 list_take = ["polars-ops/list_take"]
@@ -61,7 +60,7 @@ list_count = ["polars-ops/list_count"]
 trigonometry = []
 sign = []
 timezones = ["polars-time/timezones", "polars-core/timezones", "regex"]
-
+binary_encoding = ["polars-ops/binary_encoding"]
 true_div = []
 
 # operations

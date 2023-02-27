@@ -8,7 +8,7 @@ use std::ops::Add;
 use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
-use num::{Float, ToPrimitive};
+use num_traits::{Float, ToPrimitive};
 use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 pub use quantile::*;
 pub use var::*;
@@ -459,7 +459,6 @@ impl ChunkAggSeries for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkAggSeries for BinaryChunked {
     fn sum_as_series(&self) -> Series {
         BinaryChunked::full_null(self.name(), 1).into_series()

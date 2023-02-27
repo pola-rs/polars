@@ -489,6 +489,26 @@ def test_date_range() -> None:
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
 
+@pytest.mark.parametrize(
+    ("time_unit", "expected_micros"),
+    [
+        ("ms", 986000),
+        ("us", 986759),
+        ("ns", 986759),
+        (None, 986759),
+    ],
+)
+def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) -> None:
+    micros = 986759
+    start = datetime(2000, 5, 30, 1, 53, 4, micros)
+    stop = datetime(2000, 5, 31, 1, 53, 4, micros)
+    result = pl.date_range(start, stop, time_unit=time_unit)
+    expected_start = start.replace(microsecond=expected_micros)
+    expected_stop = stop.replace(microsecond=expected_micros)
+    assert result[0] == expected_start
+    assert result[1] == expected_stop
+
+
 def test_range_invalid_unit() -> None:
     with pytest.raises(PanicException, match="'D' not supported"):
         pl.date_range(
@@ -1760,6 +1780,21 @@ def test_strptime_with_invalid_tz() -> None:
         pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z", tz_aware=True
         )
+    with pytest.raises(
+        ComputeError,
+        match="Cannot use strptime with both 'utc=True' and tz-aware Datetime.",
+    ):
+        pl.Series(["2020-01-01 03:00:00"]).str.strptime(
+            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S", utc=True
+        )
+
+
+def test_strptime_unguessable_format() -> None:
+    with pytest.raises(
+        ComputeError,
+        match="Could not find an appropriate format to parse dates, please define a fmt",
+    ):
+        pl.Series(["foobar"]).str.strptime(pl.Datetime)
 
 
 def test_convert_time_zone_invalid() -> None:

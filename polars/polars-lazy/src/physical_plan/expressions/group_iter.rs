@@ -17,7 +17,11 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedFlat(_) => {
                 self.groups();
                 let s = self.series();
-                Box::new(FlatIter::new(s.array_ref(0).clone(), self.groups.len()))
+                Box::new(FlatIter::new(
+                    s.array_ref(0).clone(),
+                    self.groups.len(),
+                    s.dtype(),
+                ))
             }
             AggState::AggregatedList(_) => {
                 let s = self.series();
@@ -86,8 +90,13 @@ struct FlatIter<'a> {
 }
 
 impl<'a> FlatIter<'a> {
-    fn new(array: ArrayRef, len: usize) -> Self {
-        let mut series_container = Box::pin(Series::try_from(("", array.clone())).unwrap());
+    fn new(array: ArrayRef, len: usize, logical: &DataType) -> Self {
+        let mut series_container = Box::pin(
+            Series::try_from(("", array.clone()))
+                .unwrap()
+                .cast(logical)
+                .unwrap(),
+        );
         let ref_s = &mut *series_container as *mut Series;
         Self {
             array,
@@ -112,5 +121,8 @@ impl<'a> Iterator for FlatIter<'a> {
             self.item.swap(&mut arr);
             Some(Some(self.item))
         }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.offset))
     }
 }

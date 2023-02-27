@@ -1,10 +1,13 @@
+use std::path::{Path, PathBuf};
+
 use polars_core::prelude::*;
 use polars_io::RowCount;
 
-use super::{LazyFrame, ScanArgsAnonymous};
+use super::{LazyFileListReader, LazyFrame, ScanArgsAnonymous};
 
+#[derive(Clone)]
 pub struct LazyJsonLineReader {
-    pub(crate) path: String,
+    pub(crate) path: PathBuf,
     pub(crate) batch_size: Option<usize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
@@ -16,8 +19,9 @@ pub struct LazyJsonLineReader {
 
 impl LazyJsonLineReader {
     pub fn new(path: String) -> Self {
+        // TODO: Change argument type to impl AsRef<Path>
         LazyJsonLineReader {
-            path,
+            path: path.into(),
             batch_size: None,
             low_memory: false,
             rechunk: true,
@@ -62,20 +66,15 @@ impl LazyJsonLineReader {
         self
     }
 
-    /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
-    pub fn with_rechunk(mut self, toggle: bool) -> Self {
-        self.rechunk = toggle;
-        self
-    }
-
     #[must_use]
     pub fn with_batch_size(mut self, batch_size: Option<usize>) -> Self {
         self.batch_size = batch_size;
         self
     }
+}
 
-    pub fn finish(self) -> PolarsResult<LazyFrame> {
+impl LazyFileListReader for LazyJsonLineReader {
+    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let options = ScanArgsAnonymous {
             name: "JSON SCAN",
             infer_schema_length: self.infer_schema_length,
@@ -86,5 +85,36 @@ impl LazyJsonLineReader {
         };
 
         LazyFrame::anonymous_scan(std::sync::Arc::new(self), options)
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn with_path(mut self, path: PathBuf) -> Self {
+        self.path = path;
+        self
+    }
+
+    fn rechunk(&self) -> bool {
+        self.rechunk
+    }
+
+    /// Rechunk the memory to contiguous chunks when parsing is done.
+    #[must_use]
+    fn with_rechunk(mut self, toggle: bool) -> Self {
+        self.rechunk = toggle;
+        self
+    }
+
+    /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
+    /// be guaranteed.
+    fn n_rows(&self) -> Option<usize> {
+        self.n_rows
+    }
+
+    /// Add a `row_count` column.
+    fn row_count(&self) -> Option<&RowCount> {
+        self.row_count.as_ref()
     }
 }

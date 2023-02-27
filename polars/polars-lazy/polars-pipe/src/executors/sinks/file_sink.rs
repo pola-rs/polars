@@ -61,6 +61,9 @@ impl ParquetSink {
             .with_data_pagesize_limit(options.data_pagesize_limit)
             .with_statistics(options.statistics)
             .with_row_group_size(options.row_group_size)
+            // This is important! Otherwise we will deadlock
+            // See: #7074
+            .set_parallel(false)
             .batched(schema)?;
 
         let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;

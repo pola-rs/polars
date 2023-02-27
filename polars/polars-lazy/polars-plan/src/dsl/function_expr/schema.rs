@@ -142,7 +142,6 @@ impl FunctionExpr {
                     FromRadix { .. } => with_dtype(DataType::Int32),
                 }
             }
-            #[cfg(feature = "dtype-binary")]
             BinaryExpr(s) => {
                 use BinaryFunction::*;
                 match s {

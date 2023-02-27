@@ -1,5 +1,5 @@
 pub(crate) mod multiple_keys;
-mod single_keys;
+pub(super) mod single_keys;
 mod single_keys_dispatch;
 mod single_keys_inner;
 mod single_keys_left;
@@ -22,10 +22,8 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "asof_join")]
 pub(crate) use single_keys::create_probe_table;
-use single_keys::*;
 #[cfg(feature = "asof_join")]
-pub(crate) use single_keys_dispatch::prepare_strs;
-use single_keys_inner::*;
+pub(crate) use single_keys_dispatch::prepare_bytes;
 use single_keys_left::*;
 use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
@@ -260,7 +258,6 @@ macro_rules! impl_zip_outer_join {
 }
 impl_zip_outer_join!(BooleanChunked);
 impl_zip_outer_join!(Utf8Chunked);
-#[cfg(feature = "dtype-binary")]
 impl_zip_outer_join!(BinaryChunked);
 
 impl ZipOuterJoinColumn for Float32Chunked {

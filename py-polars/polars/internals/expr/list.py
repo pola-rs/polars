@@ -647,6 +647,10 @@ class ExprListNameSpace:
         -------
         Exploded column with the datatype of the list elements.
 
+        See Also
+        --------
+        ExprNameSpace.reshape: Reshape this Expr to a flat Series or a Series of Lists.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})

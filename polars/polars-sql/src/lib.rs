@@ -43,6 +43,19 @@ mod test {
     }
 
     #[test]
+    fn test_nested_expr() -> PolarsResult<()> {
+        let df = create_sample_df()?;
+        let mut context = SQLContext::try_new()?;
+        context.register("df", df.clone().lazy());
+        let df_sql = context
+            .execute(r#"SELECT * FROM df WHERE (a > 3)"#)?
+            .collect()?;
+        let df_pl = df.lazy().filter(col("a").gt(lit(3))).collect()?;
+        assert_eq!(df_sql, df_pl);
+        Ok(())
+    }
+
+    #[test]
     fn test_groupby_simple() -> PolarsResult<()> {
         let df = create_sample_df()?;
         let mut context = SQLContext::try_new()?;
@@ -469,6 +482,55 @@ mod test {
         assert!(df_2.frame_equal(&expected));
     }
 
+    fn assert_sql_to_polars(df: &DataFrame, sql: &str, f: impl FnOnce(LazyFrame) -> LazyFrame) {
+        let mut context = SQLContext::try_new().unwrap();
+        context.register("df", df.clone().lazy());
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let df_pl = f(df.clone().lazy()).collect().unwrap();
+        assert!(df_sql.frame_equal(&df_pl));
+    }
+
+    #[test]
+    fn test_arr_agg() {
+        let df = create_sample_df().unwrap();
+        let exprs = vec![
+            (
+                "SELECT ARRAY_AGG(a) AS a FROM df",
+                vec![col("a").list().alias("a")],
+            ),
+            (
+                "SELECT ARRAY_AGG(a) AS a, ARRAY_AGG(b) as b FROM df",
+                vec![col("a").list().alias("a"), col("b").list().alias("b")],
+            ),
+            (
+                "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
+                vec![col("a")
+                    .sort_by(vec![col("a")], vec![false])
+                    .list()
+                    .alias("a")],
+            ),
+            (
+                "SELECT ARRAY_AGG(a) AS a FROM df",
+                vec![col("a").list().alias("a")],
+            ),
+            (
+                "SELECT unnest(ARRAY_AGG(DISTINCT a)) FROM df",
+                vec![col("a").unique_stable().list().explode().alias("a")],
+            ),
+            (
+                "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
+                vec![col("a")
+                    .sort_by(vec![col("b")], vec![false])
+                    .head(Some(2))
+                    .list()],
+            ),
+        ];
+
+        for (sql, expr) in exprs {
+            assert_sql_to_polars(&df, sql, |df| df.select(&expr));
+        }
+    }
+
     #[test]
     #[cfg(feature = "csv")]
     fn read_csv_tbl_func() {
@@ -524,5 +586,50 @@ mod test {
             .collect()
             .unwrap();
         assert!(df_sql.frame_equal(&expected));
+    }
+
+    #[test]
+    #[cfg(feature = "parquet")]
+    fn read_parquet_tbl() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            CREATE TABLE foods1 AS
+            SELECT *
+            FROM read_parquet('../../examples/datasets/foods1.parquet')"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let create_tbl_res = df! {
+            "Response" => ["Create Table"]
+        }
+        .unwrap();
+        assert!(df_sql.frame_equal(&create_tbl_res));
+        let df_2 = context
+            .execute(r#"SELECT * FROM foods1"#)
+            .unwrap()
+            .collect()
+            .unwrap();
+        assert_eq!(df_2.height(), 27);
+        assert_eq!(df_2.width(), 4);
+    }
+    #[test]
+    #[cfg(feature = "ipc")]
+    fn read_ipc_tbl() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            CREATE TABLE foods1 AS
+            SELECT *
+            FROM read_ipc('../../examples/datasets/foods1.ipc')"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let create_tbl_res = df! {
+            "Response" => ["Create Table"]
+        }
+        .unwrap();
+        assert!(df_sql.frame_equal(&create_tbl_res));
+        let df_2 = context
+            .execute(r#"SELECT * FROM foods1"#)
+            .unwrap()
+            .collect()
+            .unwrap();
+        assert_eq!(df_2.height(), 27);
+        assert_eq!(df_2.width(), 4);
     }
 }

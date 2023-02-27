@@ -62,37 +62,16 @@ where
 
 impl TakeChunked for Utf8Chunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|[chunk_idx, array_idx]| {
-                let arr = arrs.get_unchecked(*chunk_idx as usize);
-                arr.get_unchecked(*array_idx as usize)
-            })
-            .collect_trusted();
-        ca.rename(self.name());
-        ca.set_sorted_flag(sorted);
-        ca
+        self.as_binary()
+            .take_chunked_unchecked(by, sorted)
+            .to_utf8()
     }
 
     unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
-        let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|opt_idx| {
-                opt_idx.and_then(|[chunk_idx, array_idx]| {
-                    let arr = arrs.get_unchecked(chunk_idx as usize);
-                    arr.get_unchecked(array_idx as usize)
-                })
-            })
-            .collect_trusted();
-
-        ca.rename(self.name());
-        ca
+        self.as_binary().take_opt_chunked_unchecked(by).to_utf8()
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl TakeChunked for BinaryChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();

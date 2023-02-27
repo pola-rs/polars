@@ -2,8 +2,9 @@ use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
-    Function as SQLFunction, JoinConstraint, TrimWhereField, Value as SqlValue,
+    ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
+    Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
+    Value as SqlValue,
 };
 
 use crate::context::TABLES;
@@ -64,6 +65,7 @@ impl SqlExprVisitor {
             SqlExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
             SqlExpr::Floor { expr, .. } => self.visit_expr(expr),
             SqlExpr::Ceil { expr, .. } => self.visit_expr(expr),
+            SqlExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
             SqlExpr::Between {
                 expr,
                 negated,
@@ -81,6 +83,7 @@ impl SqlExprVisitor {
             SqlExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
             SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any()),
             SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all()),
+            SqlExpr::Nested(expr) => self.visit_expr(expr),
             other => Err(PolarsError::ComputeError(
                 format!("SQL Expr {:?} was not supported in polars-sql yet!", other).into(),
             )),
@@ -258,6 +261,56 @@ impl SqlExprVisitor {
             (Some(TrimWhereField::Trailing), None) => expr.str().rstrip(None),
             (Some(TrimWhereField::Trailing), Some(val)) => expr.str().rstrip(Some(val)),
         })
+    }
+
+    /// Visit a SQL `ARRAY_AGG` expression
+    fn visit_arr_agg(&self, expr: &ArrayAgg) -> PolarsResult<Expr> {
+        let mut base = self.visit_expr(&expr.expr)?;
+
+        if let Some(order_by) = expr.order_by.as_ref() {
+            let (order_by, descending) = self.visit_order_by(order_by)?;
+            base = base.sort_by(vec![order_by], vec![descending]);
+        }
+
+        if let Some(limit) = &expr.limit {
+            let limit = match self.visit_expr(&limit)? {
+                Expr::Literal(lit) => match lit {
+                    LiteralValue::UInt32(n) => n as usize,
+                    LiteralValue::UInt64(n) => n as usize,
+                    LiteralValue::Int32(n) => n as usize,
+                    LiteralValue::Int64(n) => n as usize,
+                    _ => {
+                        return Err(PolarsError::ComputeError(
+                            "Limit in ARRAY_AGG must be a positive integer".into(),
+                        ))
+                    }
+                },
+                _ => {
+                    return Err(PolarsError::ComputeError(
+                        "Limit in ARRAY_AGG must be a positive integer".into(),
+                    ))
+                }
+            };
+
+            base = base.head(Some(limit));
+        }
+
+        if expr.distinct {
+            base = base.unique_stable();
+        }
+
+        if expr.within_group {
+            return Err(PolarsError::ComputeError(
+                "ARRAY_AGG WITHIN GROUP is not yet supported".into(),
+            ));
+        }
+        Ok(base.list())
+    }
+
+    fn visit_order_by(&self, order_by: &OrderByExpr) -> PolarsResult<(Expr, bool)> {
+        let expr = self.visit_expr(&order_by.expr)?;
+        let descending = order_by.asc.unwrap_or(false);
+        Ok((expr, descending))
     }
 
     fn err(&self, expr: &Expr) -> PolarsResult<Expr> {

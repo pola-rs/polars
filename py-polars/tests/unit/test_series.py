@@ -537,6 +537,18 @@ def test_arrow() -> None:
     out = a.to_arrow()
     assert out == pa.array([1, 2, 3, None])
 
+    b = pl.Series("b", [1.0, 2.0, 3.0, None])
+    out = b.to_arrow()
+    assert out == pa.array([1.0, 2.0, 3.0, None])
+
+    c = pl.Series("c", ["A", "BB", "CCC", None])
+    out = c.to_arrow()
+    assert out == pa.array(["A", "BB", "CCC", None], type=pa.large_string())
+
+    d = pl.Series("d", [None, None, None], pl.Null)
+    out = d.to_arrow()
+    assert out == pa.nulls(3)
+
     s = cast(
         pl.Series,
         pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))),
@@ -948,19 +960,41 @@ def test_object() -> None:
 
 
 def test_repeat() -> None:
-    s = pl.repeat(1, 10, eager=True)
+    s = pl.repeat(2**31 - 1, 3, eager=True)
+    assert s.dtype == pl.Int32
+    assert s.len() == 3
+    assert s.to_list() == [2**31 - 1] * 3
+    s = pl.repeat(-(2**31), 4, eager=True)
+    assert s.dtype == pl.Int32
+    assert s.len() == 4
+    assert s.to_list() == [-(2**31)] * 4
+    s = pl.repeat(2**31, 5, eager=True)
     assert s.dtype == pl.Int64
-    assert s.len() == 10
-    s = pl.repeat("foo", 10, eager=True)
+    assert s.len() == 5
+    assert s.to_list() == [2**31] * 5
+    s = pl.repeat(-(2**31) - 1, 3, eager=True)
+    assert s.dtype == pl.Int64
+    assert s.len() == 3
+    assert s.to_list() == [-(2**31) - 1] * 3
+    s = pl.repeat("foo", 2, eager=True)
     assert s.dtype == pl.Utf8
-    assert s.len() == 10
+    assert s.len() == 2
+    assert s.to_list() == ["foo"] * 2
     s = pl.repeat(1.0, 5, eager=True)
     assert s.dtype == pl.Float64
     assert s.len() == 5
-    assert s.to_list() == [1.0, 1.0, 1.0, 1.0, 1.0]
-    s = pl.repeat(True, 5, eager=True)
+    assert s.to_list() == [1.0] * 5
+    s = pl.repeat(True, 4, eager=True)
     assert s.dtype == pl.Boolean
-    assert s.len() == 5
+    assert s.len() == 4
+    assert s.to_list() == [True] * 4
+    s = pl.repeat(None, 7, eager=True)
+    assert s.dtype == pl.Null
+    assert s.len() == 7
+    assert s.to_list() == [None] * 7
+    s = pl.repeat(0, 0, eager=True)
+    assert s.dtype == pl.Int32
+    assert s.len() == 0
 
 
 def test_shape() -> None:
@@ -1631,6 +1665,17 @@ def test_arg_sort() -> None:
 
     expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
+
+
+def test_argsort_deprecated() -> None:
+    s = pl.Series("a", [5, 3, 4, 1, 2])
+    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
+    with pytest.deprecated_call():
+        assert_series_equal(s.argsort(), expected)
+
+    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
+    with pytest.deprecated_call():
+        assert_series_equal(s.argsort(descending=True), expected_descending)
 
 
 def test_arg_min_and_arg_max() -> None:
@@ -2482,3 +2527,44 @@ def test_numpy_series_arithmetic() -> None:
     result_pow2 = sx**y
     expected = pl.Series([1.0, 16.0], dtype=pl.Float64)
     assert_series_equal(result_pow2, expected)  # type: ignore[arg-type]
+
+
+def test_from_epoch_seq_input() -> None:
+    seq_input = [1147880044]
+    expected = pl.Series([datetime(2006, 5, 17, 15, 34, 4)])
+    result = pl.from_epoch(seq_input)
+    assert_series_equal(result, expected)
+
+
+def test_cut() -> None:
+    a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
+    out = a.cut(bins=[-1, 1])
+
+    assert out.shape == (12, 3)
+    assert out.filter(pl.col("break_point") < 1e9).to_dict(False) == {
+        "a": [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0],
+        "break_point": [-1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0],
+        "category": [
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+        ],
+    }
+
+    # test cut on integers #4939
+    inf = float("inf")
+    df = pl.DataFrame({"a": list(range(5))})
+    ser = df.select("a").to_series()
+    assert ser.cut(bins=[-1, 1]).rows() == [
+        (0.0, 1.0, "(-1.0, 1.0]"),
+        (1.0, 1.0, "(-1.0, 1.0]"),
+        (2.0, inf, "(1.0, inf]"),
+        (3.0, inf, "(1.0, inf]"),
+        (4.0, inf, "(1.0, inf]"),
+    ]

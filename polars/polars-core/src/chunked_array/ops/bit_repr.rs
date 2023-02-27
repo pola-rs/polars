@@ -138,11 +138,13 @@ where
                 .collect::<Vec<_>>();
             unsafe { UInt32Chunked::from_chunks(self.name(), chunks) }
         } else {
-            self.cast_unchecked(&DataType::UInt32)
-                .unwrap()
-                .u32()
-                .unwrap()
-                .clone()
+            unsafe {
+                self.cast_unchecked(&DataType::UInt32)
+                    .unwrap()
+                    .u32()
+                    .unwrap()
+                    .clone()
+            }
         }
     }
 }

@@ -5,7 +5,16 @@ import os
 import random
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterable,
+    NoReturn,
+    Sequence,
+    TypeVar,
+    cast,
+)
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -48,9 +57,13 @@ if TYPE_CHECKING:
     from polars.polars import PyExpr
 
     if sys.version_info >= (3, 11):
-        from typing import Self
+        from typing import Concatenate, ParamSpec, Self
     else:
-        from typing_extensions import Self
+        from typing_extensions import Concatenate, ParamSpec, Self
+
+    T = TypeVar("T")
+    P = ParamSpec("P")
+
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
@@ -134,7 +147,7 @@ def expr_to_lit_or_expr(
         unaliased_expr = expr.meta.undo_aliases()
         if unaliased_expr.meta.has_multiple_outputs():
             expr_name = expr_output_name(expr)
-            expr = cast(Expr, pli.struct(expr if expr_name is None else unaliased_expr))
+            expr = pli.struct(expr if expr_name is None else unaliased_expr)
             name = name or expr_name
 
     return expr if name is None else expr.alias(name)
@@ -683,6 +696,46 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.keep_name())
+
+    def pipe(
+        self,
+        function: Callable[Concatenate[Expr, P], T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        r"""
+        Offers a structured way to apply a sequence of user-defined functions (UDFs).
+
+        Parameters
+        ----------
+        function
+            Callable; will receive the expression as the first parameter,
+            followed by any given args/kwargs.
+        args
+            Arguments to pass to the UDF.
+        kwargs
+            Keyword arguments to pass to the UDF.
+
+        Examples
+        --------
+        >>> def extract_number(expr):
+        ...     return expr.str.extract(r"\d+", 0).cast(pl.Int64)
+        ...
+        >>> df = pl.DataFrame({"a": ["a: 1", "b: 2", "c: 3"]})
+        >>> df.with_columns(pl.col("a").pipe(extract_number))
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        """
+        return function(self, *args, **kwargs)
 
     def prefix(self, prefix: str) -> Self:
         """
@@ -3324,8 +3377,8 @@ class Expr:
 
         See Also
         --------
-        ExprListNameSpace.explode : Explode a list column
-        ExprStringNameSpace.explode : Explode a string column
+        ExprListNameSpace.explode : Explode a list column.
+        ExprStringNameSpace.explode : Explode a string column.
 
         """
         warnings.warn(
@@ -5462,6 +5515,10 @@ class Expr:
             If a multiple dimensions are given, results in a Series of Lists with shape
             (rows, cols).
 
+        See Also
+        --------
+        ExprListNameSpace.explode : Explode a list column.
+
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
@@ -6298,8 +6355,9 @@ class Expr:
             #   - one column DataFrame in other cases.
             df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
 
+            # For struct we always apply mapping to the first column
             column = df.columns[0]
-            input_dtype = df.select(column).dtypes[0]
+            input_dtype = df.dtypes[0]
             remap_key_column = f"__POLARS_REMAP_KEY_{column}"
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"

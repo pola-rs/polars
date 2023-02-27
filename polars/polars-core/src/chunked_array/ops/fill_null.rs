@@ -2,7 +2,7 @@ use std::ops::Add;
 
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num::{Bounded, NumCast, One, Zero};
+use num_traits::{Bounded, NumCast, One, Zero};
 use polars_arrow::kernels::set::set_at_nulls;
 use polars_arrow::trusted_len::FromIteratorReversed;
 use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
@@ -54,18 +54,10 @@ impl Series {
         let out = match s.dtype() {
             Boolean => fill_null_bool(s.bool().unwrap(), strategy),
             Utf8 => {
-                #[cfg(feature = "dtype-binary")]
-                {
-                    let s = unsafe { s.cast_unchecked(&Binary)? };
-                    let out = s.fill_null(strategy)?;
-                    return unsafe { out.cast_unchecked(&Utf8) };
-                }
-                #[cfg(not(feature = "dtype-binary"))]
-                {
-                    panic!("activate 'dtype-binary' feature")
-                }
+                let s = unsafe { s.cast_unchecked(&Binary)? };
+                let out = s.fill_null(strategy)?;
+                return unsafe { out.cast_unchecked(&Utf8) };
             }
-            #[cfg(feature = "dtype-binary")]
             Binary => {
                 let ca = s.binary().unwrap();
                 fill_null_binary(ca, strategy).map(|ca| ca.into_series())
@@ -164,7 +156,6 @@ where
         .collect_reversed()
 }
 
-#[cfg(feature = "dtype-binary")]
 fn fill_backward_limit_binary(ca: &BinaryChunked, limit: IdxSize) -> BinaryChunked {
     let mut cnt = 0;
     let mut previous = None;
@@ -361,7 +352,6 @@ fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResu
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 fn fill_null_binary(ca: &BinaryChunked, strategy: FillNullStrategy) -> PolarsResult<BinaryChunked> {
     // nothing to fill
     if !ca.has_validity() {
@@ -433,7 +423,6 @@ impl ChunkFillNullValue<bool> for BooleanChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkFillNullValue<&[u8]> for BinaryChunked {
     fn fill_null_with_values(&self, value: &[u8]) -> PolarsResult<Self> {
         self.set(&self.is_null(), Some(value))

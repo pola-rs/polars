@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::Bitmap;
+use num_traits::{One, Zero};
 pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
 pub use series::*;
@@ -282,7 +283,6 @@ macro_rules! match_dtype_to_logical_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_binary:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
             DataType::Utf8 => $macro_utf8!($($opt_args)*),
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => $macro_binary!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]
@@ -831,20 +831,20 @@ where
 #[inline]
 pub(crate) fn index_to_chunked_index<
     I: Iterator<Item = Idx>,
-    Idx: PartialOrd + std::ops::AddAssign + std::ops::SubAssign + num::Zero + num::One,
+    Idx: PartialOrd + std::ops::AddAssign + std::ops::SubAssign + Zero + One,
 >(
     chunk_lens: I,
     index: Idx,
 ) -> (Idx, Idx) {
     let mut index_remainder = index;
-    let mut current_chunk_idx = num::Zero::zero();
+    let mut current_chunk_idx = Zero::zero();
 
     for chunk_len in chunk_lens {
         if chunk_len > index_remainder {
             break;
         } else {
             index_remainder -= chunk_len;
-            current_chunk_idx += num::One::one();
+            current_chunk_idx += One::one();
         }
     }
     (current_chunk_idx, index_remainder)

@@ -1078,3 +1078,18 @@ fn test_try_parse_dates_3380() -> PolarsResult<()> {
     assert_eq!(df.column("validdate")?.null_count(), 0);
     Ok(())
 }
+
+#[test]
+fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
+    let csv = r#"
+"ABC","DEF",
+"24.5","  4.1"
+"#;
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let col_1 = df.column("ABC").unwrap();
+    let col_2 = df.column("DEF").unwrap();
+    assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
+    assert_eq!(col_2.get(0)?, AnyValue::Float64(4.1));
+    Ok(())
+}

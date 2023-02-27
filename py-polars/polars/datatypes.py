@@ -85,6 +85,7 @@ PythonDataType: TypeAlias = Union[
     Type[Tuple[Any, ...]],
     Type[bytes],
     Type[Decimal],
+    Type[None],
 ]
 
 SchemaDefinition: TypeAlias = Union[
@@ -131,6 +132,9 @@ class DataTypeClass(type):
     def _string_repr(cls) -> str:
         return dtype_str_repr(cls)
 
+    def base_type(cls) -> PolarsDataType:
+        return cls
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -147,6 +151,22 @@ class DataType(metaclass=DataTypeClass):
 
     def _string_repr(self) -> str:
         return dtype_str_repr(self)
+
+    @classmethod
+    def base_type(cls) -> PolarsDataType:
+        """
+        Return this DataType's fundamental/root type class.
+
+        Examples
+        --------
+        >>> pl.Datetime("ns").base_type()
+        Datetime
+        >>> pl.List(pl.Int32).base_type()
+        List
+        >>> pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]).base_type()
+        Struct
+        """
+        return cls
 
 
 class NumericType(DataType):
@@ -549,6 +569,7 @@ class _DataTypeMappings:
             Decimal: Float64,
             bytes: Binary,
             object: Object,
+            None.__class__: Null,
         }
 
     @property
@@ -578,8 +599,7 @@ class _DataTypeMappings:
             Time: time,
             Binary: bytes,
             List: list,
-            # don't really know what type could be used in python
-            Null: None,  # type: ignore[dict-item]
+            Null: None.__class__,
         }
 
     @property
@@ -611,6 +631,7 @@ class _DataTypeMappings:
             time: pa.time64("us"),
             datetime: pa.timestamp("us"),
             timedelta: pa.duration("us"),
+            None.__class__: pa.null(),
         }
 
     @property
@@ -639,6 +660,7 @@ class _DataTypeMappings:
             Duration("us"): pa.duration("us"),
             Duration("ns"): pa.duration("ns"),
             Time: pa.time64("us"),
+            Null: pa.null(),
         }
 
 
@@ -811,7 +833,7 @@ def maybe_cast(
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):
         try:
-            el = py_type(el)  # type: ignore[call-arg]
+            el = py_type(el)  # type: ignore[call-arg, misc]
         except Exception:
             raise ValueError(
                 f"Cannot convert Python type {type(el)} to {dtype}"
