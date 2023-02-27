@@ -2,7 +2,7 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
-use num::NumCast;
+use num_traits::NumCast;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;

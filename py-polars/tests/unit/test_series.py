@@ -1667,6 +1667,17 @@ def test_arg_sort() -> None:
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
+def test_argsort_deprecated() -> None:
+    s = pl.Series("a", [5, 3, 4, 1, 2])
+    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
+    with pytest.deprecated_call():
+        assert_series_equal(s.argsort(), expected)
+
+    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
+    with pytest.deprecated_call():
+        assert_series_equal(s.argsort(descending=True), expected_descending)
+
+
 def test_arg_min_and_arg_max() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
     assert s.arg_min() == 3
@@ -2516,3 +2527,44 @@ def test_numpy_series_arithmetic() -> None:
     result_pow2 = sx**y
     expected = pl.Series([1.0, 16.0], dtype=pl.Float64)
     assert_series_equal(result_pow2, expected)  # type: ignore[arg-type]
+
+
+def test_from_epoch_seq_input() -> None:
+    seq_input = [1147880044]
+    expected = pl.Series([datetime(2006, 5, 17, 15, 34, 4)])
+    result = pl.from_epoch(seq_input)
+    assert_series_equal(result, expected)
+
+
+def test_cut() -> None:
+    a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
+    out = a.cut(bins=[-1, 1])
+
+    assert out.shape == (12, 3)
+    assert out.filter(pl.col("break_point") < 1e9).to_dict(False) == {
+        "a": [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0],
+        "break_point": [-1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0],
+        "category": [
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+        ],
+    }
+
+    # test cut on integers #4939
+    inf = float("inf")
+    df = pl.DataFrame({"a": list(range(5))})
+    ser = df.select("a").to_series()
+    assert ser.cut(bins=[-1, 1]).rows() == [
+        (0.0, 1.0, "(-1.0, 1.0]"),
+        (1.0, 1.0, "(-1.0, 1.0]"),
+        (2.0, inf, "(1.0, inf]"),
+        (3.0, inf, "(1.0, inf]"),
+        (4.0, inf, "(1.0, inf]"),
+    ]

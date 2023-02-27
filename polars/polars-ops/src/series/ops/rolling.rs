@@ -1,9 +1,10 @@
-use std::ops::SubAssign;
-
-use polars_core::export::num;
-use polars_core::export::num::{Float, FromPrimitive};
 use polars_core::prelude::*;
-use polars_core::utils::with_unstable_series;
+#[cfg(feature = "moment")]
+use {
+    polars_core::export::num::{self, Float, FromPrimitive},
+    polars_core::utils::with_unstable_series,
+    std::ops::SubAssign,
+};
 
 use crate::series::ops::SeriesSealed;
 

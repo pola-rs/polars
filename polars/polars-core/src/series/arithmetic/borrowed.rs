@@ -92,7 +92,7 @@ impl NumOpsDispatch for BinaryChunked {
 
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {
-    use num::{CheckedDiv, ToPrimitive, Zero};
+    use num_traits::{CheckedDiv, One, ToPrimitive, Zero};
 
     use super::*;
     use crate::utils::align_chunks_binary;
@@ -115,8 +115,7 @@ pub mod checked {
     impl<T> NumOpsDispatchChecked for ChunkedArray<T>
     where
         T: PolarsIntegerType,
-        T::Native:
-            CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + num::Zero + num::One,
+        T::Native: CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + Zero + One,
         ChunkedArray<T>: IntoSeries,
     {
         fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {

@@ -235,9 +235,9 @@ fn using_string_cache() -> bool {
 }
 
 #[pyfunction]
-fn concat_str(s: Vec<dsl::PyExpr>, sep: &str) -> dsl::PyExpr {
+fn concat_str(s: Vec<dsl::PyExpr>, separator: &str) -> dsl::PyExpr {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    polars_rs::lazy::dsl::concat_str(s, sep).into()
+    polars_rs::lazy::dsl::concat_str(s, separator).into()
 }
 
 #[pyfunction]

@@ -106,6 +106,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         CsvEncoding,
         FillNullStrategy,
+        FrameInitTypes,
         IntoExpr,
         IpcCompression,
         JoinStrategy,
@@ -216,13 +217,13 @@ class DataFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Notice that the dtype is automatically inferred as a polars Int64:
+    Notice that the dtypes are automatically inferred as polars Int64:
 
     >>> df.dtypes
     [Int64, Int64]
 
-    To specify the frame schema you supply the `schema` parameter with a dictionary
-    of (name,dtype) pairs...
+    To specify a more detailed/specific frame schema you can supply the `schema`
+    parameter with a dictionary of (name,dtype) pairs...
 
     >>> data = {"col1": [0, 2], "col2": [3, 7]}
     >>> df2 = pl.DataFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
@@ -320,15 +321,7 @@ class DataFrame:
     @deprecated_alias(columns="schema")
     def __init__(
         self,
-        data: (
-            Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series]
-            | Sequence[Any]
-            | np.ndarray[Any, Any]
-            | pa.Table
-            | pd.DataFrame
-            | pli.Series
-            | None
-        ) = None,
+        data: FrameInitTypes | None = None,
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
@@ -6850,7 +6843,9 @@ class DataFrame:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            If set to True, the order of the sampled rows will be shuffled. If
+            set to False (default), the order of the returned rows will be
+            neither stable nor fully random.
         seed
             Seed for the random number generator. If set to None (default), a random
             seed is generated using the ``random`` module.

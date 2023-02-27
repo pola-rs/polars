@@ -1,9 +1,11 @@
+use num_traits::pow::Pow;
+use num_traits::{clamp_max, clamp_min};
+
 use crate::prelude::*;
 
 impl Series {
     /// Round underlying floating point array to given decimal.
     pub fn round(&self, decimals: u32) -> PolarsResult<Self> {
-        use num::traits::Pow;
         if let Ok(ca) = self.f32() {
             // Note we do the computation on f64 floats to not loose precision
             // when the computation is done, we cast to f32
@@ -82,7 +84,6 @@ impl Series {
 
     /// Clamp underlying values to the `max` value.
     pub fn clip_max(mut self, max: AnyValue<'_>) -> PolarsResult<Self> {
-        use num::traits::clamp_max;
         if self.dtype().is_numeric() {
             macro_rules! apply_clip {
                 ($pl_type:ty, $ca:expr) => {{
@@ -105,8 +106,6 @@ impl Series {
 
     /// Clamp underlying values to the `min` value.
     pub fn clip_min(mut self, min: AnyValue<'_>) -> PolarsResult<Self> {
-        use num::traits::clamp_min;
-
         if self.dtype().is_numeric() {
             macro_rules! apply_clip {
                 ($pl_type:ty, $ca:expr) => {{

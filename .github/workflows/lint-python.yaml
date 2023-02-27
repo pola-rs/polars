@@ -36,7 +36,7 @@ jobs:
         run: |
           black --check .
           blackdoc --check .
-          ruff .
+          ruff . --exit-non-zero-on-fix
 
 
   lint-rust:

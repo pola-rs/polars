@@ -132,6 +132,9 @@ class DataTypeClass(type):
     def _string_repr(cls) -> str:
         return dtype_str_repr(cls)
 
+    def base_type(cls) -> PolarsDataType:
+        return cls
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -148,6 +151,22 @@ class DataType(metaclass=DataTypeClass):
 
     def _string_repr(self) -> str:
         return dtype_str_repr(self)
+
+    @classmethod
+    def base_type(cls) -> PolarsDataType:
+        """
+        Return this DataType's fundamental/root type class.
+
+        Examples
+        --------
+        >>> pl.Datetime("ns").base_type()
+        Datetime
+        >>> pl.List(pl.Int32).base_type()
+        List
+        >>> pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]).base_type()
+        Struct
+        """
+        return cls
 
 
 class NumericType(DataType):

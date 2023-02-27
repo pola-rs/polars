@@ -41,8 +41,19 @@ def test_dtype_temporal_units() -> None:
         assert inferred_dtype.tu == "us"  # type: ignore[union-attr]
 
 
+def test_dtype_base_type() -> None:
+    assert pl.Date.base_type() is pl.Date
+    assert pl.List(pl.Int32).base_type() is pl.List
+    assert (
+        pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]).base_type()
+        is pl.Struct
+    )
+    for dtype in datatypes.DATETIME_DTYPES:
+        assert dtype.base_type() is pl.Datetime
+
+
 def test_get_idx_type() -> None:
-    assert datatypes.get_idx_type() == datatypes.UInt32
+    assert datatypes.get_idx_type() == pl.UInt32
 
 
 def test_dtypes_picklable() -> None:

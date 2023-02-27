@@ -186,6 +186,38 @@ impl ALogicalPlan {
         }
     }
 
+    pub fn name(&self) -> &'static str {
+        use ALogicalPlan::*;
+        match self {
+            AnonymousScan { .. } => "anonymous_scan",
+            #[cfg(feature = "python")]
+            PythonScan { .. } => "python_scan",
+            Melt { .. } => "melt",
+            Slice { .. } => "slice",
+            Selection { .. } => "selection",
+            #[cfg(feature = "csv-file")]
+            CsvScan { .. } => "csv_scan",
+            #[cfg(feature = "ipc")]
+            IpcScan { .. } => "ipc_scan",
+            #[cfg(feature = "parquet")]
+            ParquetScan { .. } => "parquet_scan",
+            DataFrameScan { .. } => "df",
+            Projection { .. } => "projection",
+            LocalProjection { .. } => "local_projection",
+            Sort { .. } => "sort",
+            Explode { .. } => "explode",
+            Cache { .. } => "cache",
+            Aggregate { .. } => "aggregate",
+            Join { .. } => "join",
+            HStack { .. } => "hstack",
+            Distinct { .. } => "distinct",
+            MapFunction { .. } => "map_function",
+            Union { .. } => "union",
+            ExtContext { .. } => "ext_context",
+            FileSink { .. } => "file_sink",
+        }
+    }
+
     /// Get the schema of the logical plan node.
     pub fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> Cow<'a, SchemaRef> {
         use ALogicalPlan::*;

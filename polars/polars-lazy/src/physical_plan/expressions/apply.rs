@@ -84,6 +84,7 @@ impl ApplyExpr {
         }
     }
 
+    /// evaluates and flattens `Option<Series>` to `Series`.
     fn eval_and_flatten(&self, inputs: &mut [Series]) -> PolarsResult<Series> {
         self.function.call_udf(inputs).map(|opt_out| {
             opt_out.unwrap_or_else(|| {
@@ -143,39 +144,75 @@ impl ApplyExpr {
         ca.rename(&name);
         self.finish_apply_groups(ac, ca)
     }
-    fn apply_single_flattened<'a>(
+
+    /// Apply elementwise e.g. ignore the group/list indices
+    fn apply_single_elementwise<'a>(
         &self,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        // make sure the groups are updated because we are about to throw away
-        // the series' length information
-        let set_update_groups = match ac.update_groups {
-            UpdateGroups::WithSeriesLen => {
-                ac.groups();
-                true
+        let (s, aggregated) = match ac.agg_state() {
+            AggState::AggregatedList(s) => {
+                let ca = s.list().unwrap();
+                let out = ca.apply_to_inner(&|s| self.eval_and_flatten(&mut [s]))?;
+                (out.into_series(), true)
             }
-            UpdateGroups::WithSeriesLenOwned(_) => false,
-            UpdateGroups::No | UpdateGroups::WithGroupsLen => false,
+            AggState::AggregatedFlat(s) => (self.eval_and_flatten(&mut [s.clone()])?, true),
+            AggState::NotAggregated(s) | AggState::Literal(s) => {
+                (self.eval_and_flatten(&mut [s.clone()])?, false)
+            }
         };
 
-        if let UpdateGroups::WithSeriesLen = ac.update_groups {
-            ac.groups();
-        }
-
-        let input = ac.flat_naive().into_owned();
-        let input_len = input.len();
-        let s = self.eval_and_flatten(&mut [input])?;
-
-        check_map_output_len(input_len, s.len(), &self.expr)?;
-        ac.with_series(s, false, None)?;
-
-        if set_update_groups {
-            // The flat_naive orders by groups, so we must create new groups
-            // not by series length as we don't have an agg_list, but by original
-            // groups length
-            ac.update_groups = UpdateGroups::WithGroupsLen;
-        }
+        ac.with_series(s, aggregated, Some(&self.expr))?;
         Ok(ac)
+    }
+    fn apply_multiple_group_aware<'a>(
+        &self,
+        mut acs: Vec<AggregationContext<'a>>,
+        df: &DataFrame,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let mut container = vec![Default::default(); acs.len()];
+        let schema = self.get_input_schema(df);
+        let field = self.to_field(&schema)?;
+
+        // aggregate representation of the aggregation contexts
+        // then unpack the lists and finally create iterators from this list chunked arrays.
+        let mut iters = acs
+            .iter_mut()
+            .map(|ac| ac.iter_groups())
+            .collect::<Vec<_>>();
+
+        // length of the items to iterate over
+        let len = iters[0].size_hint().0;
+
+        if len == 0 {
+            let out = Series::full_null(field.name(), 0, &field.dtype);
+
+            drop(iters);
+            // take the first aggregation context that as that is the input series
+            let mut ac = acs.swap_remove(0);
+            ac.with_series(out, true, Some(&self.expr))?;
+            return Ok(ac);
+        }
+
+        let mut ca: ListChunked = (0..len)
+            .map(|_| {
+                container.clear();
+                for iter in &mut iters {
+                    match iter.next().unwrap() {
+                        None => return Ok(None),
+                        Some(s) => container.push(s.deep_clone()),
+                    }
+                }
+                self.function.call_udf(&mut container)
+            })
+            .collect::<PolarsResult<_>>()?;
+
+        ca.rename(&field.name);
+        drop(iters);
+
+        // take the first aggregation context that as that is the input series
+        let ac = acs.swap_remove(0);
+        self.finish_apply_groups(ac, ca)
     }
 }
 
@@ -228,30 +265,20 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match (state.has_overlapping_groups(), self.collect_groups) {
-                (_, ApplyOptions::ApplyList) => {
+            match self.collect_groups {
+                ApplyOptions::ApplyList => {
                     let s = self.eval_and_flatten(&mut [ac.aggregated()])?;
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 }
-                // - series is aggregated flat/reduction: sum/min/mean etc.
-                // - apply options is apply_flat -> elementwise
-                // we can simply apply the function in a vectorized manner.
-                (_, ApplyOptions::ApplyFlat) if ac.is_aggregated_flat() => {
-                    let s = ac.aggregated();
-                    let s = self.eval_and_flatten(&mut [s])?;
-                    ac.with_series(s, true, Some(&self.expr))?;
-                    Ok(ac)
-                }
-                // overlapping groups always take this branch as explode/flat_naive bloats data size
-                (_, ApplyOptions::ApplyGroups) | (true, _) => self.apply_single_group_aware(ac),
-                (_, ApplyOptions::ApplyFlat) => self.apply_single_flattened(ac),
+                ApplyOptions::ApplyGroups => self.apply_single_group_aware(ac),
+                ApplyOptions::ApplyFlat => self.apply_single_elementwise(ac),
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match (state.has_overlapping_groups(), self.collect_groups) {
-                (_, ApplyOptions::ApplyList) => {
+            match self.collect_groups {
+                ApplyOptions::ApplyList => {
                     let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let s = self.eval_and_flatten(&mut s)?;
                     // take the first aggregation context that as that is the input series
@@ -260,72 +287,16 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 }
-
-                // overlapping groups always take this branch as explode bloats data size
-                (_, ApplyOptions::ApplyGroups) | (true, _) => {
-                    // if
-                    // - there are overlapping groups
-                    // - can do elementwise operations
-                    // - we don't have to explode
-                    // then apply flat
-                    if let (
-                        true,
-                        ApplyOptions::ApplyFlat,
-                        AggState::AggregatedFlat(_) | AggState::NotAggregated(_),
-                    ) = (
-                        state.has_overlapping_groups(),
-                        self.collect_groups,
-                        acs[0].agg_state(),
-                    ) {
-                        apply_multiple_flat(acs, self.function.as_ref(), &self.expr)
+                ApplyOptions::ApplyGroups => self.apply_multiple_group_aware(acs, df),
+                ApplyOptions::ApplyFlat => {
+                    if acs
+                        .iter()
+                        .any(|ac| matches!(ac.agg_state(), AggState::AggregatedList(_)))
+                    {
+                        self.apply_multiple_group_aware(acs, df)
                     } else {
-                        let mut container = vec![Default::default(); acs.len()];
-                        let schema = self.get_input_schema(df);
-                        let field = self.to_field(&schema)?;
-
-                        // aggregate representation of the aggregation contexts
-                        // then unpack the lists and finally create iterators from this list chunked arrays.
-                        let mut iters = acs
-                            .iter_mut()
-                            .map(|ac| ac.iter_groups())
-                            .collect::<Vec<_>>();
-
-                        // length of the items to iterate over
-                        let len = iters[0].size_hint().0;
-
-                        if len == 0 {
-                            let out = Series::full_null(field.name(), 0, &field.dtype);
-
-                            drop(iters);
-                            // take the first aggregation context that as that is the input series
-                            let mut ac = acs.swap_remove(0);
-                            ac.with_series(out, true, Some(&self.expr))?;
-                            return Ok(ac);
-                        }
-
-                        let mut ca: ListChunked = (0..len)
-                            .map(|_| {
-                                container.clear();
-                                for iter in &mut iters {
-                                    match iter.next().unwrap() {
-                                        None => return Ok(None),
-                                        Some(s) => container.push(s.deep_clone()),
-                                    }
-                                }
-                                self.function.call_udf(&mut container)
-                            })
-                            .collect::<PolarsResult<_>>()?;
-
-                        ca.rename(&field.name);
-                        drop(iters);
-
-                        // take the first aggregation context that as that is the input series
-                        let ac = acs.swap_remove(0);
-                        self.finish_apply_groups(ac, ca)
+                        apply_multiple_elementwise(acs, self.function.as_ref(), &self.expr)
                     }
-                }
-                (_, ApplyOptions::ApplyFlat) => {
-                    apply_multiple_flat(acs, self.function.as_ref(), &self.expr)
                 }
             }
         }
@@ -359,32 +330,58 @@ impl PhysicalExpr for ApplyExpr {
     }
 }
 
-fn apply_multiple_flat<'a>(
+fn apply_multiple_elementwise<'a>(
     mut acs: Vec<AggregationContext<'a>>,
     function: &dyn SeriesUdf,
     expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
-    let mut s = acs
-        .iter_mut()
-        .map(|ac| {
-            // make sure the groups are updated because we are about to throw away
-            // the series length information
-            if let UpdateGroups::WithSeriesLen = ac.update_groups {
-                ac.groups();
-            }
+    match acs.first().unwrap().agg_state() {
+        // a fast path that doesn't drop groups of the first arg
+        // this doesn't require group re-computation
+        AggState::AggregatedList(s) => {
+            let ca = s.list().unwrap();
 
-            ac.flat_naive().into_owned()
-        })
-        .collect::<Vec<_>>();
+            let other = acs[1..]
+                .iter()
+                .map(|ac| ac.flat_naive().into_owned())
+                .collect::<Vec<_>>();
 
-    let input_len = s[0].len();
-    let s = function.call_udf(&mut s)?.unwrap();
-    check_map_output_len(input_len, s.len(), expr)?;
+            let out = ca.apply_to_inner(&|s| {
+                let mut args = vec![s];
+                args.extend_from_slice(&other);
+                let out = function.call_udf(&mut args)?.unwrap();
+                Ok(out)
+            })?;
+            let mut ac = acs.swap_remove(0);
+            ac.with_series(out.into_series(), true, None)?;
+            Ok(ac)
+        }
+        _ => {
+            let mut s = acs
+                .iter_mut()
+                .enumerate()
+                .map(|(i, ac)| {
+                    // make sure the groups are updated because we are about to throw away
+                    // the series length information
+                    // only on first iteration
+                    if let (0, UpdateGroups::WithSeriesLen) = (i, &ac.update_groups) {
+                        ac.groups();
+                    }
 
-    // take the first aggregation context that as that is the input series
-    let mut ac = acs.swap_remove(0);
-    ac.with_series(s, false, None)?;
-    Ok(ac)
+                    ac.flat_naive().into_owned()
+                })
+                .collect::<Vec<_>>();
+
+            let input_len = s[0].len();
+            let s = function.call_udf(&mut s)?.unwrap();
+            check_map_output_len(input_len, s.len(), expr)?;
+
+            // take the first aggregation context that as that is the input series
+            let mut ac = acs.swap_remove(0);
+            ac.with_series(s, false, None)?;
+            Ok(ac)
+        }
+    }
 }
 
 #[cfg(feature = "parquet")]

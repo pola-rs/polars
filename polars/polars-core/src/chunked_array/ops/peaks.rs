@@ -1,4 +1,4 @@
-use num::Zero;
+use num_traits::Zero;
 
 use crate::prelude::*;
 

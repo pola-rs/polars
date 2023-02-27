@@ -93,14 +93,13 @@ def test_strptime_precision_with_time_unit(
 
 @pytest.mark.parametrize("fmt", ["%Y-%m-%dT%H:%M:%S", None])
 def test_utc_with_tz_naive(fmt: str | None) -> None:
-    with pytest.raises(
-        ComputeError,
-        match=(
-            r"^Cannot use 'utc=True' with tz-naive data. "
-            r"Parse the data as naive, and then use `.dt.convert_time_zone\('UTC'\)`.$"
-        ),
-    ):
-        pl.Series(["2020-01-01 00:00:00"]).str.strptime(pl.Datetime, fmt, utc=True)
+    result = (
+        pl.Series(["2020-01-01T00:00:00"])
+        .str.strptime(pl.Datetime, fmt, utc=True)
+        .item()
+    )
+    expected = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    assert result == expected
 
 
 @pytest.mark.parametrize(

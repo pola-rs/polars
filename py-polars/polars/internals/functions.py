@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 from polars import internals as pli
-from polars.datatypes import Categorical, Date, Float64, PolarsDataType
+from polars.datatypes import Date, PolarsDataType
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
@@ -44,6 +45,9 @@ def get_dummies(
     """
     Convert categorical variables into dummy/indicator variables.
 
+    .. deprecated:: 0.16.8
+        `pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`
+
     Parameters
     ----------
     df
@@ -75,6 +79,11 @@ def get_dummies(
     └───────┴───────┴───────┴───────┴───────┴───────┘
 
     """
+    warnings.warn(
+        "`pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
     return df.to_dummies(columns=columns, separator=separator)
 
 
@@ -505,6 +514,9 @@ def cut(
     """
     Bin values into discrete values.
 
+    .. deprecated:: 0.16.8
+        `pl.cut(series, ...)` has been deprecated; use `series.cut(...)`
+
     Parameters
     ----------
     s
@@ -550,43 +562,12 @@ def cut(
     └──────┴─────────────┴──────────────┘
 
     """
-    var_nm = s.name
-
-    cuts_df = pli.DataFrame(
-        [
-            pli.Series(
-                name=break_point_label, values=bins, dtype=Float64
-            ).extend_constant(float("inf"), 1)
-        ]
+    warnings.warn(
+        "`pl.cut(series)` has been deprecated; use `series.cut()`",
+        category=DeprecationWarning,
+        stacklevel=2,
     )
-
-    if labels:
-        if len(labels) != len(bins) + 1:
-            raise ValueError("expected more labels")
-        cuts_df = cuts_df.with_columns(pli.Series(name=category_label, values=labels))
-    else:
-        cuts_df = cuts_df.with_columns(
-            pli.format(
-                "({}, {}]",
-                pli.col(break_point_label).shift_and_fill(1, float("-inf")),
-                pli.col(break_point_label),
-            ).alias(category_label)
-        )
-
-    cuts_df = cuts_df.with_columns(pli.col(category_label).cast(Categorical))
-
-    result = (
-        s.cast(Float64)
-        .sort()
-        .to_frame()
-        .join_asof(
-            cuts_df,
-            left_on=var_nm,
-            right_on=break_point_label,
-            strategy="forward",
-        )
-    )
-    return result
+    return s.cut(bins, labels, break_point_label, category_label)
 
 
 @overload

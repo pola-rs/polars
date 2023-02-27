@@ -64,7 +64,7 @@ def test_read_csv_categorical() -> None:
 def test_cat_to_dummies() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3, 4], "bar": ["a", "b", "a", "c"]})
     df = df.with_columns(pl.col("bar").cast(pl.Categorical))
-    assert pl.get_dummies(df).to_dict(False) == {
+    assert df.to_dummies().to_dict(False) == {
         "foo_1": [1, 0, 0, 0],
         "foo_2": [0, 1, 0, 0],
         "foo_3": [0, 0, 1, 0],

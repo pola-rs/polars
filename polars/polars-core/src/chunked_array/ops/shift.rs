@@ -1,4 +1,4 @@
-use num::{abs, clamp};
+use num_traits::{abs, clamp};
 
 use crate::prelude::*;
 

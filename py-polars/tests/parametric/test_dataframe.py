@@ -18,6 +18,13 @@ def test_repr(df: pl.DataFrame) -> None:
     assert_frame_equal(df, df, check_exact=True, nans_compare_equal=True)
 
 
+@given(df=dataframes(cols=10, max_size=1, allowed_dtypes=[pl.UInt8, pl.Int8]))
+@settings(max_examples=3)
+def test_dtype_integer_cols(df: pl.DataFrame) -> None:
+    # ensure dtype constraint works in conjunction with 'n' cols
+    assert all(tp in (pl.UInt8, pl.Int8) for tp in df.schema.values())
+
+
 @given(
     df=dataframes(
         min_size=1, min_cols=1, null_probability=0.25, excluded_dtypes=[pl.Utf8]

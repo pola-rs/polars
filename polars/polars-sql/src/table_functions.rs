@@ -47,6 +47,7 @@ impl FromStr for PolarsTableFunctions {
 }
 
 impl PolarsTableFunctions {
+    #[allow(unused_variables)]
     pub(crate) fn execute(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
         match self {
             #[cfg(feature = "csv")]
@@ -81,6 +82,7 @@ impl PolarsTableFunctions {
         Ok((path, lf))
     }
 
+    #[allow(dead_code)]
     fn get_file_path_from_arg(&self, arg: &FunctionArg) -> PolarsResult<String> {
         use sqlparser::ast::{Expr as SqlExpr, Value as SqlValue};
         match arg {
