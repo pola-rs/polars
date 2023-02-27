@@ -361,7 +361,7 @@ def test_fetch(fruits_cars: pl.DataFrame) -> None:
 def test_concat_str() -> None:
     ldf = pl.LazyFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
-    out = ldf.select([pl.concat_str(["a", "b"], sep="-")])
+    out = ldf.select([pl.concat_str(["a", "b"], separator="-")])
     assert out.collect()["a"].to_list() == ["a-1", "b-2", "c-3"]
 
     out = ldf.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])

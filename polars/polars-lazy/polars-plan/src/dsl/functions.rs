@@ -253,13 +253,13 @@ pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, descending: &[bool]) -> Expr {
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 /// Horizontally concat string columns in linear time
-pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
+pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str) -> Expr {
     let input = s.as_ref().to_vec();
-    let sep = sep.to_string();
+    let separator = separator.to_string();
 
     Expr::Function {
         input,
-        function: StringFunction::ConcatHorizontal(sep).into(),
+        function: StringFunction::ConcatHorizontal(separator).into(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,

@@ -812,3 +812,26 @@ def test_sort_structs() -> None:
         "sex": ["female", "female", "male"],
         "age": [26, 38, 22],
     }
+
+
+def test_struct_args_kwargs() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": ["a", "b"]})
+
+    # Single input
+    result = df.select(r=pl.struct((pl.col("a") + pl.col("b")).alias("p")))
+    expected = pl.DataFrame({"r": [{"p": 4}, {"p": 6}]})
+    assert_frame_equal(result, expected)
+
+    # List input
+    result = df.select(r=pl.struct([pl.col("a").alias("p"), pl.col("b").alias("q")]))
+    expected = pl.DataFrame({"r": [{"p": 1, "q": 3}, {"p": 2, "q": 4}]})
+    assert_frame_equal(result, expected)
+
+    # Positional input
+    # TODO: Enable when keyword args input is supported
+    # result = df.select(r=pl.struct(pl.col("a").alias("p"), pl.col("b").alias("q")))
+    # assert_frame_equal(result, expected)
+
+    # Keyword input
+    result = df.select(r=pl.struct(p="a", q="b"))
+    assert_frame_equal(result, expected)
