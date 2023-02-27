@@ -850,6 +850,12 @@ def read_ipc(
     -------
     DataFrame
 
+    Warnings
+    --------
+    If ``memory_map`` is set, the bytes on disk are mapped 1:1 to memory.
+    That means that you cannot write to the same filename.
+    E.g. ``pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`` will fail.
+
     """
     if use_pyarrow and n_rows and not memory_map:
         raise ValueError(
