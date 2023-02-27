@@ -559,8 +559,6 @@ def dataframes(
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
     """  # noqa: 501
-    if isinstance(cols, int):
-        cols = columns(cols)
     if isinstance(min_size, int) and min_cols in (0, None):
         min_cols = 1
 
@@ -574,8 +572,8 @@ def dataframes(
     def draw_frames(draw: DrawFn) -> pli.DataFrame | pli.LazyFrame:
         with StringCache():
             # if not given, create 'n' cols with random dtypes
-            if cols is None:
-                n = between(
+            if cols is None or isinstance(cols, int):
+                n = cols or between(
                     draw, int, min_=(min_cols or 0), max_=(max_cols or MAX_COLS)
                 )
                 dtypes_ = [draw(sampled_from(selectable_dtypes)) for _ in range(n)]
@@ -583,7 +581,7 @@ def dataframes(
             elif isinstance(cols, column):
                 coldefs = [cols]
             else:
-                coldefs = list(cols)  # type: ignore[arg-type]
+                coldefs = list(cols)
 
             # append any explicitly provided cols
             coldefs.extend(include_cols or ())
