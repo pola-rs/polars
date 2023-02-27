@@ -795,16 +795,42 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return func(self, *args, **kwargs)
 
-    def describe_plan(self, *, optimized: bool = False) -> str:
+    def describe_plan(
+        self,
+        *,
+        optimized: bool = False,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
+        streaming: bool = False,
+    ) -> str:
         """
         Create a string representation of the unoptimized query plan.
 
         Parameters
         ----------
         optimized
-            Return an optimized query plan. Defaults to `False`.
-            Use ``describe_optimized_plan`` to control
-            the optimization flags.
+            Return an optimized query plan. Defaults to ``False``.
+            If this is set to ``True`` the subsequent
+            optimization flags control which optimizations
+            run.
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        slice_pushdown
+            Slice pushdown optimization.
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
+        streaming
+            Run parts of the query in a streaming fashion (this is in an alpha state)
 
         Examples
         --------
@@ -821,7 +847,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         if optimized:
-            return self._ldf.describe_optimized_plan()
+            ldf = self._ldf.optimization_toggle(
+                type_coercion,
+                predicate_pushdown,
+                projection_pushdown,
+                simplify_expression,
+                slice_pushdown,
+                common_subplan_elimination,
+                streaming,
+            )
+            return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
     @deprecate_nonkeyword_arguments()
