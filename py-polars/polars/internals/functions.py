@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 from polars import internals as pli
-from polars.datatypes import Date, PolarsDataType
+from polars.datatypes import Date
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
@@ -27,7 +27,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from datetime import date
 
+    from polars.datatypes import PolarsDataType
     from polars.internals.type_aliases import ClosedInterval, ConcatMethod, TimeUnit
 
     if sys.version_info >= (3, 8):
@@ -625,6 +627,7 @@ def align_frames(
 
     Examples
     --------
+    >>> from datetime import date
     >>> df1 = pl.DataFrame(
     ...     {
     ...         "dt": [date(2022, 9, 1), date(2022, 9, 2), date(2022, 9, 3)],
@@ -646,7 +649,6 @@ def align_frames(
     ...         "y": [2.5, 2.0],
     ...     }
     ... )  # doctest: +IGNORE_RESULT
-    >>>
     >>> pl.Config.set_tbl_formatting("UTF8_FULL")  # doctest: +IGNORE_RESULT
     #
     # df1                              df2                              df3
@@ -663,7 +665,9 @@ def align_frames(
     # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │_/  `>│ 2022-09-01 ┆ 3.5 ┆ 5.0  │-//-
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘
     ...
-    >>> # align frames by the "dt" column:
+
+    Align frames by the "dt" column:
+
     >>> af1, af2, af3 = pl.align_frames(
     ...     df1, df2, df3, on="dt"
     ... )  # doctest: +IGNORE_RESULT
@@ -682,7 +686,9 @@ def align_frames(
     # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │----->│ 2022-09-03 ┆ 1.0 ┆ 12.0 │----->│ 2022-09-03 ┆ 2.0  ┆ 2.5  │
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
     ...
-    >>> # align frames by "dt", but keep only cols "x" and "y":
+
+    Align frames by "dt", but keep only cols "x" and "y":
+
     >>> af1, af2, af3 = pl.align_frames(
     ...     df1, df2, df3, on="dt", select=["x", "y"]
     ... )  # doctest: +IGNORE_RESULT
@@ -701,7 +707,9 @@ def align_frames(
     # │ 1.0 ┆ 1.5  │      │ 1.0 ┆ 12.0 │      │ 2.0  ┆ 2.5  │
     # └─────┴──────┘      └─────┴──────┘      └──────┴──────┘
     ...
-    >>> # now data is aligned, can easily calculate the row-wise dot product:
+
+    Now data is aligned, and you can easily calculate the row-wise dot product:
+
     >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
     shape: (3, 1)
     ┌───────┐

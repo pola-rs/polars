@@ -11,12 +11,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import (
-    DATETIME_DTYPES,
-    DTYPE_TEMPORAL_UNITS,
-    TEMPORAL_DTYPES,
-    PolarsTemporalType,
-)
+from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
 from polars.exceptions import ComputeError, PanicException
 from polars.testing import (
     assert_frame_equal,
@@ -25,6 +20,7 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsTemporalType
     from polars.internals.type_aliases import TimeUnit
 
 if sys.version_info >= (3, 9):

@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 from polars import lit, when
-from polars.datatypes import NUMERIC_DTYPES, PolarsDataType
+from polars.datatypes import NUMERIC_DTYPES
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -1327,7 +1327,7 @@ def test_quadratic_behavior_4736() -> None:
 
 
 @pytest.mark.parametrize("input_dtype", [pl.Utf8, pl.Int64, pl.Float64])
-def test_from_epoch(input_dtype: PolarsDataType) -> None:
+def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
     ldf = pl.LazyFrame(
         [
             pl.Series("timestamp_d", [13285]).cast(input_dtype),

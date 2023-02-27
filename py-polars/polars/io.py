@@ -1,7 +1,7 @@
 """Functions for reading and writing data."""
 from __future__ import annotations
 
-from io import BytesIO, IOBase, StringIO
+from io import StringIO
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -18,9 +18,8 @@ from typing import (
 import polars.internals as pli
 from polars import BatchedCsvReader
 from polars.convert import from_arrow
-from polars.datatypes import N_INFER_DEFAULT, PolarsDataType, SchemaDict, Utf8
+from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.dependencies import _DELTALAKE_AVAILABLE, _PYARROW_AVAILABLE, deltalake
-from polars.dependencies import pyarrow as pa
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 from polars.utils import (
@@ -32,7 +31,10 @@ from polars.utils import (
 
 if TYPE_CHECKING:
     import sys
+    from io import BytesIO, IOBase
 
+    from polars.datatypes import PolarsDataType, SchemaDict
+    from polars.dependencies import pyarrow as pa
     from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
 
     if sys.version_info >= (3, 8):

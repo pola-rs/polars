@@ -27,9 +27,6 @@ from polars.datatypes import (
     Duration,
     Float32,
     List,
-    PolarsDataType,
-    SchemaDefinition,
-    SchemaDict,
     Struct,
     Time,
     Unknown,
@@ -68,6 +65,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.internals.type_aliases import Orientation
 
 if version_info >= (3, 10):
