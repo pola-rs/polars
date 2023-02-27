@@ -1,4 +1,4 @@
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array, BinaryArray, BooleanArray, PrimitiveArray};
 use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
 
@@ -12,7 +12,9 @@ pub fn convert_columns(columns: &[ArrayRef], fields: Vec<SortField>) -> RowsEnco
 
     let mut rows = allocate_rows_buf(columns, &fields);
     for (arr, field) in columns.iter().zip(fields.iter()) {
-        encode_array(&**arr, field, &mut rows)
+        // Safety:
+        // we allocated rows with enough bytes.
+        unsafe { encode_array(&**arr, field, &mut rows) }
     }
 
     // we set fields later so we don't have aliasing borrows.
@@ -32,10 +34,23 @@ fn encode_primitive<T: NativeType + FixedLengthEncoding>(
     }
 }
 
-fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncoded) {
+/// Ecnodes an array into `out`
+///
+/// # Safety
+/// `out` must have enough bytes allocated otherwise it will be out of bounds.
+unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncoded) {
     match array.data_type() {
-        DataType::Boolean => todo!(),
-        DataType::LargeUtf8 => todo!(),
+        DataType::Boolean => {
+            let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
+            crate::encodings::fixed::encode_iter(array.into_iter(), out, field);
+        }
+        DataType::LargeBinary => {
+            let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+            crate::encodings::variable::encode_iter(array.into_iter(), out, field)
+        }
+        DataType::LargeUtf8 => {
+            panic!("should be cast to binary")
+        }
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {
                 let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
@@ -52,10 +67,54 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], fields: &[SortField]) -> RowsEnco
 
     let num_rows = columns[0].len();
     if has_variable {
-        todo!()
+        // row size of the fixed-length columns
+        // those can be determined without looping over the arrays
+        let row_size_fixed: usize = fields
+            .iter()
+            .map(|f| {
+                if matches!(f.data_type, ArrowDataType::LargeBinary) {
+                    0
+                } else {
+                    f.encoded_size()
+                }
+            })
+            .sum();
+
+        let mut lengths = vec![row_size_fixed; num_rows];
+
+        // for the variable length columns we must iterate to determine the length per row location
+        for array in columns.iter() {
+            if matches!(array.data_type(), ArrowDataType::LargeBinary) {
+                let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+                for (opt_val, row_length) in array.into_iter().zip(lengths.iter_mut()) {
+                    *row_length += crate::encodings::variable::encoded_len(opt_val)
+                }
+            }
+        }
+        let mut offsets = Vec::with_capacity(num_rows + 1);
+        let mut current_offset = 0_usize;
+        offsets.push(current_offset);
+
+        for length in lengths {
+            offsets.push(current_offset);
+            #[cfg(target_pointer_width = "64")]
+            {
+                // don't do overflow check, counting exabytes here.
+                current_offset += length;
+            }
+            #[cfg(not(target_pointer_width = "64"))]
+            {
+                current_offset = current_offset.checked_add(length).expect("overflow");
+            }
+        }
+
+        // todo! allocate uninit
+        let buf = vec![0u8; current_offset];
+        RowsEncoded::new(buf, offsets, None)
     } else {
         let row_size: usize = fields.iter().map(|f| f.encoded_size()).sum();
         let n_bytes = num_rows * row_size;
+        // todo! allocate uninit
         let buf = vec![0u8; n_bytes];
 
         // note that offsets are shifted to the left
