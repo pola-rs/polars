@@ -20,7 +20,7 @@ use comfy_table::modifiers::*;
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
-use num::{Num, NumCast};
+use num_traits::{Num, NumCast};
 
 use crate::config::*;
 use crate::prelude::*;

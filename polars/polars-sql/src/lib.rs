@@ -483,6 +483,55 @@ mod test {
         assert!(df_2.frame_equal(&expected));
     }
 
+    fn assert_sql_to_polars(df: &DataFrame, sql: &str, f: impl FnOnce(LazyFrame) -> LazyFrame) {
+        let mut context = SQLContext::try_new().unwrap();
+        context.register("df", df.clone().lazy());
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let df_pl = f(df.clone().lazy()).collect().unwrap();
+        assert!(df_sql.frame_equal(&df_pl));
+    }
+
+    #[test]
+    fn test_arr_agg() {
+        let df = create_sample_df().unwrap();
+        let exprs = vec![
+            (
+                "SELECT ARRAY_AGG(a) AS a FROM df",
+                vec![col("a").list().alias("a")],
+            ),
+            (
+                "SELECT ARRAY_AGG(a) AS a, ARRAY_AGG(b) as b FROM df",
+                vec![col("a").list().alias("a"), col("b").list().alias("b")],
+            ),
+            (
+                "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
+                vec![col("a")
+                    .sort_by(vec![col("a")], vec![false])
+                    .list()
+                    .alias("a")],
+            ),
+            (
+                "SELECT ARRAY_AGG(a) AS a FROM df",
+                vec![col("a").list().alias("a")],
+            ),
+            (
+                "SELECT unnest(ARRAY_AGG(DISTINCT a)) FROM df",
+                vec![col("a").unique_stable().list().explode().alias("a")],
+            ),
+            (
+                "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
+                vec![col("a")
+                    .sort_by(vec![col("b")], vec![false])
+                    .head(Some(2))
+                    .list()],
+            ),
+        ];
+
+        for (sql, expr) in exprs {
+            assert_sql_to_polars(&df, sql, |df| df.select(&expr));
+        }
+    }
+
     #[test]
     #[cfg(feature = "csv")]
     fn read_csv_tbl_func() {

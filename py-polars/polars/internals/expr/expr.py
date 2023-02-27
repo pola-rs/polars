@@ -147,7 +147,7 @@ def expr_to_lit_or_expr(
         unaliased_expr = expr.meta.undo_aliases()
         if unaliased_expr.meta.has_multiple_outputs():
             expr_name = expr_output_name(expr)
-            expr = cast(Expr, pli.struct(expr if expr_name is None else unaliased_expr))
+            expr = pli.struct(expr if expr_name is None else unaliased_expr)
             name = name or expr_name
 
     return expr if name is None else expr.alias(name)

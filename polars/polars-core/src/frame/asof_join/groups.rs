@@ -4,7 +4,7 @@ use std::ops::Sub;
 
 use ahash::RandomState;
 use arrow::types::NativeType;
-use num::Zero;
+use num_traits::Zero;
 use rayon::prelude::*;
 
 use super::*;
@@ -158,7 +158,7 @@ fn process_group<K, T>(
     forward: bool,
 ) where
     K: Hash + PartialEq + Eq,
-    T: NativeType + Sub<Output = T> + PartialOrd + num::Zero,
+    T: NativeType + Sub<Output = T> + PartialOrd + Zero,
 {
     let (offset_slice, mut previous_join_idx) =
         *right_tbl_offsets.get(&k).unwrap_or(&(0usize, None));
@@ -179,7 +179,7 @@ fn process_group<K, T>(
             if forward {
                 previous_join_idx = None;
             }
-            if tolerance > num::zero() {
+            if tolerance > Zero::zero() {
                 if let Some(idx) = previous_join_idx {
                     debug_assert!((idx as usize) < right_asof.len());
                     let val_r = unsafe { *right_asof.get_unchecked(idx as usize) };

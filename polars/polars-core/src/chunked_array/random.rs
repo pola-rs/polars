@@ -1,4 +1,4 @@
-use num::{Float, NumCast};
+use num_traits::{Float, NumCast};
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};

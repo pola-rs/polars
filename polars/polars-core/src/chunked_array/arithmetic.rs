@@ -8,7 +8,7 @@ use arrow::compute::arithmetics::basic;
 use arrow::compute::arithmetics::decimal;
 use arrow::compute::arity_assign;
 use arrow::types::NativeType;
-use num::{Num, NumCast, ToPrimitive};
+use num_traits::{Num, NumCast, ToPrimitive};
 
 use crate::prelude::*;
 use crate::series::IsSorted;

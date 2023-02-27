@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from functools import reduce
+from inspect import signature
 from operator import add
 from string import ascii_letters
 from typing import TYPE_CHECKING, Any, cast
@@ -17,6 +18,13 @@ from polars.testing.asserts import assert_series_equal
 
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
+
+
+def test_init_signature_match() -> None:
+    # eager/lazy init signatures are expected to match; if this test fails, it
+    # means a parameter was added to one but not the other, and that should be
+    # fixed (or an explicit exemption should be made here, with an explanation)
+    assert signature(pl.DataFrame.__init__) == signature(pl.LazyFrame.__init__)
 
 
 def test_lazy() -> None:
@@ -353,7 +361,7 @@ def test_fetch(fruits_cars: pl.DataFrame) -> None:
 def test_concat_str() -> None:
     ldf = pl.LazyFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
-    out = ldf.select([pl.concat_str(["a", "b"], sep="-")])
+    out = ldf.select([pl.concat_str(["a", "b"], separator="-")])
     assert out.collect()["a"].to_list() == ["a-1", "b-2", "c-3"]
 
     out = ldf.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])

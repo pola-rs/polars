@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 pub use arrow::array::StructArray;
 pub use arrow::io::ndjson as arrow_ndjson;
-use num::traits::Pow;
+use num_traits::pow::Pow;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;

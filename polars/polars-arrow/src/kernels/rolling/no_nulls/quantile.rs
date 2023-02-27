@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use num_traits::ToPrimitive;
+
 use super::*;
 use crate::index::IdxSize;
 use crate::trusted_len::TrustedLen;
@@ -16,8 +18,8 @@ where
     T: std::iter::Sum<T>
         + NativeType
         + Copy
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
+        + PartialOrd
+        + ToPrimitive
         + NumCast
         + Add<Output = T>
         + Sub<Output = T>
@@ -58,8 +60,8 @@ pub(crate) fn compute_quantile2<T>(
 where
     T: std::iter::Sum<T>
         + Copy
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
+        + PartialOrd
+        + ToPrimitive
         + NumCast
         + Add<Output = T>
         + Sub<Output = T>
@@ -126,8 +128,8 @@ pub fn rolling_median<T>(
 where
     T: NativeType
         + std::iter::Sum<T>
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
+        + PartialOrd
+        + ToPrimitive
         + NumCast
         + Add<Output = T>
         + Sub<Output = T>
@@ -159,8 +161,8 @@ pub fn rolling_quantile<T>(
 where
     T: NativeType
         + std::iter::Sum<T>
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
+        + PartialOrd
+        + ToPrimitive
         + NumCast
         + Add<Output = T>
         + Sub<Output = T>
