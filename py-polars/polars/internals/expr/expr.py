@@ -6355,8 +6355,9 @@ class Expr:
             #   - one column DataFrame in other cases.
             df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
 
+            # For struct we always apply mapping to the first column
             column = df.columns[0]
-            input_dtype = df.select(column).dtypes[0]
+            input_dtype = df.dtypes[0]
             remap_key_column = f"__POLARS_REMAP_KEY_{column}"
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
