@@ -283,7 +283,11 @@ pub trait ChunkCast {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
-    fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
+    ///
+    /// # Safety
+    /// - This doesn't do utf8 validation checking when casting from binary
+    /// - This doesn't do categorical bound checking when casting from UInt32
+    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
 }
 
 /// Fastest way to do elementwise operations on a ChunkedArray<T> when the operation is cheaper than
@@ -621,7 +625,6 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BinaryChunked {
         let mut out = impl_chunk_expand!(self, length, index);

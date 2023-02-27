@@ -92,7 +92,6 @@ all = [
   "propagate_nans",
   "polars/groupby_list",
   "sql",
-  "polars/dtype-binary",
   "binary_encoding",
   "streaming",
   "performant",

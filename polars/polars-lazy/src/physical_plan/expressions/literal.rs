@@ -75,7 +75,6 @@ impl PhysicalExpr for LiteralExpr {
                 }
             },
             Utf8(v) => Utf8Chunked::full(NAME, v, 1).into_series(),
-            #[cfg(feature = "dtype-binary")]
             Binary(v) => BinaryChunked::full(NAME, v, 1).into_series(),
             #[cfg(feature = "temporal")]
             DateTime(ndt, tu) => {

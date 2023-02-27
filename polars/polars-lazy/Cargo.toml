@@ -58,7 +58,6 @@ dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "t
 dtype-time = ["polars-core/dtype-time", "temporal"]
 dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe/dtype-categorical"]
 dtype-struct = ["polars-plan/dtype-struct"]
-dtype-binary = ["polars-plan/dtype-binary"]
 object = ["polars-plan/object"]
 date_offset = ["polars-plan/date_offset"]
 trigonometry = ["polars-plan/trigonometry"]
@@ -127,7 +126,7 @@ serde = [
   "polars-ops/serde",
 ]
 
-binary_encoding = ["polars-plan/binary_encoding", "dtype-binary"]
+binary_encoding = ["polars-plan/binary_encoding"]
 
 # no guarantees whatsoever
 private = ["polars-plan/private"]

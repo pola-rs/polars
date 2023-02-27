@@ -3,9 +3,7 @@ use std::ops::Not;
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::compute;
 use arrow::compute::comparison;
-#[cfg(feature = "dtype-binary")]
-use arrow::scalar::BinaryScalar;
-use arrow::scalar::{PrimitiveScalar, Scalar, Utf8Scalar};
+use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::prelude::FromData;
 
@@ -609,7 +607,6 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl BinaryChunked {
     fn comparison(
         &self,
@@ -628,7 +625,6 @@ impl BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     type Item = BooleanChunked;
 
@@ -849,7 +845,6 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl BinaryChunked {
     fn binary_compare_scalar(
         &self,
@@ -861,7 +856,6 @@ impl BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkCompare<&[u8]> for BinaryChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &[u8]) -> BooleanChunked {
@@ -1012,7 +1006,6 @@ impl ChunkEqualElement for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkEqualElement for BinaryChunked {
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         let ca_other = other.as_ref().as_ref();

@@ -175,6 +175,7 @@ impl AggList for BooleanChunked {
 
 impl AggList for Utf8Chunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        // TODO: dispatch via binary
         match groups {
             GroupsProxy::Idx(groups) => {
                 let mut builder =
@@ -198,7 +199,6 @@ impl AggList for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl AggList for BinaryChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         match groups {

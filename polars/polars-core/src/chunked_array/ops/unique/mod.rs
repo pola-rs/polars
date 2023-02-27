@@ -205,51 +205,25 @@ where
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> PolarsResult<Self> {
-        match self.null_count() {
-            0 => {
-                let mut set =
-                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
-                for arr in self.downcast_iter() {
-                    set.extend(arr.values_iter())
-                }
-                Ok(Utf8Chunked::from_iter_values(
-                    self.name(),
-                    set.iter().copied(),
-                ))
-            }
-            _ => {
-                let mut set =
-                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
-                for arr in self.downcast_iter() {
-                    set.extend(arr.iter())
-                }
-                Ok(Utf8Chunked::from_iter_options(
-                    self.name(),
-                    set.iter().copied(),
-                ))
-            }
-        }
+        let out = self.as_binary().unique()?;
+        Ok(unsafe { out.to_utf8() })
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
+        self.as_binary().arg_unique()
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
-        if self.null_count() > 0 {
-            Ok(fill_set(self.into_iter().flatten()).len() + 1)
-        } else {
-            Ok(fill_set(self.into_no_null_iter()).len())
-        }
+        self.as_binary().n_unique()
     }
 
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Self> {
-        Ok(mode(self))
+        let out = self.as_binary().mode()?;
+        Ok(unsafe { out.to_utf8() })
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkUnique<BinaryType> for BinaryChunked {
     fn unique(&self) -> PolarsResult<Self> {
         match self.null_count() {

@@ -49,6 +49,7 @@ impl RepeatBy for BooleanChunked {
 }
 impl RepeatBy for Utf8Chunked {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+        // TODO! dispatch via binary.
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -67,7 +68,6 @@ impl RepeatBy for Utf8Chunked {
         }
     }
 }
-#[cfg(feature = "dtype-binary")]
 impl RepeatBy for BinaryChunked {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let iter = self

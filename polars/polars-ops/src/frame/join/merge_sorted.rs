@@ -50,17 +50,20 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series 
             merge_ca(lhs, rhs, merge_indicator).into_series()
         }
         Utf8 => {
-            let lhs = lhs.utf8().unwrap();
-            let rhs = rhs.utf8().unwrap();
-            merge_ca(lhs, rhs, merge_indicator).into_series()
+            // dispatch via binary
+            let lhs = lhs.cast(&Binary).unwrap();
+            let rhs = rhs.cast(&Binary).unwrap();
+            let lhs = lhs.binary().unwrap();
+            let rhs = rhs.binary().unwrap();
+            let out = merge_ca(lhs, rhs, merge_indicator);
+            unsafe { out.cast_unchecked(&Utf8).unwrap() }
         }
-        #[cfg(feature = "dtype-binary")]
         Binary => {
             let lhs = lhs.binary().unwrap();
             let rhs = rhs.binary().unwrap();
             merge_ca(lhs, rhs, merge_indicator).into_series()
         }
-        #[cfg(feature = "dtype-binary")]
+        #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let lhs = lhs.struct_().unwrap();
             let rhs = rhs.struct_().unwrap();

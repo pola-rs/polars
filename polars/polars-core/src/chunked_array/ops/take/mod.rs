@@ -260,64 +260,7 @@ impl ChunkTake for Utf8Chunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        let mut chunks = self.downcast_iter();
-        match indices {
-            TakeIdx::Array(array) => {
-                if array.null_count() == array.len() {
-                    return Self::full_null(self.name(), array.len());
-                }
-                let array = match self.chunks.len() {
-                    1 => take_utf8_unchecked(chunks.next().unwrap(), array) as ArrayRef,
-                    _ => {
-                        return if !array.has_validity() {
-                            let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: Utf8Chunked = take_iter_n_chunks_unchecked!(self, iter);
-                            ca.rename(self.name());
-                            ca
-                        } else {
-                            let iter = array
-                                .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
-                            let mut ca: Utf8Chunked = take_opt_iter_n_chunks_unchecked!(self, iter);
-                            ca.rename(self.name());
-                            ca
-                        }
-                    }
-                };
-                self.finish_from_array(array)
-            }
-            TakeIdx::Iter(iter) => {
-                let array = match (self.has_validity(), self.chunks.len()) {
-                    (false, 1) => {
-                        take_no_null_utf8_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
-                    }
-                    (_, 1) => take_utf8_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
-                    _ => {
-                        let mut ca: Utf8Chunked = take_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
-                    }
-                };
-                self.finish_from_array(array)
-            }
-            TakeIdx::IterNulls(iter) => {
-                let array = match (self.has_validity(), self.chunks.len()) {
-                    (false, 1) => {
-                        take_no_null_utf8_opt_iter_unchecked(chunks.next().unwrap(), iter)
-                            as ArrayRef
-                    }
-                    (_, 1) => {
-                        take_utf8_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
-                    }
-                    _ => {
-                        let mut ca: Utf8Chunked = take_opt_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
-                    }
-                };
-                self.finish_from_array(array)
-            }
-        }
+        self.as_binary().take_unchecked(indices).to_utf8()
     }
 
     fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
@@ -326,14 +269,11 @@ impl ChunkTake for Utf8Chunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        indices.check_bounds(self.len())?;
-        // Safety:
-        // just checked bounds
-        Ok(unsafe { self.take_unchecked(indices) })
+        let out = self.as_binary().take(indices)?;
+        Ok(unsafe { out.to_utf8() })
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkTake for BinaryChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where

@@ -22,7 +22,6 @@ macro_rules! impl_compare {
         match lhs.dtype() {
             DataType::Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
             DataType::Utf8 => lhs.utf8().unwrap().$method(rhs.utf8().unwrap()),
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
             DataType::UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
             DataType::UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),

@@ -459,7 +459,6 @@ impl ChunkAggSeries for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkAggSeries for BinaryChunked {
     fn sum_as_series(&self) -> Series {
         BinaryChunked::full_null(self.name(), 1).into_series()

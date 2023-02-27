@@ -518,13 +518,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort::arg_sort(
-            self.name(),
-            self.downcast_iter().map(|arr| arr.iter()),
-            options,
-            self.null_count(),
-            self.len(),
-        )
+        self.as_binary().arg_sort(options)
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -537,22 +531,10 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     /// uphold this contract. If not, it will panic.
     ///
     fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        args_validate(self, other, descending)?;
-
-        let mut count: IdxSize = 0;
-        let vals: Vec<_> = self
-            .into_iter()
-            .map(|v| {
-                let i = count;
-                count += 1;
-                (i, v)
-            })
-            .collect_trusted();
-        arg_sort_multiple_impl(vals, other, descending)
+        self.as_binary().arg_sort_multiple(other, descending)
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkSort<BinaryType> for BinaryChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<BinaryType> {
         sort_with_fast_path!(self, options);
@@ -730,16 +712,23 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 }
 
 #[cfg(feature = "sort_multiple")]
-pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series> {
+pub(crate) fn convert_sort_column_multi_sort(
+    s: &Series,
+    row_ordering: bool,
+) -> PolarsResult<Series> {
     use DataType::*;
     let out = match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
         Categorical(_) => s.rechunk(),
-        #[cfg(feature = "dtype-binary")]
         Binary => s.clone(),
-        Utf8 => s.clone(),
-        // TODO! remove this. With row ordering we can do this easily
-        Boolean => s.cast(&UInt8).unwrap(),
+        Utf8 => s.cast(&Binary).unwrap(),
+        Boolean => {
+            if row_ordering {
+                s.clone()
+            } else {
+                s.cast(&UInt8).unwrap()
+            }
+        }
         _ => {
             let phys = s.to_physical_repr().into_owned();
             if !phys.dtype().is_numeric() {
@@ -762,7 +751,7 @@ pub(crate) fn prepare_arg_sort(
 
     let mut columns = columns
         .iter()
-        .map(convert_sort_column_multi_sort)
+        .map(|s| convert_sort_column_multi_sort(s, false))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let first = columns.remove(0);

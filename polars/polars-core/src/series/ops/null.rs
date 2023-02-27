@@ -50,7 +50,6 @@ impl Series {
                         ChunkedArray::<Utf8Type>::full_null(name, size).into_series()
                     }};
                 }
-                #[cfg(feature = "dtype-binary")]
                 macro_rules! binary {
                     () => {{
                         ChunkedArray::<BinaryType>::full_null(name, size).into_series()

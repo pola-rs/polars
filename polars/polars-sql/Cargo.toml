@@ -12,7 +12,7 @@ cli = ["csv", "polars-lazy/fmt", "atty", "rustyline", "jemallocator"]
 csv = ["polars-lazy/csv-file"]
 default = []
 ipc = ["polars-lazy/ipc"]
-parquet = ["polars-lazy/parquet", "polars-lazy/dtype-binary"]
+parquet = ["polars-lazy/parquet"]
 
 [dependencies]
 atty = { version = "0.2", optional = true }
