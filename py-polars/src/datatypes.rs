@@ -30,6 +30,7 @@ pub(crate) enum PyDataType {
     Categorical,
     Struct,
     Binary,
+    Decimal(Option<usize>, usize),
 }
 
 impl From<&DataType> for PyDataType {
@@ -46,7 +47,7 @@ impl From<&DataType> for PyDataType {
             DataType::UInt64 => UInt64,
             DataType::Float32 => Float32,
             DataType::Float64 => Float64,
-            DataType::Decimal(_, _) => todo!(),
+            DataType::Decimal(p, s) => Decimal(*p, *s),
             DataType::Boolean => Bool,
             DataType::Utf8 => Utf8,
             DataType::Binary => Binary,
@@ -98,6 +99,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Object => Object(OBJECT_NAME),
             PyDataType::Categorical => Categorical(None),
             PyDataType::Struct => Struct(vec![]),
+            PyDataType::Decimal(p, s) => Decimal(p, s),
         }
     }
 }

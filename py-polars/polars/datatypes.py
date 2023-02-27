@@ -282,6 +282,16 @@ class List(NestedType):
         return f"{class_name}({self.inner!r})"
 
 
+class Decimal(DataType):
+    """Decimal 128-bit type with an optional precision and non-negative scale."""
+    precision: Optional[int]
+    scale: int
+
+    def __init__(self, precision: Optional[int], scale: int):
+        self.precision = precision
+        self.scale = scale
+
+
 class Date(TemporalType):
     """Calendar date type."""
 

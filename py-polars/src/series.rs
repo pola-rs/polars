@@ -660,7 +660,6 @@ impl PySeries {
                     DataType::Int64 => PyList::new(py, series.i64().unwrap()),
                     DataType::Float32 => PyList::new(py, series.f32().unwrap()),
                     DataType::Float64 => PyList::new(py, series.f64().unwrap()),
-                    DataType::Decimal(_, _) => todo!(),
                     DataType::Categorical(_) => {
                         PyList::new(py, series.categorical().unwrap().iter_str())
                     }
@@ -702,6 +701,10 @@ impl PySeries {
                     }
                     DataType::Datetime(_, _) => {
                         let ca = series.datetime().unwrap();
+                        return Wrap(ca).to_object(py);
+                    }
+                    DataType::Decimal(_, _) => {
+                        let ca = series.decimal().unwrap();
                         return Wrap(ca).to_object(py);
                     }
                     DataType::Utf8 => {

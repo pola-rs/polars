@@ -270,6 +270,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let convert = utils.getattr("_to_python_decimal").unwrap();
                 let mut buf = [0_u8; 48];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
+                let prec = prec.unwrap_or(n_digits);
                 convert
                     .call1((v.is_negative() as u8, &buf[..n_digits], prec, scale))
                     .unwrap()
@@ -294,7 +295,12 @@ impl ToPyObject for Wrap<DataType> {
             DataType::UInt64 => pl.getattr("UInt64").unwrap().into(),
             DataType::Float32 => pl.getattr("Float32").unwrap().into(),
             DataType::Float64 => pl.getattr("Float64").unwrap().into(),
-            DataType::Decimal(_, _) => todo!(),
+            DataType::Decimal(prec, scale) => pl
+                .getattr("Decimal")
+                .unwrap()
+                .call1((*prec, *scale))
+                .unwrap()
+                .into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
@@ -369,6 +375,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
+                    "Decimal" => DataType::Decimal(None, 0),
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
@@ -394,6 +401,11 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let tz = ob.getattr("tz").unwrap();
                 let tz = tz.extract()?;
                 DataType::Datetime(tu, tz)
+            }
+            "Decimal" => {
+                let prec = ob.getattr("prec")?.extract()?;
+                let scale = ob.getattr("scale")?.extract()?;
+                DataType::Decimal(prec, scale)
             }
             "List" => {
                 let inner = ob.getattr("inner").unwrap();
@@ -525,6 +537,26 @@ impl ToPyObject for Wrap<&DateChunked> {
     }
 }
 
+impl ToPyObject for Wrap<&DecimalChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let utils = UTILS.as_ref(py);
+        let convert = utils.getattr("_to_python_decimal").unwrap();
+        let py_scale = self.0.scale().to_object(py);
+        // if we don't know precision, the only safe bet is to set it to 39
+        let py_prec = self.0.precision().unwrap_or(39).to_object(py);
+        let iter = self.0.into_iter().map(|opt_v| {
+            opt_v.map(|v| {
+                let mut buf = [0_u8; 48];
+                let n_digits = decimal_to_digits(v.abs(), &mut buf);
+                convert
+                    .call1((v.is_negative() as u8, &buf[..n_digits], &py_prec, &py_scale))
+                    .unwrap()
+            })
+        });
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
 fn abs_decimal_from_digits(digits: &[u8], exp: i32) -> Option<(i128, usize)> {
     const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
     let mut v = digits
@@ -548,6 +580,7 @@ fn abs_decimal_from_digits(digits: &[u8], exp: i32) -> Option<(i128, usize)> {
     } else {
         (-exp) as usize
     };
+    // TODO: do we care for checking if it fits in MAX_ABS_DEC? (if we set prec to None anyway?)
     (v <= MAX_ABS_DEC).then_some((v, scale))
 }
 
@@ -687,7 +720,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         // note: Decimal('-0') will be mapped to simply '0'
                         v = -v; // won't overflow since -i128::MAX > i128::MIN
                     }
-                    Ok(Wrap(AnyValue::Decimal(v, None, scale)))
+                    Ok(Wrap(AnyValue::Decimal(v, None, scale))) // NOTE: prec := None
                 }
                 _ => Err(PyErr::from(PyPolarsErr::Other(format!(
                     "object type not supported {ob:?}",
