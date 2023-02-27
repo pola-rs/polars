@@ -104,15 +104,20 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
 
 def _datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
+    dt = dt.replace(tzinfo=timezone.utc)
     if tu == "ns":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+        nanos = dt.microsecond * 1000
+        return int(dt.timestamp()) * 1_000_000_000 + nanos
     elif tu == "us":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
+        micros = dt.microsecond
+        return int(dt.timestamp()) * 1_000_000 + micros
     elif tu == "ms":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
+        millis = dt.microsecond // 1000
+        return int(dt.timestamp()) * 1_000 + millis
     elif tu is None:
         # python has us precision
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
+        micros = dt.microsecond
+        return int(dt.timestamp()) * 1_000_000 + micros
     else:
         raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
 
