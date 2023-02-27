@@ -159,7 +159,6 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray of dtype binary
-    #[cfg(feature = "dtype-binary")]
     pub fn binary(&self) -> PolarsResult<&BinaryChunked> {
         match self.dtype() {
             DataType::Binary => unsafe {

@@ -246,6 +246,18 @@ vec_hash_int!(UInt8Chunked, fx_hash_8_bit);
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
+        let ca = self.cast(&DataType::Binary).unwrap();
+        ca.vec_hash(random_state, buf).unwrap();
+    }
+
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        let ca = self.cast(&DataType::Binary).unwrap();
+        ca.vec_hash_combine(random_state, hashes).unwrap();
+    }
+}
+
+impl VecHash for BinaryChunked {
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
         buf.clear();
         buf.reserve(self.len());
         let null_h = get_null_hash_value(random_state);
@@ -253,65 +265,13 @@ impl VecHash for Utf8Chunked {
         self.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
                 // simply use the null_hash as seed to get a hash determined by `random_state` that is passed
-                buf.extend(
-                    arr.values_iter()
-                        .map(|v| xxh3_64_with_seed(v.as_bytes(), null_h)),
-                )
+                buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
             } else {
                 buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-                    Some(v) => xxh3_64_with_seed(v.as_bytes(), null_h),
+                    Some(v) => xxh3_64_with_seed(v, null_h),
                     None => null_h,
                 }))
             }
-        });
-    }
-
-    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        let null_h = get_null_hash_value(random_state);
-
-        let mut offset = 0;
-        self.downcast_iter().for_each(|arr| {
-            match arr.null_count() {
-                0 => arr
-                    .values_iter()
-                    .zip(&mut hashes[offset..])
-                    .for_each(|(v, h)| {
-                        let l = xxh3_64_with_seed(v.as_bytes(), null_h);
-                        *h = _boost_hash_combine(l, *h)
-                    }),
-                _ => {
-                    let validity = arr.validity().unwrap();
-                    let (slice, byte_offset, _) = validity.as_slice();
-                    (0..validity.len())
-                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
-                        .zip(&mut hashes[offset..])
-                        .zip(arr.values_iter())
-                        .for_each(|((valid, h), l)| {
-                            let l = if valid {
-                                xxh3_64_with_seed(l.as_bytes(), null_h)
-                            } else {
-                                null_h
-                            };
-                            *h = _boost_hash_combine(l, *h)
-                        });
-                }
-            }
-            offset += arr.len();
-        });
-    }
-}
-
-#[cfg(feature = "dtype-binary")]
-impl VecHash for BinaryChunked {
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
-        buf.clear();
-        buf.reserve(self.len());
-        let null_h = get_null_hash_value(random_state);
-        self.downcast_iter().for_each(|arr| {
-            buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-                Some(v) => xxh3_64_with_seed(v, null_h),
-                None => null_h,
-            }))
         });
     }
 
@@ -661,16 +621,8 @@ impl<'a> Hash for BytesHash<'a> {
 
 impl<'a> BytesHash<'a> {
     #[inline]
-    #[cfg(any(feature = "dtype-binary", feature = "groupby_list"))]
     pub(crate) fn new(s: Option<&'a [u8]>, hash: u64) -> Self {
         Self { payload: s, hash }
-    }
-    #[inline]
-    pub(crate) fn new_from_str(s: Option<&'a str>, hash: u64) -> Self {
-        Self {
-            payload: s.map(|s| s.as_bytes()),
-            hash,
-        }
     }
 }
 

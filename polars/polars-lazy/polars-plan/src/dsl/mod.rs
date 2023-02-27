@@ -4,7 +4,6 @@ pub mod cat;
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
 mod arithmetic;
-#[cfg(feature = "dtype-binary")]
 pub mod binary;
 #[cfg(feature = "temporal")]
 mod dt;
@@ -2040,7 +2039,6 @@ impl Expr {
         string::StringNameSpace(self)
     }
 
-    #[cfg(feature = "dtype-binary")]
     pub fn binary(self) -> binary::BinaryNameSpace {
         binary::BinaryNameSpace(self)
     }

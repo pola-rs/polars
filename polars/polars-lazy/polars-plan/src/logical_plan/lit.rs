@@ -15,7 +15,6 @@ pub enum LiteralValue {
     /// A UTF8 encoded string type.
     Utf8(String),
     /// A raw binary array
-    #[cfg(feature = "dtype-binary")]
     Binary(Vec<u8>),
     /// An unsigned 8-bit integer number.
     #[cfg(feature = "dtype-u8")]
@@ -105,7 +104,6 @@ impl LiteralValue {
             LiteralValue::Float32(_) => DataType::Float32,
             LiteralValue::Float64(_) => DataType::Float64,
             LiteralValue::Utf8(_) => DataType::Utf8,
-            #[cfg(feature = "dtype-binary")]
             LiteralValue::Binary(_) => DataType::Binary,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
@@ -135,14 +133,12 @@ impl<'a> Literal for &'a str {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Literal for Vec<u8> {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self))
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> Literal for &'a [u8] {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self.to_vec()))
@@ -156,7 +152,6 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Null => Ok(Self::Null),
             AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
             AnyValue::Utf8(s) => Ok(Self::Utf8(s.to_string())),
-            #[cfg(feature = "dtype-binary")]
             AnyValue::Binary(b) => Ok(Self::Binary(b.to_vec())),
             #[cfg(feature = "dtype-u8")]
             AnyValue::UInt8(u) => Ok(Self::UInt8(u)),

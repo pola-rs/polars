@@ -73,27 +73,13 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
 
 impl ChunkFilter<Utf8Type> for Utf8Chunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<Utf8Type>> {
-        // broadcast
-        if filter.len() == 1 {
-            return match filter.get(0) {
-                Some(true) => Ok(self.clone()),
-                _ => Ok(Utf8Chunked::full_null(self.name(), 0)),
-            };
-        }
-        check_filter_len!(self, filter);
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-
-        Ok(self.copy_with_chunks(chunks, true, true))
+        let ca = self.cast(&DataType::Binary).unwrap();
+        let out = ca.filter(filter)?;
+        let out = unsafe { out.cast_unchecked(&DataType::Utf8) }.unwrap();
+        out.utf8().cloned()
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkFilter<BinaryType> for BinaryChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BinaryType>> {
         // broadcast

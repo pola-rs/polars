@@ -1,4 +1,3 @@
-#[cfg(feature = "dtype-binary")]
 mod binary;
 #[cfg(feature = "interpolate")]
 mod interpolate;
@@ -10,7 +9,6 @@ mod strings;
 #[cfg(feature = "top_k")]
 mod top_k;
 
-#[cfg(feature = "dtype-binary")]
 pub use binary::*;
 #[cfg(feature = "interpolate")]
 pub use interpolate::*;

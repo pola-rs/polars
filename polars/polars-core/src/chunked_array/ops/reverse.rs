@@ -39,7 +39,6 @@ macro_rules! impl_reverse {
 
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
-#[cfg(feature = "dtype-binary")]
 impl_reverse!(BinaryType, BinaryChunked);
 impl_reverse!(ListType, ListChunked);
 

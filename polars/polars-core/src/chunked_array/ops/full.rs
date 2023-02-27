@@ -64,7 +64,6 @@ impl ChunkFullNull for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
     fn full(name: &str, value: &'a [u8], length: usize) -> Self {
         let mut builder = BinaryChunkedBuilder::new(name, length, length * value.len());
@@ -78,7 +77,6 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Binary.to_arrow(), length);

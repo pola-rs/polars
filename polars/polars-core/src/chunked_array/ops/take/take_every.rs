@@ -31,17 +31,10 @@ impl ChunkTakeEvery<BooleanType> for BooleanChunked {
 
 impl ChunkTakeEvery<Utf8Type> for Utf8Chunked {
     fn take_every(&self, n: usize) -> Utf8Chunked {
-        let mut ca: Self = if !self.has_validity() {
-            self.into_no_null_iter().step_by(n).collect()
-        } else {
-            self.into_iter().step_by(n).collect()
-        };
-        ca.rename(self.name());
-        ca
+        unsafe { self.as_binary().take_every(n).to_utf8() }
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkTakeEvery<BinaryType> for BinaryChunked {
     fn take_every(&self, n: usize) -> BinaryChunked {
         let mut ca: Self = if !self.has_validity() {

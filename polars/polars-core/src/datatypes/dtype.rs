@@ -21,7 +21,6 @@ pub enum DataType {
     Decimal128(Option<(usize, usize)>),
     /// String data
     Utf8,
-    #[cfg(feature = "dtype-binary")]
     Binary,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
@@ -136,16 +135,7 @@ impl DataType {
     /// Check if datatype is a primitive type. By that we mean that
     /// it is not a container type.
     pub fn is_primitive(&self) -> bool {
-        #[cfg(feature = "dtype-binary")]
-        {
-            self.is_numeric()
-                | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
-        }
-
-        #[cfg(not(feature = "dtype-binary"))]
-        {
-            self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8)
-        }
+        self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
     }
 
     /// Check if this [`DataType`] is a numeric type
@@ -161,7 +151,6 @@ impl DataType {
             | DataType::Boolean
             | DataType::Unknown
             | DataType::Null => false,
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => false,
             #[cfg(feature = "object")]
             DataType::Object(_) => false,
@@ -216,7 +205,6 @@ impl DataType {
             #[cfg(feature = "dtype-i128")]
             Decimal128(_) => todo!(),
             Utf8 => ArrowDataType::LargeUtf8,
-            #[cfg(feature = "dtype-binary")]
             Binary => ArrowDataType::LargeBinary,
             Date => ArrowDataType::Date32,
             Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
@@ -271,7 +259,6 @@ impl Display for DataType {
             #[cfg(feature = "dtype-i128")]
             DataType::Decimal128(_) => "i128",
             DataType::Utf8 => "str",
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => "binary",
             DataType::Date => "date",
             DataType::Datetime(tu, tz) => {

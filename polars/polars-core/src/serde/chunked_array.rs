@@ -119,8 +119,6 @@ macro_rules! impl_serialize {
 impl_serialize!(Utf8Chunked);
 impl_serialize!(BooleanChunked);
 impl_serialize!(ListChunked);
-
-#[cfg(feature = "dtype-binary")]
 impl_serialize!(BinaryChunked);
 
 #[cfg(feature = "dtype-categorical")]
