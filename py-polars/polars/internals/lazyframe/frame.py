@@ -1117,12 +1117,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if more_by:
             by.extend(pli.selection_to_pyexpr_list(more_by))
 
-        # TODO: Do this check on the Rust side
-        if nulls_last and len(by) > 1:
-            raise ValueError(
-                "`nulls_last=True` only works when sorting by a single column"
-            )
-
         if isinstance(descending, bool):
             descending = [descending]
         return self._from_pyldf(self._ldf.sort_by_exprs(by, descending, nulls_last))

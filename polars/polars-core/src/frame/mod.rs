@@ -1841,8 +1841,8 @@ impl DataFrame {
             _ => {
                 #[cfg(feature = "sort_multiple")]
                 {
-                    if std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
-                        argsort_multiple_row_fmt(&by_column, &descending, nulls_last, parallel)?
+                    if nulls_last || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
+                        argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
                     } else {
                         let (first, by_column, descending) =
                             prepare_arg_sort(by_column, descending)?;
@@ -2451,7 +2451,7 @@ impl DataFrame {
     ///
     /// let df2: DataFrame = df1.describe(None)?;
     /// assert_eq!(df2.shape(), (9, 4));
-    /// dbg!(df2);
+    /// println!("{}", df2);
     /// # Ok::<(), PolarsError>(())
     /// ```
     ///
