@@ -162,6 +162,12 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.get_any_value(index)
     }
 
+    #[inline]
+    #[cfg(feature = "private")]
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+        self.0.get_any_value_unchecked(index)
+    }
+
     fn null_count(&self) -> usize {
         self.0.null_count()
     }
