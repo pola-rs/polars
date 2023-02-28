@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -17,7 +17,6 @@ from polars.datatypes import (
     Int64,
     Null,
     Object,
-    PolarsDataType,
     Time,
     UInt8,
     UInt16,
@@ -36,6 +35,8 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
 
 if not _DOCUMENTING:
     _POLARS_TYPE_TO_CONSTRUCTOR: dict[

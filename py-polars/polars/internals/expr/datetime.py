@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import time, timedelta
+from datetime import time
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -8,6 +8,8 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils import _timedelta_to_pl_duration, deprecated_alias, redirect
 
 if TYPE_CHECKING:
+    from datetime import timedelta
+
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
 
 

@@ -5,7 +5,7 @@ import os
 import subprocess
 import typing
 from datetime import date, datetime, time, timedelta
-from io import BytesIO, IOBase, StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -33,9 +33,6 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
-    PolarsDataType,
-    SchemaDefinition,
-    SchemaDict,
     Time,
     UInt8,
     UInt16,
@@ -64,9 +61,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from io import IOBase
 
     import pyarrow as pa
 
+    from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,

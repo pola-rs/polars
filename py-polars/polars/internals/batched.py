@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING, Sequence
 import polars.internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
-    PolarsDataType,
-    SchemaDict,
     py_type_to_dtype,
 )
 from polars.utils import (
@@ -22,6 +20,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyBatchedCsv
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType, SchemaDict
     from polars.internals.type_aliases import CsvEncoding
 
 

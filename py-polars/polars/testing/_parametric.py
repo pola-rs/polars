@@ -6,13 +6,11 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import isfinite
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from hypothesis import settings
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import (
-    DrawFn,
-    SearchStrategy,
     booleans,
     composite,
     dates,
@@ -41,7 +39,6 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
-    PolarsDataType,
     Time,
     UInt8,
     UInt16,
@@ -53,6 +50,11 @@ from polars.datatypes import (
 )
 from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
+
+if TYPE_CHECKING:
+    from hypothesis.strategies import DrawFn, SearchStrategy
+
+    from polars.datatypes import PolarsDataType
 
 # Default profile (eg: running locally)
 common_settings = {"print_blob": True, "deadline": None}

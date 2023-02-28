@@ -14,7 +14,6 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars import DataType
 from polars.exceptions import ComputeError, NoDataError
 from polars.testing import (
     assert_frame_equal,
@@ -574,7 +573,7 @@ def test_ignore_try_parse_dates() -> None:
     ).encode()
 
     headers = ["a", "b", "c"]
-    dtypes: dict[str, type[DataType]] = {
+    dtypes: dict[str, type[pl.DataType]] = {
         k: pl.Utf8 for k in headers
     }  # Forces Utf8 type for every column
     df = pl.read_csv(csv, columns=headers, dtypes=dtypes)
