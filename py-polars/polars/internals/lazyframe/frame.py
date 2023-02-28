@@ -1041,7 +1041,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Place null values last. Can only be used when sorting by a single column.
+            Place null values last.
 
         Examples
         --------

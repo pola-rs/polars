@@ -1,6 +1,6 @@
 mod arg_sort;
 #[cfg(feature = "sort_multiple")]
-mod arg_sort_multiple;
+pub mod arg_sort_multiple;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 
@@ -742,7 +742,7 @@ pub(crate) fn convert_sort_column_multi_sort(
     Ok(out)
 }
 
-pub(super) fn broadcast_descending(n_cols: usize, descending: &mut Vec<bool>) {
+pub fn _broadcast_descending(n_cols: usize, descending: &mut Vec<bool>) {
     if n_cols > descending.len() && descending.len() == 1 {
         while n_cols != descending.len() {
             descending.push(descending[0]);
@@ -765,7 +765,7 @@ pub(crate) fn prepare_arg_sort(
     let first = columns.remove(0);
 
     // broadcast ordering
-    broadcast_descending(n_cols, &mut descending);
+    _broadcast_descending(n_cols, &mut descending);
     Ok((first, columns, descending))
 }
 

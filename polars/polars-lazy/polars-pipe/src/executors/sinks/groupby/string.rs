@@ -252,7 +252,7 @@ impl Sink for Utf8GroupbySink {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, mut other: Box<dyn Sink>) {
+    fn combine(&mut self, other: &mut dyn Sink) {
         // don't parallel this as this is already done in parallel.
 
         let other = other.as_any().downcast_ref::<Self>().unwrap();

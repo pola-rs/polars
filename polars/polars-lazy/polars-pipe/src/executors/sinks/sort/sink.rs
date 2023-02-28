@@ -5,8 +5,9 @@ use std::sync::{Arc, Mutex};
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{AnyValue, SchemaRef, Series};
+use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_plan::prelude::SortArguments;
 use polars_utils::atomic::SyncCounter;
 use polars_utils::sys::MEMINFO;
 
@@ -26,19 +27,13 @@ pub struct SortSink {
     io_thread: Arc<Mutex<Option<IOThread>>>,
     // location in the dataframe of the columns to sort by
     sort_idx: usize,
-    descending: bool,
-    slice: Option<(i64, usize)>,
+    sort_args: SortArguments,
     // sampled values so we can find the distribution.
     dist_sample: Vec<AnyValue<'static>>,
 }
 
 impl SortSink {
-    pub(crate) fn new(
-        sort_idx: usize,
-        descending: bool,
-        schema: SchemaRef,
-        slice: Option<(i64, usize)>,
-    ) -> Self {
+    pub(crate) fn new(sort_idx: usize, sort_args: SortArguments, schema: SchemaRef) -> Self {
         // for testing purposes
         let ooc = std::env::var("POLARS_FORCE_OOC_SORT").is_ok();
 
@@ -50,8 +45,7 @@ impl SortSink {
             ooc,
             io_thread: Default::default(),
             sort_idx,
-            descending,
-            slice,
+            sort_args,
             dist_sample: vec![],
         };
         if ooc {
@@ -129,7 +123,7 @@ impl Sink for SortSink {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, mut other: Box<dyn Sink>) {
+    fn combine(&mut self, other: &mut dyn Sink) {
         let other = other.as_any().downcast_mut::<Self>().unwrap();
         self.chunks.extend(std::mem::take(&mut other.chunks));
         self.ooc |= other.ooc;
@@ -150,9 +144,8 @@ impl Sink for SortSink {
             ooc: self.ooc,
             io_thread: self.io_thread.clone(),
             sort_idx: self.sort_idx,
-            descending: self.descending,
+            sort_args: self.sort_args.clone(),
             dist_sample: vec![],
-            slice: self.slice,
         })
     }
 
@@ -168,15 +161,30 @@ impl Sink for SortSink {
             let io_thread = lock.as_ref().unwrap();
 
             let dist = Series::from_any_values("", &self.dist_sample).unwrap();
-            let dist = dist.sort(self.descending);
+            let dist = dist.sort_with(SortOptions {
+                descending: self.sort_args.descending[0],
+                nulls_last: self.sort_args.nulls_last,
+                multithreaded: true,
+            });
 
             block_thread_until_io_thread_done(io_thread);
 
-            sort_ooc(io_thread, dist, self.sort_idx, self.descending, self.slice)
+            sort_ooc(
+                io_thread,
+                dist,
+                self.sort_idx,
+                self.sort_args.descending[0],
+                self.sort_args.slice,
+            )
         } else {
             let chunks = std::mem::take(&mut self.chunks);
             let df = accumulate_dataframes_vertical_unchecked(chunks);
-            let df = sort_accumulated(df, self.sort_idx, self.descending, self.slice)?;
+            let df = sort_accumulated(
+                df,
+                self.sort_idx,
+                self.sort_args.descending[0],
+                self.sort_args.slice,
+            )?;
             Ok(FinalizedSink::Finished(df))
         }
     }

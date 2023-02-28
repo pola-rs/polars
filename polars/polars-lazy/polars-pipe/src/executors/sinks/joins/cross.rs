@@ -34,7 +34,7 @@ impl Sink for CrossJoin {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, mut other: Box<dyn Sink>) {
+    fn combine(&mut self, other: &mut dyn Sink) {
         let other = other.as_any().downcast_mut::<Self>().unwrap();
         let other_chunks = std::mem::take(&mut other.chunks);
         self.chunks.extend(other_chunks.into_iter());

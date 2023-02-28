@@ -40,7 +40,7 @@ mod reverse;
 pub(crate) mod rolling_window;
 mod set;
 mod shift;
-pub(crate) mod sort;
+pub mod sort;
 pub(crate) mod take;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]

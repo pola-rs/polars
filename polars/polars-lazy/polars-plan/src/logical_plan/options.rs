@@ -255,7 +255,6 @@ pub struct LogicalPlanUdfOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SortArguments {
     pub descending: Vec<bool>,
-    // Can only be true in case of a single column.
     pub nulls_last: bool,
     pub slice: Option<(i64, usize)>,
 }
