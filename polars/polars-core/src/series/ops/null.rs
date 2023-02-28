@@ -25,6 +25,10 @@ impl Series {
             DataType::Time => Int64Chunked::full_null(name, size)
                 .into_time()
                 .into_series(),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(prec, scale) => Int128Chunked::full_null(name, size)
+                .into_decimal_unchecked(*prec, *scale)
+                .into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
                 let fields = fields
