@@ -1611,6 +1611,7 @@ dependencies = [
  "polars-io",
  "polars-ops",
  "polars-plan",
+ "polars-row",
  "polars-utils",
  "rayon",
  "smartstring",

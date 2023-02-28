@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
-use arrow::array::{Array, PrimitiveArray, Utf8Array};
+use arrow::array::{Array, BinaryArray, PrimitiveArray};
 use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::*;
 use polars_core::prelude::*;
@@ -29,8 +29,8 @@ impl<T: NumericNative> GetArray<T> for &PrimitiveArray<T> {
     }
 }
 
-impl<'a> GetArray<&'a str> for &'a Utf8Array<i64> {
-    unsafe fn _get_value_unchecked(&self, i: usize) -> Option<&'a str> {
+impl<'a> GetArray<&'a [u8]> for &'a BinaryArray<i64> {
+    unsafe fn _get_value_unchecked(&self, i: usize) -> Option<&'a [u8]> {
         self.get_unchecked(i)
     }
 }
@@ -183,9 +183,9 @@ where
     out
 }
 
-fn search_sorted_utf8_array(
-    ca: &Utf8Chunked,
-    search_values: &Utf8Chunked,
+fn search_sorted_bin_array(
+    ca: &BinaryChunked,
+    search_values: &BinaryChunked,
     side: SearchSortedSide,
     descending: bool,
 ) -> Vec<IdxSize> {
@@ -226,8 +226,17 @@ pub fn search_sorted(
     match phys_dtype {
         DataType::Utf8 => {
             let ca = s.utf8().unwrap();
+            let ca = ca.as_binary();
             let search_values = search_values.utf8()?;
-            let idx = search_sorted_utf8_array(ca, search_values, side, descending);
+            let search_values = search_values.as_binary();
+            let idx = search_sorted_bin_array(&ca, &search_values, side, descending);
+
+            Ok(IdxCa::new_vec(s.name(), idx))
+        }
+        DataType::Binary => {
+            let ca = s.binary().unwrap();
+            let search_values = search_values.binary().unwrap();
+            let idx = search_sorted_bin_array(&ca, &search_values, side, descending);
 
             Ok(IdxCa::new_vec(s.name(), idx))
         }

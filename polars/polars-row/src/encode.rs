@@ -3,22 +3,18 @@ use arrow::datatypes::{DataType as ArrowDataType, DataType};
 use arrow::types::NativeType;
 
 use crate::encodings::fixed::FixedLengthEncoding;
-use crate::row::RowsEncoded;
-use crate::sort_field::SortField;
+use crate::row::{RowsEncoded, SortField};
 use crate::{with_match_arrow_primitive_type, ArrayRef};
 
-pub fn convert_columns(columns: &[ArrayRef], fields: Vec<SortField>) -> RowsEncoded {
+pub fn convert_columns(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncoded {
     assert_eq!(fields.len(), columns.len());
 
-    let mut rows = allocate_rows_buf(columns, &fields);
+    let mut rows = allocate_rows_buf(columns);
     for (arr, field) in columns.iter().zip(fields.iter()) {
         // Safety:
         // we allocated rows with enough bytes.
         unsafe { encode_array(&**arr, field, &mut rows) }
     }
-
-    // we set fields later so we don't have aliasing borrows.
-    rows.fields = fields;
     rows
 }
 
@@ -71,22 +67,39 @@ unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncod
     };
 }
 
-pub fn allocate_rows_buf(columns: &[ArrayRef], fields: &[SortField]) -> RowsEncoded {
-    let has_variable = fields
+pub fn encoded_size(data_type: &ArrowDataType) -> usize {
+    use ArrowDataType::*;
+    match data_type {
+        UInt8 => u8::ENCODED_LEN,
+        UInt16 => u16::ENCODED_LEN,
+        UInt32 => u32::ENCODED_LEN,
+        UInt64 => u64::ENCODED_LEN,
+        Int8 => i8::ENCODED_LEN,
+        Int16 => i16::ENCODED_LEN,
+        Int32 => i32::ENCODED_LEN,
+        Int64 => i64::ENCODED_LEN,
+        Float32 => f32::ENCODED_LEN,
+        Float64 => f64::ENCODED_LEN,
+        _ => unimplemented!(),
+    }
+}
+
+pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
+    let has_variable = columns
         .iter()
-        .any(|f| matches!(f.data_type, ArrowDataType::LargeBinary));
+        .any(|arr| matches!(arr.data_type(), ArrowDataType::LargeBinary));
 
     let num_rows = columns[0].len();
     if has_variable {
         // row size of the fixed-length columns
         // those can be determined without looping over the arrays
-        let row_size_fixed: usize = fields
+        let row_size_fixed: usize = columns
             .iter()
-            .map(|f| {
-                if matches!(f.data_type, ArrowDataType::LargeBinary) {
+            .map(|arr| {
+                if matches!(arr.data_type(), ArrowDataType::LargeBinary) {
                     0
                 } else {
-                    f.encoded_size()
+                    encoded_size(arr.data_type())
                 }
             })
             .sum();
@@ -139,9 +152,12 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], fields: &[SortField]) -> RowsEnco
 
         // todo! allocate uninit
         let buf = vec![0u8; current_offset];
-        RowsEncoded::new(buf, offsets, None)
+        RowsEncoded::new(buf, offsets)
     } else {
-        let row_size: usize = fields.iter().map(|f| f.encoded_size()).sum();
+        let row_size: usize = columns
+            .iter()
+            .map(|arr| encoded_size(arr.data_type()))
+            .sum();
         let n_bytes = num_rows * row_size;
         // todo! allocate uninit
         let buf = vec![0u8; n_bytes];
@@ -165,7 +181,7 @@ pub fn allocate_rows_buf(columns: &[ArrayRef], fields: &[SortField]) -> RowsEnco
             offsets.push(current_offset);
             current_offset += row_size;
         }
-        RowsEncoded::new(buf, offsets, None)
+        RowsEncoded::new(buf, offsets)
     }
 }
 

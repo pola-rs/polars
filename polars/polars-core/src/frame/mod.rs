@@ -1160,6 +1160,16 @@ impl DataFrame {
         inner(self, series)
     }
 
+    /// Adds a column to the `DataFrame` without doing any checks
+    /// on length or duplicates.
+    ///
+    /// # Safety
+    /// The caller must ensure `column.len() == self.height()` .
+    pub unsafe fn with_column_unchecked(&mut self, column: Series) -> &mut Self {
+        self.get_columns_mut().push(column);
+        self
+    }
+
     fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> PolarsResult<()> {
         let name = s.name();
         if let Some((idx, _, _)) = schema.get_full(name) {

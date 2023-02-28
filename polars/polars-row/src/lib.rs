@@ -269,12 +269,10 @@
 pub mod encode;
 mod encodings;
 mod row;
-mod sort_field;
 mod utils;
 
 use arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;
 
 pub use encode::convert_columns;
-pub use row::RowsEncoded;
-pub use sort_field::SortField;
+pub use row::{RowsEncoded, SortField};
