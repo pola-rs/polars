@@ -329,7 +329,7 @@ def sequence_to_pyseries(
             if dtype == Datetime and value.tzinfo is not None:
                 tz = str(value.tzinfo)
                 dtype_tz = dtype.tz  # type: ignore[union-attr]
-                if dtype.tz is not None and tz != dtype_tz:
+                if dtype_tz is not None and tz != dtype_tz:
                     raise ValueError(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
