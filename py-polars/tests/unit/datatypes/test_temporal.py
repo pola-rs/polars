@@ -1851,11 +1851,12 @@ def test_tz_datetime_duration_arithm_5221() -> None:
         data={"run_datetime": run_datetimes},
         schema=[("run_datetime", pl.Datetime(time_zone="UTC"))],
     )
+    out = out.with_columns(pl.col("run_datetime") + pl.duration(days=1))
     utc = ZoneInfo("UTC")
     assert out.to_dict(False) == {
         "run_datetime": [
-            datetime(2022, 1, 1, 0, 0, tzinfo=utc),
             datetime(2022, 1, 2, 0, 0, tzinfo=utc),
+            datetime(2022, 1, 3, 0, 0, tzinfo=utc),
         ]
     }
 
@@ -1892,7 +1893,7 @@ def test_timezone_aware_date_range() -> None:
 
     with pytest.raises(
         ValueError,
-        match="Given time_zone is different from that timezone aware datetimes. "
+        match="Given time_zone is different from that of timezone aware datetimes. "
         "Given: 'UTC', got: 'Asia/Shanghai'.",
     ):
         pl.date_range(low, high, interval=timedelta(days=5), time_zone="UTC")

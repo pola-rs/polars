@@ -475,7 +475,7 @@ def date_range(
         if time_zone is not None and low.tzinfo is not None:
             if str(low.tzinfo) != time_zone:
                 raise ValueError(
-                    "Given time_zone is different from that timezone aware datetimes."
+                    "Given time_zone is different from that of timezone aware datetimes."
                     f" Given: '{time_zone}', got: '{low.tzinfo}'."
                 )
         if time_zone is None:
