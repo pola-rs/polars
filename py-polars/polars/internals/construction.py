@@ -329,7 +329,20 @@ def sequence_to_pyseries(
             if dtype == Datetime and value.tzinfo is not None:
                 py_series = PySeries.new_from_anyvalues(name, values)
                 tz = str(value.tzinfo)
-                return pli.wrap_s(py_series).dt.replace_time_zone(tz)._s
+                time_unit = dtype.tu  # type: ignore[union-attr]
+                if time_unit is None:
+                    return pli.wrap_s(py_series).dt.replace_time_zone(tz)._s
+                if dtype.tz is not None:  # type: ignore[union-attr]
+                    raise ValueError(
+                        "Cannot pass tz-aware object and tz-aware dtype. "
+                        "Please drop time zone from the dtype."
+                    )
+                return (
+                    pli.wrap_s(py_series)
+                    .dt.cast_time_unit(time_unit)
+                    .dt.replace_time_zone(tz)
+                    ._s
+                )
 
             # TODO: use anyvalues here (no need to require pyarrow for this).
             arrow_dtype = dtype_to_arrow_type(dtype)
