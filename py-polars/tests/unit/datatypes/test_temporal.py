@@ -1847,15 +1847,13 @@ def test_tz_datetime_duration_arithm_5221() -> None:
         datetime.fromisoformat("2022-01-01T00:00:00+00:00"),
         datetime.fromisoformat("2022-01-02T00:00:00+00:00"),
     ]
-    out = pl.DataFrame(
-        data={"run_datetime": run_datetimes},
-        schema=[("run_datetime", pl.Datetime(time_zone="UTC"))],
-    )
+    df = pl.DataFrame(data={"run_datetime": run_datetimes})
+    result = df.with_columns(pl.col("run_datetime") + pl.duration(days=1))
     utc = ZoneInfo("UTC")
-    assert out.to_dict(False) == {
+    assert result.to_dict(False) == {
         "run_datetime": [
-            datetime(2022, 1, 1, 0, 0, tzinfo=utc),
             datetime(2022, 1, 2, 0, 0, tzinfo=utc),
+            datetime(2022, 1, 3, 0, 0, tzinfo=utc),
         ]
     }
 

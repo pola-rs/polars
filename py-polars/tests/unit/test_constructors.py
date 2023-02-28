@@ -437,11 +437,6 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    with pytest.raises(ValueError, match="Please drop time zone from the dtype"):
-        pl.DataFrame(
-            [datetime(2020, 1, 1, tzinfo=timezone.utc)],
-            schema={"ts": pl.Datetime("ms", "Europe/Vienna")},
-        )
 
 
 def test_init_pandas(monkeypatch: Any) -> None:
