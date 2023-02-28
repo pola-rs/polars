@@ -18,7 +18,7 @@ pub enum DataType {
     #[cfg(feature = "dtype-decimal")]
     /// Fixed point decimal type optional precision and non-negative scale.
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
-    Decimal(Option<usize>, usize),
+    Decimal(Option<usize>, Option<usize>), // prec/scale; scale being None means "infer"
     /// String data
     Utf8,
     Binary,
@@ -204,7 +204,10 @@ impl DataType {
             Float64 => ArrowDataType::Float64,
             #[cfg(feature = "dtype-decimal")]
             // note: what else can we do here other than setting prec to 38?..
-            Decimal(prec, scale) => ArrowDataType::Decimal((*prec).unwrap_or(38), *scale),
+            Decimal(prec, scale) => ArrowDataType::Decimal(
+                (*prec).unwrap_or(38),
+                scale.unwrap_or(0), // and what else can we do here?
+            ),
             Utf8 => ArrowDataType::LargeUtf8,
             Binary => ArrowDataType::LargeBinary,
             Date => ArrowDataType::Date32,
@@ -259,10 +262,11 @@ impl Display for DataType {
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(prec, scale) => {
-                return f.write_str(&match prec {
-                    Some(prec) => format!("decimal[{}, {}]", prec, scale),
-                    None => format!("decimal[*, {}]", scale),
-                })
+                return match (prec, scale) {
+                    (_, None) => f.write_str("decimal[?]"), // shouldn't happen
+                    (None, Some(scale)) => f.write_str(&format!("decimal[{scale}]")),
+                    (Some(prec), Some(scale)) => f.write_str(&format!("decimal[.{prec},{scale}]")),
+                };
             }
             DataType::Utf8 => "str",
             DataType::Binary => "binary",

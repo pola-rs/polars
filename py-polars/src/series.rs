@@ -278,8 +278,8 @@ impl PySeries {
     ) -> PyResult<PySeries> {
         // TODO: do we have to respect 'strict' here? it's possible if we want to
         let avs = slice_extract_wrapped(&val);
-        // create a fake dtype with a special 'placeholder' scale
-        let dtype = DataType::Decimal(None, usize::MAX);
+        // create a fake dtype with a placeholder "none" scale, to be inferred later
+        let dtype = DataType::Decimal(None, None);
         let s = Series::from_any_values_and_dtype(name, avs, &dtype).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }

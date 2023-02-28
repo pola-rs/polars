@@ -779,7 +779,7 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
             #[cfg(feature = "dtype-decimal")]
-            AnyValue::Decimal(v, _, scale) => fmt_decimal(f, *v, *scale),
+            AnyValue::Decimal(v, scale) => fmt_decimal(f, *v, *scale),
         }
     }
 }

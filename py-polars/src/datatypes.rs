@@ -47,7 +47,7 @@ impl From<&DataType> for PyDataType {
             DataType::UInt64 => UInt64,
             DataType::Float32 => Float32,
             DataType::Float64 => Float64,
-            DataType::Decimal(p, s) => Decimal(*p, *s),
+            DataType::Decimal(p, s) => Decimal(*p, s.expect("unexpected null decimal scale")),
             DataType::Boolean => Bool,
             DataType::Utf8 => Utf8,
             DataType::Binary => Binary,
@@ -99,7 +99,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Object => Object(OBJECT_NAME),
             PyDataType::Categorical => Categorical(None),
             PyDataType::Struct => Struct(vec![]),
-            PyDataType::Decimal(p, s) => Decimal(p, s),
+            PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
         }
     }
 }

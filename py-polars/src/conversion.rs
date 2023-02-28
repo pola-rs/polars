@@ -266,14 +266,13 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),
-            AnyValue::Decimal(v, prec, scale) => {
+            AnyValue::Decimal(v, scale) => {
                 let convert = utils.getattr("_to_python_decimal").unwrap();
                 let mut buf = [0_u8; 48];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
-                let prec = prec.unwrap_or(n_digits);
                 let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
                 convert
-                    .call1((v.is_negative() as u8, digits, prec, -(scale as i32)))
+                    .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
                     .unwrap()
                     .into_py(py)
             }
@@ -376,7 +375,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
-                    "Decimal" => DataType::Decimal(None, 0),
+                    "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
@@ -406,7 +405,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "Decimal" => {
                 let prec = ob.getattr("prec")?.extract()?;
                 let scale = ob.getattr("scale")?.extract()?;
-                DataType::Decimal(prec, scale)
+                DataType::Decimal(prec, Some(scale))
             }
             "List" => {
                 let inner = ob.getattr("inner").unwrap();
@@ -724,7 +723,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         // note: Decimal('-0') will be mapped to simply '0'
                         v = -v; // won't overflow since -i128::MAX > i128::MIN
                     }
-                    Ok(Wrap(AnyValue::Decimal(v, None, scale))) // NOTE: prec := None
+                    Ok(Wrap(AnyValue::Decimal(v, scale)))
                 }
                 _ => Err(PyErr::from(PyPolarsErr::Other(format!(
                     "object type not supported {ob:?}",

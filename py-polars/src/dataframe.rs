@@ -66,7 +66,7 @@ impl PyDataFrame {
                 fld
             }
             DataType::Decimal(_, _) => {
-                fld.coerce(DataType::Decimal(None, usize::MAX));
+                fld.coerce(DataType::Decimal(None, None));
                 fld
             }
             _ => fld,

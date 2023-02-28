@@ -64,7 +64,10 @@ impl Series {
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
             Decimal(prec, scale) => Int128Chunked::from_chunks(name, chunks)
-                .into_decimal_unchecked(*prec, *scale)
+                .into_decimal_unchecked(
+                    *prec,
+                    scale.unwrap_or_else(|| unreachable!("scale should be set")),
+                )
                 .into_series(),
             List(_) => ListChunked::from_chunks(name, chunks).cast(dtype).unwrap(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
@@ -343,7 +346,8 @@ impl Series {
             #[cfg(feature = "dtype-decimal")]
             ArrowDataType::Decimal(prec, scale) => {
                 let (prec, scale) = (Some(*prec), *scale);
-                let chunks = cast_chunks(&chunks, &DataType::Decimal(prec, scale), false).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Decimal(prec, Some(scale)), false).unwrap();
                 // or DecimalChunked?
                 Ok(Int128Chunked::from_chunks(name, chunks)
                     .into_decimal_unchecked(prec, scale)

@@ -27,7 +27,10 @@ impl Series {
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(prec, scale) => Int128Chunked::full_null(name, size)
-                .into_decimal_unchecked(*prec, *scale)
+                .into_decimal_unchecked(
+                    *prec,
+                    scale.unwrap_or_else(|| unreachable!("scale should be set")),
+                )
                 .into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {

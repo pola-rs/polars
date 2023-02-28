@@ -84,7 +84,7 @@ pub enum AnyValue<'a> {
     BinaryOwned(Vec<u8>),
     /// A 128-bit fixed point decimal number.
     #[cfg(feature = "dtype-decimal")]
-    Decimal(i128, Option<usize>, usize), // TODO: do we even need precision here?
+    Decimal(i128, usize),
 }
 
 #[cfg(feature = "serde")]
@@ -388,7 +388,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(v, _, _) => NumCast::from(*v),
+            Decimal(v, _) => NumCast::from(*v),
             Boolean(v) => {
                 if *v {
                     NumCast::from(1)
@@ -557,11 +557,11 @@ impl<'a> AnyValue<'a> {
     }
 
     #[cfg(feature = "dtype-decimal")]
-    pub(crate) fn into_decimal(self, precision: Option<usize>, scale: usize) -> Self {
+    pub(crate) fn into_decimal(self, scale: usize) -> Self {
         match self {
             // because Int128 type yields Decimal(None, 0)
             // (an alternative would be to use a whole different Int128 variant)
-            AnyValue::Decimal(v, None, 0) => AnyValue::Decimal(v, precision, scale),
+            AnyValue::Decimal(v, 0) => AnyValue::Decimal(v, scale),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create decimal from other type. dtype: {dt}"),
         }

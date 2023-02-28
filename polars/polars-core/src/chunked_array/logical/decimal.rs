@@ -7,7 +7,7 @@ impl Int128Chunked {
     #[inline]
     pub fn into_decimal_unchecked(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
         let mut dt = DecimalChunked::new_logical(self);
-        dt.2 = Some(DataType::Decimal(precision, scale));
+        dt.2 = Some(DataType::Decimal(precision, Some(scale)));
         dt
     }
 
@@ -42,21 +42,24 @@ impl LogicalType for DecimalChunked {
         self.2.as_ref().unwrap()
     }
 
+    #[inline]
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
         self.0
             .get_any_value(i)
-            .map(|av| av.into_decimal(self.precision(), self.scale()))
+            .map(|av| av.into_decimal(self.scale()))
     }
 
+    #[inline]
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        self.0
-            .get_any_value_unchecked(i)
-            .into_decimal(self.precision(), self.scale())
+        self.0.get_any_value_unchecked(i).into_decimal(self.scale())
     }
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         let (prec_src, scale_src) = (self.precision(), self.scale());
         if let &DataType::Decimal(prec_dst, scale_dst) = dtype {
+            let scale_dst = scale_dst.ok_or_else(|| {
+                PolarsError::InvalidOperation("Cannot cast to Decimal with unknown scale".into())
+            })?;
             // for now, let's just allow same-scale conversions
             // where precision is either the same or bigger or gets converted to `None`
             // (these are the easy cases requiring no checks and arithmetics which we can add later)
@@ -85,7 +88,7 @@ impl DecimalChunked {
 
     pub fn scale(&self) -> usize {
         match self.2.as_ref().unwrap() {
-            DataType::Decimal(_, scale) => *scale,
+            DataType::Decimal(_, scale) => scale.unwrap_or_else(|| unreachable!()),
             _ => unreachable!(),
         }
     }

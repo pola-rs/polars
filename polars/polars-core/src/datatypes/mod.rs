@@ -124,7 +124,7 @@ pub struct Int128Type {}
 #[cfg(feature = "dtype-decimal")]
 impl PolarsDataType for Int128Type {
     fn get_dtype() -> DataType {
-        DataType::Decimal(None, 0) // TODO: is this the right way to do it?
+        DataType::Decimal(None, Some(0)) // scale is not None to allow for get_any_value() to work
     }
 }
 

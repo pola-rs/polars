@@ -30,6 +30,7 @@ fn any_values_to_utf8(avs: &[AnyValue]) -> Utf8Chunked {
     builder.finish()
 }
 
+#[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
     avs: &[AnyValue],
     prec: Option<usize>,
@@ -40,7 +41,7 @@ fn any_values_to_decimal(
     for av in avs {
         let s_av = if av.is_signed() || av.is_unsigned() {
             0 // integers are treated as decimals with scale of zero
-        } else if let AnyValue::Decimal(_, _, scale) = av {
+        } else if let AnyValue::Decimal(_, scale) = av {
             *scale
         } else if matches!(av, AnyValue::Null) {
             continue;
@@ -88,7 +89,7 @@ fn any_values_to_decimal(
                     av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
                     0,
                 )
-            } else if let AnyValue::Decimal(v, _, scale) = av {
+            } else if let AnyValue::Decimal(v, scale) = av {
                 (*v, *scale)
             } else {
                 // it has to be a null because we've already checked it
@@ -205,9 +206,7 @@ impl Series {
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(prec, scale) => {
-                // a little hack to allow passing "none" from python
-                let scale = (*scale < usize::MAX).then_some(*scale);
-                any_values_to_decimal(av, *prec, scale)?.into_series()
+                any_values_to_decimal(av, *prec, *scale)?.into_series()
             }
             DataType::List(inner) => any_values_to_list(av, inner).into_series(),
             #[cfg(feature = "dtype-struct")]
@@ -330,7 +329,7 @@ impl Series {
             Some(av) => {
                 #[cfg(feature = "dtype-decimal")]
                 {
-                    if let AnyValue::Decimal(_, _, _) = av {
+                    if let AnyValue::Decimal(_, _) = av {
                         let mut s = any_values_to_decimal(avs, None, None)?.into_series();
                         s.rename(name);
                         return Ok(s);
@@ -389,7 +388,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             #[cfg(feature = "object")]
             ObjectOwned(o) => DataType::Object(o.0.type_name()),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, prec, scale) => DataType::Decimal(*prec, *scale),
+            Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
         }
     }
 }
