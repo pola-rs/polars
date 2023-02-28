@@ -777,14 +777,18 @@ def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
         ) from None
 
 
-def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
+def dtype_to_arrow_type(
+    dtype: PolarsDataType, tz_override: str | None = None
+) -> pa.lib.DataType:
     """Convert a Polars dtype to an Arrow dtype."""
     try:
         # special handling for mapping to tz-aware timestamp type.
         # (don't want to include every possible tz string in the lookup)
         tz = None
-        if dtype == Datetime:
+        if dtype == Datetime and tz_override is None:
             dtype, tz = Datetime(dtype.tu), dtype.tz  # type: ignore[union-attr]
+        elif dtype == Datetime:
+            dtype, tz = Datetime(dtype.tu), tz_override  # type: ignore[union-attr]
 
         arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
         if tz:

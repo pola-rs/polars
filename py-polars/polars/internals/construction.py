@@ -324,8 +324,8 @@ def sequence_to_pyseries(
             elif dtype in py_temporal_types:
                 dtype = py_type_to_dtype(dtype)
 
-            # we use anyvalue builder to create the datetime array
-            # we store the values internally as UTC and set the timezone
+            # TODO: use anyvalues here (no need to require pyarrow for this),
+            # BUT blocked by https://github.com/pola-rs/polars/issues/7232.
             if dtype == Datetime and value.tzinfo is not None:
                 tz = str(value.tzinfo)
                 dtype_tz = dtype.tz  # type: ignore[union-attr]
@@ -334,19 +334,9 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
-                py_series = PySeries.new_from_anyvalues(name, values)
-                time_unit = dtype.tu  # type: ignore[union-attr]
-                if time_unit is None:
-                    return pli.wrap_s(py_series).dt.replace_time_zone(tz)._s
-                return (
-                    pli.wrap_s(py_series)
-                    .dt.cast_time_unit(time_unit)
-                    .dt.replace_time_zone(tz)
-                    ._s
-                )
-
-            # TODO: use anyvalues here (no need to require pyarrow for this).
-            arrow_dtype = dtype_to_arrow_type(dtype)
+                arrow_dtype = dtype_to_arrow_type(dtype, tz)
+            else:
+                arrow_dtype = dtype_to_arrow_type(dtype)
             return arrow_to_pyseries(name, pa.array(values, type=arrow_dtype))
 
         elif python_dtype in (list, tuple):
