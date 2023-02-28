@@ -327,13 +327,13 @@ def sequence_to_pyseries(
             # we use anyvalue builder to create the datetime array
             # we store the values internally as UTC and set the timezone
             if dtype == Datetime and value.tzinfo is not None:
-                if dtype.tz is not None:  # type: ignore[union-attr]
+                tz = str(value.tzinfo)
+                if dtype.tz is not None and tz != dtype.tz:  # type: ignore[union-attr]
                     raise ValueError(
-                        "Cannot pass tz-aware object and tz-aware dtype. "
-                        "Please drop time zone from the dtype."
+                        "Given time_zone is different from that of timezone aware datetimes."
+                        f" Given: '{dtype.tz}', got: '{tz}'."  # type: ignore[union-attr]
                     )
                 py_series = PySeries.new_from_anyvalues(name, values)
-                tz = str(value.tzinfo)
                 time_unit = dtype.tu  # type: ignore[union-attr]
                 if time_unit is None:
                     return pli.wrap_s(py_series).dt.replace_time_zone(tz)._s

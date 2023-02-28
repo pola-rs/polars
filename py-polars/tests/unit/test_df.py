@@ -3157,7 +3157,8 @@ def test_init_datetimes_with_timezone() -> None:
             },
         ):
             with pytest.raises(
-                ValueError, match="Please drop time zone from the dtype"
+                ValueError,
+                match="Given time_zone is different from that of timezone aware datetimes",
             ):
                 pl.DataFrame(  # type: ignore[arg-type]
                     data={"d1": [dtm], "d2": [dtm]},
