@@ -328,10 +328,11 @@ def sequence_to_pyseries(
             # we store the values internally as UTC and set the timezone
             if dtype == Datetime and value.tzinfo is not None:
                 tz = str(value.tzinfo)
-                if dtype.tz is not None and tz != dtype.tz:  # type: ignore[union-attr]
+                dtype_tz = dtype.tz  # type: ignore[union-attr]
+                if dtype.tz is not None and tz != dtype_tz:
                     raise ValueError(
                         "Given time_zone is different from that of timezone aware datetimes."
-                        f" Given: '{dtype.tz}', got: '{tz}'."  # type: ignore[union-attr]
+                        f" Given: '{dtype_tz}', got: '{tz}'."
                     )
                 py_series = PySeries.new_from_anyvalues(name, values)
                 time_unit = dtype.tu  # type: ignore[union-attr]
