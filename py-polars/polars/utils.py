@@ -146,12 +146,18 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int
 _create_decimal = [Decimal] + [Context(prec=p).create_decimal for p in range(1, 63)]
 
 
-def _to_python_decimal(sign: int, digits: tuple[int], prec: int, scale: int) -> Decimal:
-    args = (sign, digits, scale)
-    if 1 <= prec < 64:
-        return _create_decimal[prec](args)
-    else:
-        return Context(prec=prec).create_decimal(args)
+@functools.lru_cache(None)
+def _create_decimal_with_prec(
+    precision: int,
+) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
+    # pre-cache contexts so we don't have to spend time on recreating them every time
+    return Context(prec=precision).create_decimal
+
+
+def _to_python_decimal(
+    sign: int, digits: Sequence[int], prec: int, scale: int
+) -> Decimal:
+    return _create_decimal_with_prec(prec)((sign, digits, scale))
 
 
 def _is_generator(val: object) -> bool:

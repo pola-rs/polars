@@ -50,3 +50,22 @@ def test_frame_from_pydecimal_and_ints() -> None:
                     "a": pl.Decimal(None, 7),
                 }
                 assert df.rows() == row_data
+
+
+def test_to_from_pydecimal_and_format() -> None:
+    dec_strs = [
+        "0",
+        "-1",
+        "0.01",
+        "-1.123801239123981293891283123",
+        "12345678901.234567890123458390192857685",
+        "-99999999999.999999999999999999999999999",
+    ]
+    formatted = (
+        str(pl.Series(list(map(D, dec_strs))))
+        .split("[", 1)[1]
+        .split("\n", 1)[1]
+        .strip()[1:-1]
+        .split()
+    )
+    assert formatted == dec_strs

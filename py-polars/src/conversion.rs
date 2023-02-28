@@ -179,7 +179,7 @@ fn struct_dict<'a>(
     dict.into_py(py)
 }
 
-fn decimal_to_digits(v: i128, buf: &mut [u8]) -> usize {
+fn decimal_to_digits(v: i128, buf: &mut [u8; 48]) -> usize {
     const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
     if buf.len() < 48 {
         panic!("decimal_to_digits: buffer size < 48");
@@ -187,6 +187,7 @@ fn decimal_to_digits(v: i128, buf: &mut [u8]) -> usize {
     let len = lexical_core::write(v, buf).len();
     let ptr = buf.as_mut_ptr() as *mut i128;
     unsafe {
+        // this is safe because we know that the buffer is exactly 48 bytes long
         *ptr -= ZEROS;
         *ptr.add(1) -= ZEROS;
         *ptr.add(2) -= ZEROS;

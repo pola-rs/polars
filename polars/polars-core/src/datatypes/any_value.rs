@@ -556,17 +556,6 @@ impl<'a> AnyValue<'a> {
         }
     }
 
-    #[cfg(feature = "dtype-decimal")]
-    pub(crate) fn into_decimal(self, scale: usize) -> Self {
-        match self {
-            // because Int128 type yields Decimal(None, 0)
-            // (an alternative would be to use a whole different Int128 variant)
-            AnyValue::Decimal(v, 0) => AnyValue::Decimal(v, scale),
-            AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create decimal from other type. dtype: {dt}"),
-        }
-    }
-
     #[must_use]
     pub fn add(&self, rhs: &AnyValue) -> Self {
         use AnyValue::*;

@@ -44,14 +44,19 @@ impl LogicalType for DecimalChunked {
 
     #[inline]
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        self.0
-            .get_any_value(i)
-            .map(|av| av.into_decimal(self.scale()))
+        if i < self.len() {
+            Ok(unsafe { self.get_any_value_unchecked(i) })
+        } else {
+            Err(PolarsError::ComputeError("Index is out of bounds.".into()))
+        }
     }
 
     #[inline]
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        self.0.get_any_value_unchecked(i).into_decimal(self.scale())
+        match self.0.get_unchecked(i) {
+            Some(v) => AnyValue::Decimal(v, self.scale()),
+            None => AnyValue::Null,
+        }
     }
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {

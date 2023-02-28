@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Sequence
 from decimal import Decimal as PyDecimal
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
