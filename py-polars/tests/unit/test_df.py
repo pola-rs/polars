@@ -4,6 +4,7 @@ import sys
 import textwrap
 import typing
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
@@ -214,7 +215,7 @@ def test_from_arrow() -> None:
         "c": pl.Datetime("us"),
         "d": pl.Datetime("ns"),
         "e": pl.Int32,
-        "decimal1": pl.Float64,
+        "decimal1": pl.Decimal(2, 1),
     }
     expected_data = [
         (
@@ -223,7 +224,7 @@ def test_from_arrow() -> None:
             datetime(1970, 1, 1, 0, 0, 0, 1),
             datetime(1970, 1, 1, 0, 0),
             1,
-            1.0,
+            Decimal("1.0"),
         ),
         (
             datetime(1970, 1, 1, 0, 0, 2),
@@ -231,7 +232,7 @@ def test_from_arrow() -> None:
             datetime(1970, 1, 1, 0, 0, 0, 2),
             datetime(1970, 1, 1, 0, 0),
             2,
-            2.0,
+            Decimal("2.0"),
         ),
     ]
 
