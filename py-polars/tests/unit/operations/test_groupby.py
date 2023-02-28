@@ -408,30 +408,31 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
     }
 
 
-def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038() -> None:
-    every: str | timedelta
-    period: str | timedelta
-
-    for every, period in (  # type: ignore[assignment]
+@pytest.mark.parametrize(
+    ("every", "period"),
+    [
         ("10s", timedelta(seconds=100)),
         (timedelta(seconds=10), "100s"),
-    ):
-        assert (
-            pl.DataFrame(
-                {
-                    "a": [
-                        datetime(2021, 1, 1) + timedelta(seconds=2**i)
-                        for i in range(10)
-                    ],
-                    "b": [float(i) for i in range(10)],
-                }
-            )
-            .lazy()
-            .groupby_dynamic("a", every=every, period=period)
-            .agg([pl.col("b").var().sqrt().alias("corr")])
-        ).collect().sum().to_dict(False) == pytest.approx(
-            {"a": [None], "corr": [6.988674024215477]}
+    ],
+)
+def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
+    every: str | timedelta, period: str | timedelta
+) -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "a": [
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(10)
+                ],
+                "b": [float(i) for i in range(10)],
+            }
         )
+        .lazy()
+        .groupby_dynamic("a", every=every, period=period)
+        .agg([pl.col("b").var().sqrt().alias("corr")])
+    ).collect().sum().to_dict(False) == pytest.approx(
+        {"a": [None], "corr": [6.988674024215477]}
+    )
 
 
 def test_take_in_groupby() -> None:
@@ -510,7 +511,8 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
     }
 
 
-def test_groupby_dynamic_iter() -> None:
+@pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
+def test_groupby_dynamic_iter(every: str | timedelta) -> None:
     df = pl.DataFrame(
         {
             "datetime": [
@@ -526,7 +528,7 @@ def test_groupby_dynamic_iter() -> None:
     # Without 'by' argument
     result1 = [
         (name, data.shape)
-        for name, data in df.groupby_dynamic("datetime", every="1h", closed="left")
+        for name, data in df.groupby_dynamic("datetime", every=every, closed="left")
     ]
     expected1 = [
         (datetime(2020, 1, 1, 10), (2, 3)),
@@ -538,7 +540,7 @@ def test_groupby_dynamic_iter() -> None:
     result2 = [
         (name, data.shape)
         for name, data in df.groupby_dynamic(
-            "datetime", every=timedelta(hours=1), closed="left", by="a"
+            "datetime", every=every, closed="left", by="a"
         )
     ]
     expected2 = [
@@ -549,7 +551,8 @@ def test_groupby_dynamic_iter() -> None:
     assert result2 == expected2
 
 
-def test_groupby_dynamic_lazy() -> None:
+@pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
+def test_groupby_dynamic_lazy(every: str | timedelta) -> None:
     ldf = pl.LazyFrame(
         {
             "time": pl.date_range(
@@ -560,34 +563,33 @@ def test_groupby_dynamic_lazy() -> None:
             "n": range(5),
         }
     )
-    for grp in (
-        ldf.groupby_dynamic("time", every=timedelta(hours=1), closed="right"),
-        ldf.groupby_dynamic("time", every="1h", closed="right"),
-    ):
-        df = grp.agg(
+    df = (
+        ldf.groupby_dynamic("time", every=every, closed="right")
+        .agg(
             [
                 pl.col("time").min().alias("time_min"),
                 pl.col("time").max().alias("time_max"),
             ]
-        ).collect()
-
-        assert sorted(df.rows()) == [
-            (
-                datetime(2021, 12, 15, 23, 0),
-                datetime(2021, 12, 16, 0, 0),
-                datetime(2021, 12, 16, 0, 0),
-            ),
-            (
-                datetime(2021, 12, 16, 0, 0),
-                datetime(2021, 12, 16, 0, 30),
-                datetime(2021, 12, 16, 1, 0),
-            ),
-            (
-                datetime(2021, 12, 16, 1, 0),
-                datetime(2021, 12, 16, 1, 30),
-                datetime(2021, 12, 16, 2, 0),
-            ),
-        ]
+        )
+        .collect()
+    )
+    assert sorted(df.rows()) == [
+        (
+            datetime(2021, 12, 15, 23, 0),
+            datetime(2021, 12, 16, 0, 0),
+            datetime(2021, 12, 16, 0, 0),
+        ),
+        (
+            datetime(2021, 12, 16, 0, 0),
+            datetime(2021, 12, 16, 0, 30),
+            datetime(2021, 12, 16, 1, 0),
+        ),
+        (
+            datetime(2021, 12, 16, 1, 0),
+            datetime(2021, 12, 16, 1, 30),
+            datetime(2021, 12, 16, 2, 0),
+        ),
+    ]
 
 
 @pytest.mark.slow()
