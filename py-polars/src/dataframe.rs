@@ -59,10 +59,14 @@ impl PyDataFrame {
         let schema =
             rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
                 .map_err(PyPolarsErr::from)?;
-        // replace inferred nulls with boolean
+        // replace inferred nulls with boolean and erase scale from inferred decimals
         let fields = schema.iter_fields().map(|mut fld| match fld.data_type() {
             DataType::Null => {
                 fld.coerce(DataType::Boolean);
+                fld
+            }
+            DataType::Decimal(_, _) => {
+                fld.coerce(DataType::Decimal(None, usize::MAX));
                 fld
             }
             _ => fld,

@@ -4,6 +4,7 @@ import contextlib
 from contextlib import suppress
 from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal as PyDecimal
 from functools import singledispatch
 from itertools import islice, zip_longest
 from sys import version_info
@@ -459,6 +460,10 @@ def sequence_to_pyseries(
                     #   - bools: "'int' object cannot be converted to 'PyBool'"
                     elif str_val == "'int' object cannot be converted to 'PyBool'":
                         constructor = py_type_to_constructor(int)
+
+                    elif "decimal.Decimal" in str_val:
+                        constructor = py_type_to_constructor(PyDecimal)
+
                     else:
                         raise error
 
