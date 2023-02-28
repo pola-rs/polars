@@ -241,9 +241,10 @@ fn concat_str(s: Vec<dsl::PyExpr>, separator: &str) -> dsl::PyExpr {
 }
 
 #[pyfunction]
-fn concat_lst(s: Vec<dsl::PyExpr>) -> dsl::PyExpr {
+fn concat_lst(s: Vec<dsl::PyExpr>) -> PyResult<dsl::PyExpr> {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    polars_rs::lazy::dsl::concat_lst(s).into()
+    let expr = polars_rs::lazy::dsl::concat_lst(s).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
 }
 
 #[pyfunction]

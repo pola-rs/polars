@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 
 import pandas as pd
+import pytest
 
 import polars as pl
 
@@ -358,6 +359,11 @@ def test_concat_list_in_agg_6397() -> None:
         "group": [1, 2, 3],
         "result": [[["a"]], [["b", "c"]], [["d"]]],
     }
+
+
+def test_concat_list_empty_raises() -> None:
+    with pytest.raises(pl.ComputeError):
+        pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.concat_list([]))
 
 
 def test_flat_aggregation_to_list_conversion_6918() -> None:
