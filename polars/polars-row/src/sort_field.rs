@@ -3,6 +3,7 @@ use encodings::fixed::FixedLengthEncoding;
 
 use super::*;
 
+#[derive(Clone)]
 pub struct SortField {
     /// Whether to sort in descending order
     pub descending: bool,

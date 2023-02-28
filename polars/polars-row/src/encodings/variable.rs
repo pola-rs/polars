@@ -17,16 +17,16 @@ use crate::row::RowsEncoded;
 use crate::SortField;
 
 /// The block size of the variable length encoding
-const BLOCK_SIZE: usize = 32;
+pub(crate) const BLOCK_SIZE: usize = 32;
 
 /// The continuation token.
-const BLOCK_CONTINUATION_TOKEN: u8 = 0xFF;
+pub(crate) const BLOCK_CONTINUATION_TOKEN: u8 = 0xFF;
 
 /// Indicates an empty string
-const EMPTY_SENTINEL: u8 = 1;
+pub(crate) const EMPTY_SENTINEL: u8 = 1;
 
 /// Indicates a non-empty string
-const NON_EMPTY_SENTINEL: u8 = 2;
+pub(crate) const NON_EMPTY_SENTINEL: u8 = 2;
 
 /// Returns the ceil of `value`/`divisor`
 #[inline]
@@ -71,7 +71,9 @@ unsafe fn encode_one(out: &mut [u8], val: Option<&[u8]>, field: &SortField) -> u
             1
         }
         Some(val) => {
-            let end_offset = padded_length(val.len());
+            let block_count = ceil(val.len(), BLOCK_SIZE);
+            let end_offset = 1 + block_count * (BLOCK_SIZE + 1);
+
             let dst = out.get_unchecked_release_mut(..end_offset);
 
             // Write `2_u8` to demarcate as non-empty, non-null string
@@ -97,6 +99,16 @@ unsafe fn encode_one(out: &mut [u8], val: Option<&[u8]>, field: &SortField) -> u
                 // replace the "there is another block" with
                 // "we are finished this, this is the length of this block"
                 *dst.last_mut().unwrap_unchecked() = BLOCK_SIZE as u8;
+            } else {
+                // get the last block
+                let start_offset = 1 + (block_count - 1) * (BLOCK_SIZE + 1);
+                let last_dst = dst.get_unchecked_release_mut(start_offset..);
+                std::ptr::copy_nonoverlapping(
+                    src_remainder.as_ptr(),
+                    last_dst.as_mut_ptr(),
+                    src_remainder.len(),
+                );
+                *dst.last_mut().unwrap_unchecked() = src_remainder.len() as u8;
             }
 
             if field.descending {

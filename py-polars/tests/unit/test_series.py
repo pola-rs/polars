@@ -1935,12 +1935,7 @@ def test_trigonometric(f: str) -> None:
     expected = (
         pl.Series("a", getattr(np, f)(s.to_numpy()))
         .to_frame()
-        .with_columns(
-            pl.when(s.is_null())  # type: ignore[arg-type]
-            .then(None)
-            .otherwise(pl.col("a"))
-            .alias("a")
-        )
+        .with_columns(pl.when(s.is_null()).then(None).otherwise(pl.col("a")).alias("a"))
         .to_series()
     )
     result = getattr(s, f)()

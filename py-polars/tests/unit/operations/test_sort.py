@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import random
+import string
 from datetime import datetime
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -446,9 +449,6 @@ def test_sort_args() -> None:
     result = df.sort("a", nulls_last=True)
     assert_frame_equal(result, df)
 
-    with pytest.raises(ValueError):
-        df.sort("a", "b", nulls_last=True)
-
 
 def test_sort_type_coersion_6892() -> None:
     df = pl.DataFrame({"a": [2, 1], "b": [2, 3]})
@@ -456,3 +456,33 @@ def test_sort_type_coersion_6892() -> None:
         "a": [1, 2],
         "b": [3, 2],
     }
+
+
+@pytest.mark.slow()
+def test_sort_row_fmt() -> None:
+    # we sort nulls_last as this will always dispatch
+    # to row_fmt and is the default in pandas
+
+    n = 1000
+    strs = pl.Series("strs", random.choices(string.ascii_lowercase, k=n))
+    strs = pl.select(
+        pl.when(strs == "a")
+        .then("")
+        .when(strs == "b")
+        .then(None)
+        .otherwise(strs)
+        .alias("strs")
+    ).to_series()
+
+    vals = pl.Series("vals", np.random.rand(n))
+
+    df = pl.DataFrame([vals, strs])
+    df_pd = df.to_pandas()
+
+    for descending in [True, False]:
+        pl.testing.assert_frame_equal(
+            df.sort(["strs", "vals"], nulls_last=True, descending=descending),
+            pl.from_pandas(
+                df_pd.sort_values(["strs", "vals"], ascending=not descending)
+            ),
+        )

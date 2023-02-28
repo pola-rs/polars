@@ -24,6 +24,13 @@ impl RowsEncoded {
             buf: &self.buf,
         }
     }
+
+    #[cfg(test)]
+    pub fn get(&self, i: usize) -> &[u8] {
+        let start = self.offsets[i];
+        let end = self.offsets[i + 1];
+        &self.buf[start..end]
+    }
 }
 
 pub struct RowsEncodedIter<'a> {

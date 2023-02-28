@@ -69,22 +69,38 @@ pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
 
 pub(crate) fn argsort_multiple_row_fmt(
     by: &[Series],
-    descending: &[bool],
+    mut descending: Vec<bool>,
     nulls_last: bool,
     parallel: bool,
 ) -> PolarsResult<IdxCa> {
     use polars_row::{convert_columns, SortField};
+    broadcast_descending(by.len(), &mut descending);
 
     let mut cols = Vec::with_capacity(by.len());
     let mut fields = Vec::with_capacity(by.len());
 
+    debug_assert_eq!(by.len(), descending.len());
     for (by, descending) in by.iter().zip(descending) {
         let by = convert_sort_column_multi_sort(by, true)?;
-        let data_type = by.dtype().to_arrow();
         let by = by.rechunk();
-        cols.push(by.chunks()[0].clone());
+
+        let arr = match by.dtype() {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => {
+                let ca = by.categorical().unwrap();
+                if ca.use_lexical_sort() {
+                    by.to_arrow(0)
+                } else {
+                    ca.logical().chunks[0].clone()
+                }
+            }
+            _ => by.to_arrow(0),
+        };
+        let data_type = arr.data_type().clone();
+
+        cols.push(arr);
         fields.push(SortField {
-            descending: *descending,
+            descending,
             nulls_last,
             data_type,
         })
