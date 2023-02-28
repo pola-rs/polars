@@ -2079,7 +2079,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         if offset is None:
-            offset = f"-{period}"
+            offset = f"-{_timedelta_to_pl_duration(period)}"
 
         pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
         period = _timedelta_to_pl_duration(period)
@@ -2369,7 +2369,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """  # noqa: W505
         if offset is None:
-            offset = f"-{every}" if period is None else "0ns"
+            offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
 
         if period is None:
             period = every

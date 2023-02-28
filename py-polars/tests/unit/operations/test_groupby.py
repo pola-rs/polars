@@ -538,7 +538,7 @@ def test_groupby_dynamic_iter() -> None:
     result2 = [
         (name, data.shape)
         for name, data in df.groupby_dynamic(
-            "datetime", every="1h", closed="left", by="a"
+            "datetime", every=timedelta(hours=1), closed="left", by="a"
         )
     ]
     expected2 = [
@@ -547,6 +547,47 @@ def test_groupby_dynamic_iter() -> None:
         ((2, datetime(2020, 1, 1, 11)), (1, 3)),
     ]
     assert result2 == expected2
+
+
+def test_groupby_dynamic_lazy() -> None:
+    ldf = pl.LazyFrame(
+        {
+            "time": pl.date_range(
+                low=datetime(2021, 12, 16),
+                high=datetime(2021, 12, 16, 2),
+                interval="30m",
+            ),
+            "n": range(5),
+        }
+    )
+    for grp in (
+        ldf.groupby_dynamic("time", every=timedelta(hours=1), closed="right"),
+        ldf.groupby_dynamic("time", every="1h", closed="right"),
+    ):
+        df = grp.agg(
+            [
+                pl.col("time").min().alias("time_min"),
+                pl.col("time").max().alias("time_max"),
+            ]
+        ).collect()
+
+        assert sorted(df.rows()) == [
+            (
+                datetime(2021, 12, 15, 23, 0),
+                datetime(2021, 12, 16, 0, 0),
+                datetime(2021, 12, 16, 0, 0),
+            ),
+            (
+                datetime(2021, 12, 16, 0, 0),
+                datetime(2021, 12, 16, 0, 30),
+                datetime(2021, 12, 16, 1, 0),
+            ),
+            (
+                datetime(2021, 12, 16, 1, 0),
+                datetime(2021, 12, 16, 1, 30),
+                datetime(2021, 12, 16, 2, 0),
+            ),
+        ]
 
 
 @pytest.mark.slow()
