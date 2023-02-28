@@ -295,6 +295,18 @@ class Decimal(DataType):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(prec={self.prec}, scale={self.scale})"
 
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # allow comparing object instances to class
+        if type(other) is DataTypeClass and issubclass(other, Decimal):
+            return True
+        elif isinstance(other, Decimal):
+            return self.prec == other.prec and self.scale == other.scale
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((Decimal, self.prec, self.scale))
+
 
 class Date(TemporalType):
     """Calendar date type."""
