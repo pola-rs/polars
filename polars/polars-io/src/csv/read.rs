@@ -111,11 +111,11 @@ where
     delimiter: Option<u8>,
     has_header: bool,
     ignore_errors: bool,
-    pub(crate) schema: Option<&'a Schema>,
+    pub(crate) schema: Option<SchemaRef>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     path: Option<PathBuf>,
-    schema_overwrite: Option<&'a Schema>,
+    schema_overwrite: Option<SchemaRef>,
     dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
@@ -129,8 +129,6 @@ where
     skip_rows_after_header: usize,
     try_parse_dates: bool,
     row_count: Option<RowCount>,
-    // temporary schema needed for batch lifetimes
-    owned_schema: Option<Box<Schema>>,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -178,7 +176,7 @@ where
     /// in the csv parser and expects a complete Schema.
     ///
     /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
-    pub fn with_schema(mut self, schema: &'a Schema) -> Self {
+    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
         self.schema = Some(schema);
         self
     }
@@ -233,7 +231,7 @@ where
 
     /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
     /// of the total schema.
-    pub fn with_dtypes(mut self, schema: Option<&'a Schema>) -> Self {
+    pub fn with_dtypes(mut self, schema: Option<SchemaRef>) -> Self {
         self.schema_overwrite = schema;
         self
     }
@@ -331,7 +329,7 @@ impl<'a> CsvReader<'a, File> {
 impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
     fn core_reader<'b>(
         &'b mut self,
-        schema: Option<&'b Schema>,
+        schema: Option<SchemaRef>,
         to_cast: Vec<Field>,
     ) -> PolarsResult<CoreReader<'b>>
     where
@@ -347,7 +345,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.delimiter,
             self.has_header,
             self.ignore_errors,
-            self.schema,
+            self.schema.clone(),
             std::mem::take(&mut self.columns),
             self.encoding,
             self.n_threads,
@@ -404,24 +402,14 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
     }
 
     pub fn batched_borrowed(&'a mut self) -> PolarsResult<BatchedCsvReader<'a>> {
-        if let Some(schema) = self.schema_overwrite {
+        if let Some(schema) = self.schema_overwrite.as_deref() {
             let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
-            self.owned_schema = Some(Box::new(schema));
+            let schema = Arc::new(schema);
 
-            // safety
-            // we boxed the schema and we refer to the boxed pointer
-            // the schema will drop once self drops
-            // so it is bound to 'a
-            let schema = unsafe {
-                std::mem::transmute::<Option<&Schema>, Option<&Schema>>(
-                    self.owned_schema.as_ref().map(|b| b.as_ref()),
-                )
-            };
-
-            let csv_reader = self.core_reader(schema, to_cast)?;
+            let csv_reader = self.core_reader(Some(schema), to_cast)?;
             csv_reader.batched(has_cat)
         } else {
-            let csv_reader = self.core_reader(self.schema, vec![])?;
+            let csv_reader = self.core_reader(self.schema.clone(), vec![])?;
             csv_reader.batched(false)
         }
     }
@@ -490,14 +478,13 @@ where
             skip_rows_after_header: 0,
             try_parse_dates: false,
             row_count: None,
-            owned_schema: None,
         }
     }
 
     /// Read the file and create the DataFrame.
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
-        let schema_overwrite = self.schema_overwrite;
+        let schema_overwrite = self.schema_overwrite.clone();
         let dtype_overwrite = self.dtype_overwrite;
         let should_parse_dates = self.try_parse_dates;
         let low_memory = self.low_memory;
@@ -505,7 +492,7 @@ where
         #[cfg(feature = "dtype-categorical")]
         let mut _cat_lock = None;
 
-        let mut df = if let Some(schema) = schema_overwrite {
+        let mut df = if let Some(schema) = schema_overwrite.as_deref() {
             let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema);
 
             #[cfg(feature = "dtype-categorical")]
@@ -513,13 +500,14 @@ where
                 _cat_lock = Some(polars_core::IUseStringCache::new())
             }
 
-            let mut csv_reader = self.core_reader(Some(&schema), to_cast)?;
+            let mut csv_reader = self.core_reader(Some(Arc::new(schema)), to_cast)?;
             csv_reader.as_df()?
         } else {
             #[cfg(feature = "dtype-categorical")]
             {
                 let has_cat = self
                     .schema
+                    .clone()
                     .map(|schema| {
                         schema
                             .iter_dtypes()
@@ -530,7 +518,7 @@ where
                     _cat_lock = Some(polars_core::IUseStringCache::new())
                 }
             }
-            let mut csv_reader = self.core_reader(self.schema, vec![])?;
+            let mut csv_reader = self.core_reader(self.schema.clone(), vec![])?;
             csv_reader.as_df()?
         };
 
@@ -549,16 +537,16 @@ where
         if should_parse_dates {
             // determine the schema that's given by the user. That should not be changed
             let fixed_schema = match (schema_overwrite, dtype_overwrite) {
-                (Some(schema), _) => Cow::Borrowed(schema),
+                (Some(schema), _) => schema,
                 (None, Some(dtypes)) => {
                     let fields = dtypes
                         .iter()
                         .zip(df.get_column_names())
                         .map(|(dtype, name)| Field::new(name, dtype.clone()));
 
-                    Cow::Owned(Schema::from(fields))
+                    Arc::new(Schema::from(fields))
                 }
-                _ => Cow::Owned(Schema::default()),
+                _ => Arc::default(),
             };
             df = parse_dates(df, &fixed_schema)
         }

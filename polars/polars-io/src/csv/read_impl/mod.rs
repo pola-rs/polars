@@ -1,6 +1,5 @@
 mod batched;
 
-use std::borrow::Cow;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -77,7 +76,7 @@ pub(crate) fn cast_columns(
 pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     /// Explicit schema for the CSV file
-    schema: Cow<'a, Schema>,
+    schema: SchemaRef,
     /// Optional projection for which columns to load (zero-based column indices)
     projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
@@ -173,11 +172,11 @@ impl<'a> CoreReader<'a> {
         delimiter: Option<u8>,
         has_header: bool,
         ignore_errors: bool,
-        schema: Option<&'a Schema>,
+        schema: Option<SchemaRef>,
         columns: Option<Vec<String>>,
         encoding: CsvEncoding,
         n_threads: Option<usize>,
-        schema_overwrite: Option<&'a Schema>,
+        schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<&'a [DataType]>,
         sample_size: usize,
         chunk_size: usize,
@@ -205,7 +204,7 @@ impl<'a> CoreReader<'a> {
         let delimiter = delimiter.unwrap_or(b',');
 
         let mut schema = match schema {
-            Some(schema) => Cow::Borrowed(schema),
+            Some(schema) => schema,
             None => {
                 {
                     // We keep track of the inferred schema bool
@@ -223,7 +222,7 @@ impl<'a> CoreReader<'a> {
                         delimiter,
                         max_records,
                         has_header,
-                        schema_overwrite,
+                        schema_overwrite.as_deref(),
                         &mut skip_rows,
                         skip_rows_after_header,
                         comment_char,
@@ -232,16 +231,15 @@ impl<'a> CoreReader<'a> {
                         null_values.as_ref(),
                         try_parse_dates,
                     )?;
-                    Cow::Owned(inferred_schema)
+                    Arc::new(inferred_schema)
                 }
             }
         };
         if let Some(dtypes) = dtype_overwrite {
-            let mut s = schema.into_owned();
+            let s = Arc::make_mut(&mut schema);
             for (index, dt) in dtypes.iter().enumerate() {
                 s.coerce_by_index(index, dt.clone()).unwrap();
             }
-            schema = Cow::Owned(s);
         }
 
         // create a null value for every column
@@ -445,26 +443,33 @@ impl<'a> CoreReader<'a> {
             .unwrap_or_else(|| (0..self.schema.len()).collect())
     }
 
-    fn get_string_columns(&self, projection: &[usize]) -> PolarsResult<Vec<&str>> {
+    fn get_string_columns(&self, projection: &[usize]) -> PolarsResult<StringColumns> {
         // keep track of the maximum capacity that needs to be allocated for the utf8-builder
         // Per string column we keep a statistic of the maximum length of string bytes per chunk
         // We must the names, not the indexes, (the indexes are incorrect due to projection
         // pushdown)
-        let mut str_columns = Vec::with_capacity(projection.len());
+
+        let mut new_projection = Vec::with_capacity(projection.len());
+
         for i in projection {
-            let (name, dtype) = self.schema.get_index(*i).ok_or_else(||
+            let (_, dtype) = self.schema.get_index(*i).ok_or_else(||
                 PolarsError::ComputeError(
                     format!("the given projection index: {} is out of bounds for csv schema with {} columns", i, self.schema.len()).into())
             )?;
 
             if dtype == &DataType::Utf8 {
-                str_columns.push(name.as_str())
+                new_projection.push(*i)
             }
         }
-        Ok(str_columns)
+
+        Ok(StringColumns::new(self.schema.clone(), new_projection))
     }
 
-    fn init_string_size_stats(&self, str_columns: &[&str], capacity: usize) -> Vec<RunningSize> {
+    fn init_string_size_stats(
+        &self,
+        str_columns: &StringColumns,
+        capacity: usize,
+    ) -> Vec<RunningSize> {
         // assume 10 chars per str
         // this is not updated in low memory mode
         let init_str_bytes = capacity * 10;
@@ -690,7 +695,7 @@ impl<'a> CoreReader<'a> {
 
 fn update_string_stats(
     str_capacities: &[RunningSize],
-    str_columns: &[&str],
+    str_columns: &StringColumns,
     local_df: &DataFrame,
 ) -> PolarsResult<()> {
     // update the running str bytes statistics
@@ -768,4 +773,28 @@ fn read_chunk(
             .map(|buf| buf.into_series())
             .collect::<PolarsResult<_>>()?,
     ))
+}
+
+/// List of strings, which are stored inside of a [Schema].
+///
+/// Conceptually it is `Vec<&str>` with `&str` tied to the lifetime of
+/// the [Schema].
+struct StringColumns {
+    schema: SchemaRef,
+    fields: Vec<usize>,
+}
+
+impl StringColumns {
+    /// New [StringColumns], where the list `fields` has indices
+    /// of fields in the `schema`.
+    fn new(schema: SchemaRef, fields: Vec<usize>) -> Self {
+        Self { schema, fields }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &str> {
+        self.fields.iter().map(|schema_i| {
+            let (name, _) = self.schema.get_index(*schema_i).unwrap();
+            name.as_str()
+        })
+    }
 }

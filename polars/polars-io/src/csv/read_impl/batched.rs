@@ -13,12 +13,7 @@ impl<'a> CoreReader<'a> {
             .determine_file_chunks_and_statistics(&mut n_threads, &reader_bytes, logging, true)?;
         let projection = self.get_projection();
 
-        // safety
-        // we extend the lifetime because we are sure they are bound
-        // to 'a, as the &str refer to the &schema which is bound by 'a
-        let str_columns = unsafe {
-            std::mem::transmute::<Vec<&str>, Vec<&'a str>>(self.get_string_columns(&projection)?)
-        };
+        let str_columns = self.get_string_columns(&projection)?;
 
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]
@@ -64,7 +59,7 @@ pub struct BatchedCsvReader<'a> {
     file_chunks: Vec<(usize, usize)>,
     chunk_offset: IdxSize,
     str_capacities: Vec<RunningSize>,
-    str_columns: Vec<&'a str>,
+    str_columns: StringColumns,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
     row_count: Option<RowCount>,
@@ -78,7 +73,7 @@ pub struct BatchedCsvReader<'a> {
     n_rows: Option<usize>,
     encoding: CsvEncoding,
     delimiter: u8,
-    schema: Cow<'a, Schema>,
+    schema: SchemaRef,
     rows_read: IdxSize,
     #[cfg(feature = "dtype-categorical")]
     _cat_lock: Option<polars_core::IUseStringCache>,
@@ -193,7 +188,7 @@ pub fn to_batched_owned(
 ) -> OwnedBatchedCsvReader {
     // make sure that the schema is bound to the schema we have
     // we will keep ownership of the schema so that the lifetime remains bound to ourselves
-    let reader = reader.with_schema(schema.as_ref());
+    let reader = reader.with_schema(schema.clone());
     // extend the lifetime
     // the lifetime was bound to schema, which we own and will store on the heap
     let reader = unsafe {
