@@ -236,7 +236,7 @@ pub fn search_sorted(
         DataType::Binary => {
             let ca = s.binary().unwrap();
             let search_values = search_values.binary().unwrap();
-            let idx = search_sorted_bin_array(&ca, &search_values, side, descending);
+            let idx = search_sorted_bin_array(ca, search_values, side, descending);
 
             Ok(IdxCa::new_vec(s.name(), idx))
         }
