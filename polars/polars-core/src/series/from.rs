@@ -64,7 +64,7 @@ impl Series {
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
             Decimal(prec, scale) => Int128Chunked::from_chunks(name, chunks)
-                .into_decimal(*prec, *scale)
+                .into_decimal_unchecked(*prec, *scale)
                 .into_series(),
             List(_) => ListChunked::from_chunks(name, chunks).cast(dtype).unwrap(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
@@ -346,7 +346,7 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Decimal(prec, scale), false).unwrap();
                 // or DecimalChunked?
                 Ok(Int128Chunked::from_chunks(name, chunks)
-                    .into_decimal(prec, scale)
+                    .into_decimal_unchecked(prec, scale)
                     .into_series())
             }
             #[allow(unreachable_patterns)]

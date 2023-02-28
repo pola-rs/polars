@@ -12,7 +12,7 @@ impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {}
 impl SeriesWrap<DecimalChunked> {
     fn apply_logical<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {
         f(&self.0)
-            .into_decimal(self.0.precision(), self.0.scale())
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 }
@@ -74,14 +74,14 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         Ok(self
             .0
             .filter(filter)?
-            .into_decimal(self.0.precision(), self.0.scale())
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
 
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
         let ca = self.0.deref().take_chunked_unchecked(by, sorted);
-        ca.into_decimal(self.0.precision(), self.0.scale())
+        ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
@@ -92,14 +92,14 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
         ChunkTake::take(self.0.deref(), iter.into()).map(|ca| {
-            ca.into_decimal(self.0.precision(), self.0.scale())
+            ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
                 .into_series()
         })
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(self.0.deref(), iter.into())
-            .into_decimal(self.0.precision(), self.0.scale())
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
@@ -113,19 +113,19 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         }
 
         Ok(out
-            .into_decimal(self.0.precision(), self.0.scale())
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
         ChunkTake::take_unchecked(self.0.deref(), iter.into())
-            .into_decimal(self.0.precision(), self.0.scale())
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         ChunkTake::take(self.0.deref(), indices.into()).map(|ca| {
-            ca.into_decimal(self.0.precision(), self.0.scale())
+            ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
                 .into_series()
         })
     }
@@ -136,21 +136,21 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn rechunk(&self) -> Series {
         let ca = self.0.rechunk();
-        ca.into_decimal(self.0.precision(), self.0.scale())
+        ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
     fn take_every(&self, n: usize) -> Series {
         self.0
             .take_every(n)
-            .into_decimal(self.0.precision(), self.0.scale())
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
             .new_from_index(index, length)
-            .into_decimal(self.0.precision(), self.0.scale())
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 

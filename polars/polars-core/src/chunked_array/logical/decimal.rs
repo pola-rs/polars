@@ -4,10 +4,36 @@ use crate::prelude::*;
 pub type DecimalChunked = Logical<DecimalType, Int128Type>;
 
 impl Int128Chunked {
-    pub fn into_decimal(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
+    #[inline]
+    pub fn into_decimal_unchecked(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
         let mut dt = DecimalChunked::new_logical(self);
         dt.2 = Some(DataType::Decimal(precision, scale));
         dt
+    }
+
+    pub fn into_decimal(
+        self,
+        precision: Option<usize>,
+        scale: usize,
+    ) -> PolarsResult<DecimalChunked> {
+        // TODO: if prec is None, do we check that the value fits within precision of 38?...
+        if let Some(precision) = precision {
+            let prec_max = 10_i128.pow(precision as u32);
+            // note: this is not too efficient as it scans through the data twice...
+            if let (Some(min), Some(max)) = (self.min(), self.max()) {
+                let max = max.abs().max(min.abs());
+                if max > prec_max {
+                    return Err(PolarsError::InvalidOperation(
+                        format!(
+                            "Decimal precision {precision} can't fit values with {} digits",
+                            max.to_string().len(),
+                        )
+                        .into(),
+                    ));
+                }
+            }
+        }
+        Ok(self.into_decimal_unchecked(precision, scale))
     }
 }
 
