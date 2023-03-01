@@ -98,6 +98,27 @@ def test_null_parquet() -> None:
     assert_frame_equal(out, df)
 
 
+def test_parquet_eq_stats() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "stats.parquet"
+
+        df1 = pd.DataFrame({"a": [None, 1, None, 2, 3, 3, 4, 4, 5, 5]})
+        df1.to_parquet(file_path, engine="pyarrow")
+        df = pl.scan_parquet(file_path).filter(pl.col("a") == 4).collect()
+        assert df["a"].to_list() == [4.0, 4.0]
+
+        assert (
+            pl.scan_parquet(file_path)
+            .filter(pl.col("a") == 2)
+            .select(pl.col("a").sum())
+        ).collect()[0, "a"] == 2.0
+
+        assert pl.scan_parquet(file_path).filter(pl.col("a") == 5).collect().shape == (
+            2,
+            1,
+        )
+
+
 def test_parquet_is_in_stats() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
@@ -175,6 +196,42 @@ def test_row_count_schema(parquet_file_path: Path) -> None:
         .select(["id", "b"])
         .collect()
     ).dtypes == [pl.UInt32, pl.Utf8]
+
+
+def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    df = pl.DataFrame({"idx": pl.arange(100, 200, eager=True)}).with_columns(
+        (pl.col("idx") // 25).alias("part")
+    )
+    df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)
+    assert df.n_chunks("all") == [4, 4]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "stats.parquet"
+        df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "stats.parquet"
+        df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+
+        for pred in [
+            pl.col("idx") == 50,
+            pl.col("idx") == 150,
+            pl.col("idx") == 210,
+        ]:
+            result = pl.scan_parquet(file_path).filter(pred).collect()
+            assert_frame_equal(result, df.filter(pred))
+
+    captured = capfd.readouterr().err
+    assert (
+        "parquet file must be read, statistics not sufficient for predicate."
+        in captured
+    )
+    assert (
+        "parquet file can be skipped, the statistics were sufficient"
+        " to apply the predicate." in captured
+    )
 
 
 def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any) -> None:
