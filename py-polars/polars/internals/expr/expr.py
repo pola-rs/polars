@@ -38,6 +38,7 @@ from polars.utils import (
     deprecate_nonkeyword_arguments,
     deprecated_alias,
     sphinx_accessor,
+    threadpool_size,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
 
     from polars.datatypes import PolarsDataType
     from polars.internals.type_aliases import (
+        ApplyStrategy,
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
@@ -3252,6 +3254,8 @@ class Expr:
         return_dtype: PolarsDataType | None = None,
         skip_nulls: bool = True,
         pass_name: bool = False,
+        *,
+        strategy: ApplyStrategy = "thread_local",
     ) -> Self:
         """
         Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
@@ -3265,15 +3269,10 @@ class Expr:
             Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
-        Implementing logic using a Python function is almost always _significantly_
-        slower and more memory intensive than implementing the same logic using
-        the native expression API because:
-
-        - The native expression engine runs in Rust; UDFs run in Python.
-        - Use of Python UDFs forces the DataFrame to be materialized in memory.
-        - Polars-native expressions can be parallelised (UDFs cannot).
-        - Polars-native expressions can be logically optimised (UDFs cannot).
-
+        Notes
+        -----
+        Using ``apply`` is strongly discouraged as you will be effectively running
+        python for loops. This will be very slow.
         Wherever possible you should strongly prefer the native expression API
         to achieve the best performance.
 
@@ -3291,6 +3290,16 @@ class Expr:
         pass_name
             Pass the Series name to the custom function
             This is more expensive.
+        strategy : {'thread_local', 'threading'}
+            This functionality is in `alpha` stage. This may be removed
+            /changed without it being considdered a breaking change.
+
+            - 'thread_local': run the python function on a single thread.
+            - 'threading': run the python function on separate threads. Use with
+                        care as this can slow performance. This might only speed up
+                        your code if the amount of work per element is significant
+                        and the python function releases the GIL (e.g. via calling
+                        a c function)
 
         Examples
         --------
@@ -3357,8 +3366,6 @@ class Expr:
 
                 return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
 
-            return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
-
         else:
 
             def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
@@ -3366,7 +3373,40 @@ class Expr:
                     function, return_dtype=return_dtype, skip_nulls=skip_nulls
                 )
 
+        if strategy == "thread_local":
             return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
+        elif strategy == "threading":
+
+            def wrap_threading(x: pli.Series) -> pli.Series:
+                df = x.to_frame("x")
+
+                n_threads = threadpool_size()
+                chunk_size = x.len() // threadpool_size()
+
+                def get_lazy_promise(df: pli.DataFrame) -> pli.LazyFrame:
+                    return df.lazy().select(
+                        pli.col("x").map(
+                            wrap_f, agg_list=True, return_dtype=return_dtype
+                        )
+                    )
+
+                # ensure we don't slice to 0
+                if n_threads > x.len() * 3:
+                    return get_lazy_promise(df).collect().to_series()
+
+                # create partitions with LazyFrames
+                # these are promises on a computation
+                partitions = [
+                    get_lazy_promise(df[i * chunk_size : i * chunk_size + chunk_size])
+                    for i in range(n_threads)
+                ]
+
+                out = [df.to_series() for df in pli.collect_all(partitions)]
+                return pli.concat(out, rechunk=False)
+
+            return self.map(wrap_threading, agg_list=True, return_dtype=return_dtype)
+        else:
+            ValueError(f"Strategy {strategy} is not supported.")
 
     def flatten(self) -> Self:
         """
