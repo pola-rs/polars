@@ -439,18 +439,13 @@ fn scan_small_dtypes() -> PolarsResult<()> {
         let df = LazyCsvReader::new(FOODS_CSV)
             .has_header(true)
             .with_dtype_overwrite(Some(&Schema::from(
-                vec![
-                    Field::new("sugars_g", dt.clone()),
-                ]
-                .into_iter())))
+                vec![Field::new("sugars_g", dt.clone())].into_iter(),
+            )))
             .finish()?
             .select(&[col("sugars_g")])
             .collect()?;
 
-        assert_eq!(
-            df.dtypes(),
-            &[dt]
-        );
+        assert_eq!(df.dtypes(), &[dt]);
     }
     Ok(())
 }
