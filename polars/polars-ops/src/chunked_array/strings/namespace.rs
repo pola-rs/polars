@@ -73,20 +73,23 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
         if strict && ca.null_count() != out.null_count() {
             let failure_mask = !ca.is_null() & out.is_null();
-            let failures = ca.filter(&failure_mask)?.unique()?;
-            let some_error = failures
+            let all_failures = ca.filter(&failure_mask)?;
+            let n_failures = all_failures.len();
+            let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
+            let some_error_msg = some_failures
                 .get(0)
-                .and_then(|s| <i32 as Num>::from_str_radix(s, radix).err());
-            let some_error_msg = some_error.map_or_else(
-                || unreachable!("Could unexpectedly not recreate ParseIntError"),
-                |err| format!("{}", err),
-            );
+                .and_then(|s| <i32 as Num>::from_str_radix(s, radix).err())
+                .map_or_else(
+                    || unreachable!("Could unexpectedly not recreate ParseIntError"),
+                    |err| format!("{}", err),
+                );
 
             Err(PolarsError::ComputeError(
                 format!(
-                    "Strict integer parsing failed for values {}. \
+                    "Strict integer parsing failed for {} value(s): {} \
                     ParseIntError msg for first shown value: '{}'. Consider non strict parsing.",
-                    failures.into_series().fmt_list(),
+                    n_failures,
+                    some_failures.into_series().fmt_list(),
                     some_error_msg
                 )
                 .into(),
