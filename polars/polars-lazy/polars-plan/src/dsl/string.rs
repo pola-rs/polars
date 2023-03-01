@@ -1,6 +1,7 @@
 use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
+use polars_utils::format_smartstring;
 
 use super::function_expr::StringFunction;
 use super::*;
@@ -217,7 +218,9 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )
@@ -269,7 +272,9 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )
@@ -321,7 +326,9 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )

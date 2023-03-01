@@ -1,12 +1,12 @@
 mod asof;
 mod groups;
-
 use std::borrow::Cow;
 
 use asof::*;
 use num_traits::Bounded;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
 use crate::utils::slice_slice;
@@ -22,9 +22,9 @@ pub struct AsOfOptions {
     /// - "2h15m"
     /// - "1d6h"
     /// etc
-    pub tolerance_str: Option<String>,
-    pub left_by: Option<Vec<String>>,
-    pub right_by: Option<Vec<String>>,
+    pub tolerance_str: Option<SmartString>,
+    pub left_by: Option<Vec<SmartString>>,
+    pub right_by: Option<Vec<SmartString>>,
 }
 
 fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {

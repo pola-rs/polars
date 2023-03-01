@@ -374,7 +374,7 @@ impl LogicalPlanBuilder {
             let field = e
                 .to_field_amortized(&schema, Context::Default, &mut arena)
                 .unwrap();
-            new_schema.with_column(field.name().to_string(), field.data_type().clone());
+            new_schema.with_column(field.name().clone(), field.data_type().clone());
             arena.clear();
         }
 
@@ -610,7 +610,7 @@ impl LogicalPlanBuilder {
                 if let Expr::Column(name) = e {
                     if let Some(DataType::List(inner)) = schema.get(name) {
                         let inner = *inner.clone();
-                        schema.with_column(name.to_string(), inner);
+                        schema.with_column(name.as_ref().into(), inner);
                     }
 
                     (**name).to_owned()
@@ -739,12 +739,12 @@ pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
         .variable_name
         .as_ref()
         .cloned()
-        .unwrap_or_else(|| "variable".to_string());
+        .unwrap_or_else(|| "variable".into());
     let value_name = args
         .value_name
         .as_ref()
         .cloned()
-        .unwrap_or_else(|| "value".to_string());
+        .unwrap_or_else(|| "value".into());
 
     new_schema.with_column(variable_name, DataType::Utf8);
 

@@ -145,14 +145,14 @@ fn test_read_ndjson_iss_5875() {
 
     let mut schema = Schema::new();
     schema.with_column(
-        "struct".to_owned(),
+        "struct".into(),
         DataType::Struct(vec![
             field_int_inner.clone(),
             field_float_inner.clone(),
             field_str_inner.clone(),
         ]),
     );
-    schema.with_column("float".to_owned(), DataType::Float64);
+    schema.with_column("float".into(), DataType::Float64);
 
     assert_eq!(schema, df.unwrap().schema());
 }
@@ -178,11 +178,11 @@ fn test_read_ndjson_iss_5875_part2() {
     );
     let mut schema = Schema::new();
     schema.with_column(
-        "struct".to_owned(),
+        "struct".into(),
         DataType::Struct(vec![field_int_list_inner, field_float, field_str_list]),
     );
     schema.with_column(
-        "float_list_outer".to_owned(),
+        "float_list_outer".into(),
         field_float_list.data_type().clone(),
     );
 

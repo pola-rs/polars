@@ -1580,6 +1580,7 @@ dependencies = [
  "polars-utils",
  "pyo3",
  "rayon",
+ "smartstring",
 ]
 
 [[package]]
@@ -1596,6 +1597,7 @@ dependencies = [
  "polars-utils",
  "serde",
  "serde_json",
+ "smartstring",
 ]
 
 [[package]]
@@ -1633,6 +1635,7 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+ "smartstring",
 ]
 
 [[package]]
@@ -1672,6 +1675,7 @@ dependencies = [
  "polars-utils",
  "regex",
  "serde",
+ "smartstring",
 ]
 
 [[package]]
@@ -1680,6 +1684,7 @@ version = "0.27.2"
 dependencies = [
  "once_cell",
  "rayon",
+ "smartstring",
  "sysinfo",
 ]
 
@@ -1717,6 +1722,7 @@ dependencies = [
  "pyo3",
  "pyo3-built",
  "serde_json",
+ "smartstring",
  "thiserror",
 ]
 
@@ -2071,6 +2077,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fb72c633efbaa2dd666986505016c32c3044395ceaf881518399d2f4127ee29"
 dependencies = [
  "autocfg",
+ "serde",
  "static_assertions",
  "version_check",
 ]

@@ -20,6 +20,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
+use smartstring::alias::String as SmartString;
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -173,7 +174,7 @@ fn struct_dict<'a>(
 ) -> PyObject {
     let dict = PyDict::new(py);
     for (fld, val) in flds.iter().zip(vals) {
-        dict.set_item(fld.name(), Wrap(val)).unwrap()
+        dict.set_item(fld.name().as_str(), Wrap(val)).unwrap()
     }
     dict.into_py(py)
 }
@@ -297,7 +298,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Struct(fields) => {
                 let field_class = pl.getattr("Field").unwrap();
                 let iter = fields.iter().map(|fld| {
-                    let name = fld.name().clone();
+                    let name = fld.name().as_str();
                     let dtype = Wrap(fld.data_type().clone()).to_object(py);
                     field_class.call1((name, dtype)).unwrap()
                 });
@@ -1177,4 +1178,12 @@ pub(crate) fn parse_parquet_compression(
         }
     };
     Ok(parsed)
+}
+
+pub(crate) fn strings_to_smartstrings<I, S>(container: I) -> Vec<SmartString>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    container.into_iter().map(|s| s.as_ref().into()).collect()
 }

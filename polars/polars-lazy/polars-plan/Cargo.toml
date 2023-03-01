@@ -22,6 +22,7 @@ pyo3 = { version = "0.18", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }
 serde = { version = "1", features = ["derive", "rc"], optional = true }
+smartstring.workspace = true
 
 [features]
 # debuging utility

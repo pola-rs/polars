@@ -1,7 +1,8 @@
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
@@ -20,12 +21,12 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 
 /// Arguments for `[DataFrame::melt]` function
 #[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct MeltArgs {
-    pub id_vars: Vec<String>,
-    pub value_vars: Vec<String>,
-    pub variable_name: Option<String>,
-    pub value_name: Option<String>,
+    pub id_vars: Vec<SmartString>,
+    pub value_vars: Vec<SmartString>,
+    pub variable_name: Option<SmartString>,
+    pub value_name: Option<SmartString>,
 }
 
 impl DataFrame {
@@ -209,8 +210,8 @@ impl DataFrame {
     /// ```
     pub fn melt<I, J>(&self, id_vars: I, value_vars: J) -> PolarsResult<Self>
     where
-        I: IntoVec<String>,
-        J: IntoVec<String>,
+        I: IntoVec<SmartString>,
+        J: IntoVec<SmartString>,
     {
         let id_vars = id_vars.into_vec();
         let value_vars = value_vars.into_vec();
@@ -242,7 +243,7 @@ impl DataFrame {
                     if id_vars_set.contains(s.name()) {
                         None
                     } else {
-                        Some(s.name().to_string())
+                        Some(s.name().into())
                     }
                 })
                 .collect();

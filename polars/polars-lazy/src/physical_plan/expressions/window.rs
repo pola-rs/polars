@@ -12,6 +12,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
@@ -180,7 +181,7 @@ impl WindowExpr {
                 let first = group.first();
                 let group = groupby_columns
                     .iter()
-                    .map(|s| format!("{}", s.get(first as usize).unwrap()))
+                    .map(|s| format_smartstring!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
                 let err_msg = format!(
                     "{}\n> Group: ",

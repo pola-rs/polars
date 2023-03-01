@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
 
@@ -15,7 +16,7 @@ struct Wrap<T>(pub T);
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DynamicGroupOptions {
     /// Time or index column
-    pub index_column: String,
+    pub index_column: SmartString,
     /// start a window at this interval
     pub every: Duration,
     /// window duration
@@ -33,7 +34,7 @@ pub struct DynamicGroupOptions {
 impl Default for DynamicGroupOptions {
     fn default() -> Self {
         Self {
-            index_column: "".to_string(),
+            index_column: "".into(),
             every: Duration::new(1),
             period: Duration::new(1),
             offset: Duration::new(1),
@@ -49,7 +50,7 @@ impl Default for DynamicGroupOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
     /// Time or index column
-    pub index_column: String,
+    pub index_column: SmartString,
     /// window duration
     pub period: Duration,
     pub offset: Duration,
