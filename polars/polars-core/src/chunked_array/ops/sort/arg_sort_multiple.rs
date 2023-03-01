@@ -1,4 +1,5 @@
 use polars_arrow::data_types::IsFloat;
+use polars_row::{convert_columns, RowsEncoded, SortField};
 use polars_utils::iter::EnumerateIdxTrait;
 
 use super::*;
@@ -67,29 +68,54 @@ pub(crate) fn arg_sort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
     Ok(ca.into_inner())
 }
 
-pub(crate) fn argsort_multiple_row_fmt(
+pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
+    let by = convert_sort_column_multi_sort(by, true)?;
+    let by = by.rechunk();
+
+    let out = match by.dtype() {
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_) => {
+            let ca = by.categorical().unwrap();
+            if ca.use_lexical_sort() {
+                by.to_arrow(0)
+            } else {
+                ca.logical().chunks[0].clone()
+            }
+        }
+        _ => by.to_arrow(0),
+    };
+    Ok(out)
+}
+
+pub fn _get_rows_encoded(
     by: &[Series],
     descending: &[bool],
     nulls_last: bool,
-    parallel: bool,
-) -> PolarsResult<IdxCa> {
-    use polars_row::{convert_columns, SortField};
-
+) -> PolarsResult<RowsEncoded> {
+    debug_assert_eq!(by.len(), descending.len());
     let mut cols = Vec::with_capacity(by.len());
     let mut fields = Vec::with_capacity(by.len());
-
     for (by, descending) in by.iter().zip(descending) {
-        let by = convert_sort_column_multi_sort(by)?;
-        let data_type = by.dtype().to_arrow();
-        let by = by.rechunk();
-        cols.push(by.chunks()[0].clone());
+        let arr = _get_rows_encoded_compat_array(by)?;
+
+        cols.push(arr);
         fields.push(SortField {
             descending: *descending,
             nulls_last,
-            data_type,
         })
     }
-    let rows_encoded = convert_columns(&cols, fields);
+    Ok(convert_columns(&cols, &fields))
+}
+
+pub(crate) fn argsort_multiple_row_fmt(
+    by: &[Series],
+    mut descending: Vec<bool>,
+    nulls_last: bool,
+    parallel: bool,
+) -> PolarsResult<IdxCa> {
+    _broadcast_descending(by.len(), &mut descending);
+
+    let rows_encoded = _get_rows_encoded(by, &descending, nulls_last)?;
     let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
 
     if parallel {

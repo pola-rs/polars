@@ -18,7 +18,6 @@ from typing import (
 
 from polars import internals as pli
 from polars.datatypes import (
-    PolarsDataType,
     Struct,
     UInt32,
     is_polars_dtype,
@@ -43,6 +42,7 @@ from polars.utils import (
 if TYPE_CHECKING:
     import sys
 
+    from polars.datatypes import PolarsDataType
     from polars.internals.type_aliases import (
         ClosedInterval,
         FillNullStrategy,

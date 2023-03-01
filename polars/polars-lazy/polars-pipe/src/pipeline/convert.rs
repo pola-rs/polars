@@ -190,20 +190,28 @@ where
             by_column,
             args,
         } => {
-            let input_schema = lp_arena.get(*input).schema(lp_arena);
-            assert_eq!(by_column.len(), 1);
-            let by_column = aexpr_to_leaf_names_iter(by_column[0], expr_arena)
-                .next()
-                .unwrap();
-            let index = input_schema.try_index_of(by_column.as_ref())?;
+            let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
 
-            let sort_sink = SortSink::new(
-                index,
-                args.descending[0],
-                input_schema.into_owned(),
-                args.slice,
-            );
-            Box::new(sort_sink) as Box<dyn Sink>
+            if by_column.len() == 1 {
+                let by_column = aexpr_to_leaf_names_iter(by_column[0], expr_arena)
+                    .next()
+                    .unwrap();
+                let index = input_schema.try_index_of(by_column.as_ref())?;
+
+                let sort_sink = SortSink::new(index, args.clone(), input_schema);
+                Box::new(sort_sink) as Box<dyn Sink>
+            } else {
+                let sort_idx = by_column
+                    .iter()
+                    .map(|node| {
+                        let name = aexpr_to_leaf_names_iter(*node, expr_arena).next().unwrap();
+                        input_schema.try_index_of(name.as_ref())
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+
+                let sort_sink = SortSinkMultiple::new(args.clone(), &input_schema, sort_idx);
+                Box::new(sort_sink) as Box<dyn Sink>
+            }
         }
         Aggregate {
             input,

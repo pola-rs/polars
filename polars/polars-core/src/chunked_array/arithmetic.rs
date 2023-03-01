@@ -540,7 +540,6 @@ fn concat_strings(l: &str, r: &str) -> String {
     s
 }
 
-#[cfg(feature = "dtype-binary")]
 fn concat_binary_arrs(l: &[u8], r: &[u8]) -> Vec<u8> {
     let mut v = Vec::with_capacity(l.len() + r.len());
     v.extend_from_slice(l);
@@ -610,7 +609,6 @@ impl Add<&str> for &Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Add for &BinaryChunked {
     type Output = BinaryChunked;
 
@@ -646,7 +644,6 @@ impl Add for &BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Add for BinaryChunked {
     type Output = BinaryChunked;
 
@@ -655,7 +652,6 @@ impl Add for BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 

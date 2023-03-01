@@ -143,7 +143,6 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkZip<BinaryType> for BinaryChunked {
     fn zip_with(
         &self,

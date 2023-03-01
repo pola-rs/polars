@@ -68,7 +68,7 @@ class WhenThen:
     def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
 
-    def when(self, predicate: pli.Expr | bool) -> WhenThenThen:
+    def when(self, predicate: pli.Expr | bool | pli.Series) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
@@ -131,7 +131,7 @@ class When:
         return WhenThen(pywhenthen)
 
 
-def when(expr: pli.Expr | bool) -> When:
+def when(expr: pli.Expr | bool | pli.Series) -> When:
     """
     Start a "when, then, otherwise" expression.
 

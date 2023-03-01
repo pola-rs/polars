@@ -1160,6 +1160,16 @@ impl DataFrame {
         inner(self, series)
     }
 
+    /// Adds a column to the `DataFrame` without doing any checks
+    /// on length or duplicates.
+    ///
+    /// # Safety
+    /// The caller must ensure `column.len() == self.height()` .
+    pub unsafe fn with_column_unchecked(&mut self, column: Series) -> &mut Self {
+        self.get_columns_mut().push(column);
+        self
+    }
+
     fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> PolarsResult<()> {
         let name = s.name();
         if let Some((idx, _, _)) = schema.get_full(name) {
@@ -1841,8 +1851,8 @@ impl DataFrame {
             _ => {
                 #[cfg(feature = "sort_multiple")]
                 {
-                    if std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
-                        argsort_multiple_row_fmt(&by_column, &descending, nulls_last, parallel)?
+                    if nulls_last || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
+                        argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
                     } else {
                         let (first, by_column, descending) =
                             prepare_arg_sort(by_column, descending)?;
@@ -2451,7 +2461,7 @@ impl DataFrame {
     ///
     /// let df2: DataFrame = df1.describe(None)?;
     /// assert_eq!(df2.shape(), (9, 4));
-    /// dbg!(df2);
+    /// println!("{}", df2);
     /// # Ok::<(), PolarsError>(())
     /// ```
     ///

@@ -442,7 +442,6 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
     fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
     where
@@ -582,7 +581,6 @@ impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
     fn apply_kernel(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)

@@ -35,7 +35,6 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else {
             match self.dtype() {
-                #[cfg(feature = "dtype-binary")]
                 DataType::Binary => {
                     let ca = self.binary().unwrap();
                     ca.serialize(serializer)
@@ -206,7 +205,6 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<Series>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    #[cfg(feature = "dtype-binary")]
                     DeDataType::Binary => {
                         let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;
                         Ok(Series::new(&name, values))

@@ -3156,17 +3156,14 @@ def test_init_datetimes_with_timezone() -> None:
                 }
             },
         ):
-            df = pl.DataFrame(  # type: ignore[arg-type]
-                data={"d1": [dtm], "d2": [dtm]},
-                **type_overrides,
-            )
-            assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
-            assert df.rows() == [
-                (
-                    datetime(2022, 10, 12, 8, 30, tzinfo=ZoneInfo(tz_us)),
-                    datetime(2022, 10, 12, 14, 30, tzinfo=ZoneInfo(tz_europe)),
+            with pytest.raises(
+                ValueError,
+                match="Given time_zone is different from that of timezone aware datetimes",
+            ):
+                pl.DataFrame(  # type: ignore[arg-type]
+                    data={"d1": [dtm], "d2": [dtm]},
+                    **type_overrides,
                 )
-            ]
 
 
 def test_init_physical_with_timezone() -> None:

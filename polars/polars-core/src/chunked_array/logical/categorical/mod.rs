@@ -4,6 +4,7 @@ mod merge;
 mod ops;
 pub mod stringcache;
 
+use bitflags::bitflags;
 pub use builder::*;
 pub(crate) use merge::*;
 pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
@@ -12,13 +13,20 @@ use polars_utils::sync::SyncPtr;
 use super::*;
 use crate::prelude::*;
 
+bitflags! {
+    #[derive(Default)]
+    struct BitSettings: u8 {
+    const ORIGINAL = 0x01;
+    const LEXICAL_SORT = 0x02;
+}}
+
 #[derive(Clone)]
 pub struct CategoricalChunked {
     logical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
     ///             meaning that n_unique is the same as the cat map length
     /// 2nd bit: use lexical sorting
-    bit_settings: u8,
+    bit_settings: BitSettings,
 }
 
 impl CategoricalChunked {
@@ -58,7 +66,9 @@ impl CategoricalChunked {
         let ca = unsafe { UInt32Chunked::from_chunks(name, chunks) };
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(ca);
         logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map))));
-        let bit_settings = 1u8;
+
+        let mut bit_settings = BitSettings::default();
+        bit_settings.insert(BitSettings::ORIGINAL);
         Self {
             logical,
             bit_settings,
@@ -67,14 +77,14 @@ impl CategoricalChunked {
 
     pub fn set_lexical_sorted(&mut self, toggle: bool) {
         if toggle {
-            self.bit_settings |= 1u8 << 1;
+            self.bit_settings.insert(BitSettings::LEXICAL_SORT);
         } else {
-            self.bit_settings &= !(1u8 << 1);
+            self.bit_settings.remove(BitSettings::LEXICAL_SORT);
         }
     }
 
     pub(crate) fn use_lexical_sort(&self) -> bool {
-        self.bit_settings & 1 << 1 != 0
+        self.bit_settings.contains(BitSettings::LEXICAL_SORT)
     }
 
     /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
@@ -103,14 +113,14 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn can_fast_unique(&self) -> bool {
-        self.bit_settings & 1 << 0 != 0 && self.logical.chunks.len() == 1
+        self.bit_settings.contains(BitSettings::ORIGINAL) && self.logical.chunks.len() == 1
     }
 
     pub(crate) fn set_fast_unique(&mut self, can: bool) {
         if can {
-            self.bit_settings |= 1u8 << 0;
+            self.bit_settings.insert(BitSettings::ORIGINAL);
         } else {
-            self.bit_settings &= !(1u8 << 0);
+            self.bit_settings.remove(BitSettings::ORIGINAL);
         }
     }
 

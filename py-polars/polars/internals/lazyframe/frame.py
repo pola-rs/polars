@@ -5,7 +5,7 @@ import os
 import subprocess
 import typing
 from datetime import date, datetime, time, timedelta
-from io import BytesIO, IOBase, StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -33,9 +33,6 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
-    PolarsDataType,
-    SchemaDefinition,
-    SchemaDict,
     Time,
     UInt8,
     UInt16,
@@ -64,9 +61,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from io import IOBase
 
     import pyarrow as pa
 
+    from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -795,16 +794,42 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return func(self, *args, **kwargs)
 
-    def describe_plan(self, *, optimized: bool = False) -> str:
+    def describe_plan(
+        self,
+        *,
+        optimized: bool = False,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
+        streaming: bool = False,
+    ) -> str:
         """
         Create a string representation of the unoptimized query plan.
 
         Parameters
         ----------
         optimized
-            Return an optimized query plan. Defaults to `False`.
-            Use ``describe_optimized_plan`` to control
-            the optimization flags.
+            Return an optimized query plan. Defaults to ``False``.
+            If this is set to ``True`` the subsequent
+            optimization flags control which optimizations
+            run.
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        slice_pushdown
+            Slice pushdown optimization.
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
+        streaming
+            Run parts of the query in a streaming fashion (this is in an alpha state)
 
         Examples
         --------
@@ -821,7 +846,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         if optimized:
-            return self._ldf.describe_optimized_plan()
+            ldf = self._ldf.optimization_toggle(
+                type_coercion,
+                predicate_pushdown,
+                projection_pushdown,
+                simplify_expression,
+                slice_pushdown,
+                common_subplan_elimination,
+                streaming,
+            )
+            return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
     @deprecate_nonkeyword_arguments()
@@ -1006,7 +1040,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Place null values last. Can only be used when sorting by a single column.
+            Place null values last.
 
         Examples
         --------
@@ -1081,12 +1115,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by = pli.selection_to_pyexpr_list(by)
         if more_by:
             by.extend(pli.selection_to_pyexpr_list(more_by))
-
-        # TODO: Do this check on the Rust side
-        if nulls_last and len(by) > 1:
-            raise ValueError(
-                "`nulls_last=True` only works when sorting by a single column"
-            )
 
         if isinstance(descending, bool):
             descending = [descending]
@@ -2079,7 +2107,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         if offset is None:
-            offset = f"-{period}"
+            offset = f"-{_timedelta_to_pl_duration(period)}"
 
         pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
         period = _timedelta_to_pl_duration(period)
@@ -2369,7 +2397,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """  # noqa: W505
         if offset is None:
-            offset = f"-{every}" if period is None else "0ns"
+            offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
 
         if period is None:
             period = every

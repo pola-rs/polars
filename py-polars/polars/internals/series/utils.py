@@ -6,9 +6,10 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 import polars.internals as pli
-from polars.datatypes import PolarsDataType, dtype_to_ffiname
+from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
     from polars.polars import PySeries
 
     if sys.version_info >= (3, 10):

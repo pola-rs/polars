@@ -1,18 +1,23 @@
-use crate::sort_field::SortField;
+use arrow::array::BinaryArray;
+use arrow::datatypes::DataType;
+use arrow::offset::Offsets;
+
+#[derive(Clone)]
+pub struct SortField {
+    /// Whether to sort in descending order
+    pub descending: bool,
+    /// Whether to sort nulls first
+    pub nulls_last: bool,
+}
 
 pub struct RowsEncoded {
     pub(crate) buf: Vec<u8>,
     pub(crate) offsets: Vec<usize>,
-    pub(crate) fields: Vec<SortField>,
 }
 
 impl RowsEncoded {
-    pub(crate) fn new(buf: Vec<u8>, offsets: Vec<usize>, fields: Option<Vec<SortField>>) -> Self {
-        RowsEncoded {
-            buf,
-            offsets,
-            fields: fields.unwrap_or_default(),
-        }
+    pub(crate) fn new(buf: Vec<u8>, offsets: Vec<usize>) -> Self {
+        RowsEncoded { buf, offsets }
     }
 
     pub fn iter(&self) -> RowsEncodedIter {
@@ -23,6 +28,33 @@ impl RowsEncoded {
             end: iter,
             buf: &self.buf,
         }
+    }
+
+    pub fn into_array(self) -> BinaryArray<i64> {
+        assert_eq!(
+            std::mem::size_of::<usize>(),
+            std::mem::size_of::<i64>(),
+            "only supported on 64bit arch"
+        );
+        assert!(
+            (*self.offsets.last().unwrap() as u64) < i64::MAX as u64,
+            "overflow"
+        );
+
+        // Safety: we checked overflow
+        let offsets = unsafe { std::mem::transmute::<Vec<usize>, Vec<i64>>(self.offsets) };
+
+        // Safety: monotonically increasing
+        let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+        BinaryArray::new(DataType::LargeBinary, offsets.into(), self.buf.into(), None)
+    }
+
+    #[cfg(test)]
+    pub fn get(&self, i: usize) -> &[u8] {
+        let start = self.offsets[i];
+        let end = self.offsets[i + 1];
+        &self.buf[start..end]
     }
 }
 

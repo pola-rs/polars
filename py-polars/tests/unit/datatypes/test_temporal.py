@@ -11,12 +11,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import (
-    DATETIME_DTYPES,
-    DTYPE_TEMPORAL_UNITS,
-    TEMPORAL_DTYPES,
-    PolarsTemporalType,
-)
+from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
 from polars.exceptions import ComputeError, PanicException
 from polars.testing import (
     assert_frame_equal,
@@ -25,6 +20,7 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsTemporalType
     from polars.internals.type_aliases import TimeUnit
 
 if sys.version_info >= (3, 9):
@@ -487,6 +483,26 @@ def test_date_range() -> None:
     assert result.dtype.tu == "ns"  # type: ignore[union-attr]
     assert result.dt.second()[-1] == 59
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "expected_micros"),
+    [
+        ("ms", 986000),
+        ("us", 986759),
+        ("ns", 986759),
+        (None, 986759),
+    ],
+)
+def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) -> None:
+    micros = 986759
+    start = datetime(2000, 5, 30, 1, 53, 4, micros)
+    stop = datetime(2000, 5, 31, 1, 53, 4, micros)
+    result = pl.date_range(start, stop, time_unit=time_unit)
+    expected_start = start.replace(microsecond=expected_micros)
+    expected_stop = stop.replace(microsecond=expected_micros)
+    assert result[0] == expected_start
+    assert result[1] == expected_stop
 
 
 def test_range_invalid_unit() -> None:
@@ -1831,11 +1847,12 @@ def test_tz_datetime_duration_arithm_5221() -> None:
         data={"run_datetime": run_datetimes},
         schema=[("run_datetime", pl.Datetime(time_zone="UTC"))],
     )
+    out = out.with_columns(pl.col("run_datetime") + pl.duration(days=1))
     utc = ZoneInfo("UTC")
     assert out.to_dict(False) == {
         "run_datetime": [
-            datetime(2022, 1, 1, 0, 0, tzinfo=utc),
             datetime(2022, 1, 2, 0, 0, tzinfo=utc),
+            datetime(2022, 1, 3, 0, 0, tzinfo=utc),
         ]
     }
 
@@ -1872,7 +1889,7 @@ def test_timezone_aware_date_range() -> None:
 
     with pytest.raises(
         ValueError,
-        match="Given time_zone is different from that timezone aware datetimes. "
+        match="Given time_zone is different from that of timezone aware datetimes. "
         "Given: 'UTC', got: 'Asia/Shanghai'.",
     ):
         pl.date_range(low, high, interval=timedelta(days=5), time_zone="UTC")

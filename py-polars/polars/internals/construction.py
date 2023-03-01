@@ -27,9 +27,6 @@ from polars.datatypes import (
     Duration,
     Float32,
     List,
-    PolarsDataType,
-    SchemaDefinition,
-    SchemaDict,
     Struct,
     Time,
     Unknown,
@@ -68,6 +65,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.internals.type_aliases import Orientation
 
 if version_info >= (3, 10):
@@ -327,9 +325,23 @@ def sequence_to_pyseries(
             # we use anyvalue builder to create the datetime array
             # we store the values internally as UTC and set the timezone
             if dtype == Datetime and value.tzinfo is not None:
-                py_series = PySeries.new_from_anyvalues(name, values)
                 tz = str(value.tzinfo)
-                return pli.wrap_s(py_series).dt.replace_time_zone(tz)._s
+                dtype_tz = dtype.tz  # type: ignore[union-attr]
+                if dtype_tz is not None and tz != dtype_tz:
+                    raise ValueError(
+                        "Given time_zone is different from that of timezone aware datetimes."
+                        f" Given: '{dtype_tz}', got: '{tz}'."
+                    )
+                py_series = PySeries.new_from_anyvalues(name, values)
+                time_unit = dtype.tu  # type: ignore[union-attr]
+                if time_unit is None:
+                    return pli.wrap_s(py_series).dt.replace_time_zone(tz)._s
+                return (
+                    pli.wrap_s(py_series)
+                    .dt.cast_time_unit(time_unit)
+                    .dt.replace_time_zone(tz)
+                    ._s
+                )
 
             # TODO: use anyvalues here (no need to require pyarrow for this).
             arrow_dtype = dtype_to_arrow_type(dtype)

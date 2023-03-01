@@ -280,7 +280,6 @@
 //! | UInt16                  | dtype-u16         |
 //! | Categorical             | dtype-categorical |
 //! | Struct                  | dtype-struct      |
-//! | Binary                  | dtype-binary      |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.

@@ -7,7 +7,7 @@ import os
 import random
 import typing
 from collections.abc import Sized
-from io import BytesIO, IOBase, StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -39,9 +39,6 @@ from polars.datatypes import (
     Int32,
     Int64,
     Object,
-    PolarsDataType,
-    SchemaDefinition,
-    SchemaDict,
     UInt8,
     UInt16,
     UInt32,
@@ -96,9 +93,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from datetime import timedelta
+    from io import IOBase
 
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
 
+    from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -3092,7 +3091,7 @@ class DataFrame:
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Place null values last. Can only be used when sorting by a single column.
+            Place null values last.
 
         Examples
         --------

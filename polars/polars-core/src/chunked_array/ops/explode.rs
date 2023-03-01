@@ -241,46 +241,15 @@ impl ExplodeByOffsets for ListChunked {
 }
 impl ExplodeByOffsets for Utf8Chunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        debug_assert_eq!(self.chunks.len(), 1);
-        let arr = self.downcast_iter().next().unwrap().clone();
-
-        let cap = ((arr.len() as f32) * 1.5) as usize;
-        let bytes_size = self.get_values_size();
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), cap, bytes_size);
-
-        let mut start = offsets[0] as usize;
-        let mut last = start;
-        for &o in &offsets[1..] {
-            let o = o as usize;
-            if o == last {
-                if start != last {
-                    let vals = arr.slice_typed(start, last - start);
-                    if vals.null_count() == 0 {
-                        builder
-                            .builder
-                            .extend_trusted_len_values(vals.values_iter())
-                    } else {
-                        builder.builder.extend_trusted_len(vals.into_iter());
-                    }
-                }
-                builder.append_null();
-                start = o;
-            }
-            last = o;
+        unsafe {
+            self.as_binary()
+                .explode_by_offsets(offsets)
+                .cast_unchecked(&DataType::Utf8)
+                .unwrap()
         }
-        let vals = arr.slice_typed(start, last - start);
-        if vals.null_count() == 0 {
-            builder
-                .builder
-                .extend_trusted_len_values(vals.values_iter())
-        } else {
-            builder.builder.extend_trusted_len(vals.into_iter());
-        }
-        builder.finish().into()
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ExplodeByOffsets for BinaryChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);

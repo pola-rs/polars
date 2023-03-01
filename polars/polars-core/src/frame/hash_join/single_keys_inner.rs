@@ -1,4 +1,6 @@
+use super::single_keys::create_probe_table;
 use super::*;
+use crate::frame::hash_join::single_keys::probe_to_offsets;
 
 /// Probe the build table and add tuples to the results (inner join)
 pub(super) fn probe_inner<T, F>(

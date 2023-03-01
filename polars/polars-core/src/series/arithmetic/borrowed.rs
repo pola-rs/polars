@@ -81,7 +81,6 @@ impl NumOpsDispatch for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl NumOpsDispatch for BinaryChunked {
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         let rhs = self.unpack_series_matching_type(rhs)?;

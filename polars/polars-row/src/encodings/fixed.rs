@@ -1,7 +1,6 @@
 use polars_utils::slice::*;
 
-use crate::row::RowsEncoded;
-use crate::sort_field::SortField;
+use crate::row::{RowsEncoded, SortField};
 
 /// Encodes a value of a particular fixed width type into bytes
 pub trait FixedLengthEncoding: Copy {

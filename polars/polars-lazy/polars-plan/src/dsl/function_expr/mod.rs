@@ -1,6 +1,5 @@
 #[cfg(feature = "arg_where")]
 mod arg_where;
-#[cfg(feature = "dtype-binary")]
 mod binary;
 #[cfg(feature = "round_series")]
 mod clip;
@@ -40,7 +39,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "dtype-binary")]
 pub(crate) use self::binary::BinaryFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
@@ -68,7 +66,6 @@ pub enum FunctionExpr {
     SearchSorted(SearchSortedSide),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
-    #[cfg(feature = "dtype-binary")]
     BinaryExpr(BinaryFunction),
     #[cfg(feature = "temporal")]
     TemporalExpr(TemporalFunction),
@@ -145,7 +142,6 @@ impl Display for FunctionExpr {
             SearchSorted(_) => "search_sorted",
             #[cfg(feature = "strings")]
             StringExpr(s) => return write!(f, "{s}"),
-            #[cfg(feature = "dtype-binary")]
             BinaryExpr(b) => return write!(f, "{b}"),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => return write!(f, "{fun}"),
@@ -304,7 +300,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "strings")]
             StringExpr(s) => s.into(),
-            #[cfg(feature = "dtype-binary")]
             BinaryExpr(s) => s.into(),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => func.into(),
@@ -442,7 +437,6 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BinaryFunction) -> Self {
         use BinaryFunction::*;

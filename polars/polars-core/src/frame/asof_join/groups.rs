@@ -12,7 +12,7 @@ use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 #[cfg(feature = "dtype-categorical")]
 use crate::frame::hash_join::_check_categorical_src;
 use crate::frame::hash_join::{
-    create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_strs,
+    create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes,
 };
 use crate::utils::{split_ca, split_df};
 use crate::vector_hasher::{df_rows_to_hashes_threaded, AsU64};
@@ -325,9 +325,9 @@ where
     }))
 }
 
-fn asof_join_by_utf8<T>(
-    by_left: &Utf8Chunked,
-    by_right: &Utf8Chunked,
+fn asof_join_by_binary<T>(
+    by_left: &BinaryChunked,
+    by_right: &BinaryChunked,
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
     tolerance: Option<AnyValue<'static>>,
@@ -375,8 +375,8 @@ where
     let splitted_right = split_ca(by_right, n_threads).unwrap();
 
     let hb = RandomState::default();
-    let vals_left = prepare_strs(&splitted_by_left, &hb);
-    let vals_right = prepare_strs(&splitted_right, &hb);
+    let vals_left = prepare_bytes(&splitted_by_left, &hb);
+    let vals_right = prepare_bytes(&splitted_right, &hb);
 
     let hash_tbls = create_probe_table(vals_right);
 
@@ -581,9 +581,17 @@ fn dispatch_join<T: PolarsNumericType>(
 ) -> PolarsResult<Vec<Option<IdxSize>>> {
     let out = if left_by.width() == 1 {
         match left_by_s.dtype() {
-            DataType::Utf8 => asof_join_by_utf8(
-                left_by_s.utf8().unwrap(),
-                right_by_s.utf8().unwrap(),
+            DataType::Utf8 => asof_join_by_binary(
+                &left_by_s.utf8().unwrap().as_binary(),
+                &right_by_s.utf8().unwrap().as_binary(),
+                left_asof,
+                right_asof,
+                tolerance,
+                strategy,
+            ),
+            DataType::Binary => asof_join_by_binary(
+                left_by_s.binary().unwrap(),
+                right_by_s.binary().unwrap(),
                 left_asof,
                 right_asof,
                 tolerance,

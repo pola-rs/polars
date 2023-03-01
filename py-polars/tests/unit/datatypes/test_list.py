@@ -368,6 +368,18 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
+def test_concat_list_with_lit() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert df.select(pl.concat_list([pl.col("a"), pl.lit(1)]).alias("a")).to_dict(
+        False
+    ) == {"a": [[1, 1], [2, 1], [3, 1]]}
+
+    assert df.select(pl.concat_list([pl.lit(1), pl.col("a")]).alias("a")).to_dict(
+        False
+    ) == {"a": [[1, 1], [1, 2], [1, 3]]}
+
+
 def test_list_count_match() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").arr.count_match(2).alias("number_of_twos")

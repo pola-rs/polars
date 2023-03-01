@@ -17,7 +17,7 @@ pub enum FinalizedSink {
 pub trait Sink: Send + Sync {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult>;
 
-    fn combine(&mut self, other: Box<dyn Sink>);
+    fn combine(&mut self, other: &mut dyn Sink);
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink>;
 

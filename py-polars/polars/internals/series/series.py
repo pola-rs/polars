@@ -31,7 +31,6 @@ from polars.datatypes import (
     Int64,
     List,
     Object,
-    PolarsDataType,
     Time,
     UInt8,
     UInt16,
@@ -94,6 +93,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
+    from polars.datatypes import PolarsDataType
     from polars.internals.series._numpy import SeriesView
     from polars.internals.type_aliases import (
         ClosedInterval,

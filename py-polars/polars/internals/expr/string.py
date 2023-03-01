@@ -7,14 +7,13 @@ from polars.datatypes import (
     DataType,
     Date,
     Datetime,
-    PolarsDataType,
-    PolarsTemporalType,
     Time,
     is_polars_dtype,
     py_type_to_dtype,
 )
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType, PolarsTemporalType
     from polars.internals.type_aliases import TransferEncoding
 
 

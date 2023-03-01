@@ -50,7 +50,6 @@ impl From<&DataType> for DeDataType<'_> {
             DataType::Boolean => DeDataType::Boolean,
             DataType::Null => DeDataType::Null,
             DataType::List(_) => DeDataType::List,
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => DeDataType::Binary,
             #[cfg(feature = "object")]
             DataType::Object(s) => DeDataType::Object(s),
@@ -133,7 +132,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "dtype-binary")]
     fn test_serde_binary_series_owned_bincode() {
         let s1 = Series::new(
             "foo",

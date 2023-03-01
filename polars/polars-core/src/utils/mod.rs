@@ -283,7 +283,6 @@ macro_rules! match_dtype_to_logical_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_binary:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
             DataType::Utf8 => $macro_utf8!($($opt_args)*),
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => $macro_binary!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]

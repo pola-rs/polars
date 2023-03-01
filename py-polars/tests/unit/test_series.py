@@ -17,7 +17,6 @@ from polars.datatypes import (
     Float64,
     Int32,
     Int64,
-    PolarsDataType,
     Time,
     UInt32,
     UInt64,
@@ -1935,12 +1934,7 @@ def test_trigonometric(f: str) -> None:
     expected = (
         pl.Series("a", getattr(np, f)(s.to_numpy()))
         .to_frame()
-        .with_columns(
-            pl.when(s.is_null())  # type: ignore[arg-type]
-            .then(None)
-            .otherwise(pl.col("a"))
-            .alias("a")
-        )
+        .with_columns(pl.when(s.is_null()).then(None).otherwise(pl.col("a")).alias("a"))
         .to_series()
     )
     result = getattr(s, f)()
@@ -2359,7 +2353,7 @@ def test_builtin_abs() -> None:
     ],
 )
 def test_from_epoch_expr(
-    value: int, unit: EpochTimeUnit, exp: date | datetime, exp_type: PolarsDataType
+    value: int, unit: EpochTimeUnit, exp: date | datetime, exp_type: pl.PolarsDataType
 ) -> None:
     s = pl.Series("timestamp", [value, None])
     result = pl.from_epoch(s, unit=unit)
@@ -2484,7 +2478,7 @@ def test_map_dict() -> None:
     ],
 )
 def test_upper_lower_bounds(
-    dtype: PolarsDataType, upper: int | float, lower: int | float
+    dtype: pl.PolarsDataType, upper: int | float, lower: int | float
 ) -> None:
     s = pl.Series("s", dtype=dtype)
     assert s.lower_bound().item() == lower

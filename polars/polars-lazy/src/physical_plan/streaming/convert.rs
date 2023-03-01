@@ -48,11 +48,11 @@ fn to_physical_piped_expr(
 }
 
 fn is_streamable_sort(args: &SortArguments) -> bool {
-    let positive_slice = match args.slice {
+    // check if slice is positive
+    match args.slice {
         Some((offset, _)) => offset >= 0,
         None => true,
-    };
-    positive_slice && !args.nulls_last
+    }
 }
 
 fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
@@ -93,6 +93,7 @@ fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     exprs.iter().all(|node| is_streamable(*node, expr_arena))
 }
 
+/// check if all expressions are a simple column projection
 fn all_column(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     exprs
         .iter()
@@ -193,10 +194,7 @@ pub(crate) fn insert_streaming_nodes(
                 input,
                 by_column,
                 args,
-            } if is_streamable_sort(args)
-                && by_column.len() == 1
-                && all_column(by_column, expr_arena) =>
-            {
+            } if is_streamable_sort(args) && all_column(by_column, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
                 stack.push((*input, state, current_idx))
