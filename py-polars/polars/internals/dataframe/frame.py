@@ -25,7 +25,6 @@ from typing import (
 )
 
 from polars import internals as pli
-from polars._html import NotebookFormatter
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -67,6 +66,7 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
+from polars.internals.dataframe._html import NotebookFormatter
 from polars.internals.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
