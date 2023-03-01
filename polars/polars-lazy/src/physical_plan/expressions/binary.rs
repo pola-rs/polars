@@ -298,7 +298,7 @@ mod stats {
 
     fn apply_operator_stats_eq(min_max: &Series, literal: &Series) -> bool {
         // literal is greater than max, don't need to read
-        if ChunkCompare::<&Series>::gt(min_max, literal)
+        if ChunkCompare::<&Series>::gt(literal, min_max)
             .ok()
             .map(|s| s.all())
             == Some(true)
@@ -307,9 +307,9 @@ mod stats {
         }
 
         // literal is smaller than min, don't need to read
-        if ChunkCompare::<&Series>::lt(min_max, literal)
+        if ChunkCompare::<&Series>::lt(literal, min_max)
             .ok()
-            .map(|s| s.any())
+            .map(|s| s.all())
             == Some(true)
         {
             return false;
@@ -418,7 +418,7 @@ mod stats {
             if !self.expr.into_iter().all(|e| match e {
                 BinaryExpr { op, .. } => !matches!(
                     op,
-                    Multiply | Divide | TrueDivide | FloorDivide | Modulus | Eq | NotEq
+                    Multiply | Divide | TrueDivide | FloorDivide | Modulus | NotEq
                 ),
                 Column(_) | Literal(_) | Alias(_, _) => true,
                 _ => false,
