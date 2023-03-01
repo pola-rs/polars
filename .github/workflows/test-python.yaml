@@ -61,7 +61,7 @@ jobs:
           maturin develop
 
       - name: Run tests and report coverage
-        run: pytest --cov -n auto -m "not benchmark"
+        run: pytest --cov -n auto --dist worksteal -m "not benchmark"
 
       - name: Run doctests
         run: python tests/docs/run_doctest.py
@@ -125,7 +125,7 @@ jobs:
           pip install target/wheels/polars-*.whl
 
       - name: Run tests
-        run: pytest -n auto -m "not benchmark"
+        run: pytest -n auto --dist worksteal -m "not benchmark"
 
       - name: Check import without optional dependencies
         run: |
