@@ -11,7 +11,7 @@ description = "private utils for the polars dataframe library"
 [dependencies]
 once_cell.workspace = true
 rayon.workspace = true
-sysinfo = { version = "0.27", default-features = false, optional = true }
+sysinfo = { version = "0.28", default-features = false, optional = true }
 
 [features]
 bigidx = []
