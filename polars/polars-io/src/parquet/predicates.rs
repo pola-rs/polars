@@ -84,13 +84,14 @@ impl ColumnStats {
         }
     }
 
+    #[cfg(feature = "dtype-binary")]
     fn use_min_max(dtype: DataType) -> bool {
-        let use_min_max = dtype.is_numeric() || matches!(dtype, DataType::Utf8);
+        dtype.is_numeric() || matches!(dtype, DataType::Utf8) || matches!(dtype, DataType::Binary)
+    }
 
-        #[cfg(feature = "dtype-binary")]
-        let use_min_max = use_min_max || matches!(dtype, DataType::Binary);
-
-        use_min_max
+    #[cfg(not(feature = "dtype-binary"))]
+    fn use_min_max(dtype: DataType) -> bool {
+        dtype.is_numeric() || matches!(dtype, DataType::Utf8)
     }
 }
 
