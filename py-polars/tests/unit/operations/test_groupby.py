@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
-from zoneinfo import ZoneInfo
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+else:
+    from backports.zoneinfo import ZoneInfo
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
