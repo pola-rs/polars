@@ -559,7 +559,11 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                             let dt = ob.call_method("replace", (), Some(kwargs))?;
                             let localize = UTILS.getattr("_localize").unwrap();
                             let loc_tz = localize.call1((dt, "UTC"));
-                            let seconds = loc_tz.call_method0("timestamp")?;
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("microsecond", 0)?;
+                            let seconds = loc_tz
+                                .call_method("replace", (), Some(kwargs))?
+                                .call_method0("timestamp")?;
                             let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
                             (seconds, microseconds)
                         };
@@ -572,7 +576,11 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                             kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
                             let dt = ob.call_method("replace", (), Some(kwargs))?;
 
-                            let seconds = dt.call_method0("timestamp")?;
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("microsecond", 0)?;
+                            let seconds = dt
+                                .call_method("replace", (), Some(kwargs))?
+                                .call_method0("timestamp")?;
                             let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
                             (seconds, microseconds)
                         };
