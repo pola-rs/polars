@@ -296,8 +296,31 @@ mod stats {
 
     use super::*;
 
+    fn apply_operator_stats_eq(min_max: &Series, literal: &Series) -> bool {
+        // literal is greater than max, don't need to read
+        if ChunkCompare::<&Series>::gt(literal, min_max)
+            .ok()
+            .map(|s| s.all())
+            == Some(true)
+        {
+            return false;
+        }
+
+        // literal is smaller than min, don't need to read
+        if ChunkCompare::<&Series>::lt(literal, min_max)
+            .ok()
+            .map(|s| s.all())
+            == Some(true)
+        {
+            return false;
+        }
+
+        true
+    }
+
     fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
         match op {
+            Operator::Eq => apply_operator_stats_eq(min_max, literal),
             // col > lit
             // e.g.
             // [min,
@@ -349,6 +372,7 @@ mod stats {
 
     fn apply_operator_stats_lhs_lit(literal: &Series, min_max: &Series, op: Operator) -> bool {
         match op {
+            Operator::Eq => apply_operator_stats_eq(min_max, literal),
             Operator::Gt => {
                 // literal is bigger than max value
                 // selection needs all rows
@@ -394,7 +418,7 @@ mod stats {
             if !self.expr.into_iter().all(|e| match e {
                 BinaryExpr { op, .. } => !matches!(
                     op,
-                    Multiply | Divide | TrueDivide | FloorDivide | Modulus | Eq | NotEq
+                    Multiply | Divide | TrueDivide | FloorDivide | Modulus | NotEq
                 ),
                 Column(_) | Literal(_) | Alias(_, _) => true,
                 _ => false,
