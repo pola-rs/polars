@@ -14,7 +14,7 @@ xlsx2csv
 deltalake
 
 # Tooling
-hypothesis==6.65.2
+hypothesis==6.68.2
 maturin==0.14.10
 pytest==7.2.0
 pytest-cov==4.0.0
