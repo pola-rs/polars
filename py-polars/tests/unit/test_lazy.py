@@ -73,6 +73,15 @@ def test_apply() -> None:
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
+    for strategy in ["thread_local", "threading"]:
+        ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
+        new = ldf.with_columns(
+            pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+        )
+
+        expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
+        assert_frame_equal(new.collect(), expected.collect())
+
 
 def test_add_eager_column() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})

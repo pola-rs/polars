@@ -653,9 +653,9 @@ class LazyFrame:
 
     def __str__(self) -> str:
         return f"""\
-naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
+naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
-{self.describe_plan()}\
+{self.explain(optimized=False)}\
 """
 
     def __repr__(self) -> str:
@@ -673,10 +673,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 f" the optimized version</p>{svg.decode()}"
             )
         except Exception:
-            insert = self.describe_plan().replace("\n", "<p></p>")
+            insert = self.explain(optimized=False).replace("\n", "<p></p>")
 
             return f"""\
-<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
+<i>naive plan: (run <b>LazyFrame.explain(optimized=True)</b> to see the optimized plan)</i>
     <p></p>
     <div>{insert}</div>\
 """

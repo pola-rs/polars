@@ -68,6 +68,7 @@ StartBy: TypeAlias = Literal["window", "datapoint", "monday"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
+ApplyStrategy: TypeAlias = Literal["thread_local", "threading"]
 
 # The following have a Rust enum equivalent with a different name
 AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
