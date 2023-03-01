@@ -10,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Iterable,
     NoReturn,
     Sequence,
     Union,
@@ -93,7 +94,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
-    from polars.datatypes import PolarsDataType
+    from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
     from polars.internals.series._numpy import SeriesView
     from polars.internals.type_aliases import (
         ClosedInterval,
@@ -2879,9 +2880,7 @@ class Series:
             Float64,
         )
 
-    def is_temporal(
-        self, excluding: PolarsDataType | Sequence[PolarsDataType] | None = None
-    ) -> bool:
+    def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
         Check if this Series datatype is temporal.
 
@@ -2901,7 +2900,7 @@ class Series:
 
         """
         if excluding is not None:
-            if not isinstance(excluding, Sequence):
+            if not isinstance(excluding, Iterable):
                 excluding = [excluding]
             if self.dtype in excluding:
                 return False

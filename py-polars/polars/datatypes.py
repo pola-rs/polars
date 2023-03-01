@@ -13,6 +13,7 @@ from typing import (
     Any,
     Callable,
     ForwardRef,
+    Iterable,
     Iterator,
     Mapping,
     Optional,
@@ -71,7 +72,7 @@ N_INFER_DEFAULT = 100
 # act as specialisations (eg: "List" and "List[Int32]")
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
-
+OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
 PythonDataType: TypeAlias = Union[
     Type[int],
     Type[float],
