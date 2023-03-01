@@ -553,31 +553,36 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     Python::with_gil(|py| {
                         // windows
                         #[cfg(target_arch = "windows")]
-                        {
+                        let (seconds, microseconds) = {
                             let kwargs = PyDict::new(py);
                             kwargs.set_item("tzinfo", py.None())?;
                             let dt = ob.call_method("replace", (), Some(kwargs))?;
                             let localize = UTILS.getattr("_localize").unwrap();
                             let loc_tz = localize.call1((dt, "UTC"));
-                            loc_tz.call_method0("timestamp")?;
-                            // s to us
-                            let v = (ts.extract::<f64>()? * 1000_000.0) as i64;
-                            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                        }
+                            let seconds = loc_tz.call_method0("timestamp")?;
+                            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
+                            (seconds, microseconds)
+                        };
                         // unix
                         #[cfg(not(target_arch = "windows"))]
-                        {
+                        let (seconds, microseconds) = {
                             let datetime = PyModule::import(py, "datetime")?;
                             let timezone = datetime.getattr("timezone")?;
                             let kwargs = PyDict::new(py);
                             kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
                             let dt = ob.call_method("replace", (), Some(kwargs))?;
-                            let ts = dt.call_method0("timestamp")?;
-                            // s to us
-                            let v = (ts.extract::<f64>()? * 1_000_000.0) as i64;
-                            // choose "us" as that is python's default unit
-                            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                        }
+
+                            let seconds = dt.call_method0("timestamp")?;
+                            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
+                            (seconds, microseconds)
+                        };
+
+                        // s to us
+                        let mut v = (seconds.extract::<f64>()? as i64) * 1_000_000;
+                        v += microseconds;
+
+                        // choose "us" as that is python's default unit
+                        Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
                     })
                 }
                 "date" => Python::with_gil(|py| {
