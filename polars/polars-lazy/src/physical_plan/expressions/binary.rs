@@ -497,7 +497,6 @@ mod stats {
                 (Some(l), Some(r)) => match self.op {
                     Operator::And => Ok(l.should_read(stats)? && r.should_read(stats)?),
                     Operator::Or => Ok(l.should_read(stats)? || r.should_read(stats)?),
-                    Operator::Xor => Ok(l.should_read(stats)? ^ r.should_read(stats)?),
                     _ => Ok(true),
                 },
                 _ => self.impl_should_read(stats),
