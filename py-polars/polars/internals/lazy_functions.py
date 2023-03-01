@@ -2911,6 +2911,10 @@ def arg_where(
         3
     ]
 
+    See Also
+    --------
+    Series.arg_true : Return indices where Series is True
+
     """
     if eager:
         if not isinstance(condition, pli.Series):
