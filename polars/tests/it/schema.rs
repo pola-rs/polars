@@ -11,7 +11,7 @@ fn test_schema_rename() {
         ]
         .into_iter(),
     );
-    schema.rename("a", "anton".to_string()).unwrap();
+    schema.rename("a", "anton".into()).unwrap();
     let expected = Schema::from(
         [
             Field::new("anton", UInt64),

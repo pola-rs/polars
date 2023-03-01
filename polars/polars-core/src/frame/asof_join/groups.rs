@@ -6,6 +6,7 @@ use ahash::RandomState;
 use arrow::types::NativeType;
 use num_traits::Zero;
 use rayon::prelude::*;
+use smartstring::alias::String as SmartString;
 
 use super::*;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
@@ -634,8 +635,8 @@ impl DataFrame {
         other: &DataFrame,
         left_on: &str,
         right_on: &str,
-        left_by: Vec<String>,
-        right_by: Vec<String>,
+        left_by: Vec<SmartString>,
+        right_by: Vec<SmartString>,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         suffix: Option<&str>,
@@ -727,14 +728,8 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let left_by = left_by
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect();
-        let right_by = right_by
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect();
+        let left_by = left_by.into_iter().map(|s| s.as_ref().into()).collect();
+        let right_by = right_by.into_iter().map(|s| s.as_ref().into()).collect();
         self._join_asof_by(
             other, left_on, right_on, left_by, right_by, strategy, tolerance, None, None,
         )

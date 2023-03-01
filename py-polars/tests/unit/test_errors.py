@@ -448,3 +448,12 @@ def test_file_path_truncate_err() -> None:
         match=r"\.\.\.42jfdksl32jfdksl22jfdksl12jfdksl02jfdksl91jfdksl81jfdksl71jfdksl61jfdksl51jfdksl41jfdksl",
     ):
         pl.read_csv(content)
+
+
+def test_ambiguous_filter_err() -> None:
+    df = pl.DataFrame({"a": [None, "2", "3"], "b": [None, None, "z"]})
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"The predicate passed to 'filter' expanded to multiple expressions",
+    ):
+        df.filter(pl.col(["a", "b"]).is_null())

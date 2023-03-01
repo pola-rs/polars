@@ -34,9 +34,9 @@ use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
-#[cfg(feature = "serde")]
+#[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
+#[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
 pub use time_unit::*;
 

@@ -7,7 +7,7 @@ import os
 import random
 import typing
 from collections.abc import Sized
-from io import BytesIO, IOBase, StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -25,7 +25,6 @@ from typing import (
 )
 
 from polars import internals as pli
-from polars._html import NotebookFormatter
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -39,9 +38,6 @@ from polars.datatypes import (
     Int32,
     Int64,
     Object,
-    PolarsDataType,
-    SchemaDefinition,
-    SchemaDict,
     UInt8,
     UInt16,
     UInt32,
@@ -70,7 +66,15 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
+from polars.internals.dataframe._html import NotebookFormatter
 from polars.internals.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
+from polars.internals.io_excel import (
+    _xl_column_range,
+    _xl_setup_table_columns,
+    _xl_setup_table_options,
+    _xl_setup_workbook,
+    _xl_unique_table_name,
+)
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
@@ -96,9 +100,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from datetime import timedelta
+    from io import IOBase
 
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
+    from xlsxwriter import Workbook
 
+    from polars.datatypes import (
+        OneOrMoreDataTypes,
+        PolarsDataType,
+        SchemaDefinition,
+        SchemaDict,
+    )
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -2377,6 +2389,267 @@ class DataFrame:
             file = normalise_filepath(file)
 
         self._df.write_avro(file, compression)
+
+    def write_excel(
+        self,
+        workbook: Workbook | BytesIO | Path | str | None = None,
+        worksheet: str | None = None,
+        *,
+        position: tuple[int, int] | str = "A1",
+        table_style: str | dict[str, Any] | None = None,
+        table_name: str | None = None,
+        column_formats: dict[str, str] | None = None,
+        column_widths: dict[str, int] | None = None,
+        column_totals: dict[str, str] | Sequence[str] | bool | None = None,
+        conditional_formats: dict[str, str | dict[str, Any]] | None = None,
+        dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
+        float_precision: int = 3,
+        has_header: bool = True,
+        autofilter: bool = True,
+        autofit: bool = False,
+        hidden_columns: Sequence[str] | None = None,
+        hide_gridlines: bool = False,
+    ) -> Workbook:
+        """
+        Write data to a table in an Excel workbook/worksheet.
+
+        Parameters
+        ----------
+        workbook
+            String name or path of the workbook to create, BytesIO object to write
+            into, or an open ``xlsxwriter.Workbook`` object that has not been closed.
+            If None, writes to a ``dataframe.xlsx`` workbook in the working directory.
+        worksheet
+            Name of target worksheet; if None, writes to "Sheet1" when creating a new
+            workbook (writing to an existing workbook requires a valid worksheet name).
+        position
+            Table position in Excel notation (eg: "A1"), or a (row,col) integer tuple.
+        table_style
+            A named Excel table style, such as "Table Style Medium 4", or a
+            table style/option dictionary containing one or more of the following keys:
+            "style", "first_column", "last_column", "banded_columns, "banded_rows".
+        table_name
+            Name of the output table object in the worksheet.
+        column_formats
+            A {"col":"fmt",} dict matching specific columns to a particular Excel format
+            string, such as "dd/mm/yyyy", "0.00%", "($#,##0_);[Red]($#,##0)", etc.
+            (Formats defined here will override those defined in ``dtype_formats``).
+        column_widths
+            A {"col":width,} dict that sets (or overrides if autofitting) column widths
+            in integer pixel units.
+        column_totals
+            Add a total row. If True, all numeric columns will have an associated total
+            using "sum". If a list of colnames, only those listed will have a "sum"
+            total. For more control, pass a {"col":"fn",} dict. Valid functions include:
+            "average", "count_nums", "count", "max", "min", "std_dev", "sum", "var".
+        conditional_formats
+            A {"col":"typename",} or {"col":definition,} dict applying conditional
+            formats to specific columns. If supplying a typename, should be one of the
+            recognised xlsxwriter types such as "3_color_scale", "data_bar", etc. When
+            supplying the full definition you have complete flexibility to apply any
+            supported conditional format, including icon sets, formulae, etc.
+        dtype_formats
+            A {dtype:"fmt",} dict that sets the default Excel format for the given
+            dtype. (This is overridden on a per-column basis by ``column_formats``). It
+            is also valid to use dtype groups such as ``polars.datatypes.FLOAT_DTYPES``
+            as the dtype/format key, to simplify setting uniform int/float formats.
+        float_precision
+            Default number of decimals displayed for floating point columns (note that
+            this is purely a formatting directive; the actual values are not rounded).
+        has_header
+            Indicate if the table should be created with a header row.
+        autofilter
+            If the table has headers, provide autofilter capability.
+        autofit
+            Calculate individual column widths from the data.
+        hidden_columns
+             A list of table columns to hide in the worksheet.
+        hide_gridlines
+            Do not display any gridlines on the output worksheet.
+
+        Notes
+        -----
+        All conditional formatting dictionaries should provide xlsxwriter-compatible
+        definitions; polars will take care of how/where they are applied on the
+        worksheet with respect to the column position. For more details, see:
+        https://xlsxwriter.readthedocs.io/working_with_conditional_formats.html
+
+        Examples
+        --------
+        >>> from random import uniform
+        >>> from datetime import date
+        >>>
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dtm": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+        ...         "num": [uniform(-500, 500), uniform(-500, 500), uniform(-500, 500)],
+        ...         "val": [10_000, 20_000, 30_000],
+        ...     }
+        ... )
+
+        Simple export to "dataframe.xlsx" (default) in the working directory,
+        column totals ("sum") on all numeric columns, autofit:
+
+        >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +IGNORE_RESULT
+
+        Write frame to a specific location on the sheet, set a named table style,
+        apply US-style date formatting, increase default float precision, apply
+        non-default total function to a single column, autofit:
+
+        >>> df.write_excel(
+        ...     position="B4",
+        ...     table_style="Table Style Light 16",
+        ...     dtype_formats={pl.Date: "mm/dd/yyyy"},
+        ...     column_totals={"num": "average"},
+        ...     float_precision=6,
+        ...     autofit=True,
+        ... )  # doctest: +IGNORE_RESULT
+
+        Write the same frame to a named worksheet twice, applying different styles
+        and conditional formatting to each table, adding table titles using direct
+        xlsxwriter integration:
+
+        >>> from xlsxwriter import Workbook
+        >>> with Workbook("multi_frame.xlsx") as wb:
+        ...     # basic/default conditional formatting
+        ...     df.write_excel(
+        ...         workbook=wb,
+        ...         worksheet="data",
+        ...         position=(3, 1),  # specify position as (row,col) coordinates
+        ...         conditional_formats={"num": "3_color_scale", "val": "data_bar"},
+        ...         table_style="Table Style Medium 4",
+        ...     )  # doctest: +IGNORE_RESULT
+        ...
+        ...     # advanced conditional formatting, custom styles
+        ...     df.write_excel(
+        ...         workbook=wb,
+        ...         worksheet="data",
+        ...         position=(len(df) + 7, 1),
+        ...         table_style={
+        ...             "style": "Table Style Light 4",
+        ...             "first_column": True,
+        ...         },
+        ...         conditional_formats={
+        ...             "num": {
+        ...                 "type": "3_color_scale",
+        ...                 "min_color": "#76933c",
+        ...                 "mid_color": "#c4d79b",
+        ...                 "max_color": "#ebf1de",
+        ...             },
+        ...             "val": {
+        ...                 "type": "data_bar",
+        ...                 "data_bar_2010": True,
+        ...                 "bar_color": "#9bbb59",
+        ...                 "bar_negative_color_same": True,
+        ...                 "bar_negative_border_color_same": True,
+        ...             },
+        ...         },
+        ...         column_formats={"num": "#,##0.000;[White]-#,##0.000"},
+        ...         column_widths={"val": 125},
+        ...         autofit=True,
+        ...     )  # doctest: +IGNORE_RESULT
+        ...
+        ...     # add some table titles (with a custom format)
+        ...     ws = wb.get_worksheet_by_name("data")
+        ...     fmt_title = wb.add_format(
+        ...         {
+        ...             "font_color": "#4f6228",
+        ...             "font_size": 12,
+        ...             "italic": True,
+        ...             "bold": True,
+        ...         }
+        ...     )
+        ...     ws.write(2, 1, "Basic/default conditional formatting", fmt_title)
+        ...     ws.write(len(df) + 6, 1, "Customised conditional formatting", fmt_title)
+        ...
+
+        """
+        try:
+            import xlsxwriter
+            from xlsxwriter.utility import xl_cell_to_rowcol
+        except ImportError:
+            raise ImportError(
+                "Excel export requires xlsxwriter; please run `pip install XlsxWriter`"
+            ) from None
+
+        # setup workbook/worksheet
+        wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
+        df, is_empty = self, not len(self)
+
+        # setup table format/columns
+        table_style, table_options = _xl_setup_table_options(table_style)
+        table_columns = _xl_setup_table_columns(
+            df=df,
+            wb=wb,
+            column_formats=column_formats,
+            column_totals=column_totals,
+            dtype_formats=dtype_formats,
+            float_precision=float_precision,
+        )
+
+        # normalise cell refs (eg: "B3" => (2,1)) and establish table start/finish,
+        # accounting for potential presence/absence of headers and a totals row.
+        table_start = (
+            xl_cell_to_rowcol(position) if isinstance(position, str) else position
+        )
+        table_finish = (
+            table_start[0] + len(df) - int(not has_header) + int(bool(column_totals)),
+            table_start[1] + len(df.columns) - 1,
+        )
+
+        # write table into the target sheet
+        if not is_empty or has_header:
+            frame_data = [[None] * len(df.columns)] if is_empty else df.rows()
+            ws.add_table(
+                *table_start,
+                *table_finish,
+                {
+                    "data": frame_data,
+                    "style": table_style,
+                    "columns": table_columns,
+                    "header_row": has_header,
+                    "autofilter": autofilter,
+                    "total_row": bool(column_totals) and not is_empty,
+                    "name": table_name or _xl_unique_table_name(ws),
+                    **table_options,
+                },
+            )
+            # apply any conditional formats
+            for col, fmt in (conditional_formats or {}).items():
+                col_range = _xl_column_range(df, table_start, col, has_header)
+                ws.conditional_format(
+                    *col_range, fmt if isinstance(fmt, dict) else {"type": fmt}
+                )
+
+        # worksheet options
+        if autofit and not is_empty:
+            xlv = xlsxwriter.__version__
+            if parse_version(xlv) < parse_version("3.0.8"):
+                raise ModuleNotFoundError(
+                    f'"autofit=True" requires xlsxwriter 3.0.8 or higher; found {xlv}.'
+                )
+            ws.autofit()
+        if hide_gridlines:
+            ws.hide_gridlines(2)
+
+        # additional column-level properties
+        hidden_columns = hidden_columns or ()
+        column_widths = column_widths or {}
+
+        for col in df.columns:
+            col_idx, options = table_start[1] + df.find_idx_by_name(col), {}
+            if col in hidden_columns:
+                options = {"hidden": True}
+            if col in column_widths:
+                ws.set_column_pixels(
+                    col_idx, col_idx, column_widths[col], None, options
+                )
+            elif options:
+                ws.set_column(col_idx, col_idx, None, None, options)
+
+        if can_close:
+            wb.close()
+        return wb
 
     def write_ipc(
         self,
@@ -4876,6 +5149,9 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
+        # faster path
+        if n == 0:
+            return self._from_pydf(self._df.clear())
         if n > 0 or len(self) > 0:
             return self.__class__(
                 {

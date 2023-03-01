@@ -41,7 +41,7 @@ def test_double_projection_pushdown() -> None:
             .lazy()
             .select(["c0", "c1", "c2"])
             .select(["c0", "c1"])
-        ).describe_optimized_plan()
+        ).explain()
     )
 
 
@@ -59,7 +59,7 @@ def test_groupby_projection_pushdown() -> None:
                 ]
             )
             .select(["sum(c1)"])
-        ).describe_optimized_plan()
+        ).explain()
     )
 
 

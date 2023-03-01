@@ -11,12 +11,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import (
-    DATETIME_DTYPES,
-    DTYPE_TEMPORAL_UNITS,
-    TEMPORAL_DTYPES,
-    PolarsTemporalType,
-)
+from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
 from polars.exceptions import ComputeError, PanicException
 from polars.testing import (
     assert_frame_equal,
@@ -25,6 +20,7 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsTemporalType
     from polars.internals.type_aliases import TimeUnit
 
 if sys.version_info >= (3, 9):
@@ -335,6 +331,22 @@ def test_datetime_consistency() -> None:
         datetime(2514, 5, 30, 1, 53, 4, 986754),
         datetime(3099, 12, 31, 23, 59, 59, 123456),
         datetime(9999, 12, 31, 23, 59, 59, 999999),
+    ]
+    ddf = pl.DataFrame({"dtm": test_data}).with_columns(
+        pl.col("dtm").dt.nanosecond().alias("ns")
+    )
+    assert ddf.rows() == [
+        (test_data[0], 555555000),
+        (test_data[1], 986754000),
+        (test_data[2], 123456000),
+        (test_data[3], 999999000),
+    ]
+    # Same as above, but for tz-aware
+    test_data = [
+        datetime(2000, 1, 1, 1, 1, 1, 555555, tzinfo=ZoneInfo("Asia/Kathmandu")),
+        datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=ZoneInfo("Asia/Kathmandu")),
+        datetime(3099, 12, 31, 23, 59, 59, 123456, tzinfo=ZoneInfo("Asia/Kathmandu")),
+        datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
     ]
     ddf = pl.DataFrame({"dtm": test_data}).with_columns(
         pl.col("dtm").dt.nanosecond().alias("ns")
@@ -2415,3 +2427,10 @@ def test_series_is_temporal() -> None:
     s = pl.Series([datetime(2023, 2, 14, 11, 12, 13)], dtype=pl.Datetime)
     for tp in (pl.Datetime, [pl.Datetime], [pl.Time, pl.Datetime]):  # type: ignore[assignment]
         assert s.is_temporal(excluding=tp) is False
+
+
+def test_microsecond_precision_any_value_conversion() -> None:
+    dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=timezone.utc)
+    assert pl.Series([dt]).to_list() == [dt]
+    dt = datetime(2514, 5, 30, 1, 53, 4, 986754)
+    assert pl.Series([dt]).to_list() == [dt]

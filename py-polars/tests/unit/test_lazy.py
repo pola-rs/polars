@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 from polars import lit, when
-from polars.datatypes import NUMERIC_DTYPES, PolarsDataType
+from polars.datatypes import NUMERIC_DTYPES
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -72,6 +72,15 @@ def test_apply() -> None:
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
+
+    for strategy in ["thread_local", "threading"]:
+        ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
+        new = ldf.with_columns(
+            pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+        )
+
+        expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
+        assert_frame_equal(new.collect(), expected.collect())
 
 
 def test_add_eager_column() -> None:
@@ -338,8 +347,8 @@ def test_when_then_flatten() -> None:
 
 
 def test_describe_plan() -> None:
-    assert isinstance(pl.LazyFrame({"a": [1]}).describe_optimized_plan(), str)
-    assert isinstance(pl.LazyFrame({"a": [1]}).describe_plan(), str)
+    assert isinstance(pl.LazyFrame({"a": [1]}).explain(optimized=True), str)
+    assert isinstance(pl.LazyFrame({"a": [1]}).explain(optimized=False), str)
 
 
 def test_inspect(capsys: CaptureFixture[str]) -> None:
@@ -1327,7 +1336,7 @@ def test_quadratic_behavior_4736() -> None:
 
 
 @pytest.mark.parametrize("input_dtype", [pl.Utf8, pl.Int64, pl.Float64])
-def test_from_epoch(input_dtype: PolarsDataType) -> None:
+def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
     ldf = pl.LazyFrame(
         [
             pl.Series("timestamp_d", [13285]).cast(input_dtype),

@@ -187,12 +187,10 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
 
 #[cfg(test)]
 mod test {
-    use arrow::array::{Int64Array, UInt8Array, Utf8Array};
+    use arrow::array::Utf8Array;
 
     use super::*;
-    use crate::encodings::variable::{
-        BLOCK_CONTINUATION_TOKEN, BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL,
-    };
+    use crate::encodings::variable::{BLOCK_SIZE, EMPTY_SENTINEL, NON_EMPTY_SENTINEL};
 
     #[test]
     fn test_str_encode() {
@@ -203,11 +201,10 @@ mod test {
         let field = SortField {
             descending: false,
             nulls_last: false,
-            data_type: ArrowDataType::LargeBinary,
         };
         let arr = arrow::compute::cast::cast(&arr, &ArrowDataType::LargeBinary, Default::default())
             .unwrap();
-        let rows_encoded = convert_columns(&[arr], vec![field]);
+        let rows_encoded = convert_columns(&[arr], &[field]);
         let row1 = rows_encoded.get(0);
 
         // + 2 for the start valid byte and for the continuation token
@@ -226,11 +223,11 @@ mod test {
         let mut expected = [0u8; BLOCK_SIZE + 2];
         expected[0] = NON_EMPTY_SENTINEL;
         *expected.last_mut().unwrap() = 4;
-        &mut expected[1..5].copy_from_slice(b"meep");
+        (&mut expected[1..5]).copy_from_slice(b"meep");
         assert_eq!(row3, expected);
 
         let row4 = rows_encoded.get(3);
-        let mut expected = [
+        let expected = [
             2, 84, 104, 101, 32, 98, 108, 97, 99, 107, 32, 99, 97, 116, 32, 119, 97, 108, 107, 101,
             100, 32, 117, 110, 100, 101, 114, 32, 97, 32, 108, 97, 100, 255, 100, 101, 114, 32, 98,
             117, 116, 32, 102, 111, 114, 103, 101, 116, 32, 105, 116, 39, 115, 32, 109, 105, 108,

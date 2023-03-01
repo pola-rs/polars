@@ -27,7 +27,6 @@ use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
 use crate::prelude::*;
 use crate::utils;
-use crate::utils::{combine_predicates_expr, has_expr};
 
 pub(crate) fn prepare_projection(
     exprs: Vec<Expr>,
@@ -375,7 +374,7 @@ impl LogicalPlanBuilder {
             let field = e
                 .to_field_amortized(&schema, Context::Default, &mut arena)
                 .unwrap();
-            new_schema.with_column(field.name().to_string(), field.data_type().clone());
+            new_schema.with_column(field.name().clone(), field.data_type().clone());
             arena.clear();
         }
 
@@ -428,18 +427,43 @@ impl LogicalPlanBuilder {
             _ => false,
         }) {
             let schema = try_delayed!(self.0.schema(), &self.0, into);
-            let rewritten = try_delayed!(
+            let mut rewritten = try_delayed!(
                 rewrite_projections(vec![predicate], &schema, &[]),
                 &self.0,
                 into
             );
-            if rewritten.is_empty() {
-                let msg = "The predicate expanded to zero expressions. \
+            match rewritten.len() {
+                1 => {
+                    // all good
+                    rewritten.pop().unwrap()
+                }
+                0 => {
+                    let msg = "The predicate expanded to zero expressions. \
                 This may for example be caused by a regex not matching column names or \
                 a column dtype match not hitting any dtypes in the DataFrame";
-                return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+                    return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+                }
+                _ => {
+                    let mut expanded = String::new();
+                    for e in rewritten.iter().take(5) {
+                        expanded.push_str(&format!("\t{e},\n"))
+                    }
+                    // pop latest comma
+                    expanded.pop();
+                    if rewritten.len() > 5 {
+                        expanded.push_str("\t...\n")
+                    }
+
+                    let msg = if cfg!(feature = "python") {
+                        format!("The predicate passed to 'filter' expanded to multiple expressions: \n\n{expanded}\n\
+                    This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
+                    } else {
+                        format!("The predicate passed to 'filter' expanded to multiple expressions: \n\n{expanded}\n\
+                    This is ambiguous. Try to combine the predicates with the 'all_exprs' or `any_exprs' expression.")
+                    };
+                    return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+                }
             }
-            combine_predicates_expr(rewritten.into_iter())
         } else {
             predicate
         };
@@ -586,7 +610,7 @@ impl LogicalPlanBuilder {
                 if let Expr::Column(name) = e {
                     if let Some(DataType::List(inner)) = schema.get(name) {
                         let inner = *inner.clone();
-                        schema.with_column(name.to_string(), inner);
+                        schema.with_column(name.as_ref().into(), inner);
                     }
 
                     (**name).to_owned()
@@ -715,12 +739,12 @@ pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
         .variable_name
         .as_ref()
         .cloned()
-        .unwrap_or_else(|| "variable".to_string());
+        .unwrap_or_else(|| "variable".into());
     let value_name = args
         .value_name
         .as_ref()
         .cloned()
-        .unwrap_or_else(|| "value".to_string());
+        .unwrap_or_else(|| "value".into());
 
     new_schema.with_column(variable_name, DataType::Utf8);
 

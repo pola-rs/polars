@@ -309,16 +309,16 @@ impl PhysicalExpr for ApplyExpr {
     }
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        if matches!(
-            self.expr,
-            Expr::Function {
-                function: FunctionExpr::IsNull,
-                ..
-            }
-        ) {
-            Some(self)
-        } else {
-            None
+        let function = match &self.expr {
+            Expr::Function { function, .. } => function,
+            _ => return None,
+        };
+
+        match function {
+            FunctionExpr::IsNull => Some(self),
+            #[cfg(feature = "is_in")]
+            FunctionExpr::IsIn => Some(self),
+            _ => None,
         }
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
@@ -387,27 +387,92 @@ fn apply_multiple_elementwise<'a>(
 #[cfg(feature = "parquet")]
 impl StatsEvaluator for ApplyExpr {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
-        if matches!(
-            self.expr,
+        let read = self.should_read_impl(stats)?;
+
+        let state = ExecutionState::new();
+
+        if state.verbose() && read {
+            eprintln!("parquet file must be read, statistics not sufficient for predicate.")
+        } else if state.verbose() && !read {
+            eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
+        };
+
+        Ok(read)
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl ApplyExpr {
+    fn should_read_impl(&self, stats: &BatchStats) -> PolarsResult<bool> {
+        let (function, input) = match &self.expr {
             Expr::Function {
-                function: FunctionExpr::IsNull,
-                ..
-            }
-        ) {
-            let root = expr_to_leaf_column_name(&self.expr)?;
+                function, input, ..
+            } => (function, input),
+            _ => return Ok(true),
+        };
 
-            let read = true;
-            let skip = false;
+        match function {
+            FunctionExpr::IsNull => {
+                let root = expr_to_leaf_column_name(&self.expr)?;
 
-            match stats.get_stats(&root).ok() {
-                Some(st) => match st.null_count() {
-                    Some(0) => Ok(skip),
-                    _ => Ok(read),
-                },
-                None => Ok(read),
+                match stats.get_stats(&root).ok() {
+                    Some(st) => match st.null_count() {
+                        Some(0) => Ok(false),
+                        _ => Ok(true),
+                    },
+                    None => Ok(true),
+                }
             }
-        } else {
-            Ok(true)
+            #[cfg(feature = "is_in")]
+            FunctionExpr::IsIn => {
+                let root = match expr_to_leaf_column_name(&input[0]) {
+                    Ok(root) => root,
+                    Err(_) => return Ok(true),
+                };
+
+                let input: &Series = match &input[1] {
+                    Expr::Literal(LiteralValue::Series(s)) => s,
+                    _ => return Ok(true),
+                };
+
+                match stats.get_stats(&root).ok() {
+                    Some(st) => {
+                        let min = match st.to_min() {
+                            Some(min) => min,
+                            None => return Ok(true),
+                        };
+
+                        let max = match st.to_max() {
+                            Some(max) => max,
+                            None => return Ok(true),
+                        };
+
+                        // all wanted values are smaller than minimum
+                        // don't need to read
+                        if ChunkCompare::<&Series>::lt(input, &min)
+                            .ok()
+                            .map(|ca| ca.all())
+                            == Some(true)
+                        {
+                            return Ok(false);
+                        }
+
+                        // all wanted values are bigger than maximum
+                        // don't need to read
+                        if ChunkCompare::<&Series>::gt(input, &max)
+                            .ok()
+                            .map(|ca| ca.all())
+                            == Some(true)
+                        {
+                            return Ok(false);
+                        }
+
+                        Ok(true)
+                    }
+                    None => Ok(true),
+                }
+            }
+            _ => Ok(true),
         }
     }
 }

@@ -78,6 +78,10 @@ module = [
   "connectorx",
   "deltalake",
   "IPython.*",
+  "xlsx2csv",
+  "xlsxwriter",
+  "xlsxwriter.utility",
+  "xlsxwriter.worksheet",
   "zoneinfo",
 ]
 ignore_missing_imports = true
@@ -151,6 +155,9 @@ max-doc-length = 88
 
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"
+
+[tool.ruff.flake8-type-checking]
+strict = true
 
 [tool.ruff.per-file-ignores]
 "polars/datatypes.py" = ["B019"]

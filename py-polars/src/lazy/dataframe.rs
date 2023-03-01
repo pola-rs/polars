@@ -259,7 +259,7 @@ impl PyLazyFrame {
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
-                let iter = schema.iter_names();
+                let iter = schema.iter_names().map(|s| s.as_str());
                 Python::with_gil(|py| {
                     let names = PyList::new(py, iter);
 
@@ -272,7 +272,7 @@ impl PyLazyFrame {
                     let fields = schema
                         .iter_dtypes()
                         .zip(new_names)
-                        .map(|(dtype, name)| Field::from_owned(name, dtype.clone()));
+                        .map(|(dtype, name)| Field::from_owned(name.into(), dtype.clone()));
                     Ok(Schema::from(fields))
                 })
             };
@@ -541,7 +541,7 @@ impl PyLazyFrame {
 
     pub fn groupby_rolling(
         &mut self,
-        index_column: String,
+        index_column: &str,
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
@@ -556,7 +556,7 @@ impl PyLazyFrame {
         let lazy_gb = ldf.groupby_rolling(
             by,
             RollingGroupOptions {
-                index_column,
+                index_column: index_column.into(),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
                 closed_window,
@@ -569,7 +569,7 @@ impl PyLazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn groupby_dynamic(
         &mut self,
-        index_column: String,
+        index_column: &str,
         every: &str,
         period: &str,
         offset: &str,
@@ -588,7 +588,7 @@ impl PyLazyFrame {
         let lazy_gb = ldf.groupby_dynamic(
             by,
             DynamicGroupOptions {
-                index_column,
+                index_column: index_column.into(),
                 every: Duration::parse(every),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
@@ -615,8 +615,8 @@ impl PyLazyFrame {
         other: PyLazyFrame,
         left_on: PyExpr,
         right_on: PyExpr,
-        left_by: Option<Vec<String>>,
-        right_by: Option<Vec<String>>,
+        left_by: Option<Vec<&str>>,
+        right_by: Option<Vec<&str>>,
         allow_parallel: bool,
         force_parallel: bool,
         suffix: String,
@@ -637,10 +637,10 @@ impl PyLazyFrame {
             .force_parallel(force_parallel)
             .how(JoinType::AsOf(AsOfOptions {
                 strategy: strategy.0,
-                left_by,
-                right_by,
+                left_by: left_by.map(strings_to_smartstrings),
+                right_by: right_by.map(strings_to_smartstrings),
                 tolerance: tolerance.map(|t| t.0.into_static().unwrap()),
-                tolerance_str,
+                tolerance_str: tolerance_str.map(|s| s.into()),
             }))
             .suffix(suffix)
             .finish()
@@ -802,10 +802,10 @@ impl PyLazyFrame {
         variable_name: Option<String>,
     ) -> Self {
         let args = MeltArgs {
-            id_vars,
-            value_vars,
-            value_name,
-            variable_name,
+            id_vars: strings_to_smartstrings(id_vars),
+            value_vars: strings_to_smartstrings(value_vars),
+            value_name: value_name.map(|s| s.into()),
+            variable_name: variable_name.map(|s| s.into()),
         };
 
         let ldf = self.ldf.clone();
@@ -915,8 +915,10 @@ impl PyLazyFrame {
         self.ldf.clone().into()
     }
 
-    pub fn columns(&self) -> PyResult<Vec<String>> {
-        Ok(self.get_schema()?.iter_names().cloned().collect())
+    pub fn columns(&self, py: Python) -> PyResult<PyObject> {
+        let schema = self.get_schema()?;
+        let iter = schema.iter_names().map(|s| s.as_str());
+        Ok(PyList::new(py, iter).to_object(py))
     }
 
     pub fn dtypes(&self, py: Python) -> PyResult<PyObject> {
@@ -933,7 +935,7 @@ impl PyLazyFrame {
 
         schema.iter_fields().for_each(|fld| {
             schema_dict
-                .set_item(fld.name(), Wrap(fld.data_type().clone()))
+                .set_item(fld.name().as_str(), Wrap(fld.data_type().clone()))
                 .unwrap()
         });
         Ok(schema_dict.to_object(py))

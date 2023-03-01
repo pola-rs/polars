@@ -61,9 +61,9 @@ impl Executor for CsvExec {
         };
 
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.path.to_string_lossy().to_string()];
+            let mut ids = vec![self.path.to_string_lossy().into()];
             if self.predicate.is_some() {
-                ids.push("predicate".to_string())
+                ids.push("predicate".into())
             }
             let name = column_delimited("csv".to_string(), &ids);
             Cow::Owned(name)

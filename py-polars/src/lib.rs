@@ -309,7 +309,7 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
     let first = iter.next().unwrap()?;
 
     let first_rdf = get_df(first)?;
-    let identity_df = first_rdf.slice(0, 0);
+    let identity_df = first_rdf.clear();
 
     let mut rdfs: Vec<PolarsResult<DataFrame>> = vec![Ok(first_rdf)];
 

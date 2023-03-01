@@ -70,7 +70,7 @@ impl Series {
             ));
         }
         if n == 0 {
-            return Ok(self.slice(0, 0));
+            return Ok(self.clear());
         }
         let len = self.len();
 

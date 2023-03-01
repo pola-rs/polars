@@ -2,7 +2,6 @@ mod drop;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 mod rename;
-
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
@@ -12,6 +11,7 @@ use polars_core::prelude::*;
 use polars_core::IUseStringCache;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 #[cfg(feature = "merge_sorted")]
 use crate::logical_plan::functions::merge_sorted::merge_sorted;
@@ -59,13 +59,13 @@ pub enum FunctionNode {
         column: Arc<str>,
     },
     Rename {
-        existing: Arc<Vec<String>>,
-        new: Arc<Vec<String>>,
+        existing: Arc<Vec<SmartString>>,
+        new: Arc<Vec<SmartString>>,
         // A column name gets swapped with an existing column
         swapping: bool,
     },
     Drop {
-        names: Arc<Vec<String>>,
+        names: Arc<Vec<SmartString>>,
     },
 }
 

@@ -84,7 +84,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.16.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-02-22#bbeb28ac4384930d342ee8b3152de93fc89dca31"
+source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-03-01#db533042a0129ea9ea26eec4c481126f29b6e631"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1580,6 +1580,7 @@ dependencies = [
  "polars-utils",
  "pyo3",
  "rayon",
+ "smartstring",
 ]
 
 [[package]]
@@ -1596,6 +1597,7 @@ dependencies = [
  "polars-utils",
  "serde",
  "serde_json",
+ "smartstring",
 ]
 
 [[package]]
@@ -1633,6 +1635,7 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+ "smartstring",
 ]
 
 [[package]]
@@ -1672,6 +1675,7 @@ dependencies = [
  "polars-utils",
  "regex",
  "serde",
+ "smartstring",
 ]
 
 [[package]]
@@ -1680,6 +1684,7 @@ version = "0.27.2"
 dependencies = [
  "once_cell",
  "rayon",
+ "smartstring",
  "sysinfo",
 ]
 
@@ -1717,6 +1722,7 @@ dependencies = [
  "pyo3",
  "pyo3-built",
  "serde_json",
+ "smartstring",
  "thiserror",
 ]
 
@@ -2071,6 +2077,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fb72c633efbaa2dd666986505016c32c3044395ceaf881518399d2f4127ee29"
 dependencies = [
  "autocfg",
+ "serde",
  "static_assertions",
  "version_check",
 ]
@@ -2149,9 +2156,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.27.7"
+version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "975fe381e0ecba475d4acff52466906d95b153a40324956552e027b2a9eaa89e"
+checksum = "38a81bbc26c485910df47772df6bbcdb417036132caa9e51e29d2e39c4636d4e"
 dependencies = [
  "cfg-if",
  "core-foundation-sys",

@@ -42,6 +42,7 @@ test:  ## Run tests
 	    -p polars-arrow \
 	    -p polars-time \
 	    -p polars-utils \
+	    -p polars-row \
 	    -- \
 	    --test-threads=2
 

@@ -13,8 +13,6 @@ from polars.datatypes import (
     Duration,
     Int32,
     Int64,
-    PolarsDataType,
-    SchemaDict,
     Struct,
     Time,
     UInt32,
@@ -65,6 +63,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
+    from polars.datatypes import PolarsDataType, SchemaDict
     from polars.internals.type_aliases import (
         EpochTimeUnit,
         IntoExpr,
@@ -2911,6 +2910,10 @@ def arg_where(
         1
         3
     ]
+
+    See Also
+    --------
+    Series.arg_true : Return indices where Series is True
 
     """
     if eager:

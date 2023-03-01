@@ -26,7 +26,7 @@ def test_union_duplicates() -> None:
         len(
             re.findall(
                 r".*CACHE\[id: .*, count: 9].*",
-                pl.concat(lazy_dfs).describe_optimized_plan(),
+                pl.concat(lazy_dfs).explain(),
                 flags=re.MULTILINE,
             )
         )

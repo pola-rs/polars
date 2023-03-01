@@ -20,6 +20,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
+use smartstring::alias::String as SmartString;
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -173,7 +174,7 @@ fn struct_dict<'a>(
 ) -> PyObject {
     let dict = PyDict::new(py);
     for (fld, val) in flds.iter().zip(vals) {
-        dict.set_item(fld.name(), Wrap(val)).unwrap()
+        dict.set_item(fld.name().as_str(), Wrap(val)).unwrap()
     }
     dict.into_py(py)
 }
@@ -297,7 +298,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Struct(fields) => {
                 let field_class = pl.getattr("Field").unwrap();
                 let iter = fields.iter().map(|fld| {
-                    let name = fld.name().clone();
+                    let name = fld.name().as_str();
                     let dtype = Wrap(fld.data_type().clone()).to_object(py);
                     field_class.call1((name, dtype)).unwrap()
                 });
@@ -553,31 +554,44 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     Python::with_gil(|py| {
                         // windows
                         #[cfg(target_arch = "windows")]
-                        {
+                        let (seconds, microseconds) = {
                             let kwargs = PyDict::new(py);
                             kwargs.set_item("tzinfo", py.None())?;
                             let dt = ob.call_method("replace", (), Some(kwargs))?;
                             let localize = UTILS.getattr("_localize").unwrap();
                             let loc_tz = localize.call1((dt, "UTC"));
-                            loc_tz.call_method0("timestamp")?;
-                            // s to us
-                            let v = (ts.extract::<f64>()? * 1000_000.0) as i64;
-                            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                        }
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("microsecond", 0)?;
+                            let seconds = loc_tz
+                                .call_method("replace", (), Some(kwargs))?
+                                .call_method0("timestamp")?;
+                            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
+                            (seconds, microseconds)
+                        };
                         // unix
                         #[cfg(not(target_arch = "windows"))]
-                        {
+                        let (seconds, microseconds) = {
                             let datetime = PyModule::import(py, "datetime")?;
                             let timezone = datetime.getattr("timezone")?;
                             let kwargs = PyDict::new(py);
                             kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
                             let dt = ob.call_method("replace", (), Some(kwargs))?;
-                            let ts = dt.call_method0("timestamp")?;
-                            // s to us
-                            let v = (ts.extract::<f64>()? * 1_000_000.0) as i64;
-                            // choose "us" as that is python's default unit
-                            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                        }
+
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("microsecond", 0)?;
+                            let seconds = dt
+                                .call_method("replace", (), Some(kwargs))?
+                                .call_method0("timestamp")?;
+                            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
+                            (seconds, microseconds)
+                        };
+
+                        // s to us
+                        let mut v = (seconds.extract::<f64>()? as i64) * 1_000_000;
+                        v += microseconds;
+
+                        // choose "us" as that is python's default unit
+                        Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
                     })
                 }
                 "date" => Python::with_gil(|py| {
@@ -1164,4 +1178,12 @@ pub(crate) fn parse_parquet_compression(
         }
     };
     Ok(parsed)
+}
+
+pub(crate) fn strings_to_smartstrings<I, S>(container: I) -> Vec<SmartString>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    container.into_iter().map(|s| s.as_ref().into()).collect()
 }

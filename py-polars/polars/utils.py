@@ -8,8 +8,8 @@ import os
 import re
 import sys
 import warnings
-from collections.abc import MappingView, Reversible, Sized
-from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from collections.abc import MappingView, Sized
+from datetime import datetime, time, timedelta, timezone
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -22,13 +22,7 @@ from typing import (
 )
 
 import polars.internals as pli
-from polars.datatypes import (
-    Date,
-    Datetime,
-    Int64,
-    PolarsDataType,
-    is_polars_dtype,
-)
+from polars.datatypes import Date, Datetime, Int64, is_polars_dtype
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -43,10 +37,6 @@ if sys.version_info >= (3, 9):
 elif _ZONEINFO_AVAILABLE:
     from backports.zoneinfo._zoneinfo import ZoneInfo
 
-if sys.version_info >= (3, 10):
-    from typing import ParamSpec, TypeGuard
-else:
-    from typing_extensions import ParamSpec, TypeGuard
 
 # note: reversed views don't match as instances of MappingView
 if sys.version_info >= (3, 11):
@@ -54,9 +44,20 @@ if sys.version_info >= (3, 11):
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 if TYPE_CHECKING:
+    from collections.abc import Reversible
+    from datetime import date, tzinfo
     from pathlib import Path
 
+    from polars.datatypes import PolarsDataType
     from polars.internals.type_aliases import SizeUnit, TimeUnit
+
+    if sys.version_info >= (3, 10):
+        from typing import ParamSpec, TypeGuard
+    else:
+        from typing_extensions import ParamSpec, TypeGuard
+
+    P = ParamSpec("P")
+    T = TypeVar("T")
 
 
 def _process_null_values(
@@ -401,10 +402,6 @@ def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
 def threadpool_size() -> int:
     """Get the size of polars' thread pool."""
     return _pool_size()
-
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 
 def _rename_kwargs(

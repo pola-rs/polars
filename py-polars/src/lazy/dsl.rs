@@ -8,6 +8,7 @@ use pyo3::class::basic::CompareOp;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
+use smartstring::alias::String as SmartString;
 
 use super::apply::*;
 use crate::conversion::{parse_fill_null_strategy, Wrap};
@@ -1605,7 +1606,8 @@ impl PyExpr {
             Arc::new(move |idx: usize| {
                 Python::with_gil(|py| {
                     let out = lambda.call1(py, (idx,)).unwrap();
-                    out.extract::<String>(py).unwrap()
+                    let out: SmartString = out.extract::<&str>(py).unwrap().into();
+                    out
                 })
             }) as NameGenerator
         });

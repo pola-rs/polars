@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use smartstring::alias::String as SmartString;
+
 use super::*;
 
 fn iter_and_update_nodes(
@@ -25,8 +27,8 @@ pub(super) fn process_rename(
     acc_projections: &mut [Node],
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
-    existing: &[String],
-    new: &[String],
+    existing: &[SmartString],
+    new: &[SmartString],
     swapping: bool,
 ) -> PolarsResult<()> {
     let mut processed = BTreeSet::new();

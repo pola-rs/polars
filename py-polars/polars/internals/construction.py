@@ -27,9 +27,6 @@ from polars.datatypes import (
     Duration,
     Float32,
     List,
-    PolarsDataType,
-    SchemaDefinition,
-    SchemaDict,
     Struct,
     Time,
     Unknown,
@@ -68,6 +65,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.internals.type_aliases import Orientation
 
 if version_info >= (3, 10):
@@ -323,9 +321,15 @@ def sequence_to_pyseries(
                 dtype = py_type_to_dtype(python_dtype)  # construct from integer
             elif dtype in py_temporal_types:
                 dtype = py_type_to_dtype(dtype)
+            time_unit = getattr(dtype, "tu", None)
 
             # we use anyvalue builder to create the datetime array
             # we store the values internally as UTC and set the timezone
+            py_series = PySeries.new_from_anyvalues(name, values)
+            if time_unit is None:
+                s = pli.wrap_s(py_series)
+            else:
+                s = pli.wrap_s(py_series).dt.cast_time_unit(time_unit)
             if dtype == Datetime and value.tzinfo is not None:
                 tz = str(value.tzinfo)
                 dtype_tz = dtype.tz  # type: ignore[union-attr]
@@ -334,20 +338,8 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
-                py_series = PySeries.new_from_anyvalues(name, values)
-                time_unit = dtype.tu  # type: ignore[union-attr]
-                if time_unit is None:
-                    return pli.wrap_s(py_series).dt.replace_time_zone(tz)._s
-                return (
-                    pli.wrap_s(py_series)
-                    .dt.cast_time_unit(time_unit)
-                    .dt.replace_time_zone(tz)
-                    ._s
-                )
-
-            # TODO: use anyvalues here (no need to require pyarrow for this).
-            arrow_dtype = dtype_to_arrow_type(dtype)
-            return arrow_to_pyseries(name, pa.array(values, type=arrow_dtype))
+                return s.dt.replace_time_zone(tz)._s
+            return s._s
 
         elif python_dtype in (list, tuple):
             if nested_dtype is None:

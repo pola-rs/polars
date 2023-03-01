@@ -2,8 +2,8 @@ use super::*;
 
 pub(super) fn rename_impl(
     mut df: DataFrame,
-    existing: &[String],
-    new: &[String],
+    existing: &[SmartString],
+    new: &[SmartString],
 ) -> PolarsResult<DataFrame> {
     let positions = existing
         .iter()
@@ -24,8 +24,8 @@ pub(super) fn rename_impl(
 
 pub(super) fn rename_schema<'a>(
     input_schema: &'a SchemaRef,
-    existing: &[String],
-    new: &[String],
+    existing: &[SmartString],
+    new: &[SmartString],
 ) -> PolarsResult<Cow<'a, SchemaRef>> {
     let mut new_schema = (**input_schema).clone();
     for (old, new) in existing.iter().zip(new.iter()) {
