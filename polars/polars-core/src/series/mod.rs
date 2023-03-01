@@ -158,6 +158,10 @@ impl Series {
         Series::full_null(name, 0, dtype)
     }
 
+    pub fn clear(&self) -> Series {
+        Series::new_empty(self.name(), self.dtype())
+    }
+
     #[doc(hidden)]
     #[cfg(feature = "private")]
     pub fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {

@@ -59,7 +59,7 @@ impl Operator for ProjectionOperator {
 
         if has_empty {
             for s in &mut projected {
-                *s = s.slice(0, 0);
+                *s = s.clear();
             }
         } else if has_literals {
             let height = projected.iter().map(|s| s.len()).max().unwrap();

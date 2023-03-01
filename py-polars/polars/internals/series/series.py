@@ -3319,6 +3319,8 @@ class Series:
         ]
 
         """
+        if n == 0:
+            return wrap_s(self._s.clear())
         s = (
             self.__class__(name=self.name, values=[], dtype=self.dtype)
             if len(self) > 0

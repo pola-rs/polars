@@ -1142,7 +1142,7 @@ impl DataFrame {
             }
             // special case for literals
             else if height == 0 && series.len() == 1 {
-                let s = series.slice(0, 0);
+                let s = series.clear();
                 df.add_column_by_search(s)?;
                 Ok(df)
             } else {
@@ -1219,7 +1219,7 @@ impl DataFrame {
         }
         // special case for literals
         else if height == 0 && series.len() == 1 {
-            let s = series.slice(0, 0);
+            let s = series.clear();
             self.add_column_by_schema(s, schema)?;
             Ok(self)
         } else {
@@ -2277,6 +2277,11 @@ impl DataFrame {
             .iter()
             .map(|s| s.slice(offset, length))
             .collect::<Vec<_>>();
+        DataFrame::new_no_checks(col)
+    }
+
+    pub fn clear(&self) -> Self {
+        let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
         DataFrame::new_no_checks(col)
     }
 
@@ -3669,7 +3674,7 @@ mod test {
         )?;
 
         // has got columns, but no rows
-        let mut df = base.slice(0, 0);
+        let mut df = base.clear();
         let out = df.with_column(Series::new("c", [1]))?;
         assert_eq!(out.shape(), (0, 3));
         assert!(out.iter().all(|s| s.len() == 0));

@@ -354,7 +354,7 @@ mod test {
     fn test_explode_df_empty_list() -> PolarsResult<()> {
         let s0 = Series::new("a", &[1, 2, 3]);
         let s1 = Series::new("b", &[1, 1, 1]);
-        let list = Series::new("foo", &[s0, s1.clone(), s1.slice(0, 0)]);
+        let list = Series::new("foo", &[s0, s1.clone(), s1.clear()]);
         let s0 = Series::new("B", [1, 2, 3]);
         let s1 = Series::new("C", [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
@@ -368,7 +368,7 @@ mod test {
 
         assert!(out.frame_equal_missing(&expected));
 
-        let list = Series::new("foo", &[s0.clone(), s1.slice(0, 0), s1.clone()]);
+        let list = Series::new("foo", &[s0.clone(), s1.clear(), s1.clone()]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
         let out = df.explode(["foo"])?;
         let expected = df![

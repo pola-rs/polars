@@ -4875,6 +4875,9 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
+        # faster path
+        if n == 0:
+            return self._from_pydf(self._df.clear())
         if n > 0 or len(self) > 0:
             return self.__class__(
                 {
