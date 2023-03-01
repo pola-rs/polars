@@ -344,7 +344,7 @@ impl LazyFrame {
     }
 
     /// Removes columns from the DataFrame.
-    /// Note that its better to only select the columns you need
+    /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
     pub fn drop_columns<I, T>(self, columns: I) -> Self
     where
@@ -498,7 +498,7 @@ impl LazyFrame {
     }
 
     /// Execute all the lazy operations and collect them into a [`DataFrame`].
-    /// Before execution the query is being optimized.
+    /// The query is optimized prior to execution.
     ///
     /// # Example
     ///
@@ -562,7 +562,7 @@ impl LazyFrame {
         }
     }
 
-    //// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
+    /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]
@@ -1388,6 +1388,7 @@ pub struct JoinBuilder {
     suffix: Option<String>,
 }
 impl JoinBuilder {
+    /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
     pub fn new(lf: LazyFrame) -> Self {
         Self {
             lf,
@@ -1401,7 +1402,7 @@ impl JoinBuilder {
         }
     }
 
-    /// The table to join with.
+    /// The right table in the join.
     pub fn with(mut self, other: LazyFrame) -> Self {
         self.other = Some(other);
         self
@@ -1413,7 +1414,7 @@ impl JoinBuilder {
         self
     }
 
-    /// The columns you want to join both tables on.
+    /// The columns you want to join both tables on. The passed expressions must be valid in both `LazyFrame`s in the join.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
         self.left_on = on.clone();
@@ -1421,17 +1422,18 @@ impl JoinBuilder {
         self
     }
 
-    /// The columns you want to join the left table on.
+    /// The columns you want to join the left table on. The passed expressions must be valid in the left table.
     pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.left_on = on.as_ref().to_vec();
         self
     }
 
-    /// The columns you want to join the right table on.
+    /// The columns you want to join the right table on. The passed expressions must be valid in the right table.
     pub fn right_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.right_on = on.as_ref().to_vec();
         self
     }
+
     /// Allow parallel table evaluation.
     pub fn allow_parallel(mut self, allow: bool) -> Self {
         self.allow_parallel = allow;
@@ -1445,7 +1447,7 @@ impl JoinBuilder {
     }
 
     /// Suffix to add duplicate column names in join.
-    /// Defaults to `"_right"`.
+    /// Defaults to `"_right"` if this method is never called.
     pub fn suffix<S: AsRef<str>>(mut self, suffix: S) -> Self {
         self.suffix = Some(suffix.as_ref().to_string());
         self
