@@ -289,7 +289,13 @@ impl Literal for Series {
     }
 }
 
-/// Create a Literal Expression from `L`
+/// Create a Literal Expression from `L`. A literal expression behaves like a column that contains a single distinct
+/// value.
+///
+/// The column is automatically of the "correct" length to make the operations work. Often this is determined by the
+/// length of the `LazyFrame` it is being used with. For instance, `lazy_df.with_column(lit(5).alias("five"))` creates a
+/// new column named "five" that is the length of the Dataframe (at the time `collect` is called), where every value in
+/// the column is `5`.
 pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
 }
