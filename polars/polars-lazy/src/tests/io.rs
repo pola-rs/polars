@@ -425,3 +425,32 @@ fn scan_anonymous_fn() -> PolarsResult<()> {
     assert_eq!(df.shape(), (5, 4));
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "dtype-full")]
+fn scan_small_dtypes() -> PolarsResult<()> {
+    let small_dt = vec![
+        DataType::Int8,
+        DataType::UInt8,
+        DataType::Int16,
+        DataType::UInt16,
+    ];
+    for dt in small_dt {
+        let df = LazyCsvReader::new(FOODS_CSV)
+            .has_header(true)
+            .with_dtype_overwrite(Some(&Schema::from(
+                vec![
+                    Field::new("sugars_g", dt.clone()),
+                ]
+                .into_iter())))
+            .finish()?
+            .select(&[col("sugars_g")])
+            .collect()?;
+
+        assert_eq!(
+            df.dtypes(),
+            &[dt]
+        );
+    }
+    Ok(())
+}
