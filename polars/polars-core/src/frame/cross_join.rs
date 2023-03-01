@@ -52,6 +52,9 @@ impl DataFrame {
             return Err(PolarsError::ComputeError("Cross joins would produce more rows than fits into 2^32.\n\
             Consider comping with polars-big-idx feature, or set 'streaming'.".into()))
         };
+        if n_rows_left == 0 || n_rows_right == 0 {
+            return Ok((self.clear(), other.clear()));
+        }
 
         // the left side has the Nth row combined with every row from right.
         // So let's say we have the following no. of rows

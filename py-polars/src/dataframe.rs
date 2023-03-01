@@ -1355,4 +1355,8 @@ impl PyDataFrame {
         let df = self.df.unnest(names).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
+
+    pub fn clear(&self) -> Self {
+        self.df.clear().into()
+    }
 }

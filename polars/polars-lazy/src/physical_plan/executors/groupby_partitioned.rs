@@ -86,7 +86,7 @@ fn run_partitions(
 
                             if agg.len() == 1 {
                                 Ok(match groups.len()  {
-                                    0 => agg.slice(0, 0),
+                                    0 => agg.clear(),
                                     len => agg.new_from_index(0, len)
                                 })
                             } else {

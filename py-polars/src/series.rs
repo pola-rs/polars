@@ -1164,6 +1164,10 @@ impl PySeries {
         };
         self.series.is_sorted(options)
     }
+
+    pub fn clear(&self) -> Self {
+        self.series.clear().into()
+    }
 }
 
 macro_rules! impl_set_with_mask {
