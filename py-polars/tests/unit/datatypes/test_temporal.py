@@ -2411,3 +2411,10 @@ def test_series_is_temporal() -> None:
     s = pl.Series([datetime(2023, 2, 14, 11, 12, 13)], dtype=pl.Datetime)
     for tp in (pl.Datetime, [pl.Datetime], [pl.Time, pl.Datetime]):  # type: ignore[assignment]
         assert s.is_temporal(excluding=tp) is False
+
+
+def test_microsecond_precision_any_value_conversion() -> None:
+    dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=timezone.utc)
+    assert pl.Series([dt]).to_list() == [dt]
+    dt = datetime(2514, 5, 30, 1, 53, 4, 986754)
+    assert pl.Series([dt]).to_list() == [dt]
