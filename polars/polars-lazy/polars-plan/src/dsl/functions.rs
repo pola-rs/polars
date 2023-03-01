@@ -448,6 +448,7 @@ pub struct DatetimeArgs {
     pub microsecond: Option<Expr>,
 }
 
+/// Construct a column of `Datetime` from the provided args.
 #[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
     use polars_core::export::chrono::NaiveDate;
@@ -563,6 +564,7 @@ pub struct DurationArgs {
     pub weeks: Option<Expr>,
 }
 
+/// Construct a column of `Duration` from the provided args.
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
@@ -737,7 +739,7 @@ macro_rules! prepare_binary_function {
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
 ///
-/// The closure takes two arguments, each a `Series`.
+/// The closure takes two arguments, each a `Series`. `output_type` must be the element type of the resulting `Series`.
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync,
