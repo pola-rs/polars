@@ -278,11 +278,9 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-// TODO: is there any way to link to `polars_lazy::dsl` here? It's not a dependency of polars-plan (and can't be —
-// circular dependency) so I don't see any way to get a link to it in here.
-/// An abstract representation of a DataFrame column or an operation to perform on one. Queries consist of multiple
-/// expressions. When using the polars lazy API, don't construct an `Expr` directly; instead, create one using the
-/// functions in the `polars_lazy::dsl` module. See that module's docs for more info.
+/// Expressions that can be used in various contexts. Queries consist of multiple expressions. When using the polars
+/// lazy API, don't construct an `Expr` directly; instead, create one using the functions in the `polars_lazy::dsl`
+/// module. See that module's docs for more info.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
