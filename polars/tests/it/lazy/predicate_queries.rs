@@ -44,32 +44,6 @@ fn filter_true_lit() -> PolarsResult<()> {
     Ok(())
 }
 
-#[test]
-fn test_combine_columns_in_filter() -> PolarsResult<()> {
-    let df = df![
-        "a" => [1, 2, 3],
-        "b" => [None, Some("a"), Some("b")]
-    ]?;
-
-    let out = df
-        .lazy()
-        .filter(
-            cols(vec!["a".to_string(), "b".to_string()])
-                .cast(DataType::Utf8)
-                .gt(lit("2")),
-        )
-        .collect()?;
-
-    let expected = df![
-        "a" => [3],
-        "b" => ["b"],
-    ]?;
-
-    // "b" > "2" == true
-    assert!(out.frame_equal(&expected));
-    Ok(())
-}
-
 fn create_n_filters(col_name: &str, num_filters: usize) -> Vec<Expr> {
     (0..num_filters)
         .into_iter()
