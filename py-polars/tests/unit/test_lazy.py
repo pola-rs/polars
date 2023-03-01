@@ -338,8 +338,8 @@ def test_when_then_flatten() -> None:
 
 
 def test_describe_plan() -> None:
-    assert isinstance(pl.LazyFrame({"a": [1]}).describe_optimized_plan(), str)
-    assert isinstance(pl.LazyFrame({"a": [1]}).describe_plan(), str)
+    assert isinstance(pl.LazyFrame({"a": [1]}).explain(optimized=True), str)
+    assert isinstance(pl.LazyFrame({"a": [1]}).explain(optimized=False), str)
 
 
 def test_inspect(capsys: CaptureFixture[str]) -> None:
