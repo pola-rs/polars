@@ -1,6 +1,6 @@
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
@@ -21,7 +21,7 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 
 /// Arguments for `[DataFrame::melt]` function
 #[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct MeltArgs {
     pub id_vars: Vec<SmartString>,
     pub value_vars: Vec<SmartString>,

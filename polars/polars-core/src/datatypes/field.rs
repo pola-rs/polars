@@ -4,10 +4,7 @@ use super::*;
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    any(feature = "serde", feature = "serde-lazy"),
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Field {
     pub name: SmartString,
     pub dtype: DataType,
