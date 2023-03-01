@@ -40,7 +40,7 @@ use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
-use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
+use polars_plan::utils::expr_to_leaf_column_names;
 
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::planner::create_physical_plan;
@@ -1012,10 +1012,14 @@ impl LazyFrame {
     /// Equal to `LazyFrame::filter(col("*").is_not_null())`
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
         match subset {
-            None => self.filter(col("*").is_not_null()),
+            None => self.filter(all_exprs([col("*").is_not_null()])),
             Some(subset) => {
-                let it = subset.into_iter().map(|e| e.is_not_null());
-                let predicate = combine_predicates_expr(it);
+                let predicate = all_exprs(
+                    subset
+                        .into_iter()
+                        .map(|e| e.is_not_null())
+                        .collect::<Vec<_>>(),
+                );
                 self.filter(predicate)
             }
         }
