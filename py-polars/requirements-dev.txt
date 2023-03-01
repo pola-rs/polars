@@ -18,7 +18,7 @@ hypothesis==6.65.2
 maturin==0.14.10
 pytest==7.2.0
 pytest-cov==4.0.0
-pytest-xdist==3.1.0
+pytest-xdist==3.2.0
 
 # Stub files
 pandas-stubs==1.2.0.62
