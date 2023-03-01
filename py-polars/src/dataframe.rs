@@ -31,7 +31,7 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::prelude::dicts_to_rows;
+use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
 use crate::series::{to_pyseries_collection, to_series_collection, PySeries};
 use crate::{arrow_interop, py_modules, PyExpr};
 
@@ -1093,16 +1093,16 @@ impl PyDataFrame {
 
     pub fn melt(
         &self,
-        id_vars: Vec<String>,
-        value_vars: Vec<String>,
-        value_name: Option<String>,
-        variable_name: Option<String>,
+        id_vars: Vec<&str>,
+        value_vars: Vec<&str>,
+        value_name: Option<&str>,
+        variable_name: Option<&str>,
     ) -> PyResult<Self> {
         let args = MeltArgs {
-            id_vars,
-            value_vars,
-            value_name,
-            variable_name,
+            id_vars: strings_to_smartstrings(id_vars),
+            value_vars: strings_to_smartstrings(value_vars),
+            value_name: value_name.map(|s| s.into()),
+            variable_name: variable_name.map(|s| s.into()),
         };
 
         let df = self.df.melt2(args).map_err(PyPolarsErr::from)?;

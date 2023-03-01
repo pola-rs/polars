@@ -2,6 +2,8 @@ mod from;
 
 use std::collections::BTreeMap;
 
+use smartstring::alias::String as SmartString;
+
 use super::*;
 use crate::datatypes::*;
 use crate::utils::index_to_chunked_index2;
@@ -163,7 +165,7 @@ impl StructChunked {
         &self.field
     }
 
-    pub fn name(&self) -> &String {
+    pub fn name(&self) -> &SmartString {
         self.field.name()
     }
 
@@ -176,7 +178,7 @@ impl StructChunked {
     }
 
     pub fn rename(&mut self, name: &str) {
-        self.field.set_name(name.to_string())
+        self.field.set_name(name.into())
     }
 
     pub(crate) fn try_apply_fields<F>(&self, func: F) -> PolarsResult<Self>

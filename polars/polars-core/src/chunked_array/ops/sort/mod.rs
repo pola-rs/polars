@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 
+#[cfg(feature = "sort_multiple")]
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;

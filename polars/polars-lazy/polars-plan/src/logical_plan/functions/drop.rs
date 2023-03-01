@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn drop_impl(mut df: DataFrame, names: &[String]) -> PolarsResult<DataFrame> {
+pub(super) fn drop_impl(mut df: DataFrame, names: &[SmartString]) -> PolarsResult<DataFrame> {
     for name in names {
         // ignore names that are not in there
         // they might already be removed by projection pushdown
@@ -14,7 +14,7 @@ pub(super) fn drop_impl(mut df: DataFrame, names: &[String]) -> PolarsResult<Dat
 
 pub(super) fn drop_schema<'a>(
     input_schema: &'a SchemaRef,
-    names: &[String],
+    names: &[SmartString],
 ) -> PolarsResult<Cow<'a, SchemaRef>> {
     let to_drop = PlHashSet::from_iter(names);
 

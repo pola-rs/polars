@@ -9,6 +9,7 @@ use num_traits::{One, Zero};
 pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
 pub use series::*;
+use smartstring::alias::String as SmartString;
 pub use supertype::*;
 pub use {arrow, rayon};
 
@@ -821,6 +822,16 @@ where
 {
     fn into_vec(self) -> Vec<String> {
         self.into_iter().map(|s| s.as_ref().to_string()).collect()
+    }
+}
+
+impl<I, S> IntoVec<SmartString> for I
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    fn into_vec(self) -> Vec<SmartString> {
+        self.into_iter().map(|s| s.as_ref().into()).collect()
     }
 }
 

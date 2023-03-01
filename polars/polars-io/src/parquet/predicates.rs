@@ -127,7 +127,7 @@ pub(crate) fn collect_statistics(
             // we select a single row group and collect only those stats
             Some(rg) => deserialize(fld, &md[rg..rg + 1])?,
         };
-        schema.with_column(fld.name.to_string(), (&fld.data_type).into());
+        schema.with_column((&fld.name).into(), (&fld.data_type).into());
         stats.push(ColumnStats(st, Field::from(fld)));
     }
 

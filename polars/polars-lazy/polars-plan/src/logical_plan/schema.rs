@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -197,7 +198,7 @@ pub(crate) fn det_join_schema(
 
             for (name, dtype) in schema_left.iter() {
                 names.insert(name.as_str());
-                new_schema.with_column(name.to_string(), dtype.clone());
+                new_schema.with_column(name.clone(), dtype.clone());
             }
 
             // make sure that expression are assigned to the schema
@@ -224,7 +225,8 @@ pub(crate) fn det_join_schema(
                         if schema_left.contains(&field_right.name) {
                             use polars_core::frame::hash_join::_join_suffix_name;
                             new_schema.with_column(
-                                _join_suffix_name(&field_right.name, options.suffix.as_ref()),
+                                _join_suffix_name(&field_right.name, options.suffix.as_ref())
+                                    .into(),
                                 field_right.dtype,
                             );
                         } else {
@@ -257,10 +259,10 @@ pub(crate) fn det_join_schema(
                             }
                         }
 
-                        let new_name = format!("{}{}", name, options.suffix.as_ref());
+                        let new_name = format_smartstring!("{}{}", name, options.suffix.as_ref());
                         new_schema.with_column(new_name, dtype.clone());
                     } else {
-                        new_schema.with_column(name.to_string(), dtype.clone());
+                        new_schema.with_column(name.clone(), dtype.clone());
                     }
                 }
             }

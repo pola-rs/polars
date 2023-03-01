@@ -20,6 +20,7 @@ polars-core = { version = "0.27.2", path = "../polars-core", features = ["privat
 polars-utils = { version = "0.27.2", path = "../polars-utils", default-features = false }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+smartstring.workspace = true
 
 [features]
 nightly = ["polars-utils/nightly"]

@@ -1,3 +1,5 @@
+use smartstring::alias::String as SmartString;
+
 use super::*;
 
 /// Characterizes the name and the [`DataType`] of a column.
@@ -7,7 +9,7 @@ use super::*;
     derive(Serialize, Deserialize)
 )]
 pub struct Field {
-    pub name: String,
+    pub name: SmartString,
     pub dtype: DataType,
 }
 
@@ -25,12 +27,12 @@ impl Field {
     #[inline]
     pub fn new(name: &str, dtype: DataType) -> Self {
         Field {
-            name: name.to_string(),
+            name: name.into(),
             dtype,
         }
     }
 
-    pub fn from_owned(name: String, dtype: DataType) -> Self {
+    pub fn from_owned(name: SmartString, dtype: DataType) -> Self {
         Field { name, dtype }
     }
 
@@ -45,7 +47,7 @@ impl Field {
     /// assert_eq!(f.name(), "Year");
     /// ```
     #[inline]
-    pub fn name(&self) -> &String {
+    pub fn name(&self) -> &SmartString {
         &self.name
     }
 
@@ -86,11 +88,11 @@ impl Field {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let mut f = Field::new("Atomic number", DataType::UInt32);
-    /// f.set_name("Proton".to_owned());
+    /// f.set_name("Proton".into());
     ///
     /// assert_eq!(f, Field::new("Proton", DataType::UInt32));
     /// ```
-    pub fn set_name(&mut self, name: String) {
+    pub fn set_name(&mut self, name: SmartString) {
         self.name = name;
     }
 
@@ -106,7 +108,7 @@ impl Field {
     /// assert_eq!(f.to_arrow(), af);
     /// ```
     pub fn to_arrow(&self) -> ArrowField {
-        ArrowField::new(&self.name, self.dtype.to_arrow(), true)
+        ArrowField::new(self.name.as_str(), self.dtype.to_arrow(), true)
     }
 }
 

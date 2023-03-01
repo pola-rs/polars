@@ -20,6 +20,7 @@ polars-ops = { version = "0.27.2", path = "../polars-ops" }
 polars-utils = { version = "0.27.2", path = "../polars-utils" }
 regex = "1.7.1"
 serde = { version = "1", features = ["derive"], optional = true }
+smartstring.workspace = true
 
 [features]
 dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]

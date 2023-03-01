@@ -128,7 +128,7 @@ pub(crate) fn init_buffers(
         .iter()
         .map(|(name, dtype)| {
             let av_buf = (dtype, capacity).into();
-            let key = KnownKey::from(name);
+            let key = KnownKey::from(name.as_str());
             Ok((BufferKey(key), Buffer(name, av_buf)))
         })
         .collect()

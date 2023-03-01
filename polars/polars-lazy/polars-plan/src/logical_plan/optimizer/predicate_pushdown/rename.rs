@@ -1,3 +1,5 @@
+use smartstring::alias::String as SmartString;
+
 use super::*;
 use crate::prelude::optimizer::predicate_pushdown::keys::{key_has_name, predicate_to_key};
 
@@ -21,8 +23,8 @@ fn remove_any_key_referencing_renamed(
 pub(super) fn process_rename(
     acc_predicates: &mut PlHashMap<Arc<str>, Node>,
     expr_arena: &mut Arena<AExpr>,
-    existing: &[String],
-    new: &[String],
+    existing: &[SmartString],
+    new: &[SmartString],
 ) -> PolarsResult<Vec<Node>> {
     let mut local_predicates = vec![];
     for (existing, new) in existing.iter().zip(new.iter()) {

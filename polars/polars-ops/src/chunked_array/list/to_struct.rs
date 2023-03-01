@@ -1,4 +1,6 @@
 use polars_core::export::rayon::prelude::*;
+use polars_utils::format_smartstring;
+use smartstring::alias::String as SmartString;
 
 use super::*;
 
@@ -45,10 +47,10 @@ fn det_n_fields(ca: &ListChunked, n_fields: ListToStructWidthStrategy) -> usize 
     }
 }
 
-pub type NameGenerator = Arc<dyn Fn(usize) -> String + Send + Sync>;
+pub type NameGenerator = Arc<dyn Fn(usize) -> SmartString + Send + Sync>;
 
-pub fn _default_struct_name_gen(idx: usize) -> String {
-    format!("field_{idx}")
+pub fn _default_struct_name_gen(idx: usize) -> SmartString {
+    format_smartstring!("field_{idx}")
 }
 
 pub trait ToStruct: AsList {

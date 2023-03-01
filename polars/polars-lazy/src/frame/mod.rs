@@ -41,6 +41,7 @@ use polars_plan::global::FETCH_ROWS;
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
 use polars_plan::utils::expr_to_leaf_column_names;
+use smartstring::alias::String as SmartString;
 
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::planner::create_physical_plan;
@@ -270,7 +271,7 @@ impl LazyFrame {
 
     /// Check the if the `names` are available in the `schema`, if not
     /// return a `LogicalPlan` that raises an `Error`.
-    fn check_names(&self, names: &[String], schema: Option<&SchemaRef>) -> Option<Self> {
+    fn check_names(&self, names: &[SmartString], schema: Option<&SchemaRef>) -> Option<Self> {
         let schema = schema
             .map(Cow::Borrowed)
             .unwrap_or_else(|| Cow::Owned(self.schema().unwrap()));
@@ -306,16 +307,16 @@ impl LazyFrame {
     {
         let iter = existing.into_iter();
         let cap = iter.size_hint().0;
-        let mut existing_vec = Vec::with_capacity(cap);
-        let mut new_vec = Vec::with_capacity(cap);
+        let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
+        let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
 
         for (existing, new) in iter.zip(new.into_iter()) {
             let existing = existing.as_ref();
             let new = new.as_ref();
 
             if new != existing {
-                existing_vec.push(existing.to_string());
-                new_vec.push(new.to_string());
+                existing_vec.push(existing.into());
+                new_vec.push(new.into());
             }
         }
 
@@ -342,15 +343,15 @@ impl LazyFrame {
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
     {
-        let columns: Vec<String> = columns
+        let columns: Vec<SmartString> = columns
             .into_iter()
-            .map(|name| name.as_ref().to_string())
+            .map(|name| name.as_ref().into())
             .collect();
         self.drop_columns_impl(columns)
     }
 
     #[allow(clippy::ptr_arg)]
-    fn drop_columns_impl(self, columns: Vec<String>) -> Self {
+    fn drop_columns_impl(self, columns: Vec<SmartString>) -> Self {
         if let Some(lp) = self.check_names(&columns, None) {
             lp
         } else {
@@ -1132,7 +1133,7 @@ impl LazyFrame {
             }
         }
 
-        let name2 = name.to_string();
+        let name2: SmartString = name.into();
         let udf_schema = move |s: &Schema| {
             let new = s.insert_index(0, name2.clone(), IDX_DTYPE).unwrap();
             Ok(Arc::new(new))

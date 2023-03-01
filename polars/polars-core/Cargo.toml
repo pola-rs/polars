@@ -100,7 +100,7 @@ parquet = ["arrow/io_parquet"]
 bigidx = ["polars-arrow/bigidx"]
 python = []
 
-serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde"]
+serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde"]
 
 docs-selection = [
   "ndarray",
@@ -174,7 +174,7 @@ regex = { version = "1.6", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-smartstring = { version = "1" }
+smartstring.workspace = true
 thiserror.workspace = true
 url = { version = "2.3.1", optional = true }
 xxhash-rust.workspace = true
