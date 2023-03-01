@@ -363,7 +363,7 @@ fn test_empty_bytes_to_dataframe() {
     let result = CsvReader::new(file)
         .has_header(false)
         .with_columns(Some(schema.iter_names().cloned().collect()))
-        .with_schema(&schema)
+        .with_schema(Arc::new(schema))
         .finish();
     assert!(result.is_ok())
 }
@@ -392,14 +392,14 @@ fn test_missing_value() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_schema(&Schema::from(
+        .with_schema(Arc::new(Schema::from(
             vec![
                 Field::new("foo", DataType::UInt32),
                 Field::new("bar", DataType::UInt32),
                 Field::new("ham", DataType::UInt32),
             ]
             .into_iter(),
-        ))
+        )))
         .finish()
         .unwrap();
     assert_eq!(df.column("ham").unwrap().len(), 3)
@@ -417,13 +417,13 @@ AUDCAD,1616455921,0.96212,0.95666,1
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_dtypes(Some(&Schema::from(
+        .with_dtypes(Some(Arc::new(Schema::from(
             vec![Field::new(
                 "b",
                 DataType::Datetime(TimeUnit::Nanoseconds, None),
             )]
             .into_iter(),
-        )))
+        ))))
         .finish()?;
 
     assert_eq!(
