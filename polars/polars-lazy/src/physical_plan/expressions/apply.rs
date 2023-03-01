@@ -387,6 +387,23 @@ fn apply_multiple_elementwise<'a>(
 #[cfg(feature = "parquet")]
 impl StatsEvaluator for ApplyExpr {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
+        let read = self.should_read_impl(stats)?;
+
+        let state = ExecutionState::new();
+
+        if state.verbose() && read {
+            eprintln!("parquet file must be read, statistics not sufficient for predicate.")
+        } else if state.verbose() && !read {
+            eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
+        };
+
+        Ok(read)
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl ApplyExpr {
+    fn should_read_impl(&self, stats: &BatchStats) -> PolarsResult<bool> {
         let (function, input) = match &self.expr {
             Expr::Function {
                 function, input, ..
