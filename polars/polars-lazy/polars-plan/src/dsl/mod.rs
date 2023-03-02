@@ -1,4 +1,4 @@
-//! Domain specific language for the Lazy api.
+//! Domain specific language for the Lazy API.
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
@@ -45,6 +45,7 @@ use crate::utils::has_expr;
 #[cfg(feature = "is_in")]
 use crate::utils::has_root_literal_expr;
 
+/// Compute `op(l, r)` (or equivalently `l op r`). `l` and `r` must have types compatible with the Operator.
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {
         left: Box::new(l),

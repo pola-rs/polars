@@ -22,7 +22,8 @@ impl StringNameSpace {
         )
     }
 
-    /// Check if a string value contains a Regex substring.
+    /// Check if this column of strings contains a Regex. If `strict` is `true`, then it is an error if any `pat` is
+    /// an invalid regex, whereas if `strict` is `false`, an invalid regex will simply evaluate to `false`.
     #[cfg(feature = "regex")]
     pub fn contains(self, pat: Expr, strict: bool) -> Expr {
         self.0.map_many_private(
@@ -53,7 +54,7 @@ impl StringNameSpace {
         )
     }
 
-    /// Extract a regex pattern from the a string value.
+    /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
         self.0
@@ -99,6 +100,7 @@ impl StringNameSpace {
         self.0.map_private(StringFunction::CountMatch(pat).into())
     }
 
+    /// Construct a `Datetime` column by parsing this string column as datetimes, using the provided `options`.
     #[cfg(feature = "temporal")]
     pub fn strptime(self, options: StrpTimeOptions) -> Expr {
         self.0.map_private(StringFunction::Strptime(options).into())
