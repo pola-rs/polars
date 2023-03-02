@@ -46,12 +46,10 @@ pub enum LiteralValue {
         data_type: DataType,
     },
     #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-    #[cfg_attr(feature = "serde", serde(skip))]
     DateTime(NaiveDateTime, TimeUnit),
     #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
     #[cfg_attr(feature = "serde", serde(skip))]
     Duration(ChronoDuration, TimeUnit),
-    #[cfg_attr(feature = "serde", serde(skip))]
     Series(SpecialEq<Series>),
 }
 
