@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
@@ -52,7 +52,7 @@ class StructNameSpace:
 
         """
 
-    def rename_fields(self, names: list[str]) -> pli.Series:
+    def rename_fields(self, names: Sequence[str]) -> pli.Series:
         """
         Rename the fields of the struct.
 

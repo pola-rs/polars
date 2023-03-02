@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Sequence
+
 import polars.internals as pli
 
 
@@ -81,7 +83,7 @@ class ExprStructNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.struct_field_by_name(name))
 
-    def rename_fields(self, names: list[str]) -> pli.Expr:
+    def rename_fields(self, names: Sequence[str]) -> pli.Expr:
         """
         Rename the fields of the struct.
 
