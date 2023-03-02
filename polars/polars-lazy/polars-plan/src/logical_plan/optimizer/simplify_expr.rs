@@ -401,7 +401,7 @@ fn string_addition_to_linear_concat(
                     input: vec![left_ae, right_ae],
                     function: StringFunction::ConcatHorizontal("".to_string()).into(),
                     options: FunctionOptions {
-                        collect_groups: ApplyOptions::ApplyGroups,
+                        collect_groups: ApplyOptions::ApplyFlat,
                         input_wildcard_expansion: true,
                         auto_explode: true,
                         ..Default::default()
