@@ -369,11 +369,20 @@ impl LogicalPlanBuilder {
         let mut new_schema = (**schema).clone();
         let (exprs, _) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
 
+        let mut output_names = PlHashSet::with_capacity(exprs.len());
+
         let mut arena = Arena::with_capacity(8);
         for e in &exprs {
             let field = e
                 .to_field_amortized(&schema, Context::Default, &mut arena)
                 .unwrap();
+            if !output_names.insert(field.name().clone()) {
+                let msg = format!(
+                    "The name: '{}' passed to `LazyFrame.with_columns` is duplicate",
+                    field.name()
+                );
+                return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+            }
             new_schema.with_column(field.name().clone(), field.data_type().clone());
             arena.clear();
         }
@@ -455,10 +464,10 @@ impl LogicalPlanBuilder {
                     }
 
                     let msg = if cfg!(feature = "python") {
-                        format!("The predicate passed to 'filter' expanded to multiple expressions: \n\n{expanded}\n\
+                        format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
                     This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
                     } else {
-                        format!("The predicate passed to 'filter' expanded to multiple expressions: \n\n{expanded}\n\
+                        format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
                     This is ambiguous. Try to combine the predicates with the 'all_exprs' or `any_exprs' expression.")
                     };
                     return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);

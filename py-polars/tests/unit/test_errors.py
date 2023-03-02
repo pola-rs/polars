@@ -454,6 +454,15 @@ def test_ambiguous_filter_err() -> None:
     df = pl.DataFrame({"a": [None, "2", "3"], "b": [None, None, "z"]})
     with pytest.raises(
         pl.ComputeError,
-        match=r"The predicate passed to 'filter' expanded to multiple expressions",
+        match=r"The predicate passed to 'LazyFrame.filter' expanded to multiple expressions",
     ):
         df.filter(pl.col(["a", "b"]).is_null())
+
+
+def test_with_column_duplicates() -> None:
+    df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"The name: 'same' passed to `LazyFrame.with_columns` is duplicate",
+    ):
+        assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
