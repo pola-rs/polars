@@ -52,7 +52,6 @@ pub mod utils;
 mod write;
 pub(super) mod write_impl;
 
-use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;

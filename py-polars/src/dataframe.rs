@@ -212,7 +212,7 @@ impl PyDataFrame {
             .with_columns(columns)
             .with_n_threads(n_threads)
             .with_path(path)
-            .with_dtypes(overwrite_dtype.as_ref())
+            .with_dtypes(overwrite_dtype.map(Arc::new))
             .with_dtypes_slice(overwrite_dtype_slice.as_deref())
             .low_memory(low_memory)
             .with_null_values(null_values)
