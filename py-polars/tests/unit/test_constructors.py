@@ -923,3 +923,13 @@ def test_array_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
         pyseries.get_chunks()[0]._get_ptr()
         == original_array.chunks[0].buffers()[1].address
     )
+
+
+def test_init_with_explicit_binary_schema() -> None:
+    df = pl.DataFrame({"a": [b"hello", b"world"]}, schema={"a": pl.Binary})
+    assert df.schema == {"a": pl.Binary}
+    assert df["a"].to_list() == [b"hello", b"world"]
+
+    s = pl.Series("a", [b"hello", b"world"], dtype=pl.Binary)
+    assert s.dtype == pl.Binary
+    assert s.to_list() == [b"hello", b"world"]
