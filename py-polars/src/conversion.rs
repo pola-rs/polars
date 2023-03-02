@@ -709,19 +709,15 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     Ok(Wrap(AnyValue::Time(v)))
                 }),
                 "Decimal" => {
-                    // note: there seems to be no way to extract precision from decimal.Decimal
                     let (sign, digits, exp): (i8, Vec<u8>, i32) =
                         ob.call_method0("as_tuple").unwrap().extract().unwrap();
-                    // (using Vec<u8> is not the most efficient thing here... the input is a tuple)
-                    // let digits = digits.into_iter().map(|d| d.extract::<u8>().unwrap());
-                    // let digits = digits.iter().map(|s| *s as u8).collect::<Vec<_>>();
+                    // note: using Vec<u8> is not the most efficient thing here (input is a tuple)
                     let (mut v, scale) = abs_decimal_from_digits(digits, exp).ok_or_else(|| {
                         PyErr::from(PyPolarsErr::Other(
                             "Decimal is too large to fit in Decimal128".into(),
                         ))
                     })?;
                     if sign > 0 {
-                        // note: Decimal('-0') will be mapped to simply '0'
                         v = -v; // won't overflow since -i128::MAX > i128::MIN
                     }
                     Ok(Wrap(AnyValue::Decimal(v, scale)))
