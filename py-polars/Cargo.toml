@@ -177,4 +177,4 @@ lto = "fat"
 # target-cpu = "native"
 
 [build-dependencies]
-built = { version = "0.5", features = ["chrono", "git2"], optional = true }
+built = { version = "0.6", features = ["chrono", "git2"], optional = true }
