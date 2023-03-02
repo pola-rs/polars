@@ -77,6 +77,21 @@ pub struct IpcReader<R: MmapBytesReader> {
     metadata: Option<read::FileMetadata>,
 }
 
+fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
+    match err {
+        PolarsError::ArrowError(e) => match e.as_ref() {
+            arrow::error::Error::NotYetImplemented(s)
+                if s == "mmap can only be done on uncompressed IPC files" =>
+            {
+                eprint!("Could not mmap compressed IPC file, defaulting to normal read. Toggle off 'memory_map' to silence this warning.");
+            }
+            _ => return Err(PolarsError::ArrowError(e)),
+        },
+        err => return Err(err),
+    }
+    Ok(())
+}
+
 impl<R: MmapBytesReader> IpcReader<R> {
     #[doc(hidden)]
     /// A very bad estimate of the number of rows
@@ -150,21 +165,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
             }
             match self.finish_memmapped(predicate.clone()) {
                 Ok(df) => return Ok(df),
-                Err(err) => {
-                    match err {
-                        PolarsError::ArrowError(e) => match e.as_ref() {
-                            arrow::error::Error::NotYetImplemented(s)
-                                if s == "mmap can only be done on uncompressed IPC files" =>
-                            {
-                                if verbose {
-                                    eprint!("could not mmap compressed IPC file, defaulting to normal read")
-                                }
-                            }
-                            _ => return Err(PolarsError::ArrowError(e)),
-                        },
-                        err => return Err(err),
-                    }
-                }
+                Err(err) => check_mmap_err(err)?,
             }
         }
         let rechunk = self.rechunk;
@@ -214,17 +215,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
         if self.memmap && self.reader.to_file().is_some() {
             match self.finish_memmapped(None) {
                 Ok(df) => return Ok(df),
-                Err(err) => match err {
-                    PolarsError::ArrowError(e) => match e.as_ref() {
-                        arrow::error::Error::NotYetImplemented(s)
-                            if s == "mmap can only be done on uncompressed IPC files" =>
-                        {
-                            eprint!("could not mmap compressed IPC file, defaulting to normal read")
-                        }
-                        _ => return Err(PolarsError::ArrowError(e)),
-                    },
-                    err => return Err(err),
-                },
+                Err(err) => check_mmap_err(err)?,
             }
         }
         let rechunk = self.rechunk;
