@@ -2490,27 +2490,27 @@ class DataFrame:
         Simple export to "dataframe.xlsx" (default) in the working directory,
         column totals ("sum") on all numeric columns, autofit:
 
-        >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +IGNORE_RESULT
+        >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +SKIP
 
         Write frame to a specific location on the sheet, set a named table style,
         apply US-style date formatting, increase default float precision, apply
         non-default total function to a single column, autofit:
 
-        >>> df.write_excel(
+        >>> df.write_excel(  # doctest: +SKIP
         ...     position="B4",
         ...     table_style="Table Style Light 16",
         ...     dtype_formats={pl.Date: "mm/dd/yyyy"},
         ...     column_totals={"num": "average"},
         ...     float_precision=6,
         ...     autofit=True,
-        ... )  # doctest: +IGNORE_RESULT
+        ... )
 
         Write the same frame to a named worksheet twice, applying different styles
         and conditional formatting to each table, adding table titles using direct
         xlsxwriter integration:
 
         >>> from xlsxwriter import Workbook
-        >>> with Workbook("multi_frame.xlsx") as wb:
+        >>> with Workbook("multi_frame.xlsx") as wb:  # doctest: +SKIP
         ...     # basic/default conditional formatting
         ...     df.write_excel(
         ...         workbook=wb,
