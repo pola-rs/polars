@@ -9,4 +9,4 @@ Miscellaneous
     DataFrame.apply
     DataFrame.frame_equal
     DataFrame.lazy
-    DataFrame.pearson_corr
+    DataFrame.corr

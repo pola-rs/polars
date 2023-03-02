@@ -7805,7 +7805,7 @@ class DataFrame:
         return self._from_pydf(self._df.unnest(names))
 
     @typing.no_type_check
-    def pearson_corr(self, **kwargs: Any) -> Self:
+    def corr(self, **kwargs: Any) -> Self:
         """
         Return Pearson product-moment correlation coefficients.
 
@@ -7823,7 +7823,7 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [3, 2, 1], "ham": [7, 8, 9]})
-        >>> df.pearson_corr()
+        >>> df.corr()
         shape: (3, 3)
         ┌──────┬──────┬──────┐
         │ foo  ┆ bar  ┆ ham  │

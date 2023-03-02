@@ -1016,7 +1016,9 @@ def test_spearman_corr() -> None:
 
     out = (
         ldf.groupby("era", maintain_order=True).agg(
-            pl.spearman_rank_corr(pl.col("prediction"), pl.col("target")).alias("c"),
+            pl.corr(pl.col("prediction"), pl.col("target"), method="spearman").alias(
+                "c"
+            ),
         )
     ).collect()["c"]
     assert np.isclose(out[0], 0.5)
@@ -1025,7 +1027,7 @@ def test_spearman_corr() -> None:
     # we can also pass in column names directly
     out = (
         ldf.groupby("era", maintain_order=True).agg(
-            pl.spearman_rank_corr("prediction", "target").alias("c"),
+            pl.corr("prediction", "target", method="spearman").alias("c"),
         )
     ).collect()["c"]
     assert np.isclose(out[0], 0.5)
@@ -1043,7 +1045,9 @@ def test_pearson_corr() -> None:
 
     out = (
         ldf.groupby("era", maintain_order=True).agg(
-            pl.pearson_corr(pl.col("prediction"), pl.col("target")).alias("c"),
+            pl.corr(pl.col("prediction"), pl.col("target"), method="pearson").alias(
+                "c"
+            ),
         )
     ).collect()["c"]
     assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])
@@ -1051,7 +1055,7 @@ def test_pearson_corr() -> None:
     # we can also pass in column names directly
     out = (
         ldf.groupby("era", maintain_order=True).agg(
-            pl.pearson_corr("prediction", "target").alias("c"),
+            pl.corr("prediction", "target", method="pearson").alias("c"),
         )
     ).collect()["c"]
     assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])

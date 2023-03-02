@@ -65,6 +65,7 @@ if TYPE_CHECKING:
 
     from polars.datatypes import PolarsDataType, SchemaDict
     from polars.internals.type_aliases import (
+        CorrelationMethod,
         EpochTimeUnit,
         IntoExpr,
         RollingInterpolationMethod,
@@ -1340,8 +1341,12 @@ def spearman_rank_corr(
     ╞═════╡
     │ 0.5 │
     └─────┘
-
     """
+    warnings.warn(
+        "`spearman_rank_corr()` is deprecated in favor of `corr()`",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
@@ -1363,7 +1368,6 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
         Column name or Expression.
     ddof
         Delta degrees of freedom
-
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
@@ -1376,13 +1380,87 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     ╞══════════╡
     │ 0.544705 │
     └──────────┘
-
     """
+    warnings.warn(
+        "`pearson_corr()` is deprecated in favor of `corr()`",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
     return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+
+
+def corr(
+    a: str | pli.Expr,
+    b: str | pli.Expr,
+    *,
+    method: CorrelationMethod = "pearson",
+    ddof: int = 1,
+    propagate_nans: bool = False,
+) -> pli.Expr:
+    """
+    Compute the pearson's or spearman rank correlation correlation between two columns.
+
+    Parameters
+    ----------
+    a
+        Column name or Expression.
+    b
+        Column name or Expression.
+    ddof
+        Delta degrees of freedom
+    method : {'pearson', 'spearman'}
+        Correlation method.
+    propagate_nans
+        If `True` any `NaN` encountered will lead to `NaN` in the output.
+        Defaults to `False` where `NaN` are regarded as larger than any finite number
+        and thus lead to the highest rank.
+
+    Examples
+    --------
+    Pearson's correlation:
+
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.corr("a", "b"))
+    shape: (1, 1)
+    ┌──────────┐
+    │ a        │
+    │ ---      │
+    │ f64      │
+    ╞══════════╡
+    │ 0.544705 │
+    └──────────┘
+
+    Spearman rank correlation:
+
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.corr("a", "b", method="spearman"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 0.5 │
+    └─────┘
+    """
+    if isinstance(a, str):
+        a = col(a)
+    if isinstance(b, str):
+        b = col(b)
+    if method == "pearson":
+        return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+    elif method == "spearman":
+        return pli.wrap_expr(
+            pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
+        )
+    else:
+        raise ValueError(
+            "method must be one of {'pearson', 'spearman'}," f" got {method!r}"
+        )
 
 
 def cov(a: str | pli.Expr, b: str | pli.Expr) -> pli.Expr:

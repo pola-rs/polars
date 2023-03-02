@@ -90,6 +90,7 @@ EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
 TransferEncoding: TypeAlias = Literal["hex", "base64"]
+CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = "Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series] | Sequence[Any] | np.ndarray[Any, Any] | pa.Table | pd.DataFrame | pli.Series"

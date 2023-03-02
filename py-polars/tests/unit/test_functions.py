@@ -104,8 +104,8 @@ def test_null_handling_correlation() -> None:
 
     out = df.select(
         [
-            pl.pearson_corr("a", "b").alias("pearson"),
-            pl.spearman_rank_corr("a", "b").alias("spearman"),
+            pl.corr("a", "b").alias("pearson"),
+            pl.corr("a", "b", method="spearman").alias("spearman"),
         ]
     )
     assert out["pearson"][0] == pytest.approx(1.0)
@@ -115,9 +115,11 @@ def test_null_handling_correlation() -> None:
     df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
     df2 = pl.DataFrame({"a": [np.nan, 1, 2], "b": [np.nan, 2, 1]})
 
-    assert np.isclose(df1.select(pl.spearman_rank_corr("a", "b")).item(), -1.0)
+    assert np.isclose(df1.select(pl.corr("a", "b", method="spearman")).item(), -1.0)
     assert (
-        str(df2.select(pl.spearman_rank_corr("a", "b", propagate_nans=True)).item())
+        str(
+            df2.select(pl.corr("a", "b", method="spearman", propagate_nans=True)).item()
+        )
         == "nan"
     )
 
