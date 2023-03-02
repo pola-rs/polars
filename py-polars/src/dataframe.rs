@@ -1351,8 +1351,8 @@ impl PyDataFrame {
         s.into_series().into()
     }
 
-    pub fn unnest(&self, names: Vec<String>) -> PyResult<Self> {
-        let df = self.df.unnest(names).map_err(PyPolarsErr::from)?;
+    pub fn unnest(&self, columns: Vec<String>) -> PyResult<Self> {
+        let df = self.df.unnest(columns).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 

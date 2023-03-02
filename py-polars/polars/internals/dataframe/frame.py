@@ -7755,17 +7755,20 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.to_struct(name))
 
-    def unnest(self, names: str | Sequence[str]) -> Self:
+    @deprecated_alias(names="columns")
+    def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
         """
-        Decompose a struct into its fields.
+        Decompose struct columns into separate columns for each of their fields.
 
-        The fields will be inserted into the `DataFrame` on the location of the
-        `struct` type.
+        The new columns will be inserted into the dataframe at the location of the
+        struct column.
 
         Parameters
         ----------
-        names
-           Names of the struct columns that will be decomposed by its fields
+        columns
+            Name of the struct column(s) that should be unnested.
+        *more_columns
+            Additional columns to unnest, specified as positional arguments.
 
         Examples
         --------
@@ -7778,7 +7781,7 @@ class DataFrame:
         ...         "t_d": [[1, 2], [3]],
         ...         "after": ["baz", "womp"],
         ...     }
-        ... ).select(["before", pl.struct(pl.col("^t_.$")).alias("t_struct"), "after"])
+        ... ).select("before", pl.struct(pl.col("^t_.$")).alias("t_struct"), "after")
         >>> df
         shape: (2, 3)
         ┌────────┬─────────────────────┬───────┐
@@ -7801,9 +7804,12 @@ class DataFrame:
         └────────┴─────┴─────┴──────┴───────────┴───────┘
 
         """
-        if isinstance(names, str):
-            names = [names]
-        return self._from_pydf(self._df.unnest(names))
+        if isinstance(columns, str):
+            columns = [columns]
+        if more_columns:
+            columns = list(columns)
+            columns.extend(more_columns)
+        return self._from_pydf(self._df.unnest(columns))
 
     @typing.no_type_check
     def corr(self, **kwargs: Any) -> Self:
