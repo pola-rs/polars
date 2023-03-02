@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
+    Binary,
     Boolean,
     Categorical,
     Date,
@@ -60,6 +61,7 @@ if not _DOCUMENTING:
         Utf8: PySeries.new_str,
         Object: PySeries.new_object,
         Categorical: PySeries.new_str,
+        Binary: PySeries.new_binary,
         Null: PySeries.new_null,
     }
 
