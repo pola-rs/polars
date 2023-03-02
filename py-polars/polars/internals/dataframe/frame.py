@@ -171,6 +171,7 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
     {
         "cleared": "clear",
         "iterrows": "iter_rows",
+        "pearson_corr": "corr",
         "with_column": "with_columns",
     }
 )
@@ -7809,7 +7810,8 @@ class DataFrame:
         """
         Return Pearson product-moment correlation coefficients.
 
-        See numpy corrcoef for more information.
+        See numpy ``corrcoef`` for more information:
+        https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
 
         Notes
         -----

@@ -153,6 +153,7 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal_missing(&df_pl));
     }
+
     #[test]
     fn test_prefixed_column_names() {
         let df = create_sample_df().unwrap();
