@@ -283,7 +283,11 @@ class List(NestedType):
 
 
 class Decimal(DataType):
-    """Decimal 128-bit type with an optional precision and non-negative scale."""
+    """
+    Decimal 128-bit type with an optional precision and non-negative scale.
+
+    NOTE: this is an experimental work-in-progress feature and may not work as expected.
+    """
 
     prec: int | None
     scale: int
