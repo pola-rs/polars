@@ -301,10 +301,16 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
 }
 
 /// Concat lists entries.
-pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
-    let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
+pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+    let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    Expr::Function {
+    if s.is_empty() {
+        return Err(PolarsError::ComputeError(
+            "concat_list needs one or more expressions".into(),
+        ));
+    }
+
+    Ok(Expr::Function {
         input: s,
         function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
@@ -313,7 +319,7 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
             fmt_str: "concat_list",
             ..Default::default()
         },
-    }
+    })
 }
 
 /// Create list entries that are range arrays
