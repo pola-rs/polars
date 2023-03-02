@@ -21,6 +21,7 @@ These functions are available from the polars module root and can be used as exp
    coalesce
    concat_list
    concat_str
+   corr
    count
    cov
    cumfold
@@ -45,13 +46,12 @@ These functions are available from the polars module root and can be used as exp
    median
    min
    n_unique
-   corr
    pearson_corr
-   spearman_rank_corr
    quantile
    reduce
    repeat
    select
+   spearman_rank_corr
    std
    struct
    sum

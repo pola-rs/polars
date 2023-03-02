@@ -1316,6 +1316,10 @@ def spearman_rank_corr(
 
     Missing data will be excluded from the computation.
 
+    .. deprecated:: 0.16.10
+        ``spearman_rank_corr`` will be removed in favor of
+        ``corr(..., method="spearman")``.
+
     Parameters
     ----------
     a
@@ -1328,6 +1332,10 @@ def spearman_rank_corr(
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
+
+    See Also
+    --------
+    corr
 
     Examples
     --------
@@ -1360,6 +1368,9 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
     """
     Compute the pearson's correlation between two columns.
 
+    .. deprecated:: 0.16.10
+        ``pearson_corr`` will be removed in favor of ``corr(..., method="pearson")``.
+
     Parameters
     ----------
     a
@@ -1368,6 +1379,11 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
         Column name or Expression.
     ddof
         Delta degrees of freedom
+
+    See Also
+    --------
+    corr
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
@@ -1451,6 +1467,7 @@ def corr(
         a = col(a)
     if isinstance(b, str):
         b = col(b)
+
     if method == "pearson":
         return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
     elif method == "spearman":
@@ -1459,7 +1476,7 @@ def corr(
         )
     else:
         raise ValueError(
-            "method must be one of {'pearson', 'spearman'}," f" got {method!r}"
+            f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         )
 
 
