@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import sys
 import typing
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+else:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -410,10 +418,11 @@ def test_dynamic_groupby_timezone_awareness() -> None:
         ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
 
 
-def test_groupby_dynamic_startby_5599() -> None:
+@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     # start by datapoint
-    start = datetime(2022, 12, 16)
-    stop = datetime(2022, 12, 16, hour=3)
+    start = datetime(2022, 12, 16, tzinfo=tzinfo)
+    stop = datetime(2022, 12, 16, hour=3, tzinfo=tzinfo)
     df = pl.DataFrame({"date": pl.date_range(start, stop, "30m")})
 
     assert df.groupby_dynamic(
@@ -424,35 +433,35 @@ def test_groupby_dynamic_startby_5599() -> None:
         start_by="datapoint",
     ).agg(pl.count()).to_dict(False) == {
         "_lower_boundary": [
-            datetime(2022, 12, 16, 0, 0),
-            datetime(2022, 12, 16, 0, 31),
-            datetime(2022, 12, 16, 1, 2),
-            datetime(2022, 12, 16, 1, 33),
-            datetime(2022, 12, 16, 2, 4),
-            datetime(2022, 12, 16, 2, 35),
+            datetime(2022, 12, 16, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 0, 31, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 1, 2, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 1, 33, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 2, 4, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 2, 35, tzinfo=tzinfo),
         ],
         "_upper_boundary": [
-            datetime(2022, 12, 16, 0, 31),
-            datetime(2022, 12, 16, 1, 2),
-            datetime(2022, 12, 16, 1, 33),
-            datetime(2022, 12, 16, 2, 4),
-            datetime(2022, 12, 16, 2, 35),
-            datetime(2022, 12, 16, 3, 6),
+            datetime(2022, 12, 16, 0, 31, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 1, 2, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 1, 33, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 2, 4, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 2, 35, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 3, 6, tzinfo=tzinfo),
         ],
         "date": [
-            datetime(2022, 12, 16, 0, 0),
-            datetime(2022, 12, 16, 1, 0),
-            datetime(2022, 12, 16, 1, 30),
-            datetime(2022, 12, 16, 2, 0),
-            datetime(2022, 12, 16, 2, 30),
-            datetime(2022, 12, 16, 3, 0),
+            datetime(2022, 12, 16, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 1, 0, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 1, 30, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 2, 0, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 2, 30, tzinfo=tzinfo),
+            datetime(2022, 12, 16, 3, 0, tzinfo=tzinfo),
         ],
         "count": [2, 1, 1, 1, 1, 1],
     }
 
     # start by week
-    start = datetime(2022, 1, 1)
-    stop = datetime(2022, 1, 12, 7)
+    start = datetime(2022, 1, 1, tzinfo=tzinfo)
+    stop = datetime(2022, 1, 12, 7, tzinfo=tzinfo)
 
     df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_columns(
         pl.col("date").dt.weekday().alias("day")
@@ -466,9 +475,18 @@ def test_groupby_dynamic_startby_5599() -> None:
         start_by="monday",
         truncate=False,
     ).agg([pl.count(), pl.col("day").first().alias("data_day")]).to_dict(False) == {
-        "_lower_boundary": [datetime(2022, 1, 3, 0, 0), datetime(2022, 1, 10, 0, 0)],
-        "_upper_boundary": [datetime(2022, 1, 6, 0, 0), datetime(2022, 1, 13, 0, 0)],
-        "date": [datetime(2022, 1, 3, 0, 0), datetime(2022, 1, 10, 0, 0)],
+        "_lower_boundary": [
+            datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
+        ],
+        "_upper_boundary": [
+            datetime(2022, 1, 6, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 13, 0, 0, tzinfo=tzinfo),
+        ],
+        "date": [
+            datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
+        ],
         "count": [6, 5],
         "data_day": [1, 1],
     }
