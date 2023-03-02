@@ -261,7 +261,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str) -> Expr {
         input,
         function: StringFunction::ConcatHorizontal(separator).into(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
             auto_explode: true,
             ..Default::default()
@@ -1052,7 +1052,7 @@ pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
 #[cfg(feature = "dtype-struct")]
 pub fn as_struct(exprs: &[Expr]) -> Expr {
     map_multiple(
-        |s| StructChunked::new("", s).map(|ca| Some(ca.into_series())),
+        |s| StructChunked::new(s[0].name(), s).map(|ca| Some(ca.into_series())),
         exprs,
         GetOutput::map_fields(|fld| Field::new(fld[0].name(), DataType::Struct(fld.to_vec()))),
     )

@@ -835,3 +835,15 @@ def test_struct_args_kwargs() -> None:
     # Keyword input
     result = df.select(r=pl.struct(p="a", q="b"))
     assert_frame_equal(result, expected)
+
+
+def test_struct_applies_as_map() -> None:
+    df = pl.DataFrame({"id": [1, 1, 2], "x": ["a", "b", "c"], "y": ["d", "e", "f"]})
+
+    # the window function doesn't really make sense
+    # but it runs the test: #7286
+    assert df.select(
+        pl.struct([pl.col("x"), pl.col("y") + pl.col("y")]).over("id")
+    ).to_dict(False) == {
+        "x": [{"x": "a", "y": "dd"}, {"x": "b", "y": "ee"}, {"x": "c", "y": "ff"}]
+    }
