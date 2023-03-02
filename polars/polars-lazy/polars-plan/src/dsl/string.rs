@@ -390,8 +390,10 @@ impl StringNameSpace {
 
     #[cfg(feature = "string_from_radix")]
     /// Parse string in base radix into decimal
-    pub fn from_radix(self, radix: Option<u32>) -> Expr {
+    pub fn from_radix(self, radix: u32, strict: bool) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(radix)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(
+                radix, strict,
+            )))
     }
 }

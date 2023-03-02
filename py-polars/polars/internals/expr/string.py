@@ -1246,40 +1246,45 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.explode())
 
-    def parse_int(self, radix: int = 2) -> pli.Expr:
+    def parse_int(self, radix: int = 2, strict: bool = True) -> pli.Expr:
         """
         Parse integers with base radix from strings.
 
-        By default base 2.
+        By default base 2. ParseError/Overflows become Nulls.
 
         Parameters
         ----------
         radix
             Positive integer which is the base of the string we are parsing.
-            Default: 2
+            Default: 2.
+
+        strict
+            Bool, Defult=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
 
         Returns
         -------
-        Column of parsed integers in i32 format
+        Expr: Series of parsed integers in i32 format
 
         Examples
         --------
-        >>> df = pl.DataFrame({"bin": ["110", "101", "010"]})
-        >>> df.select(pl.col("bin").str.parse_int(2))
-        shape: (3, 1)
-        ┌─────┐
-        │ bin │
-        │ --- │
-        │ i32 │
-        ╞═════╡
-        │ 6   │
-        │ 5   │
-        │ 2   │
-        └─────┘
+        >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
+        >>> df.select(pl.col("bin").str.parse_int(2, False))
+        shape: (4, 1)
+        ┌──────┐
+        │ bin  │
+        │ ---  │
+        │ i32  │
+        ╞══════╡
+        │ 6    │
+        │ 5    │
+        │ 2    │
+        │ null │
+        └──────┘
 
-        >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe"]})
-        >>> df.select(pl.col("hex").str.parse_int(16))
-        shape: (3, 1)
+        >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe", None]})
+        >>> df.select(pl.col("hex").str.parse_int(16, True))
+        shape: (4, 1)
         ┌───────┐
         │ hex   │
         │ ---   │
@@ -1288,7 +1293,8 @@ class ExprStringNameSpace:
         │ 64030 │
         │ 65280 │
         │ 51966 │
+        │ null  │
         └───────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_parse_int(radix))
+        return pli.wrap_expr(self._pyexpr.str_parse_int(radix, strict))

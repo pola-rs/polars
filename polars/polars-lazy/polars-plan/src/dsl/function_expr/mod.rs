@@ -432,7 +432,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
             #[cfg(feature = "string_from_radix")]
-            FromRadix(matches) => map!(strings::from_radix, matches),
+            FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
         }
     }
 }

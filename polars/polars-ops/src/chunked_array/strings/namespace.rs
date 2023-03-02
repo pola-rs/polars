@@ -59,11 +59,40 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     #[cfg(feature = "string_from_radix")]
     // Parse a string number with base _radix_ into a decimal (i32)
-    fn parse_int(&self, radix: Option<u32>) -> Int32Chunked {
+    fn parse_int(&self, radix: u32, strict: bool) -> PolarsResult<Int32Chunked> {
+        use polars_arrow::utils::CustomIterTools;
         let ca = self.as_utf8();
+        let f = |opt_s: Option<&str>| -> Option<i32> {
+            opt_s.and_then(|s| <i32 as Num>::from_str_radix(s, radix).ok())
+        };
+        let out: Int32Chunked = ca.into_iter().map(f).collect_trusted();
 
-        let f = |s: &str| <i32 as Num>::from_str_radix(s, radix.unwrap_or(2)).unwrap();
-        ca.apply_cast_numeric(f)
+        if strict && ca.null_count() != out.null_count() {
+            let failure_mask = !ca.is_null() & out.is_null();
+            let all_failures = ca.filter(&failure_mask)?;
+            let n_failures = all_failures.len();
+            let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
+            let some_error_msg = some_failures
+                .get(0)
+                .and_then(|s| <i32 as Num>::from_str_radix(s, radix).err())
+                .map_or_else(
+                    || unreachable!("Could unexpectedly not recreate ParseIntError"),
+                    |err| format!("{}", err),
+                );
+
+            Err(PolarsError::ComputeError(
+                format!(
+                    "Strict integer parsing failed for {} value(s): {} \
+                    ParseIntError msg for first shown value: '{}'. Consider non strict parsing.",
+                    n_failures,
+                    some_failures.into_series().fmt_list(),
+                    some_error_msg
+                )
+                .into(),
+            ))?
+        };
+
+        Ok(out)
     }
 
     /// Get the length of the string values as number of chars.

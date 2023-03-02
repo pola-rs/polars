@@ -794,11 +794,11 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_parse_int(&self, radix: Option<u32>) -> PyExpr {
+    pub fn str_parse_int(&self, radix: u32, strict: bool) -> PyExpr {
         self.inner
             .clone()
             .str()
-            .from_radix(radix)
+            .from_radix(radix, strict)
             .with_fmt("str.parse_int")
             .into()
     }
