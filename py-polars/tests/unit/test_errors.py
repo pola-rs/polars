@@ -475,3 +475,11 @@ def test_skipp_nulls_err() -> None:
         pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
     ):
         df.with_columns(pl.col("foo").apply(lambda x: x, skip_nulls=True))
+
+
+def test_err_on_time_datetime_cast() -> None:
+    s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
+    with pytest.raises(
+        pl.ComputeError, match=r"Cannot cast dtype: 'Time' to dtype: 'Datetime'"
+    ):
+        s.cast(pl.Datetime)
