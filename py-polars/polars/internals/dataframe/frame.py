@@ -2543,7 +2543,7 @@ class DataFrame:
         ...         position=(3, 1),  # specify position as (row,col) coordinates
         ...         conditional_formats={"num": "3_color_scale", "val": "data_bar"},
         ...         table_style="Table Style Medium 4",
-        ...     )  # doctest: +IGNORE_RESULT
+        ...     )
         ...
         ...     # advanced conditional formatting, custom styles
         ...     df.write_excel(
@@ -2603,7 +2603,7 @@ class DataFrame:
         ...     }
         ... )
         >>> from polars.datatypes import INTEGER_DTYPES
-        >>> df.write_excel(
+        >>> df.write_excel(  # doctest: +SKIP
         ...     table_style="Table Style Light 2",
         ...     dtype_formats={INTEGER_DTYPES: "#,##0_);(#,##0)"},
         ...     sparklines={
