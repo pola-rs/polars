@@ -62,8 +62,14 @@ def test_empty_sort() -> None:
         ],
         orient="row",
     )
-    df_filtered = df.filter(pl.col("blob").apply(lambda blob: blob["name"] == "baz"))
-    df_filtered.sort(pl.col("blob").apply(lambda blob: blob["sort_key"]))
+    df_filtered = df.filter(
+        pl.col("blob").apply(
+            lambda blob: blob["name"] == "baz", return_dtype=pl.Boolean
+        )
+    )
+    df_filtered.sort(
+        pl.col("blob").apply(lambda blob: blob["sort_key"], return_dtype=pl.Int64)
+    )
 
 
 def test_object_to_dicts() -> None:
