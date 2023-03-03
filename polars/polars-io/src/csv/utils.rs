@@ -397,6 +397,15 @@ pub fn infer_file_schema(
                 fields.push(Field::new(name, dtype.clone()));
                 continue;
             }
+
+            // column might have been renamed
+            // execute only if schema is complete
+            if schema_overwrite.len() == header_length {
+                if let Some((name, dtype)) = schema_overwrite.get_index(i) {
+                    fields.push(Field::new(name, dtype.clone()));
+                    continue;
+                }
+            }
         }
 
         // determine data type based on possible types

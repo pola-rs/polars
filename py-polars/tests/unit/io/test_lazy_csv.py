@@ -83,6 +83,26 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
     ]
 
 
+@pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
+@pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16])
+def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
+    io_files_path: Path, file_name: str, dtype: pl.DataType
+) -> None:
+    file_path = io_files_path / file_name
+    df = pl.scan_csv(
+        file_path,
+        dtypes={"calories_foo": pl.Utf8, "sugars_g_foo": dtype},
+        with_column_names=lambda names: [f"{a}_foo" for a in names],
+    ).collect()
+    assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, dtype]
+    assert df.columns == [
+        "category_foo",
+        "calories_foo",
+        "fats_g_foo",
+        "sugars_g_foo",
+    ]
+
+
 def test_lazy_n_rows(foods_file_path: Path) -> None:
     df = (
         pl.scan_csv(foods_file_path, n_rows=4, row_count_name="idx")
