@@ -3396,10 +3396,17 @@ class Expr:
 
                 # create partitions with LazyFrames
                 # these are promises on a computation
-                partitions = [
-                    get_lazy_promise(df[i * chunk_size : i * chunk_size + chunk_size])
-                    for i in range(n_threads)
-                ]
+                partitions = []
+                for i in range(n_threads):
+                    # latest partition can be a little longer
+                    # we increase length of slice
+                    if i == (n_threads - 1):
+                        partition_df = df[
+                            i * chunk_size : i * chunk_size + chunk_size * 10
+                        ]
+                    else:
+                        partition_df = df[i * chunk_size : i * chunk_size + chunk_size]
+                    partitions.append(get_lazy_promise(partition_df))
 
                 out = [df.to_series() for df in pli.collect_all(partitions)]
                 return pli.concat(out, rechunk=False)
