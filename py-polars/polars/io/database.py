@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import polars.internals as pli
 from polars.convert import from_arrow
@@ -25,12 +25,6 @@ def read_database(
     """
     Read a SQL query into a DataFrame.
 
-    Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
-    Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
-    please see the connectorx docs:
-
-    * https://github.com/sfu-db/connector-x#supported-sources--destinations
-
     Parameters
     ----------
     sql
@@ -49,20 +43,21 @@ def read_database(
         Backend-specific transfer protocol directive; see connectorx documentation for
         details.
     engine : {'connectorx', 'adbc'}
-        Select the engine used for reading the data from sql.
-        - 'connectorx'
-            Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
-            Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
-            please see the connectorx docs:
+        Select the engine used for reading the data.
 
-            * https://github.com/sfu-db/connector-x#supported-sources--destinations
-        - 'adbc'
-            Currently just PostgreSQL and SQLite are supported and these are both in
-            development. When flight_sql is further in development and widely adopted
-            this will make this significantly better. For an up-to-date list
-            please see the adbc docs:
+        * ``'connectorx'``
+          Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
+          Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
+          please see the connectorx docs:
 
-            * https://arrow.apache.org/adbc/0.1.0/driver/cpp/index.html
+          * https://github.com/sfu-db/connector-x#supported-sources--destinations
+        * ``'adbc'``
+          Currently just PostgreSQL and SQLite are supported and these are both in
+          development. When flight_sql is further in development and widely adopted
+          this will make this significantly better. For an up-to-date list
+          please see the adbc docs:
+
+          * https://arrow.apache.org/adbc/0.1.0/driver/cpp/index.html
 
     Notes
     -----
@@ -124,7 +119,7 @@ def read_sql(
     partition_num: int | None = None,
     protocol: str | None = None,
     *,
-    engine: Literal["connectorx", "adbc"] = "connectorx",
+    engine: DbReadEngine = "connectorx",
 ) -> pli.DataFrame:
     """
     Read a SQL query into a DataFrame.
@@ -154,20 +149,6 @@ def read_sql(
         details.
     engine : {'connectorx', 'adbc'}
         Select the engine used for reading the data from sql.
-
-        - 'connectorx'
-            Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
-            Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
-            please see the connectorx docs:
-
-            * https://github.com/sfu-db/connector-x#supported-sources--destinations
-        - 'adbc'
-            Currently just PostgreSQL and SQLite are supported and these are both in
-            development. When flight_sql is further in development and widely adopted
-            this will make this significantly better. For an up-to-date list
-            please see the adbc docs:
-
-            * https://arrow.apache.org/adbc/0.1.0/driver/cpp/index.html
 
     .. deprecated:: 0.16.10
         Use ``read_database`` instead.
