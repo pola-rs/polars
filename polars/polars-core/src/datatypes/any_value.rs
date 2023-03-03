@@ -82,6 +82,9 @@ pub enum AnyValue<'a> {
     Utf8Owned(smartstring::alias::String),
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
+    /// A 128-bit fixed point decimal number.
+    #[cfg(feature = "dtype-decimal")]
+    Decimal(i128, usize),
 }
 
 #[cfg(feature = "serde")]
@@ -384,6 +387,8 @@ impl<'a> AnyValue<'a> {
             Time(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(v, _) => NumCast::from(*v),
             Boolean(v) => {
                 if *v {
                     NumCast::from(1)

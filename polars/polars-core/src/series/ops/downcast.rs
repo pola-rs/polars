@@ -222,6 +222,19 @@ impl Series {
         }
     }
 
+    /// Unpack to ChunkedArray of dtype decimal
+    #[cfg(feature = "dtype-decimal")]
+    pub fn decimal(&self) -> PolarsResult<&DecimalChunked> {
+        match self.dtype() {
+            DataType::Decimal(_, _) => unsafe {
+                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DecimalChunked))
+            },
+            dt => Err(PolarsError::SchemaMisMatch(
+                format!("Series of dtype: {dt:?} != Decimal").into(),
+            )),
+        }
+    }
+
     /// Unpack to ChunkedArray of dtype list
     pub fn list(&self) -> PolarsResult<&ListChunked> {
         match self.dtype() {

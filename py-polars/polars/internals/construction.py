@@ -4,6 +4,7 @@ import contextlib
 from contextlib import suppress
 from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal as PyDecimal
 from functools import singledispatch
 from itertools import islice, zip_longest
 from sys import version_info
@@ -459,6 +460,10 @@ def sequence_to_pyseries(
                     #   - bools: "'int' object cannot be converted to 'PyBool'"
                     elif str_val == "'int' object cannot be converted to 'PyBool'":
                         constructor = py_type_to_constructor(int)
+
+                    elif "decimal.Decimal" in str_val:
+                        constructor = py_type_to_constructor(PyDecimal)
+
                     else:
                         raise error
 
@@ -1419,10 +1424,6 @@ def pandas_to_pydf(
 
 def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
     import pyarrow.compute as pc
-
-    # note: Decimal256 could not be cast to float
-    if isinstance(array.type, pa.Decimal128Type):
-        array = pc.cast(array, pa.float64())
 
     if hasattr(array, "num_chunks") and array.num_chunks > 1 and rechunk:
         # small integer keys can often not be combined, so let's already cast

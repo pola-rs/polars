@@ -18,7 +18,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence, PyTuple};
 use pyo3::{PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
@@ -179,6 +179,22 @@ fn struct_dict<'a>(
     dict.into_py(py)
 }
 
+fn decimal_to_digits(v: i128, buf: &mut [u8; 48]) -> usize {
+    const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
+    if buf.len() < 48 {
+        panic!("decimal_to_digits: buffer size < 48");
+    }
+    let len = lexical_core::write(v, buf).len();
+    let ptr = buf.as_mut_ptr() as *mut i128;
+    unsafe {
+        // this is safe because we know that the buffer is exactly 48 bytes long
+        *ptr -= ZEROS;
+        *ptr.add(1) -= ZEROS;
+        *ptr.add(2) -= ZEROS;
+    }
+    len
+}
+
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
         let pl = POLARS.as_ref(py);
@@ -251,6 +267,16 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),
+            AnyValue::Decimal(v, scale) => {
+                let convert = utils.getattr("_to_python_decimal").unwrap();
+                let mut buf = [0_u8; 48];
+                let n_digits = decimal_to_digits(v.abs(), &mut buf);
+                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
+                convert
+                    .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
+                    .unwrap()
+                    .into_py(py)
+            }
         }
     }
 }
@@ -270,7 +296,12 @@ impl ToPyObject for Wrap<DataType> {
             DataType::UInt64 => pl.getattr("UInt64").unwrap().into(),
             DataType::Float32 => pl.getattr("Float32").unwrap().into(),
             DataType::Float64 => pl.getattr("Float64").unwrap().into(),
-            DataType::Decimal128(_) => todo!(),
+            DataType::Decimal(prec, scale) => pl
+                .getattr("Decimal")
+                .unwrap()
+                .call1((*prec, *scale))
+                .unwrap()
+                .into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
@@ -345,6 +376,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
+                    "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
@@ -370,6 +402,11 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let tz = ob.getattr("tz").unwrap();
                 let tz = tz.extract()?;
                 DataType::Datetime(tu, tz)
+            }
+            "Decimal" => {
+                let prec = ob.getattr("prec")?.extract()?;
+                let scale = ob.getattr("scale")?.extract()?;
+                DataType::Decimal(prec, Some(scale))
             }
             "List" => {
                 let inner = ob.getattr("inner").unwrap();
@@ -501,13 +538,61 @@ impl ToPyObject for Wrap<&DateChunked> {
     }
 }
 
+impl ToPyObject for Wrap<&DecimalChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let utils = UTILS.as_ref(py);
+        let convert = utils.getattr("_to_python_decimal").unwrap();
+        let py_scale = self.0.scale().to_object(py);
+        // if we don't know precision, the only safe bet is to set it to 39
+        let py_prec = self.0.precision().unwrap_or(39).to_object(py);
+        let iter = self.0.into_iter().map(|opt_v| {
+            opt_v.map(|v| {
+                let mut buf = [0_u8; 48];
+                let n_digits = decimal_to_digits(v.abs(), &mut buf);
+                convert
+                    .call1((v.is_negative() as u8, &buf[..n_digits], &py_prec, &py_scale))
+                    .unwrap()
+            })
+        });
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+fn abs_decimal_from_digits(
+    digits: impl IntoIterator<Item = u8>,
+    exp: i32,
+) -> Option<(i128, usize)> {
+    const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
+    let mut v = 0_i128;
+    for (i, d) in digits.into_iter().map(i128::from).enumerate() {
+        if i < 38 {
+            v = v * 10 + d;
+        } else {
+            v = v.checked_mul(10).and_then(|v| v.checked_add(d))?;
+        }
+    }
+    // we only support non-negative scale (=> non-positive exponent)
+    let scale = if exp > 0 {
+        // the decimal may be in a non-canonical representation, try to fix it first
+        v = 10_i128
+            .checked_pow(exp as u32)
+            .and_then(|factor| v.checked_mul(factor))?;
+        0
+    } else {
+        (-exp) as usize
+    };
+    // TODO: do we care for checking if it fits in MAX_ABS_DEC? (if we set prec to None anyway?)
+    (v <= MAX_ABS_DEC).then_some((v, scale))
+}
+
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
+        let type_name = ob.get_type().name()?;
         if ob.is_instance_of::<PyBool>().unwrap() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v).into())
-        } else if let Ok(v) = ob.extract::<f64>() {
+        } else if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
             Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
@@ -548,7 +633,6 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         } else if let Ok(v) = ob.extract::<&'s [u8]>() {
             Ok(AnyValue::Binary(v).into())
         } else {
-            let type_name = ob.get_type().name()?;
             match type_name {
                 "datetime" => {
                     Python::with_gil(|py| {
@@ -624,6 +708,20 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     let v = time.extract::<i64>().unwrap();
                     Ok(Wrap(AnyValue::Time(v)))
                 }),
+                "Decimal" => {
+                    let (sign, digits, exp): (i8, Vec<u8>, i32) =
+                        ob.call_method0("as_tuple").unwrap().extract().unwrap();
+                    // note: using Vec<u8> is not the most efficient thing here (input is a tuple)
+                    let (mut v, scale) = abs_decimal_from_digits(digits, exp).ok_or_else(|| {
+                        PyErr::from(PyPolarsErr::Other(
+                            "Decimal is too large to fit in Decimal128".into(),
+                        ))
+                    })?;
+                    if sign > 0 {
+                        v = -v; // won't overflow since -i128::MAX > i128::MIN
+                    }
+                    Ok(Wrap(AnyValue::Decimal(v, scale)))
+                }
                 _ => Err(PyErr::from(PyPolarsErr::Other(format!(
                     "object type not supported {ob:?}",
                 )))),

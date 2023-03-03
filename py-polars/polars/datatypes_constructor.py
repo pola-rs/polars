@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars.datatypes import (
@@ -144,6 +145,7 @@ if not _DOCUMENTING:
         int: PySeries.new_opt_i64,
         str: PySeries.new_str,
         bool: PySeries.new_opt_bool,
+        PyDecimal: PySeries.new_decimal,
     }
 
 

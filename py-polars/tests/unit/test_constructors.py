@@ -135,7 +135,7 @@ def test_init_dataclasses_and_namedtuple() -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.Utf8,
-                "price": pl.Float64,
+                "price": pl.Decimal(None, 1),
                 "size": pl.Int64,
             }
             assert df.rows() == raw_data
@@ -148,7 +148,7 @@ def test_init_dataclasses_and_namedtuple() -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("ms"),
                 "ticker": pl.Utf8,
-                "price": pl.Float64,
+                "price": pl.Decimal(None, 1),
                 "size": pl.Int32,
             }
 
@@ -158,14 +158,14 @@ def test_init_dataclasses_and_namedtuple() -> None:
             schema=[
                 ("ts", pl.Datetime("ms")),
                 ("tk", pl.Categorical),
-                ("pc", pl.Float32),
+                ("pc", pl.Decimal(None, 1)),
                 ("sz", pl.UInt16),
             ],
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
             "tk": pl.Categorical,
-            "pc": pl.Float32,
+            "pc": pl.Decimal(None, 1),
             "sz": pl.UInt16,
         }
         assert df.rows() == raw_data

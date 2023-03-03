@@ -271,6 +271,20 @@ impl PySeries {
     }
 
     #[staticmethod]
+    pub fn new_decimal(
+        name: &str,
+        val: Vec<Wrap<AnyValue<'_>>>,
+        _strict: bool,
+    ) -> PyResult<PySeries> {
+        // TODO: do we have to respect 'strict' here? it's possible if we want to
+        let avs = slice_extract_wrapped(&val);
+        // create a fake dtype with a placeholder "none" scale, to be inferred later
+        let dtype = DataType::Decimal(None, None);
+        let s = Series::from_any_values_and_dtype(name, avs, &dtype).map_err(PyPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    #[staticmethod]
     pub fn repeat(name: &str, val: &PyAny, n: usize, dtype: Wrap<DataType>) -> Self {
         match dtype.0 {
             DataType::Utf8 => {
@@ -660,7 +674,6 @@ impl PySeries {
                     DataType::Int64 => PyList::new(py, series.i64().unwrap()),
                     DataType::Float32 => PyList::new(py, series.f32().unwrap()),
                     DataType::Float64 => PyList::new(py, series.f64().unwrap()),
-                    DataType::Decimal128(_) => todo!(),
                     DataType::Categorical(_) => {
                         PyList::new(py, series.categorical().unwrap().iter_str())
                     }
@@ -702,6 +715,10 @@ impl PySeries {
                     }
                     DataType::Datetime(_, _) => {
                         let ca = series.datetime().unwrap();
+                        return Wrap(ca).to_object(py);
+                    }
+                    DataType::Decimal(_, _) => {
+                        let ca = series.decimal().unwrap();
                         return Wrap(ca).to_object(py);
                     }
                     DataType::Utf8 => {

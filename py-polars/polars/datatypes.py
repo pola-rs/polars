@@ -6,7 +6,7 @@ import functools
 import re
 import sys
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal as PyDecimal
 from inspect import isclass
 from typing import (
     TYPE_CHECKING,
@@ -85,7 +85,7 @@ PythonDataType: TypeAlias = Union[
     Type[ListType[Any]],
     Type[Tuple[Any, ...]],
     Type[bytes],
-    Type[Decimal],
+    Type[PyDecimal],
     Type[None],
 ]
 
@@ -280,6 +280,36 @@ class List(NestedType):
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
         return f"{class_name}({self.inner!r})"
+
+
+class Decimal(DataType):
+    """
+    Decimal 128-bit type with an optional precision and non-negative scale.
+
+    NOTE: this is an experimental work-in-progress feature and may not work as expected.
+    """
+
+    prec: int | None
+    scale: int
+
+    def __init__(self, prec: int | None, scale: int):
+        self.prec = prec
+        self.scale = scale
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(prec={self.prec}, scale={self.scale})"
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # allow comparing object instances to class
+        if type(other) is DataTypeClass and issubclass(other, Decimal):
+            return True
+        elif isinstance(other, Decimal):
+            return self.prec == other.prec and self.scale == other.scale
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((Decimal, self.prec, self.scale))
 
 
 class Date(TemporalType):
@@ -567,7 +597,7 @@ class _DataTypeMappings:
             time: Time,
             list: List,
             tuple: List,
-            Decimal: Float64,
+            PyDecimal: Decimal,
             bytes: Binary,
             object: Object,
             None.__class__: Null,
@@ -600,6 +630,7 @@ class _DataTypeMappings:
             Time: time,
             Binary: bytes,
             List: list,
+            Decimal: PyDecimal,
             Null: None.__class__,
         }
 

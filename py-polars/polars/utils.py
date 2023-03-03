@@ -10,6 +10,7 @@ import sys
 import warnings
 from collections.abc import MappingView, Sized
 from datetime import datetime, time, timedelta, timezone
+from decimal import Context, Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -140,6 +141,23 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int
         return int(td.total_seconds() * 1e6)
     else:
         raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
+
+
+_create_decimal = [Decimal] + [Context(prec=p).create_decimal for p in range(1, 63)]
+
+
+@functools.lru_cache(None)
+def _create_decimal_with_prec(
+    precision: int,
+) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
+    # pre-cache contexts so we don't have to spend time on recreating them every time
+    return Context(prec=precision).create_decimal
+
+
+def _to_python_decimal(
+    sign: int, digits: Sequence[int], prec: int, scale: int
+) -> Decimal:
+    return _create_decimal_with_prec(prec)((sign, digits, scale))
 
 
 def _is_generator(val: object) -> bool:
