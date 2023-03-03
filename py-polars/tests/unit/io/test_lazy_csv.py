@@ -81,6 +81,7 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
         "sugars_g_foo",
     ]
 
+
 @pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
 @pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16])
 def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
@@ -99,6 +100,7 @@ def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
         "fats_g_foo",
         "sugars_g_foo",
     ]
+
 
 def test_lazy_n_rows(foods_file_path: Path) -> None:
     df = (
