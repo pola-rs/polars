@@ -36,6 +36,7 @@ def test_scan_ndjson(foods_ndjson_path: Path) -> None:
     assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
 
 
+@pytest.mark.write_disk()
 def test_scan_with_projection() -> None:
     json = r"""
 {"text": "\"hello", "id": 1}

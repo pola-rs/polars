@@ -57,6 +57,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
     conn.close()
 
 
+@pytest.mark.write_disk()
 @pytest.mark.parametrize(
     ("engine", "expected_dtypes", "expected_dates"),
     [
@@ -150,6 +151,7 @@ def test_read_database_exceptions(
             )
 
 
+@pytest.mark.write_disk()
 @pytest.mark.parametrize(
     ("engine", "mode"),
     [

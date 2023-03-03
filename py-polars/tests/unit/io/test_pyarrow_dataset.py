@@ -21,6 +21,7 @@ def helper_dataset_test(file_path: Path, query) -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_dataset(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:

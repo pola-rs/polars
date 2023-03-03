@@ -169,9 +169,10 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-  "-m not slow and not hypothesis and not benchmark",
+  "-m not slow and not hypothesis and not benchmark and not write_disk",
 ]
 markers = [
+  "write_disk: Tests that write to disk",
   "slow: Tests with a longer than average runtime.",
   "benchmark: Tests that should be run on a Polars release build.",
 ]

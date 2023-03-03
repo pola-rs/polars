@@ -59,6 +59,7 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
         assert_frame_equal_local_categoricals(df.select(["time", "cat"]), read_df)
 
 
+@pytest.mark.write_disk()
 def test_to_from_file(df_no_lists: pl.DataFrame) -> None:
     df = df_no_lists.drop("strings_nulls")
 
@@ -365,6 +366,7 @@ def test_read_csv_buffer_ownership() -> None:
     assert buf.read() == bts
 
 
+@pytest.mark.write_disk()
 def test_read_csv_encoding() -> None:
     bts = (
         b"Value1,Value2,Value3,Value4,Region\n"
@@ -747,6 +749,7 @@ def test_csv_string_escaping() -> None:
     assert_frame_equal(df_read, df)
 
 
+@pytest.mark.write_disk()
 def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
     df = df_no_lists.drop("strings_nulls")
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -1171,6 +1174,7 @@ def test_csv_statistics_offset() -> None:
     assert pl.read_csv(io.StringIO(csv), n_rows=N).height == 4999
 
 
+@pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_csv_scan_categorical() -> None:
     N = 5_000

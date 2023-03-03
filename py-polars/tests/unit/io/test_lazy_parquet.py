@@ -52,6 +52,7 @@ def test_row_count(foods_parquet_path: Path) -> None:
     assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
 
 
+@pytest.mark.write_disk()
 def test_categorical_parquet_statistics() -> None:
     df = pl.DataFrame(
         {
@@ -89,6 +90,7 @@ def test_categorical_parquet_statistics() -> None:
         assert df.shape == (4, 3)
 
 
+@pytest.mark.write_disk()
 def test_null_parquet() -> None:
     df = pl.DataFrame([pl.Series("foo", [], dtype=pl.Int8)])
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -98,6 +100,7 @@ def test_null_parquet() -> None:
     assert_frame_equal(out, df)
 
 
+@pytest.mark.write_disk()
 def test_parquet_eq_stats() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
@@ -119,6 +122,7 @@ def test_parquet_eq_stats() -> None:
         )
 
 
+@pytest.mark.write_disk()
 def test_parquet_is_in_stats() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
@@ -157,6 +161,7 @@ def test_parquet_is_in_stats() -> None:
         ).collect().shape == (8, 1)
 
 
+@pytest.mark.write_disk()
 def test_parquet_stats() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "binary_stats.parquet"
@@ -198,6 +203,7 @@ def test_row_count_schema(parquet_file_path: Path) -> None:
     ).dtypes == [pl.UInt32, pl.Utf8]
 
 
+@pytest.mark.write_disk()
 def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -234,6 +240,7 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any) -> None:
     )
 
 
+@pytest.mark.write_disk()
 def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -269,6 +276,7 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any) -> None:
     )
 
 
+@pytest.mark.write_disk()
 def test_parquet_statistics(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -304,6 +312,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any) -> None:
 
 
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+@pytest.mark.write_disk()
 def test_streaming_categorical() -> None:
     df = pl.DataFrame(
         [
@@ -331,6 +340,7 @@ def test_streaming_categorical() -> None:
 
 
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+@pytest.mark.write_disk()
 def test_parquet_struct_categorical() -> None:
     df = pl.DataFrame(
         [
