@@ -3390,7 +3390,13 @@ def test_format_empty_df() -> None:
 def test_deadlocks_3409() -> None:
     assert (
         pl.DataFrame({"col1": [[1, 2, 3]]})
-        .with_columns([pl.col("col1").arr.eval(pl.element().apply(lambda x: x))])
+        .with_columns(
+            [
+                pl.col("col1").arr.eval(
+                    pl.element().apply(lambda x: x, return_dtype=pl.Int64)
+                )
+            ]
+        )
         .to_dict(False)
     ) == {"col1": [[1, 2, 3]]}
 
