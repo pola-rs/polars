@@ -1074,22 +1074,13 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
     assert batches is not None
     assert len(batches) == 5
-    assert batches[0].to_dict(False) == {
-        "category": ["vegetables"],
-        "calories": [45],
-        "fats_g": [0.5],
-        "sugars_g": [2],
-    }
-    assert batches[-1].to_dict(False) == {
-        "category": ["meat"],
-        "calories": [120],
-        "fats_g": [10.0],
-        "sugars_g": [1],
-    }
+    assert batches[0].to_dict(False) == {'category': ['vegetables', 'seafood', 'meat', 'fruit', 'seafood', 'meat'], 'calories': [45, 150, 100, 60, 140, 120], 'fats_g': [0.5, 5.0, 5.0, 0.0, 5.0, 10.0], 'sugars_g': [2, 0, 0, 11, 1, 1]}
+    assert batches[-1].to_dict(False) == {'category': ['fruit', 'meat', 'vegetables', 'fruit'], 'calories': [130, 100, 30, 50], 'fats_g': [0.0, 7.0, 0.0, 0.0], 'sugars_g': [25, 0, 5, 11]}
+    assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
 
 def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
-    for new_columns in [None, ["Category", "Calories", "Fats_g", "Augars_g"]]:
+    for new_columns in [None, ["Category", "Calories", "Fats_g", "Sugars_g"]]:
         out = pl.read_csv(foods_file_path, new_columns=new_columns)
         reader = pl.read_csv_batched(
             foods_file_path, new_columns=new_columns, batch_size=4

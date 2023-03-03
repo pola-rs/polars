@@ -117,6 +117,8 @@ impl PyBatchedCsv {
 
     fn next_batches(&mut self, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
         let batches = self.reader.next_batches(n).map_err(PyPolarsErr::from)?;
-        Ok(batches.map(|batches| batches.into_iter().map(|out| out.1.into()).collect()))
+        // safety: same memory layout
+        let batches = unsafe { std::mem::transmute::<Option<Vec<DataFrame>>, Option<Vec<PyDataFrame>>>(batches) };
+        Ok(batches)
     }
 }

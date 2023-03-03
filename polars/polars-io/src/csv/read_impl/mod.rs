@@ -341,17 +341,14 @@ impl<'a> CoreReader<'a> {
         Ok((bytes, starting_point_offset))
     }
 
-    #[allow(clippy::type_complexity)]
-    fn determine_file_chunks_and_statistics(
+    /// Estimates number of rows and optionally ensure we don't read more than `n_rows`
+    /// by slicing `bytes` to the upper bound.
+    fn estimate_rows_and_set_upper_bound<'b>(
         &self,
-        n_threads: &mut usize,
-        bytes: &'a [u8],
+        mut bytes: &'b [u8],
         logging: bool,
-        streaming: bool,
-    ) -> PolarsResult<(Vec<(usize, usize)>, usize, usize, Option<usize>, &'a [u8])> {
-        // Make the variable mutable so that we can reassign the sliced file to this variable.
-        let (mut bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
-
+        set_upper_bound: bool,
+    ) -> (&'b [u8], usize) {
         // initial row guess. We use the line statistic to guess the number of rows to allocate
         let mut total_rows = 128;
 
@@ -388,7 +385,9 @@ impl<'a> CoreReader<'a> {
                         self.quote_char,
                         self.eol_char,
                     ) {
-                        bytes = &bytes[..n_bytes + pos]
+                        if set_upper_bound {
+                            bytes = &bytes[..n_bytes + pos]
+                        }
                     }
                 }
             }
@@ -396,6 +395,20 @@ impl<'a> CoreReader<'a> {
                 eprintln!("initial row estimate: {total_rows}")
             }
         }
+        (bytes, total_rows)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn determine_file_chunks_and_statistics(
+        &self,
+        n_threads: &mut usize,
+        bytes: &'a [u8],
+        logging: bool,
+    ) -> PolarsResult<(Vec<(usize, usize)>, usize, usize, Option<usize>, &'a [u8])> {
+        // Make the variable mutable so that we can reassign the sliced file to this variable.
+        let (bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
+
+        let (bytes, total_rows) = self.estimate_rows_and_set_upper_bound(bytes, logging, true);
         if total_rows == 128 {
             *n_threads = 1;
 
@@ -405,9 +418,7 @@ impl<'a> CoreReader<'a> {
         }
 
         let chunk_size = std::cmp::min(self.chunk_size, total_rows);
-        let n_chunks = total_rows / chunk_size;
-
-        let n_file_chunks = if streaming { n_chunks } else { *n_threads };
+        let n_file_chunks = *n_threads;
 
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
@@ -430,7 +441,6 @@ impl<'a> CoreReader<'a> {
 
         Ok((chunks, chunk_size, total_rows, starting_point_offset, bytes))
     }
-
     fn get_projection(&mut self) -> Vec<usize> {
         // we also need to sort the projection to have predictable output.
         // the `parse_lines` function expects this.
@@ -487,7 +497,7 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<DataFrame> {
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes) =
-            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging, false)?;
+            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
         let projection = self.get_projection();
         let str_columns = self.get_string_columns(&projection)?;
 
