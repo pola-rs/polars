@@ -55,14 +55,19 @@ fn is_streamable_sort(args: &SortArguments) -> bool {
     }
 }
 
-fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) -> bool {
     // check weather leaf colum is Col or Lit
     let mut seen_column = false;
     let mut seen_lit_range = false;
     let all = expr_arena.iter(node).all(|(_, ae)| match ae {
-        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
-            matches!(options.collect_groups, ApplyOptions::ApplyFlat)
-        }
+        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => match context
+        {
+            Context::Default => matches!(
+                options.collect_groups,
+                ApplyOptions::ApplyFlat | ApplyOptions::ApplyList
+            ),
+            Context::Aggregation => matches!(options.collect_groups, ApplyOptions::ApplyFlat),
+        },
         AExpr::Column(_) => {
             seen_column = true;
             true
@@ -89,8 +94,10 @@ fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     false
 }
 
-fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
-    exprs.iter().all(|node| is_streamable(*node, expr_arena))
+fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>, context: Context) -> bool {
+    exprs
+        .iter()
+        .all(|node| is_streamable(*node, expr_arena, context))
 }
 
 /// check if all expressions are a simple column projection
@@ -170,12 +177,14 @@ pub(crate) fn insert_streaming_nodes(
     use ALogicalPlan::*;
     while let Some((root, mut state, mut current_idx)) = stack.pop() {
         match lp_arena.get(root) {
-            Selection { input, predicate } if is_streamable(*predicate, expr_arena) => {
+            Selection { input, predicate }
+                if is_streamable(*predicate, expr_arena, Context::Default) =>
+            {
                 state.streamable = true;
                 state.operators_sinks.push((!IS_SINK, !IS_RHS_JOIN, root));
                 stack.push((*input, state, current_idx))
             }
-            HStack { input, exprs, .. } if all_streamable(exprs, expr_arena) => {
+            HStack { input, exprs, .. } if all_streamable(exprs, expr_arena, Context::Default) => {
                 state.streamable = true;
                 state.operators_sinks.push((!IS_SINK, !IS_RHS_JOIN, root));
                 stack.push((*input, state, current_idx))
@@ -199,7 +208,9 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
                 stack.push((*input, state, current_idx))
             }
-            Projection { input, expr, .. } if all_streamable(expr, expr_arena) => {
+            Projection { input, expr, .. }
+                if all_streamable(expr, expr_arena, Context::Default) =>
+            {
                 state.streamable = true;
                 state.operators_sinks.push((!IS_SINK, !IS_RHS_JOIN, root));
                 stack.push((*input, state, current_idx))

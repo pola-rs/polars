@@ -311,3 +311,12 @@ def test_tree_validation_streaming() -> None:
 
     out = df_1.join(df_3, on="a", how="left")
     assert out.collect(streaming=True).shape == (3, 3)
+
+
+def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    q = pl.DataFrame({"a": [1, 2]}).lazy()
+
+    (q.select(pl.col("a").apply(lambda x: x * 2)).collect(streaming=True))
+    (_, err) = capfd.readouterr()
+    assert "df -> projection -> ordered_sink" in err
