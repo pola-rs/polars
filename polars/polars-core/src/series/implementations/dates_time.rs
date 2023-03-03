@@ -338,6 +338,12 @@ macro_rules! impl_dyn_series {
                         .unwrap()
                         .strftime("%Y-%m-%d")
                         .into_series()),
+                    #[cfg(feature = "dtype-datetime")]
+                    (DataType::Time, DataType::Datetime(_, _)) => {
+                        let msg = "Cannot cast dtype: 'Time' to dtype: 'Datetime'.\n\
+                        Consider using 'dt.combine' to combine times and dates.";
+                        Err(PolarsError::ComputeError(msg.into()))
+                    }
                     _ => self.0.cast(data_type),
                 }
             }
