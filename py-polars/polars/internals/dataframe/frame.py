@@ -2837,7 +2837,12 @@ class DataFrame:
                 raise ModuleNotFoundError(
                     f"Writing with engine 'sqlalchemy' requires Pandas 1.5.x or higher, found Pandas {pd.__version__}."
                 )
-            from sqlalchemy import create_engine
+            try:
+                from sqlalchemy import create_engine
+            except ImportError as err:
+                raise ImportError(
+                    "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
+                ) from err
 
             engine = create_engine(connection_uri)
 
