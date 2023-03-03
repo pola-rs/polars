@@ -466,3 +466,12 @@ def test_with_column_duplicates() -> None:
         match=r"The name: 'same' passed to `LazyFrame.with_columns` is duplicate",
     ):
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
+
+
+def test_skipp_nulls_err() -> None:
+    df = pl.DataFrame({"foo": [None, None]})
+
+    with pytest.raises(
+        pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
+    ):
+        df.with_columns(pl.col("foo").apply(lambda x: x, skip_nulls=True))

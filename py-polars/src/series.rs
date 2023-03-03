@@ -14,7 +14,7 @@ use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
 use crate::prelude::*;
 use crate::set::set_at_idx;
-use crate::{apply_method_all_arrow_series2, arrow_interop};
+use crate::{apply_method_all_arrow_series2, arrow_interop, raise_err};
 
 #[pyclass]
 #[repr(transparent)]
@@ -826,32 +826,39 @@ impl PySeries {
         output_type: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
-        Python::with_gil(|py| {
-            let series = &self.series;
+        let series = &self.series;
 
-            let output_type = output_type.map(|dt| dt.0);
+        if skip_nulls && (series.null_count() == series.len()) {
+            let msg = "The output type of 'apply' function cannot determined.\n\
+            The function was never called because 'skip_nulls=True' and all values are null.\n\
+            Consider setting 'skip_nulls=False'";
+            raise_err!(msg, ComputeError)
+        }
 
-            macro_rules! dispatch_apply {
-                ($self:expr, $method:ident, $($args:expr),*) => {
-                    match $self.dtype() {
-                        #[cfg(feature = "object")]
-                        DataType::Object(_) => {
-                            let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
-                            ca.$method($($args),*)
-                        },
-                        _ => {
-                            apply_method_all_arrow_series2!(
-                                $self,
-                                $method,
-                                $($args),*
-                            )
-                        }
+        let output_type = output_type.map(|dt| dt.0);
 
+        macro_rules! dispatch_apply {
+            ($self:expr, $method:ident, $($args:expr),*) => {
+                match $self.dtype() {
+                    #[cfg(feature = "object")]
+                    DataType::Object(_) => {
+                        let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
+                        ca.$method($($args),*)
+                    },
+                    _ => {
+                        apply_method_all_arrow_series2!(
+                            $self,
+                            $method,
+                            $($args),*
+                        )
                     }
-                }
 
+                }
             }
 
+        }
+
+        Python::with_gil(|py| {
             if matches!(
                 self.series.dtype(),
                 DataType::Datetime(_, _)
