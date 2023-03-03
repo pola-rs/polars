@@ -68,6 +68,7 @@ def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
         _ = pl.read_parquet(buf)
 
 
+@pytest.mark.write_disk()
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_to_from_file(df: pl.DataFrame, compression: ParquetCompression) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -77,6 +78,7 @@ def test_to_from_file(df: pl.DataFrame, compression: ParquetCompression) -> None
         assert_frame_equal_local_categoricals(df, read_df)
 
 
+@pytest.mark.write_disk()
 def test_to_from_file_lzo(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.avro"
@@ -159,6 +161,7 @@ def test_nested_parquet() -> None:
     assert isinstance(read.dtypes[0].inner, pl.datatypes.Struct)
 
 
+@pytest.mark.write_disk()
 def test_glob_parquet(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.parquet"
@@ -169,6 +172,7 @@ def test_glob_parquet(df: pl.DataFrame) -> None:
         assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
 
 
+@pytest.mark.write_disk()
 def test_streaming_parquet_glob_5900(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.parquet"
@@ -203,6 +207,7 @@ def test_chunked_round_trip() -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
+@pytest.mark.write_disk()
 def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.parquet"
@@ -351,6 +356,7 @@ def test_parquet_nested_dictionaries_6217() -> None:
         assert_frame_equal(read, df)
 
 
+@pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_sink_parquet(io_files_path: Path) -> None:
     file = io_files_path / "small.parquet"
@@ -367,6 +373,7 @@ def test_sink_parquet(io_files_path: Path) -> None:
             assert_frame_equal(result, df_read)
 
 
+@pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_sink_ipc(io_files_path: Path) -> None:
     file = io_files_path / "small.parquet"
@@ -383,6 +390,7 @@ def test_sink_ipc(io_files_path: Path) -> None:
             assert_frame_equal(result, df_read)
 
 
+@pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_fetch_union() -> None:
     df1 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})

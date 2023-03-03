@@ -31,6 +31,7 @@ def test_from_to_buffer(example_df: pl.DataFrame, compression: AvroCompression) 
     assert_frame_equal(example_df, read_df)
 
 
+@pytest.mark.write_disk()
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_from_to_file(example_df: pl.DataFrame, compression: AvroCompression) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:

@@ -26,6 +26,7 @@ def test_scan_empty_csv(io_files_path: Path) -> None:
     assert "empty csv" in str(excinfo.value)
 
 
+@pytest.mark.write_disk()
 def test_invalid_utf8() -> None:
     np.random.seed(1)
     bts = bytes(np.random.randint(0, 255, 200))
@@ -102,6 +103,7 @@ def test_scan_slice_streaming(foods_file_path: Path) -> None:
     assert df.shape == (5, 4)
 
 
+@pytest.mark.write_disk()
 def test_glob_skip_rows() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         for i in range(2):

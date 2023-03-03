@@ -18,6 +18,7 @@ def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
     assert_frame_equal_local_categoricals(df, read_df)
 
 
+@pytest.mark.write_disk()
 def test_to_from_file(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.json"
