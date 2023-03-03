@@ -135,6 +135,9 @@ def read_sql(
         Backend-specific transfer protocol directive; see connectorx documentation for
         details.
 
+    .. deprecated:: 0.16.10
+        Use ``read_db`` instead.
+
     Notes
     -----
     Make sure to install connectorx>=0.3.1. Read the documentation

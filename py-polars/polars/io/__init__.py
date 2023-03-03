@@ -9,12 +9,13 @@ from polars.io.json import read_json
 from polars.io.ndjson import read_ndjson, scan_ndjson
 from polars.io.parquet import read_parquet, scan_parquet
 from polars.io.pyarrow_dataset import scan_ds
-from polars.io.sql import read_sql
+from polars.io.sql import read_db, read_sql
 
 __all__ = [
     "read_avro",
     "read_csv",
     "read_csv_batched",
+    "read_db",
     "read_delta",
     "read_excel",
     "read_ipc",
