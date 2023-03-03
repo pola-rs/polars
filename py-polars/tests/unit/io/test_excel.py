@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.datatypes import FLOAT_DTYPES
+from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
 
 
@@ -120,3 +120,57 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         xldf = xldf[:3]
 
     assert_frame_equal(df, xldf)
+
+
+def test_excel_sparklines() -> None:
+    from xlsxwriter import Workbook
+
+    # note that we don't (quite) expect sparkline export to round-trip
+    # as we have to inject additional empty columns to hold them...
+    df = pl.DataFrame(
+        {
+            "id": ["aaa", "bbb", "ccc", "ddd", "eee"],
+            "q1": [100, 55, -20, 0, 35],
+            "q2": [30, -10, 15, 60, 20],
+            "q3": [-50, 0, 40, 80, 80],
+            "q4": [75, 55, 25, -10, -55],
+        }
+    )
+
+    # also: confirm that we can use a Workbook directly with "write_excel"
+    xls = BytesIO()
+    with Workbook(xls) as wb:
+        df.write_excel(
+            workbook=wb,
+            worksheet="frame_data",
+            table_style="Table Style Light 2",
+            dtype_formats={INTEGER_DTYPES: "#,##0_);(#,##0)"},
+            sparklines={
+                "trend": ["q1", "q2", "q3", "q4"],
+                "+/-": {
+                    "columns": ["q1", "q2", "q3", "q4"],
+                    "insert_after": "id",
+                    "type": "win_loss",
+                },
+            },
+            hide_gridlines=True,
+        )
+
+    xldf = pl.read_excel(file=xls, sheet_name="frame_data")  # type: ignore[call-overload]
+    # ┌──────┬──────┬─────┬─────┬─────┬─────┬───────┐
+    # │ id   ┆ +/-  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ trend │
+    # │ ---  ┆ ---  ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   │
+    # │ str  ┆ str  ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ str   │
+    # ╞══════╪══════╪═════╪═════╪═════╪═════╪═══════╡
+    # │ aaa  ┆ null ┆ 100 ┆ 30  ┆ -50 ┆ 75  ┆ null  │
+    # │ bbb  ┆ null ┆ 55  ┆ -10 ┆ 0   ┆ 55  ┆ null  │
+    # │ ccc  ┆ null ┆ -20 ┆ 15  ┆ 40  ┆ 25  ┆ null  │
+    # │ ddd  ┆ null ┆ 0   ┆ 60  ┆ 80  ┆ -10 ┆ null  │
+    # │ eee  ┆ null ┆ 35  ┆ 20  ┆ 80  ┆ -55 ┆ null  │
+    # └──────┴──────┴─────┴─────┴─────┴─────┴───────┘
+
+    for sparkline_col in ("+/-", "trend"):
+        assert set(xldf[sparkline_col]) == {None}
+
+    assert xldf.columns == ["id", "+/-", "q1", "q2", "q3", "q4", "trend"]
+    assert_frame_equal(df, xldf.drop("+/-", "trend"))

@@ -8,6 +8,7 @@ from typing import (
     Sequence,
 )
 
+import polars.internals as pli
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -16,12 +17,12 @@ from polars.datatypes import (
     Datetime,
     Time,
 )
+from polars.exceptions import DuplicateError
 
 if TYPE_CHECKING:
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
-    import polars.internals as pli
     from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
 
 
@@ -34,6 +35,83 @@ _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
 }
 for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
+
+
+def _xl_inject_dummy_table_columns(
+    df: pli.DataFrame, options: dict[str, Sequence[str] | dict[str, Any]]
+) -> pli.DataFrame:
+    """Insert dummy frame columns in order to create empty/named table columns."""
+    df_original_columns = set(df.columns)
+    df_select_cols = df.columns.copy()
+
+    for col, definition in options.items():
+        if col in df_original_columns:
+            raise DuplicateError(f"Cannot create a second {col!r} column")
+        elif not isinstance(definition, dict):
+            df_select_cols.append(col)
+        else:
+            insert_after = definition.get("insert_after")
+            insert_before = definition.get("insert_before")
+            if insert_after is None and insert_before is None:
+                df_select_cols.append(col)
+            else:
+                insert_idx = (
+                    df_select_cols.index(insert_after) + 1  # type: ignore[arg-type]
+                    if insert_before is None
+                    else df_select_cols.index(insert_before)
+                )
+                df_select_cols.insert(insert_idx, col)
+
+    df = df.select(
+        [
+            (col if col in df_original_columns else pli.lit("").alias(col))
+            for col in df_select_cols
+        ]
+    )
+    return df
+
+
+def _xl_inject_sparklines(
+    ws: Worksheet,
+    df: pli.DataFrame,
+    table_start: tuple[int, int],
+    col: str,
+    has_header: bool,
+    params: Sequence[str] | dict[str, Any],
+) -> None:
+    """Inject sparklines into (previously-created) empty table columns."""
+    from xlsxwriter.utility import xl_rowcol_to_cell
+
+    data_cols = params.get("columns") if isinstance(params, dict) else params
+    if not data_cols:
+        raise ValueError("Supplying 'columns' is mandatory for sparklines")
+
+    data_idxs = sorted(df.find_idx_by_name(col) for col in data_cols)
+    if data_idxs != sorted(range(min(data_idxs), max(data_idxs) + 1)):
+        raise RuntimeError("sparkline data range/cols must be contiguous")
+
+    spk_row, spk_col, _, _ = _xl_column_range(df, table_start, col, has_header)
+    data_start_col = table_start[1] + data_idxs[0]
+    data_end_col = table_start[1] + data_idxs[-1]
+
+    if not isinstance(params, dict):
+        options = {}
+    else:
+        # strip polars-specific params before passing to xlsxwriter
+        options = {
+            name: val
+            for name, val in params.items()
+            if name not in ("columns", "insert_after", "insert_before")
+        }
+        if "negative_points" not in options:
+            options["negative_points"] = options.get("type") in ("column", "win_loss")
+
+    for _ in range(len(df)):
+        data_start = xl_rowcol_to_cell(spk_row, data_start_col)
+        data_end = xl_rowcol_to_cell(spk_row, data_end_col)
+        options["range"] = f"{data_start}:{data_end}"
+        ws.add_sparkline(spk_row, spk_col, options)
+        spk_row += 1
 
 
 def _xl_setup_workbook(
@@ -74,8 +152,9 @@ def _xl_setup_table_columns(
     column_formats: dict[str, str] | None = None,
     column_totals: dict[str, str] | Sequence[str] | bool | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
+    sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
     float_precision: int = 3,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], pli.DataFrame]:
     """Setup and unify all column-related formatting/defaults."""
     total_funcs = (
         {col: "sum" for col in column_totals}
@@ -87,6 +166,10 @@ def _xl_setup_table_columns(
     for tp, _fmt in list(dtype_formats.items()):
         if isinstance(tp, (tuple, frozenset)):
             dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
+
+    # inject sparkline placeholder(s)
+    if sparklines:
+        df = _xl_inject_dummy_table_columns(df, sparklines)
 
     # default float format
     zeros = "0" * float_precision
@@ -125,7 +208,8 @@ def _xl_setup_table_columns(
                     fmt["num_format"] = dtype_formats[tp]
             column_formats[col] = wb.add_format(fmt)
 
-    return [
+    # assemble table columns
+    table_columns = [
         {
             "header": col,
             "format": column_formats.get(col),
@@ -133,6 +217,7 @@ def _xl_setup_table_columns(
         }
         for col in df.columns
     ]
+    return table_columns, df
 
 
 def _xl_setup_table_options(
