@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from contextlib import suppress
 from datetime import date
@@ -71,6 +72,10 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Date,
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
+            marks=pytest.mark.skipif(
+                sys.version_info >= (3, 8),
+                reason="connectorx not available on Python 3.7",
+            ),
         ),
         pytest.param(
             "adbc",
