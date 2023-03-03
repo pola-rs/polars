@@ -90,6 +90,7 @@ impl<'a> Iterator for ChunkOffsetIter<'a> {
                 );
                 match self.offsets.pop_front() {
                     Some(offsets) => Some(offsets),
+                    // We depleted the iterator. Ensure we deplete the slice as well
                     None => {
                         let out = Some((self.last_offset, self.bytes.len()));
                         self.last_offset = self.bytes.len();
@@ -207,8 +208,13 @@ impl<'a> BatchedCsvReader<'a> {
             }
         }
 
+        // get next `n` offset positions.
         let file_chunks_iter = (&mut self.file_chunks_iter).take(n);
         self.file_chunks.extend(file_chunks_iter);
+        // depleted the offsets iterator, we are done as well.
+        if self.file_chunks.is_empty() {
+            return Ok(None);
+        }
         let chunks = &self.file_chunks;
 
         let mut bytes = self.reader_bytes.deref();
