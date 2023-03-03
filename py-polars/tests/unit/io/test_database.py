@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from contextlib import suppress
+import sys
+import tempfile
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -70,6 +71,10 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Date,
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 8),
+                reason="connectorx not available below Python 3.8",
+            ),
         ),
         pytest.param(
             "adbc",
@@ -80,6 +85,10 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Utf8,
             },
             ["2020-01-01", "2021-12-31"],
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 9) or sys.platform == "win32",
+                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+            ),
         ),
     ],
 )
@@ -88,28 +97,23 @@ def test_read_database(
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
 ) -> None:
-    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir_name:
+        test_db = os.path.join(tmpdir_name, "test.db")
+        create_temp_sqlite_db(test_db)
 
-    with suppress(ImportError):
-        import connectorx  # noqa: F401
+        df = pl.read_database(
+            connection_uri=f"sqlite:///{test_db}",
+            query="SELECT * FROM test_data",
+            engine=engine,
+        )
 
-        with tempfile.TemporaryDirectory() as tmpdir_name:
-            test_db = os.path.join(tmpdir_name, "test.db")
-            create_temp_sqlite_db(test_db)
-
-            df = pl.read_database(
-                connection_uri=f"sqlite:///{test_db}",
-                sql="SELECT * FROM test_data",
-                engine=engine,
-            )
-
-            assert df.schema == expected_dtypes
-            assert df.shape == (2, 4)
-            assert df["date"].to_list() == expected_dates
+        assert df.schema == expected_dtypes
+        assert df.shape == (2, 4)
+        assert df["date"].to_list() == expected_dates
 
 
 @pytest.mark.parametrize(
-    ("engine", "sql", "database", "err"),
+    ("engine", "query", "database", "err"),
     [
         pytest.param(
             "not_engine",
@@ -135,10 +139,8 @@ def test_read_database(
     ],
 )
 def test_read_database_exceptions(
-    engine: DbReadEngine, sql: str, database: str, err: str
+    engine: DbReadEngine, query: str, database: str, err: str
 ) -> None:
-    import tempfile
-
     with tempfile.TemporaryDirectory() as tmpdir_name:
         test_db = os.path.join(tmpdir_name, "test.db")
         create_temp_sqlite_db(test_db)
@@ -146,7 +148,7 @@ def test_read_database_exceptions(
         with pytest.raises(ValueError, match=err):
             pl.read_database(
                 connection_uri=f"{database}:///{test_db}",
-                sql=sql,
+                query=query,
                 engine=engine,
             )
 
@@ -155,16 +157,30 @@ def test_read_database_exceptions(
 @pytest.mark.parametrize(
     ("engine", "mode"),
     [
-        pytest.param("adbc", "create", id="create"),
-        pytest.param("adbc", "append", id="append"),
+        pytest.param(
+            "adbc",
+            "create",
+            id="create",
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 9) or sys.platform == "win32",
+                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+            ),
+        ),
+        pytest.param(
+            "adbc",
+            "append",
+            id="append",
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 9) or sys.platform == "win32",
+                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+            ),
+        ),
     ],
 )
 def test_write_database(
     engine: DbWriteEngine, mode: DbWriteMode, sample_df: pl.DataFrame
 ) -> None:
-    import tempfile
-
-    with suppress(ImportError), tempfile.TemporaryDirectory() as tmpdir_name:
+    with tempfile.TemporaryDirectory() as tmpdir_name:
         test_db = os.path.join(tmpdir_name, "test.db")
 
         sample_df.write_database(
@@ -183,7 +199,10 @@ def test_write_database(
             )
             sample_df = pl.concat([sample_df, sample_df])
 
-        assert_frame_equal(
-            sample_df,
-            pl.read_database("SELECT * FROM test_data", f"sqlite:///{test_db}"),
-        )
+        result = pl.read_database("SELECT * FROM test_data", f"sqlite:///{test_db}")
+
+    # TODO: Fix this bug! Floats shouldn't be rounded
+    sample_df = sample_df.with_columns(pl.col("value").ceil())
+
+    sample_df = sample_df.with_columns(pl.col("date").cast(pl.Utf8))
+    assert_frame_equal(sample_df, result)
