@@ -171,3 +171,27 @@ fn test_unnest_pushdown() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_join_duplicate_7314() -> PolarsResult<()> {
+    let df_a: DataFrame = df![
+        "a" => [1, 2, 2],
+        "b" => [4, 5, 6],
+        "c" => [1, 1, 1],
+    ]?;
+
+    let df_b: DataFrame = df![
+        "a" => [1, 2, 2],
+        "b" => [4, 5, 6],
+        "d" => [1, 1, 1],
+    ]?;
+
+    let out = df_a
+        .lazy()
+        .inner_join(df_b.lazy(), col("a"), col("b"))
+        .select([col("a"), col("c") * col("d")])
+        .collect()?;
+
+    assert_eq!(out.get_column_names(), &["a", "c"]);
+    Ok(())
+}
