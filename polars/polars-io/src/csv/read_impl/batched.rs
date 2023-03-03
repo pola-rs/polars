@@ -103,19 +103,22 @@ impl<'a> Iterator for ChunkOffsetIter<'a> {
 
 impl<'a> CoreReader<'a> {
     pub fn batched(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
         let (bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
 
+        // this is arbitrarily chosen.
+        // we don't want this to depend on the thread pool size
+        // otherwise the chunks are not deterministic
+        let offset_batch_size = 16;
         // extend lifetime. It is bound to `readerbytes` and we keep track of that
         // lifetime so this is sound.
         let bytes = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(bytes) };
         let file_chunks = ChunkOffsetIter {
             bytes,
-            offsets: VecDeque::with_capacity(n_threads),
+            offsets: VecDeque::with_capacity(offset_batch_size),
             last_offset: 0,
-            n_chunks: n_threads,
+            n_chunks: offset_batch_size,
             rows_per_batch: self.chunk_size,
             expected_fields: self.schema.len(),
             delimiter: self.delimiter,
