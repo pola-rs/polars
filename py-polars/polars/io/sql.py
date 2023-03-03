@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 @deprecate_nonkeyword_arguments()
-def read_db(
+def read_database(
     sql: list[str] | str,
     connection_uri: str,
     partition_on: str | None = None,
@@ -57,14 +57,14 @@ def read_db(
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
-    >>> pl.read_db(query, uri)  # doctest: +SKIP
+    >>> pl.read_database(query, uri)  # doctest: +SKIP
 
     Read a DataFrame in parallel using 10 threads by automatically partitioning the
     provided SQL on the partition column:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
-    >>> pl.read_db(
+    >>> pl.read_database(
     ...     query, uri, partition_on="partition_col", partition_num=10
     ... )  # doctest: +SKIP
 
@@ -76,7 +76,7 @@ def read_db(
     ...     "SELECT * FROM lineitem WHERE partition_col <= 10",
     ...     "SELECT * FROM lineitem WHERE partition_col > 10",
     ... ]
-    >>> pl.read_db(queries, uri)  # doctest: +SKIP
+    >>> pl.read_database(queries, uri)  # doctest: +SKIP
 
     """
     try:
@@ -136,7 +136,7 @@ def read_sql(
         details.
 
     .. deprecated:: 0.16.10
-        Use ``read_db`` instead.
+        Use ``read_database`` instead.
 
     Notes
     -----
@@ -173,11 +173,11 @@ def read_sql(
     """
     warnings.warn(
         "`read_sql` has been renamed; this"
-        " redirect is temporary, please use `read_db` instead",
+        " redirect is temporary, please use `read_database` instead",
         category=DeprecationWarning,
         stacklevel=2,
     )
-    return read_db(
+    return read_database(
         sql=sql,
         connection_uri=connection_uri,
         partition_on=partition_on,

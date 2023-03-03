@@ -40,7 +40,7 @@ DataBase
 .. autosummary::
    :toctree: api/
 
-   read_db
+   read_database
 
 JSON
 ~~~~
