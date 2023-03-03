@@ -35,7 +35,7 @@ Parquet
    read_parquet_schema
    DataFrame.write_parquet
 
-DataBase
+Database
 ~~~~~~~~
 .. autosummary::
    :toctree: api/

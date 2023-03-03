@@ -1,25 +1,24 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-import polars.internals as pli
 from polars.convert import from_arrow
-from polars.utils import deprecate_nonkeyword_arguments
+from polars.utils import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
+    import polars.internals as pli
     from polars.internals.type_aliases import DbReadEngine
 
 
-@deprecate_nonkeyword_arguments()
 def read_database(
-    sql: list[str] | str,
+    query: list[str] | str,
     connection_uri: str,
+    *,
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
-    *,
     engine: DbReadEngine = "connectorx",
 ) -> pli.DataFrame:
     """
@@ -27,7 +26,7 @@ def read_database(
 
     Parameters
     ----------
-    sql
+    query
         Raw SQL query (or queries).
     connection_uri
         A connectorx compatible connection uri, for example
@@ -94,25 +93,25 @@ def read_database(
     """
     if engine == "connectorx":
         return _read_sql_connectorx(
-            connection_uri=connection_uri,
-            sql=sql,
+            query,
+            connection_uri,
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,
             protocol=protocol,
         )
     elif engine == "adbc":
-        if isinstance(sql, str):
-            return _read_sql_adbc(sql=sql, connection_uri=connection_uri)
-        else:
+        if not isinstance(query, str):
             raise ValueError("Only a single SQL query string is accepted for adbc.")
+        return _read_sql_adbc(query, connection_uri)
     else:
         raise ValueError("Engine is not implemented, try either connectorx or adbc.")
 
 
+@deprecated_alias(sql="query")
 @deprecate_nonkeyword_arguments()
 def read_sql(
-    sql: list[str] | str,
+    query: list[str] | str,
     connection_uri: str,
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
@@ -132,12 +131,12 @@ def read_sql(
 
     Parameters
     ----------
-    sql
+    query
         Raw SQL query (or queries).
     connection_uri
         A connectorx compatible connection uri, for example
 
-        * "postgresql://username:password@server:port/database"
+        - "postgresql://username:password@server:port/database"
     partition_on
         The column on which to partition the result.
     partition_range
@@ -157,6 +156,10 @@ def read_sql(
     -----
     Make sure to install connectorx>=0.3.1. Read the documentation
     `here <https://sfu-db.github.io/connector-x/intro.html>`_.
+
+    See Also
+    --------
+    read_database
 
     Examples
     --------
@@ -193,7 +196,7 @@ def read_sql(
         stacklevel=2,
     )
     return read_database(
-        sql=sql,
+        query=query,
         connection_uri=connection_uri,
         partition_on=partition_on,
         partition_range=partition_range,
@@ -204,7 +207,7 @@ def read_sql(
 
 
 def _read_sql_connectorx(
-    sql: str | list[str],
+    query: str | list[str],
     connection_uri: str,
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
@@ -220,7 +223,7 @@ def _read_sql_connectorx(
 
     tbl = cx.read_sql(
         conn=connection_uri,
-        query=sql,
+        query=query,
         return_type="arrow2",
         partition_on=partition_on,
         partition_range=partition_range,
@@ -228,16 +231,16 @@ def _read_sql_connectorx(
         protocol=protocol,
     )
 
-    return cast(pli.DataFrame, from_arrow(tbl))
+    return from_arrow(tbl)  # type: ignore[return-value]
 
 
-def _read_sql_adbc(sql: str, connection_uri: str) -> pli.DataFrame:
+def _read_sql_adbc(query: str, connection_uri: str) -> pli.DataFrame:
     with _open_adbc_connection(connection_uri) as conn:
         cursor = conn.cursor()
-        cursor.execute(sql)
+        cursor.execute(query)
         tbl = cursor.fetch_arrow_table()
         cursor.close()
-    return cast(pli.DataFrame, from_arrow(tbl))
+    return from_arrow(tbl)  # type: ignore[return-value]
 
 
 def _open_adbc_connection(connection_uri: str) -> Any:
