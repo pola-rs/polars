@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from polars.convert import from_arrow
@@ -167,6 +168,12 @@ def read_sql(
     >>> pl.read_sql(queries, uri)  # doctest: +SKIP
 
     """
+    warnings.warn(
+        "`read_sql` has been renamed; this"
+        " redirect is temporary, please use `read_db` instead",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
     return read_db(
         sql=sql,
         connection_uri=connection_uri,
