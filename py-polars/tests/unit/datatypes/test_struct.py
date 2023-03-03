@@ -81,6 +81,19 @@ def test_struct_unnesting() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_struct_unnest_multiple() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [1.0, 2.0], "d": ["a", "b"]})
+    df_structs = df.select(s1=pl.struct(["a", "b"]), s2=pl.struct(["c", "d"]))
+
+    # List input
+    result = df_structs.unnest(["s1", "s2"])
+    assert_frame_equal(result, df)
+
+    # Positional input
+    result = df_structs.unnest("s1", "s2")
+    assert_frame_equal(result, df)
+
+
 def test_struct_function_expansion() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}

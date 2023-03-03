@@ -4324,37 +4324,34 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(pli.col("*").interpolate())
 
-    def unnest(self, names: str | list[str]) -> Self:
+    @deprecated_alias(names="columns")
+    def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
         """
-        Decompose a struct into its fields.
+        Decompose struct columns into separate columns for each of their fields.
 
-        The fields will be inserted into the `DataFrame` on the location of the
-        `struct` type.
+        The new columns will be inserted into the dataframe at the location of the
+        struct column.
 
         Parameters
         ----------
-        names
-           Names of the struct columns that will be decomposed by its fields
+        columns
+            Name of the struct column(s) that should be unnested.
+        *more_columns
+            Additional columns to unnest, specified as positional arguments.
 
         Examples
         --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "before": ["foo", "bar"],
-        ...             "t_a": [1, 2],
-        ...             "t_b": ["a", "b"],
-        ...             "t_c": [True, None],
-        ...             "t_d": [[1, 2], [3]],
-        ...             "after": ["baz", "womp"],
-        ...         }
-        ...     )
-        ...     .lazy()
-        ...     .select(
-        ...         ["before", pl.struct(pl.col("^t_.$")).alias("t_struct"), "after"]
-        ...     )
-        ... )
-        >>> df.fetch()
+        >>> df = pl.LazyFrame(
+        ...     {
+        ...         "before": ["foo", "bar"],
+        ...         "t_a": [1, 2],
+        ...         "t_b": ["a", "b"],
+        ...         "t_c": [True, None],
+        ...         "t_d": [[1, 2], [3]],
+        ...         "after": ["baz", "womp"],
+        ...     }
+        ... ).select("before", pl.struct(pl.col("^t_.$")).alias("t_struct"), "after")
+        >>> df.collect()
         shape: (2, 3)
         ┌────────┬─────────────────────┬───────┐
         │ before ┆ t_struct            ┆ after │
@@ -4364,7 +4361,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ foo    ┆ {1,"a",true,[1, 2]} ┆ baz   │
         │ bar    ┆ {2,"b",null,[3]}    ┆ womp  │
         └────────┴─────────────────────┴───────┘
-        >>> df.unnest("t_struct").fetch()
+        >>> df.unnest("t_struct").collect()
         shape: (2, 6)
         ┌────────┬─────┬─────┬──────┬───────────┬───────┐
         │ before ┆ t_a ┆ t_b ┆ t_c  ┆ t_d       ┆ after │
@@ -4376,9 +4373,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └────────┴─────┴─────┴──────┴───────────┴───────┘
 
         """
-        if isinstance(names, str):
-            names = [names]
-        return self._from_pyldf(self._ldf.unnest(names))
+        if isinstance(columns, str):
+            columns = [columns]
+        if more_columns:
+            columns = list(columns)
+            columns.extend(more_columns)
+        return self._from_pyldf(self._ldf.unnest(columns))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> Self:
         """
