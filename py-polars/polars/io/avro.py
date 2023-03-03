@@ -4,12 +4,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO
 
 from polars.internals import DataFrame
-from polars.utils import normalise_filepath
+from polars.utils import deprecate_nonkeyword_arguments, normalise_filepath
 
 if TYPE_CHECKING:
     from io import BytesIO
 
 
+@deprecate_nonkeyword_arguments()
 def read_avro(
     file: str | Path | BytesIO | BinaryIO,
     columns: list[int] | list[str] | None = None,

@@ -30,7 +30,7 @@ def _deser_and_exec(  # noqa: D417
     return func(with_columns, *args)
 
 
-def _scan_ds_impl(
+def _scan_pyarrow_dataset_impl(
     ds: pa.dataset.dataset, with_columns: list[str] | None, predicate: str | None
 ) -> pli.DataFrame:
     """
@@ -58,11 +58,11 @@ def _scan_ds_impl(
     )
 
 
-def _scan_ds(
+def _scan_pyarrow_dataset(
     ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True
 ) -> pli.LazyFrame:
     """
-    Pickle the partially applied function `_scan_ds_impl`.
+    Pickle the partially applied function `_scan_pyarrow_dataset_impl`.
 
     The bytes are then sent to the polars logical plan. It can be deserialized once
     executed and ran.
@@ -77,7 +77,7 @@ def _scan_ds(
         different than polars does.
 
     """
-    func = partial(_scan_ds_impl, ds)
+    func = partial(_scan_pyarrow_dataset_impl, ds)
     func_serialized = pickle.dumps(func)
     return pli.LazyFrame._scan_python_function(
         ds.schema, func_serialized, allow_pyarrow_filter

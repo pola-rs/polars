@@ -84,7 +84,7 @@ Connect to pyarrow datasets.
 .. autosummary::
    :toctree: api/
 
-   scan_ds
+   scan_pyarrow_dataset
 
 
 BatchedCsvReader

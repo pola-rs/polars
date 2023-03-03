@@ -161,6 +161,7 @@ from polars.io import (
     scan_ipc,
     scan_ndjson,
     scan_parquet,
+    scan_pyarrow_dataset,
 )
 from polars.show_versions import show_versions
 from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
@@ -236,6 +237,7 @@ __all__ = [
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",
+    "scan_pyarrow_dataset",
     # polars.stringcache
     "StringCache",
     "toggle_string_cache",

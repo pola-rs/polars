@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
-from polars.io.pyarrow_dataset import scan_ds
+from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 from polars.utils import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
@@ -323,7 +323,7 @@ def scan_delta(
 
     # Must provide filesystem as DeltaStorageHandler is not serializable.
     pa_ds = dl_tbl.to_pyarrow_dataset(filesystem=filesystem, **pyarrow_options)
-    return scan_ds(pa_ds)
+    return scan_pyarrow_dataset(pa_ds)
 
 
 def _resolve_delta_lake_uri(table_uri: str) -> tuple[str, str, str]:
