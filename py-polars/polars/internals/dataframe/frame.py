@@ -117,6 +117,8 @@ if TYPE_CHECKING:
         ClosedInterval,
         ComparisonOperator,
         CsvEncoding,
+        DbWriteEngine,
+        DbWriteMode,
         FillNullStrategy,
         FrameInitTypes,
         IntoExpr,
@@ -2783,6 +2785,46 @@ class DataFrame:
             self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
             )
+
+    def write_database(
+        self,
+        table_name: str,
+        connection_uri: str,
+        *,
+        mode: DbWriteMode = "create",
+        engine: DbWriteEngine = "adbc",
+    ) -> None:
+        """
+        Write a polars frame to an SQL database.
+
+        ADBC
+        Currently this can only connect to sqlite and postgres.
+
+        Parameters
+        ----------
+        table_name
+            Name of the table to append to or create in the SQL database.
+        connection_uri
+            Connection uri, for example
+
+            * "postgresql://username:password@server:port/database"
+        mode : {'append', 'create'}
+            The insert mode.
+            'create' will create a new database table.
+            'append' will append to an existing table.
+        engine : {'adbc'}
+            Select the engine used for writing the data.
+        """
+        from polars.io.database import _open_adbc_connection
+
+        if engine == "adbc":
+            with _open_adbc_connection(connection_uri) as conn:
+                cursor = conn.cursor()
+                cursor.adbc_ingest(table_name, self.to_arrow(), mode)
+                cursor.close()
+                conn.commit()
+        else:
+            raise ValueError(f"'engine' {engine} is not supported.")
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
