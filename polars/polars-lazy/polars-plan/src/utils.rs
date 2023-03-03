@@ -348,6 +348,10 @@ pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
     aexpr_to_leaf_names_iter(node, arena).collect()
 }
 
+pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> Arc<str> {
+    aexpr_to_leaf_names_iter(node, arena).next().unwrap()
+}
+
 /// check if a selection/projection can be done on the downwards schema
 pub(crate) fn check_input_node(
     node: Node,

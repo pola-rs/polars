@@ -129,6 +129,18 @@ pub(super) fn process_join(
             );
         }
 
+        // The join on keys can lead that columns are already added, we don't want to create
+        // duplicates so store the names.
+        let already_added_local_to_local_projected = if !local_projection.is_empty() {
+            let mut local_projected_names = PlHashSet::with_capacity(acc_projections.len());
+            for proj in &local_projection {
+                local_projected_names.insert(aexpr_to_leaf_name(*proj, expr_arena));
+            }
+            local_projected_names
+        } else {
+            PlHashSet::new()
+        };
+
         for proj in acc_projections {
             match options.how {
                 #[cfg(feature = "asof_join")]
@@ -150,7 +162,12 @@ pub(super) fn process_join(
                 }
                 _ => {}
             };
-            let mut add_local = true;
+            let mut add_local = if already_added_local_to_local_projected.is_empty() {
+                true
+            } else {
+                let name = aexpr_to_leaf_name(proj, expr_arena);
+                !already_added_local_to_local_projected.contains(&name)
+            };
 
             // if it is an alias we want to project the leaf column name downwards
             // but we don't want to project it a this level, otherwise we project both
