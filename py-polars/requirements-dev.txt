@@ -13,7 +13,7 @@ backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
 xlsx2csv
 XlsxWriter
-adbc_driver_sqlite
+adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
 connectorx==0.3.2a2; python_version >= '3.8'  # Latest full release is broken - unpin when 0.3.2 released
 
 # Tooling

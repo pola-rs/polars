@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
-from contextlib import suppress
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -73,8 +72,8 @@ def create_temp_sqlite_db(test_db: str) -> None:
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
             marks=pytest.mark.skipif(
-                sys.version_info >= (3, 8),
-                reason="connectorx not available on Python 3.7",
+                sys.version_info < (3, 8),
+                reason="connectorx not available below Python 3.8",
             ),
         ),
         pytest.param(
@@ -86,6 +85,10 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Utf8,
             },
             ["2020-01-01", "2021-12-31"],
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 9) or sys.platform == "win32",
+                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+            ),
         ),
     ],
 )
@@ -154,14 +157,30 @@ def test_read_database_exceptions(
 @pytest.mark.parametrize(
     ("engine", "mode"),
     [
-        pytest.param("adbc", "create", id="create"),
-        pytest.param("adbc", "append", id="append"),
+        pytest.param(
+            "adbc",
+            "create",
+            id="create",
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 9) or sys.platform == "win32",
+                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+            ),
+        ),
+        pytest.param(
+            "adbc",
+            "append",
+            id="append",
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 9) or sys.platform == "win32",
+                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+            ),
+        ),
     ],
 )
 def test_write_database(
     engine: DbWriteEngine, mode: DbWriteMode, sample_df: pl.DataFrame
 ) -> None:
-    with suppress(ImportError), tempfile.TemporaryDirectory() as tmpdir_name:
+    with tempfile.TemporaryDirectory() as tmpdir_name:
         test_db = os.path.join(tmpdir_name, "test.db")
 
         sample_df.write_database(
