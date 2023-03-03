@@ -52,8 +52,9 @@ xlsx2csv = ["xlsx2csv >= 0.8.0"]
 deltalake = ["deltalake >= 0.6.2"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
+sqlalchemy = ["sqlalchemy"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy]",
 ]
 
 [tool.mypy]
@@ -83,6 +84,7 @@ module = [
   "xlsxwriter.utility",
   "xlsxwriter.worksheet",
   "zoneinfo",
+  "sqlalchemy",
 ]
 ignore_missing_imports = true
 

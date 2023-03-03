@@ -2791,14 +2791,11 @@ class DataFrame:
         table_name: str,
         connection_uri: str,
         *,
-        mode: DbWriteMode = "create",
-        engine: DbWriteEngine = "adbc",
+        if_exists: DbWriteMode = "fail",
+        engine: DbWriteEngine = "sqlalchemy",
     ) -> None:
         """
-        Write a polars frame to an SQL database.
-
-        ADBC
-        Currently this can only connect to sqlite and postgres.
+        Write a polars frame to a database.
 
         Parameters
         ----------
@@ -2808,21 +2805,48 @@ class DataFrame:
             Connection uri, for example
 
             * "postgresql://username:password@server:port/database"
-        mode : {'append', 'create'}
+        if_exists : {'append', 'replace', 'fail'}
             The insert mode.
-            'create' will create a new database table.
+            'replace' will create a new database table, overwriting an existing one.
             'append' will append to an existing table.
-        engine : {'adbc'}
+            'fail' will fail if table already exists.
+        engine : {'sqlalchemy', 'adbc'}
             Select the engine used for writing the data.
         """
         from polars.io.database import _open_adbc_connection
 
         if engine == "adbc":
+            if if_exists == "fail":
+                raise ValueError("'if_exists' not yet supported with engine ADBC")
+            elif if_exists == "replace":
+                mode = "create"
+            elif if_exists == "append":
+                mode = "append"
+            else:
+                raise ValueError(
+                    f"Value for 'if_exists'={if_exists} was unexpected. "
+                    f"Choose one of: {'fail', 'replace', 'append'}."
+                )
             with _open_adbc_connection(connection_uri) as conn:
                 cursor = conn.cursor()
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
                 cursor.close()
                 conn.commit()
+        elif engine == "sqlalchemy":
+            if parse_version(pd.__version__) < parse_version("1.5"):
+                raise ModuleNotFoundError(
+                    f"Writing with engine 'sqlalchemy' requires Pandas 1.5.x or higher, found Pandas {pd.__version__}."
+                )
+            from sqlalchemy import create_engine
+
+            engine = create_engine(connection_uri)
+
+            # this conversion to pandas as zero-copy
+            # so we can utilize their sql utils for free
+            self.to_pandas(use_pyarrow_extension_array=True).to_sql(
+                name=table_name, con=engine, if_exists=if_exists
+            )
+
         else:
             raise ValueError(f"'engine' {engine} is not supported.")
 

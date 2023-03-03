@@ -170,7 +170,7 @@ def test_write_database(
         sample_df.write_database(
             table_name="test_data",
             connection_uri=f"sqlite:///{test_db}",
-            mode="create",
+            if_exists="replace",
             engine=engine,
         )
 
@@ -178,7 +178,7 @@ def test_write_database(
             sample_df.write_database(
                 table_name="test_data",
                 connection_uri=f"sqlite:///{test_db}",
-                mode="append",
+                if_exists="append",
                 engine=engine,
             )
             sample_df = pl.concat([sample_df, sample_df])
