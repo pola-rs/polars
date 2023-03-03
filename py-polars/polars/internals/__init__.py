@@ -7,9 +7,9 @@ they all import from each other via this __init__ file using
 """
 from polars.internals.anonymous_scan import (
     _deser_and_exec,
-    _scan_ds,
     _scan_ipc_fsspec,
     _scan_parquet_fsspec,
+    _scan_pyarrow_dataset,
 )
 from polars.internals.batched import BatchedCsvReader
 from polars.internals.dataframe import DataFrame, wrap_df
@@ -87,7 +87,7 @@ __all__ = [
     "_deser_and_exec",
     "_is_local_file",
     "_prepare_file_arg",
-    "_scan_ds",
+    "_scan_pyarrow_dataset",
     "_scan_ipc_fsspec",
     "_scan_parquet_fsspec",
     "_update_columns",
