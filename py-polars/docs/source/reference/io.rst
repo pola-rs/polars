@@ -35,12 +35,12 @@ Parquet
    read_parquet_schema
    DataFrame.write_parquet
 
-SQL
-~~~
+DataBase
+~~~~~~~~
 .. autosummary::
    :toctree: api/
 
-   read_sql
+   read_database
 
 JSON
 ~~~~
