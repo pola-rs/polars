@@ -92,8 +92,8 @@ SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
 TransferEncoding: TypeAlias = Literal["hex", "base64"]
 CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
-DbWriteEngine: TypeAlias = Literal["adbc"]
-DbWriteMode: TypeAlias = Literal["create", "append"]
+DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
+DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = "Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series] | Sequence[Any] | np.ndarray[Any, Any] | pa.Table | pd.DataFrame | pli.Series"
