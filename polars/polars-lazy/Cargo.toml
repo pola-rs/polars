@@ -132,21 +132,6 @@ binary_encoding = ["polars-plan/binary_encoding"]
 # no guarantees whatsoever
 private = ["polars-plan/private"]
 
-# all opt-in datatypes
-dtype-full = [
-  "dtype-date",
-  "dtype-datetime",
-  "dtype-duration",
-  "dtype-time",
-  "dtype-i8",
-  "dtype-i16",
-  "dtype-i128",
-  "dtype-u8",
-  "dtype-u16",
-  "dtype-categorical",
-  "dtype-struct",
-]
-
 bigidx = ["polars-plan/bigidx"]
 
 panic_on_schema = ["polars-plan/panic_on_schema"]
