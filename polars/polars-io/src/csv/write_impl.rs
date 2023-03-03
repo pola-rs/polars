@@ -130,6 +130,7 @@ fn write_anyvalue(
         ))?,
     }
     .map_err(|err| match value {
+        #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(_, _, tz) => {
             // If this is a datetime, then datetime_format was either set or inferred.
             let datetime_format = datetime_format.unwrap();

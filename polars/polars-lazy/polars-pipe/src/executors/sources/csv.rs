@@ -17,6 +17,7 @@ pub(crate) struct CsvSource {
     reader: *mut CsvReader<'static, File>,
     batched_reader: *mut BatchedCsvReader<'static>,
     n_threads: usize,
+    chunk_index: IdxSize,
 }
 
 impl CsvSource {
@@ -80,6 +81,7 @@ impl CsvSource {
             reader,
             batched_reader,
             n_threads: POOL.current_num_threads(),
+            chunk_index: 0,
         })
     }
 }
@@ -106,7 +108,14 @@ impl Source for CsvSource {
             Some(batches) => SourceResult::GotMoreData(
                 batches
                     .into_iter()
-                    .map(|(chunk_index, data)| DataChunk { chunk_index, data })
+                    .map(|data| {
+                        let out = DataChunk {
+                            chunk_index: self.chunk_index,
+                            data,
+                        };
+                        self.chunk_index += 1;
+                        out
+                    })
                     .collect(),
             ),
         })

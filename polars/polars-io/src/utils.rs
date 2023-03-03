@@ -96,6 +96,21 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
     }
 }
 
+/// Because of threading every row starts from `0` or from `offset`.
+/// We must correct that so that they are monotonically increasing.
+pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
+    if !dfs.is_empty() {
+        let mut previous = dfs[0].height() as IdxSize + offset;
+        for df in &mut dfs[1..] {
+            let n_read = df.height() as IdxSize;
+            if let Some(s) = df.get_columns_mut().get_mut(0) {
+                *s = &*s + previous;
+            }
+            previous += n_read;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
