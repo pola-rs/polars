@@ -72,11 +72,8 @@ impl OptimizationRule for ReplaceDropNulls {
                     }
                 }
                 if not_null_count == column_count && binary_and_count < column_count {
-                    let subset = Arc::new(
+                    let subset = Arc::from(
                         aexpr_to_leaf_names(*predicate, expr_arena)
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>(),
                     );
 
                     Some(ALogicalPlan::MapFunction {
