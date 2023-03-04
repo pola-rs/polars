@@ -68,6 +68,7 @@ Excel
    :toctree: api/
 
    read_excel
+   DataFrame.write_excel
 
 Delta Lake
 ~~~~~~~~~~
