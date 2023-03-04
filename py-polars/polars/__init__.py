@@ -24,6 +24,11 @@ from polars.convert import (
     from_records,
 )
 from polars.datatypes import (
+    DURATION_DTYPES,
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    TEMPORAL_DTYPES,
     Binary,
     Boolean,
     Categorical,
@@ -217,6 +222,12 @@ __all__ = [
     "Unknown",
     "Utf8",
     "get_idx_type",
+    # polars.datatypes: dtype groups
+    "DURATION_DTYPES",
+    "FLOAT_DTYPES",
+    "INTEGER_DTYPES",
+    "NUMERIC_DTYPES",
+    "TEMPORAL_DTYPES",
     # polars.io
     "read_avro",
     "read_csv",
