@@ -151,7 +151,6 @@ docs-selection = [
 
 [dependencies]
 ahash.workspace = true
-anyhow.workspace = true
 arrow.workspace = true
 bitflags.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }

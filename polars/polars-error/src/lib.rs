@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 
-use anyhow::Error;
 use thiserror::Error as ThisError;
 
 #[derive(Debug)]
@@ -83,12 +82,6 @@ impl From<ArrowError> for PolarsError {
     }
 }
 
-impl From<anyhow::Error> for PolarsError {
-    fn from(err: Error) -> Self {
-        PolarsError::ComputeError(format!("{err:?}").into())
-    }
-}
-
 #[cfg(feature = "regex")]
 impl From<regex::Error> for PolarsError {
     fn from(err: regex::Error) -> Self {
@@ -96,7 +89,8 @@ impl From<regex::Error> for PolarsError {
     }
 }
 
-pub type PolarsResult<T> = std::result::Result<T, PolarsError>;
+pub type PolarsResult<T> = Result<T, PolarsError>;
+
 pub use arrow::error::Error as ArrowError;
 
 impl PolarsError {
@@ -115,5 +109,9 @@ impl PolarsError {
             ShapeMisMatch(msg) => ShapeMisMatch(func(msg).into()),
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
         }
+    }
+
+    pub fn from_any(err: impl Display) -> Self {
+        Self::ComputeError(err.to_string().into())
     }
 }

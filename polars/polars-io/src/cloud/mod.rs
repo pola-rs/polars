@@ -30,7 +30,7 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
 /// Build an ObjectStore based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 pub fn build(url: &str, options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
-    let store = match CloudType::from_str(url).map_err(anyhow::Error::from)? {
+    let store = match CloudType::from_str(url)? {
         CloudType::File => {
             let local = LocalFileSystem::new();
             Ok::<_, PolarsError>(Box::new(local) as Box<dyn ObjectStore>)

@@ -54,7 +54,7 @@ impl ParquetObjectStore {
             locked_store
                 .head(&path)
                 .await
-                .map_err(anyhow::Error::from)?
+                .map_err(PolarsError::from_any)?
                 .size as u64
         });
         Ok(())
@@ -63,7 +63,7 @@ impl ParquetObjectStore {
     pub async fn schema(&mut self) -> PolarsResult<Schema> {
         let metadata = self.get_metadata().await?;
 
-        let arrow_schema = parquet2_read::infer_schema(metadata).map_err(anyhow::Error::from)?;
+        let arrow_schema = parquet2_read::infer_schema(metadata)?;
 
         Ok(arrow_schema.fields.iter().into())
     }
@@ -83,7 +83,7 @@ impl ParquetObjectStore {
         let mut reader = CloudReader::new(length, object_store, path);
         parquet2_read::read_metadata_async(&mut reader)
             .await
-            .map_err(|e| anyhow::Error::from(e).into())
+            .map_err(PolarsError::from_any)
     }
 
     /// Fetch and memoize the metadata of the parquet file.
@@ -110,7 +110,7 @@ async fn download_projection<'a: 'b, 'b>(
     row_groups: &'a [RowGroupMetaData],
     schema: &ArrowSchema,
     async_reader: &'b ParquetObjectStore,
-) -> anyhow::Result<RowGroupChunks<'a>> {
+) -> PolarsResult<RowGroupChunks<'a>> {
     let fields = projection
         .iter()
         .map(|i| schema.fields[*i].name.clone())
@@ -137,7 +137,7 @@ async fn download_projection<'a: 'b, 'b>(
         .then(move |(name, row_group)| async move {
             let columns = row_group.columns();
             read_columns_async(reader_factory, columns, name.as_ref())
-                .map_err(anyhow::Error::from)
+                .map_err(PolarsError::from_any)
                 .await
         })
         .try_collect()

@@ -76,7 +76,7 @@ impl FromStr for CloudType {
 
     #[cfg(feature = "async")]
     fn from_str(url: &str) -> Result<Self, Self::Err> {
-        let parsed = Url::parse(url).map_err(anyhow::Error::from)?;
+        let parsed = Url::parse(url).map_err(PolarsError::from_any)?;
         match parsed.scheme() {
             "s3" => Ok(Self::Aws),
             "az" | "adl" | "abfs" => Ok(Self::Azure),

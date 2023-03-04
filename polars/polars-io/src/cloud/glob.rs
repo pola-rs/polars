@@ -86,7 +86,7 @@ pub struct CloudLocation {
 impl CloudLocation {
     /// Parse a CloudLocation from an url.
     pub fn new(url: &str) -> PolarsResult<CloudLocation> {
-        let parsed = Url::parse(url).map_err(anyhow::Error::from)?;
+        let parsed = Url::parse(url).map_err(PolarsError::from_any)?;
         let is_local = parsed.scheme() == "file";
         let (bucket, key) = if is_local {
             ("".into(), url[7..].into())
@@ -129,9 +129,7 @@ impl Matcher {
     /// Build a Matcher for the given prefix and expansion.
     fn new(prefix: String, expansion: Option<&str>) -> PolarsResult<Matcher> {
         // Cloud APIs accept a prefix without any expansion, extract it.
-        let re = expansion
-            .map(|ex| Regex::new(ex).map_err(anyhow::Error::from))
-            .transpose()?;
+        let re = expansion.map(|ex| Regex::new(ex)).transpose()?;
         Ok(Matcher { prefix, re })
     }
 
@@ -168,16 +166,12 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
     let list_stream = store
         .list(Some(&Path::from(prefix)))
         .await
-        .map_err(anyhow::Error::from)?;
+        .map_err(PolarsError::from_any)?;
     let locations: Vec<Path> = list_stream
         .then(|entry| async {
-            let entry = entry.map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
-            Ok::<_, PolarsError>(entry.location)
+            Ok::<_, PolarsError>(entry.map_err(PolarsError::from_any)?.location)
         })
-        .filter(|name| match name {
-            PolarsResult::Ok(name) => ready(matcher.is_matching(name)),
-            _ => ready(true),
-        })
+        .filter(|name| ready(name.as_ref().map_or(true, |name| matcher.is_matching(name))))
         .try_collect()
         .await?;
     Ok(locations

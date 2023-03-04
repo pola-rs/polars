@@ -151,13 +151,12 @@ pub(crate) fn parse_bytes_with_encoding(
     bytes: &[u8],
     encoding: CsvEncoding,
 ) -> PolarsResult<Cow<str>> {
-    let s = match encoding {
+    Ok(match encoding {
         CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
-            .map_err(anyhow::Error::from)?
+            .map_err(|_| PolarsError::ComputeError("invalid utf-8 sequence".into()))?
             .into(),
         CsvEncoding::LossyUtf8 => String::from_utf8_lossy(bytes),
-    };
-    Ok(s)
+    })
 }
 
 /// Infer the schema of a CSV file by reading through the first n records of the file,
