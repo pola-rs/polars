@@ -587,3 +587,21 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904() -> None:
             }
         ),
     )
+
+
+def test_groupby_multiple_column_reference() -> None:
+    # Issue #7181
+    df = pl.DataFrame(
+        {
+            "gr": ["a", "b", "a", "b", "a", "b"],
+            "val": [1, 20, 100, 2000, 10000, 200000],
+        }
+    )
+    res = df.groupby("gr").agg(
+        pl.col("val") + pl.col("val").shift().fill_null(0),
+    )
+
+    assert res.sort("gr").to_dict(False) == {
+        "gr": ["a", "b"],
+        "val": [[1, 101, 10100], [20, 2020, 202000]],
+    }
