@@ -1,52 +1,37 @@
+use std::borrow::Cow;
+use std::env;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 
 use thiserror::Error as ThisError;
 
 #[derive(Debug)]
-pub enum ErrString {
-    Owned(String),
-    Borrowed(&'static str),
+pub struct ErrString(Cow<'static, str>);
+
+impl<T> From<T> for ErrString
+where
+    T: Into<Cow<'static, str>>,
+{
+    fn from(msg: T) -> Self {
+        if env::var("POLARS_PANIC_ON_ERR").is_ok() {
+            panic!("{}", msg.into())
+        } else {
+            ErrString(msg.into())
+        }
+    }
 }
 
 impl Deref for ErrString {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        match self {
-            ErrString::Owned(s) => s,
-            ErrString::Borrowed(s) => s,
-        }
-    }
-}
-
-impl From<&'static str> for ErrString {
-    fn from(msg: &'static str) -> Self {
-        if std::env::var("POLARS_PANIC_ON_ERR").is_ok() {
-            panic!("{}", msg)
-        } else {
-            ErrString::Borrowed(msg)
-        }
-    }
-}
-
-impl From<String> for ErrString {
-    fn from(msg: String) -> Self {
-        if std::env::var("POLARS_PANIC_ON_ERR").is_ok() {
-            panic!("{}", msg)
-        } else {
-            ErrString::Owned(msg)
-        }
+        &self.0
     }
 }
 
 impl Display for ErrString {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let msg = match self {
-            ErrString::Owned(msg) => msg.as_str(),
-            ErrString::Borrowed(msg) => msg,
-        };
-        write!(f, "{msg}")
+        write!(f, "{}", self.0)
     }
 }
 
