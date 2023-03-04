@@ -139,7 +139,7 @@ pub fn map_single(
             let s = out.to_series(py, &POLARS, s.name());
 
             if !matches!(output_type, DataType::Unknown) && s.dtype() != &output_type {
-                Err(PolarsError::SchemaMisMatch(
+                Err(PolarsError::SchemaMismatch(
                     format!("Expected output type: '{:?}', but got '{:?}'. Set 'return_dtype' to the proper datatype.", output_type, s.dtype()).into()))
             } else {
                 Ok(Some(s))

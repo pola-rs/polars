@@ -280,7 +280,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             // dtype will be correct.
             Ok(unsafe { self.unpack_series_matching_physical_type(series) })
         } else {
-            Err(PolarsError::SchemaMisMatch(
+            Err(PolarsError::SchemaMismatch(
                 format!(
                     "cannot unpack series {:?} into matching type {:?}",
                     series,

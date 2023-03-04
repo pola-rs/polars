@@ -73,7 +73,7 @@ impl DataFrame {
                 if exploded.len() == df.height() || df.width() == 0 {
                     df.columns.insert(col_idx, exploded);
                 } else {
-                    return Err(PolarsError::ShapeMisMatch(
+                    return Err(PolarsError::ShapeMismatch(
                         format!("The exploded column(s) don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
                     ));
                 }

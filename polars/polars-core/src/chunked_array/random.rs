@@ -64,7 +64,7 @@ impl Series {
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         if !with_replacement && n > self.len() {
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 "cannot take a larger sample than the total population when `with_replacement=false`"
                     .into(),
             ));
@@ -126,7 +126,7 @@ where
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         if !with_replacement && n > self.len() {
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 "cannot take a larger sample than the total population when `with_replacement=false`"
                     .into(),
             ));
@@ -172,7 +172,7 @@ impl DataFrame {
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         if !with_replacement && n > self.height() {
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 "cannot take a larger sample than the total population when `with_replacement=false`"
                     .into(),
             ));

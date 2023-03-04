@@ -7,7 +7,7 @@ impl Series {
             DataType::Int8 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Int8Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Int8").into(),
             )),
         }
@@ -19,7 +19,7 @@ impl Series {
             DataType::Int16 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Int16Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Int16").into(),
             )),
         }
@@ -44,7 +44,7 @@ impl Series {
             DataType::Int32 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Int32Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Int32").into(),
             )),
         }
@@ -56,7 +56,7 @@ impl Series {
             DataType::Int64 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Int64Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Int64").into(),
             )),
         }
@@ -68,7 +68,7 @@ impl Series {
             DataType::Float32 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Float32Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Float32").into(),
             )),
         }
@@ -80,7 +80,7 @@ impl Series {
             DataType::Float64 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Float64Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Float64").into(),
             )),
         }
@@ -92,7 +92,7 @@ impl Series {
             DataType::UInt8 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const UInt8Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != UInt8").into(),
             )),
         }
@@ -104,7 +104,7 @@ impl Series {
             DataType::UInt16 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const UInt16Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != UInt16").into(),
             )),
         }
@@ -116,7 +116,7 @@ impl Series {
             DataType::UInt32 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const UInt32Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != UInt32").into(),
             )),
         }
@@ -128,7 +128,7 @@ impl Series {
             DataType::UInt64 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const UInt64Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != UInt64").into(),
             )),
         }
@@ -140,7 +140,7 @@ impl Series {
             DataType::Boolean => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const BooleanChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Boolean").into(),
             )),
         }
@@ -152,7 +152,7 @@ impl Series {
             DataType::Utf8 => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Utf8Chunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Utf8").into(),
             )),
         }
@@ -164,7 +164,7 @@ impl Series {
             DataType::Binary => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const BinaryChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != binary").into(),
             )),
         }
@@ -177,7 +177,7 @@ impl Series {
             DataType::Time => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const TimeChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Time").into(),
             )),
         }
@@ -190,7 +190,7 @@ impl Series {
             DataType::Date => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DateChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Date").into(),
             )),
         }
@@ -203,7 +203,7 @@ impl Series {
             DataType::Datetime(_, _) => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DatetimeChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Datetime").into(),
             )),
         }
@@ -216,7 +216,7 @@ impl Series {
             DataType::Duration(_) => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DurationChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Duration").into(),
             )),
         }
@@ -229,7 +229,7 @@ impl Series {
             DataType::Decimal(_, _) => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DecimalChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Decimal").into(),
             )),
         }
@@ -241,7 +241,7 @@ impl Series {
             DataType::List(_) => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const ListChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != List").into(),
             )),
         }
@@ -254,7 +254,7 @@ impl Series {
             DataType::Categorical(_) => unsafe {
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const CategoricalChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Categorical").into(),
             )),
         }
@@ -274,7 +274,7 @@ impl Series {
                 // We just checked type
                 Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const StructChunked))
             },
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!("Series of dtype: {dt:?} != Struct").into(),
             )),
         }

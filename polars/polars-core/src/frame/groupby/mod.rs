@@ -66,7 +66,7 @@ impl DataFrame {
             if by_len == 1 {
                 by[0] = by[0].new_from_index(0, self.height())
             } else {
-                return Err(PolarsError::ShapeMisMatch(
+                return Err(PolarsError::ShapeMismatch(
                     "the Series used as keys should have the same length as the DataFrame".into(),
                 ));
             }

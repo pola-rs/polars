@@ -202,7 +202,7 @@ pub fn cut(
 
     let cuts_df = if let Some(labels) = labels {
         if labels.len() != (bins.len() + 1) {
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 "Labels count must equal bins count".into(),
             ));
         }

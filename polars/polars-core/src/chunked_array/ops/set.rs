@@ -44,7 +44,7 @@ macro_rules! impl_set_at_idx_with {
 macro_rules! check_bounds {
     ($self:ident, $mask:ident) => {{
         if $self.len() != $mask.len() {
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 "Shape of parameter `mask` could not be used in `set` operation.".into(),
             ));
         }

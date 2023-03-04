@@ -183,7 +183,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         if self.0.dtype() == other.dtype() {
             self.0.append(other.categorical().unwrap())
         } else {
-            Err(PolarsError::SchemaMisMatch(
+            Err(PolarsError::SchemaMismatch(
                 "cannot append Series; data types don't match".into(),
             ))
         }
@@ -198,7 +198,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             unsafe { self.0.set_rev_map(new_rev_map, false) };
             Ok(())
         } else {
-            Err(PolarsError::SchemaMisMatch(
+            Err(PolarsError::SchemaMismatch(
                 "cannot extend Series; data types don't match".into(),
             ))
         }

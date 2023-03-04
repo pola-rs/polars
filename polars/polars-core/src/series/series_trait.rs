@@ -583,7 +583,7 @@ impl<'a> (dyn SeriesTrait + 'a) {
         if &N::get_dtype() == self.dtype() {
             Ok(self.as_ref())
         } else {
-            Err(PolarsError::SchemaMisMatch(
+            Err(PolarsError::SchemaMismatch(
                 "cannot unpack Series; data types don't match".into(),
             ))
         }

@@ -122,7 +122,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 let lhs_name = lhs.name();
                 let rhs_name = rhs.name();
                 if lhs_name != rhs_name {
-                    return Err(PolarsError::SchemaMisMatch(format!("cannot append field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+                    return Err(PolarsError::SchemaMismatch(format!("cannot append field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
                 }
                 lhs.append(rhs)?;
             }
@@ -143,7 +143,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 let lhs_name = lhs.name();
                 let rhs_name = rhs.name();
                 if lhs_name != rhs_name {
-                    return Err(PolarsError::SchemaMisMatch(format!("cannot extend field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+                    return Err(PolarsError::SchemaMismatch(format!("cannot extend field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
                 }
                 lhs.extend(rhs)?;
             }

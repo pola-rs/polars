@@ -239,7 +239,7 @@ pub trait IndexOfSchema: Debug {
 
     fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
-            PolarsError::SchemaMisMatch(
+            PolarsError::SchemaMismatch(
                 format!("Unable to get field named \"{name}\" from schema: {self:?}",).into(),
             )
         })

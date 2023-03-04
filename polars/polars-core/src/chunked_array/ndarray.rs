@@ -48,7 +48,7 @@ impl ListChunked {
 
                 for series in iter {
                     if series.len() != width {
-                        return Err(PolarsError::ShapeMisMatch(
+                        return Err(PolarsError::ShapeMismatch(
                             "Could not create a 2D array. Series have different lengths".into(),
                         ));
                     }

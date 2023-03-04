@@ -82,10 +82,10 @@ impl DataFrame {
     pub fn frame_equal_schema(&self, other: &DataFrame) -> PolarsResult<()> {
         for (lhs, rhs) in self.iter().zip(other.iter()) {
             if lhs.name() != rhs.name() {
-                return Err(PolarsError::SchemaMisMatch(format!("Name of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.name(), rhs.name()).into()));
+                return Err(PolarsError::SchemaMismatch(format!("Name of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.name(), rhs.name()).into()));
             }
             if lhs.dtype() != rhs.dtype() {
-                return Err(PolarsError::SchemaMisMatch(
+                return Err(PolarsError::SchemaMismatch(
                     format!("Dtype of the left hand DataFrame: '{}' does not match that of the right hand DataFrame '{}'", lhs.dtype(), rhs.dtype()).into())
                 );
             }

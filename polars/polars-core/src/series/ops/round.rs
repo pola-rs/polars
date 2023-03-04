@@ -22,7 +22,7 @@ impl Series {
                 .into_series();
             return Ok(s);
         }
-        Err(PolarsError::SchemaMisMatch(
+        Err(PolarsError::SchemaMismatch(
             format!("{:?} is not a floating point datatype", self.dtype()).into(),
         ))
     }
@@ -37,7 +37,7 @@ impl Series {
             let s = ca.apply(|val| val.floor()).into_series();
             return Ok(s);
         }
-        Err(PolarsError::SchemaMisMatch(
+        Err(PolarsError::SchemaMismatch(
             format!("{:?} is not a floating point datatype", self.dtype()).into(),
         ))
     }
@@ -52,7 +52,7 @@ impl Series {
             let s = ca.apply(|val| val.ceil()).into_series();
             return Ok(s);
         }
-        Err(PolarsError::SchemaMisMatch(
+        Err(PolarsError::SchemaMismatch(
             format!("{:?} is not a floating point datatype", self.dtype()).into(),
         ))
     }
@@ -76,7 +76,7 @@ impl Series {
             downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
             Ok(self)
         } else {
-            Err(PolarsError::SchemaMisMatch(
+            Err(PolarsError::SchemaMismatch(
                 format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
             ))
         }
@@ -98,7 +98,7 @@ impl Series {
             downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
             Ok(self)
         } else {
-            Err(PolarsError::SchemaMisMatch(
+            Err(PolarsError::SchemaMismatch(
                 format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
             ))
         }
@@ -120,7 +120,7 @@ impl Series {
             downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
             Ok(self)
         } else {
-            Err(PolarsError::SchemaMisMatch(
+            Err(PolarsError::SchemaMismatch(
                 format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
             ))
         }

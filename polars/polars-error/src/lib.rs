@@ -1,9 +1,7 @@
 use std::borrow::Cow;
-use std::env;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::ops::Deref;
-
-use thiserror::Error as ThisError;
+use std::{env, io};
 
 #[derive(Debug)]
 pub struct ErrString(Cow<'static, str>);
@@ -30,12 +28,12 @@ impl Deref for ErrString {
 }
 
 impl Display for ErrString {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 pub enum PolarsError {
     #[error(transparent)]
     ArrowError(Box<ArrowError>),
@@ -48,15 +46,15 @@ pub enum PolarsError {
     #[error("Invalid operation {0}")]
     InvalidOperation(ErrString),
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error("Such empty...: {0}")]
     NoData(ErrString),
     #[error("Not found: {0}")]
     SchemaFieldNotFound(ErrString),
     #[error("Data types don't match: {0}")]
-    SchemaMisMatch(ErrString),
+    SchemaMismatch(ErrString),
     #[error("Lengths don't match: {0}")]
-    ShapeMisMatch(ErrString),
+    ShapeMismatch(ErrString),
     #[error("Not found: {0}")]
     StructFieldNotFound(ErrString),
 }
@@ -90,8 +88,8 @@ impl PolarsError {
             Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
             NoData(msg) => NoData(func(msg).into()),
             SchemaFieldNotFound(msg) => SchemaFieldNotFound(func(msg).into()),
-            SchemaMisMatch(msg) => SchemaMisMatch(func(msg).into()),
-            ShapeMisMatch(msg) => ShapeMisMatch(func(msg).into()),
+            SchemaMismatch(msg) => SchemaMismatch(func(msg).into()),
+            ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
         }
     }

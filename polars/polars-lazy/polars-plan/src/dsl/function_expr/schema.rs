@@ -97,7 +97,7 @@ impl FunctionExpr {
                 if let DataType::Datetime(tu, _) = dt {
                     Ok(DataType::Datetime(*tu, tz.cloned()))
                 } else {
-                    Err(PolarsError::SchemaMisMatch(
+                    Err(PolarsError::SchemaMismatch(
                         format!("expected Datetime got {dt:?}").into(),
                     ))
                 }

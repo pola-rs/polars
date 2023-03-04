@@ -230,7 +230,7 @@ impl DataFrame {
                 "Could not create a new DataFrame from Series. The Series have different lengths: \
                 found length {first_len:?} for Series named {first_name:?} and length {len:?} for Series named {name:?}."
             );
-            Err(PolarsError::ShapeMisMatch(msg.into()))
+            Err(PolarsError::ShapeMismatch(msg.into()))
         };
 
         let series_cols = if S::is_series() {
@@ -585,12 +585,12 @@ impl DataFrame {
     /// ```
     pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> PolarsResult<()> {
         if names.len() != self.columns.len() {
-            return Err(PolarsError::ShapeMisMatch("the provided slice with column names has not the same size as the DataFrame's width".into()));
+            return Err(PolarsError::ShapeMismatch("the provided slice with column names has not the same size as the DataFrame's width".into()));
         }
         let unique_names: AHashSet<&str, ahash::RandomState> =
             AHashSet::from_iter(names.iter().map(|name| name.as_ref()));
         if unique_names.len() != self.columns.len() {
-            return Err(PolarsError::SchemaMisMatch(
+            return Err(PolarsError::SchemaMismatch(
                 "duplicate column names found".into(),
             ));
         }
@@ -763,7 +763,7 @@ impl DataFrame {
         // this DataFrame is already modified when an error occurs.
         for col in columns {
             if col.len() != height && height != 0 {
-                return Err(PolarsError::ShapeMisMatch(
+                return Err(PolarsError::ShapeMismatch(
                     format!("Could not horizontally stack Series. The Series length {} differs from the DataFrame height: {height}", col.len()).into()));
             }
 
@@ -912,7 +912,7 @@ impl DataFrame {
                 return Ok(self);
             }
 
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 format!("Could not vertically stack DataFrame. The DataFrames appended width {} differs from the parent DataFrames width {}", self.width(), other.width()).into()
             ));
         }
@@ -954,7 +954,7 @@ impl DataFrame {
     /// of `append` operations with a [`rechunk`](Self::rechunk).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         if self.width() != other.width() {
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 format!("Could not extend DataFrame. The DataFrames extended width {} differs from the parent DataFrames width {}", self.width(), other.width()).into()
             ));
         }
@@ -1097,7 +1097,7 @@ impl DataFrame {
             self.columns.insert(index, series);
             Ok(self)
         } else {
-            Err(PolarsError::ShapeMisMatch(
+            Err(PolarsError::ShapeMismatch(
                 format!(
                     "Could not add column. The Series length {} differs from the DataFrame height: {}",
                     series.len(),
@@ -1146,7 +1146,7 @@ impl DataFrame {
                 df.add_column_by_search(s)?;
                 Ok(df)
             } else {
-                Err(PolarsError::ShapeMisMatch(
+                Err(PolarsError::ShapeMismatch(
                     format!(
                         "Could not add column. The Series length {} differs from the DataFrame height: {}",
                         series.len(),
@@ -1223,7 +1223,7 @@ impl DataFrame {
             self.add_column_by_schema(s, schema)?;
             Ok(self)
         } else {
-            Err(PolarsError::ShapeMisMatch(
+            Err(PolarsError::ShapeMismatch(
                 format!(
                     "Could not add column. The Series length {} differs from the DataFrame height: {}",
                     series.len(),
@@ -1783,7 +1783,7 @@ impl DataFrame {
         let unique_names: AHashSet<&str, ahash::RandomState> =
             AHashSet::from_iter(self.columns.iter().map(|s| s.name()));
         if unique_names.len() != self.columns.len() {
-            return Err(PolarsError::SchemaMisMatch(
+            return Err(PolarsError::SchemaMismatch(
                 "duplicate column names found".into(),
             ));
         }
@@ -1981,7 +1981,7 @@ impl DataFrame {
     ) -> PolarsResult<&mut Self> {
         let mut new_column = new_col.into_series();
         if new_column.len() != self.height() {
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 format!("Cannot replace Series at index {}. The shape of Series {} does not match that of the DataFrame {}",
                 idx, new_column.len(), self.height()
                 ).into()));
@@ -2103,7 +2103,7 @@ impl DataFrame {
                 let _ = mem::replace(col, new_col);
             }
             len => {
-                return Err(PolarsError::ShapeMisMatch(
+                return Err(PolarsError::ShapeMismatch(
                     format!(
                         "Result Series has shape {} where the DataFrame has height {}",
                         len,
@@ -3448,7 +3448,7 @@ impl From<DataFrame> for Vec<Series> {
 fn can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
     if left.dtype() != right.dtype() || left.name() != right.name() {
         if left.dtype() != right.dtype() {
-            return Err(PolarsError::SchemaMisMatch(
+            return Err(PolarsError::SchemaMismatch(
                 format!(
                     "cannot vstack: because column datatypes (dtypes) in the two DataFrames do not match for \
                                 left.name='{}' with left.dtype={} != right.dtype={} with right.name='{}'",
@@ -3460,7 +3460,7 @@ fn can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
                     .into(),
             ));
         } else {
-            return Err(PolarsError::SchemaMisMatch(
+            return Err(PolarsError::SchemaMismatch(
                 format!(
                     "cannot vstack: because column names in the two DataFrames do not match for \
                                 left.name='{}' != right.name='{}'",

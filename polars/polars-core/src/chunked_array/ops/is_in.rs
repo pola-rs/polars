@@ -214,7 +214,7 @@ impl IsIn for Utf8Chunked {
                 ca.rename(self.name());
                 Ok(ca)
             }
-            _ => Err(PolarsError::SchemaMisMatch(
+            _ => Err(PolarsError::SchemaMismatch(
                 format!(
                     "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
                     self.dtype(),
@@ -277,7 +277,7 @@ impl IsIn for BinaryChunked {
                 ca.rename(self.name());
                 Ok(ca)
             }
-            _ => Err(PolarsError::SchemaMisMatch(
+            _ => Err(PolarsError::SchemaMismatch(
                 format!(
                     "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
                     self.dtype(),
@@ -334,7 +334,7 @@ impl IsIn for BooleanChunked {
                 let has_false = !other.all();
                 Ok(self.apply(|v| if v { has_true } else { has_false }))
             }
-            _ => Err(PolarsError::SchemaMisMatch(
+            _ => Err(PolarsError::SchemaMismatch(
                 format!(
                     "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
                     self.dtype(),

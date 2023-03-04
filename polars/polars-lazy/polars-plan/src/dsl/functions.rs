@@ -278,7 +278,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
     let segments: Vec<&str> = format.split("{}").collect();
 
     if segments.len() - 1 != args.len() {
-        return Err(PolarsError::ShapeMisMatch(
+        return Err(PolarsError::ShapeMismatch(
             "number of placeholders should equal the number of arguments".into(),
         ));
     }

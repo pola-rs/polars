@@ -7,7 +7,7 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
     let (array, fill_value) = if matches!(super_type, DataType::Unknown) {
         let fill_value = fill_value.cast(array.dtype()).map_err(|_|{
                 let msg = "'fill_null' supertype could not be determined. Set the correct literal value or ensure the type of the expression is known .";
-            PolarsError::SchemaMisMatch(msg.into())
+            PolarsError::SchemaMismatch(msg.into())
         })?;
         (array.clone(), fill_value)
     } else {

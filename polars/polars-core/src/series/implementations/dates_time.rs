@@ -230,7 +230,7 @@ macro_rules! impl_dyn_series {
                     self.0.append(other.as_ref().as_ref().as_ref());
                     Ok(())
                 } else {
-                    Err(PolarsError::SchemaMisMatch(
+                    Err(PolarsError::SchemaMismatch(
                         "cannot append Series; data types don't match".into(),
                     ))
                 }
@@ -245,7 +245,7 @@ macro_rules! impl_dyn_series {
                     self.0.extend(other.as_ref().as_ref().as_ref());
                     Ok(())
                 } else {
-                    Err(PolarsError::SchemaMisMatch(
+                    Err(PolarsError::SchemaMismatch(
                         "cannot extend Series; data types don't match".into(),
                     ))
                 }

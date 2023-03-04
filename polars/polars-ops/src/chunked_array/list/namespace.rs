@@ -48,7 +48,7 @@ fn cast_rhs(
                     *s = out;
                 }
                 Err(_) => {
-                    return Err(PolarsError::SchemaMisMatch(
+                    return Err(PolarsError::SchemaMismatch(
                         format!("cannot concat {:?} into a list of {:?}", s.dtype(), dtype).into(),
                     ));
                 }
@@ -63,7 +63,7 @@ fn cast_rhs(
                 }
                 // else do nothing
             } else {
-                return Err(PolarsError::ShapeMisMatch(
+                return Err(PolarsError::ShapeMismatch(
                     format!("length {} does not match {}", s.len(), length).into(),
                 ));
             }
@@ -107,7 +107,7 @@ pub trait ListNameSpaceImpl: AsList {
                 });
                 Ok(builder.finish())
             }
-            dt => Err(PolarsError::SchemaMisMatch(
+            dt => Err(PolarsError::SchemaMismatch(
                 format!(
                     "cannot call lst.join on Series with dtype {dt:?}.\
                 Inner type must be Utf8",

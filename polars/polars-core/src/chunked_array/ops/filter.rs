@@ -10,7 +10,7 @@ use crate::utils::align_chunks_binary;
 macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{
         if $self.len() != $filter.len() {
-            return Err(PolarsError::ShapeMisMatch(
+            return Err(PolarsError::ShapeMismatch(
                 format!(
                     "Filter's length differs from that of the ChunkedArray/ Series. \
                 Length Self: {} Length mask: {}\

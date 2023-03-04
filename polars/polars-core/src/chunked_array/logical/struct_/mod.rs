@@ -81,7 +81,7 @@ impl StructChunked {
                 } else if s_len == 1 {
                     new_fields.push(s.new_from_index(0, max_len))
                 } else {
-                    return Err(PolarsError::ShapeMisMatch(
+                    return Err(PolarsError::ShapeMismatch(
                         "expected all fields to have equal length".into(),
                     ));
                 }
