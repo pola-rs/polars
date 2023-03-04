@@ -2607,7 +2607,9 @@ class DataFrame:
         ...     table_style="Table Style Light 2",
         ...     dtype_formats={INTEGER_DTYPES: "#,##0_);(#,##0)"},
         ...     sparklines={
+        ...         # default options; just provide source cols
         ...         "trend": ["q1", "q2", "q3", "q4"],
+        ...         # customised sparkline type, with positioning directive
         ...         "+/-": {
         ...             "columns": ["q1", "q2", "q3", "q4"],
         ...             "insert_after": "id",
