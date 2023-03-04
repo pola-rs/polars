@@ -1019,7 +1019,7 @@ impl DataFrame {
     /// | Malta   | 32.7                |
     /// +---------+---------------------+
     /// ```
-    pub fn drop_nulls(&self, subset: Option<&[String]>) -> PolarsResult<Self> {
+    pub fn drop_nulls<S: AsRef<str>>(&self, subset: Option<&[S]>) -> PolarsResult<Self> {
         let selected_series;
 
         let mut iter = match subset {
