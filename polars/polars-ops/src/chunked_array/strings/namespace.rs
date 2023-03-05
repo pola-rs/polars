@@ -243,13 +243,35 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Replace the leftmost literal (sub)string with another string
     fn replace_literal<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
-        // note: benchmarking shows that using the regex engine for literal
-        // replacement is faster than str::replacen in almost all cases.
-        // ref: https://github.com/pola-rs/polars/pull/6777
-        let reg = Regex::new(escape(pat).as_str())?;
-        let f = |s: &'a str| reg.replace(s, NoExpand(val));
+        // amortize allocation
+        let mut buf = String::new();
+
+        let f = move |s: &'a str| {
+            buf.clear();
+            let mut changed = false;
+
+            // See: str.replacen
+            let mut last_end = 0;
+            if let Some((start, part)) = s.match_indices(pat).next() {
+                changed = true;
+                buf.push_str(unsafe { s.get_unchecked(last_end..start) });
+                buf.push_str(val);
+                last_end = start + part.len();
+            }
+            buf.push_str(unsafe { s.get_unchecked(last_end..s.len()) });
+
+            if changed {
+                // extend lifetime
+                // lifetime is bound to 'a
+                let slice = buf.as_str();
+                let slice = unsafe { std::mem::transmute::<&str, &'a str>(slice) };
+                Cow::Borrowed(slice)
+            } else {
+                Cow::Borrowed(s)
+            }
+        };
         let ca = self.as_utf8();
-        Ok(ca.apply(f))
+        Ok(ca.apply_mut(f))
     }
 
     /// Replace all regex-matched (sub)strings with another string
