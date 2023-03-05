@@ -101,11 +101,6 @@ pub enum ALogicalPlan {
         by_column: Vec<Node>,
         args: SortArguments,
     },
-    Explode {
-        input: Node,
-        columns: Vec<String>,
-        schema: SchemaRef,
-    },
     Cache {
         input: Node,
         id: usize,
@@ -205,7 +200,6 @@ impl ALogicalPlan {
             Projection { .. } => "projection",
             LocalProjection { .. } => "local_projection",
             Sort { .. } => "sort",
-            Explode { .. } => "explode",
             Cache { .. } => "cache",
             Aggregate { .. } => "aggregate",
             Join { .. } => "join",
@@ -227,7 +221,6 @@ impl ALogicalPlan {
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
-            Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan {
                 file_info,
@@ -361,13 +354,6 @@ impl ALogicalPlan {
                 input: inputs[0],
                 by_column: by_column.clone(),
                 args: args.clone(),
-            },
-            Explode {
-                columns, schema, ..
-            } => Explode {
-                input: inputs[0],
-                columns: columns.clone(),
-                schema: schema.clone(),
             },
             Cache { id, count, .. } => Cache {
                 input: inputs[0],
@@ -513,7 +499,6 @@ impl ALogicalPlan {
         match self {
             Melt { .. }
             | Slice { .. }
-            | Explode { .. }
             | Cache { .. }
             | Distinct { .. }
             | Union { .. }
@@ -595,7 +580,6 @@ impl ALogicalPlan {
             Projection { input, .. } => *input,
             LocalProjection { input, .. } => *input,
             Sort { input, .. } => *input,
-            Explode { input, .. } => *input,
             Cache { input, .. } => *input,
             Aggregate { input, .. } => *input,
             Join {

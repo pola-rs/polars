@@ -632,9 +632,10 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             function: FunctionNode::Explode {
                 columns,
-                schema: Arc::new(schema)
-            }
-        }.into()
+                schema: Arc::new(schema),
+            },
+        }
+        .into()
     }
 
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {

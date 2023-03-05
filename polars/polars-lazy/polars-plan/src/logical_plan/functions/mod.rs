@@ -71,7 +71,7 @@ pub enum FunctionNode {
     Explode {
         columns: Arc<[Arc<str>]>,
         schema: SchemaRef,
-    }
+    },
 }
 
 impl PartialEq for FunctionNode {
@@ -94,7 +94,7 @@ impl PartialEq for FunctionNode {
                 },
             ) => existing_l == existing_r && new_l == new_r,
             (Drop { names: l }, Drop { names: r }) => l == r,
-            (Explode { columns: l , ..}, Explode { columns: r, .. }) => l == r,
+            (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             _ => false,
         }
     }
@@ -112,7 +112,7 @@ impl FunctionNode {
             | FastProjection { .. }
             | Unnest { .. }
             | Rename { .. }
-            | Explode {..}
+            | Explode { .. }
             | Drop { .. } => true,
             Opaque { streamable, .. } => *streamable,
         }
@@ -178,7 +178,7 @@ impl FunctionNode {
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
             Drop { names } => drop::drop_schema(input_schema, names),
-            Explode {schema, ..} => Ok(Cow::Owned(schema.clone()))
+            Explode { schema, .. } => Ok(Cow::Owned(schema.clone())),
         }
     }
 
@@ -220,7 +220,7 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Unnest { columns } => columns.as_ref(),
-            Explode {columns, ..} => columns.as_ref(),
+            Explode { columns, .. } => columns.as_ref(),
             _ => &[],
         }
     }
@@ -262,7 +262,7 @@ impl FunctionNode {
             }
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
             Drop { names } => drop::drop_impl(df, names),
-            Explode {columns, ..} => df.explode(columns.as_ref())
+            Explode { columns, .. } => df.explode(columns.as_ref()),
         }
     }
 }

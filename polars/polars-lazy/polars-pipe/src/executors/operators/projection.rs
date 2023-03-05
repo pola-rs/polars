@@ -18,7 +18,7 @@ impl Operator for FastProjectionOperator {
         _context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-         let chunk = chunk.with_data(chunk.data.select(self.columns.as_ref())?);
+        let chunk = chunk.with_data(chunk.data.select(self.columns.as_ref())?);
         Ok(OperatorResult::Finished(chunk))
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {

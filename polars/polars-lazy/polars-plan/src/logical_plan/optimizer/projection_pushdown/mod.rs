@@ -1,3 +1,4 @@
+mod functions;
 mod generic;
 mod groupby;
 mod hstack;
@@ -7,7 +8,6 @@ mod projection;
 mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
-mod functions;
 
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
@@ -563,33 +563,6 @@ impl ProjectionPushDown {
                     args,
                 })
             }
-            Explode {
-                input,
-                columns,
-                schema,
-            } => {
-                columns.iter().for_each(|name| {
-                    add_str_to_accumulated(
-                        name,
-                        &mut acc_projections,
-                        &mut projected_names,
-                        expr_arena,
-                    )
-                });
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                Ok(Explode {
-                    input,
-                    columns,
-                    schema,
-                })
-            }
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
                 if let Some(subset) = options.subset.as_ref() {
@@ -756,11 +729,16 @@ impl ProjectionPushDown {
             MapFunction {
                 input,
                 ref function,
-            } => {
-                functions::process_functions(
-                    
-                )
-            }
+            } => functions::process_functions(
+                self,
+                input,
+                function,
+                acc_projections,
+                projected_names,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            ),
             lp @ Union { .. } => {
                 self.has_joins_or_unions = true;
                 process_generic(

@@ -310,18 +310,6 @@ pub fn to_alp(
                 args,
             }
         }
-        LogicalPlan::Explode {
-            input,
-            columns,
-            schema,
-        } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Explode {
-                input,
-                columns,
-                schema,
-            }
-        }
         LogicalPlan::Cache { input, id, count } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Cache { input, id, count }
@@ -798,18 +786,6 @@ impl ALogicalPlan {
                     input,
                     by_column: nodes_to_exprs(&by_column, expr_arena),
                     args,
-                }
-            }
-            ALogicalPlan::Explode {
-                input,
-                columns,
-                schema,
-            } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::Explode {
-                    input,
-                    columns,
-                    schema,
                 }
             }
             ALogicalPlan::Cache { input, id, count } => {
