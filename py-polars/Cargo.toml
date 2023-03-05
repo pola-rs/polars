@@ -65,6 +65,10 @@ merge_sorted = ["polars/merge_sorted"]
 list_take = ["polars/list_take"]
 list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
+"async" = ["polars/async"]
+"aws" = ["polars/aws", "async"]
+"gcp" = ["polars/gcp", "async"]
+"azure" = ["polars/azure", "async"]
 
 all = [
   "json",
@@ -99,6 +103,9 @@ all = [
   "performant",
   "list_take",
   "list_count",
+  "aws",
+  "gcp",
+  "azure",
 ]
 
 # we cannot conditionaly activate simd

@@ -457,6 +457,15 @@ fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 }
 
 #[pyfunction]
+fn is_object_store_url(py: Python, url: &str) -> PyResult<PyObject> {
+    #[cfg(feature = "async")]
+    let is_supported_url = polars_rs::io::is_cloud_url(url);
+    #[cfg(not(feature = "async"))]
+    let is_supported_url = false;
+    Ok(is_supported_url.to_object(py))
+}
+
+#[pyfunction]
 fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
     use polars_core::utils::rayon::prelude::*;
 
@@ -672,6 +681,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(parquet_schema)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(is_object_store_url))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(collect_all)).unwrap();
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();

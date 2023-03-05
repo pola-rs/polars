@@ -162,7 +162,7 @@ indexmap = { version = "1", features = ["std"] }
 itoap = { version = "1", optional = true }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits.workspace = true
-object_store = { version = "0.5.3", default-features = false, optional = true }
+object_store = { version = "0.5.5", default-features = false, optional = true }
 once_cell.workspace = true
 polars-arrow = { version = "0.27.2", path = "../polars-arrow", features = ["compute"] }
 polars-error = { version = "0.27.2", path = "../polars-error" }

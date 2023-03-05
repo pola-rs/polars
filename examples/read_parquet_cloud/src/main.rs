@@ -22,6 +22,8 @@ fn main() -> PolarsResult<()> {
         .select([
             // select all columns
             all(),
+            // and do some aggregations
+            cols(["fats_g", "sugars_g"]).sum().suffix("_summed"),
         ])
         .collect()?;
 

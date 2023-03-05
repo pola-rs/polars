@@ -7,12 +7,14 @@ use std::sync::Arc;
 use arrow::array::new_empty_array;
 use arrow::io::parquet::read;
 use arrow::io::parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
+use futures::future::BoxFuture;
+use futures::TryFutureExt;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use super::mmap::ColumnStore;
+use super::mmap::CloudMapper;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
@@ -27,7 +29,7 @@ fn column_idx_to_series(
     md: &RowGroupMetaData,
     remaining_rows: usize,
     schema: &ArrowSchema,
-    store: &mmap::ColumnStore,
+    store: &mmap::CloudMapper,
     chunk_size: usize,
 ) -> PolarsResult<Series> {
     let mut field = schema.fields[column_i].clone();
@@ -88,14 +90,14 @@ pub(super) fn array_iter_to_series(
 #[allow(clippy::too_many_arguments)]
 // might parallelize over columns
 fn rg_to_dfs(
-    store: &mmap::ColumnStore,
+    store: &mmap::CloudMapper,
     previous_row_count: &mut IdxSize,
     row_group_start: usize,
     row_group_end: usize,
     remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
     schema: &ArrowSchema,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     row_count: Option<RowCount>,
     parallel: ParallelStrategy,
     projection: &[usize],
@@ -165,14 +167,14 @@ fn rg_to_dfs(
 #[allow(clippy::too_many_arguments)]
 // parallelizes over row groups
 fn rg_to_dfs_par(
-    store: &mmap::ColumnStore,
+    store: &mmap::CloudMapper,
     row_group_start: usize,
     row_group_end: usize,
     previous_row_count: &mut IdxSize,
     remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
     schema: &ArrowSchema,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     row_count: Option<RowCount>,
     projection: &[usize],
     use_statistics: bool,
@@ -224,7 +226,7 @@ fn rg_to_dfs_par(
                 df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
 
-            apply_predicate(&mut df, predicate.as_deref(), false)?;
+            apply_predicate(&mut df, predicate, false)?;
 
             Ok(Some(df))
         })
@@ -233,21 +235,18 @@ fn rg_to_dfs_par(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_parquet<R: MmapBytesReader>(
-    mut reader: R,
+pub fn read_parquet_from_cloud_mapper(
+    cloud_mapper: &mmap::CloudMapper,
     mut limit: usize,
     projection: Option<&[usize]>,
     schema: &ArrowSchema,
-    metadata: Option<FileMetaData>,
+    metadata: FileMetaData,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     mut parallel: ParallelStrategy,
     row_count: Option<RowCount>,
     use_statistics: bool,
 ) -> PolarsResult<DataFrame> {
-    let file_metadata = metadata
-        .map(Ok)
-        .unwrap_or_else(|| read::read_metadata(&mut reader))?;
-    let row_group_len = file_metadata.row_groups.len();
+    let row_group_len = metadata.row_groups.len();
 
     let projection = projection
         .map(Cow::Borrowed)
@@ -265,33 +264,30 @@ pub fn read_parquet<R: MmapBytesReader>(
         parallel = ParallelStrategy::None;
     }
 
-    let reader = ReaderBytes::from(&reader);
-    let bytes = reader.deref();
-    let store = mmap::ColumnStore::Local(bytes);
     let dfs = match parallel {
         ParallelStrategy::Columns | ParallelStrategy::None => rg_to_dfs(
-            &store,
+            cloud_mapper,
             &mut 0,
             0,
             row_group_len,
             &mut limit,
-            &file_metadata,
+            &metadata,
             schema,
-            predicate,
+            predicate.as_ref(),
             row_count,
             parallel,
             &projection,
             use_statistics,
         )?,
         ParallelStrategy::RowGroups => rg_to_dfs_par(
-            &store,
+            cloud_mapper,
             0,
-            file_metadata.row_groups.len(),
+            row_group_len,
             &mut 0,
             &mut limit,
-            &file_metadata,
+            &metadata,
             schema,
-            predicate,
+            predicate.as_ref(),
             row_count,
             &projection,
             use_statistics,
@@ -312,6 +308,35 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn read_parquet<R: MmapBytesReader>(
+    mut reader: R,
+    limit: usize,
+    projection: Option<&[usize]>,
+    schema: &ArrowSchema,
+    metadata: Option<FileMetaData>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    parallel: ParallelStrategy,
+    row_count: Option<RowCount>,
+) -> PolarsResult<DataFrame> {
+    let file_metadata = metadata
+        .map(Ok)
+        .unwrap_or_else(|| read::read_metadata(&mut reader))?;
+    let reader = ReaderBytes::from(&reader);
+    let bytes = reader.deref();
+    let column_store = mmap::CloudMapper::PassThrough(bytes);
+
+    read_parquet_from_cloud_mapper(
+        &column_store,
+        limit,
+        projection,
+        schema,
+        file_metadata,
+        predicate,
+        parallel,
+        row_count,
+    )
+}
 /// Provide RowGroup content to the BatchedReader.
 /// This allows us to share the code to do in-memory processing for different use cases.
 pub trait FetchRowGroups: Sync + Send {
@@ -338,8 +363,11 @@ impl FetchRowGroupsFromMmapReader {
 
 /// There is nothing to do when fetching a mmap-ed file.
 impl FetchRowGroups for FetchRowGroupsFromMmapReader {
-    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
-        Ok(mmap::ColumnStore::Local(self.0.deref()))
+    fn fetch_row_groups(
+        &mut self,
+        _row_groups: Range<usize>,
+    ) -> PolarsResult<CloudMapper> {
+        Ok(mmap::CloudMapper::PassThrough(self.0.deref())) 
     }
 }
 
@@ -349,6 +377,7 @@ pub struct BatchedParquetReader {
     row_group_fetcher: Box<dyn FetchRowGroups>,
     limit: usize,
     projection: Vec<usize>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
     schema: ArrowSchema,
     metadata: FileMetaData,
     row_count: Option<RowCount>,
@@ -403,8 +432,8 @@ impl BatchedParquetReader {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         // fill up fifo stack
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
-            let row_group_start = self.row_group_offset;
-            let row_group_end = std::cmp::min(self.row_group_offset + n, self.n_row_groups);
+        let row_group_start = self.row_group_offset;
+        let row_group_end = std::cmp::min(self.row_group_offset + n, self.n_row_groups);
             let store = self
                 .row_group_fetcher
                 .fetch_row_groups(row_group_start..row_group_end)?;
@@ -444,8 +473,8 @@ impl BatchedParquetReader {
                     self.row_group_offset += n;
                     dfs
                 }
-                _ => unimplemented!(),
-            };
+                    _ => unimplemented!(),
+                };
 
             // TODO! this is slower than it needs to be
             // we also need to parallelize over row groups here.

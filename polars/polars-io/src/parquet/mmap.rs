@@ -8,8 +8,8 @@ use polars_core::datatypes::PlHashMap;
 
 use super::*;
 
-/// Store columns data in two scenarios:
-/// 1. a local memory mapped file
+/// Map column data in two scenarios:
+/// 1. a local memory mapped file, there is nothing to do in this case.
 /// 2. data fetched from cloud storage on demand, in this case
 ///     a. the key in the hashmap is the start in the file
 ///     b. the value in the hashmap is the actual data.
@@ -19,8 +19,8 @@ use super::*;
 ///    b. asynchronously fetch them in parallel, for example using object_store
 ///    c. store the data in this data structure
 ///    d. when all the data is available deserialize on multiple threads, for example using rayon
-pub enum ColumnStore<'a> {
-    Local(&'a [u8]),
+pub enum CloudMapper<'a> {
+    PassThrough(&'a [u8]),
     #[cfg(feature = "async")]
     Fetched(PlHashMap<u64, Vec<u8>>),
 }
@@ -28,7 +28,7 @@ pub enum ColumnStore<'a> {
 /// For local files memory maps all columns that are part of the parquet field `field_name`.
 /// For cloud files the relevant memory regions should have been prefetched.
 pub(super) fn mmap_columns<'a>(
-    store: &'a ColumnStore,
+    store: &'a CloudMapper,
     columns: &'a [ColumnChunkMetaData],
     field_name: &str,
 ) -> Vec<(&'a ColumnChunkMetaData, &'a [u8])> {
@@ -39,17 +39,17 @@ pub(super) fn mmap_columns<'a>(
 }
 
 fn _mmap_single_column<'a>(
-    store: &'a ColumnStore,
+    store: &'a CloudMapper,
     meta: &'a ColumnChunkMetaData,
 ) -> (&'a ColumnChunkMetaData, &'a [u8]) {
     let (start, len) = meta.byte_range();
     let chunk = match store {
-        ColumnStore::Local(file) => &file[start as usize..(start + len) as usize],
+        CloudMapper::PassThrough(file) => &file[start as usize..(start + len) as usize],
         #[cfg(all(feature = "async", feature = "parquet"))]
-        ColumnStore::Fetched(fetched) => {
+        CloudMapper::Fetched(fetched) => {
             let entry = fetched.get(&start).unwrap_or_else(|| {
                 panic!(
-                    "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
+                    "mmap_columns: column with start {start} must be prefetched in ColumnAccess.\n"
                 )
             });
             entry.as_slice()

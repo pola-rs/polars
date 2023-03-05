@@ -57,7 +57,7 @@ from polars.utils import (
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame
+    from polars.polars import PyLazyFrame, is_object_store_url
 
 
 if TYPE_CHECKING:
@@ -100,6 +100,10 @@ if TYPE_CHECKING:
 
 def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
     return LazyFrame._from_pyldf(ldf)
+
+# The storage_options key to enable the Rust implementation
+# of the download code.
+OBJECT_STORE_KEY = "object_store"
 
 
 @redirect(
@@ -384,8 +388,14 @@ class LazyFrame:
         polars.io.scan_parquet
 
         """
+        object_store = (
+            storage_options
+            and OBJECT_STORE_KEY in storage_options
+            and bool(storage_options[OBJECT_STORE_KEY])
+            and is_object_store_url(file)
+        )
         # try fsspec scanner
-        if not pli._is_local_file(file):
+        if not (pli._is_local_file(file) or object_store):
             scan = pli._scan_parquet_fsspec(file, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
@@ -393,6 +403,8 @@ class LazyFrame:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
 
+        if storage_options and OBJECT_STORE_KEY in storage_options:
+            del storage_options[OBJECT_STORE_KEY]
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
             file,

@@ -9,8 +9,8 @@ pub struct IpcExec {
 
 impl IpcExec {
     fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
-        let (file, projection, n_rows, predicate) = prepare_scan_args(
-            &self.path,
+        let file = std::fs::File::open(&self.path).unwrap();
+        let (projection, n_rows, predicate) = prepare_scan_args(
             &self.predicate,
             &mut self.options.with_columns,
             &mut self.schema,

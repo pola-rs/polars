@@ -41,12 +41,14 @@ pub mod partition;
 
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
 use arrow::array::new_empty_array;
 use arrow::error::Result as ArrowResult;
 pub use options::*;
 use polars_core::config::verbose;
+use polars_core::cloud::CloudType;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
@@ -173,7 +175,6 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
-    p.as_ref().starts_with("s3://")
-        || p.as_ref().starts_with("file://")
-        || p.as_ref().starts_with("gcs://")
+    let path = p.as_ref();
+    return CloudType::from_str(&path.to_string_lossy()).is_ok();
 }

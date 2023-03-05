@@ -149,7 +149,6 @@ impl Matcher {
     }
 }
 
-#[tokio::main(flavor = "current_thread")]
 /// List files with a prefix derived from the pattern.
 pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Vec<String>> {
     // Find the fixed prefix, up to the first '*'.
@@ -164,6 +163,9 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
         store,
     ) = super::build(url, cloud_options)?;
     let matcher = Matcher::new(prefix.clone(), expansion.as_deref())?;
+    if expansion.is_none() {
+        return Ok(vec![url.into()]);
+    }
 
     let list_stream = store
         .list(Some(&Path::from(prefix)))
@@ -260,6 +262,13 @@ mod test {
         assert!(!a.is_matching(&Path::from("folder/1parquet")));
         // Intermediary folders are not allowed.
         assert!(!a.is_matching(&Path::from("folder/other/1.parquet")));
+
+        // Match full name.
+        let cloud_location = CloudLocation::new("s3://bucket/folder/some.parquet").unwrap();
+        let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
+        // Regular match.
+        assert!(a.is_matching(&Path::from("folder/some.parquet")));
+        assert!(!a.is_matching(&Path::from("folder/other.parquet")));
     }
 
     #[test]

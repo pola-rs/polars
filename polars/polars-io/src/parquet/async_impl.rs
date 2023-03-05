@@ -8,7 +8,7 @@ use arrow::io::parquet::read::{
 use arrow::io::parquet::write::FileMetaData;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
-use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{stream, StreamExt, TryFutureExt, TryStreamExt, FutureExt};
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
 use polars_core::cloud::CloudOptions;
@@ -20,7 +20,7 @@ use polars_core::schema::Schema;
 
 use super::cloud::{build, CloudLocation, CloudReader};
 use super::mmap;
-use super::mmap::ColumnStore;
+use super::mmap::CloudMapper;
 use super::read_impl::FetchRowGroups;
 
 pub struct ParquetObjectStore {
@@ -104,7 +104,6 @@ type RowGroupChunks<'a> = Vec<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>>;
 
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
-#[tokio::main(flavor = "current_thread")]
 async fn download_projection<'a: 'b, 'b>(
     projection: &[usize],
     row_groups: &'a [RowGroupMetaData],
@@ -149,7 +148,7 @@ pub(crate) struct FetchRowGroupsFromObjectStore {
     row_groups_metadata: Vec<RowGroupMetaData>,
     projection: Vec<usize>,
     logging: bool,
-    schema: ArrowSchema,
+    pub schema: ArrowSchema,
 }
 
 impl FetchRowGroupsFromObjectStore {
@@ -173,11 +172,12 @@ impl FetchRowGroupsFromObjectStore {
             schema,
         })
     }
-}
 
-impl FetchRowGroups for FetchRowGroupsFromObjectStore {
-    fn fetch_row_groups(&mut self, row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
-        // Fetch the required row groups.
+    /// Fetch the required row groups asynchronously.
+    pub async fn fetch_row_groups_async(
+        &mut self,
+        row_groups: Range<usize>,
+    ) -> PolarsResult<CloudMapper> {
         let row_groups = &self
             .row_groups_metadata
             .get(row_groups.clone())
@@ -194,9 +194,9 @@ impl FetchRowGroups for FetchRowGroupsFromObjectStore {
                 Ok,
             )?;
 
-        // Package in the format required by ColumnStore.
+        // Package in the format required by ColumnAccess.
         let downloaded =
-            download_projection(&self.projection, row_groups, &self.schema, &self.reader)?;
+            download_projection(&self.projection, row_groups, &self.schema, &self.reader).await?;
         if self.logging {
             eprintln!(
                 "BatchedParquetReader: fetched {} row_groups for {} fields, yielding {} column chunks.",
@@ -224,6 +224,15 @@ impl FetchRowGroups for FetchRowGroupsFromObjectStore {
             );
         }
 
-        Ok(mmap::ColumnStore::Fetched(downloaded_per_filepos))
+        Ok(mmap::CloudMapper::Fetched(downloaded_per_filepos))
+    }
+}
+
+impl FetchRowGroups for FetchRowGroupsFromObjectStore {
+    fn fetch_row_groups<'a>(
+        &'a mut self,
+        row_groups: Range<usize>,
+    ) -> BoxFuture<'a, PolarsResult<CloudMapper>> {
+        self.fetch_row_groups_async(row_groups).boxed()
     }
 }

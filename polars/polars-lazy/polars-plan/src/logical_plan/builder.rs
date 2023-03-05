@@ -2,6 +2,8 @@ use std::io::{Read, Seek};
 use std::ops::Deref;
 use std::path::PathBuf;
 
+#[cfg(all(feature = "parquet", feature = "async"))]
+use futures::future::BoxFuture;
 #[cfg(feature = "parquet")]
 use polars_core::cloud::CloudOptions;
 use polars_core::frame::_duplicate_err;
@@ -12,7 +14,7 @@ use polars_core::utils::try_get_supertype;
 use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::parquet::ParquetAsyncReader;
-#[cfg(feature = "parquet")]
+#[cfg(all(feature = "parquet", not(feature = "async")))]
 use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
@@ -113,7 +115,46 @@ impl LogicalPlanBuilder {
         .into())
     }
 
-    #[cfg(any(feature = "parquet", feature = "parquet_async"))]
+    #[cfg(all(feature = "parquet", feature = "async"))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn scan_parquet_async(
+        uri: String,
+        n_rows: Option<usize>,
+        cache: bool,
+        parallel: polars_io::parquet::ParallelStrategy,
+        row_count: Option<RowCount>,
+        rechunk: bool,
+        low_memory: bool,
+        cloud_options: Option<CloudOptions>,
+    ) -> BoxFuture<'static, PolarsResult<Self>> {
+        Box::pin(async move {
+            let (schema, num_rows) =
+                ParquetAsyncReader::file_info(&uri, cloud_options.as_ref()).await?;
+            let file_info = FileInfo {
+                schema: Arc::new(schema),
+                row_estimation: (Some(num_rows), num_rows),
+            };
+            Ok(LogicalPlan::ParquetScan {
+                path: PathBuf::from(uri),
+                file_info,
+                predicate: None,
+                options: ParquetOptions {
+                    n_rows,
+                    with_columns: None,
+                    cache,
+                    parallel,
+                    row_count,
+                    rechunk,
+                    file_counter: Default::default(),
+                    low_memory,
+                },
+                cloud_options,
+            }
+            .into())
+        })
+    }
+
+    #[cfg(feature = "parquet")]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet<P: Into<PathBuf>>(
         path: P,
@@ -126,6 +167,7 @@ impl LogicalPlanBuilder {
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
     ) -> PolarsResult<Self> {
+        use polars_io::prelude::ParquetReader;
         use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
@@ -137,13 +179,7 @@ impl LogicalPlanBuilder {
 
             #[cfg(feature = "async")]
             {
-                let uri = path.to_string_lossy();
-                let (schema, num_rows) =
-                    ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?;
-                Ok(FileInfo {
-                    schema: Arc::new(schema),
-                    row_estimation: (Some(num_rows), num_rows),
-                })
+                panic!("Use scan_parquet_async for cloud storage.")
             }
         } else {
             let file = std::fs::File::open(&path)?;

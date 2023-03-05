@@ -9,7 +9,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::read_impl::FetchRowGroupsFromMmapReader;
+use super::read_impl::{read_parquet_from_cloud_mapper, FetchRowGroupsFromMmapReader};
 use crate::mmap::MmapBytesReader;
 #[cfg(feature = "async")]
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
@@ -160,6 +160,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
             metadata,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
+            None,
             self.row_count,
             chunk_size,
             self.use_statistics,
@@ -228,6 +229,7 @@ pub struct ParquetAsyncReader {
     row_count: Option<RowCount>,
     low_memory: bool,
     use_statistics: bool,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
 }
 
 #[cfg(feature = "async")]
@@ -244,11 +246,11 @@ impl ParquetAsyncReader {
             row_count: None,
             low_memory: false,
             use_statistics: true,
+            predicate: None,
         })
     }
 
-    /// Fetch the file info in a synchronous way to for the query planning phase.
-    #[tokio::main(flavor = "current_thread")]
+    /// Fetch the file info from the cloud storage.
     pub async fn file_info(
         uri: &str,
         options: Option<&CloudOptions>,
@@ -298,7 +300,7 @@ impl ParquetAsyncReader {
         self
     }
 
-    #[tokio::main(flavor = "current_thread")]
+    #[tokio::main(flavor = "multi_thread")]
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.to_owned();
         let row_group_fetcher = Box::new(FetchRowGroupsFromObjectStore::new(
@@ -311,9 +313,37 @@ impl ParquetAsyncReader {
             metadata,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
+            self.predicate,
             self.row_count,
             chunk_size,
             self.use_statistics,
         )
+    }
+
+    /// Actually read the parquet file.
+    pub async fn finish(mut self, rechunk: bool) -> PolarsResult<DataFrame> {
+        let metadata = self.reader.get_metadata().await?.to_owned();
+        let mut row_group_fetcher =
+            FetchRowGroupsFromObjectStore::new(self.reader, &metadata, &self.projection)?;
+        let schema = row_group_fetcher.schema.clone();
+        let column_store = row_group_fetcher
+            .fetch_row_groups_async(0..metadata.row_groups.len())
+            .await?;
+        read_parquet_from_cloud_mapper(
+            &column_store,
+            self.n_rows.unwrap_or(usize::MAX),
+            self.projection.as_deref(),
+            &schema,
+            metadata,
+            self.predicate,
+            Default::default(),
+            self.row_count,
+        )
+        .map(|mut df| {
+            if rechunk {
+                df.rechunk();
+            };
+            df
+        })
     }
 }

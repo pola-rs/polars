@@ -16,6 +16,9 @@
 //!
 #[cfg(feature = "async")]
 pub(super) mod async_impl;
+#[cfg(feature = "async")]
+pub(super) mod async_manager;
+
 pub(super) mod mmap;
 pub mod predicates;
 mod read;
