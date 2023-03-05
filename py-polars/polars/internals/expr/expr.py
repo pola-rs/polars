@@ -3381,7 +3381,15 @@ class Expr:
                 df = x.to_frame("x")
 
                 n_threads = threadpool_size()
-                chunk_size = x.len() // threadpool_size()
+                chunk_size = x.len() // n_threads
+                remainder = x.len() % n_threads
+                if chunk_size == 0:
+                    chunk_sizes = [1 for _ in range(remainder)]
+                else:
+                    chunk_sizes = [
+                        chunk_size + 1 if i < remainder else chunk_size
+                        for i in range(n_threads)
+                    ]
 
                 def get_lazy_promise(df: pli.DataFrame) -> pli.LazyFrame:
                     return df.lazy().select(
@@ -3390,22 +3398,14 @@ class Expr:
                         )
                     )
 
-                # ensure we don't slice to 0
-                if n_threads > x.len() * 3:
-                    return get_lazy_promise(df).collect().to_series()
-
                 # create partitions with LazyFrames
                 # these are promises on a computation
                 partitions = []
-                for i in range(n_threads):
-                    # latest partition can be a little longer
-                    # we increase length of slice
-                    if i == (n_threads - 1):
-                        partition_df = df[
-                            i * chunk_size : i * chunk_size + chunk_size * 10
-                        ]
-                    else:
-                        partition_df = df[i * chunk_size : i * chunk_size + chunk_size]
+                b = 0
+                for step in chunk_sizes:
+                    a = b
+                    b = b + step
+                    partition_df = df[a:b]
                     partitions.append(get_lazy_promise(partition_df))
 
                 out = [df.to_series() for df in pli.collect_all(partitions)]
