@@ -454,6 +454,7 @@ fn replace_single<'a>(
         (1, 1) => {
             let pat = get_pat(pat)?;
             let val = val.get(0).ok_or_else(|| PolarsError::ComputeError("value may not be 'null' in 'replace' expression".into()))?;
+            let literal = literal || pat.chars().all(|c| !c.is_ascii_punctuation());
 
             match literal {
                 true => ca.replace_literal(pat, val),
