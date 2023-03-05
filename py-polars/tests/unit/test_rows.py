@@ -59,6 +59,15 @@ def test_rows() -> None:
     rows = df.rows(named=True)
     assert rows == [{"a": 1, "b": 1}, {"a": 2, "b": 2}]
 
+    # Rows with nullarray cols
+    df = df.with_columns(c=pl.lit(None))
+    assert df.schema == {"a": pl.Int64, "b": pl.Int64, "c": pl.Null}
+    assert df.rows() == [(1, 1, None), (2, 2, None)]
+    assert df.rows(named=True) == [
+        {"a": 1, "b": 1, "c": None},
+        {"a": 2, "b": 2, "c": None},
+    ]
+
 
 def test_iter_rows() -> None:
     df = pl.DataFrame(
