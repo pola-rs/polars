@@ -11,6 +11,7 @@ pub mod default_arrays;
 mod get;
 pub mod list;
 pub mod slice;
+pub mod utf8;
 
 pub use get::ArrowGetItem;
 pub use slice::*;
