@@ -354,7 +354,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
 impl Utf8Chunked {
     pub fn apply_mut<'a, F>(&'a self, mut f: F) -> Self
     where
-        F: FnMut(&'a str) -> Cow<'a, str>,
+        F: FnMut(&'a str) -> &'a str,
     {
         use polars_arrow::array::utf8::Utf8FromIter;
         let chunks = self
