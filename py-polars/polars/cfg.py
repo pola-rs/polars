@@ -37,6 +37,7 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
+    "POLARS_ACTIVATE_DECIMAL",
 }
 
 
@@ -569,4 +570,19 @@ class Config:
 
         """
         _set_float_fmt(fmt)
+        return cls
+
+    @classmethod
+    def activate_decimals(cls) -> type[Config]:
+        """
+        Activate ``Decimal`` data types.
+
+        This is temporary setting that will be removed later once
+        ``Decimal`` type stabilize. This happens without it being
+        considered a breaking change.
+
+        Currently, ``Decimal`` types are in alpha stage.
+
+        """
+        os.environ["POLARS_ACTIVATE_DECIMAL"] = "1"
         return cls
