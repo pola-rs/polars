@@ -168,7 +168,7 @@ Required Rust version `>=1.62`
 
 ## Contributing
 
-Want to contribute? Read our [contribution guideline](https://github.com/pola-rs/polars/blob/master/CONTRIBUTING.md).
+Want to contribute? Read our [contribution guideline](.github/CONTRIBUTING.md).
 
 ## Python: compile polars from source
 
