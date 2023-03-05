@@ -3383,10 +3383,13 @@ class Expr:
                 n_threads = threadpool_size()
                 chunk_size = x.len() // n_threads
                 remainder = x.len() % n_threads
-                chunk_sizes = [
-                    chunk_size + 1 if i < remainder else chunk_size
-                    for i in range(n_threads)
-                ]
+                if chunk_size == 0:
+                    chunk_sizes = [1 for _ in range(remainder)]
+                else:
+                    chunk_sizes = [
+                        chunk_size + 1 if i < remainder else chunk_size
+                        for i in range(n_threads)
+                    ]
 
                 def get_lazy_promise(df: pli.DataFrame) -> pli.LazyFrame:
                     return df.lazy().select(
