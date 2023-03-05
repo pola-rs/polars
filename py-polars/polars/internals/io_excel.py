@@ -64,7 +64,7 @@ def _xl_inject_dummy_table_columns(
 
     df = df.select(
         [
-            (col if col in df_original_columns else pli.lit("").alias(col))
+            (col if col in df_original_columns else pli.lit(None).alias(col))
             for col in df_select_cols
         ]
     )
