@@ -1001,7 +1001,7 @@ impl DataFrame {
     ///                         "Tax revenue (% GDP)" => [Some(32.7), None, None])?;
     /// assert_eq!(df1.shape(), (3, 2));
     ///
-    /// let df2: DataFrame = df1.drop_nulls(None)?;
+    /// let df2: DataFrame = df1.drop_nulls::<String>(None)?;
     /// assert_eq!(df2.shape(), (1, 2));
     /// println!("{}", df2);
     /// # Ok::<(), PolarsError>(())
