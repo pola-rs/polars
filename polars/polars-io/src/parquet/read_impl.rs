@@ -109,7 +109,7 @@ fn rg_to_dfs(
         let md = &file_metadata.row_groups[rg];
         let current_row_count = md.num_rows() as IdxSize;
 
-        if use_statistics && !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg)? {
+        if use_statistics && !read_this_row_group(predicate, file_metadata, schema, rg)? {
             *previous_row_count += current_row_count;
             continue;
         }
@@ -363,11 +363,8 @@ impl FetchRowGroupsFromMmapReader {
 
 /// There is nothing to do when fetching a mmap-ed file.
 impl FetchRowGroups for FetchRowGroupsFromMmapReader {
-    fn fetch_row_groups(
-        &mut self,
-        _row_groups: Range<usize>,
-    ) -> PolarsResult<CloudMapper> {
-        Ok(mmap::CloudMapper::PassThrough(self.0.deref())) 
+    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<CloudMapper> {
+        Ok(mmap::CloudMapper::PassThrough(self.0.deref()))
     }
 }
 
@@ -377,7 +374,6 @@ pub struct BatchedParquetReader {
     row_group_fetcher: Box<dyn FetchRowGroups>,
     limit: usize,
     projection: Vec<usize>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
     schema: ArrowSchema,
     metadata: FileMetaData,
     row_count: Option<RowCount>,
@@ -432,8 +428,8 @@ impl BatchedParquetReader {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         // fill up fifo stack
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
-        let row_group_start = self.row_group_offset;
-        let row_group_end = std::cmp::min(self.row_group_offset + n, self.n_row_groups);
+            let row_group_start = self.row_group_offset;
+            let row_group_end = std::cmp::min(self.row_group_offset + n, self.n_row_groups);
             let store = self
                 .row_group_fetcher
                 .fetch_row_groups(row_group_start..row_group_end)?;
@@ -473,8 +469,8 @@ impl BatchedParquetReader {
                     self.row_group_offset += n;
                     dfs
                 }
-                    _ => unimplemented!(),
-                };
+                _ => unimplemented!(),
+            };
 
             // TODO! this is slower than it needs to be
             // we also need to parallelize over row groups here.

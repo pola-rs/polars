@@ -10,9 +10,10 @@ use futures::channel::mpsc::Sender;
 use futures::channel::oneshot;
 use once_cell::sync::Lazy;
 use polars_core::prelude::*;
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
 
-use super::mmap::ColumnMapper;
+use super::async_impl::ParquetObjectStore;
+use super::mmap::CloudMapper;
 
 static GLOBAL_ASYNC_MANAGER: Lazy<AsyncManager> = Lazy::new(AsyncManager::default);
 
@@ -47,7 +48,7 @@ enum AsyncParquetReaderMessage {
         /// The row groups to fetch.
         row_groups: Range<usize>,
         /// The channel to send the result to.
-        tx: oneshot::Sender<PolarsResult<ColumnMapper>>,
+        tx: oneshot::Sender<PolarsResult<CloudMapper>>,
     },
 }
 
@@ -56,7 +57,7 @@ pub(crate) struct AsyncManager {
     /// The channel to communicate with the manager.
     tx: Sender<AsyncParquetReaderMessage>,
     /// A handle to the Tokio runtime running the manager.
-    handle: Handle,
+    runtime: Runtime,
     /// Opened readers.
     readers: PlHashMap<String, Arc<ParquetObjectStore>>,
 }
@@ -64,12 +65,14 @@ pub(crate) struct AsyncManager {
 impl AsyncManager {
     /// Create a new async manager.
     pub fn new() -> AsyncManager {
+        use futures::stream::StreamExt;
+
         let (tx, rx) = futures::channel::mpsc::channel(1);
-        let handle = tokio::runtime::Builder::new_multi_thread()
+        let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
-        handle.spawn(async move {
+        runtime.spawn(async move {
             let mut reader = None;
             while let Some(message) = rx.next().await {
                 match message {
@@ -106,7 +109,11 @@ impl AsyncManager {
                 }
             }
         });
-        AsyncManager { tx, handle }
+        AsyncManager {
+            tx,
+            runtime,
+            readers: PlHashMap::new(),
+        }
     }
 }
 
