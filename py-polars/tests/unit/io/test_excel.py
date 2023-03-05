@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from datetime import date
 from io import BytesIO
-from pathlib import Path  # noqa: TCH003
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture()
