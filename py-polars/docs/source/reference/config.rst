@@ -9,6 +9,7 @@ Config options
 .. autosummary::
    :toctree: api/
 
+    Config.activate_decimals
     Config.set_ascii_tables
     Config.set_fmt_float
     Config.set_fmt_str_lengths
