@@ -198,7 +198,7 @@ def test_mixed_sequence_selection() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_from_arrow(monkeypatch) -> None:
+def test_from_arrow(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     tbl = pa.table(
         {
