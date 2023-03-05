@@ -199,7 +199,7 @@ def test_mixed_sequence_selection() -> None:
 
 
 def test_from_arrow(monkeypatch) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL") = "1"
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     tbl = pa.table(
         {
             "a": pa.array([1, 2], pa.timestamp("s")),
