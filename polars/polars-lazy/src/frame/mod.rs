@@ -1172,7 +1172,7 @@ impl LazyFrame {
     #[cfg(feature = "dtype-struct")]
     pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
         self.map_private(FunctionNode::Unnest {
-            columns: Arc::new(cols.into_iter().map(|s| Arc::from(s.as_ref())).collect()),
+            columns: cols.into_iter().map(|s| Arc::from(s.as_ref())).collect(),
         })
     }
 

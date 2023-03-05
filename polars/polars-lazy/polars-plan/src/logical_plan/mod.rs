@@ -220,12 +220,6 @@ pub enum LogicalPlan {
         by_column: Vec<Expr>,
         args: SortArguments,
     },
-    /// An explode operation
-    Explode {
-        input: Box<LogicalPlan>,
-        columns: Vec<String>,
-        schema: SchemaRef,
-    },
     /// Slice the table
     Slice {
         input: Box<LogicalPlan>,
@@ -298,7 +292,6 @@ impl LogicalPlan {
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
-            Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
             ParquetScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             #[cfg(feature = "ipc")]

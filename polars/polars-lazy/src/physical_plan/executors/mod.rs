@@ -1,7 +1,6 @@
 mod cache;
 mod drop_duplicates;
 mod executor;
-mod explode;
 mod ext_context;
 mod filter;
 mod groupby;
@@ -31,7 +30,6 @@ use rayon::prelude::*;
 
 pub(super) use self::cache::*;
 pub(super) use self::drop_duplicates::*;
-pub(super) use self::explode::*;
 pub(super) use self::ext_context::*;
 pub(super) use self::filter::*;
 pub(super) use self::groupby::*;

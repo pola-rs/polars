@@ -203,7 +203,6 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 ..
             },
         ) => expr_nodes_equal(by_l, by_r, expr_arena) && args_l == args_r,
-        (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
         (Distinct { options: l, .. }, Distinct { options: r, .. }) => l == r,
         (MapFunction { function: l, .. }, MapFunction { function: r, .. }) => l == r,
         (

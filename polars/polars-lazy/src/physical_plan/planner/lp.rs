@@ -340,10 +340,6 @@ pub fn create_physical_plan(
                 args,
             }))
         }
-        Explode { input, columns, .. } => {
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            Ok(Box::new(executors::ExplodeExec { input, columns }))
-        }
         Cache { input, id, count } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::CacheExec { id, input, count }))

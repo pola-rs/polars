@@ -204,10 +204,6 @@ impl LogicalPlan {
                 writeln!(f, "{:indent$}SORT BY {by_column:?}", "")?;
                 input._format(f, indent)
             }
-            Explode { input, columns, .. } => {
-                writeln!(f, "{:indent$}EXPLODE BY {columns:?}", "")?;
-                input._format(f, indent)
-            }
             Aggregate {
                 input, keys, aggs, ..
             } => {
