@@ -19,6 +19,9 @@
   <a href="https://www.npmjs.com/package/nodejs-polars">
     <img src="https://img.shields.io/npm/v/nodejs-polars.svg" alt="NPM Latest Release"/>
   </a>
+  <a href="https://doi.org/10.5281/zenodo.7697217">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7697217.svg" alt="DOI Latest Release"/>
+  </a>
 </div>
 
 <p align="center">
