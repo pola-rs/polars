@@ -42,7 +42,6 @@ pub use functions::*;
 pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
-use polars_core::frame::explode::MeltArgs;
 pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -220,23 +219,11 @@ pub enum LogicalPlan {
         by_column: Vec<Expr>,
         args: SortArguments,
     },
-    /// An explode operation
-    Explode {
-        input: Box<LogicalPlan>,
-        columns: Vec<String>,
-        schema: SchemaRef,
-    },
     /// Slice the table
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
         len: IdxSize,
-    },
-    /// A Melt operation
-    Melt {
-        input: Box<LogicalPlan>,
-        args: Arc<MeltArgs>,
-        schema: SchemaRef,
     },
     /// A (User Defined) Function
     MapFunction {
@@ -298,7 +285,6 @@ impl LogicalPlan {
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
-            Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
             ParquetScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             #[cfg(feature = "ipc")]
@@ -315,7 +301,6 @@ impl LogicalPlan {
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
             Distinct { input, .. } | FileSink { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
-            Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
             MapFunction {
                 input, function, ..
             } => {

@@ -38,7 +38,7 @@ from polars.datatypes import (
     py_type_to_arrow_type,
     py_type_to_dtype,
 )
-from polars.datatypes_constructor import (
+from polars.datatypes.constructor import (
     numpy_type_to_constructor,
     numpy_values_and_dtype,
     polars_type_to_constructor,

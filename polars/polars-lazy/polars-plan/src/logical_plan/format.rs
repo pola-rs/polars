@@ -137,10 +137,6 @@ impl LogicalPlan {
                 writeln!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
             }
-            Melt { input, .. } => {
-                writeln!(f, "{:indent$}MELT", "")?;
-                input._format(f, indent)
-            }
             #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
@@ -202,10 +198,6 @@ impl LogicalPlan {
                 input, by_column, ..
             } => {
                 writeln!(f, "{:indent$}SORT BY {by_column:?}", "")?;
-                input._format(f, indent)
-            }
-            Explode { input, columns, .. } => {
-                writeln!(f, "{:indent$}EXPLODE BY {columns:?}", "")?;
                 input._format(f, indent)
             }
             Aggregate {

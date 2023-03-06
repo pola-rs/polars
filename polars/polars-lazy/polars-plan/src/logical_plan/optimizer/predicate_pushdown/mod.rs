@@ -223,33 +223,6 @@ impl PredicatePushDown {
                 Ok(lp)
             }
 
-            Melt {
-                input,
-                args,
-                schema,
-            } => {
-                let variable_name = args.variable_name.as_deref().unwrap_or("variable");
-                let value_name = args.value_name.as_deref().unwrap_or("value");
-
-                // predicates that will be done at this level
-                let condition = |name: Arc<str>| {
-                    let name = &*name;
-                    name == variable_name
-                        || name == value_name
-                        || args.value_vars.iter().any(|s| s.as_str() == name)
-                };
-                let local_predicates =
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-
-                let lp = ALogicalPlan::Melt {
-                    input,
-                    args,
-                    schema,
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-            }
             LocalProjection { expr, input, .. } => {
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
 
@@ -376,23 +349,6 @@ impl PredicatePushDown {
                 }
             }
 
-            Explode { input, columns, schema } => {
-                let condition = |name: Arc<str>| columns.iter().any(|s| s.as_str() == &*name);
-
-                // first columns that refer to the exploded columns should be done here
-                let mut local_predicates =
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-
-                // if any predicate is a pushdown boundary, thus influenced by order of predicates e.g.: sum(), over(), sort
-                // we do all here. #5950
-                if acc_predicates.values().chain(local_predicates.iter()).any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
-                    local_predicates.extend(acc_predicates.drain().map(|(_name, node)| node))
-                }
-
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                let lp = Explode { input, columns, schema };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-            }
             Distinct {
                 input,
                 options
@@ -539,7 +495,48 @@ impl PredicatePushDown {
                             )?;
                             let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-                        }, _ => {
+                        },
+                        FunctionNode::Explode {columns, ..} => {
+
+                            let condition = |name: Arc<str>| columns.iter().any(|s| s.as_ref() == &*name);
+
+                            // first columns that refer to the exploded columns should be done here
+                            let mut local_predicates =
+                                transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+
+                            // if any predicate is a pushdown boundary, thus influenced by order of predicates e.g.: sum(), over(), sort
+                            // we do all here. #5950
+                            if acc_predicates.values().chain(local_predicates.iter()).any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
+                                local_predicates.extend(acc_predicates.drain().map(|(_name, node)| node))
+                            }
+
+                            let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                            Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+                        }
+                        FunctionNode::Melt {
+                            args,
+                            ..
+                        } => {
+
+                            let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+                            let value_name = args.value_name.as_deref().unwrap_or("value");
+
+                            // predicates that will be done at this level
+                            let condition = |name: Arc<str>| {
+                                let name = &*name;
+                                name == variable_name
+                                    || name == value_name
+                                    || args.value_vars.iter().any(|s| s.as_str() == name)
+                            };
+                            let local_predicates =
+                                transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+
+                            let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                            Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+                        }
+                        _ => {
                             self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                         }
                     }

@@ -3,29 +3,18 @@ use super::*;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_melt(
     proj_pd: &mut ProjectionPushDown,
+    lp: ALogicalPlan,
+    args: &Arc<MeltArgs>,
     input: Node,
-    args: Arc<MeltArgs>,
-    schema: SchemaRef,
     acc_projections: Vec<Node>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<ALogicalPlan> {
-    // all columns are used in melt
     if args.value_vars.is_empty() {
         // restart projection pushdown
-        proj_pd.no_pushdown_restart_opt(
-            ALogicalPlan::Melt {
-                input,
-                args,
-                schema,
-            },
-            acc_projections,
-            projections_seen,
-            lp_arena,
-            expr_arena,
-        )
+        proj_pd.no_pushdown_restart_opt(lp, acc_projections, projections_seen, lp_arena, expr_arena)
     } else {
         let (mut acc_projections, mut local_projections, names) = split_acc_projections(
             acc_projections,
@@ -54,8 +43,12 @@ pub(super) fn process_melt(
             lp_arena,
             expr_arena,
         )?;
-
-        let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(args);
-        Ok(proj_pd.finish_node(local_projections, builder))
+        if local_projections.is_empty() {
+            Ok(lp)
+        } else {
+            Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
+                .project(local_projections)
+                .build())
+        }
     }
 }

@@ -32,7 +32,7 @@ fn impl_fast_projection(
         let lp = ALogicalPlan::MapFunction {
             input,
             function: FunctionNode::FastProjection {
-                columns: Arc::new(columns),
+                columns: Arc::from(columns),
             },
         };
 

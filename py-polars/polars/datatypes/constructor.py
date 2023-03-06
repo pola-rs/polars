@@ -3,30 +3,7 @@ from __future__ import annotations
 from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
-from polars.datatypes import (
-    DTYPE_TEMPORAL_UNITS,
-    Binary,
-    Boolean,
-    Categorical,
-    Date,
-    Datetime,
-    Duration,
-    Float32,
-    Float64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Null,
-    Object,
-    Time,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    Utf8,
-    _base_type,
-)
+from polars import datatypes as dt
 from polars.dependencies import numpy as np
 
 # Module not available when building docs
@@ -44,26 +21,26 @@ if not _DOCUMENTING:
     _POLARS_TYPE_TO_CONSTRUCTOR: dict[
         PolarsDataType, Callable[[str, Sequence[Any], bool], PySeries]
     ] = {
-        Float32: PySeries.new_opt_f32,
-        Float64: PySeries.new_opt_f64,
-        Int8: PySeries.new_opt_i8,
-        Int16: PySeries.new_opt_i16,
-        Int32: PySeries.new_opt_i32,
-        Int64: PySeries.new_opt_i64,
-        UInt8: PySeries.new_opt_u8,
-        UInt16: PySeries.new_opt_u16,
-        UInt32: PySeries.new_opt_u32,
-        UInt64: PySeries.new_opt_u64,
-        Date: PySeries.new_opt_i32,
-        Datetime: PySeries.new_opt_i64,
-        Duration: PySeries.new_opt_i64,
-        Time: PySeries.new_opt_i64,
-        Boolean: PySeries.new_opt_bool,
-        Utf8: PySeries.new_str,
-        Object: PySeries.new_object,
-        Categorical: PySeries.new_str,
-        Binary: PySeries.new_binary,
-        Null: PySeries.new_null,
+        dt.Float32: PySeries.new_opt_f32,
+        dt.Float64: PySeries.new_opt_f64,
+        dt.Int8: PySeries.new_opt_i8,
+        dt.Int16: PySeries.new_opt_i16,
+        dt.Int32: PySeries.new_opt_i32,
+        dt.Int64: PySeries.new_opt_i64,
+        dt.UInt8: PySeries.new_opt_u8,
+        dt.UInt16: PySeries.new_opt_u16,
+        dt.UInt32: PySeries.new_opt_u32,
+        dt.UInt64: PySeries.new_opt_u64,
+        dt.Date: PySeries.new_opt_i32,
+        dt.Datetime: PySeries.new_opt_i64,
+        dt.Duration: PySeries.new_opt_i64,
+        dt.Time: PySeries.new_opt_i64,
+        dt.Boolean: PySeries.new_opt_bool,
+        dt.Utf8: PySeries.new_str,
+        dt.Object: PySeries.new_object,
+        dt.Categorical: PySeries.new_str,
+        dt.Binary: PySeries.new_binary,
+        dt.Null: PySeries.new_null,
     }
 
 
@@ -72,7 +49,7 @@ def polars_type_to_constructor(
 ) -> Callable[[str, Sequence[Any], bool], PySeries]:
     """Get the right PySeries constructor for the given Polars dtype."""
     try:
-        dtype = _base_type(dtype)
+        dtype = dt._base_type(dtype)
         return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot construct PySeries for type {dtype}.") from None
@@ -118,7 +95,7 @@ def numpy_values_and_dtype(
         values = values.astype(np.float32)
         dtype = values.dtype.type
     elif dtype == np.datetime64:
-        if np.datetime_data(values.dtype)[0] in DTYPE_TEMPORAL_UNITS:
+        if np.datetime_data(values.dtype)[0] in dt.DTYPE_TEMPORAL_UNITS:
             values = values.astype(np.int64)
         else:
             dtype = object

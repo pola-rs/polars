@@ -1946,11 +1946,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Expressions with multiple outputs can be automatically instantiated as Structs
         by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
-        >>> from polars.datatypes import INTEGER_DTYPES
         >>> with pl.Config() as cfg:
         ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
         ...     ldf.select(
-        ...         is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
+        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).suffix("_is_odd"),
         ...     ).collect()
         ...
         shape: (3, 1)
@@ -4151,6 +4150,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         value_vars: str | list[str] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
+        *,
+        streamable: bool = True,
     ) -> Self:
         """
         Unpivot a DataFrame from wide to long format.
@@ -4173,6 +4174,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Name to give to the `variable` column. Defaults to "variable"
         value_name
             Name to give to the `value` column. Defaults to "value"
+        streamable
+            Allow this node to run in the streaming engine.
+            If this runs in streaming, the output of the melt operation
+            will not have a stable ordering.
 
         Examples
         --------
@@ -4208,7 +4213,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if id_vars is None:
             id_vars = []
         return self._from_pyldf(
-            self._ldf.melt(id_vars, value_vars, value_name, variable_name)
+            self._ldf.melt(id_vars, value_vars, value_name, variable_name, streamable)
         )
 
     @deprecated_alias(f="function")

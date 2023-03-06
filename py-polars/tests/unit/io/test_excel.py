@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from datetime import date
 from io import BytesIO
-from pathlib import Path  # noqa: TCH003
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture()
@@ -79,7 +80,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
                 },
             },
             "dtype_formats": {
-                FLOAT_DTYPES: '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)'
+                pl.FLOAT_DTYPES: '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)'
             },
             "column_formats": {
                 "dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"},
@@ -144,7 +145,7 @@ def test_excel_sparklines() -> None:
             workbook=wb,
             worksheet="frame_data",
             table_style="Table Style Light 2",
-            dtype_formats={INTEGER_DTYPES: "#,##0_);(#,##0)"},
+            dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
             sparklines={
                 "trend": ["q1", "q2", "q3", "q4"],
                 "+/-": {
@@ -155,6 +156,9 @@ def test_excel_sparklines() -> None:
             },
             hide_gridlines=True,
         )
+
+    tables = {tbl["name"] for tbl in wb.get_worksheet_by_name("frame_data").tables}
+    assert "PolarsFrameTable0" in tables
 
     xldf = pl.read_excel(file=xls, sheet_name="frame_data")  # type: ignore[call-overload]
     # ┌──────┬──────┬─────┬─────┬─────┬─────┬───────┐
@@ -174,3 +178,28 @@ def test_excel_sparklines() -> None:
 
     assert xldf.columns == ["id", "+/-", "q1", "q2", "q3", "q4", "trend"]
     assert_frame_equal(df, xldf.drop("+/-", "trend"))
+
+
+def test_excel_write_multiple_tables() -> None:
+    from xlsxwriter import Workbook
+
+    # note: also checks that empty tables don't error on write
+    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df4 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+
+    xls = BytesIO()
+    with Workbook(xls) as wb:
+        df1.write_excel(workbook=wb, worksheet="sheet1", position="A1")
+        df2.write_excel(workbook=wb, worksheet="sheet1", position="A6")
+        df3.write_excel(workbook=wb, worksheet="sheet2", position="A1")
+        df4.write_excel(workbook=wb, worksheet="sheet3", position="A1")
+
+    table_names: set[str] = set()
+    for sheet in ("sheet1", "sheet2", "sheet3"):
+        table_names.update(
+            tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
+        )
+    assert table_names == {f"PolarsFrameTable{n}" for n in range(4)}
+    assert pl.read_excel(file=xls, sheet_name="sheet3").rows() == [(None, None, None)]  # type: ignore[call-overload]

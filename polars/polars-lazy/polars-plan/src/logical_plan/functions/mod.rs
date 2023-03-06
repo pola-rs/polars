@@ -2,6 +2,7 @@ mod drop;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 mod rename;
+
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
@@ -40,13 +41,13 @@ pub enum FunctionNode {
         original: Option<Arc<LogicalPlan>>,
     },
     Unnest {
-        columns: Arc<Vec<Arc<str>>>,
+        columns: Arc<[Arc<str>]>,
     },
     FastProjection {
-        columns: Arc<Vec<Arc<str>>>,
+        columns: Arc<[Arc<str>]>,
     },
     DropNulls {
-        subset: Arc<Vec<String>>,
+        subset: Arc<[Arc<str>]>,
     },
     Rechunk,
     // The two DataFrames are temporary concatenated
@@ -59,13 +60,21 @@ pub enum FunctionNode {
         column: Arc<str>,
     },
     Rename {
-        existing: Arc<Vec<SmartString>>,
-        new: Arc<Vec<SmartString>>,
+        existing: Arc<[SmartString]>,
+        new: Arc<[SmartString]>,
         // A column name gets swapped with an existing column
         swapping: bool,
     },
     Drop {
-        names: Arc<Vec<SmartString>>,
+        names: Arc<[SmartString]>,
+    },
+    Explode {
+        columns: Arc<[Arc<str>]>,
+        schema: SchemaRef,
+    },
+    Melt {
+        args: Arc<MeltArgs>,
+        schema: SchemaRef,
     },
 }
 
@@ -89,6 +98,8 @@ impl PartialEq for FunctionNode {
                 },
             ) => existing_l == existing_r && new_l == new_r,
             (Drop { names: l }, Drop { names: r }) => l == r,
+            (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
+            (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
             _ => false,
         }
     }
@@ -106,7 +117,9 @@ impl FunctionNode {
             | FastProjection { .. }
             | Unnest { .. }
             | Rename { .. }
+            | Explode { .. }
             | Drop { .. } => true,
+            Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
         }
     }
@@ -171,6 +184,8 @@ impl FunctionNode {
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
             Drop { names } => drop::drop_schema(input_schema, names),
+            Explode { schema, .. } => Ok(Cow::Owned(schema.clone())),
+            Melt { schema, .. } => Ok(Cow::Owned(schema.clone())),
         }
     }
 
@@ -183,6 +198,8 @@ impl FunctionNode {
             | Rechunk
             | Unnest { .. }
             | Rename { .. }
+            | Explode { .. }
+            | Melt { .. }
             | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
@@ -199,6 +216,8 @@ impl FunctionNode {
             | Rechunk
             | Unnest { .. }
             | Rename { .. }
+            | Explode { .. }
+            | Melt { .. }
             | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
@@ -209,7 +228,8 @@ impl FunctionNode {
     pub(crate) fn additional_projection_pd_columns(&self) -> &[Arc<str>] {
         use FunctionNode::*;
         match self {
-            Unnest { columns } => columns.as_slice(),
+            Unnest { columns } => columns.as_ref(),
+            Explode { columns, .. } => columns.as_ref(),
             _ => &[],
         }
     }
@@ -218,8 +238,8 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),
-            FastProjection { columns } => df.select(columns.as_slice()),
-            DropNulls { subset } => df.drop_nulls(Some(subset.as_slice())),
+            FastProjection { columns } => df.select(columns.as_ref()),
+            DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
@@ -229,7 +249,7 @@ impl FunctionNode {
             Unnest { columns: _columns } => {
                 #[cfg(feature = "dtype-struct")]
                 {
-                    df.unnest(_columns.as_slice())
+                    df.unnest(_columns.as_ref())
                 }
                 #[cfg(not(feature = "dtype-struct"))]
                 {
@@ -251,6 +271,11 @@ impl FunctionNode {
             }
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
             Drop { names } => drop::drop_impl(df, names),
+            Explode { columns, .. } => df.explode(columns.as_ref()),
+            Melt { args, .. } => {
+                let args = (**args).clone();
+                df.melt2(args)
+            }
         }
     }
 }
@@ -268,18 +293,18 @@ impl Display for FunctionNode {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             FastProjection { columns } => {
                 write!(f, "FAST_PROJECT: ")?;
-                let columns = columns.as_slice();
+                let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
             }
             DropNulls { subset } => {
                 write!(f, "DROP_NULLS by: ")?;
-                let subset = subset.as_slice();
+                let subset = subset.as_ref();
                 fmt_column_delimited(f, subset, "[", "]")
             }
             Rechunk => write!(f, "RECHUNK"),
             Unnest { columns } => {
                 write!(f, "UNNEST by:")?;
-                let columns = columns.as_slice();
+                let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
             }
             #[cfg(feature = "merge_sorted")]
@@ -296,6 +321,8 @@ impl Display for FunctionNode {
             }
             Rename { .. } => write!(f, "RENAME"),
             Drop { .. } => write!(f, "DROP"),
+            Explode { .. } => write!(f, "EXPLODE"),
+            Melt { .. } => write!(f, "MELT"),
         }
     }
 }

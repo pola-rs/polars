@@ -621,17 +621,19 @@ impl LogicalPlanBuilder {
                         let inner = *inner.clone();
                         schema.with_column(name.as_ref().into(), inner);
                     }
-
-                    (**name).to_owned()
+                    name.clone()
                 } else {
                     panic!("expected column expression")
                 }
             })
             .collect();
-        LogicalPlan::Explode {
+
+        LogicalPlan::MapFunction {
             input: Box::new(self.0),
-            columns,
-            schema: Arc::new(schema),
+            function: FunctionNode::Explode {
+                columns,
+                schema: Arc::new(schema),
+            },
         }
         .into()
     }
@@ -639,10 +641,9 @@ impl LogicalPlanBuilder {
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let schema = det_melt_schema(&args, &schema);
-        LogicalPlan::Melt {
+        LogicalPlan::MapFunction {
             input: Box::new(self.0),
-            args,
-            schema,
+            function: FunctionNode::Melt { args, schema },
         }
         .into()
     }

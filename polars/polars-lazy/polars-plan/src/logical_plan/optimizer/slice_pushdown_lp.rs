@@ -300,8 +300,8 @@ impl SlicePushDown {
             // other blocking nodes
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
-            | m @ (Explode {..}, _)
-            | m @ (Melt {..}, _)
+            | m @ (MapFunction {function: FunctionNode::Explode {..}, ..}, _)
+            | m @ (MapFunction {function: FunctionNode::Melt {..}, ..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
             | m @ (HStack {..},_)

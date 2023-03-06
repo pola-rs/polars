@@ -202,18 +202,6 @@ pub fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
-        LogicalPlan::Melt {
-            input,
-            args,
-            schema,
-        } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Melt {
-                input,
-                args,
-                schema,
-            }
-        }
         #[cfg(feature = "csv-file")]
         LogicalPlan::CsvScan {
             path,
@@ -308,18 +296,6 @@ pub fn to_alp(
                 input,
                 by_column,
                 args,
-            }
-        }
-        LogicalPlan::Explode {
-            input,
-            columns,
-            schema,
-        } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Explode {
-                input,
-                columns,
-                schema,
             }
         }
         LogicalPlan::Cache { input, id, count } => {
@@ -800,18 +776,6 @@ impl ALogicalPlan {
                     args,
                 }
             }
-            ALogicalPlan::Explode {
-                input,
-                columns,
-                schema,
-            } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::Explode {
-                    input,
-                    columns,
-                    schema,
-                }
-            }
             ALogicalPlan::Cache { input, id, count } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Cache { input, id, count }
@@ -875,18 +839,6 @@ impl ALogicalPlan {
                 LogicalPlan::Distinct {
                     input: Box::new(i),
                     options,
-                }
-            }
-            ALogicalPlan::Melt {
-                input,
-                args,
-                schema,
-            } => {
-                let input = convert_to_lp(input, lp_arena);
-                LogicalPlan::Melt {
-                    input: Box::new(input),
-                    args,
-                    schema,
                 }
             }
             ALogicalPlan::MapFunction { input, function } => {

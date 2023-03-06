@@ -1,10 +1,15 @@
-from pathlib import Path  # noqa: TCH003
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import pyarrow.fs
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture()
