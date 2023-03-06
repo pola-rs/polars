@@ -37,25 +37,25 @@ impl Display for ErrString {
 pub enum PolarsError {
     #[error(transparent)]
     ArrowError(Box<ArrowError>),
-    #[error("Not found: {0}")]
+    #[error("not found: {0}")]
     ColumnNotFound(ErrString),
     #[error("{0}")]
     ComputeError(ErrString),
-    #[error("DuplicateError: {0}")]
+    #[error("duplicate: {0}")]
     Duplicate(ErrString),
-    #[error("Invalid operation {0}")]
+    #[error("invalid operation: {0}")]
     InvalidOperation(ErrString),
     #[error(transparent)]
     Io(#[from] io::Error),
-    #[error("Such empty...: {0}")]
+    #[error("no data: {0}")]
     NoData(ErrString),
-    #[error("Not found: {0}")]
+    #[error("field not found: {0}")]
     SchemaFieldNotFound(ErrString),
-    #[error("Data types don't match: {0}")]
+    #[error("data types don't match: {0}")]
     SchemaMismatch(ErrString),
-    #[error("Lengths don't match: {0}")]
+    #[error("lengths don't match: {0}")]
     ShapeMismatch(ErrString),
-    #[error("Not found: {0}")]
+    #[error("field not found: {0}")]
     StructFieldNotFound(ErrString),
 }
 
@@ -68,7 +68,7 @@ impl From<ArrowError> for PolarsError {
 #[cfg(feature = "regex")]
 impl From<regex::Error> for PolarsError {
     fn from(err: regex::Error) -> Self {
-        PolarsError::ComputeError(format!("regex error: {err:?}").into())
+        PolarsError::ComputeError(format!("regex error: {err}").into())
     }
 }
 
