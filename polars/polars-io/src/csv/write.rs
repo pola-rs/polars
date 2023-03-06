@@ -31,7 +31,7 @@ where
         }
     }
 
-    fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
+    fn finish(&mut self, df: &DataFrame) -> PolarsResult<()> {
         df.as_single_chunk_par();
         let names = df.get_column_names();
         if self.header {
