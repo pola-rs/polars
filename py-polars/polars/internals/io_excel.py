@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
+    Iterable,
     Sequence,
 )
 
@@ -35,6 +36,35 @@ _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
 }
 for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
+
+
+def _xl_column_range(
+    df: pli.DataFrame, table_start: tuple[int, int], col: str, has_header: bool
+) -> tuple[int, int, int, int]:
+    """Return the excel sheet range of a named column, accounting for all offsets."""
+    col_start = (
+        table_start[0] + int(has_header),
+        table_start[1] + df.find_idx_by_name(col),
+    )
+    col_finish = (col_start[0] + len(df) - 1, col_start[1])
+    return col_start + col_finish
+
+
+def _xl_column_multi_range(
+    df: pli.DataFrame,
+    table_start: tuple[int, int],
+    cols: Iterable[str],
+    has_header: bool,
+) -> str:
+    from xlsxwriter.utility import xl_rowcol_to_cell
+
+    multi_range: list[str] = []
+    for col in cols:
+        col_range = _xl_column_range(df, table_start, col, has_header)
+        col_start = xl_rowcol_to_cell(col_range[0], col_range[1])
+        col_end = xl_rowcol_to_cell(col_range[2], col_range[3])
+        multi_range.append(f"{col_start}:{col_end}")
+    return " ".join(multi_range)
 
 
 def _xl_inject_dummy_table_columns(
@@ -112,38 +142,6 @@ def _xl_inject_sparklines(
         options["range"] = f"{data_start}:{data_end}"
         ws.add_sparkline(spk_row, spk_col, options)
         spk_row += 1
-
-
-def _xl_setup_workbook(
-    workbook: Workbook | BytesIO | Path | str | None, worksheet: str | None = None
-) -> tuple[Workbook, Worksheet, bool]:
-    """Establish the target excel workbook and worksheet."""
-    from xlsxwriter import Workbook
-
-    if isinstance(workbook, Workbook):
-        wb, can_close = workbook, False
-        ws = wb.get_worksheet_by_name(name=worksheet)
-    else:
-        workbook_options = {
-            "nan_inf_to_errors": True,
-            "strings_to_formulas": False,
-            "default_date_format": _XL_DEFAULT_DTYPE_FORMATS_[Date],
-        }
-        if isinstance(workbook, BytesIO):
-            wb, ws, can_close = Workbook(workbook, workbook_options), None, True
-        else:
-            file = Path("dataframe.xlsx" if workbook is None else workbook)
-            wb = Workbook(
-                (file if file.suffix else file.with_suffix(".xlsx"))
-                .expanduser()
-                .resolve(strict=False),
-                workbook_options,
-            )
-            ws, can_close = None, True
-
-    if ws is None:
-        ws = wb.add_worksheet(name=worksheet)
-    return wb, ws, can_close
 
 
 def _xl_setup_table_columns(
@@ -244,6 +242,38 @@ def _xl_setup_table_options(
     return table_style, table_options
 
 
+def _xl_setup_workbook(
+    workbook: Workbook | BytesIO | Path | str | None, worksheet: str | None = None
+) -> tuple[Workbook, Worksheet, bool]:
+    """Establish the target excel workbook and worksheet."""
+    from xlsxwriter import Workbook
+
+    if isinstance(workbook, Workbook):
+        wb, can_close = workbook, False
+        ws = wb.get_worksheet_by_name(name=worksheet)
+    else:
+        workbook_options = {
+            "nan_inf_to_errors": True,
+            "strings_to_formulas": False,
+            "default_date_format": _XL_DEFAULT_DTYPE_FORMATS_[Date],
+        }
+        if isinstance(workbook, BytesIO):
+            wb, ws, can_close = Workbook(workbook, workbook_options), None, True
+        else:
+            file = Path("dataframe.xlsx" if workbook is None else workbook)
+            wb = Workbook(
+                (file if file.suffix else file.with_suffix(".xlsx"))
+                .expanduser()
+                .resolve(strict=False),
+                workbook_options,
+            )
+            ws, can_close = None, True
+
+    if ws is None:
+        ws = wb.add_worksheet(name=worksheet)
+    return wb, ws, can_close
+
+
 def _xl_unique_table_name(wb: Workbook) -> str:
     """Establish a unique (per-workbook) table object name."""
     table_prefix = "PolarsFrameTable"
@@ -258,15 +288,3 @@ def _xl_unique_table_name(wb: Workbook) -> str:
         n += 1
         table_name = f"{table_prefix}{n}"
     return table_name
-
-
-def _xl_column_range(
-    df: pli.DataFrame, table_start: tuple[int, int], col: str, has_header: bool
-) -> tuple[int, int, int, int]:
-    """Return the excel sheet range of a named column, accounting for all offsets."""
-    col_start = (
-        table_start[0] + int(has_header),
-        table_start[1] + df.find_idx_by_name(col),
-    )
-    col_finish = (col_start[0] + len(df) - 1, col_start[1])
-    return col_start + col_finish

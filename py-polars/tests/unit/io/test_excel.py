@@ -126,8 +126,8 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
 def test_excel_sparklines() -> None:
     from xlsxwriter import Workbook
 
-    # note that we don't (quite) expect sparkline export to round-trip
-    # as we have to inject additional empty columns to hold them...
+    # note that we don't (quite) expect sparkline export to round-trip as we
+    # inject additional empty columns to hold them (which will read as nulls).
     df = pl.DataFrame(
         {
             "id": ["aaa", "bbb", "ccc", "ddd", "eee"],
@@ -153,6 +153,13 @@ def test_excel_sparklines() -> None:
                     "insert_after": "id",
                     "type": "win_loss",
                 },
+            },
+            conditional_formats={
+                ("q1", "q2", "q3", "q4"): {
+                    "type": "2_color_scale",
+                    "min_color": "#95b3d7",
+                    "max_color": "#ffffff",
+                }
             },
             hide_gridlines=True,
         )
