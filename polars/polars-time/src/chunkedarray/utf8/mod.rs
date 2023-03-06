@@ -517,10 +517,24 @@ pub trait Utf8Methods: AsUtf8 {
                             opt_s.and_then(|s| {
                                 if cache {
                                     *cache_map.entry(s).or_insert_with(|| {
-                                        NaiveDateTime::parse_from_str(s, &fmt).ok().map(func)
+                                        NaiveDateTime::parse_from_str(s, &fmt)
+                                            .ok()
+                                            .map(func)
+                                            .or_else(|| {
+                                                NaiveDate::parse_from_str(s, &fmt).ok().map(|nd| {
+                                                    func(nd.and_hms_opt(0, 0, 0).unwrap())
+                                                })
+                                            })
                                     })
                                 } else {
-                                    NaiveDateTime::parse_from_str(s, &fmt).ok().map(func)
+                                    NaiveDateTime::parse_from_str(s, &fmt)
+                                        .ok()
+                                        .map(func)
+                                        .or_else(|| {
+                                            NaiveDate::parse_from_str(s, &fmt)
+                                                .ok()
+                                                .map(|nd| func(nd.and_hms_opt(0, 0, 0).unwrap()))
+                                        })
                                 }
                             })
                         })

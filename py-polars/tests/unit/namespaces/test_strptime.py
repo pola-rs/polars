@@ -292,6 +292,11 @@ def test_abbrev_month(
     assert result == expected
 
 
+def test_full_month_name() -> None:
+    s = pl.Series(["2022-December-01"]).str.strptime(pl.Datetime, "%Y-%B-%d")
+    assert s[0] == datetime(2022, 12, 1)
+
+
 def test_invalid_date_parsing_4898() -> None:
     assert pl.Series(["2022-09-18", "2022-09-50"]).str.strptime(
         pl.Date, "%Y-%m-%d", strict=False
