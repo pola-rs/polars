@@ -19,6 +19,7 @@ pub struct DatetimeInfer<T> {
     pub logical_type: DataType,
 }
 
+#[cfg(feature = "dtype-datetime")]
 impl TryFrom<Pattern> for DatetimeInfer<i64> {
     type Error = PolarsError;
 
