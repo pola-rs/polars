@@ -30,8 +30,8 @@ _XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.{zeros};[Red]-#,##0.{zeros}"
 _XL_DEFAULT_INTEGER_FORMAT_ = "#,##0;[Red]-#,##0"
 _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
     Datetime: "yyyy-mm-dd hh:mm:ss",
-    Date: "yyyy-mm-dd",
-    Time: "hh:mm:ss",
+    Date: "yyyy-mm-dd;@",
+    Time: "hh:mm:ss;@",
 }
 for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
