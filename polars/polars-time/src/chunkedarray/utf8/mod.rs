@@ -482,7 +482,6 @@ pub trait Utf8Methods: AsUtf8 {
                         // Safety:
                         // fmt_len is correct, it was computed with this `fmt` str.
                         unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) }
-                            .or_else(|| NaiveDateTime::parse_from_str(s, &fmt).ok())
                             .map(func)
                     };
                     if utf8_ca.null_count() == 0 {
