@@ -424,8 +424,7 @@ mod test {
         let args = MeltArgs {
             id_vars: vec![],
             value_vars: vec![],
-            variable_name: None,
-            value_name: None,
+            ..Default::default()
         };
 
         let melted = df.melt2(args).unwrap();
@@ -441,8 +440,7 @@ mod test {
         let args = MeltArgs {
             id_vars: vec!["A".into()],
             value_vars: vec![],
-            variable_name: None,
-            value_name: None,
+            ..Default::default()
         };
 
         let melted = df.melt2(args).unwrap();
