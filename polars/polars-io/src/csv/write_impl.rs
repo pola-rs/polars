@@ -252,7 +252,13 @@ pub(crate) fn write<W: Write>(
         let par_iter = (0..n_threads).into_par_iter().map(|thread_no| {
             let thread_offset = thread_no * chunk_size;
             let total_offset = n_rows_finished + thread_offset;
-            let df = df.slice(total_offset as i64, chunk_size);
+            let mut df = df.slice(total_offset as i64, chunk_size);
+            // the `series.iter` needs rechunked series.
+            // we don't do this on the whole as this probably needs much less rechunking
+            // so will be faster.
+            // and allows writing `pl.concat([df] * 100, rechunk=False).write_csv()` as the rechunk
+            // would go OOM
+            df.as_single_chunk();
             let cols = df.get_columns();
 
             // Safety:
