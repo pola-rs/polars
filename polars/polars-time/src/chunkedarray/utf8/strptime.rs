@@ -50,10 +50,17 @@ pub(super) fn compile_fmt(fmt: &str) -> String {
 // # Safety
 // Caller must ensure that fmt adheres to the fmt rules of chrono and `fmt_len` is correct.
 pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<NaiveDateTime> {
-    const ESCAPE: u8 = b'%';
-    if val.len() < fmt_len as usize {
+    let mut offset = 0;
+    let mut negative = false;
+    if val.starts_with(b"-") && fmt.starts_with(b"%Y") {
+        offset = 1;
+        negative = true;
+    }
+    if val.len() - offset != (fmt_len as usize) {
         return None;
     }
+
+    const ESCAPE: u8 = b'%';
     let mut year: i32 = 1;
     // minimal day/month is always 1
     // otherwise chrono may panic.
@@ -65,14 +72,6 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
     let mut nano: u32 = 0;
 
     let mut fmt_iter = fmt.iter();
-
-    let mut offset = 0;
-    let mut negative = false;
-
-    if val.starts_with(b"-") && fmt.starts_with(b"%Y") {
-        offset = 1;
-        negative = true;
-    }
 
     while let Some(fmt_b) = fmt_iter.next() {
         debug_assert!(offset < val.len());
@@ -127,8 +126,6 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
                     nano *= 1_000_000;
                     break;
                 }
-                // utc can be ignored
-                b'Z' => {}
                 _ => return None,
             }
         }
@@ -165,7 +162,6 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                 b'H' => cnt += 2,
                 b'M' => cnt += 2,
                 b'S' => cnt += 2,
-                b'Z' => cnt += 1,
                 b'9' => {
                     cnt += 9;
                     debug_assert_eq!(iter.next(), Some(&b'f'));
