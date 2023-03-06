@@ -42,7 +42,6 @@ pub use functions::*;
 pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
-use polars_core::frame::explode::MeltArgs;
 pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -226,12 +225,6 @@ pub enum LogicalPlan {
         offset: i64,
         len: IdxSize,
     },
-    /// A Melt operation
-    Melt {
-        input: Box<LogicalPlan>,
-        args: Arc<MeltArgs>,
-        schema: SchemaRef,
-    },
     /// A (User Defined) Function
     MapFunction {
         input: Box<LogicalPlan>,
@@ -308,7 +301,6 @@ impl LogicalPlan {
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
             Distinct { input, .. } | FileSink { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
-            Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
             MapFunction {
                 input, function, ..
             } => {

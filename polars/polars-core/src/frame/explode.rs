@@ -20,13 +20,17 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 }
 
 /// Arguments for `[DataFrame::melt]` function
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct MeltArgs {
     pub id_vars: Vec<SmartString>,
     pub value_vars: Vec<SmartString>,
     pub variable_name: Option<SmartString>,
     pub value_name: Option<SmartString>,
+    /// Whether the melt may be done
+    /// in the streaming engine
+    /// This will not have a stable ordering
+    pub streamable: bool,
 }
 
 impl DataFrame {

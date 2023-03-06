@@ -794,18 +794,21 @@ impl PyLazyFrame {
         ldf.tail(n).into()
     }
 
+    #[pyo3(signature = (id_vars, value_vars, value_name, variable_name, streamable))]
     pub fn melt(
         &self,
         id_vars: Vec<String>,
         value_vars: Vec<String>,
         value_name: Option<String>,
         variable_name: Option<String>,
+        streamable: bool,
     ) -> Self {
         let args = MeltArgs {
             id_vars: strings_to_smartstrings(id_vars),
             value_vars: strings_to_smartstrings(value_vars),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
+            streamable,
         };
 
         let ldf = self.ldf.clone();

@@ -72,6 +72,10 @@ pub enum FunctionNode {
         columns: Arc<[Arc<str>]>,
         schema: SchemaRef,
     },
+    Melt {
+        args: Arc<MeltArgs>,
+        schema: SchemaRef,
+    },
 }
 
 impl PartialEq for FunctionNode {
@@ -95,6 +99,7 @@ impl PartialEq for FunctionNode {
             ) => existing_l == existing_r && new_l == new_r,
             (Drop { names: l }, Drop { names: r }) => l == r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
+            (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
             _ => false,
         }
     }
@@ -114,6 +119,7 @@ impl FunctionNode {
             | Rename { .. }
             | Explode { .. }
             | Drop { .. } => true,
+            Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
         }
     }
@@ -179,6 +185,7 @@ impl FunctionNode {
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
             Drop { names } => drop::drop_schema(input_schema, names),
             Explode { schema, .. } => Ok(Cow::Owned(schema.clone())),
+            Melt { schema, .. } => Ok(Cow::Owned(schema.clone())),
         }
     }
 
@@ -192,6 +199,7 @@ impl FunctionNode {
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
+            | Melt { .. }
             | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
@@ -209,6 +217,7 @@ impl FunctionNode {
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
+            | Melt { .. }
             | Drop { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
@@ -263,6 +272,10 @@ impl FunctionNode {
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
             Drop { names } => drop::drop_impl(df, names),
             Explode { columns, .. } => df.explode(columns.as_ref()),
+            Melt { args, .. } => {
+                let args = (**args).clone();
+                df.melt2(args)
+            }
         }
     }
 }
@@ -309,6 +322,7 @@ impl Display for FunctionNode {
             Rename { .. } => write!(f, "RENAME"),
             Drop { .. } => write!(f, "DROP"),
             Explode { .. } => write!(f, "EXPLODE"),
+            Melt { .. } => write!(f, "MELT"),
         }
     }
 }

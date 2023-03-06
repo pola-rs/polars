@@ -3,7 +3,6 @@ mod generic;
 mod groupby;
 mod hstack;
 mod joins;
-mod melt;
 mod projection;
 mod rename;
 #[cfg(feature = "semi_anti_join")]
@@ -20,7 +19,6 @@ use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::groupby::process_groupby;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
-use crate::prelude::optimizer::projection_pushdown::melt::process_melt;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
 use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
@@ -606,21 +604,6 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Selection { predicate, input })
             }
-            Melt {
-                input,
-                args,
-                schema,
-            } => process_melt(
-                self,
-                input,
-                args,
-                schema,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            ),
             Aggregate {
                 input,
                 keys,
