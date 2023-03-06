@@ -155,7 +155,8 @@ fn transform_date_bytes(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<i32> {
     unsafe { strptime::parse(val, fmt, fmt_len).map(|ndt| naive_date_to_date(ndt.date())) }
 }
 
-fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
+#[cfg(feature = "dtype-datetime")]
+pub fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_ns);
@@ -166,7 +167,8 @@ fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     })
 }
 
-fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
+#[cfg(feature = "dtype-datetime")]
+pub fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_us);
@@ -181,7 +183,8 @@ fn transform_datetime_us_bytes(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<i
     unsafe { strptime::parse(val, fmt, fmt_len).map(datetime_to_timestamp_us) }
 }
 
-fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
+#[cfg(feature = "dtype-datetime")]
+pub fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_ms);

@@ -410,6 +410,11 @@ pub trait Utf8Methods: AsUtf8 {
             TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
+        let transform = match tu {
+            TimeUnit::Nanoseconds => infer::transform_datetime_ns,
+            TimeUnit::Microseconds => infer::transform_datetime_us,
+            TimeUnit::Milliseconds => infer::transform_datetime_ms,
+        };
 
         if tz_aware {
             #[cfg(feature = "timezones")]
@@ -516,25 +521,9 @@ pub trait Utf8Methods: AsUtf8 {
                         .map(|opt_s| {
                             opt_s.and_then(|s| {
                                 if cache {
-                                    *cache_map.entry(s).or_insert_with(|| {
-                                        NaiveDateTime::parse_from_str(s, &fmt)
-                                            .ok()
-                                            .map(func)
-                                            .or_else(|| {
-                                                NaiveDate::parse_from_str(s, &fmt).ok().map(|nd| {
-                                                    func(nd.and_hms_opt(0, 0, 0).unwrap())
-                                                })
-                                            })
-                                    })
+                                    *cache_map.entry(s).or_insert_with(|| transform(s, &fmt))
                                 } else {
-                                    NaiveDateTime::parse_from_str(s, &fmt)
-                                        .ok()
-                                        .map(func)
-                                        .or_else(|| {
-                                            NaiveDate::parse_from_str(s, &fmt)
-                                                .ok()
-                                                .map(|nd| func(nd.and_hms_opt(0, 0, 0).unwrap()))
-                                        })
+                                    transform(s, &fmt)
                                 }
                             })
                         })
