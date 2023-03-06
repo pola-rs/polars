@@ -410,11 +410,6 @@ pub trait Utf8Methods: AsUtf8 {
             TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
-        let transform = match tu {
-            TimeUnit::Nanoseconds => infer::transform_datetime_ns,
-            TimeUnit::Microseconds => infer::transform_datetime_us,
-            TimeUnit::Milliseconds => infer::transform_datetime_ms,
-        };
 
         if tz_aware {
             #[cfg(feature = "timezones")]
@@ -515,6 +510,11 @@ pub trait Utf8Methods: AsUtf8 {
                             .collect_trusted()
                     }
                 } else {
+                    let transform = match tu {
+                        TimeUnit::Nanoseconds => infer::transform_datetime_ns,
+                        TimeUnit::Microseconds => infer::transform_datetime_us,
+                        TimeUnit::Milliseconds => infer::transform_datetime_ms,
+                    };
                     let mut cache_map = PlHashMap::new();
                     utf8_ca
                         .into_iter()
