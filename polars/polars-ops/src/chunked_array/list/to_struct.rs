@@ -66,23 +66,18 @@ pub trait ToStruct: AsList {
             .as_deref()
             .unwrap_or(&_default_struct_name_gen);
 
-        if n_fields == 0 {
-            Err(PolarsError::ComputeError(
-                "cannot create a struct with 0 fields".into(),
-            ))
-        } else {
-            let fields = (0..n_fields)
-                .into_par_iter()
-                .map(|i| {
-                    ca.lst_get(i as i64).map(|mut s| {
-                        s.rename(&name_generator(i));
-                        s
-                    })
+        polars_ensure!(n_fields != 0, ComputeError: "cannot create a struct with 0 fields");
+        let fields = (0..n_fields)
+            .into_par_iter()
+            .map(|i| {
+                ca.lst_get(i as i64).map(|mut s| {
+                    s.rename(&name_generator(i));
+                    s
                 })
-                .collect::<PolarsResult<Vec<_>>>()?;
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
 
-            StructChunked::new(ca.name(), &fields)
-        }
+        StructChunked::new(ca.name(), &fields)
     }
 }
 

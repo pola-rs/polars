@@ -13,9 +13,7 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
-        _ => Err(PolarsError::InvalidOperation(
-            format!("cannot explode dtype: {:?}", series.dtype()).into(),
-        )),
+        _ => polars_bail!(opq = explode, series.dtype()),
     }
 }
 
@@ -73,14 +71,13 @@ impl DataFrame {
                 if exploded.len() == df.height() || df.width() == 0 {
                     df.columns.insert(col_idx, exploded);
                 } else {
-                    return Err(PolarsError::ShapeMismatch(
-                        format!("The exploded column(s) don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
-                    ));
+                    polars_bail!(
+                        ShapeMismatch: "exploded column(s) {:?} doesn't have the same length: {} \
+                        as the dataframe: {}", exploded.name(), exploded.name(), df.height(),
+                    );
                 }
             } else {
-                return Err(PolarsError::InvalidOperation(
-                    format!("cannot explode dtype: {:?}", s.dtype()).into(),
-                ));
+                polars_bail!(opq = explode, s.dtype());
             }
         }
         Ok(df)
@@ -258,7 +255,7 @@ impl DataFrame {
         let mut iter = value_vars.iter().map(|v| {
             schema
                 .get(v)
-                .ok_or_else(|| PolarsError::ColumnNotFound(v.to_string().into()))
+                .ok_or_else(|| polars_err!(ColumnNotFound: "{}", v))
         });
         let mut st = iter.next().unwrap()?.clone();
         for dt in iter {

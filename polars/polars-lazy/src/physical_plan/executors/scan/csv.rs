@@ -65,7 +65,7 @@ impl Executor for CsvExec {
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }
-            let name = column_delimited("csv".to_string(), &ids);
+            let name = comma_delimited("csv".to_string(), &ids);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

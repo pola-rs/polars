@@ -12,7 +12,7 @@ import polars as pl
 
 def test_error_on_empty_groupby() -> None:
     with pytest.raises(
-        pl.ComputeError, match="expected keys in groupby operation, got nothing"
+        pl.ComputeError, match="at least one key is required in a groupby operation"
     ):
         pl.DataFrame({"x": [0, 0, 1, 1]}).groupby([]).agg(pl.count())
 
@@ -25,8 +25,7 @@ def test_error_on_reducing_map() -> None:
     with pytest.raises(
         pl.ComputeError,
         match=(
-            "A 'map' functions output length must be equal to that of the input length."
-            " Consider using 'apply' in favor of 'map'."
+            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
         ),
     ):
         df.groupby("id").agg(pl.map(["t", "y"], np.trapz))
@@ -61,7 +60,7 @@ def test_not_found_error() -> None:
 
 
 def test_string_numeric_comp_err() -> None:
-    with pytest.raises(pl.ComputeError, match="cannot compare Utf8 with numeric data"):
+    with pytest.raises(pl.ComputeError, match="cannot compare utf-8 with numeric data"):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
 
@@ -163,7 +162,7 @@ def test_error_on_double_agg() -> None:
         "median",
         "skew",  # this one is comes from Apply
     ]:
-        with pytest.raises(pl.ComputeError, match="The column is already aggregated"):
+        with pytest.raises(pl.ComputeError, match="the column is already aggregated"):
             (
                 pl.DataFrame(
                     {
@@ -184,7 +183,7 @@ def test_unique_on_list_df() -> None:
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
-        pl.ComputeError, match="Filter predicate must be of type Boolean, got"
+        pl.ComputeError, match="filter predicate must be of type `Boolean`, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
 
@@ -238,12 +237,11 @@ def test_window_expression_different_group_length() -> None:
     except pl.ComputeError as e:
         msg = str(e)
         assert (
-            "The length of the window expression did not match that of the group."
-            in msg
+            "the length of the window expression did not match that of the group" in msg
         )
-        assert "Group:" in msg
-        assert "Group length:" in msg
-        assert "Output: 'shape:" in msg
+        assert "group:" in msg
+        assert "group length:" in msg
+        assert "output: 'shape:" in msg
 
 
 @typing.no_type_check
@@ -283,14 +281,15 @@ def test_invalid_sort_by() -> None:
     # `select a where b order by c desc`
     with pytest.raises(
         pl.ComputeError,
-        match="The sortby operation produced a different length than the Series that has to be sorted.",
+        match=r"`sort_by` produced different length: 5 than the series that has to be sorted: 3",
     ):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", descending=True))
 
 
 def test_epoch_time_type() -> None:
     with pytest.raises(
-        pl.ComputeError, match="Cannot compute timestamp of a series with dtype 'Time'"
+        pl.InvalidOperationError,
+        match="`timestamp` operation not supported for dtype `time`",
     ):
         pl.Series([time(0, 0, 1)]).dt.epoch("s")
 
@@ -332,7 +331,7 @@ def test_alias_in_join_keys() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
     with pytest.raises(
         pl.ComputeError,
-        match=r"'alias' is not allowed in a join key. Use 'with_columns' first",
+        match=r"'alias' is not allowed in a join key, use 'with_columns' first",
     ):
         df.join(df, on=pl.col("A").alias("foo"))
 
@@ -347,7 +346,7 @@ def test_sort_by_different_lengths() -> None:
     )
     with pytest.raises(
         pl.ComputeError,
-        match=r"The expression in 'sort_by' argument must lead to the same length",
+        match=r"the expression in `sort_by` argument must result in the same length",
     ):
         df.groupby("group").agg(
             [
@@ -357,7 +356,7 @@ def test_sort_by_different_lengths() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match=r"The expression in 'sort_by' argument must lead to the same length",
+        match=r"the expression in `sort_by` argument must result in the same length",
     ):
         df.groupby("group").agg(
             [
@@ -393,7 +392,7 @@ def test_date_string_comparison() -> None:
     ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
 
     with pytest.raises(
-        pl.ComputeError, match=r"Cannot compare 'date/datetime/time' to a string value"
+        pl.ComputeError, match=r"cannot compare 'date/datetime/time' to a string value"
     ):
         df.select(pl.col("date") > "2021-11-10")
 
@@ -401,7 +400,7 @@ def test_date_string_comparison() -> None:
 def test_err_on_multiple_column_expansion() -> None:
     # this would be a great feature :)
     with pytest.raises(
-        pl.ComputeError, match=r"Expanding more than one `col` is not yet allowed"
+        pl.ComputeError, match=r"expanding more than one `col` is not allowed"
     ):
         pl.DataFrame(
             {
@@ -422,21 +421,21 @@ def test_compare_different_len() -> None:
 
     s = pl.Series([2, 5, 8])
     with pytest.raises(
-        pl.ComputeError, match=r"annot evaluate two Series of different length"
+        pl.ComputeError, match=r"cannot evaluate two series of different lengths"
     ):
         df.filter(pl.col("idx") == s)
 
 
 def test_take_negative_index_is_oob() -> None:
     df = pl.DataFrame({"value": [1, 2, 3]})
-    with pytest.raises(pl.ComputeError, match=r"Out of bounds"):
+    with pytest.raises(pl.ComputeError, match=r"index out of bounds"):
         df["value"].take(-1)
 
 
 def test_string_numeric_arithmetic_err() -> None:
     df = pl.DataFrame({"s": ["x"]})
     with pytest.raises(
-        pl.ComputeError, match=r"Arithmetic on string and numeric not allowed"
+        pl.ComputeError, match=r"arithmetic on string and numeric not allowed"
     ):
         df.select(pl.col("s") + 1)
 
@@ -479,7 +478,5 @@ def test_skipp_nulls_err() -> None:
 
 def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
-    with pytest.raises(
-        pl.ComputeError, match=r"Cannot cast dtype: 'Time' to dtype: 'Datetime'"
-    ):
+    with pytest.raises(pl.ComputeError, match=r"cannot cast `Time` to `Datetime`"):
         s.cast(pl.Datetime)

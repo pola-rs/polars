@@ -102,11 +102,11 @@ where
                             _missing_is_null,
                         );
                     }
-                    if ignore_errors || bytes.is_empty() {
-                        self.append_null()
-                    } else {
-                        return Err(PolarsError::ComputeError("".into()));
-                    }
+                    polars_ensure!(
+                        bytes.is_empty() || ignore_errors,
+                        ComputeError: "remaining bytes non-empty",
+                    );
+                    self.append_null()
                 }
             };
         }
@@ -235,7 +235,7 @@ impl ParsedBuffer for Utf8Field {
                     self.offsets.push(self.data.len() as i64);
                     self.validity.push(false);
                 } else {
-                    return Err(PolarsError::ComputeError("invalid utf8 data".into()));
+                    polars_bail!(ComputeError: "invalid utf-8 sequence");
                 }
             }
         }
@@ -346,7 +346,7 @@ impl<'a> CategoricalField<'a> {
         } else if ignore_errors {
             self.builder.append_null()
         } else {
-            return Err(PolarsError::ComputeError("invalid utf8 data".into()));
+            polars_bail!(ComputeError: "invalid utf-8 sequence");
         }
         Ok(())
     }
@@ -373,13 +373,10 @@ impl ParsedBuffer for BooleanChunkedBuilder {
         } else if ignore_errors || bytes.is_empty() {
             self.append_null();
         } else {
-            return Err(PolarsError::ComputeError(
-                format!(
-                    "Error while parsing value {} as boolean",
-                    String::from_utf8_lossy(bytes)
-                )
-                .into(),
-            ));
+            polars_bail!(
+                ComputeError: "error while parsing value {} as boolean",
+                String::from_utf8_lossy(bytes),
+            );
         }
         Ok(())
     }
@@ -395,7 +392,6 @@ pub(crate) struct DatetimeField<T: PolarsNumericType> {
 impl<T: PolarsNumericType> DatetimeField<T> {
     fn new(name: &str, capacity: usize) -> Self {
         let builder = PrimitiveChunkedBuilder::<T>::new(name, capacity);
-
         Self {
             compiled: None,
             builder,
@@ -421,7 +417,7 @@ where
         buf.builder.append_null();
         return Ok(());
     } else if !ignore_errors && std::str::from_utf8(bytes).is_err() {
-        return Err(PolarsError::ComputeError("invalid utf8".into()));
+        polars_bail!(ComputeError: "invalid utf-8 sequence");
     } else {
         buf.builder.append_null();
         return Ok(());
@@ -534,11 +530,9 @@ pub(crate) fn init_buffers<'a>(
                 &DataType::Categorical(_) => {
                     Buffer::Categorical(CategoricalField::new(name, capacity, quote_char))
                 }
-                other => {
-                    return Err(PolarsError::ComputeError(
-                        format!("Unsupported data type {other:?} when reading a csv").into(),
-                    ))
-                }
+                dt => polars_bail!(
+                    ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
+                ),
             };
             Ok(builder)
         })
@@ -603,9 +597,8 @@ impl<'a> Buffer<'a> {
                     // this alone is not enough
                     // we must also check byte starts
                     // see: https://github.com/jorgecarleitao/arrow2/pull/823
-                    simdutf8::basic::from_utf8(&v.data).map_err(|_| {
-                        PolarsError::ComputeError("invalid utf8 data in csv".into())
-                    })?;
+                    simdutf8::basic::from_utf8(&v.data)
+                        .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence in csv"))?;
 
                     for i in (0..v.offsets.len() - 1).step_by(2) {
                         // Safety:
@@ -623,10 +616,7 @@ impl<'a> Buffer<'a> {
                             }
                         }
                     }
-
-                    if !valid_utf8 {
-                        return Err(PolarsError::ComputeError("invalid utf8 data in csv".into()));
-                    }
+                    polars_ensure!(valid_utf8, ComputeError: "invalid utf-8 sequence in CSV");
                 }
 
                 let arr = Utf8Array::<i64>::from_data_unchecked_default(

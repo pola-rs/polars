@@ -149,11 +149,8 @@ impl LogicalType for CategoricalChunked {
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        if i < self.len() {
-            Ok(unsafe { self.get_any_value_unchecked(i) })
-        } else {
-            Err(PolarsError::ComputeError("Index is out of bounds.".into()))
-        }
+        polars_ensure!(i < self.len(), oob = i, self.len());
+        Ok(unsafe { self.get_any_value_unchecked(i) })
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {

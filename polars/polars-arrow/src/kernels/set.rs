@@ -3,9 +3,10 @@ use std::ops::BitOr;
 use arrow::array::*;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
+use polars_error::polars_err;
 
 use crate::array::default_arrays::FromData;
-use crate::error::{PolarsError, PolarsResult};
+use crate::error::PolarsResult;
 use crate::index::IdxSize;
 use crate::kernels::BinaryMaskedSliceIterator;
 use crate::trusted_len::PushUnchecked;
@@ -82,7 +83,7 @@ where
     idx.into_iter().try_for_each::<_, PolarsResult<_>>(|idx| {
         let val = mut_slice
             .get_mut(idx as usize)
-            .ok_or_else(|| PolarsError::ComputeError("idx is out of bounds".into()))?;
+            .ok_or_else(|| polars_err!(ComputeError: "index is out of bounds"))?;
         *val = set_value;
         Ok(())
     })?;

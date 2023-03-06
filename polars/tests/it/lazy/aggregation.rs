@@ -72,7 +72,7 @@ fn test_lazy_agg() {
 fn test_apply_multiple_error() {
     fn issue() -> Expr {
         apply_multiple(
-            move |_| return Err(PolarsError::ComputeError("hardcoded error".into())),
+            move |_| polars_bail!(ComputeError: "hardcoded error"),
             &[col("x"), col("y")],
             GetOutput::from_type(DataType::Float64),
             true,

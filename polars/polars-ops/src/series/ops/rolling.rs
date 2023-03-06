@@ -51,9 +51,7 @@ pub trait RollingSeries: SeriesSealed {
                 let s = s.cast(&DataType::Float64).unwrap();
                 s.rolling_skew(window_size, bias)
             }
-            dt => Err(PolarsError::ComputeError(
-                format!("cannot use rolling_skew function on Series of dtype: {dt:?}",).into(),
-            )),
+            dt => polars_bail!(opq = rolling_skew, dt),
         }
     }
 }

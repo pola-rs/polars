@@ -97,9 +97,7 @@ impl FunctionExpr {
                 if let DataType::Datetime(tu, _) = dt {
                     Ok(DataType::Datetime(*tu, tz.cloned()))
                 } else {
-                    Err(PolarsError::SchemaMismatch(
-                        format!("expected Datetime got {dt:?}").into(),
-                    ))
+                    polars_bail!(op = "cast-timezone", got = dt, expected = "Datetime");
                 }
             })
         };
@@ -214,27 +212,21 @@ impl FunctionExpr {
                 match s {
                     FieldByIndex(index) => {
                         let (index, _) = slice_offsets(*index, 0, fields.len());
-                        fields.get(index).cloned().ok_or_else(|| {
-                            PolarsError::ComputeError(
-                                "index out of bounds in 'struct.field'".into(),
-                            )
-                        })
+                        fields.get(index).cloned().ok_or_else(
+                            || polars_err!(ComputeError: "index out of bounds in `struct.field`"),
+                        )
                     }
                     FieldByName(name) => {
                         if let DataType::Struct(flds) = &fields[0].dtype {
                             let fld = flds
                                 .iter()
                                 .find(|fld| fld.name() == name.as_ref())
-                                .ok_or_else(|| {
-                                    PolarsError::StructFieldNotFound(
-                                        name.as_ref().to_string().into(),
-                                    )
-                                })?;
+                                .ok_or_else(
+                                    || polars_err!(StructFieldNotFound: "{}", name.as_ref()),
+                                )?;
                             Ok(fld.clone())
                         } else {
-                            Err(PolarsError::StructFieldNotFound(
-                                name.as_ref().to_string().into(),
-                            ))
+                            polars_bail!(StructFieldNotFound: "{}", name.as_ref());
                         }
                     }
                 }

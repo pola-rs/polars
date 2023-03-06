@@ -59,11 +59,10 @@ impl ListChunked {
 
             let expected_len = elements.len();
             let out: Series = func(elements)?;
-            if out.len() != expected_len {
-                return Err(PolarsError::ComputeError(
-                    "The function should apply only elementwise Instead it has removed elements".into(),
-                ));
-            }
+            polars_ensure!(
+                out.len() == expected_len,
+                ComputeError: "the function should apply element-wise, it removed elements instead"
+            );
             let out = out.rechunk();
             let values = out.chunks()[0].clone();
 

@@ -9,20 +9,11 @@ use crate::utils::align_chunks_binary;
 
 macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{
-        if $self.len() != $filter.len() {
-            return Err(PolarsError::ShapeMismatch(
-                format!(
-                    "Filter's length differs from that of the ChunkedArray/ Series. \
-                Length Self: {} Length mask: {}\
-                 Self: {:?}; mask: {:?}",
-                    $self.len(),
-                    $filter.len(),
-                    $self,
-                    $filter
-                )
-                .into(),
-            ));
-        }
+        polars_ensure!(
+            $self.len() == $filter.len(),
+            ShapeMismatch: "filter's length: {} differs from that of the series: {}",
+            $filter.len(), $self.len()
+        )
     }};
 }
 
@@ -146,11 +137,7 @@ where
                 _ => Ok(ObjectChunked::new_empty(self.name())),
             };
         }
-        if self.is_empty() {
-            return Err(PolarsError::NoData(
-                "cannot filter empty object array".into(),
-            ));
-        }
+        polars_ensure!(!self.is_empty(), NoData: "cannot filter empty object array");
         let chunks = self.downcast_iter().collect::<Vec<_>>();
         let mut builder = ObjectChunkedBuilder::<T>::new(self.name(), self.len());
         for (idx, mask) in filter.into_iter().enumerate() {

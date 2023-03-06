@@ -74,15 +74,13 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
 }
 
 fn str_numeric_arithmetic(type_left: &DataType, type_right: &DataType) -> PolarsResult<()> {
-    if type_left.is_numeric() && matches!(type_right, DataType::Utf8)
-        || type_right.is_numeric() && matches!(type_left, DataType::Utf8)
-    {
-        Err(PolarsError::ComputeError(
-            "Arithmetic on string and numeric not allowed. Try an explicit cast first.".into(),
-        ))
-    } else {
-        Ok(())
-    }
+    let mismatch = type_left.is_numeric() && matches!(type_right, DataType::Utf8)
+        || type_right.is_numeric() && matches!(type_left, DataType::Utf8);
+    polars_ensure!(
+        !mismatch,
+        ComputeError: "arithmetic on string and numeric not allowed, try an explicit cast first",
+    );
+    Ok(())
 }
 
 fn process_list_arithmetic(

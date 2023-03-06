@@ -1,28 +1,27 @@
 use crate::prelude::*;
 
+macro_rules! unpack_chunked {
+    ($series:expr, $expected:pat => $ca:ty, $name:expr) => {
+        match $series.dtype() {
+            $expected => unsafe {
+                Ok(&*($series.as_ref() as *const dyn SeriesTrait as *const $ca))
+            },
+            dt => polars_bail!(
+                SchemaMismatch: "invalid series dtype: expected `{}`, got `{}`", $name, dt,
+            ),
+        }
+    };
+}
+
 impl Series {
     /// Unpack to ChunkedArray of dtype i8
     pub fn i8(&self) -> PolarsResult<&Int8Chunked> {
-        match self.dtype() {
-            DataType::Int8 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Int8Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Int8").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Int8 => Int8Chunked, "Int8")
     }
 
     /// Unpack to ChunkedArray i16
     pub fn i16(&self) -> PolarsResult<&Int16Chunked> {
-        match self.dtype() {
-            DataType::Int16 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Int16Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Int16").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Int16 => Int16Chunked, "Int16")
     }
 
     /// Unpack to ChunkedArray
@@ -40,243 +39,110 @@ impl Series {
     /// }).collect();
     /// ```
     pub fn i32(&self) -> PolarsResult<&Int32Chunked> {
-        match self.dtype() {
-            DataType::Int32 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Int32Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Int32").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Int32 => Int32Chunked, "Int32")
     }
 
     /// Unpack to ChunkedArray of dtype i64
     pub fn i64(&self) -> PolarsResult<&Int64Chunked> {
-        match self.dtype() {
-            DataType::Int64 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Int64Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Int64").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Int64 => Int64Chunked, "Int64")
     }
 
     /// Unpack to ChunkedArray of dtype f32
     pub fn f32(&self) -> PolarsResult<&Float32Chunked> {
-        match self.dtype() {
-            DataType::Float32 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Float32Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Float32").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Float32 => Float32Chunked, "Float32")
     }
 
     /// Unpack to ChunkedArray of dtype f64
     pub fn f64(&self) -> PolarsResult<&Float64Chunked> {
-        match self.dtype() {
-            DataType::Float64 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Float64Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Float64").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Float64 => Float64Chunked, "Float64")
     }
 
     /// Unpack to ChunkedArray of dtype u8
     pub fn u8(&self) -> PolarsResult<&UInt8Chunked> {
-        match self.dtype() {
-            DataType::UInt8 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const UInt8Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != UInt8").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::UInt8 => UInt8Chunked, "UInt8")
     }
 
     /// Unpack to ChunkedArray of dtype u16
     pub fn u16(&self) -> PolarsResult<&UInt16Chunked> {
-        match self.dtype() {
-            DataType::UInt16 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const UInt16Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != UInt16").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::UInt16 => UInt16Chunked, "UInt16")
     }
 
     /// Unpack to ChunkedArray of dtype u32
     pub fn u32(&self) -> PolarsResult<&UInt32Chunked> {
-        match self.dtype() {
-            DataType::UInt32 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const UInt32Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != UInt32").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::UInt32 => UInt32Chunked, "UInt32")
     }
 
     /// Unpack to ChunkedArray of dtype u64
     pub fn u64(&self) -> PolarsResult<&UInt64Chunked> {
-        match self.dtype() {
-            DataType::UInt64 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const UInt64Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != UInt64").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::UInt64 => UInt64Chunked, "UInt64")
     }
 
     /// Unpack to ChunkedArray of dtype bool
     pub fn bool(&self) -> PolarsResult<&BooleanChunked> {
-        match self.dtype() {
-            DataType::Boolean => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const BooleanChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Boolean").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Boolean => BooleanChunked, "Boolean")
     }
 
     /// Unpack to ChunkedArray of dtype utf8
     pub fn utf8(&self) -> PolarsResult<&Utf8Chunked> {
-        match self.dtype() {
-            DataType::Utf8 => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const Utf8Chunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Utf8").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Utf8 => Utf8Chunked, "Utf8")
     }
 
     /// Unpack to ChunkedArray of dtype binary
     pub fn binary(&self) -> PolarsResult<&BinaryChunked> {
-        match self.dtype() {
-            DataType::Binary => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const BinaryChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != binary").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Binary => BinaryChunked, "Binary")
     }
 
     /// Unpack to ChunkedArray of dtype Time
     #[cfg(feature = "dtype-time")]
     pub fn time(&self) -> PolarsResult<&TimeChunked> {
-        match self.dtype() {
-            DataType::Time => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const TimeChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Time").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Time => TimeChunked, "Time")
     }
 
     /// Unpack to ChunkedArray of dtype Date
     #[cfg(feature = "dtype-date")]
     pub fn date(&self) -> PolarsResult<&DateChunked> {
-        match self.dtype() {
-            DataType::Date => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DateChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Date").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Date => DateChunked, "Date")
     }
 
     /// Unpack to ChunkedArray of dtype datetime
     #[cfg(feature = "dtype-datetime")]
     pub fn datetime(&self) -> PolarsResult<&DatetimeChunked> {
-        match self.dtype() {
-            DataType::Datetime(_, _) => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DatetimeChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Datetime").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Datetime(_, _) => DatetimeChunked, "Datetime")
     }
 
     /// Unpack to ChunkedArray of dtype duration
     #[cfg(feature = "dtype-duration")]
     pub fn duration(&self) -> PolarsResult<&DurationChunked> {
-        match self.dtype() {
-            DataType::Duration(_) => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DurationChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Duration").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Duration(_) => DurationChunked, "Duration")
     }
 
     /// Unpack to ChunkedArray of dtype decimal
     #[cfg(feature = "dtype-decimal")]
     pub fn decimal(&self) -> PolarsResult<&DecimalChunked> {
-        match self.dtype() {
-            DataType::Decimal(_, _) => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const DecimalChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Decimal").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Decimal(_, _) => DecimalChunked, "Decimal")
     }
 
     /// Unpack to ChunkedArray of dtype list
     pub fn list(&self) -> PolarsResult<&ListChunked> {
-        match self.dtype() {
-            DataType::List(_) => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const ListChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != List").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::List(_) => ListChunked, "List")
     }
 
     /// Unpack to ChunkedArray of dtype categorical
     #[cfg(feature = "dtype-categorical")]
     pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        match self.dtype() {
-            DataType::Categorical(_) => unsafe {
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const CategoricalChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Categorical").into(),
-            )),
-        }
+        unpack_chunked!(self, DataType::Categorical(_) => CategoricalChunked, "Categorical")
     }
 
     /// Unpack to ChunkedArray of dtype struct
     #[cfg(feature = "dtype-struct")]
     pub fn struct_(&self) -> PolarsResult<&StructChunked> {
-        match self.dtype() {
-            DataType::Struct(_) => unsafe {
-                #[cfg(debug_assertions)]
-                {
-                    let any = self.as_any();
-                    assert!(any.is::<StructChunked>());
-                }
-                // Safety
-                // We just checked type
-                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const StructChunked))
-            },
-            dt => Err(PolarsError::SchemaMismatch(
-                format!("Series of dtype: {dt:?} != Struct").into(),
-            )),
+        #[cfg(debug_assertions)]
+        {
+            if let DataType::Struct(_) = self.dtype() {
+                let any = self.as_any();
+                assert!(any.is::<StructChunked>());
+            }
         }
+        unpack_chunked!(self, DataType::Struct(_) => StructChunked, "Struct")
     }
 }

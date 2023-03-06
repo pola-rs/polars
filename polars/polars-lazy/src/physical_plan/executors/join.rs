@@ -80,7 +80,7 @@ impl Executor for JoinExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&df_left.schema())?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("join".to_string(), &by);
+            let name = comma_delimited("join".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")
@@ -116,9 +116,11 @@ impl Executor for JoinExec {
                     use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
                     if let Some(tol) = &options.tolerance_str {
                         let duration = polars_time::Duration::parse(tol);
-                        if duration.months() != 0 {
-                            return Err(PolarsError::ComputeError("Cannot use month offset in timedelta of an asof join. Consider using 4 weeks".into()));
-                        }
+                        polars_ensure!(
+                            duration.months() == 0,
+                            ComputeError: "cannot use month offset in timedelta of an asof join; \
+                            consider using 4 weeks"
+                        );
                         let left_asof = df_left.column(left_on_series[0].name())?;
                         use DataType::*;
                         match left_asof.dtype() {

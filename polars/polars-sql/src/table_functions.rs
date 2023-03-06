@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use polars_core::prelude::{PolarsError, PolarsResult};
+use polars_core::prelude::{polars_bail, PolarsError, PolarsResult};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
 use polars_lazy::prelude::LazyFrame;
@@ -31,23 +31,22 @@ pub(crate) enum PolarsTableFunctions {
 impl FromStr for PolarsTableFunctions {
     type Err = PolarsError;
 
+    #[allow(unreachable_code)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        Ok(match s {
             #[cfg(feature = "csv")]
-            "read_csv" => Ok(PolarsTableFunctions::ReadCsv),
+            "read_csv" => PolarsTableFunctions::ReadCsv,
             #[cfg(feature = "parquet")]
-            "read_parquet" => Ok(PolarsTableFunctions::ReadParquet),
+            "read_parquet" => PolarsTableFunctions::ReadParquet,
             #[cfg(feature = "ipc")]
-            "read_ipc" => Ok(PolarsTableFunctions::ReadIpc),
-            _ => Err(PolarsError::ComputeError(
-                format!("'{}' is not a supported table function", s).into(),
-            )),
-        }
+            "read_ipc" => PolarsTableFunctions::ReadIpc,
+            _ => polars_bail!(ComputeError: "'{}' is not a supported table function", s),
+        })
     }
 }
 
 impl PolarsTableFunctions {
-    #[allow(unused_variables)]
+    #[allow(unused_variables, unreachable_patterns)]
     pub(crate) fn execute(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
         match self {
             #[cfg(feature = "csv")]
@@ -89,9 +88,10 @@ impl PolarsTableFunctions {
             FunctionArg::Unnamed(FunctionArgExpr::Expr(SqlExpr::Value(
                 SqlValue::SingleQuotedString(s),
             ))) => Ok(s.to_string()),
-            _ => Err(PolarsError::ComputeError(
-                format!("Only a single quoted string is accepted as the first parameter. Instead received: {}", arg).into(),
-            )),
+            _ => polars_bail!(
+                ComputeError:
+                "only a single quoted string is accepted as the first parameter; received: {}", arg,
+            ),
         }
     }
 }

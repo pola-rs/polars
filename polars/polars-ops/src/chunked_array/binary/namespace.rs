@@ -51,10 +51,10 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         let ca = self.as_binary();
         if strict {
             ca.try_apply(|s| {
-                let bytes = hex::decode(s).map_err(|_e| {
-                    PolarsError::ComputeError(
-                        "Invalid 'hex' encoding found. Try setting 'strict' to false to ignore."
-                            .into(),
+                let bytes = hex::decode(s).map_err(|_| {
+                    polars_err!(
+                        ComputeError:
+                        "invalid `hex` encoding found; try setting `strict=false` to ignore"
                     )
                 })?;
                 Ok(bytes.into())
@@ -80,9 +80,9 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         if strict {
             ca.try_apply(|s| {
                 let bytes = general_purpose::STANDARD.decode(s).map_err(|_e| {
-                    PolarsError::ComputeError(
-                        "Invalid 'base64' encoding found. Try setting 'strict' to false to ignore."
-                            .into(),
+                    polars_err!(
+                        ComputeError:
+                        "invalid `base64` encoding found; try setting `strict=false` to ignore"
                     )
                 })?;
                 Ok(bytes.into())

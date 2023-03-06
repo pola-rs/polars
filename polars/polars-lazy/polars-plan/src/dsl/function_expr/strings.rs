@@ -298,7 +298,7 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     if pat.len() == 1 {
         let pat = pat
             .get(0)
-            .ok_or_else(|| PolarsError::ComputeError("Expected a pattern got null".into()))?;
+            .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;
         ca.extract_all(pat).map(|ca| ca.into_series())
     } else {
         ca.extract_all_many(pat).map(|ca| ca.into_series())
@@ -316,12 +316,10 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
     let tz_aware = match (options.tz_aware, &options.fmt) {
         (true, Some(_)) => true,
-        (true, None) => {
-            return Err(PolarsError::ComputeError(
-                "Passing 'tz_aware=True' without 'fmt' is not yet supported. Please specify 'fmt'."
-                    .into(),
-            ));
-        }
+        (true, None) => polars_bail!(
+            ComputeError:
+            "passing 'tz_aware=True' without 'fmt' is not yet supported, please specify 'fmt'"
+        ),
         #[cfg(feature = "timezones")]
         (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
         (false, _) => false,
@@ -340,20 +338,16 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         DataType::Datetime(tu, tz) => {
             let tz = match (tz, tz_aware, options.utc) {
                 (Some(tz), false, false) => Some(tz.clone()),
-                (Some(_), true, _) => {
-                    return Err(PolarsError::ComputeError(
-                        "Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime. \
-                                               Please drop time zone from the dtype."
-                            .into(),
-                    ))
-                }
-                (Some(_), _, true) => {
-                    return Err(PolarsError::ComputeError(
-                        "Cannot use strptime with both 'utc=True' and tz-aware Datetime. \
-                                               Please drop time zone from the dtype."
-                            .into(),
-                    ))
-                }
+                (Some(_), true, _) => polars_bail!(
+                    ComputeError:
+                    "cannot use strptime with both 'tz_aware=True' and tz-aware datetime, \
+                    please drop time zone from the dtype"
+                ),
+                (Some(_), _, true) => polars_bail!(
+                    ComputeError:
+                    "cannot use strptime with both 'utc=True' and tz-aware datetime, \
+                    please drop time zone from the dtype"
+                ),
                 (None, _, true) => Some("UTC".to_string()),
                 (None, _, false) => None,
             };
@@ -372,33 +366,22 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                     .into_series()
             }
         }
-        DataType::Time => {
-            if options.exact {
-                ca.as_time(options.fmt.as_deref(), options.cache)?
-                    .into_series()
-            } else {
-                return Err(PolarsError::ComputeError(
-                    format!("non-exact not implemented for dtype {:?}", DataType::Time).into(),
-                ));
-            }
+        dt @ DataType::Time => {
+            polars_ensure!(
+                options.exact, ComputeError: "non-exact not implemented for datatype {}", dt,
+            );
+            ca.as_time(options.fmt.as_deref(), options.cache)?
+                .into_series()
         }
-        dt => {
-            return Err(PolarsError::ComputeError(
-                format!("not implemented for dtype {dt:?}").into(),
-            ))
-        }
+        dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     };
     if options.strict {
-        if out.null_count() != ca.null_count() {
-            Err(PolarsError::ComputeError(
-                "strict conversion to dates failed, maybe set strict=False".into(),
-            ))
-        } else {
-            Ok(out.into_series())
-        }
-    } else {
-        Ok(out.into_series())
+        polars_ensure!(
+            out.null_count() == ca.null_count(),
+            ComputeError: "strict conversion to dates failed, try setting strict=False",
+        );
     }
+    Ok(out.into_series())
 }
 
 #[cfg(feature = "concat_str")]
@@ -419,9 +402,9 @@ impl From<StringFunction> for FunctionExpr {
 
 #[cfg(feature = "regex")]
 fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
-    pat.get(0).ok_or_else(|| {
-        PolarsError::ComputeError("pattern may not be 'null' in 'replace' expression".into())
-    })
+    pat.get(0).ok_or_else(
+        || polars_err!(ComputeError: "pattern may not be 'null' in 'replace' expression"),
+    )
 }
 
 // used only if feature="regex"
@@ -457,7 +440,9 @@ fn replace_single<'a>(
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(|| PolarsError::ComputeError("value may not be 'null' in 'replace' expression".into()))?;
+            let val = val.get(0).ok_or_else(
+                || polars_err!(ComputeError: "value may not be 'null' in 'replace' expression"),
+            )?;
             let literal = literal || is_literal_pat(pat);
 
             match literal {
@@ -467,16 +452,17 @@ fn replace_single<'a>(
         }
         (1, len_val) => {
             let mut pat = get_pat(pat)?.to_string();
-            if len_val != ca.len() {
-                return Err(PolarsError::ComputeError(format!("The replacement value expression in 'str.replace' should be equal to the length of the string column.\
-                Got column length: {} and replacement value length: {}", ca.len(), len_val).into()))
-            }
+            polars_ensure!(
+                len_val == ca.len(),
+                ComputeError:
+                "replacement value length ({}) does not match string column length ({})",
+                len_val, ca.len(),
+            );
             let literal = literal || is_literal_pat(&pat);
 
             if literal {
                 pat = escape(&pat)
             }
-
 
             let reg = Regex::new(&pat)?;
             let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
@@ -490,7 +476,9 @@ fn replace_single<'a>(
             };
             Ok(iter_and_replace(ca, val, f))
         }
-        _ => Err(PolarsError::ComputeError("A dynamic pattern length in the 'str.replace' expressions are not yet supported. Consider open a feature request for this.".into()))
+        _ => polars_bail!(
+            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
+        ),
     }
 }
 
@@ -504,7 +492,9 @@ fn replace_all<'a>(
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(|| PolarsError::ComputeError("value may not be 'null' in 'replace' expression".into()))?;
+            let val = val.get(0).ok_or_else(
+                || polars_err!(ComputeError: "value may not be 'null' in 'replace' expression"),
+            )?;
             let literal = literal || is_literal_pat(pat);
 
             match literal {
@@ -514,10 +504,12 @@ fn replace_all<'a>(
         }
         (1, len_val) => {
             let mut pat = get_pat(pat)?.to_string();
-            if len_val != ca.len() {
-                return Err(PolarsError::ComputeError(format!("The replacement value expression in 'str.replace' should be equal to the length of the string column.\
-                Got column length: {} and replacement value length: {}", ca.len(), len_val).into()))
-            }
+            polars_ensure!(
+                len_val == ca.len(),
+                ComputeError:
+                "replacement value length ({}) does not match string column length ({})",
+                len_val, ca.len(),
+            );
             let literal = literal || is_literal_pat(&pat);
 
             if literal {
@@ -526,12 +518,12 @@ fn replace_all<'a>(
 
             let reg = Regex::new(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| {
-                reg.replace_all(s, val)
-            };
+            let f = |s: &'a str, val: &'a str| reg.replace_all(s, val);
             Ok(iter_and_replace(ca, val, f))
         }
-        _ => Err(PolarsError::ComputeError("A dynamic pattern length in the 'str.replace' expressions are not yet supported. Consider open a feature request for this.".into()))
+        _ => polars_bail!(
+            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
+        ),
     }
 }
 

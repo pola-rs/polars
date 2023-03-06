@@ -104,16 +104,14 @@ use crate::series::IsSorted;
 /// a different global string cache the mapping will be incorrect.
 #[cfg(feature = "dtype-categorical")]
 pub fn _check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<()> {
-    match (l, r) {
-        (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
-            if !l.same_src(r) {
-                return Err(PolarsError::ComputeError("Joins/or comparisons on categorical dtypes can only happen if they are created under the same global string cache.\
-                  Hint: set a global StringCache".into()));
-            }
-            Ok(())
-        }
-        _ => Ok(()),
+    if let (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) = (l, r) {
+        polars_ensure!(
+            l.same_src(r),
+            ComputeError: "joins/or comparisons on categoricals can only happen if they were \
+            created under the same global string cache"
+        );
     }
+    Ok(())
 }
 
 #[derive(Clone, PartialEq, Eq)]

@@ -59,9 +59,8 @@ macro_rules! impl_ternary_broadcast {
                 val.rename($self.name());
                 Ok(val)
             }
-            (_, _) => Err(PolarsError::ShapeMismatch(
-                "Shape of parameter `mask` and `other` could not be used in zip_with operation"
-                    .into(),
+            (_, _) => Err(polars_err!(
+                ShapeMismatch: "shapes of `mask` and `other` are not suitable for `zip_with` operation"
             )),
         }
     }};

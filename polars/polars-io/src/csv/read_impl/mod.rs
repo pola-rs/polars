@@ -197,7 +197,10 @@ impl<'a> CoreReader<'a> {
 
         #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
         if is_compressed(&reader_bytes) {
-            return Err(PolarsError::ComputeError("cannot read compressed csv file; compile with feature 'decompress' or 'decompress-fast'".into()));
+            polars_bail!(
+                ComputeError: "cannot read compressed CSV file; \
+                compile with feature 'decompress' or 'decompress-fast'"
+            );
         }
 
         // check if schema should be inferred
@@ -310,7 +313,7 @@ impl<'a> CoreReader<'a> {
         if self.skip_rows_before_header > 0 {
             for _ in 0..self.skip_rows_before_header {
                 let pos = next_line_position_naive(bytes, eol_char)
-                    .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
+                    .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
                 bytes = &bytes[pos..];
             }
         }
@@ -326,7 +329,7 @@ impl<'a> CoreReader<'a> {
                     // no matter the no. of fields
                     _ => next_line_position(bytes, None, self.delimiter, self.quote_char, eol_char),
                 }
-                .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
+                .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
 
                 bytes = &bytes[pos..];
             }
@@ -462,10 +465,13 @@ impl<'a> CoreReader<'a> {
         let mut new_projection = Vec::with_capacity(projection.len());
 
         for i in projection {
-            let (_, dtype) = self.schema.get_index(*i).ok_or_else(||
-                PolarsError::ComputeError(
-                    format!("the given projection index: {} is out of bounds for csv schema with {} columns", i, self.schema.len()).into())
-            )?;
+            let (_, dtype) = self.schema.get_index(*i).ok_or_else(|| {
+                polars_err!(
+                    ComputeError:
+                    "projection index {} is out of bounds for CSV schema with {} columns",
+                    i, self.schema.len(),
+                )
+            })?;
 
             if dtype == &DataType::Utf8 {
                 new_projection.push(*i)

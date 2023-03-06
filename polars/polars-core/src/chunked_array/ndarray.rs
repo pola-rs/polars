@@ -22,54 +22,45 @@ impl ListChunked {
     where
         N: PolarsNumericType,
     {
-        if self.null_count() != 0 {
-            Err(PolarsError::ComputeError(
-                "Creation of ndarray with null values is not supported.".into(),
-            ))
-        } else {
-            let mut iter = self.into_no_null_iter();
+        polars_ensure!(
+            self.null_count() == 0,
+            ComputeError: "creation of ndarray with null values is not supported"
+        );
 
-            let mut ndarray;
-            let width;
+        // first iteration determine the size
+        let mut iter = self.into_no_null_iter();
+        let series = iter
+            .next()
+            .ok_or_else(|| polars_err!(NoData: "unable to create ndarray of empty ListChunked"))?;
 
-            // first iteration determine the size
-            if let Some(series) = iter.next() {
-                width = series.len();
+        let width = series.len();
+        let mut row_idx = 0;
+        let mut ndarray = ndarray::Array::uninit((self.len(), width));
 
-                let mut row_idx = 0;
-                ndarray = ndarray::Array::uninit((self.len(), width));
+        let series = series.cast(&N::get_dtype())?;
+        let ca = series.unpack::<N>()?;
+        let a = ca.to_ndarray()?;
+        let mut row = ndarray.slice_mut(s![row_idx, ..]);
+        a.assign_to(&mut row);
+        row_idx += 1;
 
-                let series = series.cast(&N::get_dtype())?;
-                let ca = series.unpack::<N>()?;
-                let a = ca.to_ndarray()?;
-                let mut row = ndarray.slice_mut(s![row_idx, ..]);
-                a.assign_to(&mut row);
-                row_idx += 1;
-
-                for series in iter {
-                    if series.len() != width {
-                        return Err(PolarsError::ShapeMismatch(
-                            "Could not create a 2D array. Series have different lengths".into(),
-                        ));
-                    }
-                    let series = series.cast(&N::get_dtype())?;
-                    let ca = series.unpack::<N>()?;
-                    let a = ca.to_ndarray()?;
-                    let mut row = ndarray.slice_mut(s![row_idx, ..]);
-                    a.assign_to(&mut row);
-                    row_idx += 1;
-                }
-
-                debug_assert_eq!(row_idx, self.len());
-                // Safety:
-                // We have assigned to every row and element of the array
-                unsafe { Ok(ndarray.assume_init()) }
-            } else {
-                Err(PolarsError::NoData(
-                    "cannot create ndarray of empty ListChunked".into(),
-                ))
-            }
+        for series in iter {
+            polars_ensure!(
+                series.len() == width,
+                ShapeMismatch: "unable to create a 2-D array, series have different lengths"
+            );
+            let series = series.cast(&N::get_dtype())?;
+            let ca = series.unpack::<N>()?;
+            let a = ca.to_ndarray()?;
+            let mut row = ndarray.slice_mut(s![row_idx, ..]);
+            a.assign_to(&mut row);
+            row_idx += 1;
         }
+
+        debug_assert_eq!(row_idx, self.len());
+        // Safety:
+        // We have assigned to every row and element of the array
+        unsafe { Ok(ndarray.assume_init()) }
     }
 }
 
@@ -125,32 +116,37 @@ impl DataFrame {
         let mut membuf = Vec::with_capacity(shape.0 * shape.1);
         let ptr = membuf.as_ptr() as usize;
 
-        POOL.install(||{columns.par_iter().enumerate().map(|(col_idx, s)| {
-            if s.null_count() != 0 {
-                return Err(PolarsError::ComputeError(
-                    "Creation of ndarray with null values is not supported. Consider using floats and NaNs".into(),
-                ));
-            }
+        POOL.install(|| {
+            columns
+                .par_iter()
+                .enumerate()
+                .map(|(col_idx, s)| {
+                    polars_ensure!(
+                        s.null_count() == 0,
+                        ComputeError: "creation of ndarray with null values is not supported"
+                    );
 
-            // this is an Arc clone if already of type N
-            let s = s.cast(&N::get_dtype())?;
-            let ca = s.unpack::<N>()?;
-            let vals = ca.cont_slice().unwrap();
+                    // this is an Arc clone if already of type N
+                    let s = s.cast(&N::get_dtype())?;
+                    let ca = s.unpack::<N>()?;
+                    let vals = ca.cont_slice().unwrap();
 
-            // Safety:
-            // we get parallel access to the vector
-            // but we make sure that we don't get aliased access by offsetting the column indices + length
-            unsafe {
-                let offset_ptr = (ptr as *mut N::Native).add(col_idx * height) ;
-                // Safety:
-                // this is uninitialized memory, so we must never read from this data
-                // copy_from_slice does not read
-                let buf = std::slice::from_raw_parts_mut(offset_ptr, height);
-                buf.copy_from_slice(vals)
-            }
+                    // Safety:
+                    // we get parallel access to the vector
+                    // but we make sure that we don't get aliased access by offsetting the column indices + length
+                    unsafe {
+                        let offset_ptr = (ptr as *mut N::Native).add(col_idx * height);
+                        // Safety:
+                        // this is uninitialized memory, so we must never read from this data
+                        // copy_from_slice does not read
+                        let buf = std::slice::from_raw_parts_mut(offset_ptr, height);
+                        buf.copy_from_slice(vals)
+                    }
 
-            Ok(())
-        }).collect::<PolarsResult<Vec<_>>>()})?;
+                    Ok(())
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
 
         // Safety:
         // we have written all data, so we can now safely set length

@@ -251,8 +251,6 @@ pub fn search_sorted(
             });
             Ok(IdxCa::new_vec(s.name(), idx))
         }
-        _ => Err(PolarsError::ComputeError(
-            format!("'search_sorted' not allowed on dtype: {original_dtype}").into(),
-        )),
+        _ => polars_bail!(opq = search_sorted, original_dtype),
     }
 }

@@ -308,11 +308,10 @@ impl IntoGroupsProxy for ListChunked {
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "groupby_list")]
         {
-            if !self.inner_dtype().to_physical().is_numeric() {
-                return Err(PolarsError::ComputeError(
-                    "Grouping on List type is only allowed if the inner type is numeric".into(),
-                ));
-            }
+            polars_ensure!(
+                self.inner_dtype().to_physical().is_numeric(),
+                ComputeError: "grouping on list type is only allowed if the inner type is numeric"
+            );
 
             let hb = RandomState::default();
             let null_h = get_null_hash_value(hb.clone());

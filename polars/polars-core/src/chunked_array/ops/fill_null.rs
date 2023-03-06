@@ -9,6 +9,10 @@ use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
 
 use crate::prelude::*;
 
+fn err_fill_null() -> PolarsError {
+    polars_err!(ComputeError: "could not determine the fill value")
+}
+
 impl Series {
     /// Replace None values with one of the following strategies:
     /// * Forward fill (replace None with the previous value)
@@ -278,28 +282,23 @@ where
     if !ca.has_validity() {
         return Ok(ca.clone());
     }
-    let mut out =
-        match strategy {
-            FillNullStrategy::Forward(None) => fill_forward(ca),
-            FillNullStrategy::Forward(Some(limit)) => fill_forward_limit(ca, limit),
-            FillNullStrategy::Backward(None) => fill_backward(ca),
-            FillNullStrategy::Backward(Some(limit)) => fill_backward_limit(ca, limit),
-            FillNullStrategy::Min => ca.fill_null_with_values(ca.min().ok_or_else(|| {
-                PolarsError::ComputeError("Could not determine fill value".into())
-            })?)?,
-            FillNullStrategy::Max => ca.fill_null_with_values(ca.max().ok_or_else(|| {
-                PolarsError::ComputeError("Could not determine fill value".into())
-            })?)?,
-            FillNullStrategy::Mean => {
-                ca.fill_null_with_values(ca.mean().map(|v| NumCast::from(v).unwrap()).ok_or_else(
-                    || PolarsError::ComputeError("Could not determine fill value".into()),
-                )?)?
-            }
-            FillNullStrategy::One => return ca.fill_null_with_values(One::one()),
-            FillNullStrategy::Zero => return ca.fill_null_with_values(Zero::zero()),
-            FillNullStrategy::MinBound => return ca.fill_null_with_values(Bounded::min_value()),
-            FillNullStrategy::MaxBound => return ca.fill_null_with_values(Bounded::max_value()),
-        };
+    let mut out = match strategy {
+        FillNullStrategy::Forward(None) => fill_forward(ca),
+        FillNullStrategy::Forward(Some(limit)) => fill_forward_limit(ca, limit),
+        FillNullStrategy::Backward(None) => fill_backward(ca),
+        FillNullStrategy::Backward(Some(limit)) => fill_backward_limit(ca, limit),
+        FillNullStrategy::Min => ca.fill_null_with_values(ca.min().ok_or_else(err_fill_null)?)?,
+        FillNullStrategy::Max => ca.fill_null_with_values(ca.max().ok_or_else(err_fill_null)?)?,
+        FillNullStrategy::Mean => ca.fill_null_with_values(
+            ca.mean()
+                .map(|v| NumCast::from(v).unwrap())
+                .ok_or_else(err_fill_null)?,
+        )?,
+        FillNullStrategy::One => return ca.fill_null_with_values(One::one()),
+        FillNullStrategy::Zero => return ca.fill_null_with_values(Zero::zero()),
+        FillNullStrategy::MinBound => return ca.fill_null_with_values(Bounded::min_value()),
+        FillNullStrategy::MaxBound => return ca.fill_null_with_values(Bounded::max_value()),
+    };
     out.rename(ca.name());
     Ok(out)
 }
@@ -327,22 +326,12 @@ fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResu
             Ok(out.into_series())
         }
         FillNullStrategy::Min => ca
-            .fill_null_with_values(
-                1 == ca.min().ok_or_else(|| {
-                    PolarsError::ComputeError("Could not determine fill value".into())
-                })?,
-            )
+            .fill_null_with_values(1 == ca.min().ok_or_else(err_fill_null)?)
             .map(|ca| ca.into_series()),
         FillNullStrategy::Max => ca
-            .fill_null_with_values(
-                1 == ca.max().ok_or_else(|| {
-                    PolarsError::ComputeError("Could not determine fill value".into())
-                })?,
-            )
+            .fill_null_with_values(1 == ca.max().ok_or_else(err_fill_null)?)
             .map(|ca| ca.into_series()),
-        FillNullStrategy::Mean => Err(PolarsError::InvalidOperation(
-            "mean not supported on array of Boolean type".into(),
-        )),
+        FillNullStrategy::Mean => polars_bail!(opq = mean, "Boolean"),
         FillNullStrategy::One | FillNullStrategy::MaxBound => {
             ca.fill_null_with_values(true).map(|ca| ca.into_series())
         }
@@ -374,9 +363,7 @@ fn fill_null_binary(ca: &BinaryChunked, strategy: FillNullStrategy) -> PolarsRes
             out.rename(ca.name());
             Ok(out)
         }
-        strat => Err(PolarsError::InvalidOperation(
-            format!("Strategy {strat:?} not supported").into(),
-        )),
+        strat => polars_bail!(InvalidOperation: "fill-null strategy {:?} is not supported", strat),
     }
 }
 
@@ -402,9 +389,7 @@ fn fill_null_list(ca: &ListChunked, strategy: FillNullStrategy) -> PolarsResult<
             out.rename(ca.name());
             Ok(out)
         }
-        strat => Err(PolarsError::InvalidOperation(
-            format!("Strategy {strat:?} not supported").into(),
-        )),
+        strat => polars_bail!(InvalidOperation: "fill-null strategy {:?} is not supported", strat),
     }
 }
 

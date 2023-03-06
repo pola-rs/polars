@@ -41,9 +41,7 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
             }),
-            _ => Err(PolarsError::ComputeError(
-                "could not convert pattern".into(),
-            )),
+            _ => polars_bail!(ComputeError: "could not convert pattern"),
         }
     }
 }
@@ -70,9 +68,7 @@ impl TryFrom<Pattern> for DatetimeInfer<i32> {
                 fmt_len: 0,
                 logical_type: DataType::Date,
             }),
-            _ => Err(PolarsError::ComputeError(
-                "could not convert pattern".into(),
-            )),
+            _ => polars_bail!(ComputeError: "could not convert pattern"),
         }
     }
 }
@@ -246,12 +242,7 @@ pub(crate) fn to_datetime(
             let pattern = subset
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
-                .ok_or_else(|| {
-                    PolarsError::ComputeError(
-                        "Could not find an appropriate format to parse dates, please define a fmt"
-                            .into(),
-                    )
-                })?;
+                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<i64>::try_from(pattern).unwrap();
             match tu {
                 TimeUnit::Nanoseconds => infer.transform = transform_datetime_ns,
@@ -279,12 +270,7 @@ pub(crate) fn to_date(ca: &Utf8Chunked) -> PolarsResult<DateChunked> {
             let pattern = subset
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
-                .ok_or_else(|| {
-                    PolarsError::ComputeError(
-                        "Could not find an appropriate format to parse dates, please define a fmt"
-                            .into(),
-                    )
-                })?;
+                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<i32>::try_from(pattern).unwrap();
             infer.coerce_utf8(ca).date().cloned()
         }

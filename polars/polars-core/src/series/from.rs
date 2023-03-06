@@ -217,9 +217,9 @@ impl Series {
                     value_type.as_ref(),
                     ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Null
                 ) {
-                    return Err(PolarsError::ComputeError(
-                        "polars only supports dictionaries with string-like values".into(),
-                    ));
+                    polars_bail!(
+                        ComputeError: "only string-like values are supported in dictionaries"
+                    );
                 }
 
                 macro_rules! unpack_keys_values {
@@ -233,34 +233,32 @@ impl Series {
                     }};
                 }
 
-                let (keys, values) =
-                    match key_type {
-                        IntegerType::Int8 => {
-                            unpack_keys_values!(i8)
-                        }
-                        IntegerType::UInt8 => {
-                            unpack_keys_values!(u8)
-                        }
-                        IntegerType::Int16 => {
-                            unpack_keys_values!(i16)
-                        }
-                        IntegerType::UInt16 => {
-                            unpack_keys_values!(u16)
-                        }
-                        IntegerType::Int32 => {
-                            unpack_keys_values!(i32)
-                        }
-                        IntegerType::UInt32 => {
-                            unpack_keys_values!(u32)
-                        }
-                        IntegerType::Int64 => {
-                            unpack_keys_values!(i64)
-                        }
-                        _ => return Err(PolarsError::ComputeError(
-                            "dictionaries with unsigned 64 bits keys are not supported by polars"
-                                .into(),
-                        )),
-                    };
+                let (keys, values) = match key_type {
+                    IntegerType::Int8 => {
+                        unpack_keys_values!(i8)
+                    }
+                    IntegerType::UInt8 => {
+                        unpack_keys_values!(u8)
+                    }
+                    IntegerType::Int16 => {
+                        unpack_keys_values!(i16)
+                    }
+                    IntegerType::UInt16 => {
+                        unpack_keys_values!(u16)
+                    }
+                    IntegerType::Int32 => {
+                        unpack_keys_values!(i32)
+                    }
+                    IntegerType::UInt32 => {
+                        unpack_keys_values!(u32)
+                    }
+                    IntegerType::Int64 => {
+                        unpack_keys_values!(i64)
+                    }
+                    _ => polars_bail!(
+                        ComputeError: "dictionaries with unsigned 64-bit keys are not supported"
+                    ),
+                };
                 let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
                 let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
 
@@ -390,9 +388,7 @@ impl Series {
                 .into_series())
             }
             ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
-            dt => Err(PolarsError::InvalidOperation(
-                format!("Cannot create polars series from {dt:?} type").into(),
-            )),
+            dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
 }
@@ -476,15 +472,15 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
         let mut chunks_iter = chunks.iter();
         let data_type: ArrowDataType = chunks_iter
             .next()
-            .ok_or_else(|| PolarsError::NoData("Expected at least on ArrayRef".into()))?
+            .ok_or_else(|| polars_err!(NoData: "expected at least one array-ref"))?
             .data_type()
             .clone();
 
         for chunk in chunks_iter {
             if chunk.data_type() != &data_type {
-                return Err(PolarsError::InvalidOperation(
-                    "Cannot create series from multiple arrays with different types".into(),
-                ));
+                polars_bail!(
+                    ComputeError: "cannot create series from multiple arrays with different types"
+                );
             }
         }
         // Safety:

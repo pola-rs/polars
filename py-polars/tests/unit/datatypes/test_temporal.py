@@ -636,7 +636,7 @@ def test_date_range_lazy_with_expressions(
 
 
 def test_date_range_invalid_time_zone() -> None:
-    with pytest.raises(ComputeError, match="Could not parse time zone foo"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: foo"):
         pl.date_range(
             datetime(2001, 1, 1), datetime(2001, 1, 3), interval="1d", time_zone="foo"
         )
@@ -1825,18 +1825,18 @@ def test_strptime_empty(tu: TimeUnit, tz: str | None) -> None:
 
 
 def test_strptime_with_invalid_tz() -> None:
-    with pytest.raises(ComputeError, match="Could not parse time zone foo"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: foo"):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
-        match="Cannot use strptime with both 'tz_aware=True' and tz-aware Datetime.",
+        match="cannot use strptime with both 'tz_aware=True' and tz-aware datetime",
     ):
         pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z", tz_aware=True
         )
     with pytest.raises(
         ComputeError,
-        match="Cannot use strptime with both 'utc=True' and tz-aware Datetime.",
+        match="cannot use strptime with both 'utc=True' and tz-aware datetime",
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S", utc=True
@@ -1846,14 +1846,14 @@ def test_strptime_with_invalid_tz() -> None:
 def test_strptime_unguessable_format() -> None:
     with pytest.raises(
         ComputeError,
-        match="Could not find an appropriate format to parse dates, please define a fmt",
+        match="could not find an appropriate format to parse dates, please define a fmt",
     ):
         pl.Series(["foobar"]).str.strptime(pl.Datetime)
 
 
 def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(ComputeError, match="Could not parse timezone: 'foo'"):
+    with pytest.raises(ComputeError, match="unable to parse timezone: 'foo'"):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 
@@ -1878,7 +1878,7 @@ def test_convert_time_zone_on_tz_naive() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(
         ComputeError,
-        match="Cannot call convert_time_zone on tz-naive. Set a time zone first with replace_time_zone",
+        match="cannot call `convert_time_zone` on tz-naive; set a time zone first with `replace_time_zone`",
     ):
         ts.dt.convert_time_zone("Africa/Bamako")
 
@@ -2115,10 +2115,10 @@ def test_tz_aware_truncate() -> None:
 def test_strftime_invalid_format() -> None:
     tz_naive = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        ComputeError, match="Cannot format NaiveDateTime with format '%z'"
+        ComputeError, match="cannot format NaiveDateTime with format '%z'"
     ):
         tz_naive.dt.strftime("%z")
-    with pytest.raises(ComputeError, match="Cannot format DateTime with format '%q'"):
+    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
         tz_naive.dt.replace_time_zone("UTC").dt.strftime("%q")
 
 

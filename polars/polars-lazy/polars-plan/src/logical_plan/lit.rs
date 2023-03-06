@@ -210,9 +210,9 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
                     }
                 }
             }
-            _ => Err(PolarsError::ComputeError(
-                "Unsupported AnyValue type variant, cannot convert to Literal".into(),
-            )),
+            v => polars_bail!(
+                ComputeError: "cannot convert any-value {:?} to literal", v
+            ),
         }
     }
 }

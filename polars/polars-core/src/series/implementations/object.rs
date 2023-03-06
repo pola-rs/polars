@@ -92,18 +92,15 @@ where
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.dtype() == other.dtype() {
-            ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMismatch(
-                "cannot append Series; data types don't match".into(),
-            ))
+        if self.dtype() != other.dtype() {
+            polars_bail!(append);
         }
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
+        Ok(())
     }
 
     fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
-        panic!("extend not implemented for Object dtypes")
+        polars_bail!(opq = extend, self.dtype());
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -168,9 +165,7 @@ where
     }
 
     fn cast(&self, _data_type: &DataType) -> PolarsResult<Series> {
-        Err(PolarsError::InvalidOperation(
-            "cannot cast array of type ObjectChunked to arrow datatype".into(),
-        ))
+        polars_bail!(opq = cast, self.dtype());
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

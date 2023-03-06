@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 #[cfg(feature = "parquet")]
 use polars_core::cloud::CloudOptions;
-use polars_core::frame::_duplicate_err;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
@@ -46,10 +45,7 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 }
 
 fn format_err(msg: &str, input: &LogicalPlan) -> String {
-    format!(
-        "{msg}\n\n> Error originated just after operation: '{input:?}'\n\
-    This operation could not be added to the plan.",
-    )
+    format!("{msg}\n\nError originated just after this operation:\n{input:?}")
 }
 
 /// Returns every error or msg: &str as `ComputeError`.
@@ -228,13 +224,11 @@ impl LogicalPlanBuilder {
         let mut file = std::fs::File::open(&path)?;
         let mut magic_nr = [0u8; 2];
         file.read_exact(&mut magic_nr)
-            .map_err(|_| PolarsError::NoData("empty csv".into()))?;
-
-        if is_compressed(&magic_nr) {
-            return Err(PolarsError::ComputeError(
-                "cannot scan compressed csv; use read_csv for compressed data".into(),
-            ));
-        }
+            .map_err(|_| polars_err!(NoData: "empty csv"))?;
+        polars_ensure!(
+            !is_compressed(&magic_nr),
+            ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
+        );
         file.rewind()?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
@@ -381,7 +375,7 @@ impl LogicalPlanBuilder {
                     "The name: '{}' passed to `LazyFrame.with_columns` is duplicate",
                     field.name()
                 );
-                return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+                return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
             }
             new_schema.with_column(field.name().clone(), field.data_type().clone());
             arena.clear();
@@ -448,9 +442,9 @@ impl LogicalPlanBuilder {
                 }
                 0 => {
                     let msg = "The predicate expanded to zero expressions. \
-                This may for example be caused by a regex not matching column names or \
-                a column dtype match not hitting any dtypes in the DataFrame";
-                    return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+                        This may for example be caused by a regex not matching column names or \
+                        a column dtype match not hitting any dtypes in the DataFrame";
+                    return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
                 }
                 _ => {
                     let mut expanded = String::new();
@@ -465,12 +459,12 @@ impl LogicalPlanBuilder {
 
                     let msg = if cfg!(feature = "python") {
                         format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                    This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
+                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
                     } else {
                         format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                    This is ambiguous. Try to combine the predicates with the 'all_exprs' or `any_exprs' expression.")
+                            This is ambiguous. Try to combine the predicates with the 'all_exprs' or `any_exprs' expression.")
                     };
-                    return raise_err!(PolarsError::ComputeError(msg.into()), &self.0, into);
+                    return raise_err!(polars_err!(ComputeError: msg), &self.0, into);
                 }
             }
         } else {
@@ -523,7 +517,7 @@ impl LogicalPlanBuilder {
                 for expr in aggs.iter().chain(keys.iter()) {
                     let name = expr_output_name(expr)?;
                     if !names.insert(name.clone()) {
-                        return _duplicate_err(name.as_ref());
+                        polars_bail!(duplicate = name);
                     }
                 }
                 Ok(())
@@ -545,7 +539,7 @@ impl LogicalPlanBuilder {
                 let dtype = try_delayed!(
                     current_schema
                         .get(name)
-                        .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
+                        .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name)),
                     self.0,
                     into
                 );
@@ -676,8 +670,9 @@ impl LogicalPlanBuilder {
             if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
                 return LogicalPlan::Error {
                     input: Box::new(self.0),
-                    err: PolarsError::ComputeError(
-                        "'alias' is not allowed in a join key. Use 'with_columns' first.".into(),
+                    err: polars_err!(
+                        ComputeError:
+                        "'alias' is not allowed in a join key, use 'with_columns' first",
                     )
                     .into(),
                 }

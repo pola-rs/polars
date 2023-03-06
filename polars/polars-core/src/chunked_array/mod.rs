@@ -275,20 +275,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Series to ChunkedArray<T>
     pub fn unpack_series_matching_type(&self, series: &Series) -> PolarsResult<&ChunkedArray<T>> {
-        if self.dtype() == series.dtype() {
-            // Safety
-            // dtype will be correct.
-            Ok(unsafe { self.unpack_series_matching_physical_type(series) })
-        } else {
-            Err(PolarsError::SchemaMismatch(
-                format!(
-                    "cannot unpack series {:?} into matching type {:?}",
-                    series,
-                    self.dtype()
-                )
-                .into(),
-            ))
-        }
+        polars_ensure!(
+            self.dtype() == series.dtype(),
+            SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
+            series.dtype(),
+            self.dtype(),
+        );
+        // Safety
+        // dtype will be correct.
+        Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
 
     /// Unique id representing the number of chunks
@@ -466,12 +461,16 @@ where
     }
 }
 
-pub(crate) trait AsSinglePtr {
+impl<T: PolarsDataType> AsRefDataType for ChunkedArray<T> {
+    fn as_ref_dtype(&self) -> &DataType {
+        self.dtype()
+    }
+}
+
+pub(crate) trait AsSinglePtr: AsRefDataType {
     /// Rechunk and return a ptr to the start of the array
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
-        Err(PolarsError::InvalidOperation(
-            "operation as_single_ptr not supported for this dtype".into(),
-        ))
+        polars_bail!(opq = as_single_ptr, self.as_ref_dtype());
     }
 }
 
@@ -501,12 +500,13 @@ where
 {
     /// Contiguous slice
     pub fn cont_slice(&self) -> PolarsResult<&[T::Native]> {
-        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
-        } else {
-            Err(PolarsError::ComputeError("no_slice".into()))
-        }
+        polars_ensure!(
+            self.chunks.len() == 1 && self.chunks[0].null_count() == 0,
+            ComputeError: "chunked array is not contiguous"
+        );
+        Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
     }
+
     /// Contiguous mutable slice
     pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {

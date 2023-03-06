@@ -81,11 +81,7 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
                 is_unique_ca(ca, invert)
             })
         }
-        dt => {
-            return Err(PolarsError::ComputeError(
-                format!("Dtype {dt} not supported in 'is_unique' operation.").into(),
-            ))
-        }
+        dt => polars_bail!(opq = is_unique, dt),
     };
     Ok(out)
 }

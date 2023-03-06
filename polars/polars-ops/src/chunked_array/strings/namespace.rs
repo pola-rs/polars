@@ -76,20 +76,17 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                 .get(0)
                 .and_then(|s| <i32 as Num>::from_str_radix(s, radix).err())
                 .map_or_else(
-                    || unreachable!("Could unexpectedly not recreate ParseIntError"),
-                    |err| format!("{}", err),
+                    || unreachable!("failed to extract ParseIntError"),
+                    |e| format!("{}", e),
                 );
-
-            Err(PolarsError::ComputeError(
-                format!(
-                    "Strict integer parsing failed for {} value(s): {} \
-                    ParseIntError msg for first shown value: '{}'. Consider non strict parsing.",
-                    n_failures,
-                    some_failures.into_series().fmt_list(),
-                    some_error_msg
-                )
-                .into(),
-            ))?
+            polars_bail!(
+                ComputeError:
+                "strict integer parsing failed for {} value(s): {}; error message for the \
+                first shown value: '{}' (consider non-strict parsing)",
+                n_failures,
+                some_failures.into_series().fmt_list(),
+                some_error_msg
+            );
         };
 
         Ok(out)
@@ -346,11 +343,11 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Extract each successive non-overlapping regex match in an individual string as an array
     fn extract_all_many(&self, pat: &Utf8Chunked) -> PolarsResult<ListChunked> {
         let ca = self.as_utf8();
-        if ca.len() != pat.len() {
-            return Err(PolarsError::ComputeError(
-                "pattern's length does not match that of the argument Series".into(),
-            ));
-        }
+        polars_ensure!(
+            ca.len() == pat.len(),
+            ComputeError: "pattern's length: {} does not match that of the argument series: {}",
+            pat.len(), ca.len(),
+        );
 
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 

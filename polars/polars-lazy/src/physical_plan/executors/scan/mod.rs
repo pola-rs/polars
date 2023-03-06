@@ -84,17 +84,16 @@ impl Executor for DataFrameExec {
 
         if let Some(selection) = &self.selection {
             let s = selection.evaluate(&df, state)?;
-            let mask = s.bool().map_err(|_| {
-                PolarsError::ComputeError("filter predicate was not of type boolean".into())
-            })?;
+            let mask = s.bool().map_err(
+                |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
+            )?;
             df = df.filter(mask)?;
         }
 
-        if let Some(limit) = _set_n_rows_for_scan(None) {
-            Ok(df.head(Some(limit)))
-        } else {
-            Ok(df)
-        }
+        Ok(match _set_n_rows_for_scan(None) {
+            Some(limit) => df.head(Some(limit)),
+            None => df,
+        })
     }
 }
 
@@ -115,9 +114,9 @@ impl Executor for AnonymousScanExec {
                 (false, Some(predicate)) => {
                     let mut df = self.function.scan(self.options.clone())?;
                     let s = predicate.evaluate(&df, state)?;
-                    let mask = s.bool().map_err(|_| {
-                        PolarsError::ComputeError("filter predicate was not of type boolean".into())
-                    })?;
+                    let mask = s.bool().map_err(
+                        |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
+                    )?;
                     df = df.filter(mask)?;
 
                     Ok(df)

@@ -25,7 +25,7 @@ impl AExpr {
             Explode(expr) => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
 
-                if let DataType::List(inner) = field.data_type() {
+                if let List(inner) = field.data_type() {
                     Ok(Field::new(field.name(), *inner.clone()))
                 } else {
                     Ok(field)
@@ -38,12 +38,12 @@ impl AExpr {
             Column(name) => {
                 let field = schema
                     .get_field(name)
-                    .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()));
+                    .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name));
 
                 match ctxt {
                     Context::Default => field,
                     Context::Aggregation => field.map(|mut field| {
-                        let dtype = DataType::List(Box::new(field.data_type().clone()));
+                        let dtype = List(Box::new(field.data_type().clone()));
                         field.coerce(dtype);
                         field
                     }),

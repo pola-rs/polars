@@ -42,7 +42,7 @@ impl Executor for IpcExec {
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }
-            let name = column_delimited("ipc".to_string(), &ids);
+            let name = comma_delimited("ipc".to_string(), &ids);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

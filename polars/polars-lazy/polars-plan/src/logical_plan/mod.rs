@@ -97,9 +97,11 @@ impl ErrorStateSync {
                 };
                 err
             }
-            ErrorState::AlreadyEncountered { prev_err_msg } => PolarsError::ComputeError(
-                format!("LogicalPlan already failed with error: `{prev_err_msg}`").into(),
-            ),
+            ErrorState::AlreadyEncountered { prev_err_msg } => {
+                polars_err!(
+                    ComputeError: "LogicalPlan already failed with error: '{}'", prev_err_msg,
+                )
+            }
         }
     }
 }

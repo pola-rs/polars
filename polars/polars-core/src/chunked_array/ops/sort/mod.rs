@@ -732,11 +732,10 @@ pub(crate) fn convert_sort_column_multi_sort(
         }
         _ => {
             let phys = s.to_physical_repr().into_owned();
-            if !phys.dtype().is_numeric() {
-                return Err(PolarsError::ComputeError(
-                    format!("Cannot sort column of dtype: {:?}", s.dtype()).into(),
-                ));
-            }
+            polars_ensure!(
+                phys.dtype().is_numeric(),
+                ComputeError: "cannot sort column of dtype `{}`", s.dtype()
+            );
             phys
         }
     };

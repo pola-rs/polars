@@ -204,13 +204,11 @@ pub trait RollingAgg {
 /// utility
 #[cfg(feature = "rolling_window")]
 fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
-    if min_periods > window_size {
-        Err(PolarsError::ComputeError(
-            "`windows_size` should be >= `min_periods`".into(),
-        ))
-    } else {
-        Ok(())
-    }
+    polars_ensure!(
+        min_periods <= window_size,
+        ComputeError: "`min_periods` should be <= `window_size`",
+    );
+    Ok(())
 }
 
 #[cfg(feature = "rolling_window")]

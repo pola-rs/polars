@@ -88,11 +88,9 @@ pub(crate) fn binary_lambda(
         let result_series_wrapper =
             match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => {
-                    return Err(PolarsError::ComputeError(
-                        format!("custom python function failed: {}", e.value(py)).into(),
-                    ))
-                }
+                Err(e) => polars_bail!(
+                    ComputeError: "custom python function failed: {}", e.value(py),
+                ),
             };
         let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
             let pyexpr = expr.extract::<PyExpr>(py).unwrap();
@@ -135,15 +133,15 @@ pub fn map_single(
 
             // this is a python Series
             let out = call_lambda_with_series(py, s.clone(), &lambda, &POLARS)
-                .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+                .map_err(|e| polars_err!(ComputeError: "{}", e))?;
             let s = out.to_series(py, &POLARS, s.name());
-
-            if !matches!(output_type, DataType::Unknown) && s.dtype() != &output_type {
-                Err(PolarsError::SchemaMismatch(
-                    format!("Expected output type: '{:?}', but got '{:?}'. Set 'return_dtype' to the proper datatype.", output_type, s.dtype()).into()))
-            } else {
-                Ok(Some(s))
-            }
+            polars_ensure!(
+                matches!(output_type, DataType::Unknown) || s.dtype() == &output_type,
+                SchemaMismatch:
+                "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
+                output_type, s.dtype(),
+            );
+            Ok(Some(s))
         })
     };
 

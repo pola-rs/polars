@@ -6,8 +6,9 @@ use arrow::temporal_conversions::{
 };
 #[cfg(feature = "timezones")]
 use chrono::{NaiveDateTime, TimeZone};
+use polars_error::polars_bail;
 
-use crate::error::{PolarsError, PolarsResult};
+use crate::error::PolarsResult;
 use crate::prelude::ArrayRef;
 
 #[cfg(feature = "timezones")]
@@ -66,29 +67,23 @@ pub fn replace_timezone(
     from: String,
     to: String,
 ) -> PolarsResult<ArrayRef> {
-    match from.parse::<chrono_tz::Tz>() {
+    Ok(match from.parse::<chrono_tz::Tz>() {
         Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
-            Ok(to_tz) => Ok(convert_to_timestamp(from_tz, to_tz, arr, tu)),
+            Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu),
             Err(_) => match parse_offset(&to) {
-                Ok(to_tz) => Ok(convert_to_timestamp(from_tz, to_tz, arr, tu)),
-                Err(_) => Err(PolarsError::ComputeError(
-                    format!("Could not parse time zone {to}").into(),
-                )),
+                Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu),
+                Err(_) => polars_bail!(ComputeError: "unable to parse time zone: {}", to),
             },
         },
         Err(_) => match parse_offset(&from) {
             Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
-                Ok(to_tz) => Ok(convert_to_timestamp(from_tz, to_tz, arr, tu)),
+                Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu),
                 Err(_) => match parse_offset(&to) {
-                    Ok(to_tz) => Ok(convert_to_timestamp(from_tz, to_tz, arr, tu)),
-                    Err(_) => Err(PolarsError::ComputeError(
-                        format!("Could not parse time zone {to}").into(),
-                    )),
+                    Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu),
+                    Err(_) => polars_bail!(ComputeError: "unable to parse time zone: {}", to),
                 },
             },
-            Err(_) => Err(PolarsError::ComputeError(
-                format!("Could not parse time zone {from}").into(),
-            )),
+            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: {}", from),
         },
-    }
+    })
 }

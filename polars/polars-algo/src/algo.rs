@@ -57,19 +57,20 @@ pub fn hist(
 
     let (min_value, max_value): (Expr, AnyValue) = match s.dtype() {
         // Floating point values have a notion of infinity
-        DataType::Float64 => Ok((lit(f64::NEG_INFINITY), AnyValue::Float64(f64::INFINITY))),
-        DataType::Float32 => Ok((lit(f32::NEG_INFINITY), AnyValue::Float32(f32::INFINITY))),
+        DataType::Float64 => (lit(f64::NEG_INFINITY), AnyValue::Float64(f64::INFINITY)),
+        DataType::Float32 => (lit(f32::NEG_INFINITY), AnyValue::Float32(f32::INFINITY)),
         // However, integers don't.  So, the best we can do is use the maximum for the type
-        DataType::Int64 => Ok((lit(i64::MIN), AnyValue::Int64(i64::MAX))),
-        DataType::Int32 => Ok((lit(i32::MIN), AnyValue::Int32(i32::MAX))),
-        DataType::Int16 => Ok((lit(i32::MIN), AnyValue::Int16(i16::MAX))),
-        DataType::UInt64 => Ok((lit(u64::MIN), AnyValue::UInt64(u64::MAX))),
-        DataType::UInt32 => Ok((lit(u32::MIN), AnyValue::UInt32(u32::MAX))),
-        DataType::UInt16 => Ok((lit(u32::MIN), AnyValue::UInt16(u16::MAX))),
-        _ => Err(PolarsError::InvalidOperation(
-            "Cannot take histogram of non-numeric types; consider a groupby and count.".into(),
-        )),
-    }?;
+        DataType::Int64 => (lit(i64::MIN), AnyValue::Int64(i64::MAX)),
+        DataType::Int32 => (lit(i32::MIN), AnyValue::Int32(i32::MAX)),
+        DataType::Int16 => (lit(i32::MIN), AnyValue::Int16(i16::MAX)),
+        DataType::UInt64 => (lit(u64::MIN), AnyValue::UInt64(u64::MAX)),
+        DataType::UInt32 => (lit(u32::MIN), AnyValue::UInt32(u32::MAX)),
+        DataType::UInt16 => (lit(u32::MIN), AnyValue::UInt16(u16::MAX)),
+        _ => polars_bail!(
+            InvalidOperation:
+            "cannot take histogram of non-numeric types; consider a groupby and count"
+        ),
+    };
 
     let cuts_df = df![
         breakpoint_str => bins.extend_constant(max_value, 1)?
@@ -201,12 +202,10 @@ pub fn cut(
     ]?;
 
     let cuts_df = if let Some(labels) = labels {
-        if labels.len() != (bins.len() + 1) {
-            return Err(PolarsError::ShapeMismatch(
-                "Labels count must equal bins count".into(),
-            ));
-        }
-
+        polars_ensure!(
+            labels.len() == (bins.len() + 1),
+            ShapeMismatch: "labels count must equal bins count",
+        );
         cuts_df
             .lazy()
             .with_column(lit(Series::new(category_str, labels)))

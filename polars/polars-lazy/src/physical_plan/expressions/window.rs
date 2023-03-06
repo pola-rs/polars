@@ -18,7 +18,6 @@ use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -177,27 +176,23 @@ impl WindowExpr {
                         }
                     });
 
-            return if let Some((output, group)) = non_matching_group {
+            if let Some((output, group)) = non_matching_group {
                 let first = group.first();
                 let group = groupby_columns
                     .iter()
                     .map(|s| format_smartstring!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
-                let err_msg = format!(
-                    "{}\n> Group: ",
-                    "The length of the window expression did not match that of the group."
+                polars_bail!(
+                    expr = self.expr, ComputeError:
+                    "the length of the window expression did not match that of the group\
+                    \n> group: {}\n> group length: {}\n> output: '{:?}'",
+                    comma_delimited(String::new(), &group), group.len(), output.unwrap()
                 );
-                let err_msg = column_delimited(err_msg, &group);
-                let err_msg = format!(
-                    "{}\n> Group length: {}\n> Output: '{:?}'",
-                    err_msg,
-                    group.len(),
-                    output.unwrap()
-                );
-                Err(expression_err!(err_msg, self.expr, ComputeError))
             } else {
-                let msg = "The length of the window expression did not match that of the group.";
-                Err(expression_err!(msg, self.expr, ComputeError))
+                polars_bail!(
+                    expr = self.expr, ComputeError:
+                    "the length of the window expression did not match that of the group"
+                );
             };
         }
         self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb, state, cache_key)
@@ -336,8 +331,10 @@ impl WindowExpr {
             (true, true, _) => Ok(MapStrategy::ExplodeLater),
             // Explode all the aggregated lists. Maybe add later?
             (true, false, _) => {
-                let msg = "This operation is likely not what you want (you may need '.list()'). Please open an issue if you really want to do this";
-                Err(expression_err!(msg, self.expr, ComputeError))
+                polars_bail!(
+                    expr = self.expr, ComputeError:
+                    "this operation is likely not what you want (you may need `.list()`)"
+                );
             }
             // explicit list
             // `(col("x").sum() * col("y")).list().over("groups")`
@@ -623,9 +620,7 @@ impl PhysicalExpr for WindowExpr {
         _groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        Err(PolarsError::InvalidOperation(
-            "window expression not allowed in aggregation".into(),
-        ))
+        polars_bail!(InvalidOperation: "window expression not allowed in aggregation");
     }
 
     fn as_expression(&self) -> Option<&Expr> {

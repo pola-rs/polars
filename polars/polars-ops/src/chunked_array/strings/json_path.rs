@@ -42,14 +42,11 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
     /// Extract json path, first match
     /// Refer to <https://goessner.net/articles/JsonPath/>
     fn json_path_match(&self, json_path: &str) -> PolarsResult<Utf8Chunked> {
-        match PathCompiled::compile(json_path) {
-            Ok(pat) => Ok(self
-                .as_utf8()
-                .apply_on_opt(|opt_s| opt_s.and_then(|s| extract_json(&pat, s)))),
-            Err(e) => Err(PolarsError::ComputeError(
-                format!("error compiling JSONpath expression {e:?}").into(),
-            )),
-        }
+        let pat = PathCompiled::compile(json_path)
+            .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression {}", e))?;
+        Ok(self
+            .as_utf8()
+            .apply_on_opt(|opt_s| opt_s.and_then(|s| extract_json(&pat, s))))
     }
 
     /// Returns the infered DataType for JSON values for each row
@@ -64,7 +61,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
 
         ndjson::read::infer_iter(values_iter)
             .map(|d| DataType::from(&d))
-            .map_err(|e| PolarsError::ComputeError(format!("error infering JSON {e:?}").into()))
+            .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
 
     /// Extracts a typed-JSON value for each row in the Utf8Chunked
@@ -76,23 +73,17 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
         };
 
         let iter = ca.into_iter().map(|x| x.unwrap_or("null"));
-
-        let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow()).map_err(|e| {
-            PolarsError::ComputeError(format!("error deserializing JSON {e:?}").into())
-        })?;
-
+        let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow())
+            .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
         Series::try_from(("", array))
     }
 
     fn json_path_select(&self, json_path: &str) -> PolarsResult<Utf8Chunked> {
-        match PathCompiled::compile(json_path) {
-            Ok(pat) => Ok(self
-                .as_utf8()
-                .apply_on_opt(|opt_s| opt_s.and_then(|s| select_json(&pat, s)))),
-            Err(e) => Err(PolarsError::ComputeError(
-                format!("error compiling JSONpath expression {e:?}").into(),
-            )),
-        }
+        let pat = PathCompiled::compile(json_path)
+            .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression: {}", e))?;
+        Ok(self
+            .as_utf8()
+            .apply_on_opt(|opt_s| opt_s.and_then(|s| select_json(&pat, s))))
     }
 
     fn json_path_extract(&self, json_path: &str, dtype: Option<DataType>) -> PolarsResult<Series> {

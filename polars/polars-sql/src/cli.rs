@@ -90,12 +90,18 @@ fn create_dataframe_from_filename(filename: &str) -> PolarsResult<LazyFrame> {
         Some("parquet") => LazyFrame::scan_parquet(filename, ScanArgsParquet::default()),
         #[cfg(feature = "ipc")]
         Some("ipc") => LazyFrame::scan_ipc(filename, ScanArgsIpc::default()),
-        None => Err(PolarsError::ComputeError(
-            format!("Unknown dataframe \"{}\". Either specify a dataframe name registered with \\rd or an absolute path to a file.", filename).into(),
-        )),
-        Some(ext) => Err(PolarsError::ComputeError(
-            format!("Unsupported file extension: \"{}\". Supported file extensions are {} and {}.", ext, SUPPORTED_FILE_EXTENSIONS[0..SUPPORTED_FILE_EXTENSIONS.len() - 1].join(", "), SUPPORTED_FILE_EXTENSIONS.last().unwrap()).into(),
-        )),
+        None => polars_bail!(
+            ComputeError: "unable to infer dataframe format from filename \"{}\"; \"\
+            either specify a dataframe name registered with \\rd or an absolute path to a file",
+            filename,
+        ),
+        Some(ext) => polars_bail!(
+            ComputeError: "unsupported file extension: \"{}\"; \
+            supported file extensions are {} and {}",
+            ext,
+            SUPPORTED_FILE_EXTENSIONS[0..SUPPORTED_FILE_EXTENSIONS.len() - 1].join(", "),
+            SUPPORTED_FILE_EXTENSIONS.last().unwrap()
+        ),
     };
 }
 
@@ -130,7 +136,7 @@ fn create_dataframes_from_statement(context: &mut SQLContext, stmt: &Select) -> 
     let sql_tbl: &TableWithJoins = stmt
         .from
         .get(0)
-        .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
+        .ok_or_else(|| polars_err!(ComputeError: "no table name provided in query"))?;
 
     create_dataframe_from_tablename(context, &sql_tbl.relation)?;
 
@@ -144,20 +150,9 @@ fn create_dataframes_from_statement(context: &mut SQLContext, stmt: &Select) -> 
 }
 
 fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFrame> {
-    let ast = match Parser::parse_sql(&GenericDialect::default(), query) {
-        Ok(ast) => ast,
-        Err(e) => {
-            return Err(PolarsError::ComputeError(
-                format!("Error parsing SQL: {:?}", e).into(),
-            ))
-        }
-    };
-    if ast.len() != 1 {
-        return Err(PolarsError::ComputeError(
-            "One and only one statement at a time please".into(),
-        ));
-    }
-
+    let ast = Parser::parse_sql(&GenericDialect::default(), query)
+        .map_err(|e| polars_err!(ComputeError: "error parsing SQL: {}", e))?;
+    polars_ensure!(ast.len() == 1, ComputeError: "one and only one statement at a time please");
     let ast = ast.get(0).unwrap();
     match ast {
         Statement::Query(query) => {

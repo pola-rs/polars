@@ -49,6 +49,10 @@ pub enum DataType {
     Unknown,
 }
 
+pub trait AsRefDataType {
+    fn as_ref_dtype(&self) -> &DataType;
+}
+
 impl Hash for DataType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state)
@@ -296,19 +300,17 @@ impl Display for DataType {
 pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType> {
     // TODO! add struct
     use DataType::*;
-    match (left, right) {
+    Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
         (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
             let rev_map = merge_categorical_map(rev_map_l, rev_map_r)?;
-            Ok(DataType::Categorical(Some(rev_map)))
+            Categorical(Some(rev_map))
         }
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
-            Ok(DataType::List(Box::new(merged)))
+            List(Box::new(merged))
         }
-        (left, right) if left == right => Ok(left.clone()),
-        _ => Err(PolarsError::ComputeError(
-            "Coult not merge datatypes".into(),
-        )),
-    }
+        (left, right) if left == right => left.clone(),
+        _ => polars_bail!(ComputeError: "unable to merge datatypes"),
+    })
 }

@@ -1,6 +1,4 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use std::marker::Sized;
-
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
@@ -54,9 +52,7 @@ use crate::series::IsSorted;
 #[cfg(feature = "to_list")]
 pub trait ToList<T: PolarsDataType> {
     fn to_list(&self) -> PolarsResult<ListChunked> {
-        Err(PolarsError::InvalidOperation(
-            format!("to_list not supported for dtype: {:?}", T::get_dtype()).into(),
-        ))
+        polars_bail!(opq = to_list, T::get_dtype());
     }
 }
 
@@ -135,7 +131,7 @@ pub trait ChunkBytes {
 /// by not using a fold aggregator, but reusing a `Series` wrapper and calling `Series` aggregators.
 /// This likely is a bit slower than ChunkWindow
 #[cfg(feature = "rolling_window")]
-pub trait ChunkRollApply {
+pub trait ChunkRollApply: AsRefDataType {
     fn rolling_apply(
         &self,
         _f: &dyn Fn(&Series) -> Series,
@@ -144,9 +140,7 @@ pub trait ChunkRollApply {
     where
         Self: Sized,
     {
-        Err(PolarsError::InvalidOperation(
-            "rolling mean not supported for this datatype".into(),
-        ))
+        polars_bail!(opq = rolling_apply, self.as_ref_dtype());
     }
 }
 
@@ -205,7 +199,7 @@ pub trait ChunkTake {
     #[must_use]
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
-        Self: std::marker::Sized,
+        Self: Sized,
         I: TakeIterator,
         INulls: TakeIteratorNulls;
 
@@ -214,7 +208,7 @@ pub trait ChunkTake {
     /// by reference.
     fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
-        Self: std::marker::Sized,
+        Self: Sized,
         I: TakeIterator,
         INulls: TakeIteratorNulls;
 }
@@ -467,9 +461,7 @@ pub trait ChunkUnique<T: PolarsDataType> {
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<ChunkedArray<T>> {
-        Err(PolarsError::InvalidOperation(
-            "mode is not implemented for this dtype".into(),
-        ))
+        polars_bail!(opq = mode, T::get_dtype());
     }
 }
 
@@ -504,9 +496,7 @@ pub trait ChunkSort<T: PolarsDataType> {
 
     /// Retrieve the indexes need to sort this and the other arrays.
     fn arg_sort_multiple(&self, _other: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
-        Err(PolarsError::InvalidOperation(
-            "arg_sort_multiple not implemented for this dtype".into(),
-        ))
+        polars_bail!(opq = arg_sort_multiple, T::get_dtype());
     }
 }
 
@@ -546,13 +536,13 @@ pub trait ChunkFull<T> {
     /// Create a ChunkedArray with a single value.
     fn full(name: &str, value: T, length: usize) -> Self
     where
-        Self: std::marker::Sized;
+        Self: Sized;
 }
 
 pub trait ChunkFullNull {
     fn full_null(_name: &str, _length: usize) -> Self
     where
-        Self: std::marker::Sized;
+        Self: Sized;
 }
 
 /// Reverse a ChunkedArray<T>
@@ -723,9 +713,7 @@ pub trait RepeatBy {
 /// Mask the first unique values as `true`
 pub trait IsFirst<T: PolarsDataType> {
     fn is_first(&self) -> PolarsResult<BooleanChunked> {
-        Err(PolarsError::InvalidOperation(
-            format!("operation not supported by {:?}", T::get_dtype()).into(),
-        ))
+        polars_bail!(opq = is_first, T::get_dtype());
     }
 }
 
@@ -733,9 +721,7 @@ pub trait IsFirst<T: PolarsDataType> {
 /// Mask the last unique values as `true`
 pub trait IsLast<T: PolarsDataType> {
     fn is_last(&self) -> PolarsResult<BooleanChunked> {
-        Err(PolarsError::InvalidOperation(
-            format!("operation not supported by {:?}", T::get_dtype()).into(),
-        ))
+        polars_bail!(opq = is_last, T::get_dtype());
     }
 }
 

@@ -127,9 +127,7 @@ fn update_scan_schema(
     for node in acc_projections.iter() {
         for name in aexpr_to_leaf_names(*node, expr_arena) {
             let item = schema.get_full(&name).ok_or_else(|| {
-                PolarsError::ComputeError(
-                    format!("column '{name}' not available in schema {schema:?}").into(),
-                )
+                polars_err!(ComputeError: "column '{}' not available in schema {:?}", name, schema)
             })?;
             new_cols.push(item);
         }

@@ -403,12 +403,9 @@ impl<'a> AnyValue<'a> {
     #[inline]
     pub fn try_extract<T: NumCast>(&self) -> PolarsResult<T> {
         self.extract().ok_or_else(|| {
-            PolarsError::ComputeError(
-                format!(
-                    "could not extract number from AnyValue of dtype: '{:?}'",
-                    self.dtype()
-                )
-                .into(),
+            polars_err!(
+                ComputeError: "could not extract number from any-value of dtype: '{:?}'",
+                self.dtype(),
             )
         })
     }
@@ -441,32 +438,19 @@ impl<'a> AnyValue<'a> {
                     DataType::Int64 => AnyValue::Int64($av as i64),
                     DataType::Float32 => AnyValue::Float32($av as f32),
                     DataType::Float64 => AnyValue::Float64($av as f64),
-                    _ => {
-                        return Err(PolarsError::ComputeError(format!("Cannot AnyValue: {:?} to dtype: {:?}", self, dtype).into()))
-                    }
+                    _ => polars_bail!(
+                        ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
+                    ),
                 }
 
             }
         );
 
         let new_av = match self {
-            AnyValue::Float32(_) | AnyValue::Float64(_) => {
-                let av = self.extract::<f64>().unwrap();
-                cast_to!(av)
-            }
-            av if av.is_signed() => {
-                let av = av.extract::<i64>().unwrap();
-                cast_to!(av)
-            }
-            av if av.is_unsigned() => {
-                let av = av.extract::<u64>().unwrap();
-                cast_to!(av)
-            }
-            _ => {
-                return Err(PolarsError::ComputeError(
-                    "cannot cast non numeric AnyValue to numeric dtype".into(),
-                ))
-            }
+            AnyValue::Float32(_) | AnyValue::Float64(_) => cast_to!(self.extract::<f64>().unwrap()),
+            av if av.is_signed() => cast_to!(av.extract::<i64>().unwrap()),
+            av if av.is_unsigned() => cast_to!(av.extract::<u64>().unwrap()),
+            _ => polars_bail!(ComputeError: "cannot cast non numeric any-value to numeric dtype"),
         };
         Ok(new_av)
     }
@@ -610,11 +594,7 @@ impl<'a> AnyValue<'a> {
             BinaryOwned(v) => BinaryOwned(v),
             #[cfg(feature = "object")]
             Object(v) => ObjectOwned(OwnedObject(v.to_boxed())),
-            dt => {
-                return Err(PolarsError::ComputeError(
-                    format!("cannot get static AnyValue from {dt}").into(),
-                ))
-            }
+            dt => polars_bail!(ComputeError: "cannot get static any-value from {}", dt),
         };
         Ok(av)
     }

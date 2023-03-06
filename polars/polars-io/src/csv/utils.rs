@@ -153,7 +153,7 @@ pub(crate) fn parse_bytes_with_encoding(
 ) -> PolarsResult<Cow<str>> {
     Ok(match encoding {
         CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
-            .map_err(|_| PolarsError::ComputeError("invalid utf-8 sequence".into()))?
+            .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence"))?
             .into(),
         CsvEncoding::LossyUtf8 => String::from_utf8_lossy(bytes),
     })
@@ -193,9 +193,7 @@ pub fn infer_file_schema(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
-    if bytes.is_empty() {
-        return Err(PolarsError::NoData("empty csv".into()));
-    }
+    polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
     let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     // it can be that we have a single line without eol char
     let has_eol = bytes.contains(&eol_char);
@@ -296,7 +294,7 @@ pub fn infer_file_schema(
             try_parse_dates,
         );
     } else {
-        return Err(PolarsError::NoData("empty csv".into()));
+        polars_bail!(NoData: "empty CSV");
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.

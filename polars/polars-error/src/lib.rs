@@ -93,8 +93,118 @@ impl PolarsError {
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
         }
     }
+}
 
-    pub fn from_any(err: impl Display) -> Self {
-        Self::ComputeError(err.to_string().into())
+#[macro_export]
+macro_rules! polars_err {
+    ($variant:ident: $err:expr $(,)?) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant($err.into())
+        )
+    };
+    ($variant:ident: $fmt:literal, $($arg:tt)+) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant(format!($fmt, $($arg)+).into())
+        )
+    };
+    (expr = $expr:expr, $variant:ident: $err:expr $(,)?) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant(
+                format!("{}\n\nError originated in expression: '{:?}'", $err, $expr).into()
+            )
+        )
+    };
+    (expr = $expr:expr, $variant:ident: $fmt:literal, $($arg:tt)+) => {
+        polars_err!(expr = $expr, $variant: format!($fmt, $($arg)+))
+    };
+    (op = $op:expr, got = $arg:expr, expected = $expected:expr) => {
+        $crate::polars_err!(
+            InvalidOperation: "{} operation not supported for dtype `{}` (expected: {})",
+            $op, $arg, $expected
+        )
+    };
+    (opq = $op:ident, got = $arg:expr, expected = $expected:expr) => {
+        $crate::polars_err!(
+            op = concat!("`", stringify!($op), "`"), got = $arg, expected = $expected
+        )
+    };
+    (op = $op:expr, $arg:expr) => {
+        $crate::polars_err!(
+            InvalidOperation: "{} operation not supported for dtype `{}`", $op, $arg
+        )
+    };
+    (op = $op:expr, $lhs:expr, $rhs:expr) => {
+        $crate::polars_err!(
+            InvalidOperation: "{} operation not supported for dtypes `{}` and `{}`", $op, $lhs, $rhs
+        )
+    };
+    (opq = $op:ident, $arg:expr) => {
+        $crate::polars_err!(op = concat!("`", stringify!($op), "`"), $arg)
+    };
+    (opq = $op:ident, $lhs:expr, $rhs:expr) => {
+        $crate::polars_err!(op = stringify!($op), $lhs, $rhs)
+    };
+    (append) => {
+        polars_err!(SchemaMismatch: "cannot append series, data types don't match")
+    };
+    (extend) => {
+        polars_err!(SchemaMismatch: "cannot extend series, data types don't match")
+    };
+    (unpack) => {
+        polars_err!(SchemaMismatch: "cannot unpack series, data types don't match")
+    };
+    (duplicate = $name:expr) => {
+        polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)
+    };
+    (oob = $idx:expr, $len:expr) => {
+        polars_err!(ComputeError: "index {} is out of bounds for sequence of size {}", $idx, $len)
+    };
+    (agg_len = $agg_len:expr, $groups_len:expr) => {
+        polars_err!(
+            ComputeError:
+            "returned aggregation is of different length: {} than the groups length: {}",
+            $agg_len, $groups_len
+        )
+    };
+    (parse_fmt_idk = $dtype:expr) => {
+        polars_err!(
+            ComputeError: "could not find an appropriate format to parse {}s, please define a fmt",
+            $dtype,
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! polars_bail {
+    ($($tt:tt)+) => {
+        return Err($crate::polars_err!($($tt)+))
+    };
+}
+
+#[macro_export]
+macro_rules! polars_ensure {
+    ($cond:expr, $($tt:tt)+) => {
+        if !$cond {
+            polars_bail!($($tt)+);
+        }
+    };
+}
+
+#[inline]
+#[cold]
+#[must_use]
+pub fn to_compute_err(err: impl Display) -> PolarsError {
+    PolarsError::ComputeError(err.to_string().into())
+}
+
+// Not public, referenced by macros only.
+#[doc(hidden)]
+pub mod __private {
+    #[doc(hidden)]
+    #[inline]
+    #[cold]
+    #[must_use]
+    pub fn must_use(error: crate::PolarsError) -> crate::PolarsError {
+        error
     }
 }

@@ -25,7 +25,7 @@ pub(super) fn get_by_index(s: &Series, index: i64) -> PolarsResult<Series> {
     s.fields()
         .get(index)
         .cloned()
-        .ok_or_else(|| PolarsError::ComputeError("index out of bounds in 'struct.field'".into()))
+        .ok_or_else(|| polars_err!(ComputeError: "struct field index out of bounds"))
 }
 pub(super) fn get_by_name(s: &Series, name: Arc<str>) -> PolarsResult<Series> {
     let ca = s.struct_()?;

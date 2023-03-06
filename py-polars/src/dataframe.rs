@@ -359,7 +359,7 @@ impl PyDataFrame {
             let out = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::JsonLines)
                 .finish()
-                .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
+                .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
             Ok(out.into())
         } else {
             // memmap the file first
@@ -377,7 +377,7 @@ impl PyDataFrame {
                     let out = JsonReader::new(mmap_bytes_r)
                         .with_json_format(JsonFormat::Json)
                         .finish()
-                        .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
+                        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
                     Ok(out.into())
                 }
             }
@@ -392,7 +392,7 @@ impl PyDataFrame {
         let out = JsonReader::new(mmap_bytes_r)
             .with_json_format(JsonFormat::JsonLines)
             .finish()
-            .map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
+            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
         Ok(out.into())
     }
 
@@ -405,11 +405,11 @@ impl PyDataFrame {
                 .with_json_format(JsonFormat::Json)
                 .finish(&mut self.df),
             (true, _) => serde_json::to_writer_pretty(file, &self.df)
-                .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
+                .map_err(|e| PolarsError::ComputeError(format!("{e}").into())),
             (false, _) => serde_json::to_writer(file, &self.df)
-                .map_err(|e| PolarsError::ComputeError(format!("{e:?}").into())),
+                .map_err(|e| PolarsError::ComputeError(format!("{e}").into())),
         };
-        r.map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
+        r.map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
         Ok(())
     }
 
@@ -421,7 +421,7 @@ impl PyDataFrame {
             .with_json_format(JsonFormat::JsonLines)
             .finish(&mut self.df);
 
-        r.map_err(|e| PyPolarsErr::Other(format!("{e:?}")))?;
+        r.map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
         Ok(())
     }
 
@@ -595,10 +595,8 @@ impl PyDataFrame {
             idx as usize
         };
         if idx >= self.df.height() {
-            Err(PolarsError::ComputeError("Index out of bounds.".into()))
-                .map_err(PyPolarsErr::from)?;
+            return Err(PyPolarsErr::from(polars_err!(oob = idx, self.df.height())).into());
         }
-
         let out = Python::with_gil(|py| {
             PyTuple::new(
                 py,

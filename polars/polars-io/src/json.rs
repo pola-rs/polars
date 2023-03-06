@@ -69,6 +69,7 @@ use arrow::array::StructArray;
 pub use arrow::error::Result as ArrowResult;
 pub use arrow::io::json;
 use polars_arrow::conversion::chunk_to_struct;
+use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -169,14 +170,14 @@ where
         let out = match self.json_format {
             JsonFormat::Json => {
                 let bytes = rb.deref();
-                let json_value = json::read::json_deserializer::parse(bytes)
-                    .map_err(|err| PolarsError::ComputeError(format!("{err:?}").into()))?;
+                let json_value =
+                    json::read::json_deserializer::parse(bytes).map_err(to_compute_err)?;
                 // likely struct type
                 let dtype = json::read::infer(&json_value)?;
                 let arr = json::read::deserialize(&json_value, dtype)?;
-                let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(|| {
-                    PolarsError::ComputeError("only can deserialize json objects".into())
-                })?;
+                let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
+                    || polars_err!(ComputeError: "can only deserialize json objects"),
+                )?;
                 DataFrame::try_from(arr.clone())
             }
             JsonFormat::JsonLines => {

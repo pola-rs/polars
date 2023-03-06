@@ -11,9 +11,11 @@ pub(crate) fn merge_categorical_map(
 ) -> PolarsResult<Arc<RevMapping>> {
     match (&**left, &**right) {
         (RevMapping::Global(l_map, l_slots, l_id), RevMapping::Global(r_map, r_slots, r_id)) => {
-            if l_id != r_id {
-                return Err(PolarsError::ComputeError("The two categorical arrays are not created under the same global string cache. They cannot be merged. Hint: set a global StringCache.".into()));
-            }
+            polars_ensure!(
+                l_id == r_id,
+                ComputeError: "unable to merge categorical arrays created under different global \
+                string caches (try setting a global string cache)"
+            );
             let mut new_map = (*l_map).clone();
 
             // safety: invariants don't change, just the type
@@ -70,10 +72,10 @@ pub(crate) fn merge_categorical_map(
 
             Ok(Arc::new(RevMapping::Local(arr)))
         }
-        _ => Err(PolarsError::ComputeError(
-            "cannot combine categorical under a global string cache with a non cached categorical"
-                .into(),
-        )),
+        _ => polars_bail!(
+            ComputeError:
+            "unable to merge categorical under a global string cache with a non-cached one"
+        ),
     }
 }
 

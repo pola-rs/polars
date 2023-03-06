@@ -52,13 +52,11 @@ pub(crate) fn create_physical_expr(
                     apply_columns.push(Arc::from("count"))
                 } else {
                     let e = node_to_expr(function, expr_arena);
-                    return Err(PolarsError::ComputeError(
-                        format!(
-                            "Cannot apply a window function, did not find a root column. \
-                        This is likely due to a syntax error in this expression: {e:?}",
-                        )
-                        .into(),
-                    ));
+                    polars_bail!(
+                        ComputeError:
+                        "cannot apply a window function, did not find a root column; \
+                        this is likely due to a syntax error in this expression: {:?}", e
+                    );
                 }
             }
 

@@ -12,7 +12,6 @@ use polars_io::predicates::StatsEvaluator;
 use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
 
-use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -99,13 +98,11 @@ impl ApplyExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = ac.series();
 
-        if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
-            let msg = format!(
-                "Cannot aggregate {:?}. The column is already aggregated.",
-                self.expr
-            );
-            return Err(expression_err!(msg, self.expr, ComputeError));
-        }
+        polars_ensure!(
+            !matches!(ac.agg_state(), AggState::AggregatedFlat(_)),
+            expr = self.expr,
+            ComputeError: "cannot aggregate, the column is already aggregated",
+        );
 
         let name = s.name().to_string();
         let agg = ac.aggregated();
@@ -224,12 +221,12 @@ fn all_unit_length(ca: &ListChunked) -> bool {
 }
 
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
-    if input_len != output_len {
-        let msg = "A 'map' functions output length must be equal to that of the input length. Consider using 'apply' in favor of 'map'.";
-        Err(expression_err!(msg, expr, ComputeError))
-    } else {
-        Ok(())
-    }
+    polars_ensure!(
+        input_len == output_len, expr = expr, ComputeError:
+        "output length of `map` must be equal to that of the input length; \
+        consider using `apply` instead"
+    );
+    Ok(())
 }
 
 impl PhysicalExpr for ApplyExpr {

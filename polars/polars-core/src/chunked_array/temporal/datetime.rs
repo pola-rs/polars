@@ -26,9 +26,7 @@ fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
         Ok(_) => Ok(()),
         Err(_) => match tz.parse::<Tz>() {
             Ok(_) => Ok(()),
-            Err(_) => Err(PolarsError::ComputeError(
-                format!("Could not parse timezone: '{tz}'").into(),
-            )),
+            Err(_) => polars_bail!(ComputeError: "unable to parse timezone: '{}'", tz),
         },
     }
 }
@@ -215,16 +213,12 @@ impl DatetimeChunked {
                 "{}",
                 Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
             )
-            .map_err(|_| {
-                PolarsError::ComputeError(
-                    format!("Cannot format DateTime with format '{fmt}'.").into(),
-                )
-            })?,
-            _ => write!(fmted, "{}", dt.format(fmt)).map_err(|_| {
-                PolarsError::ComputeError(
-                    format!("Cannot format NaiveDateTime with format '{fmt}'.").into(),
-                )
-            })?,
+            .map_err(
+                |_| polars_err!(ComputeError: "cannot format DateTime with format '{}'", fmt),
+            )?,
+            _ => write!(fmted, "{}", dt.format(fmt)).map_err(
+                |_| polars_err!(ComputeError: "cannot format NaiveDateTime with format '{}'", fmt),
+            )?,
         };
         let fmted = fmted; // discard mut
 
@@ -335,16 +329,14 @@ impl DatetimeChunked {
     }
     #[cfg(feature = "timezones")]
     pub fn convert_time_zone(mut self, time_zone: TimeZone) -> PolarsResult<Self> {
-        match self.time_zone() {
-            Some(_) => {
-                self.set_time_zone(time_zone)?;
-                Ok(self)
-            }
-            _ => Err(PolarsError::ComputeError(
-                "Cannot call convert_time_zone on tz-naive. Set a time zone first with replace_time_zone"
-                    .into(),
-            )),
-        }
+        polars_ensure!(
+            self.time_zone().is_some(),
+            InvalidOperation:
+            "cannot call `convert_time_zone` on tz-naive; \
+            set a time zone first with `replace_time_zone`"
+        );
+        self.set_time_zone(time_zone)?;
+        Ok(self)
     }
 }
 

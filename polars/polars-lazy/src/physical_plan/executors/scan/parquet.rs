@@ -64,7 +64,7 @@ impl Executor for ParquetExec {
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }
-            let name = column_delimited("parquet".to_string(), &ids);
+            let name = comma_delimited("parquet".to_string(), &ids);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

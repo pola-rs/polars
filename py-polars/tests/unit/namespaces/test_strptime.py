@@ -307,7 +307,7 @@ def test_replace_timezone_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.strptime(
         pl.Datetime, "%Y-%m-%d %H:%M:%S%z"
     )
-    with pytest.raises(ComputeError, match=r"Could not parse time zone foo"):
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: foo"):
         ts.dt.replace_time_zone("foo")
 
 
@@ -349,11 +349,7 @@ def test_crossing_dst(fmt: str) -> None:
 def test_crossing_dst_tz_aware(fmt: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     with pytest.raises(
-        ComputeError,
-        match=(
-            r"^Different timezones found during 'strptime' operation. "
-            "You might want to use `utc=True` and then set the time zone after parsing$"
-        ),
+        ComputeError, match="^different timezones found during 'strptime' operation"
     ):
         pl.Series(ts).str.strptime(pl.Datetime, fmt, utc=False)
 
@@ -362,8 +358,8 @@ def test_tz_aware_without_fmt() -> None:
     with pytest.raises(
         ComputeError,
         match=(
-            r"^Passing 'tz_aware=True' without 'fmt' is not yet supported. "
-            r"Please specify 'fmt'.$"
+            r"^passing 'tz_aware=True' without 'fmt' is not yet supported, "
+            r"please specify 'fmt'$"
         ),
     ):
         pl.Series(["2020-01-01"]).str.strptime(pl.Datetime, tz_aware=True)

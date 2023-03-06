@@ -52,7 +52,7 @@ impl Executor for ProjectionExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("projection".to_string(), &by);
+            let name = comma_delimited("projection".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

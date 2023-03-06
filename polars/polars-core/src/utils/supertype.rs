@@ -3,11 +3,9 @@ use super::*;
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
-    get_supertype(l, r).ok_or_else(|| {
-        PolarsError::ComputeError(
-            format!("Failed to determine supertype of {l:?} and {r:?}").into(),
-        )
-    })
+    get_supertype(l, r).ok_or_else(
+        || polars_err!(ComputeError: "failed to determine supertype of {} and {}", l, r),
+    )
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to

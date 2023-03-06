@@ -180,28 +180,19 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            self.0.append(other.categorical().unwrap())
-        } else {
-            Err(PolarsError::SchemaMismatch(
-                "cannot append Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append(other.categorical().unwrap())
     }
+
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            let other = other.categorical()?;
-            self.0.logical_mut().extend(other.logical());
-            let new_rev_map = self.0.merge_categorical_map(other)?;
-            // safety:
-            // rev_maps are merged
-            unsafe { self.0.set_rev_map(new_rev_map, false) };
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMismatch(
-                "cannot extend Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), extend);
+        let other = other.categorical()?;
+        self.0.logical_mut().extend(other.logical());
+        let new_rev_map = self.0.merge_categorical_map(other)?;
+        // SAFETY
+        // rev_maps are merged
+        unsafe { self.0.set_rev_map(new_rev_map, false) };
+        Ok(())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {

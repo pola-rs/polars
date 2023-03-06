@@ -78,18 +78,18 @@ pub struct IpcReader<R: MmapBytesReader> {
 }
 
 fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
-    match err {
-        PolarsError::ArrowError(e) => match e.as_ref() {
-            arrow::error::Error::NotYetImplemented(s)
-                if s == "mmap can only be done on uncompressed IPC files" =>
-            {
-                eprint!("Could not mmap compressed IPC file, defaulting to normal read. Toggle off 'memory_map' to silence this warning.");
+    if let PolarsError::ArrowError(ref e) = err {
+        if let arrow::error::Error::NotYetImplemented(s) = e.as_ref() {
+            if s == "mmap can only be done on uncompressed IPC files" {
+                eprint!(
+                    "Could not mmap compressed IPC file, defaulting to normal read. \
+                    Toggle off 'memory_map' to silence this warning."
+                );
+                return Ok(());
             }
-            _ => return Err(PolarsError::ArrowError(e)),
-        },
-        err => return Err(err),
+        }
     }
-    Ok(())
+    Err(err)
 }
 
 impl<R: MmapBytesReader> IpcReader<R> {

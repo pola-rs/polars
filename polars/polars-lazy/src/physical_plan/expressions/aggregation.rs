@@ -50,17 +50,11 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.series().name().to_string();
 
         let check_flat = || {
-            if !ac.null_propagated && matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
-                Err(PolarsError::ComputeError(
-                    format!(
-                        "Cannot aggregate as {}. The column is already aggregated.",
-                        self.agg_type
-                    )
-                    .into(),
-                ))
-            } else {
-                Ok(())
-            }
+            polars_ensure!(
+                ac.null_propagated || !matches!(ac.agg_state(), AggState::AggregatedFlat(_)),
+                ComputeError: "cannot aggregate as {}, the column is already aggregated"
+            );
+            Ok(())
         };
 
         // Safety:
@@ -498,14 +492,11 @@ impl AggQuantileExpr {
 
     fn get_quantile(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<f64> {
         let quantile = self.quantile.evaluate(df, state)?;
-        if quantile.len() > 1 {
-            return Err(PolarsError::ComputeError(
-                "Polars only supports computing a single quantile. \
-            Make sure the 'quantile' expression input produces a single quantile."
-                    .into(),
-            ));
-        }
-        quantile.get(0).unwrap().try_extract::<f64>()
+        polars_ensure!(quantile.len() <= 1, ComputeError:
+            "polars only supports computing a single quantile; \
+            make sure the 'quantile' expression input produces a single quantile"
+        );
+        quantile.get(0).unwrap().try_extract()
     }
 }
 

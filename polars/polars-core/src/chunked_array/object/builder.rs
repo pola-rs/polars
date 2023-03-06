@@ -40,15 +40,11 @@ where
 
     #[inline]
     pub fn append_value_from_any(&mut self, v: &dyn Any) -> PolarsResult<()> {
-        match v.downcast_ref::<T>() {
-            None => Err(PolarsError::SchemaMismatch(
-                "cannot downcast any in ObjectBuilder".into(),
-            )),
-            Some(v) => {
-                self.append_value(v.clone());
-                Ok(())
-            }
-        }
+        let Some(v) = v.downcast_ref::<T>() else {
+            polars_bail!(SchemaMismatch: "cannot downcast any in ObjectBuilder");
+        };
+        self.append_value(v.clone());
+        Ok(())
     }
 
     #[inline]
