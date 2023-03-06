@@ -15,7 +15,8 @@ pub(crate) use csv::CsvExec;
 pub(crate) use ipc::IpcExec;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::ParquetExec;
-use polars_io::csv::CsvEncoding;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(any(

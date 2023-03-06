@@ -32,17 +32,15 @@ pub(crate) fn cast_columns(
     to_cast: &[Field],
     parallel: bool,
 ) -> PolarsResult<()> {
-    use DataType::*;
-
     let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
         #[cfg(feature = "temporal")]
-        (Utf8, Date) => s
+        (DataType::Utf8, DataType::Date) => s
             .utf8()
             .unwrap()
             .as_date(None, false)
             .map(|ca| ca.into_series()),
         #[cfg(feature = "temporal")]
-        (Utf8, Datetime(tu, _)) => s
+        (DataType::Utf8, DataType::Datetime(tu, _)) => s
             .utf8()
             .unwrap()
             .as_datetime(None, *tu, false, false, false, None)

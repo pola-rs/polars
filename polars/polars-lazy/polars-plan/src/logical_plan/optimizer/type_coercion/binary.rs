@@ -179,6 +179,25 @@ fn process_struct_numeric_arithmetic(
     }
 }
 
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+fn err_date_str_compare() -> PolarsResult<()> {
+    if cfg!(feature = "python") {
+        polars_bail!(
+            ComputeError:
+            "cannot compare 'date/datetime/time' to a string value \
+            (create native python {{ 'date', 'datetime', 'time' }} or compare to a temporal column)"
+        );
+    } else {
+        polars_bail!(
+            ComputeError: "cannot compare 'date/datetime/time' to a string value"
+        );
+    }
+}
+
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &Arena<ALogicalPlan>,

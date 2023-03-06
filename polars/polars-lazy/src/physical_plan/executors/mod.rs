@@ -19,7 +19,6 @@ mod udf;
 mod union;
 
 use std::borrow::Cow;
-use std::path::PathBuf;
 
 pub use executor::*;
 use polars_core::POOL;

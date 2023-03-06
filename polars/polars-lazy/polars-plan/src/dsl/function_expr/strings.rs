@@ -426,6 +426,7 @@ where
     out
 }
 
+#[cfg(feature = "regex")]
 fn is_literal_pat(pat: &str) -> bool {
     pat.chars().all(|c| !c.is_ascii_punctuation())
 }

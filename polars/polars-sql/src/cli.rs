@@ -4,17 +4,17 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use polars_core::prelude::*;
-#[cfg(feature = "csv")]
-use polars_lazy::frame::LazyCsvReader;
 use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "ipc")]
 use polars_lazy::frame::ScanArgsIpc;
 #[cfg(feature = "parquet")]
 use polars_lazy::frame::ScanArgsParquet;
+#[cfg(feature = "csv")]
+use polars_lazy::frame::{LazyCsvReader, LazyFileListReader};
 use polars_sql::SQLContext;
 use rustyline::completion::FilenameCompleter;
 use rustyline::error::ReadlineError;
-use rustyline::{Editor, Result};
+use rustyline::{DefaultEditor, Result};
 use sqlparser::ast::{Select, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -109,24 +109,20 @@ fn create_dataframe_from_tablename(
     context: &mut SQLContext,
     relation: &TableFactor,
 ) -> PolarsResult<()> {
-    match relation {
-        TableFactor::Table { name, alias, .. } => {
-            let source = name.0.get(0).unwrap().value.as_str();
-            let name = match alias {
-                Some(alias) => alias.name.value.to_string(),
-                None => source.to_string(),
-            };
+    if let TableFactor::Table { name, alias, .. } = relation {
+        let source = name.0.get(0).unwrap().value.as_str();
+        let name = match alias {
+            Some(alias) => alias.name.value.to_string(),
+            None => source.to_string(),
+        };
 
-            // Return early if table was already registered.
-            if context.table_map.contains_key(&name) {
-                return Ok(());
-            }
-
-            let frame = create_dataframe_from_filename(source)?;
-            context.register(&name, frame);
+        // Return early if table was already registered.
+        if context.table_map.contains_key(&name) {
+            return Ok(());
         }
-        // We leave the error for unsupported table types up to SQlContext::execute
-        _ => (),
+
+        let frame = create_dataframe_from_filename(source)?;
+        context.register(&name, frame);
     };
 
     Ok(())
@@ -154,24 +150,16 @@ fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFram
         .map_err(|e| polars_err!(ComputeError: "error parsing SQL: {}", e))?;
     polars_ensure!(ast.len() == 1, ComputeError: "one and only one statement at a time please");
     let ast = ast.get(0).unwrap();
-    match ast {
-        Statement::Query(query) => {
-            match &query.body.as_ref() {
-                SetExpr::Select(select_stmt) => {
-                    create_dataframes_from_statement(context, &select_stmt)?;
-                }
-                // Statement is validated in context::execute_statement
-                // so we leave it to them to return an error type for unsupported expressions
-                _ => (),
-            }
+    if let Statement::Query(query) = ast {
+        if let SetExpr::Select(select_stmt) = &query.body.as_ref() {
+            create_dataframes_from_statement(context, select_stmt)?;
         }
         // Statement is validated in context::execute_statement
-        // so we leave it to them to return an error type for unsupported statements
-        _ => (),
+        // so we leave it to them to return an error type for unsupported expressions
     }
 
     // Execute SQL command
-    return context.execute_statement(ast)?.collect();
+    context.execute_statement(ast)?.collect()
 }
 
 fn get_extension_from_filename(filename: &str) -> Option<&str> {
@@ -182,7 +170,7 @@ pub fn run_tty() -> std::io::Result<()> {
     let mut stdout = io::stdout();
     let mut context = SQLContext::try_new().unwrap();
     let mut dataframes = Vec::new();
-    let mut rl = Editor::<()>::new().unwrap();
+    let mut rl = DefaultEditor::new().unwrap();
 
     println!("Welcome to Polars CLI. Commands end with ; or \\n");
     println!("Type help or \\? for help.");
@@ -200,7 +188,7 @@ pub fn run_tty() -> std::io::Result<()> {
             }
         };
 
-        let command: Vec<&str> = input.trim().split(" ").collect();
+        let command: Vec<&str> = input.trim().split(' ').collect();
         if command[0].is_empty() {
             continue;
         }
@@ -215,7 +203,7 @@ pub fn run_tty() -> std::io::Result<()> {
                 return Ok(());
             }
             _ => {
-                if command[0].starts_with("\\") {
+                if command[0].starts_with('\\') {
                     print!("Unknown command: {}\n\n", command[0]);
                     print_help();
                     continue;

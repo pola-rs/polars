@@ -7,6 +7,7 @@ use polars_lazy::prelude::LazyFrame;
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 /// Table functions that are supported by Polars
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum PolarsTableFunctions {
     /// SQL 'read_csv' function
     /// ```sql

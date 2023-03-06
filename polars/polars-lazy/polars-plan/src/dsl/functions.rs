@@ -4,7 +4,9 @@
 //!
 use std::ops::{BitAnd, BitOr};
 
+#[cfg(feature = "temporal")]
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
+#[cfg(feature = "temporal")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "dtype-struct")]
 use polars_core::utils::get_supertype;

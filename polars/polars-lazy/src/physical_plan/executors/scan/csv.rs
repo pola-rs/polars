@@ -1,3 +1,7 @@
+use std::path::PathBuf;
+
+use polars_io::predicates::PhysicalIoExpr;
+
 use super::*;
 
 pub struct CsvExec {

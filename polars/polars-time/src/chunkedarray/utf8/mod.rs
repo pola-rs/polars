@@ -310,15 +310,15 @@ pub trait Utf8Methods: AsUtf8 {
             None => return infer::to_date(utf8_ca),
         };
         let cache = cache && utf8_ca.len() > 50;
-        let fmt = self::strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt);
         let mut cache_map = PlHashMap::new();
 
         // we can use the fast parser
-        let mut ca: Int32Chunked = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
+        let mut ca: Int32Chunked = if let Some(fmt_len) = strptime::fmt_len(fmt.as_bytes()) {
             let convert = |s: &str| {
                 // Safety:
                 // fmt_len is correct, it was computed with this `fmt` str.
-                match unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                match unsafe { strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
                     // fallback to chrono
                     None => NaiveDate::parse_from_str(s, &fmt).ok(),
                     Some(ndt) => Some(ndt.date()),
@@ -392,7 +392,7 @@ pub trait Utf8Methods: AsUtf8 {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu, tz),
         };
-        let fmt = self::strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt);
         let cache = cache && utf8_ca.len() > 50;
 
         let func = match tu {

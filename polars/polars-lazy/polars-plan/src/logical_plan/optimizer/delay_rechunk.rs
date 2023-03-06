@@ -24,6 +24,7 @@ impl OptimizationRule for DelayRechunk {
     ) -> Option<ALogicalPlan> {
         match lp_arena.get(node) {
             // An aggregation can be partitioned, its wasteful to rechunk before that partition.
+            #[allow(unused_mut)]
             ALogicalPlan::Aggregate { input, .. } => {
                 if !self.processed.insert(node.0) {
                     return None;

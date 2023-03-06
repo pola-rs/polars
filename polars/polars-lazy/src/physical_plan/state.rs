@@ -139,7 +139,7 @@ impl ExecutionState {
     }
 
     #[cfg(not(any(feature = "parquet", feature = "csv-file", feature = "ipc")))]
-    pub(crate) fn with_finger_prints(finger_prints: Option<usize>) -> Self {
+    pub(crate) fn with_finger_prints(_finger_prints: Option<usize>) -> Self {
         Self::new()
     }
     #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]

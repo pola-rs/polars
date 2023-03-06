@@ -1,6 +1,5 @@
+#[cfg(feature = "csv-file")]
 use std::io::{Read, Seek};
-use std::ops::Deref;
-use std::path::PathBuf;
 
 #[cfg(feature = "parquet")]
 use polars_core::cloud::CloudOptions;
@@ -13,6 +12,7 @@ use polars_io::ipc::IpcReader;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
+#[cfg(any(feature = "parquet", feature = "parquet_async", feature = "csv-file"))]
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
@@ -111,7 +111,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
     #[allow(clippy::too_many_arguments)]
-    pub fn scan_parquet<P: Into<PathBuf>>(
+    pub fn scan_parquet<P: Into<std::path::PathBuf>>(
         path: P,
         n_rows: Option<usize>,
         cache: bool,
@@ -174,7 +174,10 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> PolarsResult<Self> {
+    pub fn scan_ipc<P: Into<std::path::PathBuf>>(
+        path: P,
+        options: IpcScanOptions,
+    ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
@@ -198,7 +201,7 @@ impl LogicalPlanBuilder {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv-file")]
-    pub fn scan_csv<P: Into<PathBuf>>(
+    pub fn scan_csv<P: Into<std::path::PathBuf>>(
         path: P,
         delimiter: u8,
         has_header: bool,
@@ -250,7 +253,7 @@ impl LogicalPlanBuilder {
         )?;
 
         let schema = schema.unwrap_or_else(|| Arc::new(inferred_schema));
-        let n_bytes = reader_bytes.deref().len();
+        let n_bytes = reader_bytes.len();
         let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
 
         skip_rows += skip_rows_after_header;

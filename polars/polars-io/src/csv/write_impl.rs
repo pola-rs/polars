@@ -1,5 +1,10 @@
 use std::io::Write;
 
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-time",
+    feature = "dtype-datetime"
+))]
 use arrow::temporal_conversions;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
@@ -55,7 +60,7 @@ fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,
     options: &SerializeOptions,
-    datetime_format: Option<&str>,
+    #[allow(unused_variables)] datetime_format: Option<&str>,
 ) -> PolarsResult<()> {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),

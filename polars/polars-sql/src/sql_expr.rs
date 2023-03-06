@@ -241,7 +241,7 @@ impl SqlExprVisitor {
         }
 
         if let Some(limit) = &expr.limit {
-            let limit = match self.visit_expr(&limit)? {
+            let limit = match self.visit_expr(limit)? {
                 Expr::Literal(LiteralValue::UInt32(n)) => n as usize,
                 Expr::Literal(LiteralValue::UInt64(n)) => n as usize,
                 Expr::Literal(LiteralValue::Int32(n)) => n as usize,
@@ -283,31 +283,29 @@ pub(super) fn process_join_constraint(
     left_name: &str,
     right_name: &str,
 ) -> PolarsResult<(Expr, Expr)> {
-    if let JoinConstraint::On(expr) = constraint {
-        if let SqlExpr::BinaryOp { left, op, right } = expr {
-            match (left.as_ref(), right.as_ref()) {
-                (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
-                    if left.len() == 2 && right.len() == 2 {
-                        let tbl_a = &left[0].value;
-                        let col_a = &left[1].value;
+    if let JoinConstraint::On(SqlExpr::BinaryOp { left, op, right }) = constraint {
+        match (left.as_ref(), right.as_ref()) {
+            (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
+                if left.len() == 2 && right.len() == 2 {
+                    let tbl_a = &left[0].value;
+                    let col_a = &left[1].value;
 
-                        let tbl_b = &right[0].value;
-                        let col_b = &right[1].value;
+                    let tbl_b = &right[0].value;
+                    let col_b = &right[1].value;
 
-                        if let BinaryOperator::Eq = op {
-                            if left_name == tbl_a && right_name == tbl_b {
-                                return Ok((col(col_a), col(col_b)));
-                            } else if left_name == tbl_b && right_name == tbl_a {
-                                return Ok((col(col_b), col(col_a)));
-                            }
+                    if let BinaryOperator::Eq = op {
+                        if left_name == tbl_a && right_name == tbl_b {
+                            return Ok((col(col_a), col(col_b)));
+                        } else if left_name == tbl_b && right_name == tbl_a {
+                            return Ok((col(col_b), col(col_a)));
                         }
                     }
                 }
-                (SqlExpr::Identifier(left), SqlExpr::Identifier(right)) => {
-                    return Ok((col(&left.value), col(&right.value)))
-                }
-                _ => {}
             }
+            (SqlExpr::Identifier(left), SqlExpr::Identifier(right)) => {
+                return Ok((col(&left.value), col(&right.value)))
+            }
+            _ => {}
         }
     }
     polars_bail!(ComputeError: "SQL join constraint {:?} is not yet supported", constraint);

@@ -46,8 +46,7 @@ impl SQLContext {
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
         let ast = Parser::parse_sql(&GenericDialect::default(), query).map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
-        let ast = ast.get(0).unwrap();
-        return self.execute_statement(ast);
+        self.execute_statement(ast.get(0).unwrap())
     }
 
     pub fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -93,17 +92,17 @@ impl SQLContext {
                 match &tbl.join_operator {
                     JoinOperator::Inner(constraint) => {
                         let (left_on, right_on) =
-                            process_join_constraint(&constraint, &tbl_name, &join_tbl_name)?;
+                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf = lf.inner_join(join_tbl, left_on, right_on)
                     }
                     JoinOperator::LeftOuter(constraint) => {
                         let (left_on, right_on) =
-                            process_join_constraint(&constraint, &tbl_name, &join_tbl_name)?;
+                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf = lf.left_join(join_tbl, left_on, right_on)
                     }
                     JoinOperator::FullOuter(constraint) => {
                         let (left_on, right_on) =
-                            process_join_constraint(&constraint, &tbl_name, &join_tbl_name)?;
+                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf = lf.outer_join(join_tbl, left_on, right_on)
                     }
                     JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),

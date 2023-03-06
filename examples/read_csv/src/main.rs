@@ -18,13 +18,13 @@ fn main() -> PolarsResult<()> {
 
 fn _write_other_formats(df: &mut DataFrame) -> PolarsResult<()> {
     let parquet_out = "../datasets/foods1.parquet";
-    if std::fs::metadata(&parquet_out).is_err() {
-        let f = std::fs::File::create(&parquet_out).unwrap();
+    if std::fs::metadata(parquet_out).is_err() {
+        let f = std::fs::File::create(parquet_out).unwrap();
         ParquetWriter::new(f).with_statistics(true).finish(df)?;
     }
     let ipc_out = "../datasets/foods1.ipc";
-    if std::fs::metadata(&ipc_out).is_err() {
-        let f = std::fs::File::create(&ipc_out).unwrap();
+    if std::fs::metadata(ipc_out).is_err() {
+        let f = std::fs::File::create(ipc_out).unwrap();
         IpcWriter::new(f).finish(df)?
     }
     Ok(())

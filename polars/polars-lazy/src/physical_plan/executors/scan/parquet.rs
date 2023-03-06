@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use polars_core::cloud::CloudOptions;
 
 use super::*;

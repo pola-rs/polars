@@ -47,7 +47,7 @@ pub fn hist(
         // Calculate the breakpoints and make the array
         let interval = (stop - start) / (bin_count as f64);
         let breaks: Vec<f64> = (0..(bin_count))
-            .map(|b| start as f64 + (b as f64) * interval)
+            .map(|b| start + (b as f64) * interval)
             .collect();
 
         Series::new(breakpoint_str, breaks)
@@ -183,19 +183,8 @@ pub fn cut(
     category_label: Option<&str>,
 ) -> PolarsResult<DataFrame> {
     let var_name = s.name();
-
-    let breakpoint_str = if let Some(label) = break_point_label {
-        label
-    } else {
-        &"break_point"
-    };
-
-    let category_str = if let Some(label) = category_label {
-        label
-    } else {
-        &"category"
-    };
-
+    let breakpoint_str = break_point_label.unwrap_or("break_point");
+    let category_str = category_label.unwrap_or("category");
     let cuts_df = df![
         breakpoint_str => Series::new(breakpoint_str, &bins)
             .extend_constant(AnyValue::Float64(f64::INFINITY), 1)?

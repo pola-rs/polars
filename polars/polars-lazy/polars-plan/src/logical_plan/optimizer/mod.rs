@@ -66,6 +66,7 @@ pub fn optimize(
     #[cfg(feature = "cse")]
     let cse = opt_state.common_subplan_elimination;
 
+    #[allow(unused_variables)]
     let agg_scan_projection = opt_state.file_caching;
 
     // gradually fill the rules passed to the optimizer

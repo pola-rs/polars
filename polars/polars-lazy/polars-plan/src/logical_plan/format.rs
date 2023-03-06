@@ -15,7 +15,7 @@ fn write_scan<P: Display>(
     predicate: &Option<P>,
 ) -> fmt::Result {
     if indent != 0 {
-        writeln!(f, "")?;
+        writeln!(f)?;
     }
     write!(f, "{:indent$}{} SCAN {}", "", name, path.display())?;
     if n_columns > 0 {
@@ -36,7 +36,7 @@ fn write_scan<P: Display>(
 impl LogicalPlan {
     fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
         if indent != 0 {
-            writeln!(f, "")?;
+            writeln!(f)?;
         }
         let sub_indent = indent + 2;
         use LogicalPlan::*;

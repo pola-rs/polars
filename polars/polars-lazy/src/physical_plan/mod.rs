@@ -11,7 +11,6 @@ pub(crate) mod state;
 pub(crate) mod streaming;
 
 use polars_core::prelude::*;
-use polars_io::predicates::PhysicalIoExpr;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
