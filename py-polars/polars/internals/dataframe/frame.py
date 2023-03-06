@@ -2431,40 +2431,40 @@ class DataFrame:
             Table position in Excel notation (eg: "A1"), or a (row,col) integer tuple.
         table_style
             A named Excel table style, such as "Table Style Medium 4", or a dictionary
-            of {"option":bool,} containing one or more of the following keys:
+            of {"key":value,} containing one or more of the following keys:
             "style", "first_column", "last_column", "banded_columns, "banded_rows".
         table_name
-            Name of the output table object in the worksheet; can be referred to in
-            the sheet by formulae/charts, or by subsequent xlsxwriter operations.
+            Name of the output table object in the worksheet; can then be referred to
+            in the sheet by formulae/charts, or by subsequent ``xlsxwriter`` operations.
         column_widths
-            A {"col":width,} dict that sets (or overrides if autofitting) column widths
+            A {colname:int,} dict that sets (or overrides if autofitting) column widths
             in integer pixel units.
         column_totals
             Add a total row. If True, all numeric columns will have an associated total
-            using "sum". If given a list of colnames, those listed will have a "sum"
-            total. For more control, pass a {"col":"fn",} dict. Valid functions include:
+            using "sum". If given a list of colnames, only those listed will have a
+            total.  For more control, pass a {colname:funcname,} dict. Valid names are:
             "average", "count_nums", "count", "max", "min", "std_dev", "sum", "var".
         column_formats
-            A {"col":"fmt",} dict matching specific columns to a particular Excel format
-            string, such as "dd/mm/yyyy", "0.00%", "($#,##0_);[Red]($#,##0)", etc.
-            (Formats defined here will override those defined in ``dtype_formats``).
+            A {colname:str,} dictionary for applying an Excel format string to the given
+            columns. Formats defined here (such as "dd/mm/yyyy", "0.00%", etc) will
+            override those defined in ``dtype_formats``.
         conditional_formats
-            A {"col":str,} or {"col":options,} dict that defines conditional formatting
-            for the specified columns. If supplying a string typename, should be one of
-            the recognised xlsxwriter types such as "3_color_scale", "data_bar", etc.
-            If supplying the full definition dictionary you have complete flexibility to
-            apply any supported conditional format, including icon sets, formulae, etc.
+            A {colname:str,} or {colname:dict,} dictionary defining conditional format
+            options for the specified columns. If supplying a string typename, should be
+            one of the valid ``xlsxwriter`` types such as "3_color_scale", "data_bar",
+            etc. If supplying a dictionary you have complete flexibility to apply any
+            ``xlsxwriter``-supported options, including icon sets, formulae, etc.
         dtype_formats
-            A {dtype:"fmt",} dict that sets the default Excel format for the given
-            dtype. (This is overridden on a per-column basis by ``column_formats``). It
-            is also valid to use dtype groups such as ``polars.datatypes.FLOAT_DTYPES``
-            as the dtype/format key, to simplify setting uniform int/float formats.
+            A {dtype:str,} dictionary that sets the default Excel format for the given
+            dtype. (This is overridden on a per-column basis by ``column_formats``).
+            It is also valid to use dtype groups such as ``pl.FLOAT_DTYPES`` as the
+            dtype/format key, to simplify setting uniform int/float formats.
         sparklines
-            A {"col":colnames,} or {"col":params,} dict that defines one or more
+            A {colname:list,} or {colname:dict,} dictionary that defines one or more
             sparklines to be written into a new column in the table. If passing a
             list of colnames (used as the source of the sparkline data) the default
             sparkline settings are used (eg: will be a line with no markers). For more
-            control an xlsxwriter-compliant parameter dictionary can be supplied; in
+            control an ``xlsxwriter``-compliant parameter dictionary can be supplied; in
             this case three additional polars-specific keys are available: "columns",
             "insert_before", and "insert_after". These allow you to define the source
             columns and position the sparkline(s) with respect to other table columns.
@@ -2501,6 +2501,8 @@ class DataFrame:
 
         Examples
         --------
+        Instantiate a basic dataframe:
+
         >>> from random import uniform
         >>> from datetime import date
         >>>
@@ -2512,8 +2514,8 @@ class DataFrame:
         ...     }
         ... )
 
-        Simple export to "dataframe.xlsx" (default) in the working directory,
-        column totals ("sum") on all numeric columns, autofit:
+        Export to "dataframe.xlsx" (the default workbook name, if not specified) in the
+        working directory, add column totals ("sum") on all numeric columns, autofit:
 
         >>> df.write_excel(column_totals=True, autofit=True)  # doctest: +SKIP
 
@@ -2531,7 +2533,7 @@ class DataFrame:
         ... )
 
         Write the same frame to a named worksheet twice, applying different styles
-        and conditional formatting to each table, adding table titles using direct
+        and conditional formatting to each table, adding table titles using explicit
         xlsxwriter integration:
 
         >>> from xlsxwriter import Workbook
@@ -2602,10 +2604,9 @@ class DataFrame:
         ...         "q4": [75, 55, 25, -10, -55],
         ...     }
         ... )
-        >>> from polars.datatypes import INTEGER_DTYPES
         >>> df.write_excel(  # doctest: +SKIP
         ...     table_style="Table Style Light 2",
-        ...     dtype_formats={INTEGER_DTYPES: "#,##0_);(#,##0)"},
+        ...     dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
         ...     sparklines={
         ...         # default options; just provide source cols
         ...         "trend": ["q1", "q2", "q3", "q4"],
@@ -2651,7 +2652,11 @@ class DataFrame:
             xl_cell_to_rowcol(position) if isinstance(position, str) else position
         )
         table_finish = (
-            table_start[0] + len(df) - int(not has_header) + int(bool(column_totals)),
+            table_start[0]
+            + len(df)
+            + int(is_empty)
+            - int(not has_header)
+            + int(bool(column_totals)),
             table_start[1] + len(df.columns) - 1,
         )
 
@@ -2668,7 +2673,7 @@ class DataFrame:
                     "header_row": has_header,
                     "autofilter": autofilter,
                     "total_row": bool(column_totals) and not is_empty,
-                    "name": table_name or _xl_unique_table_name(ws),
+                    "name": table_name or _xl_unique_table_name(wb),
                     **table_options,
                 },
             )
@@ -2705,7 +2710,7 @@ class DataFrame:
             elif options:
                 ws.set_column(col_idx, col_idx, None, None, options)
 
-        # inject any sparklines into the table
+        # finally, inject any sparklines into the table
         for col, params in (sparklines or {}).items():
             _xl_inject_sparklines(ws, df, table_start, col, has_header, params)
 
@@ -6364,11 +6369,10 @@ class DataFrame:
         Expressions with multiple outputs can be automatically instantiated as Structs
         by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
-        >>> from polars.datatypes import INTEGER_DTYPES
         >>> with pl.Config() as cfg:
         ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
         ...     df.select(
-        ...         is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
+        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).suffix("_is_odd"),
         ...     )
         ...
         shape: (3, 1)

@@ -1946,11 +1946,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Expressions with multiple outputs can be automatically instantiated as Structs
         by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
-        >>> from polars.datatypes import INTEGER_DTYPES
         >>> with pl.Config() as cfg:
         ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
         ...     ldf.select(
-        ...         is_odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
+        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).suffix("_is_odd"),
         ...     ).collect()
         ...
         shape: (3, 1)

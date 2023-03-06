@@ -24,6 +24,7 @@ from polars.convert import (
     from_records,
 )
 from polars.datatypes import (
+    DATETIME_DTYPES,
     DURATION_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -223,6 +224,7 @@ __all__ = [
     "Utf8",
     "get_idx_type",
     # polars.datatypes: dtype groups
+    "DATETIME_DTYPES",
     "DURATION_DTYPES",
     "FLOAT_DTYPES",
     "INTEGER_DTYPES",

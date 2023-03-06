@@ -244,11 +244,20 @@ def _xl_setup_table_options(
     return table_style, table_options
 
 
-def _xl_unique_table_name(ws: Worksheet) -> str:
-    """Establish a unique (per-worksheet) incrementing table object name."""
-    default_name = "PolarsFrameTable"
-    n_polars_tables = sum(1 for t in ws.tables if t["name"].startswith(default_name))
-    return f"{default_name}{n_polars_tables}"
+def _xl_unique_table_name(wb: Workbook) -> str:
+    """Establish a unique (per-workbook) table object name."""
+    table_prefix = "PolarsFrameTable"
+    polars_tables: set[str] = set()
+    for ws in wb.worksheets():
+        polars_tables.update(
+            tbl["name"] for tbl in ws.tables if tbl["name"].startswith(table_prefix)
+        )
+    n = len(polars_tables)
+    table_name = f"{table_prefix}{n}"
+    while table_name in polars_tables:
+        n += 1
+        table_name = f"{table_prefix}{n}"
+    return table_name
 
 
 def _xl_column_range(
