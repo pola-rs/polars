@@ -59,6 +59,7 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
+    F = TypeVar("F", bound=Callable[..., Any])
 
 
 def _process_null_values(
@@ -448,7 +449,7 @@ def _rename_kwargs(
             kwargs[new] = kwargs.pop(alias)
 
 
-def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
+def deprecated_alias(**aliases: str) -> Callable[[F], F]:
     """
     Deprecate a function or method argument.
 
@@ -473,7 +474,7 @@ def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T
 def deprecate_nonkeyword_arguments(
     allowed_args: list[str] | None = None,
     message: str | None = None,
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+) -> Callable[[F], F]:
     """
     Decorator to deprecate the use of non-keyword arguments of a function.
 
