@@ -52,8 +52,7 @@ fn test_lazy_melt() {
     let args = MeltArgs {
         id_vars: vec!["petal.width".into(), "petal.length".into()],
         value_vars: vec!["sepal.length".into(), "sepal.width".into()],
-        variable_name: None,
-        value_name: None,
+        ..Default::default()
     };
 
     let out = df

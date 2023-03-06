@@ -178,7 +178,6 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         }
         (Projection { expr: l, .. }, Projection { expr: r, .. })
         | (HStack { exprs: l, .. }, HStack { exprs: r, .. }) => expr_nodes_equal(l, r, expr_arena),
-        (Melt { args: l, .. }, Melt { args: r, .. }) => Arc::ptr_eq(l, r),
         (
             Slice {
                 offset: offset_l,

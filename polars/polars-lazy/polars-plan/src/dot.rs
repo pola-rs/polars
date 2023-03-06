@@ -246,15 +246,6 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             }
-            Melt { input, .. } => {
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: "MELT",
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)?;
-                input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            }
             Aggregate {
                 input, keys, aggs, ..
             } => {

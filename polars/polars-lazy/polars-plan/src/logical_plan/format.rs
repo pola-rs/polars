@@ -137,10 +137,6 @@ impl LogicalPlan {
                 writeln!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
             }
-            Melt { input, .. } => {
-                writeln!(f, "{:indent$}MELT", "")?;
-                input._format(f, indent)
-            }
             #[cfg(feature = "csv-file")]
             CsvScan {
                 path,

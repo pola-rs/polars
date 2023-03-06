@@ -1108,6 +1108,7 @@ impl PyDataFrame {
             value_vars: strings_to_smartstrings(value_vars),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
+            streamable: false,
         };
 
         let df = self.df.melt2(args).map_err(PyPolarsErr::from)?;

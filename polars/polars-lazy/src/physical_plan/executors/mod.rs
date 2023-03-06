@@ -8,7 +8,6 @@ mod groupby_dynamic;
 mod groupby_partitioned;
 mod groupby_rolling;
 mod join;
-mod melt;
 mod projection;
 #[cfg(feature = "python")]
 mod python_scan;
@@ -39,7 +38,6 @@ pub(super) use self::groupby_partitioned::*;
 #[cfg(feature = "dynamic_groupby")]
 pub(super) use self::groupby_rolling::*;
 pub(super) use self::join::*;
-pub(super) use self::melt::*;
 pub(super) use self::projection::*;
 #[cfg(feature = "python")]
 pub(super) use self::python_scan::*;

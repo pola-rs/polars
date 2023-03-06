@@ -161,10 +161,6 @@ pub fn create_physical_plan(
                 .collect::<PolarsResult<Vec<_>>>()?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
         }
-        Melt { input, args, .. } => {
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            Ok(Box::new(executors::MeltExec { input, args }))
-        }
         Slice { input, offset, len } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::SliceExec { input, offset, len }))

@@ -1,3 +1,7 @@
+mod melt;
+
+use melt::process_melt;
+
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
@@ -55,6 +59,17 @@ pub(super) fn process_functions(
             )?;
             Ok(lp)
         }
+        Melt { args, .. } => process_melt(
+            proj_pd,
+            lp,
+            args,
+            input,
+            acc_projections,
+            projected_names,
+            projections_seen,
+            lp_arena,
+            expr_arena,
+        ),
         _ => {
             if function.allow_projection_pd() && !acc_projections.is_empty() {
                 let original_acc_projection_len = acc_projections.len();
