@@ -69,6 +69,7 @@ from polars.internals.construction import (
 from polars.internals.dataframe._html import NotebookFormatter
 from polars.internals.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.internals.io_excel import (
+    _unpack_multi_column_dict,
     _xl_column_multi_range,
     _xl_column_range,
     _xl_inject_sparklines,
@@ -2403,14 +2404,15 @@ class DataFrame:
         position: tuple[int, int] | str = "A1",
         table_style: str | dict[str, Any] | None = None,
         table_name: str | None = None,
-        column_widths: dict[str, int] | None = None,
-        column_totals: dict[str, str] | Sequence[str] | bool | None = None,
-        column_formats: dict[str, str] | None = None,
+        column_widths: dict[str | Sequence[str], int] | None = None,
+        column_totals: (
+            dict[str | Sequence[str], str] | Sequence[str] | bool | None
+        ) = None,
+        column_formats: dict[str | Sequence[str], str] | None = None,
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
-        conditional_formats: dict[
-            str | Sequence[str], str | dict[str | Sequence[str], Any]
-        ]
-        | None = None,
+        conditional_formats: (
+            dict[str | Sequence[str], str | dict[str | Sequence[str], Any]] | None
+        ) = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         float_precision: int = 3,
         has_header: bool = True,
@@ -2721,15 +2723,15 @@ class DataFrame:
 
         # additional column-level properties
         hidden_columns = hidden_columns or ()
-        column_widths = column_widths or {}
+        column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
         for col in df.columns:
             col_idx, options = table_start[1] + df.find_idx_by_name(col), {}
             if col in hidden_columns:
                 options = {"hidden": True}
-            if col in column_widths:
+            if col in column_widths:  # type: ignore[operator]
                 ws.set_column_pixels(
-                    col_idx, col_idx, column_widths[col], None, options
+                    col_idx, col_idx, column_widths[col], None, options  # type: ignore[index]
                 )
             elif options:
                 ws.set_column(col_idx, col_idx, None, None, options)

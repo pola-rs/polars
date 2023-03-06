@@ -161,6 +161,7 @@ def test_excel_sparklines() -> None:
                     "max_color": "#ffffff",
                 }
             },
+            column_widths={("q1", "q2", "q3", "q4"): 40},
             hide_gridlines=True,
         )
 

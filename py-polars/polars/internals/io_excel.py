@@ -38,6 +38,19 @@ for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
 
 
+def _unpack_multi_column_dict(
+    d: dict[str | Sequence[str], str] | Any
+) -> dict[str, Any] | Any:
+    """Unpack multi-col dictionary into equivalent single-col definitions."""
+    if not isinstance(d, dict):
+        return d
+    unpacked: dict[str, Any] = {}
+    for key, value in d.items():
+        for k in (key,) if isinstance(key, str) else key:
+            unpacked[k] = value
+    return unpacked
+
+
 def _xl_column_range(
     df: pli.DataFrame, table_start: tuple[int, int], col: str, has_header: bool
 ) -> tuple[int, int, int, int]:
@@ -56,6 +69,7 @@ def _xl_column_multi_range(
     cols: Iterable[str],
     has_header: bool,
 ) -> str:
+    """Return column ranges as an xlsxwriter 'multi_range' compatible string."""
     from xlsxwriter.utility import xl_rowcol_to_cell
 
     multi_range: list[str] = []
@@ -147,13 +161,16 @@ def _xl_inject_sparklines(
 def _xl_setup_table_columns(
     df: pli.DataFrame,
     wb: Workbook,
-    column_formats: dict[str, str] | None = None,
-    column_totals: dict[str, str] | Sequence[str] | bool | None = None,
+    column_totals: dict[str | Sequence[str], str] | Sequence[str] | bool | None = None,
+    column_formats: dict[str | Sequence[str], str] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
     float_precision: int = 3,
 ) -> tuple[list[dict[str, Any]], pli.DataFrame]:
     """Setup and unify all column-related formatting/defaults."""
+    column_totals = _unpack_multi_column_dict(column_totals)  # type: ignore[assignment]
+    column_formats = _unpack_multi_column_dict(column_formats)  # type: ignore[assignment]
+
     total_funcs = (
         {col: "sum" for col in column_totals}
         if isinstance(column_totals, Sequence)
@@ -193,10 +210,10 @@ def _xl_setup_table_columns(
             column_formats.setdefault(col, fmt)
         if base_type in NUMERIC_DTYPES:
             if column_totals is True:
-                total_funcs.setdefault(col, "sum")
+                total_funcs.setdefault(col, "sum")  # type: ignore[attr-defined]
 
     # ensure externally supplied formats are made available
-    for col, fmt in column_formats.items():
+    for col, fmt in column_formats.items():  # type: ignore[assignment]
         if isinstance(fmt, str):
             column_formats[col] = wb.add_format({"num_format": fmt})
         elif isinstance(fmt, dict):
@@ -211,7 +228,7 @@ def _xl_setup_table_columns(
         {
             "header": col,
             "format": column_formats.get(col),
-            "total_function": total_funcs.get(col),
+            "total_function": total_funcs.get(col),  # type: ignore[attr-defined]
         }
         for col in df.columns
     ]
