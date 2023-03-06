@@ -48,7 +48,7 @@ def test_dtype_base_type() -> None:
         pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]).base_type()
         is pl.Struct
     )
-    for dtype in datatypes.DATETIME_DTYPES:
+    for dtype in pl.DATETIME_DTYPES:
         assert dtype.base_type() is pl.Datetime
 
 
