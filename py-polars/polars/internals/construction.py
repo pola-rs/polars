@@ -437,8 +437,8 @@ def sequence_to_pyseries(
             while True:
                 try:
                     return constructor(name, values, strict)
-                except TypeError as error:
-                    str_val = str(error)
+                except TypeError as exc:
+                    str_val = str(exc)
 
                     # from x to float
                     # error message can be:
@@ -465,7 +465,7 @@ def sequence_to_pyseries(
                         constructor = py_type_to_constructor(PyDecimal)
 
                     else:
-                        raise error
+                        raise exc
 
 
 @deprecated_alias(nan_to_none="nan_to_null")

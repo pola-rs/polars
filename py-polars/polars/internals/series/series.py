@@ -1923,11 +1923,11 @@ class Series:
                 self._s.append(other._s)
             else:
                 self._s.extend(other._s)
-        except RuntimeError as e:
-            if str(e) == "Already mutably borrowed":
+        except RuntimeError as exc:
+            if str(exc) == "Already mutably borrowed":
                 self.append(other.clone(), append_chunks)
             else:
-                raise e
+                raise exc
         return self
 
     def filter(self, predicate: Series | list[bool]) -> Series:
