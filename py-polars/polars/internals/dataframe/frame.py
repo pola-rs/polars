@@ -69,6 +69,8 @@ from polars.internals.construction import (
 from polars.internals.dataframe._html import NotebookFormatter
 from polars.internals.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.internals.io_excel import (
+    _unpack_multi_column_dict,
+    _xl_column_multi_range,
     _xl_column_range,
     _xl_inject_sparklines,
     _xl_setup_table_columns,
@@ -2402,11 +2404,15 @@ class DataFrame:
         position: tuple[int, int] | str = "A1",
         table_style: str | dict[str, Any] | None = None,
         table_name: str | None = None,
-        column_widths: dict[str, int] | None = None,
-        column_totals: dict[str, str] | Sequence[str] | bool | None = None,
-        column_formats: dict[str, str] | None = None,
-        conditional_formats: dict[str, str | dict[str, Any]] | None = None,
+        column_widths: dict[str | Sequence[str], int] | None = None,
+        column_totals: (
+            dict[str | Sequence[str], str] | Sequence[str] | bool | None
+        ) = None,
+        column_formats: dict[str | Sequence[str], str] | None = None,
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
+        conditional_formats: (
+            dict[str | Sequence[str], str | dict[str | Sequence[str], Any]] | None
+        ) = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         float_precision: int = 3,
         has_header: bool = True,
@@ -2441,24 +2447,27 @@ class DataFrame:
             in integer pixel units.
         column_totals
             Add a total row. If True, all numeric columns will have an associated total
-            using "sum". If given a list of colnames, only those listed will have a
-            total.  For more control, pass a {colname:funcname,} dict. Valid names are:
+            using "sum". If given a list of colnames, only those will have a total.
+            For more control, pass a {colname:funcname,} dict. Valid names are:
             "average", "count_nums", "count", "max", "min", "std_dev", "sum", "var".
         column_formats
             A {colname:str,} dictionary for applying an Excel format string to the given
             columns. Formats defined here (such as "dd/mm/yyyy", "0.00%", etc) will
-            override those defined in ``dtype_formats``.
-        conditional_formats
-            A {colname:str,} or {colname:dict,} dictionary defining conditional format
-            options for the specified columns. If supplying a string typename, should be
-            one of the valid ``xlsxwriter`` types such as "3_color_scale", "data_bar",
-            etc. If supplying a dictionary you have complete flexibility to apply any
-            ``xlsxwriter``-supported options, including icon sets, formulae, etc.
+            override those defined in ``dtype_formats`` (below).
         dtype_formats
             A {dtype:str,} dictionary that sets the default Excel format for the given
             dtype. (This is overridden on a per-column basis by ``column_formats``).
             It is also valid to use dtype groups such as ``pl.FLOAT_DTYPES`` as the
             dtype/format key, to simplify setting uniform int/float formats.
+        conditional_formats
+            A {colname(s):str,} or {colname(s):dict,} dictionary defining conditional
+            format options for the specified columns. If supplying a string typename,
+            should be one of the valid ``xlsxwriter`` types such as "3_color_scale",
+            "data_bar", etc. If supplying a dictionary you can make use of any/all
+            ``xlsxwriter``-supported options, including icon sets, formulae, etc.
+            Supplying multiple columns as a tuple/key will apply a single format across
+            all columns at once - this is effective in creating a heatmap, as the
+            min/max values are determined across the entire range, not per-column.
         sparklines
             A {colname:list,} or {colname:dict,} dictionary that defines one or more
             sparklines to be written into a new column in the table. If passing a
@@ -2574,7 +2583,7 @@ class DataFrame:
         ...         column_formats={"num": "#,##0.000;[White]-#,##0.000"},
         ...         column_widths={"val": 125},
         ...         autofit=True,
-        ...     )  # doctest: +IGNORE_RESULT
+        ...     )
         ...
         ...     # add some table titles (with a custom format)
         ...     ws = wb.get_worksheet_by_name("data")
@@ -2593,7 +2602,7 @@ class DataFrame:
         Export a table containing two different types of sparklines. Use default
         options for the "trend" sparkline and customised options (and positioning)
         for the "+/-" win_loss sparkline, with non-default integer dtype formatting,
-        column totals, and hidden worksheet gridlines:
+        column totals, a subtle two-tone heatmap and hidden worksheet gridlines:
 
         >>> df = pl.DataFrame(
         ...     {
@@ -2606,6 +2615,7 @@ class DataFrame:
         ... )
         >>> df.write_excel(  # doctest: +SKIP
         ...     table_style="Table Style Light 2",
+        ...     # apply accounting format to all flavours of integer
         ...     dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
         ...     sparklines={
         ...         # default options; just provide source cols
@@ -2616,6 +2626,14 @@ class DataFrame:
         ...             "insert_after": "id",
         ...             "type": "win_loss",
         ...         },
+        ...     },
+        ...     conditional_formats={
+        ...         # create a unified multi-column heatmap
+        ...         ("q1", "q2", "q3", "q4"): {
+        ...             "type": "2_color_scale",
+        ...             "min_color": "#95b3d7",
+        ...             "max_color": "#ffffff",
+        ...         }
         ...     },
         ...     column_totals=["q1", "q2", "q3", "q4"],
         ...     hide_gridlines=True,
@@ -2678,11 +2696,19 @@ class DataFrame:
                 },
             )
             # apply any conditional formats
-            for col, fmt in (conditional_formats or {}).items():
-                col_range = _xl_column_range(df, table_start, col, has_header)
-                ws.conditional_format(
-                    *col_range, fmt if isinstance(fmt, dict) else {"type": fmt}
-                )
+            for cols, fmt in (conditional_formats or {}).items():
+                if not isinstance(cols, str) and len(cols) == 1:
+                    cols = cols[0]
+                if not isinstance(fmt, dict):
+                    fmt = {"type": fmt}
+                if not isinstance(cols, str):
+                    fmt["multi_range"] = _xl_column_multi_range(
+                        df, table_start, cols, has_header
+                    )
+                    cols = cols[0]
+
+                col_range = _xl_column_range(df, table_start, cols, has_header)
+                ws.conditional_format(*col_range, fmt)
 
         # worksheet options
         if autofit and not is_empty:
@@ -2697,15 +2723,15 @@ class DataFrame:
 
         # additional column-level properties
         hidden_columns = hidden_columns or ()
-        column_widths = column_widths or {}
+        column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
         for col in df.columns:
             col_idx, options = table_start[1] + df.find_idx_by_name(col), {}
             if col in hidden_columns:
                 options = {"hidden": True}
-            if col in column_widths:
+            if col in column_widths:  # type: ignore[operator]
                 ws.set_column_pixels(
-                    col_idx, col_idx, column_widths[col], None, options
+                    col_idx, col_idx, column_widths[col], None, options  # type: ignore[index]
                 )
             elif options:
                 ws.set_column(col_idx, col_idx, None, None, options)

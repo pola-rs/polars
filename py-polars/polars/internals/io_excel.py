@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
+    Iterable,
     Sequence,
 )
 
@@ -35,6 +36,49 @@ _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
 }
 for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
+
+
+def _unpack_multi_column_dict(
+    d: dict[str | Sequence[str], str] | Any
+) -> dict[str, Any] | Any:
+    """Unpack multi-col dictionary into equivalent single-col definitions."""
+    if not isinstance(d, dict):
+        return d
+    unpacked: dict[str, Any] = {}
+    for key, value in d.items():
+        for k in (key,) if isinstance(key, str) else key:
+            unpacked[k] = value
+    return unpacked
+
+
+def _xl_column_range(
+    df: pli.DataFrame, table_start: tuple[int, int], col: str, has_header: bool
+) -> tuple[int, int, int, int]:
+    """Return the excel sheet range of a named column, accounting for all offsets."""
+    col_start = (
+        table_start[0] + int(has_header),
+        table_start[1] + df.find_idx_by_name(col),
+    )
+    col_finish = (col_start[0] + len(df) - 1, col_start[1])
+    return col_start + col_finish
+
+
+def _xl_column_multi_range(
+    df: pli.DataFrame,
+    table_start: tuple[int, int],
+    cols: Iterable[str],
+    has_header: bool,
+) -> str:
+    """Return column ranges as an xlsxwriter 'multi_range' compatible string."""
+    from xlsxwriter.utility import xl_rowcol_to_cell
+
+    multi_range: list[str] = []
+    for col in cols:
+        col_range = _xl_column_range(df, table_start, col, has_header)
+        col_start = xl_rowcol_to_cell(col_range[0], col_range[1])
+        col_end = xl_rowcol_to_cell(col_range[2], col_range[3])
+        multi_range.append(f"{col_start}:{col_end}")
+    return " ".join(multi_range)
 
 
 def _xl_inject_dummy_table_columns(
@@ -114,48 +158,19 @@ def _xl_inject_sparklines(
         spk_row += 1
 
 
-def _xl_setup_workbook(
-    workbook: Workbook | BytesIO | Path | str | None, worksheet: str | None = None
-) -> tuple[Workbook, Worksheet, bool]:
-    """Establish the target excel workbook and worksheet."""
-    from xlsxwriter import Workbook
-
-    if isinstance(workbook, Workbook):
-        wb, can_close = workbook, False
-        ws = wb.get_worksheet_by_name(name=worksheet)
-    else:
-        workbook_options = {
-            "nan_inf_to_errors": True,
-            "strings_to_formulas": False,
-            "default_date_format": _XL_DEFAULT_DTYPE_FORMATS_[Date],
-        }
-        if isinstance(workbook, BytesIO):
-            wb, ws, can_close = Workbook(workbook, workbook_options), None, True
-        else:
-            file = Path("dataframe.xlsx" if workbook is None else workbook)
-            wb = Workbook(
-                (file if file.suffix else file.with_suffix(".xlsx"))
-                .expanduser()
-                .resolve(strict=False),
-                workbook_options,
-            )
-            ws, can_close = None, True
-
-    if ws is None:
-        ws = wb.add_worksheet(name=worksheet)
-    return wb, ws, can_close
-
-
 def _xl_setup_table_columns(
     df: pli.DataFrame,
     wb: Workbook,
-    column_formats: dict[str, str] | None = None,
-    column_totals: dict[str, str] | Sequence[str] | bool | None = None,
+    column_totals: dict[str | Sequence[str], str] | Sequence[str] | bool | None = None,
+    column_formats: dict[str | Sequence[str], str] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
     float_precision: int = 3,
 ) -> tuple[list[dict[str, Any]], pli.DataFrame]:
     """Setup and unify all column-related formatting/defaults."""
+    column_totals = _unpack_multi_column_dict(column_totals)  # type: ignore[assignment]
+    column_formats = _unpack_multi_column_dict(column_formats)  # type: ignore[assignment]
+
     total_funcs = (
         {col: "sum" for col in column_totals}
         if isinstance(column_totals, Sequence)
@@ -195,10 +210,10 @@ def _xl_setup_table_columns(
             column_formats.setdefault(col, fmt)
         if base_type in NUMERIC_DTYPES:
             if column_totals is True:
-                total_funcs.setdefault(col, "sum")
+                total_funcs.setdefault(col, "sum")  # type: ignore[attr-defined]
 
     # ensure externally supplied formats are made available
-    for col, fmt in column_formats.items():
+    for col, fmt in column_formats.items():  # type: ignore[assignment]
         if isinstance(fmt, str):
             column_formats[col] = wb.add_format({"num_format": fmt})
         elif isinstance(fmt, dict):
@@ -213,7 +228,7 @@ def _xl_setup_table_columns(
         {
             "header": col,
             "format": column_formats.get(col),
-            "total_function": total_funcs.get(col),
+            "total_function": total_funcs.get(col),  # type: ignore[attr-defined]
         }
         for col in df.columns
     ]
@@ -244,6 +259,38 @@ def _xl_setup_table_options(
     return table_style, table_options
 
 
+def _xl_setup_workbook(
+    workbook: Workbook | BytesIO | Path | str | None, worksheet: str | None = None
+) -> tuple[Workbook, Worksheet, bool]:
+    """Establish the target excel workbook and worksheet."""
+    from xlsxwriter import Workbook
+
+    if isinstance(workbook, Workbook):
+        wb, can_close = workbook, False
+        ws = wb.get_worksheet_by_name(name=worksheet)
+    else:
+        workbook_options = {
+            "nan_inf_to_errors": True,
+            "strings_to_formulas": False,
+            "default_date_format": _XL_DEFAULT_DTYPE_FORMATS_[Date],
+        }
+        if isinstance(workbook, BytesIO):
+            wb, ws, can_close = Workbook(workbook, workbook_options), None, True
+        else:
+            file = Path("dataframe.xlsx" if workbook is None else workbook)
+            wb = Workbook(
+                (file if file.suffix else file.with_suffix(".xlsx"))
+                .expanduser()
+                .resolve(strict=False),
+                workbook_options,
+            )
+            ws, can_close = None, True
+
+    if ws is None:
+        ws = wb.add_worksheet(name=worksheet)
+    return wb, ws, can_close
+
+
 def _xl_unique_table_name(wb: Workbook) -> str:
     """Establish a unique (per-workbook) table object name."""
     table_prefix = "PolarsFrameTable"
@@ -258,15 +305,3 @@ def _xl_unique_table_name(wb: Workbook) -> str:
         n += 1
         table_name = f"{table_prefix}{n}"
     return table_name
-
-
-def _xl_column_range(
-    df: pli.DataFrame, table_start: tuple[int, int], col: str, has_header: bool
-) -> tuple[int, int, int, int]:
-    """Return the excel sheet range of a named column, accounting for all offsets."""
-    col_start = (
-        table_start[0] + int(has_header),
-        table_start[1] + df.find_idx_by_name(col),
-    )
-    col_finish = (col_start[0] + len(df) - 1, col_start[1])
-    return col_start + col_finish
