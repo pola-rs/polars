@@ -305,11 +305,12 @@ def from_numpy(
     )
 
 
+@deprecated_alias(a="data")
 @deprecate_nonkeyword_arguments()
 def from_arrow(
-    a: pa.Table | pa.Array | pa.ChunkedArray,
+    data: pa.Table | pa.Array | pa.ChunkedArray,
     rechunk: bool = True,
-    schema: Sequence[str] | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame | Series:
     """
@@ -320,7 +321,7 @@ def from_arrow(
 
     Parameters
     ----------
-    a : :class:`pyarrow.Table` or :class:`pyarrow.Array`
+    data : :class:`pyarrow.Table` or :class:`pyarrow.Array`
         Data representing an Arrow Table or Array.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
@@ -380,14 +381,14 @@ def from_arrow(
     ]
 
     """
-    if isinstance(a, pa.Table):
+    if isinstance(data, pa.Table):
         return DataFrame._from_arrow(
-            a, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
+            data, schema=schema, schema_overrides=schema_overrides, rechunk=rechunk
         )
-    elif isinstance(a, (pa.Array, pa.ChunkedArray)):
-        return Series._from_arrow("", a, rechunk)
+    elif isinstance(data, (pa.Array, pa.ChunkedArray)):
+        return Series._from_arrow("", data, rechunk=rechunk)
     else:
-        raise ValueError(f"Expected Arrow Table or Array, got {type(a)}.")
+        raise ValueError(f"expected Arrow Table or Array, got {type(data)}.")
 
 
 @overload
