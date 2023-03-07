@@ -510,17 +510,20 @@ pub trait Utf8Methods: AsUtf8 {
                             .collect_trusted()
                     }
                 } else {
+                    let transform = match tu {
+                        TimeUnit::Nanoseconds => infer::transform_datetime_ns,
+                        TimeUnit::Microseconds => infer::transform_datetime_us,
+                        TimeUnit::Milliseconds => infer::transform_datetime_ms,
+                    };
                     let mut cache_map = PlHashMap::new();
                     utf8_ca
                         .into_iter()
                         .map(|opt_s| {
                             opt_s.and_then(|s| {
                                 if cache {
-                                    *cache_map.entry(s).or_insert_with(|| {
-                                        NaiveDateTime::parse_from_str(s, &fmt).ok().map(func)
-                                    })
+                                    *cache_map.entry(s).or_insert_with(|| transform(s, &fmt))
                                 } else {
-                                    NaiveDateTime::parse_from_str(s, &fmt).ok().map(func)
+                                    transform(s, &fmt)
                                 }
                             })
                         })
