@@ -4993,6 +4993,7 @@ class Series:
             Dictionary containing the before/after values to map.
         default
             Value to use when the remapping dict does not contain the lookup value.
+            Use ``pl.first()``, to keep the original value.
 
         Examples
         --------
@@ -5015,7 +5016,19 @@ class Series:
             "Netherlands"
         ]
 
-        ...or keep the original value:
+        ...or keep the original value, by making use of ``pl.first()``:
+
+        >>> s.map_dict(country_lookup, default=pl.first()).rename("country_name")
+        shape: (4,)
+        Series: 'country_name' [str]
+        [
+            "Türkiye"
+            "???"
+            "Japan"
+            "Netherlands"
+        ]
+
+        ...or keep the original value, by assigning the input series:
 
         >>> s.map_dict(country_lookup, default=s).rename("country_name")
         shape: (4,)

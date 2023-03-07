@@ -543,9 +543,22 @@ def test_map_dict() -> None:
     }
     df = pl.DataFrame(
         {
+            "int": [None, 1, None, 3],
             "country_code": ["FR", None, "ES", "DE"],
         }
-    ).with_row_count()
+    )
+
+    assert (
+        df.with_columns(
+            pl.col("country_code")
+            .map_dict(country_code_dict, default=pl.first())
+            .alias("remapped")
+        )
+    ).to_dict(False) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", "ES", "Germany"],
+    }
 
     assert (
         df.with_columns(
@@ -554,7 +567,7 @@ def test_map_dict() -> None:
             .alias("remapped")
         )
     ).to_dict(False) == {
-        "row_nr": [0, 1, 2, 3],
+        "int": [None, 1, None, 3],
         "country_code": ["FR", None, "ES", "DE"],
         "remapped": ["France", "Not specified", "ES", "Germany"],
     }
@@ -564,13 +577,13 @@ def test_map_dict() -> None:
             pl.col("country_code").map_dict(country_code_dict).alias("remapped")
         )
     ).to_dict(False) == {
-        "row_nr": [0, 1, 2, 3],
+        "int": [None, 1, None, 3],
         "country_code": ["FR", None, "ES", "DE"],
         "remapped": ["France", "Not specified", None, "Germany"],
     }
 
     assert (
-        df.with_columns(
+        df.with_row_count().with_columns(
             pl.struct(pl.col(["country_code", "row_nr"]))
             .map_dict(
                 country_code_dict,
@@ -580,6 +593,7 @@ def test_map_dict() -> None:
         )
     ).to_dict(False) == {
         "row_nr": [0, 1, 2, 3],
+        "int": [None, 1, None, 3],
         "country_code": ["FR", None, "ES", "DE"],
         "remapped": ["France", "Not specified", "2", "Germany"],
     }
@@ -593,7 +607,7 @@ def test_map_dict() -> None:
                 .alias("remapped")
             )
         ).to_dict(False) == {
-            "row_nr": [0, 1, 2, 3],
+            "int": [None, 1, None, 3],
             "country_code": ["FR", None, "ES", "DE"],
             "remapped": ["France", "Not specified", "ES", "Germany"],
         }
@@ -612,10 +626,54 @@ def test_map_dict() -> None:
             .collect()
             .to_dict(False)
         ) == {
-            "row_nr": [0, 1, 2, 3],
+            "int": [None, 1, None, 3],
             "country_code": ["FR", None, "ES", "DE"],
             "remapped": ["France", "Not specified", "ES", "Germany"],
         }
+
+    int_dict = {1: "b", 3: "d"}
+    int_with_none_dict = {1: "b", 3: "d", None: "e"}
+
+    assert (
+        df.with_columns(pl.col("int").map_dict(int_dict).alias("remapped")).to_dict(
+            False
+        )
+    ) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": [None, "b", None, "d"],
+    }
+
+    assert (
+        df.with_columns(
+            pl.col("int").map_dict(int_with_none_dict).alias("remapped")
+        ).to_dict(False)
+    ) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["e", "b", "e", "d"],
+    }
+
+    float_dict = {1.0: "b", 3.0: "d"}
+
+    with pytest.raises(
+        pl.ComputeError, match="Remapping keys could not be converted to Int64: "
+    ):
+        df.with_columns(pl.col("int").map_dict(float_dict))
+
+    df_int_as_str = df.with_columns(pl.col("int").cast(pl.Utf8))
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="Remapping keys could not be converted to Utf8 without losing values in the conversion.",
+    ):
+        df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="Remapping keys could not be converted to Utf8 without losing values in the conversion.",
+    ):
+        df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
 
     # 7132
     df = pl.DataFrame({"text": ["abc"]})

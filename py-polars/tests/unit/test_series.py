@@ -2461,6 +2461,13 @@ def test_map_dict() -> None:
         pl.Series("s", ["-1", "two", None, "four", "-5"]),
     )
 
+    remap_int = {1: 11, 2: 22, 3: 33, 4: 44, 5: 55}
+
+    assert_series_equal(
+        s.map_dict(remap_int, default=pl.first()),
+        pl.Series("s", [-1, 22, None, 44, -5]),
+    )
+
 
 @pytest.mark.parametrize(
     ("dtype", "lower", "upper"),

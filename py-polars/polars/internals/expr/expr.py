@@ -6312,7 +6312,7 @@ class Expr:
         Replace values in column according to remapping dictionary.
 
         Needs a global string cache for lazily evaluated queries on columns of
-        type pl.Categorical.
+        type ``pl.Categorical``.
 
         Parameters
         ----------
@@ -6320,11 +6320,7 @@ class Expr:
             Dictionary containing the before/after values to map.
         default
             Value to use when the remapping dict does not contain the lookup value.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
+            Use ``pl.first()``, to keep the original value.
 
         Examples
         --------
@@ -6386,7 +6382,26 @@ class Expr:
         │ 3      ┆ DE           ┆ Germany       │
         └────────┴──────────────┴───────────────┘
 
-        ...or keep the original value:
+        ...or keep the original value, by making use of ``pl.first()``:
+
+        >>> df.with_columns(
+        ...     pl.col("country_code")
+        ...     .map_dict(country_code_dict, default=pl.first())
+        ...     .alias("remapped")
+        ... )
+        shape: (4, 3)
+        ┌────────┬──────────────┬───────────────┐
+        │ row_nr ┆ country_code ┆ remapped      │
+        │ ---    ┆ ---          ┆ ---           │
+        │ u32    ┆ str          ┆ str           │
+        ╞════════╪══════════════╪═══════════════╡
+        │ 0      ┆ FR           ┆ France        │
+        │ 1      ┆ null         ┆ Not specified │
+        │ 2      ┆ ES           ┆ ES            │
+        │ 3      ┆ DE           ┆ Germany       │
+        └────────┴──────────────┴───────────────┘
+
+        ...or keep the original value, by explicitly referring to the column:
 
         >>> df.with_columns(
         ...     pl.col("country_code")
@@ -6429,6 +6444,42 @@ class Expr:
 
         """
 
+        def _remap_key_series(
+            remap_key_column: str,
+            remapping: dict[Any, Any],
+            input_dtype: PolarsDataType,
+        ) -> pli.Series:
+            """
+            Convert remapping dict key values to `Series` with `input_dtype`.
+
+            Try to convert the remapping dict key values to `Series` with the same dtype
+            as the column from which the values are being replaced and make sure that
+            no keys are accidentally lost (replaced by nulls) during the conversion.
+
+            """
+            try:
+                remap_key_s = pli.Series(
+                    remap_key_column,
+                    list(remapping.keys()),
+                    dtype=input_dtype,
+                    strict=True,
+                )
+            except TypeError as exc:
+                raise ValueError(
+                    f"Remapping keys could not be converted to {input_dtype}: {str(exc)}"
+                ) from exc
+
+            if remap_key_s.null_count() == 0:  # noqa: SIM114
+                pass
+            elif remap_key_s.null_count() == 1 and None in remapping:
+                pass
+            else:
+                raise ValueError(
+                    f"Remapping keys could not be converted to {input_dtype} without losing values in the conversion."
+                )
+
+            return remap_key_s
+
         # Use two functions to save unneeded work.
         # This factors out allocations and branches.
         def inner_with_default(s: pli.Series) -> pli.Series:
@@ -6437,12 +6488,14 @@ class Expr:
             #   - one column DataFrame in other cases.
             df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
 
-            # For struct we always apply mapping to the first column
+            # For struct we always apply mapping to the first column.
             column = df.columns[0]
             input_dtype = df.dtypes[0]
             remap_key_column = f"__POLARS_REMAP_KEY_{column}"
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
+
+            remap_key_s = _remap_key_series(remap_key_column, remapping, input_dtype)
 
             return (
                 (
@@ -6450,11 +6503,7 @@ class Expr:
                     .join(
                         pli.DataFrame(
                             [
-                                pli.Series(
-                                    remap_key_column,
-                                    list(remapping.keys()),
-                                    dtype=input_dtype,
-                                ),
+                                remap_key_s,
                                 pli.Series(
                                     remap_value_column, list(remapping.values())
                                 ),
@@ -6484,6 +6533,8 @@ class Expr:
             remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
 
+            remap_key_s = _remap_key_series(remap_key_column, remapping, input_dtype)
+
             return (
                 (
                     s.to_frame()
@@ -6491,11 +6542,7 @@ class Expr:
                     .join(
                         pli.DataFrame(
                             [
-                                pli.Series(
-                                    remap_key_column,
-                                    list(remapping.keys()),
-                                    dtype=input_dtype,
-                                ),
+                                remap_key_s,
                                 pli.Series(
                                     remap_value_column, list(remapping.values())
                                 ),
