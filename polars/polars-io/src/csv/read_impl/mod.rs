@@ -1,11 +1,12 @@
-mod batched;
+mod batched_mmap;
+mod batched_read;
 
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-pub use batched::*;
+pub use batched_mmap::*;
 use polars_arrow::array::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;

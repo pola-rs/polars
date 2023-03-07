@@ -1,0 +1,456 @@
+use std::collections::VecDeque;
+use std::fs::File;
+use std::io::{Cursor, Read, Seek, SeekFrom};
+
+use super::*;
+use crate::csv::CsvReader;
+use crate::mmap::MmapBytesReader;
+use crate::prelude::update_row_counts2;
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn get_offsets(
+    offsets: &mut VecDeque<(usize, usize)>,
+    n_chunks: usize,
+    chunk_size: usize,
+    bytes: &[u8],
+    expected_fields: usize,
+    delimiter: u8,
+    quote_char: Option<u8>,
+    eol_char: u8,
+) {
+    let mut start = 0;
+    for i in 1..(n_chunks + 1) {
+        let search_pos = chunk_size * i;
+
+        if search_pos >= bytes.len() {
+            break;
+        }
+
+        let end_pos = match next_line_position(
+            &bytes[search_pos..],
+            Some(expected_fields),
+            delimiter,
+            quote_char,
+            eol_char,
+        ) {
+            Some(pos) => search_pos + pos,
+            None => {
+                break;
+            }
+        };
+        offsets.push_back((start, end_pos));
+        start = end_pos;
+    }
+}
+
+
+struct ChunkIter<'a> {
+    file: &'a File,
+    buf: Vec<u8>,
+    finished: bool,
+    bytes_last_row: usize,
+    page_size: u64,
+    // position in the buffer we read
+    buf_end: usize,
+    offsets: VecDeque<(usize, usize)>,
+    last_offset: usize,
+    n_chunks: usize,
+    // not a promise, but something we want
+    rows_per_batch: usize,
+    expected_fields: usize,
+    delimiter: u8,
+    quote_char: Option<u8>,
+    eol_char: u8,
+}
+
+impl<'a> ChunkIter<'a> {
+    fn new(file: &'a File,
+           rows_per_batch: usize,
+           expected_fields: usize,
+           delimiter: u8,
+           quote_char: Option<u8>,
+           eol_char: u8,
+           page_size: u64,
+    ) -> Self {
+        Self {
+            file,
+            buf: vec![],
+            buf_end: 0,
+            offsets: VecDeque::new(),
+            finished: false,
+            bytes_last_row: 0,
+            page_size,
+            last_offset: 0,
+            // this is arbitrarily chosen.
+            // we don't want this to depend on the thread pool size
+            // otherwise the chunks are not deterministic
+            n_chunks: 16,
+            rows_per_batch,
+            expected_fields,
+            delimiter,
+            quote_char,
+            eol_char
+        }
+    }
+
+    fn reslice(&mut self) {
+        // memcopy the remaining bytes to the start
+        self.buf.copy_within(self.buf_end.., 0);
+        self.buf.truncate(self.buf.len() - self.buf_end);
+        self.buf_end = 0;
+    }
+
+    fn finish(&mut self) -> Option<&'a [u8]> {
+        self.finished = true;
+        // soundness lifetime is bound to self
+        let chunk = unsafe {
+            std::mem::transmute::<&[u8], &'a [u8]>(&self.buf)
+        };
+        Some(chunk)
+    }
+
+    fn return_slice(&mut self, start: usize, end: usize) -> Option<&'a [u8]> {
+        if start == end {
+            return self.read_and_return()
+        }
+        self.buf_end = end;
+        // soundness lifetime is bound to self
+        let chunk = unsafe {
+            std::mem::transmute::<&[u8], &'a [u8]>(&self.buf[start..end])
+        };
+        Some(chunk)
+    }
+
+    fn read_and_return(&mut self) -> Option<&'a [u8]> {
+        self.reslice();
+
+        if self.buf.len() <= self.page_size as usize {
+            self.file.take(self.page_size).read_to_end(&mut self.buf);
+            if self.buf.is_empty() {
+                self.finished = true;
+                return None
+            }
+        }
+
+        let bytes_first_row = if self.rows_per_batch > 1 {
+            let mut bytes_first_row;
+            loop {
+                bytes_first_row = next_line_position(
+                    &self.buf[2..],
+                    Some(self.expected_fields),
+                    self.delimiter,
+                    self.quote_char,
+                    self.eol_char,
+                );
+
+                if let Some(_) = bytes_first_row {
+                    break
+                } else {
+                    let read_before = self.buf.len();
+                    self.file.take(self.page_size).read_to_end(&mut self.buf);
+                    if self.buf.len() == read_before {
+                        return self.finish()
+                    }
+
+                }
+            }
+            bytes_first_row.unwrap_or(1) + 2
+        } else {
+            1
+        };
+        let expected_bytes = self.rows_per_batch * bytes_first_row * (self.n_chunks + 1);
+        if self.buf.len() < expected_bytes {
+            let read = expected_bytes - self.buf.len();
+            self.file.take(read as u64).read_to_end(&mut self.buf);
+        }
+
+        get_offsets(
+            &mut self.offsets,
+            self.n_chunks,
+            self.rows_per_batch * bytes_first_row,
+            &self.buf,
+            self.expected_fields,
+            self.delimiter,
+            self.quote_char,
+            self.eol_char,
+        );
+        match self.offsets.pop_front() {
+            Some((start, end)) => {
+                self.return_slice(start, end)
+            },
+            // We depleted the iterator. Ensure we deplete the slice as well
+            None => {
+                let read = self.file.read_to_end(&mut self.buf).unwrap();
+                self.finish()
+            }
+        }
+
+    }
+}
+
+impl<'a> Iterator for ChunkIter<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None
+        }
+        match self.offsets.pop_front() {
+            Some((start, end)) => {
+                self.return_slice(start, end)
+            },
+            // all chunks processed
+            // new read operation
+            None => {
+                self.read_and_return()
+            }
+        }
+    }
+}
+
+impl<'a> CoreReader<'a> {
+    /// Create a batched csv reader that uses read calls to load data.
+    pub fn batched_read(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
+        let reader_bytes = self.reader_bytes.take().unwrap();
+
+        let ReaderBytes::Mapped(bytes, mut file) = &reader_bytes else { unreachable!() };
+        let (_, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
+        if let Some(starting_point_offset) = starting_point_offset {
+            file.seek(SeekFrom::Current(starting_point_offset as i64));
+        }
+
+        let chunk_iter = ChunkIter::new(
+            file,
+            self.chunk_size,
+            self.schema.len(),
+            self.delimiter,
+            self.quote_char,
+            self.eol_char,
+            4096
+        );
+
+        let projection = self.get_projection();
+
+        let str_columns = self.get_string_columns(&projection)?;
+
+        // RAII structure that will ensure we maintain a global stringcache
+        #[cfg(feature = "dtype-categorical")]
+            let _cat_lock = if _has_cat {
+            Some(polars_core::IUseStringCache::new())
+        } else {
+            None
+        };
+
+        #[cfg(not(feature = "dtype-categorical"))]
+            let _cat_lock = None;
+
+        Ok(BatchedCsvReader {
+            chunk_size: self.chunk_size,
+            file_chunks_iter: chunk_iter,
+            file_chunks: vec![],
+            str_capacities: self.init_string_size_stats(&str_columns, self.chunk_size),
+            str_columns,
+            projection,
+            starting_point_offset,
+            row_count: self.row_count,
+            comment_char: self.comment_char,
+            quote_char: self.quote_char,
+            eol_char: self.eol_char,
+            null_values: self.null_values,
+            missing_is_null: self.missing_is_null,
+            to_cast: self.to_cast,
+            ignore_errors: self.ignore_errors,
+            n_rows: self.n_rows,
+            encoding: self.encoding,
+            delimiter: self.delimiter,
+            schema: self.schema,
+            rows_read: 0,
+            _cat_lock,
+        })
+    }
+}
+
+pub struct BatchedCsvReader<'a> {
+    chunk_size: usize,
+    file_chunks_iter: ChunkIter<'a>,
+    file_chunks: Vec<&'a [u8]>,
+    str_capacities: Vec<RunningSize>,
+    str_columns: StringColumns,
+    projection: Vec<usize>,
+    starting_point_offset: Option<usize>,
+    row_count: Option<RowCount>,
+    comment_char: Option<u8>,
+    quote_char: Option<u8>,
+    eol_char: u8,
+    null_values: Option<NullValuesCompiled>,
+    missing_is_null: bool,
+    to_cast: Vec<Field>,
+    ignore_errors: bool,
+    n_rows: Option<usize>,
+    encoding: CsvEncoding,
+    delimiter: u8,
+    schema: SchemaRef,
+    rows_read: IdxSize,
+    #[cfg(feature = "dtype-categorical")]
+    _cat_lock: Option<polars_core::IUseStringCache>,
+    #[cfg(not(feature = "dtype-categorical"))]
+    _cat_lock: Option<u8>,
+}
+//
+impl<'a> BatchedCsvReader<'a> {
+    pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
+        if n == 0 {
+            return Ok(None);
+        }
+        if let Some(n_rows) = self.n_rows {
+            if self.rows_read >= n_rows as IdxSize {
+                return Ok(None);
+            }
+        }
+
+        // get next `n` offset positions.
+        let file_chunks_iter = (&mut self.file_chunks_iter).take(n);
+        self.file_chunks.extend(file_chunks_iter);
+        // depleted the offsets iterator, we are done as well.
+        if self.file_chunks.is_empty() {
+            return Ok(None);
+        }
+
+        let mut chunks = POOL.install(|| {
+            self.file_chunks
+                .par_iter()
+                .copied()
+                .map(|chunk| {
+                    let mut df = read_chunk(
+                        chunk,
+                        self.delimiter,
+                        self.schema.as_ref(),
+                        self.ignore_errors,
+                        &self.projection,
+                        0,
+                        self.quote_char,
+                        self.eol_char,
+                        self.comment_char,
+                        self.chunk_size,
+                        &self.str_capacities,
+                        self.encoding,
+                        self.null_values.as_ref(),
+                        self.missing_is_null,
+                        self.chunk_size,
+                        usize::MAX,
+                        self.starting_point_offset,
+                    )?;
+
+                    cast_columns(&mut df, &self.to_cast, false)?;
+
+                    update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
+                    if let Some(rc) = &self.row_count {
+                        df.with_row_count_mut(&rc.name, Some(rc.offset));
+                    }
+                    Ok(df)
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
+        self.file_chunks.clear();
+
+        if self.row_count.is_some() {
+            update_row_counts2(&mut chunks, self.rows_read)
+        }
+        for df in &chunks {
+            self.rows_read += df.height() as IdxSize;
+        }
+        Ok(Some(chunks))
+    }
+}
+
+pub struct OwnedBatchedCsvReader {
+    #[allow(dead_code)]
+    // this exist because we need to keep ownership
+    schema: SchemaRef,
+    reader: *mut CsvReader<'static, Box<dyn MmapBytesReader>>,
+    batched_reader: *mut BatchedCsvReader<'static>,
+}
+
+unsafe impl Send for OwnedBatchedCsvReader {}
+unsafe impl Sync for OwnedBatchedCsvReader {}
+
+impl OwnedBatchedCsvReader {
+    pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
+        let reader = unsafe { &mut *self.batched_reader };
+        reader.next_batches(n)
+    }
+}
+
+impl Drop for OwnedBatchedCsvReader {
+    fn drop(&mut self) {
+        // release heap allocated
+        unsafe {
+            let _to_drop = Box::from_raw(self.batched_reader);
+            let _to_drop = Box::from_raw(self.reader);
+        };
+    }
+}
+
+pub fn to_batched_owned_read(
+    reader: CsvReader<'_, Box<dyn MmapBytesReader>>,
+    schema: SchemaRef,
+) -> OwnedBatchedCsvReader {
+    // make sure that the schema is bound to the schema we have
+    // we will keep ownership of the schema so that the lifetime remains bound to ourselves
+    let reader = reader.with_schema(schema.clone());
+    // extend the lifetime
+    // the lifetime was bound to schema, which we own and will store on the heap
+    let reader = unsafe {
+        std::mem::transmute::<
+            CsvReader<'_, Box<dyn MmapBytesReader>>,
+            CsvReader<'static, Box<dyn MmapBytesReader>>,
+        >(reader)
+    };
+    let reader = Box::new(reader);
+
+    let reader = Box::leak(reader) as *mut CsvReader<'static, Box<dyn MmapBytesReader>>;
+    let batched_reader = unsafe { Box::new((*reader).batched_borrowed_mmap().unwrap()) };
+    let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReader;
+
+    OwnedBatchedCsvReader {
+        schema,
+        reader,
+        batched_reader,
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_read_slice() {
+        let path = "../../examples/datasets/foods1.csv";
+
+        for page_size in &[16u64, 32, 64, 128, 256] {
+            let mut file = std::fs::File::open(path).unwrap();
+            let mut iter = ChunkIter::new(
+                &file,
+                5,
+                4,
+                b',',
+                None,
+                b'\n',
+                *page_size
+            );
+
+            let mut buf = vec![];
+
+            for chunk in iter {
+                buf.extend_from_slice(chunk);
+            }
+
+            file.seek(SeekFrom::Start(0)).unwrap();
+            let mut expected = vec![];
+            file.read_to_end(&mut expected);
+
+            assert_eq!(buf, expected);
+        }
+    }
+}

@@ -103,7 +103,8 @@ impl<'a> Iterator for ChunkOffsetIter<'a> {
 }
 
 impl<'a> CoreReader<'a> {
-    pub fn batched(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
+    /// Create a batched csv reader that uses mmap to load data.
+    pub fn batched_mmap(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
         let (bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
@@ -269,7 +270,7 @@ impl<'a> BatchedCsvReader<'a> {
     }
 }
 
-pub struct OwnedBatchedCsvReader {
+pub struct OwnedBatchedCsvReaderMmap {
     #[allow(dead_code)]
     // this exist because we need to keep ownership
     schema: SchemaRef,
@@ -277,17 +278,17 @@ pub struct OwnedBatchedCsvReader {
     batched_reader: *mut BatchedCsvReader<'static>,
 }
 
-unsafe impl Send for OwnedBatchedCsvReader {}
-unsafe impl Sync for OwnedBatchedCsvReader {}
+unsafe impl Send for OwnedBatchedCsvReaderMmap {}
+unsafe impl Sync for OwnedBatchedCsvReaderMmap {}
 
-impl OwnedBatchedCsvReader {
+impl OwnedBatchedCsvReaderMmap {
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         let reader = unsafe { &mut *self.batched_reader };
         reader.next_batches(n)
     }
 }
 
-impl Drop for OwnedBatchedCsvReader {
+impl Drop for OwnedBatchedCsvReaderMmap {
     fn drop(&mut self) {
         // release heap allocated
         unsafe {
@@ -297,10 +298,10 @@ impl Drop for OwnedBatchedCsvReader {
     }
 }
 
-pub fn to_batched_owned(
+pub fn to_batched_owned_mmap(
     reader: CsvReader<'_, Box<dyn MmapBytesReader>>,
     schema: SchemaRef,
-) -> OwnedBatchedCsvReader {
+) -> OwnedBatchedCsvReaderMmap {
     // make sure that the schema is bound to the schema we have
     // we will keep ownership of the schema so that the lifetime remains bound to ourselves
     let reader = reader.with_schema(schema.clone());
@@ -315,10 +316,10 @@ pub fn to_batched_owned(
     let reader = Box::new(reader);
 
     let reader = Box::leak(reader) as *mut CsvReader<'static, Box<dyn MmapBytesReader>>;
-    let batched_reader = unsafe { Box::new((*reader).batched_borrowed().unwrap()) };
+    let batched_reader = unsafe { Box::new((*reader).batched_borrowed_mmap().unwrap()) };
     let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReader;
 
-    OwnedBatchedCsvReader {
+    OwnedBatchedCsvReaderMmap {
         schema,
         reader,
         batched_reader,

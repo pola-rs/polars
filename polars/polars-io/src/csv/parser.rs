@@ -108,9 +108,6 @@ pub(crate) fn next_line_position(
             // don't count the fields
             (Some(_), None) => return Some(total_pos + pos),
             // // no new line found, check latest line (without eol) for number of fields
-            // (None, Some(expected_fields)) if { count_fields(new_input) == expected_fields } => {
-            //     return Some(total_pos + pos)
-            // }
             _ => return None,
         }
     }
