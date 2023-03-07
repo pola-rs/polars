@@ -3,16 +3,22 @@ use std::path::PathBuf;
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowCount;
 use polars::prelude::*;
+use polars_rs::prelude::read_impl::OwnedBatchedCsvReader;
 use pyo3::prelude::*;
 
-use crate::prelude::read_impl::OwnedBatchedCsvReader;
+use crate::prelude::read_impl::OwnedBatchedCsvReaderMmap;
 use crate::{PyDataFrame, PyPolarsErr, Wrap};
+
+enum BatchedReader {
+    MMap(OwnedBatchedCsvReaderMmap),
+    Read(OwnedBatchedCsvReader),
+}
 
 #[pyclass]
 #[repr(transparent)]
 pub struct PyBatchedCsv {
     // option because we cannot get a self by value in pyo3
-    pub reader: OwnedBatchedCsvReader,
+    reader: BatchedReader,
 }
 
 #[pymethods]
@@ -108,15 +114,30 @@ impl PyBatchedCsv {
             .with_end_of_line_char(eol_char)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_row_count(row_count)
-            .sample_size(sample_size)
-            .batched(overwrite_dtype.map(Arc::new))
-            .map_err(PyPolarsErr::from)?;
+            .sample_size(sample_size);
+
+        let reader = if low_memory {
+            let reader = reader
+                .batched_read(overwrite_dtype.map(Arc::new))
+                .map_err(PyPolarsErr::from)?;
+            BatchedReader::Read(reader)
+        } else {
+            let reader = reader
+                .batched_mmap(overwrite_dtype.map(Arc::new))
+                .map_err(PyPolarsErr::from)?;
+            BatchedReader::MMap(reader)
+        };
 
         Ok(PyBatchedCsv { reader })
     }
 
     fn next_batches(&mut self, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
-        let batches = self.reader.next_batches(n).map_err(PyPolarsErr::from)?;
+        let batches = match &mut self.reader {
+            BatchedReader::MMap(reader) => reader.next_batches(n),
+            BatchedReader::Read(reader) => reader.next_batches(n),
+        }
+        .map_err(PyPolarsErr::from)?;
+
         // safety: same memory layout
         let batches = unsafe {
             std::mem::transmute::<Option<Vec<DataFrame>>, Option<Vec<PyDataFrame>>>(batches)

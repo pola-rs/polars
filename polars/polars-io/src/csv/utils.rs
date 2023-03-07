@@ -56,13 +56,18 @@ pub(crate) fn get_file_chunks(
     offsets
 }
 
-pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
-    reader: &mut R,
-) -> PolarsResult<ReaderBytes<'_>> {
+pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
+    reader: &'a mut R,
+) -> PolarsResult<ReaderBytes<'a>> {
     // we have a file so we can mmap
     if let Some(file) = reader.to_file() {
         let mmap = unsafe { memmap::Mmap::map(file)? };
-        Ok(ReaderBytes::Mapped(mmap))
+
+        // somehow bck thinks borrows alias
+        // this is sound as file was already bound to 'a
+        use std::fs::File;
+        let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
+        Ok(ReaderBytes::Mapped(mmap, file))
     } else {
         // we can get the bytes for free
         if reader.to_bytes().is_some() {

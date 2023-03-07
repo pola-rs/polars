@@ -1,8 +1,9 @@
 use std::fs::File;
 use std::path::PathBuf;
 
+use polars_core::export::arrow::Either;
 use polars_core::POOL;
-use polars_io::csv::read_impl::BatchedCsvReader;
+use polars_io::csv::read_impl::{BatchedCsvReaderMmap, BatchedCsvReaderRead};
 use polars_io::csv::{CsvEncoding, CsvReader};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::CsvParserOptions;
@@ -15,7 +16,7 @@ pub(crate) struct CsvSource {
     // this exist because we need to keep ownership
     schema: SchemaRef,
     reader: *mut CsvReader<'static, File>,
-    batched_reader: *mut BatchedCsvReader<'static>,
+    batched_reader: Either<*mut BatchedCsvReaderMmap<'static>, *mut BatchedCsvReaderRead<'static>>,
     n_threads: usize,
     chunk_index: IdxSize,
 }
@@ -72,9 +73,15 @@ impl CsvSource {
         let reader = Box::new(reader);
         let reader = Box::leak(reader) as *mut CsvReader<'static, File>;
 
-        let batched_reader = unsafe { Box::new((*reader).batched_borrowed()?) };
-
-        let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReader;
+        let batched_reader = if options.low_memory {
+            let batched_reader = unsafe { Box::new((*reader).batched_borrowed_read()?) };
+            let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderRead;
+            Either::Right(batched_reader)
+        } else {
+            let batched_reader = unsafe { Box::new((*reader).batched_borrowed_mmap()?) };
+            let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderMmap;
+            Either::Left(batched_reader)
+        };
 
         Ok(CsvSource {
             schema,
@@ -89,7 +96,14 @@ impl CsvSource {
 impl Drop for CsvSource {
     fn drop(&mut self) {
         unsafe {
-            let _to_drop = Box::from_raw(self.batched_reader);
+            match self.batched_reader {
+                Either::Left(ptr) => {
+                    let _to_drop = Box::from_raw(ptr);
+                }
+                Either::Right(ptr) => {
+                    let _to_drop = Box::from_raw(ptr);
+                }
+            }
             let _to_drop = Box::from_raw(self.reader);
         };
     }
@@ -100,9 +114,18 @@ unsafe impl Sync for CsvSource {}
 
 impl Source for CsvSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
-        let reader = unsafe { &mut *self.batched_reader };
+        let batches = match self.batched_reader {
+            Either::Left(batched_reader) => {
+                let reader = unsafe { &mut *batched_reader };
 
-        let batches = reader.next_batches(self.n_threads)?;
+                reader.next_batches(self.n_threads)?
+            }
+            Either::Right(batched_reader) => {
+                let reader = unsafe { &mut *batched_reader };
+
+                reader.next_batches(self.n_threads)?
+            }
+        };
         Ok(match batches {
             None => SourceResult::Finished,
             Some(batches) => SourceResult::GotMoreData(
