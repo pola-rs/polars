@@ -860,3 +860,21 @@ def test_struct_applies_as_map() -> None:
     ).to_dict(False) == {
         "x": [{"x": "a", "y": "dd"}, {"x": "b", "y": "ee"}, {"x": "c", "y": "ff"}]
     }
+
+
+def test_struct_with_lit() -> None:
+    expr = pl.struct([pl.col("a"), pl.lit(1).alias("b")])
+
+    assert (
+        pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)}).select(expr).to_dict(False)
+    ) == {"a": []}
+
+    assert (
+        pl.DataFrame({"a": pl.Series([1], dtype=pl.Int64)}).select(expr).to_dict(False)
+    ) == {"a": [{"a": 1, "b": 1}]}
+
+    assert (
+        pl.DataFrame({"a": pl.Series([1, 2], dtype=pl.Int64)})
+        .select(expr)
+        .to_dict(False)
+    ) == {"a": [{"a": 1, "b": 1}, {"a": 2, "b": 1}]}
