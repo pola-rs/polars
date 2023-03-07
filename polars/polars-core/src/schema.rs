@@ -123,13 +123,13 @@ impl Schema {
 
     pub fn try_get(&self, name: &str) -> PolarsResult<&DataType> {
         self.get(name)
-            .ok_or_else(|| PolarsError::SchemaFieldNotFound(name.to_string().into()))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
     }
 
     pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &SmartString, &DataType)> {
         self.inner
             .get_full(name)
-            .ok_or_else(|| PolarsError::SchemaFieldNotFound(name.to_string().into()))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
     }
 
     pub fn remove(&mut self, name: &str) -> Option<DataType> {
@@ -149,7 +149,7 @@ impl Schema {
     pub fn try_get_field(&self, name: &str) -> PolarsResult<Field> {
         self.inner
             .get(name)
-            .ok_or_else(|| PolarsError::SchemaFieldNotFound(name.to_string().into()))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
             .map(|dtype| Field::new(name, dtype.clone()))
     }
 
@@ -239,9 +239,7 @@ pub trait IndexOfSchema: Debug {
 
     fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
-            PolarsError::SchemaMisMatch(
-                format!("Unable to get field named \"{name}\" from schema: {self:?}",).into(),
-            )
+            polars_err!(SchemaMismatch: "unable to get field '{}' from schema: {:?}", name, self)
         })
     }
 }

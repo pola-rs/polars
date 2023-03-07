@@ -421,19 +421,9 @@ pub fn get_list_builder(
 ) -> PolarsResult<Box<dyn ListBuilderTrait>> {
     let physical_type = dt.to_physical();
 
-    let _err = || -> PolarsResult<Box<dyn ListBuilderTrait>> {
-        Err(PolarsError::ComputeError(
-            format!(
-                "list builder not supported for this dtype: {}",
-                &physical_type
-            )
-            .into(),
-        ))
-    };
-
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_) => _err(),
+        DataType::Object(_) => polars_bail!(opq = list_builder, &physical_type),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,

@@ -271,22 +271,6 @@ fn get_aexpr_and_type<'a>(
     ))
 }
 
-#[cfg(feature = "python")]
-fn err_date_str_compare() -> PolarsResult<()> {
-    Err(PolarsError::ComputeError(
-        "Cannot compare 'date/datetime/time' to a string value.\n\
-        Create native python {{ 'date', 'datetime', 'time' }} or compare to a temporal column."
-            .into(),
-    ))
-}
-
-#[cfg(not(feature = "python"))]
-fn err_date_str_compare() -> PolarsResult<()> {
-    Err(PolarsError::ComputeError(
-        "Cannot compare 'date/datetime/time' to a string value.".into(),
-    ))
-}
-
 impl OptimizationRule for TypeCoercionRule {
     fn optimize_expr(
         &self,

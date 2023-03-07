@@ -52,24 +52,20 @@ impl DataFrame {
         multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupBy> {
-        if by.is_empty() {
-            return Err(PolarsError::ComputeError(
-                "expected keys in groupby operation, got nothing".into(),
-            ));
-        }
-
+        polars_ensure!(
+            !by.is_empty(),
+            ComputeError: "at least one key is required in a groupby operation"
+        );
         let by_len = by[0].len();
 
         // we only throw this error if self.width > 0
         // so that we can still call this on a dummy dataframe where we provide the keys
         if (by_len != self.height()) && (self.width() > 0) {
-            if by_len == 1 {
-                by[0] = by[0].new_from_index(0, self.height())
-            } else {
-                return Err(PolarsError::ShapeMisMatch(
-                    "the Series used as keys should have the same length as the DataFrame".into(),
-                ));
-            }
+            polars_ensure!(
+                by_len == 1,
+                ShapeMismatch: "series used as keys should have the same length as the dataframe"
+            );
+            by[0] = by[0].new_from_index(0, self.height())
         };
 
         let n_partitions = _set_partition_size();
@@ -589,11 +585,10 @@ impl<'df> GroupBy<'df> {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<DataFrame> {
-        if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ComputeError(
-                "quantile should be within 0.0 and 1.0".into(),
-            ));
-        }
+        polars_ensure!(
+            (0.0..=1.0).contains(&quantile),
+            ComputeError: "`quantile` should be within 0.0 and 1.0"
+        );
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name =

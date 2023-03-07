@@ -251,33 +251,14 @@ fn parse_impl(
 ) -> PolarsResult<usize> {
     line.clear();
     line.extend_from_slice(bytes);
-
-    match line.len() {
-        0 => Ok(0),
-        1 => {
-            if line[0] == NEWLINE {
-                Ok(1)
-            } else {
-                Err(PolarsError::ComputeError(
-                    "Invalid JSON: unexpected end of file".into(),
-                ))
-            }
-        }
-        2 => {
-            if line[0] == NEWLINE && line[1] == RETURN {
-                Ok(2)
-            } else {
-                Err(PolarsError::ComputeError(
-                    "Invalid JSON: unexpected end of file".into(),
-                ))
-            }
-        }
-        n => {
-            let value: simd_json::BorrowedValue =
-                simd_json::to_borrowed_value(line).map_err(|e| {
-                    PolarsError::ComputeError(format!("Error parsing line: {e}").into())
-                })?;
-
+    let n = line.len();
+    let all_good = match n {
+        0 => true,
+        1 => line[0] == NEWLINE,
+        2 => line[0] == NEWLINE && line[1] == RETURN,
+        _ => {
+            let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(line)
+                .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
             match value {
                 simd_json::BorrowedValue::Object(value) => {
                     buffers
@@ -291,9 +272,11 @@ fn parse_impl(
                     buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
                 }
             };
-            Ok(n)
+            true
         }
-    }
+    };
+    polars_ensure!(all_good, ComputeError: "invalid JSON: unexpected end of file");
+    Ok(n)
 }
 
 fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
@@ -310,13 +293,10 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
         offset += bytes.len();
         parse_impl(bytes, buffers, &mut buf)?;
     }
-
-    if offset != total_bytes {
-        return Err(PolarsError::ComputeError(
-            format!("Expected {total_bytes} bytes, but only parsed {offset}").into(),
-        ));
-    };
-
+    polars_ensure!(
+        offset == total_bytes,
+        ComputeError: "expected {} bytes, but only parsed {}", total_bytes, offset,
+    );
     Ok(())
 }
 

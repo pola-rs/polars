@@ -1,3 +1,4 @@
+use polars_core::error::to_compute_err;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
@@ -29,7 +30,7 @@ impl Executor for PythonScanExec {
 
             let out = deser_and_exec
                 .call1((bytes, with_columns, pyarrow_predicate))
-                .map_err(|err| PolarsError::ComputeError(format!("{err:?}").into()))?;
+                .map_err(to_compute_err)?;
             let pydf = out.getattr("_df").unwrap();
             let raw_parts = pydf.call_method0("into_raw_parts").unwrap();
             let raw_parts = raw_parts.extract::<(usize, usize, usize)>().unwrap();

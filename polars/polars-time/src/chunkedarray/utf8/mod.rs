@@ -100,16 +100,12 @@ enum ParseErrorKind {
 }
 
 fn get_first_val(ca: &Utf8Chunked) -> PolarsResult<&str> {
-    let idx = match ca.first_non_null() {
-        Some(idx) => idx,
-        None => {
-            return Err(PolarsError::ComputeError(
-                "Cannot determine date parsing format, all values are null".into(),
-            ))
-        }
-    };
-    let val = ca.get(idx).expect("should not be null");
-    Ok(val)
+    let idx = ca.first_non_null().ok_or_else(|| {
+        polars_err!(ComputeError:
+            "unable to determine date parsing format, all values are null",
+        )
+    })?;
+    Ok(ca.get(idx).expect("should not be null"))
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -118,9 +114,7 @@ fn sniff_fmt_datetime(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     if let Some(pattern) = datetime_pattern(val, NaiveDateTime::parse_from_str) {
         return Ok(pattern);
     }
-    Err(PolarsError::ComputeError(
-        "Could not find an appropriate format to parse dates, please define a fmt".into(),
-    ))
+    polars_bail!(parse_fmt_idk = "date");
 }
 
 #[cfg(feature = "dtype-date")]
@@ -129,9 +123,7 @@ fn sniff_fmt_date(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     if let Some(pattern) = date_pattern(val, NaiveDate::parse_from_str) {
         return Ok(pattern);
     }
-    Err(PolarsError::ComputeError(
-        "Could not find an appropriate format to parse dates, please define a fmt".into(),
-    ))
+    polars_bail!(parse_fmt_idk = "date");
 }
 
 #[cfg(feature = "dtype-time")]
@@ -140,9 +132,7 @@ fn sniff_fmt_time(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     if let Some(pattern) = time_pattern(val, NaiveTime::parse_from_str) {
         return Ok(pattern);
     }
-    Err(PolarsError::ComputeError(
-        "Could not find an appropriate format to parse times, please define a fmt".into(),
-    ))
+    polars_bail!(parse_fmt_idk = "time");
 }
 
 pub trait Utf8Methods: AsUtf8 {
@@ -320,15 +310,15 @@ pub trait Utf8Methods: AsUtf8 {
             None => return infer::to_date(utf8_ca),
         };
         let cache = cache && utf8_ca.len() > 50;
-        let fmt = self::strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt);
         let mut cache_map = PlHashMap::new();
 
         // we can use the fast parser
-        let mut ca: Int32Chunked = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
+        let mut ca: Int32Chunked = if let Some(fmt_len) = strptime::fmt_len(fmt.as_bytes()) {
             let convert = |s: &str| {
                 // Safety:
                 // fmt_len is correct, it was computed with this `fmt` str.
-                match unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                match unsafe { strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
                     // fallback to chrono
                     None => NaiveDate::parse_from_str(s, &fmt).ok(),
                     Some(ndt) => Some(ndt.date()),
@@ -402,7 +392,7 @@ pub trait Utf8Methods: AsUtf8 {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu, tz),
         };
-        let fmt = self::strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt);
         let cache = cache && utf8_ca.len() > 50;
 
         let func = match tu {
@@ -420,21 +410,24 @@ pub trait Utf8Methods: AsUtf8 {
                 let mut tz = None;
 
                 let mut convert = |s: &str| {
-                    DateTime::parse_from_str(s, &fmt).ok().map(|dt| {
-                        if !_utc {
-                            match tz {
-                                None => tz = Some(dt.timezone()),
-                                Some(tz_found) => {
-                                    if tz_found != dt.timezone() {
-                                        return Err(PolarsError::ComputeError(
-                                            "Different timezones found during 'strptime' operation. You might want to use `utc=True` and then set the time zone after parsing".into()
-                                        ));
-                                    }
+                    DateTime::parse_from_str(s, &fmt)
+                        .ok()
+                        .map(|dt| {
+                            if !_utc {
+                                if let Some(tz_found) = tz {
+                                    polars_ensure!(
+                                        tz_found == dt.timezone(),
+                                        ComputeError: "different timezones found during 'strptime' \
+                                        operation (you might want to use `utc=True` and then set \
+                                        the time zone after parsing"
+                                );
+                                } else {
+                                    tz = Some(dt.timezone());
                                 }
                             }
-                        }
-                        Ok(func(dt.naive_utc()))
-                    }).transpose()
+                            Ok(func(dt.naive_utc()))
+                        })
+                        .transpose()
                 };
 
                 let mut ca: Int64Chunked = utf8_ca

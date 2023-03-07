@@ -346,7 +346,7 @@ impl ChunkExplode for ListChunked {
         let listarr: &LargeListArray = ca
             .downcast_iter()
             .next()
-            .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
+            .ok_or_else(|| polars_err!(NoData: "cannot explode empty list"))?;
         let offsets_buf = listarr.offsets().clone();
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
@@ -423,7 +423,7 @@ impl ChunkExplode for Utf8Chunked {
         let array: &Utf8Array<i64> = ca
             .downcast_iter()
             .next()
-            .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
+            .ok_or_else(|| polars_err!(NoData: "cannot explode empty str"))?;
 
         let values = array.values();
         let old_offsets = array.offsets().clone();

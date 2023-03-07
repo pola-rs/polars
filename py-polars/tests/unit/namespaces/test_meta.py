@@ -35,7 +35,7 @@ def test_root_and_output_names() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Cannot determine an output column without a context for this expression",
+        match="cannot determine output column without a context for this expression",
     ):
         pl.all().suffix("_").meta.output_name()
 

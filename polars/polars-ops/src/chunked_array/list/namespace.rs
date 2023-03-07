@@ -43,30 +43,28 @@ fn cast_rhs(
             *s = s.reshape(&[-1, 1]).unwrap();
         }
         if s.dtype() != dtype {
-            match s.cast(dtype) {
-                Ok(out) => {
-                    *s = out;
-                }
-                Err(_) => {
-                    return Err(PolarsError::SchemaMisMatch(
-                        format!("cannot concat {:?} into a list of {:?}", s.dtype(), dtype).into(),
-                    ));
-                }
-            }
+            *s = s.cast(dtype).map_err(|e| {
+                polars_err!(
+                    SchemaMismatch:
+                    "cannot concat `{}` into a list of `{}`: {}",
+                    s.dtype(),
+                    dtype,
+                    e
+                )
+            })?;
         }
 
         if s.len() != length {
-            if s.len() == 1 {
-                if allow_broadcast {
-                    // broadcast JIT
-                    *s = s.new_from_index(0, length)
-                }
-                // else do nothing
-            } else {
-                return Err(PolarsError::ShapeMisMatch(
-                    format!("length {} does not match {}", s.len(), length).into(),
-                ));
+            polars_ensure!(
+                s.len() == 1,
+                ShapeMismatch: "series length {} does not match expected length of {}",
+                s.len(), length
+            );
+            if allow_broadcast {
+                // broadcast JIT
+                *s = s.new_from_index(0, length)
             }
+            // else do nothing
         }
     }
     Ok(())
@@ -107,13 +105,7 @@ pub trait ListNameSpaceImpl: AsList {
                 });
                 Ok(builder.finish())
             }
-            dt => Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot call lst.join on Series with dtype {dt:?}.\
-                Inner type must be Utf8",
-                )
-                .into(),
-            )),
+            dt => polars_bail!(op = "`lst.join`", got = dt, expected = "Utf8"),
         }
     }
 
@@ -383,12 +375,10 @@ pub trait ListNameSpaceImpl: AsList {
                         Ok(out.into_series())
                     }
                 } else {
-                    Err(PolarsError::ComputeError("All indices are null".into()))
+                    polars_bail!(ComputeError: "all indices are null");
                 }
             }
-            dt => Err(PolarsError::ComputeError(
-                format!("Cannot use dtype: '{dt}' as index.").into(),
-            )),
+            dt => polars_bail!(ComputeError: "cannot use dtype `{}` as an index", dt),
         }
     }
 
@@ -641,11 +631,9 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             unreachable!()
         }
     };
-    if !null_on_oob && out.null_count() != idx_null_count {
-        Err(PolarsError::ComputeError(
-            "Take indices are out of bounds.".into(),
-        ))
-    } else {
-        Ok(out)
-    }
+    polars_ensure!(
+        out.null_count() == idx_null_count || null_on_oob,
+        ComputeError: "take indices are out of bounds"
+    );
+    Ok(out)
 }

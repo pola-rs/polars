@@ -62,12 +62,10 @@ impl StructChunked {
             if s_len == 0 {
                 is_empty = true;
             }
-            let name = s.name();
-            if !names.insert(name) {
-                return Err(PolarsError::Duplicate(
-                    format!("multiple fields with name '{name}' found").into(),
-                ));
-            }
+            polars_ensure!(
+                names.insert(s.name()),
+                Duplicate: "multiple fields with name '{}' found", s.name()
+            );
         }
 
         if !all_equal_len {
@@ -81,9 +79,9 @@ impl StructChunked {
                 } else if s_len == 1 {
                     new_fields.push(s.new_from_index(0, max_len))
                 } else {
-                    return Err(PolarsError::ShapeMisMatch(
-                        "expected all fields to have equal length".into(),
-                    ));
+                    polars_bail!(
+                        ShapeMismatch: "expected all fields to have equal length"
+                    );
                 }
             }
             Ok(Self::new_unchecked(name, &new_fields))
@@ -155,7 +153,7 @@ impl StructChunked {
         self.fields
             .iter()
             .find(|s| s.name() == name)
-            .ok_or_else(|| PolarsError::StructFieldNotFound(name.to_string().into()))
+            .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
             .map(|s| s.clone())
     }
 
@@ -218,11 +216,8 @@ impl LogicalType for StructChunked {
 
     /// Gets AnyValue from LogicalType
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        if i >= self.len() {
-            Err(PolarsError::ComputeError("Index out of bounds.".into()))
-        } else {
-            unsafe { Ok(self.get_any_value_unchecked(i)) }
-        }
+        polars_ensure!(i < self.len(), oob = i, self.len());
+        unsafe { Ok(self.get_any_value_unchecked(i)) }
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::cloud::CloudOptions;
+use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::{is_cloud_url, RowCount};
 
@@ -21,10 +22,8 @@ fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsRes
         panic!("Feature `async` must be enabled to use globbing patterns with cloud urls.")
     } else {
         let paths = glob::glob(pattern)
-            .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
-
-        let paths = paths.map(|v| v.map_err(|e| PolarsError::ComputeError(format!("{e}").into())));
-
+            .map_err(|_| polars_err!(ComputeError: "invalid glob pattern given"))?;
+        let paths = paths.map(|v| v.map_err(to_compute_err));
         Ok(Box::new(paths))
     }
 }
@@ -45,22 +44,17 @@ pub trait LazyFileListReader: Clone {
                         .with_rechunk(false)
                         .finish_no_glob()
                         .map_err(|e| {
-                            PolarsError::ComputeError(
-                                format!("while reading {} got {e:?}.", path.display()).into(),
+                            polars_err!(
+                                ComputeError: "error while reading {}: {}", path.display(), e
                             )
                         })
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
-            if lfs.is_empty() {
-                return PolarsResult::Err(PolarsError::ComputeError(
-                    format!(
-                        "no matching files found in {}",
-                        self.path().to_string_lossy()
-                    )
-                    .into(),
-                ));
-            }
+            polars_ensure!(
+                !lfs.is_empty(),
+                ComputeError: "no matching files found in {}", self.path().display()
+            );
 
             let mut lf = self.concat_impl(lfs)?;
             if let Some(n_rows) = self.n_rows() {

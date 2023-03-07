@@ -5,7 +5,6 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 
-use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -36,8 +35,7 @@ impl TakeExpr {
     }
 
     fn oob_err(&self) -> PolarsResult<()> {
-        let msg = "Out of bounds.";
-        Err(expression_err!(msg, self.expr, ComputeError))
+        polars_bail!(expr = self.expr, ComputeError: "index out of bounds");
     }
 }
 
@@ -129,7 +127,7 @@ impl PhysicalExpr for TakeExpr {
 
                     return if idx.len() == 1 {
                         match idx.get(0) {
-                            None => Err(PolarsError::ComputeError("cannot take by a null".into())),
+                            None => polars_bail!(ComputeError: "cannot take by a null"),
                             Some(idx) => {
                                 if idx != 0 {
                                     // We must make sure that the column we take from is sorted by

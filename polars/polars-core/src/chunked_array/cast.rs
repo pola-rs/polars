@@ -84,16 +84,14 @@ where
         match data_type {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
-                if self.dtype() == &DataType::UInt32 {
-                    // safety:
-                    // we are guarded by the type system.
-                    let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
-                    CategoricalChunked::from_global_indices(ca.clone()).map(|ca| ca.into_series())
-                } else {
-                    Err(PolarsError::ComputeError(
-                        "Cannot cast numeric types to 'Categorical'".into(),
-                    ))
-                }
+                polars_ensure!(
+                    self.dtype() == &DataType::UInt32,
+                    ComputeError: "cannot cast numeric types to 'Categorical'"
+                );
+                // SAFETY
+                // we are guarded by the type system
+                let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
+                CategoricalChunked::from_global_indices(ca.clone()).map(|ca| ca.into_series())
             }
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
@@ -137,9 +135,7 @@ where
                     }
                     .into_series())
                 } else {
-                    Err(PolarsError::ComputeError(
-                        "Cannot cast numeric types to 'Categorical'".into(),
-                    ))
+                    polars_bail!(ComputeError: "cannot cast numeric types to 'Categorical'");
                 }
             }
             _ => self.cast_impl(data_type, false),
@@ -305,7 +301,7 @@ impl ChunkCast for ListChunked {
                     }
                 }
             }
-            _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
+            _ => polars_bail!(ComputeError: "cannot cast list type"),
         }
     }
 

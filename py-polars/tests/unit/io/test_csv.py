@@ -879,10 +879,10 @@ def test_invalid_datetime_format() -> None:
     tz_naive = pl.Series(["2020-01-01T00:00:00"]).str.strptime(pl.Datetime)
     tz_aware = tz_naive.dt.replace_time_zone("UTC")
     with pytest.raises(
-        ComputeError, match="Cannot format NaiveDateTime with format '%q'."
+        ComputeError, match="cannot format NaiveDateTime with format '%q'"
     ):
         tz_naive.to_frame().write_csv(datetime_format="%q")
-    with pytest.raises(ComputeError, match="Cannot format DateTime with format '%q'."):
+    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
         tz_aware.to_frame().write_csv(datetime_format="%q")
 
 
@@ -1031,7 +1031,7 @@ def test_error_message() -> None:
     data = io.StringIO("target,wind,energy,miso\n" "1,2,3,4\n" "1,2,1e5,1\n")
     with pytest.raises(
         ComputeError,
-        match=r"Could not parse `1e5` as dtype Int64 at column 'energy' \(column number 3\)",
+        match=r"Could not parse `1e5` as dtype `i64` at column 'energy' \(column number 3\)",
     ):
         pl.read_csv(data, infer_schema_length=1)
 

@@ -18,7 +18,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     let lf = std::mem::take(
         inputs
             .get_mut(0)
-            .ok_or_else(|| PolarsError::ComputeError("empty container given".into()))?,
+            .ok_or_else(|| polars_err!(NoData: "empty container given"))?,
     );
     let mut opt_state = lf.opt_state;
     let mut lps = Vec::with_capacity(inputs.len());

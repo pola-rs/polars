@@ -17,7 +17,10 @@ impl CategoricalChunked {
             };
 
         if is_local_different_source {
-            return Err(PolarsError::ComputeError("Cannot concat Categoricals coming from a different source. Consider setting a global StringCache.".into()));
+            polars_bail!(
+                ComputeError:
+                "cannot concat categoricals coming from a different source; consider setting a global StringCache"
+            );
         } else {
             let len = self.len();
             let new_rev_map = self.merge_categorical_map(other)?;

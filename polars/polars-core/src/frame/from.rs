@@ -7,11 +7,10 @@ impl TryFrom<StructArray> for DataFrame {
 
     fn try_from(arr: StructArray) -> PolarsResult<Self> {
         let (fld, arrs, nulls) = arr.into_data();
-        if nulls.is_some() {
-            return Err(PolarsError::ComputeError(
-                "cannot deserialize struct with nulls into a DataFrame".into(),
-            ));
-        }
+        polars_ensure!(
+            nulls.is_none(),
+            ComputeError: "cannot deserialize struct with nulls into a dataframe"
+        );
         let columns = fld
             .iter()
             .zip(arrs)

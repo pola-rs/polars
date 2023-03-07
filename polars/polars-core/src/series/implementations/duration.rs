@@ -155,9 +155,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
             }
-            (dtl, dtr) => Err(PolarsError::ComputeError(
-                format!("cannot do subtraction on these date types: {dtl:?}, {dtr:?}",).into(),
-            )),
+            (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
         }
     }
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -177,23 +175,17 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             }
-            (dtl, dtr) => Err(PolarsError::ComputeError(
-                format!("cannot do addition on these date types: {dtl:?}, {dtr:?}",).into(),
-            )),
+            (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
         }
     }
-    fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::ComputeError(
-            "cannot do multiplication on logical".into(),
-        ))
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        polars_bail!(opq = mul, self.dtype(), rhs.dtype());
     }
-    fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
-        self.0.deref().divide(_rhs.to_physical_repr().as_ref())
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        polars_bail!(opq = div, self.dtype(), rhs.dtype());
     }
-    fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
-        Err(PolarsError::ComputeError(
-            "cannot do remainder operation on logical".into(),
-        ))
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        polars_bail!(opq = rem, self.dtype(), rhs.dtype());
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
@@ -250,27 +242,17 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            let other = other.to_physical_repr().into_owned();
-            self.0.append(other.as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        let other = other.to_physical_repr().into_owned();
+        self.0.append(other.as_ref().as_ref());
+        Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            let other = other.to_physical_repr();
-            self.0.extend(other.as_ref().as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot extend Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), extend);
+        let other = other.to_physical_repr();
+        self.0.extend(other.as_ref().as_ref().as_ref());
+        Ok(())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {

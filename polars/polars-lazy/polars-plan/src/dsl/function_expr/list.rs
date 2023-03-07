@@ -49,6 +49,16 @@ pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     })
 }
 
+fn check_slice_arg_shape(slice_len: usize, ca_len: usize, name: &str) -> PolarsResult<()> {
+    polars_ensure!(
+        slice_len == ca_len,
+        ComputeError:
+        "shape of the slice '{}' argument: {} does not match that of the list column: {}",
+        name, slice_len, ca_len
+    );
+    Ok(())
+}
+
 pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let s = &args[0];
     let list_ca = s.list()?;
@@ -66,9 +76,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
             return Ok(Some(list_ca.lst_slice(offset, slice_len).into_series()));
         }
         (1, length_slice_len) => {
-            if length_slice_len != list_ca.len() {
-                return Err(PolarsError::ComputeError("the length of the slice 'length' argument does not match that of the list column".into()));
-            }
+            check_slice_arg_shape(length_slice_len, list_ca.len(), "length")?;
             let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
             // cast to i64 as it is more likely that it is that dtype
             // instead of usize/u64 (we never need that max length)
@@ -85,9 +93,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
                 .collect_trusted()
         }
         (offset_len, 1) => {
-            if offset_len != list_ca.len() {
-                return Err(PolarsError::ComputeError("the length of the slice 'offset' argument does not match that of the list column".into()));
-            }
+            check_slice_arg_shape(offset_len, list_ca.len(), "offset")?;
             let length_slice = length_s
                 .get(0)
                 .unwrap()
@@ -105,12 +111,8 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
                 .collect_trusted()
         }
         _ => {
-            if offset_s.len() != list_ca.len() {
-                return Err(PolarsError::ComputeError("the length of the slice 'offset' argument does not match that of the list column".into()));
-            }
-            if length_s.len() != list_ca.len() {
-                return Err(PolarsError::ComputeError("the length of the slice 'length' argument does not match that of the list column".into()));
-            }
+            check_slice_arg_shape(offset_s.len(), list_ca.len(), "offset")?;
+            check_slice_arg_shape(length_s.len(), list_ca.len(), "length")?;
             let offset_ca = offset_s.cast(&DataType::Int64)?;
             let offset_ca = offset_ca.i64()?;
             // cast to i64 as it is more likely that it is that dtype
@@ -171,7 +173,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
             if let Some(index) = index {
                 ca.lst_get(index).map(Some)
             } else {
-                Err(PolarsError::ComputeError("Expression 'arr.get' expected a valid index, got 'null' instead.".into()))
+                polars_bail!(ComputeError: "unexpected null index received in `arr.get`")
             }
         }
         len if len == ca.len() => {
@@ -179,30 +181,30 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
             let arr = ca.downcast_iter().next().unwrap();
             let offsets = arr.offsets().as_slice();
 
-            let take_by = index.into_iter().enumerate().map(|(i, opt_idx)| {
-                opt_idx.and_then(|idx| {
-                    let (start, end) =  unsafe {
-                        (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
-                    };
-                    let offset = if idx >= 0 {
-                        start + idx
-                    } else {
-                        end + idx
-                    };
-                    if offset >= end || offset < start || start == end {
-                        None
-                    } else {
-                        Some(offset as IdxSize)
-                    }
+            let take_by = index
+                .into_iter()
+                .enumerate()
+                .map(|(i, opt_idx)| {
+                    opt_idx.and_then(|idx| {
+                        let (start, end) =
+                            unsafe { (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1)) };
+                        let offset = if idx >= 0 { start + idx } else { end + idx };
+                        if offset >= end || offset < start || start == end {
+                            None
+                        } else {
+                            Some(offset as IdxSize)
+                        }
+                    })
                 })
-            }).collect::<IdxCa>();
+                .collect::<IdxCa>();
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
             unsafe { s.take_unchecked(&take_by) }.map(Some)
         }
-        len => {
-            Err(PolarsError::ComputeError(format!("Expression 'arr.get' got an index array of length: {} where there were {} elements in the list.", len, ca.len()).into()))
-        }
-
+        len => polars_bail!(
+            ComputeError:
+            "`arr.get` expression got an index array of length {} while the list has {} elements",
+            len, ca.len()
+        ),
     }
 }
 
@@ -227,16 +229,11 @@ pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
 pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
     let s = &args[0];
     let element = &args[1];
-
-    if element.len() != 1 {
-        return Err(PolarsError::ComputeError(
-            format!(
-                "The argument expression in 'arr.count' must produce exactly one element, got {}",
-                element.len()
-            )
-            .into(),
-        ));
-    }
+    polars_ensure!(
+        element.len() == 1,
+        ComputeError: "argument expression in `arr.count` must produce exactly one element, got {}",
+        element.len()
+    );
     let ca = s.list()?;
     list_count_match(ca, element.get(0).unwrap())
 }

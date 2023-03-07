@@ -5,12 +5,9 @@ use crate::prelude::*;
 #[cfg(feature = "rolling_window")]
 macro_rules! invalid_operation {
     ($s:expr) => {
-        Err(PolarsError::InvalidOperation(
-            format!(
-                "this operation is not implemented/valid for this dtype: {:?}",
-                $s.ops_time_dtype()
-            )
-            .into(),
+        Err(polars_err!(
+            InvalidOperation: "this operation is not implemented/valid for this dtype: {:?}",
+            $s.ops_time_dtype(),
         ))
     };
 }

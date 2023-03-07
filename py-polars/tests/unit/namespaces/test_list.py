@@ -317,7 +317,7 @@ def test_list_take() -> None:
     # use another list to make sure negative indices are respected
     taker = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
     assert s.arr.take(taker).to_list() == [[3, 2], [5, 5], [8, 7]]
-    with pytest.raises(pl.ComputeError, match=r"Take indices are out of bounds"):
+    with pytest.raises(pl.ComputeError, match=r"take indices are out of bounds"):
         s.arr.take([1, 2])
     s = pl.Series(
         [["A", "B", "C"], ["A"], ["B"], ["1", "2"], ["e"]],
@@ -339,7 +339,7 @@ def test_list_take() -> None:
     ]
     s = pl.Series([[42, 1, 2], [5, 6, 7]])
 
-    with pytest.raises(pl.ComputeError, match=r"Take indices are out of bounds"):
+    with pytest.raises(pl.ComputeError, match=r"take indices are out of bounds"):
         s.arr.take([[0, 1, 2, 3], [0, 1, 2, 3]])
 
     assert s.arr.take([0, 1, 2, 3], null_on_oob=True).to_list() == [

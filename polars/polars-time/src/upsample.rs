@@ -140,7 +140,7 @@ fn upsample_single_impl(
     use DataType::*;
     match index_column.dtype() {
         Datetime(tu, tz) => {
-            let s = index_column.cast(&DataType::Int64).unwrap();
+            let s = index_column.cast(&Int64).unwrap();
             let ca = s.i64().unwrap();
             let first = ca.into_iter().flatten().next();
             let last = ca.into_iter().flatten().next_back();
@@ -185,13 +185,13 @@ fn upsample_single_impl(
                         None,
                     )
                 }
-                _ => Err(PolarsError::ComputeError(
-                    "Cannot determine upsample boundaries. All elements are null.".into(),
-                )),
+                _ => polars_bail!(
+                    ComputeError: "cannot determine upsample boundaries: all elements are null"
+                ),
             }
         }
-        dt => Err(PolarsError::ComputeError(
-            format!("upsample not allowed for index_column of dtype {dt:?}").into(),
-        )),
+        dt => polars_bail!(
+            ComputeError: "upsample not allowed for index column of dtype {}", dt,
+        ),
     }
 }

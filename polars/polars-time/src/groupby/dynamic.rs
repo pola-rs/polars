@@ -128,14 +128,11 @@ impl Wrap<&DataFrame> {
                 let out = out.cast(&Int64).unwrap();
                 return Ok((out, by, gt));
             }
-            dt => {
-                return Err(PolarsError::ComputeError(
-                    format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
-                )
-                    .into(),
-                ))
-            }
+            dt => polars_bail!(
+                ComputeError:
+                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
+                dt
+            ),
         };
         self.impl_groupby_rolling(dt, by, options, tu, time_type)
     }
@@ -195,14 +192,11 @@ impl Wrap<&DataFrame> {
                 }
                 return Ok((out, keys, gt));
             }
-            dt => {
-                return Err(PolarsError::ComputeError(
-                    format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
-                )
-                    .into(),
-                ))
-            }
+            dt => polars_bail!(
+                ComputeError:
+                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
+                dt
+            ),
         };
         self.impl_groupby_dynamic(dt, by, options, tu, time_type)
     }

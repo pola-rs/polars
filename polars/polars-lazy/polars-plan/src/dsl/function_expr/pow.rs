@@ -18,7 +18,7 @@ where
     if exponent.len() == 1 {
         let exponent_value = exponent
             .get(0)
-            .ok_or_else(|| PolarsError::ComputeError("exponent is null".into()))?;
+            .ok_or_else(|| polars_err!(ComputeError: "exponent is null"))?;
         let s = match exponent_value.to_f64().unwrap() {
             a if a == 1.0 => base.clone().into_series(),
             // specialized sqrt will ensure (-inf)^0.5 = NaN
@@ -38,7 +38,7 @@ where
     } else if (base.len() == 1) && (exponent.len() != 1) {
         let base = base
             .get(0)
-            .ok_or_else(|| PolarsError::ComputeError("base is null".into()))?;
+            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
 
         Ok(Some(
             exponent.apply(|exp| Pow::pow(base, exp)).into_series(),
@@ -83,13 +83,11 @@ pub(super) fn pow(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let exp_len = exponent.len();
     match (base_len, exp_len) {
         (1, _) | (_, 1) => pow_on_series(base, exponent),
-        (len_a, len_b) if len_a == len_b => {
-            pow_on_series(base, exponent)
-        }
-        _ => {
-            Err(PolarsError::ComputeError(
-                format!("pow expression: the exponents length: {exp_len} does not match that of the base: {base_len}. Please ensure the lengths match or consider a literal exponent.").into()))
-        }
-
+        (len_a, len_b) if len_a == len_b => pow_on_series(base, exponent),
+        _ => polars_bail!(
+            ComputeError:
+            "exponent shape: {} in `pow` expression does not match that of the base: {}",
+            exp_len, base_len,
+        ),
     }
 }

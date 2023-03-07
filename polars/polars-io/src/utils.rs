@@ -51,13 +51,6 @@ pub(crate) fn columns_to_projection(
 ) -> PolarsResult<Vec<usize>> {
     use ahash::AHashMap;
 
-    let err = |column: &str| {
-        let valid_columns: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
-        PolarsError::ColumnNotFound(
-            format!("Unable to find \"{column}\". Valid columns: {valid_columns:?}",).into(),
-        )
-    };
-
     let mut prj = Vec::with_capacity(columns.len());
     if columns.len() > 100 {
         let mut column_names = AHashMap::with_capacity(schema.fields.len());
@@ -66,11 +59,14 @@ pub(crate) fn columns_to_projection(
         });
 
         for column in columns.iter() {
-            if let Some(&i) = column_names.get(column.as_str()) {
-                prj.push(i)
-            } else {
-                return Err(err(column));
-            }
+            let Some(&i) = column_names.get(column.as_str()) else {
+                let valid_columns: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
+                polars_bail!(
+                    ColumnNotFound:
+                    "unable to find {:?}; valid columns: {:?}", column, valid_columns,
+                );
+            };
+            prj.push(i);
         }
     } else {
         for column in columns.iter() {

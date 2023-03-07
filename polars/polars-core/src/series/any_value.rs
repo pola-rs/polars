@@ -46,13 +46,9 @@ fn any_values_to_decimal(
         } else if matches!(av, AnyValue::Null) {
             continue;
         } else {
-            return Err(PolarsError::ComputeError(
-                format!(
-                    "Unable to convert any-value of dtype {} to decimal",
-                    av.dtype()
-                )
-                .into(),
-            ));
+            polars_bail!(
+                ComputeError: "unable to convert any-value of dtype {} to decimal", av.dtype(),
+            );
         };
         scale_range = match scale_range {
             None => Some((s_av, s_av)),
@@ -70,13 +66,10 @@ fn any_values_to_decimal(
     if s_max > scale {
         // scale is provided but is lower than actual
         // TODO: do we want lossy conversions here or not?
-        Err(PolarsError::ComputeError(
-            format!(
-                "Unable to losslessly convert any-value of scale {s_max} to scale {}",
-                scale
-            )
-            .into(),
-        ))
+        polars_bail!(
+            ComputeError:
+            "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
+        );
     } else if s_min == s_max && s_max == scale {
         // no conversions needed; will potentially check values for precision though
         any_values_to_primitive::<Int128Type>(avs).into_decimal(prec, scale)
@@ -98,9 +91,7 @@ fn any_values_to_decimal(
             };
             let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
             builder.append_value(v.checked_mul(factor).ok_or_else(|| {
-                PolarsError::ComputeError(
-                    format!("Overflow while converting to decimal scale {}", scale).into(),
-                )
+                polars_err!(ComputeError: "overflow while converting to decimal scale {}", scale)
             })?);
         }
         // build the array and do a precision check if needed
@@ -301,15 +292,11 @@ impl Series {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
                         AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) => any_values_to_utf8(av),
-                        _ => {
-                            return Err(PolarsError::ComputeError(
-                                format!(
-                                    "categorical dtype with AnyValues of dtype: {} not supported",
-                                    single_av.dtype()
-                                )
-                                .into(),
-                            ))
-                        }
+                        _ => polars_bail!(
+                             ComputeError:
+                             "categorical dtype with any-values of dtype {} not supported",
+                             single_av.dtype()
+                        ),
                     }
                 } else {
                     Utf8Chunked::full("", "", 0)

@@ -82,30 +82,23 @@ fn run_partitions(
                     .map(|expr| {
                         let agg_expr = expr.as_partitioned_aggregator().unwrap();
                         let agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
-                        if agg.len() != groups.len() {
-
-                            if agg.len() == 1 {
-                                Ok(match groups.len()  {
-                                    0 => agg.clear(),
-                                    len => agg.new_from_index(0, len)
-                                })
-                            } else {
-                                Err(PolarsError::ComputeError(
-                                    format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                            agg.len(),
-                                            groups.len()).into()
-                                ))
+                        Ok(if agg.len() != groups.len() {
+                            polars_ensure!(agg.len() == 1, agg_len = agg.len(), groups.len());
+                            match groups.len() {
+                                0 => agg.clear(),
+                                len => agg.new_from_index(0, len),
                             }
-
                         } else {
-                            Ok(agg)
-                        }
-                    }).collect::<PolarsResult<Vec<_>>>()?;
+                            agg
+                        })
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 columns.extend_from_slice(&agg_columns);
 
                 DataFrame::new(columns)
-            }).collect()
+            })
+            .collect()
     })
 }
 
@@ -323,7 +316,7 @@ impl Executor for PartitionGroupByExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("groupby_partitioned".to_string(), &by);
+            let name = comma_delimited("groupby_partitioned".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

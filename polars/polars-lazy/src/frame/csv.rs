@@ -205,19 +205,11 @@ impl<'a> LazyCsvReader<'a> {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let path;
-
         let mut file = if let Some(mut paths) = self.glob()? {
-            match paths.next() {
-                Some(globresult) => {
-                    path = globresult?;
-                }
-                None => {
-                    return Err(PolarsError::ComputeError(
-                        "globbing pattern did not match any files".into(),
-                    ));
-                }
-            }
+            let path = match paths.next() {
+                Some(globresult) => globresult?,
+                None => polars_bail!(ComputeError: "globbing pattern did not match any files"),
+            };
             std::fs::File::open(&path)
         } else {
             std::fs::File::open(&self.path)

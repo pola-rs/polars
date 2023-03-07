@@ -326,13 +326,7 @@ impl Series {
         match self.dtype() {
             DataType::List(_) => self.list().unwrap().explode(),
             DataType::Utf8 => self.utf8().unwrap().explode(),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "explode not supported for Series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = explode, self.dtype()),
         }
     }
 
@@ -341,13 +335,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "'is_nan' not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_nan, self.dtype()),
         }
     }
 
@@ -356,13 +344,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "'is_not_nan' not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_not_nan, self.dtype()),
         }
     }
 
@@ -371,13 +353,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "'is_finite' not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_finite, self.dtype()),
         }
     }
 
@@ -386,13 +362,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "'is_infinite' not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_infinite, self.dtype()),
         }
     }
 
@@ -740,17 +710,13 @@ impl Series {
         if null_count != s.null_count() {
             let failure_mask = !self.is_null() & s.is_null();
             let failures = self.filter_threaded(&failure_mask, false)?.unique()?;
-            Err(PolarsError::ComputeError(
-                format!(
-                    "Strict conversion from {:?} to {:?} failed for values {}. \
-                    If you were trying to cast Utf8 to Date, Time, or Datetime, \
-                    consider using `strptime`.",
-                    self.dtype(),
-                    dtype,
-                    failures.fmt_list(),
-                )
-                .into(),
-            ))
+            polars_bail!(
+                ComputeError:
+                "strict conversion from `{}` to `{}` failed for value(s) {}; \
+                if you were trying to cast Utf8 to temporal dtypes, consider using `strptime`",
+                self.dtype(), dtype, failures.fmt_list(),
+
+            );
         } else {
             Ok(s)
         }
@@ -857,11 +823,7 @@ impl Series {
             UInt8 | UInt16 | UInt32 | UInt64 => self.clone(),
             Float32 => a.f32().unwrap().abs().into_series(),
             Float64 => a.f64().unwrap().abs().into_series(),
-            dt => {
-                return Err(PolarsError::InvalidOperation(
-                    format!("abs not supported for series of type {dt:?}").into(),
-                ));
-            }
+            dt => polars_bail!(opq = abs, dt),
         };
         Ok(out)
     }

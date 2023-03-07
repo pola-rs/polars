@@ -6,7 +6,6 @@ use polars_arrow::trusted_len::PushUnchecked;
 use polars_utils::HashSingle;
 
 use crate::datatypes::PlHashMap;
-use crate::error::PolarsError::ComputeError;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
@@ -437,21 +436,13 @@ impl CategoricalChunked {
     /// Create a [`CategoricalChunked`] from a categorical indices. The indices will
     /// probe the global string cache.
     pub(crate) fn from_global_indices(cats: UInt32Chunked) -> PolarsResult<CategoricalChunked> {
-        let cache = crate::STRING_CACHE.read_map();
-        let len = cache.len() as u32;
-        drop(cache);
-        let mut oob = false;
-
-        // fastest happy path
-        for cat in cats.into_iter().flatten() {
-            if cat >= len {
-                oob = true
-            }
-        }
-
-        if oob {
-            return Err(ComputeError("Cannot construct 'Categorical' from these categories. At least on of them is out of bounds.".into()));
-        }
+        let len = crate::STRING_CACHE.read_map().len() as u32;
+        let oob = cats.into_iter().flatten().any(|cat| cat >= len);
+        polars_ensure!(
+            !oob,
+            ComputeError:
+            "cannot construct Categorical from these categories, at least on of them is out of bounds"
+        );
         Ok(unsafe { Self::from_global_indices_unchecked(cats) })
     }
 

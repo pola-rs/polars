@@ -289,7 +289,7 @@ impl LazyFrame {
             let lp = self
                 .clone()
                 .get_plan_builder()
-                .add_err(PolarsError::SchemaFieldNotFound(name.to_string().into()))
+                .add_err(polars_err!(SchemaFieldNotFound: "{}", name))
                 .build();
             Some(Self::from_logical_plan(lp, self.opt_state))
         } else {
@@ -545,13 +545,13 @@ impl LazyFrame {
             },
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
-
-        if is_streaming {
-            let _ = physical_plan.execute(&mut state)?;
-            Ok(())
-        } else {
-            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
-        }
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order; \
+            use `collect().write_parquet()` instead"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
     }
 
     //// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
@@ -568,13 +568,13 @@ impl LazyFrame {
             },
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
-
-        if is_streaming {
-            let _ = physical_plan.execute(&mut state)?;
-            Ok(())
-        } else {
-            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
-        }
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order; \
+            use `collect().write_ipc()` instead"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
     }
 
     /// Filter by some predicate expression.
@@ -1104,8 +1104,7 @@ impl LazyFrame {
     /// This can have a negative effect on query performance.
     /// This may for instance block predicate pushdown optimization.
     pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
-        let mut add_row_count_in_map = false;
-        match &mut self.logical_plan {
+        let add_row_count_in_map = match &mut self.logical_plan {
             // Do the row count at scan
             #[cfg(feature = "csv-file")]
             LogicalPlan::CsvScan { options, .. } => {
@@ -1113,6 +1112,7 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                false
             }
             #[cfg(feature = "ipc")]
             LogicalPlan::IpcScan { options, .. } => {
@@ -1120,6 +1120,7 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                false
             }
             #[cfg(feature = "parquet")]
             LogicalPlan::ParquetScan { options, .. } => {
@@ -1127,11 +1128,10 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                false
             }
-            _ => {
-                add_row_count_in_map = true;
-            }
-        }
+            _ => true,
+        };
 
         let name2: SmartString = name.into();
         let udf_schema = move |s: &Schema| {

@@ -1,16 +1,10 @@
 mod read;
 mod write;
 
-use arrow::io::avro::avro_schema::error::Error as AvroError;
 pub use read::*;
 pub use write::*;
 
 use super::*;
-
-// we cannot implement the From trait because of the orphan rule
-fn convert_err(e: AvroError) -> PolarsError {
-    PolarsError::ComputeError(format!("{e}").into())
-}
 
 #[cfg(test)]
 mod test {

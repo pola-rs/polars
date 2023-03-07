@@ -172,13 +172,8 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> Pola
         let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
     }
-    if is_valid {
-        Ok(())
-    } else {
-        Err(PolarsError::ComputeError(
-            "Expanding more than one `col` is not yet allowed.".into(),
-        ))
-    }
+    polars_ensure!(is_valid, ComputeError: "expanding more than one `col` is not allowed");
+    Ok(())
 }
 
 /// This replaces the dtypes Expr with a Column Expr. It also removes the Exclude Expr from the

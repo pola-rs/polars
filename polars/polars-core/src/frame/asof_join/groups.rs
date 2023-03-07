@@ -238,7 +238,9 @@ where
 
     let left_asof = left_asof.rechunk();
     let err = |_: PolarsError| {
-        PolarsError::ComputeError("Keys are not allowed to have null values in asof join.".into())
+        polars_err!(
+            ComputeError: "keys are not allowed to have null values in asof join"
+        )
     };
     let left_asof = left_asof.cont_slice().map_err(err)?;
 

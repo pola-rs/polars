@@ -1,4 +1,4 @@
-use polars_core::prelude::{PolarsError, PolarsResult};
+use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
 use polars_lazy::dsl::{lit, Expr};
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
@@ -278,11 +278,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "unnest" => Self::Explode,
             "array_get" => Self::ArrayGet,
             "array_contains" => Self::ArrayContains,
-            other => {
-                return Err(PolarsError::InvalidOperation(
-                    format!("Unsupported SQL function: {}", other).into(),
-                ))
-            }
+            other => polars_bail!(InvalidOperation: "unsupported SQL function: {}", other),
         })
     }
 }
@@ -436,17 +432,12 @@ fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> PolarsResu
     })
 }
 
-fn not_supported_error(
-    function_name: &str,
-    args: &Vec<&sqlparser::ast::FunctionArgExpr>,
-) -> PolarsResult<Expr> {
-    Err(PolarsError::ComputeError(
-        format!(
-            "Function {:?} with args {:?} was not supported in polars-sql yet!",
-            function_name, args
-        )
-        .into(),
-    ))
+fn not_supported_error(function_name: &str, args: &Vec<&FunctionArgExpr>) -> PolarsResult<Expr> {
+    polars_bail!(
+        InvalidOperation:
+        "function `{}` with args {:?} is not supported in polars-sql",
+        function_name, args
+    );
 }
 
 fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {
@@ -461,53 +452,45 @@ fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {
 }
 
 pub(crate) trait FromSqlExpr {
-    fn from_sql_expr(expr: &SqlExpr) -> Result<Self, PolarsError>
+    fn from_sql_expr(expr: &SqlExpr) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl FromSqlExpr for f64 {
-    fn from_sql_expr(expr: &SqlExpr) -> Result<Self, PolarsError>
+    fn from_sql_expr(expr: &SqlExpr) -> PolarsResult<Self>
     where
         Self: Sized,
     {
         match expr {
             SqlExpr::Value(v) => match v {
-                SqlValue::Number(s, _) => s.parse::<f64>().map_err(|_| {
-                    PolarsError::ComputeError(format!("Can't parse literal {:?}", s).into())
-                }),
-                _ => Err(PolarsError::ComputeError(
-                    format!("Can't parse literal {:?}", v).into(),
-                )),
+                SqlValue::Number(s, _) => s
+                    .parse()
+                    .map_err(|_| polars_err!(ComputeError: "can't parse literal {:?}", s)),
+                _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
             },
-            _ => Err(PolarsError::ComputeError(
-                format!("Can't parse literal {:?}", expr).into(),
-            )),
+            _ => polars_bail!(ComputeError: "can't parse literal {:?}", expr),
         }
     }
 }
 
 impl FromSqlExpr for String {
-    fn from_sql_expr(expr: &SqlExpr) -> Result<Self, PolarsError>
+    fn from_sql_expr(expr: &SqlExpr) -> PolarsResult<Self>
     where
         Self: Sized,
     {
         match expr {
             SqlExpr::Value(v) => match v {
                 SqlValue::SingleQuotedString(s) => Ok(s.clone()),
-                _ => Err(PolarsError::ComputeError(
-                    format!("Can't parse literal {:?}", v).into(),
-                )),
+                _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
             },
-            _ => Err(PolarsError::ComputeError(
-                format!("Can't parse literal {:?}", expr).into(),
-            )),
+            _ => polars_bail!(ComputeError: "can't parse literal {:?}", expr),
         }
     }
 }
 
 impl FromSqlExpr for Expr {
-    fn from_sql_expr(expr: &SqlExpr) -> Result<Self, PolarsError>
+    fn from_sql_expr(expr: &SqlExpr) -> PolarsResult<Self>
     where
         Self: Sized,
     {

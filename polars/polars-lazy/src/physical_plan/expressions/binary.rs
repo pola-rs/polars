@@ -4,7 +4,6 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
-use crate::physical_plan::errors::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -215,12 +214,12 @@ impl PhysicalExpr for BinaryExpr {
         });
         let lhs = lhs?;
         let rhs = rhs?;
-        let lhs_len = lhs.len();
-        let rhs_len = rhs.len();
-        if lhs_len != rhs_len && !(lhs_len == 1 || rhs_len == 1) {
-            let msg = format!("Cannot evaluate two Series of different length. Got lhs of length: {lhs_len} and rhs of length: {rhs_len}.");
-            return Err(expression_err!(msg, self.expr, ComputeError));
-        }
+        polars_ensure!(
+            lhs.len() == rhs.len() || lhs.len() == 1 || rhs.len() == 1,
+            expr = self.expr,
+            ComputeError: "cannot evaluate two series of different lengths ({} and {})",
+            lhs.len(), rhs.len(),
+        );
         apply_operator_owned(lhs, rhs, self.op)
     }
 

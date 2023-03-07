@@ -119,11 +119,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         } else {
             let offset = self.chunks().len();
             for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-                let lhs_name = lhs.name();
-                let rhs_name = rhs.name();
-                if lhs_name != rhs_name {
-                    return Err(PolarsError::SchemaMisMatch(format!("cannot append field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
-                }
+                polars_ensure!(
+                    lhs.name() == rhs.name(), SchemaMismatch:
+                    "cannot append field with name {:?} to struct with field name {:?}",
+                    rhs.name(), lhs.name(),
+                );
                 lhs.append(rhs)?;
             }
             self.0.update_chunks(offset);
@@ -140,11 +140,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             Ok(())
         } else {
             for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-                let lhs_name = lhs.name();
-                let rhs_name = rhs.name();
-                if lhs_name != rhs_name {
-                    return Err(PolarsError::SchemaMisMatch(format!("cannot extend field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
-                }
+                polars_ensure!(
+                    lhs.name() == rhs.name(), SchemaMismatch:
+                    "cannot extend field with name {:?} to struct with field name {:?}",
+                    rhs.name(), lhs.name(),
+                );
                 lhs.extend(rhs)?;
             }
             self.0.update_chunks(0);

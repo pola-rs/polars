@@ -1,5 +1,10 @@
 use std::io::Write;
 
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-time",
+    feature = "dtype-datetime"
+))]
 use arrow::temporal_conversions;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
@@ -7,7 +12,6 @@ use chrono::TimeZone;
 use chrono_tz::Tz;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
-use polars_core::error::PolarsError::ComputeError;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -56,7 +60,7 @@ fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,
     options: &SerializeOptions,
-    datetime_format: Option<&str>,
+    #[allow(unused_variables)] datetime_format: Option<&str>,
 ) -> PolarsResult<()> {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),
@@ -125,25 +129,23 @@ fn write_anyvalue(
                 Some(fmt) => write!(f, "{}", date.format(fmt)),
             }
         }
-        ref dt => Err(PolarsError::ComputeError(
-            format!("DataType: {dt} not supported in writing to csv").into(),
-        ))?,
+        ref dt => polars_bail!(ComputeError: "datatype {} cannot be written to csv", dt),
     }
     .map_err(|err| match value {
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(_, _, tz) => {
             // If this is a datetime, then datetime_format was either set or inferred.
-            let datetime_format = datetime_format.unwrap();
-            match tz {
-                Some(_) => PolarsError::ComputeError(
-                    format!("Cannot format DateTime with format '{datetime_format}'.").into(),
-                ),
-                None => PolarsError::ComputeError(
-                    format!("Cannot format NaiveDateTime with format '{datetime_format}'.").into(),
-                ),
-            }
+            let datetime_format = datetime_format.unwrap_or_default();
+            let type_name = if tz.is_some() {
+                "DateTime"
+            } else {
+                "NaiveDateTime"
+            };
+            polars_err!(
+                ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
+            )
         }
-        _ => PolarsError::ComputeError(format!("Error writing value {value}: {:?}", err).into()),
+        _ => polars_err!(ComputeError: "error writing value {}: {}", value, err),
     })
 }
 
@@ -204,14 +206,17 @@ pub(crate) fn write<W: Write>(
             DataType::Struct(_) => true,
             _ => false,
         };
-        if nested {
-            return Err(ComputeError(format!("CSV format does not support nested data. Consider using a different data format. Got: '{}'", s.dtype()).into()));
-        }
+        polars_ensure!(
+            !nested,
+            ComputeError: "CSV format does not support nested data",
+        );
     }
 
     // check that the double quote is valid utf8
-    std::str::from_utf8(&[options.quote, options.quote])
-        .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
+    polars_ensure!(
+        std::str::from_utf8(&[options.quote, options.quote]).is_ok(),
+        ComputeError: "quote char results in invalid utf-8",
+    );
     let delimiter = char::from(options.delimiter);
 
     let formats: Option<Vec<Option<&str>>> = match &options.datetime_format {

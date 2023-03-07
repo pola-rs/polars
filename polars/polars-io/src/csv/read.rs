@@ -485,8 +485,6 @@ where
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         let schema_overwrite = self.schema_overwrite.clone();
-        let dtype_overwrite = self.dtype_overwrite;
-        let should_parse_dates = self.try_parse_dates;
         let low_memory = self.low_memory;
 
         #[cfg(feature = "dtype-categorical")]
@@ -534,9 +532,9 @@ where
 
         #[cfg(feature = "temporal")]
         // only needed until we also can parse time columns in place
-        if should_parse_dates {
+        if self.try_parse_dates {
             // determine the schema that's given by the user. That should not be changed
-            let fixed_schema = match (schema_overwrite, dtype_overwrite) {
+            let fixed_schema = match (schema_overwrite, self.dtype_overwrite) {
                 (Some(schema), _) => schema,
                 (None, Some(dtypes)) => {
                     let fields = dtypes

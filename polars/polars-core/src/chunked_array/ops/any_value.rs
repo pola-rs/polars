@@ -187,14 +187,10 @@ macro_rules! get_any_value {
     ($self:ident, $index:expr) => {{
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
         let arr = &*$self.chunks[chunk_idx];
-
-        if idx < arr.len() {
-            // SAFETY
-            // bounds are checked
-            Ok(unsafe { arr_to_any_value(arr, idx, $self.dtype()) })
-        } else {
-            Err(PolarsError::ComputeError("index is out of bounds".into()))
-        }
+        polars_ensure!(idx < arr.len(), oob = idx, arr.len());
+        // SAFETY
+        // bounds are checked
+        Ok(unsafe { arr_to_any_value(arr, idx, $self.dtype()) })
     }};
 }
 
@@ -268,7 +264,7 @@ impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
 
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
         match self.get_object(index) {
-            None => Err(PolarsError::ComputeError("index is out of bounds".into())),
+            None => Err(polars_err!(ComputeError: "index is out of bounds")),
             Some(v) => Ok(AnyValue::Object(v)),
         }
     }

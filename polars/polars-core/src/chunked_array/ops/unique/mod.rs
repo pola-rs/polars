@@ -55,15 +55,11 @@ pub(crate) fn is_unique_helper(
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     fn unique(&self) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
-        Err(PolarsError::InvalidOperation(
-            "unique not supported for object".into(),
-        ))
+        polars_bail!(opq = unique, self.dtype());
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        Err(PolarsError::InvalidOperation(
-            "unique not supported for object".into(),
-        ))
+        polars_bail!(opq = arg_unique, self.dtype());
     }
 }
 

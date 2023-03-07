@@ -61,18 +61,13 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
             let state = ExecutionState::new();
 
             let finish = |out: Series| {
-                if out.len() > 1 {
-                    Err(PolarsError::ComputeError(
-                        format!(
-                            "expected single value, got a result with length: {}, {:?}",
-                            out.len(),
-                            out
-                        )
-                        .into(),
-                    ))
-                } else {
-                    Ok(out.get(0).unwrap().into_static().unwrap())
-                }
+                polars_ensure!(
+                    out.len() <= 1,
+                    ComputeError:
+                    "expected single value, got a result with length {}, {:?}",
+                    out.len(), out,
+                );
+                Ok(out.get(0).unwrap().into_static().unwrap())
             };
 
             let avs = if parallel {

@@ -1,3 +1,5 @@
+use polars_core::error::to_compute_err;
+
 use super::*;
 use crate::prelude::{AnonymousScan, AnonymousScanOptions, LazyJsonLineReader};
 
@@ -18,8 +20,8 @@ impl AnonymousScan for LazyJsonLineReader {
         let f = std::fs::File::open(&self.path)?;
         let mut reader = std::io::BufReader::new(f);
 
-        let data_type = arrow_ndjson::read::infer(&mut reader, infer_schema_length)
-            .map_err(|err| PolarsError::ComputeError(format!("{err:#?}").into()))?;
+        let data_type =
+            arrow_ndjson::read::infer(&mut reader, infer_schema_length).map_err(to_compute_err)?;
         let schema: Schema = StructArray::get_fields(&data_type).iter().into();
 
         Ok(schema)

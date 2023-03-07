@@ -1,4 +1,3 @@
-use polars_core::export::chrono;
 use polars_utils::arena::Arena;
 
 #[cfg(feature = "strings")]
@@ -670,6 +669,7 @@ fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
     match (input, dtype) {
         #[cfg(feature = "dtype-duration")]
         (AExpr::Literal(LiteralValue::Int64(v)), DataType::Duration(tu)) => {
+            use polars_core::export::chrono;
             let dur = match tu {
                 TimeUnit::Nanoseconds => chrono::Duration::nanoseconds(*v),
                 TimeUnit::Microseconds => chrono::Duration::microseconds(*v),

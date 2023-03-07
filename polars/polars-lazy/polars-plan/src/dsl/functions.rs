@@ -4,7 +4,9 @@
 //!
 use std::ops::{BitAnd, BitOr};
 
+#[cfg(feature = "temporal")]
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
+#[cfg(feature = "temporal")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "dtype-struct")]
 use polars_core::utils::get_supertype;
@@ -277,11 +279,10 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
     // Parse the format string, and separate substrings between placeholders
     let segments: Vec<&str> = format.split("{}").collect();
 
-    if segments.len() - 1 != args.len() {
-        return Err(PolarsError::ShapeMisMatch(
-            "number of placeholders should equal the number of arguments".into(),
-        ));
-    }
+    polars_ensure!(
+        segments.len() - 1 == args.len(),
+        ShapeMismatch: "number of placeholders should equal the number of arguments"
+    );
 
     let mut exprs: Vec<Expr> = Vec::new();
 
@@ -304,11 +305,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
 pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    if s.is_empty() {
-        return Err(PolarsError::ComputeError(
-            "concat_list needs one or more expressions".into(),
-        ));
-    }
+    polars_ensure!(!s.is_empty(), ComputeError: "`concat_list` needs one or more expressions");
 
     Ok(Expr::Function {
         input: s,
@@ -368,11 +365,11 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             let low = sa
                 .i64()?
                 .get(0)
-                .ok_or_else(|| PolarsError::NoData("no data in `low` evaluation".into()))?;
+                .ok_or_else(|| polars_err!(NoData: "no data in `low` evaluation"))?;
             let high = sb
                 .i64()?
                 .get(0)
-                .ok_or_else(|| PolarsError::NoData("no data in `high` evaluation".into()))?;
+                .ok_or_else(|| polars_err!(NoData: "no data in `high` evaluation"))?;
 
             let mut ca = if step > 1 {
                 Int64Chunked::from_iter_values("arange", (low..high).step_by(step))
@@ -404,9 +401,12 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 } else if sb.len() == 1 {
                     sb = sb.new_from_index(0, sa.len())
                 } else {
-                    let msg = format!("The length of the 'low' and 'high' arguments cannot be matched in the 'arange' expression.. \
-                    Length of 'low': {}, length of 'high': {}", sa.len(), sb.len());
-                    return Err(PolarsError::ComputeError(msg.into()));
+                    polars_bail!(
+                        ComputeError:
+                        "lengths of `low`: {} and `high`: {} arguments `\
+                        cannot be matched in the `arange` expression",
+                        sa.len(), sb.len()
+                    );
                 }
             }
 
@@ -843,9 +843,7 @@ where
                 }
                 Ok(Some(acc))
             }
-            None => Err(PolarsError::ComputeError(
-                "Reduce did not have any expressions to fold".into(),
-            )),
+            None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
     }) as Arc<dyn SeriesUdf>);
 
@@ -890,9 +888,7 @@ where
 
                 StructChunked::new(acc.name(), &result).map(|ca| Some(ca.into_series()))
             }
-            None => Err(PolarsError::ComputeError(
-                "Reduce did not have any expressions to fold".into(),
-            )),
+            None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
     }) as Arc<dyn SeriesUdf>);
 
@@ -1096,9 +1092,10 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
 /// number of rows.
 pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
     let function = |s: Series, n: Series| {
-        let n = n.get(0).unwrap().extract::<usize>().ok_or_else(|| {
-            PolarsError::ComputeError(format!("could not extract a size from {n:?}").into())
-        })?;
+        let n =
+            n.get(0).unwrap().extract::<usize>().ok_or_else(
+                || polars_err!(ComputeError: "could not extract a size from {:?}", n),
+            )?;
         Ok(Some(s.new_from_index(0, n)))
     };
     apply_binary(lit(value), n_times, function, GetOutput::same_type())

@@ -22,9 +22,7 @@ impl Series {
                 .into_series();
             return Ok(s);
         }
-        Err(PolarsError::SchemaMisMatch(
-            format!("{:?} is not a floating point datatype", self.dtype()).into(),
-        ))
+        polars_bail!(opq = round, self.dtype());
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
@@ -37,9 +35,7 @@ impl Series {
             let s = ca.apply(|val| val.floor()).into_series();
             return Ok(s);
         }
-        Err(PolarsError::SchemaMisMatch(
-            format!("{:?} is not a floating point datatype", self.dtype()).into(),
-        ))
+        polars_bail!(opq = floor, self.dtype());
     }
 
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
@@ -52,9 +48,7 @@ impl Series {
             let s = ca.apply(|val| val.ceil()).into_series();
             return Ok(s);
         }
-        Err(PolarsError::SchemaMisMatch(
-            format!("{:?} is not a floating point datatype", self.dtype()).into(),
-        ))
+        polars_bail!(opq = ceil, self.dtype());
     }
 
     /// Clamp underlying values to the `min` and `max` values.
@@ -76,9 +70,7 @@ impl Series {
             downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
             Ok(self)
         } else {
-            Err(PolarsError::SchemaMisMatch(
-                format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
-            ))
+            polars_bail!(opq = clip, self.dtype());
         }
     }
 
@@ -98,9 +90,7 @@ impl Series {
             downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
             Ok(self)
         } else {
-            Err(PolarsError::SchemaMisMatch(
-                format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
-            ))
+            polars_bail!(opq = clip_max, self.dtype());
         }
     }
 
@@ -120,9 +110,7 @@ impl Series {
             downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
             Ok(self)
         } else {
-            Err(PolarsError::SchemaMisMatch(
-                format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
-            ))
+            polars_bail!(opq = clip_min, self.dtype());
         }
     }
 }

@@ -585,24 +585,22 @@ pub(super) fn parse_lines<'a>(
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
                                     let column_name = schema.get_index(idx as usize).unwrap().0;
-                                    PolarsError::ComputeError(
-                                        format!(
-                                            "Could not parse `{}` as dtype {:?} at column '{}' (column number {}).\n\
-                                            The current offset in the file is {} bytes.\n\
-                                            \n\
-                                            You might want to try:\n\
-                                            - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
-                                            - specifying the correct dtype with the `dtypes` argument\n\
-                                            - setting `ignore_errors` to `True`,\n\
-                                            - adding `{}` to the `null_values` list.",
-                                            &unparsable,
-                                            buf.dtype(),
-                                            column_name,
-                                            idx+1,
-                                            bytes_offset,
-                                            &unparsable,
-                                        )
-                                        .into(),
+                                    polars_err!(
+                                        ComputeError:
+                                        "Could not parse `{}` as dtype `{}` at column '{}' (column number {}).\n\
+                                        The current offset in the file is {} bytes.\n\
+                                        \n\
+                                        You might want to try:\n\
+                                        - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
+                                        - specifying correct dtype with the `dtypes` argument\n\
+                                        - setting `ignore_errors` to `True`,\n\
+                                        - adding `{}` to the `null_values` list.",
+                                        &unparsable,
+                                        buf.dtype(),
+                                        column_name,
+                                        idx + 1,
+                                        bytes_offset,
+                                        &unparsable,
                                     )
                                 })?;
                         }

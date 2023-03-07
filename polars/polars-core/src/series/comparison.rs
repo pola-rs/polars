@@ -102,27 +102,17 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     use DataType::*;
     #[cfg(feature = "dtype-categorical")]
     {
-        if matches!(left, Utf8 | Categorical(_)) && right.is_numeric()
-            || left.is_numeric() && matches!(right, Utf8 | Categorical(_))
-        {
-            Err(PolarsError::ComputeError(
-                "cannot compare Utf8 with numeric data".into(),
-            ))
-        } else {
-            Ok(())
-        }
+        let mismatch = matches!(left, Utf8 | Categorical(_)) && right.is_numeric()
+            || left.is_numeric() && matches!(right, Utf8 | Categorical(_));
+        polars_ensure!(!mismatch, ComputeError: "cannot compare utf-8 with numeric data");
     }
     #[cfg(not(feature = "dtype-categorical"))]
     {
-        if matches!(left, Utf8) && right.is_numeric() || left.is_numeric() && matches!(right, Utf8)
-        {
-            Err(PolarsError::ComputeError(
-                "cannot compare Utf8 with numeric data".into(),
-            ))
-        } else {
-            Ok(())
-        }
+        let mismatch = matches!(left, Utf8) && right.is_numeric()
+            || left.is_numeric() && matches!(right, Utf8);
+        polars_ensure!(!mismatch, ComputeError: "cannot compare utf-8 with numeric data");
     }
+    Ok(())
 }
 
 impl ChunkCompare<&Series> for Series {
@@ -168,7 +158,11 @@ impl ChunkCompare<&Series> for Series {
 
                     self.categorical().unwrap().logical().equal(rhs)
                 } else {
-                    return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
+                    polars_bail!(
+                        ComputeError:
+                        "cannot compare categoricals originating from different sources; \
+                        consider setting a global string cache"
+                    );
                 }
             }
             (Null, Null, _, _) => BooleanChunked::full(self.name(), true, self.len()),
@@ -220,7 +214,11 @@ impl ChunkCompare<&Series> for Series {
 
                     self.categorical().unwrap().logical().not_equal(rhs)
                 } else {
-                    return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
+                    polars_bail!(
+                        ComputeError:
+                        "cannot compare categoricals originating from different sources; \
+                        consider setting a global string cache"
+                    );
                 }
             }
             (Null, Null, _, _) => BooleanChunked::full(self.name(), false, self.len()),
@@ -308,8 +306,22 @@ where
     }
 }
 
+fn compare_series_str(
+    lhs: &Series,
+    rhs: &str,
+    op: impl Fn(&Utf8Chunked, &str) -> BooleanChunked,
+) -> PolarsResult<BooleanChunked> {
+    validate_types(lhs.dtype(), &DataType::Utf8)?;
+    lhs.utf8().map(|ca| op(ca, rhs)).map_err(|_| {
+        polars_err!(
+            ComputeError: "cannot compare str value to series of type {}", lhs.dtype(),
+        )
+    })
+}
+
 impl ChunkCompare<&str> for Series {
     type Item = PolarsResult<BooleanChunked>;
+
     fn equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         use DataType::*;
@@ -341,62 +353,18 @@ impl ChunkCompare<&str> for Series {
     }
 
     fn gt(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
-        validate_types(self.dtype(), &DataType::Utf8)?;
-        if let Ok(a) = self.utf8() {
-            Ok(a.gt(rhs))
-        } else {
-            Err(PolarsError::ComputeError(
-                format!(
-                    "cannot compare str value to series of type: {:?}",
-                    self.dtype()
-                )
-                .into(),
-            ))
-        }
+        compare_series_str(self, rhs, |lhs, rhs| lhs.gt(rhs))
     }
 
     fn gt_eq(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
-        validate_types(self.dtype(), &DataType::Utf8)?;
-        if let Ok(a) = self.utf8() {
-            Ok(a.gt_eq(rhs))
-        } else {
-            Err(PolarsError::ComputeError(
-                format!(
-                    "cannot compare str value to series of type: {:?}",
-                    self.dtype()
-                )
-                .into(),
-            ))
-        }
+        compare_series_str(self, rhs, |lhs, rhs| lhs.gt_eq(rhs))
     }
 
     fn lt(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
-        validate_types(self.dtype(), &DataType::Utf8)?;
-        if let Ok(a) = self.utf8() {
-            Ok(a.lt(rhs))
-        } else {
-            Err(PolarsError::ComputeError(
-                format!(
-                    "cannot compare str value to series of type: {:?}",
-                    self.dtype()
-                )
-                .into(),
-            ))
-        }
+        compare_series_str(self, rhs, |lhs, rhs| lhs.lt(rhs))
     }
 
     fn lt_eq(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
-        validate_types(self.dtype(), &DataType::Utf8)?;
-        if let Ok(a) = self.utf8() {
-            Ok(a.lt_eq(rhs))
-        } else {
-            Err(PolarsError::ComputeError(
-                format!(
-                    "cannot compare str value to series of type: {:?}",
-                    self.dtype()
-                )
-                .into(),
-            ))
-        }
+        compare_series_str(self, rhs, |lhs, rhs| lhs.lt_eq(rhs))
     }
 }

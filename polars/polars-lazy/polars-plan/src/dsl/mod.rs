@@ -1401,19 +1401,18 @@ impl Expr {
                     by = by.rechunk();
                     let s = &s[0];
 
-                    if options.weights.is_some() {
-                        return Err(PolarsError::ComputeError(
-                            "weights not supported in 'rolling by' expression".into(),
-                        ));
-                    }
-
+                    polars_ensure!(
+                        options.weights.is_none(),
+                        ComputeError: "`weights` is not supported in 'rolling by' expression"
+                    );
                     if matches!(by.dtype(), DataType::Datetime(_, _)) {
                         by = by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
                     }
                     let by = by.datetime().unwrap();
                     let by_values = by.cont_slice().map_err(|_| {
-                        PolarsError::ComputeError(
-                            "'by' column should not have null values in 'rolling by'".into(),
+                        polars_err!(
+                            ComputeError:
+                            "`by` column should not have null values in 'rolling by' expression"
                         )
                     })?;
                     let tu = by.time_unit();
@@ -1708,11 +1707,9 @@ impl Expr {
                     UInt64 => Series::new(name, &[u64::MAX]),
                     Float32 => Series::new(name, &[f32::INFINITY]),
                     Float64 => Series::new(name, &[f64::INFINITY]),
-                    dt => {
-                        return Err(PolarsError::ComputeError(
-                            format!("cannot determine upper bound of dtype {dt}").into(),
-                        ))
-                    }
+                    dt => polars_bail!(
+                        ComputeError: "cannot determine upper bound for dtype `{}`", dt,
+                    ),
                 };
                 Ok(Some(s))
             },
@@ -1742,11 +1739,9 @@ impl Expr {
                     UInt64 => Series::new(name, &[u64::MIN]),
                     Float32 => Series::new(name, &[f32::NEG_INFINITY]),
                     Float64 => Series::new(name, &[f64::NEG_INFINITY]),
-                    dt => {
-                        return Err(PolarsError::ComputeError(
-                            format!("cannot determine lower bound of dtype {dt}").into(),
-                        ))
-                    }
+                    dt => polars_bail!(
+                        ComputeError: "cannot determine lower bound for dtype `{}`", dt,
+                    ),
                 };
                 Ok(Some(s))
             },

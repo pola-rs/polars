@@ -55,12 +55,10 @@ pub(super) fn apply_trigonometric_function(
             apply_trigonometric_function_to_float(ca, trig_function)
         }
         dt if dt.is_numeric() => {
-            let s = s.cast(&DataType::Float64)?;
+            let s = s.cast(&Float64)?;
             apply_trigonometric_function(&s, trig_function)
         }
-        dt => Err(PolarsError::ComputeError(
-            format!("cannot use trigonometric function on Series of dtype: {dt:?}",).into(),
-        )),
+        dt => polars_bail!(op = "trigonometry", dt),
     }
 }
 
@@ -70,7 +68,7 @@ fn apply_trigonometric_function_to_float<T>(
 ) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     match trig_function {
@@ -92,7 +90,7 @@ where
 fn sin<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.sin()).into_series())
@@ -101,7 +99,7 @@ where
 fn cos<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.cos()).into_series())
@@ -110,7 +108,7 @@ where
 fn tan<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.tan()).into_series())
@@ -119,7 +117,7 @@ where
 fn arcsin<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.asin()).into_series())
@@ -128,7 +126,7 @@ where
 fn arccos<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.acos()).into_series())
@@ -137,7 +135,7 @@ where
 fn arctan<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.atan()).into_series())
@@ -146,7 +144,7 @@ where
 fn sinh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.sinh()).into_series())
@@ -155,7 +153,7 @@ where
 fn cosh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.cosh()).into_series())
@@ -164,7 +162,7 @@ where
 fn tanh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.tanh()).into_series())
@@ -173,7 +171,7 @@ where
 fn arcsinh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.asinh()).into_series())
@@ -182,7 +180,7 @@ where
 fn arccosh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.acosh()).into_series())
@@ -191,7 +189,7 @@ where
 fn arctanh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.atanh()).into_series())

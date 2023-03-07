@@ -14,7 +14,7 @@ use object_store::ObjectStore;
 use polars_core::cloud::CloudOptions;
 use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
-use polars_core::error::PolarsResult;
+use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 
@@ -50,20 +50,14 @@ impl ParquetObjectStore {
         }
         let path = self.path.clone();
         let locked_store = self.store.lock().await;
-        self.length = Some({
-            locked_store
-                .head(&path)
-                .await
-                .map_err(anyhow::Error::from)?
-                .size as u64
-        });
+        self.length = Some(locked_store.head(&path).await.map_err(to_compute_err)?.size as u64);
         Ok(())
     }
 
     pub async fn schema(&mut self) -> PolarsResult<Schema> {
         let metadata = self.get_metadata().await?;
 
-        let arrow_schema = parquet2_read::infer_schema(metadata).map_err(anyhow::Error::from)?;
+        let arrow_schema = parquet2_read::infer_schema(metadata)?;
 
         Ok(arrow_schema.fields.iter().into())
     }
@@ -83,7 +77,7 @@ impl ParquetObjectStore {
         let mut reader = CloudReader::new(length, object_store, path);
         parquet2_read::read_metadata_async(&mut reader)
             .await
-            .map_err(|e| anyhow::Error::from(e).into())
+            .map_err(to_compute_err)
     }
 
     /// Fetch and memoize the metadata of the parquet file.
@@ -110,7 +104,7 @@ async fn download_projection<'a: 'b, 'b>(
     row_groups: &'a [RowGroupMetaData],
     schema: &ArrowSchema,
     async_reader: &'b ParquetObjectStore,
-) -> anyhow::Result<RowGroupChunks<'a>> {
+) -> PolarsResult<RowGroupChunks<'a>> {
     let fields = projection
         .iter()
         .map(|i| schema.fields[*i].name.clone())
@@ -137,7 +131,7 @@ async fn download_projection<'a: 'b, 'b>(
         .then(move |(name, row_group)| async move {
             let columns = row_group.columns();
             read_columns_async(reader_factory, columns, name.as_ref())
-                .map_err(anyhow::Error::from)
+                .map_err(to_compute_err)
                 .await
         })
         .try_collect()
@@ -182,15 +176,9 @@ impl FetchRowGroups for FetchRowGroupsFromObjectStore {
             .row_groups_metadata
             .get(row_groups.clone())
             .map_or_else(
-                || {
-                    PolarsResult::Err(PolarsError::ComputeError(
-                        format!(
-                            "cannot acess slice {0}..{1}",
-                            row_groups.start, row_groups.end
-                        )
-                        .into(),
-                    ))
-                },
+                || Err(polars_err!(
+                    ComputeError: "cannot acess slice {0}..{1}", row_groups.start, row_groups.end,
+                )),
                 Ok,
             )?;
 

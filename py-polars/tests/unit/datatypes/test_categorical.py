@@ -140,8 +140,8 @@ def test_categorical_error_on_local_cmp() -> None:
     with pytest.raises(
         pl.ComputeError,
         match=(
-            "Cannot compare categoricals originating from different sources. Consider"
-            " setting a global string cache."
+            "cannot compare categoricals originating from different sources; consider"
+            " setting a global string cache"
         ),
     ):
         df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
@@ -247,7 +247,7 @@ def test_cast_inner_categorical() -> None:
     assert out.to_list() == [["a"], ["a", "b"]]
 
     with pytest.raises(
-        pl.ComputeError, match=r"Casting to 'Categorical' not allowed in 'arr.eval'"
+        pl.ComputeError, match=r"casting to categorical not allowed in `arr.eval`"
     ):
         pl.Series("foo", [["a", "b"], ["a", "b"]]).arr.eval(
             pl.element().cast(pl.Categorical)

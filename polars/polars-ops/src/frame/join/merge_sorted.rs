@@ -15,11 +15,10 @@ pub fn _merge_sorted_dfs(
     let dtype_lhs = left_s.dtype();
     let dtype_rhs = right_s.dtype();
 
-    if dtype_lhs != dtype_rhs {
-        return Err(PolarsError::ComputeError(
-            "DataTypes in merge sort should be equal".into(),
-        ));
-    }
+    polars_ensure!(
+        dtype_lhs == dtype_rhs,
+        ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
+    );
 
     let merge_indicator = series_to_merge_indicator(left_s, right_s);
     let new_columns = left

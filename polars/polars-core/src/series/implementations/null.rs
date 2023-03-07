@@ -126,17 +126,8 @@ impl SeriesTrait for NullChunked {
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        if index < self.len() {
-            Ok(AnyValue::Null)
-        } else {
-            Err(PolarsError::ComputeError(
-                format!(
-                    "index {index} is out of bounds on series of length {}",
-                    self.len()
-                )
-                .into(),
-            ))
-        }
+        polars_ensure!(index < self.len(), oob = index, self.len());
+        Ok(AnyValue::Null)
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {

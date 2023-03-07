@@ -143,9 +143,9 @@ impl FunctionNode {
                     .iter()
                     .map(|name| {
                         let name = name.as_ref();
-                        input_schema.get_field(name).ok_or_else(|| {
-                            PolarsError::SchemaFieldNotFound(name.to_string().into())
-                        })
+                        input_schema
+                            .get_field(name)
+                            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
                     })
                     .collect::<PolarsResult<Schema>>()?;
                 Ok(Cow::Owned(Arc::new(schema)))
@@ -164,9 +164,9 @@ impl FunctionNode {
                                         .with_column(fld.name().clone(), fld.data_type().clone());
                                 }
                             } else {
-                                return Err(PolarsError::ComputeError(
-                                    format!("expected struct dtype, got: '{dtype:?}'").into(),
-                                ));
+                                polars_bail!(
+                                    SchemaMismatch: "expected struct dtype, got: `{}`", dtype
+                                );
                             }
                         } else {
                             new_schema.with_column(name.clone(), dtype.clone());

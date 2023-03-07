@@ -332,13 +332,12 @@ impl<'a> AggregationContext<'a> {
                     } else {
                         String::new()
                     };
-
-                    return Err(PolarsError::ComputeError(
-                        format!(r#"The aggregation expression {}did produce a different number of elements than
-the number of groups. This likely is an invalid expression.
-Number of groups: {}
-Number of elements: {}"#, fmt_expr, self.groups.len(), series.len()).into()
-                    ));
+                    polars_bail!(
+                        ComputeError:
+                        "aggregation expression '{}' produced a different number of elements: {} \
+                        than the number of groups: {} (this is likely invalid)",
+                        fmt_expr, series.len(), self.groups.len(),
+                    );
                 }
                 AggState::AggregatedList(series)
             }

@@ -38,13 +38,12 @@ mod inner_mod {
 
     /// utility
     fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
-        if min_periods > window_size {
-            Err(PolarsError::ComputeError(
-                "`windows_size` should be >= `min_periods`".into(),
-            ))
-        } else {
-            Ok(())
-        }
+        polars_ensure!(
+            min_periods <= window_size,
+            ComputeError: "`window_size`: {} should be >= `min_periods`: {}",
+            window_size, min_periods
+        );
+        Ok(())
     }
 
     /// utility
@@ -53,7 +52,7 @@ mod inner_mod {
             let right_window = (window_size + 1) / 2;
             (
                 idx.saturating_sub(window_size - right_window),
-                std::cmp::min(len, idx + right_window),
+                len.min(idx + right_window),
             )
         } else {
             (idx.saturating_sub(window_size - 1), idx + 1)

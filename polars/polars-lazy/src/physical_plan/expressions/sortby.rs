@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -74,15 +73,12 @@ impl PhysicalExpr for SortByExpr {
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
         let (sorted_idx, series) = (sorted_idx?, series?);
-        if sorted_idx.len() != series.len() {
-            let msg = format!(
-                "The sortby operation produced a different length than the \
-            Series that has to be sorted.\nExpected length: {}, got length: {}",
-                series.len(),
-                sorted_idx.len()
-            );
-            return Err(expression_err!(msg, self.expr, ComputeError));
-        }
+        polars_ensure!(
+            sorted_idx.len() == series.len(),
+            expr = self.expr, ComputeError:
+            "`sort_by` produced different length: {} than the series that has to be sorted: {}",
+            sorted_idx.len(), series.len()
+        );
 
         // Safety:
         // sorted index are within bounds
@@ -104,10 +100,10 @@ impl PhysicalExpr for SortByExpr {
         // the groups of the lhs of the expressions do not match the series values
         // we must take the slower path.
         if !matches!(ac_in.update_groups, UpdateGroups::No) {
-            if self.by.len() > 1 {
-                let msg = "This expression is not supported for more than two sort columns.";
-                return Err(expression_err!(msg, self.expr, ComputeError));
-            }
+            polars_ensure!(
+                self.by.len() <= 1, expr = self.expr, ComputeError:
+                "this expression is not supported for more than two sort columns"
+            );
             let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
             let sort_by = ac_sort_by.aggregated();
             let mut sort_by = sort_by.list().unwrap().clone();
@@ -144,12 +140,10 @@ impl PhysicalExpr for SortByExpr {
             let (groups, ordered_by_group_operation) = if self.by.len() == 1 {
                 let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
                 let sort_by_s = ac_sort_by.flat_naive().into_owned();
-
-                if sort_by_s.len() != ac_in.flat_naive().len() {
-                    let msg = "The expression in 'sort_by' argument must lead to the same length.";
-                    return Err(expression_err!(msg, self.expr, ComputeError));
-                }
-
+                polars_ensure!(
+                    sort_by_s.len() == ac_in.flat_naive().len(), expr = self.expr, ComputeError:
+                    "the expression in `sort_by` argument must result in the same length"
+                );
                 let ordered_by_group_operation = matches!(
                     ac_sort_by.update_groups,
                     UpdateGroups::WithSeriesLen | UpdateGroups::WithGroupsLen
@@ -201,11 +195,10 @@ impl PhysicalExpr for SortByExpr {
                     .collect::<Vec<_>>();
 
                 for sort_by_s in &sort_by_s {
-                    if sort_by_s.len() != ac_in.flat_naive().len() {
-                        let msg =
-                            "The expression in 'sort_by' argument must lead to the same length.";
-                        return Err(expression_err!(msg, self.expr, ComputeError));
-                    }
+                    polars_ensure!(
+                        sort_by_s.len() == ac_in.flat_naive().len(), expr = self.expr, ComputeError:
+                        "the expression in `sort_by` argument must result in the same length"
+                    );
                 }
 
                 let ordered_by_group_operation = matches!(
@@ -251,10 +244,10 @@ impl PhysicalExpr for SortByExpr {
 
                 (GroupsProxy::Idx(groups), ordered_by_group_operation)
             };
-            if invalid.load(Ordering::Relaxed) {
-                let msg = "The expression in 'sort_by' argument must lead to the same length.";
-                return Err(expression_err!(msg, self.expr, ComputeError));
-            }
+            polars_ensure!(
+                !invalid.load(Ordering::Relaxed), expr = self.expr, ComputeError:
+                "the expression in `sort_by` argument must result in the same length"
+            );
 
             // if the rhs is already aggregated once,
             // it is reordered by the groupby operation

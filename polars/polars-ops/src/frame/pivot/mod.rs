@@ -182,11 +182,7 @@ fn pivot_impl(
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame> {
     let sep = separator.unwrap_or("_");
-    if index.is_empty() {
-        return Err(PolarsError::ComputeError(
-            "index cannot be zero length".into(),
-        ));
-    }
+    polars_ensure!(!index.is_empty(), ComputeError: "index cannot be zero length");
 
     let mut final_cols = vec![];
 

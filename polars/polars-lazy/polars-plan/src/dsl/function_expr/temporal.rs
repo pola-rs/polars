@@ -27,9 +27,9 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
             ca.0.apply_mut(|v| adder(&offset, v));
             Ok(ca.into_series())
         }
-        dt => Err(PolarsError::ComputeError(
-            format!("cannot use 'date_offset' on Series of dtype: {dt:?}").into(),
-        )),
+        dt => polars_bail!(
+            ComputeError: "cannot use 'date_offset' on Series of datatype {}", dt,
+        ),
     }
 }
 

@@ -49,8 +49,10 @@ impl DataFrame {
         let n_rows_left = self.height() as IdxSize;
         let n_rows_right = other.height() as IdxSize;
         let Some(total_rows) = n_rows_left.checked_mul(n_rows_right) else {
-            return Err(PolarsError::ComputeError("Cross joins would produce more rows than fits into 2^32.\n\
-            Consider comping with polars-big-idx feature, or set 'streaming'.".into()))
+            polars_bail!(
+                ComputeError: "cross joins would produce more rows than fits into 2^32; \
+                consider comping with polars-big-idx feature, or set 'streaming'"
+            );
         };
         if n_rows_left == 0 || n_rows_right == 0 {
             return Ok((self.clear(), other.clear()));

@@ -171,11 +171,9 @@ fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<
         Value::Static(StaticNode::Null) => AnyValue::Null,
         Value::String(s) => AnyValue::Utf8Owned(s.as_ref().into()),
         Value::Array(arr) => {
-            let inner_dtype = dtype.inner_dtype().ok_or_else(|| {
-                PolarsError::ComputeError(
-                    format!("Expected List/Array in json value got: {dtype}").into(),
-                )
-            })?;
+            let Some(inner_dtype) = dtype.inner_dtype() else {
+                polars_bail!(ComputeError: "expected list/array in json value, got {}", dtype);
+            };
             let vals: Vec<AnyValue> = arr
                 .iter()
                 .map(|val| deserialize_all(val, inner_dtype))
@@ -200,9 +198,9 @@ fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<
                     .collect::<PolarsResult<Vec<_>>>()?;
                 AnyValue::StructOwned(Box::new((vals, fields.clone())))
             } else {
-                return Err(PolarsError::ComputeError(
-                    format!("Expected: {dtype} but got object instead.").into(),
-                ));
+                polars_bail!(
+                    ComputeError: "expected {dtype} in json value, got object",
+                );
             }
         }
         #[cfg(not(feature = "dtype-struct"))]

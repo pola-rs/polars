@@ -54,13 +54,8 @@ where
                 inbounds = false;
             }
         }
-        if inbounds {
-            Ok(())
-        } else {
-            Err(PolarsError::ComputeError(
-                "Take indices are out of bounds.".into(),
-            ))
-        }
+        polars_ensure!(inbounds, ComputeError: "take indices are out of bounds");
+        Ok(())
     }
 
     fn boxed_clone(&self) -> Box<dyn TakeIterator + '_> {
@@ -82,13 +77,8 @@ where
                 inbounds = false;
             }
         }
-        if inbounds {
-            Ok(())
-        } else {
-            Err(PolarsError::ComputeError(
-                "Take indices are out of bounds.".into(),
-            ))
-        }
+        polars_ensure!(inbounds, ComputeError: "take indices are out of bounds");
+        Ok(())
     }
 
     fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_> {
@@ -138,13 +128,8 @@ where
                         }
                     }
                 }
-                if inbounds {
-                    Ok(())
-                } else {
-                    Err(PolarsError::ComputeError(
-                        "Take indices are out of bounds.".into(),
-                    ))
-                }
+                polars_ensure!(inbounds, ComputeError: "take indices are out of bounds");
+                Ok(())
             }
         }
     }

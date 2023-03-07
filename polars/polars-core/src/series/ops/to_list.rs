@@ -91,12 +91,10 @@ impl Series {
         }
 
         let prod = dims.iter().product::<i64>() as usize;
-        if prod != s_ref.len() {
-            return Err(PolarsError::ComputeError(
-                format!("cannot reshape len {} into shape {:?}", s_ref.len(), dims).into(),
-            ));
-        }
-
+        polars_ensure!(
+            prod == s_ref.len(),
+            ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dims,
+        );
         match dims.len() {
             1 => Ok(s_ref.slice(0, dims[0] as usize)),
             2 => {
