@@ -13,7 +13,7 @@ except ImportError:
 
 from polars import api
 from polars.build_info import build_info
-from polars.cfg import Config
+from polars.config import Config
 from polars.convert import (
     from_arrow,
     from_dataframe,
