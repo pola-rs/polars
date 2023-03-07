@@ -480,7 +480,6 @@ mod test {
             .unwrap();
         let expected = df.lazy().select(&[col("a")]).collect().unwrap();
 
-        println!("{df_sql}");
         assert!(df_2.frame_equal(&expected));
     }
     #[test]
