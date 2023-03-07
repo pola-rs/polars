@@ -2,14 +2,11 @@ use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
 use sqlparser::ast::{
-<<<<<<< HEAD
-    ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
-    Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
-    Value as SqlValue,
-=======
-    BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
-    Function as SQLFunction, JoinConstraint, TrimWhereField, UnaryOperator, Value as SqlValue,
->>>>>>> 9ac483bdcb (feat(rust,python): add unary +,- to sql)
+    ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator,
+    BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
+    DataType as SQLDataType, Expr as SqlExpr, Expr as SqlExpr, Function as SQLFunction,
+    Function as SQLFunction, JoinConstraint, JoinConstraint, OrderByExpr, TrimWhereField,
+    TrimWhereField, UnaryOperator, Value as SqlValue, Value as SqlValue,
 };
 
 use crate::context::TABLES;
@@ -82,7 +79,7 @@ impl SqlExprVisitor {
             SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all()),
             SqlExpr::Nested(expr) => self.visit_expr(expr),
             SqlExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
-            other => polars_bail!(ComputeError: "SQL expression {:?} is not yet supported", other)
+            other => polars_bail!(ComputeError: "SQL expression {:?} is not yet supported", other),
         }
     }
 
@@ -112,7 +109,7 @@ impl SqlExprVisitor {
             UnaryOperator::Plus => lit(0) + expr,
             UnaryOperator::Minus => lit(0) - expr,
             UnaryOperator::Not => expr.not(),
-            other => polars_bail!(ComputeError: "Unary operator {:?} is not supported", other)
+            other => polars_bail!(ComputeError: "Unary operator {:?} is not supported", other),
         })
     }
 
