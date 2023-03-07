@@ -475,60 +475,63 @@ pub trait Utf8Methods: AsUtf8 {
             }
         } else {
             let mut cache_map = PlHashMap::new();
+            let transform = match tu {
+                TimeUnit::Nanoseconds => infer::transform_datetime_ns,
+                TimeUnit::Microseconds => infer::transform_datetime_us,
+                TimeUnit::Milliseconds => infer::transform_datetime_ms,
+            };
             // we can use the fast parser
-            let mut ca: Int64Chunked =
-                if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
-                    let convert = |s: &str| {
-                        // Safety:
-                        // fmt_len is correct, it was computed with this `fmt` str.
-                        unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) }
-                            .map(func)
-                    };
-                    if utf8_ca.null_count() == 0 {
-                        utf8_ca
-                            .into_no_null_iter()
-                            .map(|val| {
+            let mut ca: Int64Chunked = if let Some(fmt_len) =
+                self::strptime::fmt_len(fmt.as_bytes())
+            {
+                let convert = |s: &str| {
+                    // Safety:
+                    // fmt_len is correct, it was computed with this `fmt` str.
+                    match unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                        None => transform(s, &fmt),
+                        Some(ndt) => Some(func(ndt)),
+                    }
+                };
+                if utf8_ca.null_count() == 0 {
+                    utf8_ca
+                        .into_no_null_iter()
+                        .map(|val| {
+                            if cache {
+                                *cache_map.entry(val).or_insert_with(|| convert(val))
+                            } else {
+                                convert(val)
+                            }
+                        })
+                        .collect_trusted()
+                } else {
+                    utf8_ca
+                        .into_iter()
+                        .map(|opt_s| {
+                            opt_s.and_then(|val| {
                                 if cache {
                                     *cache_map.entry(val).or_insert_with(|| convert(val))
                                 } else {
                                     convert(val)
                                 }
                             })
-                            .collect_trusted()
-                    } else {
-                        utf8_ca
-                            .into_iter()
-                            .map(|opt_s| {
-                                opt_s.and_then(|val| {
-                                    if cache {
-                                        *cache_map.entry(val).or_insert_with(|| convert(val))
-                                    } else {
-                                        convert(val)
-                                    }
-                                })
-                            })
-                            .collect_trusted()
-                    }
-                } else {
-                    let transform = match tu {
-                        TimeUnit::Nanoseconds => infer::transform_datetime_ns,
-                        TimeUnit::Microseconds => infer::transform_datetime_us,
-                        TimeUnit::Milliseconds => infer::transform_datetime_ms,
-                    };
-                    let mut cache_map = PlHashMap::new();
-                    utf8_ca
-                        .into_iter()
-                        .map(|opt_s| {
-                            opt_s.and_then(|s| {
-                                if cache {
-                                    *cache_map.entry(s).or_insert_with(|| transform(s, &fmt))
-                                } else {
-                                    transform(s, &fmt)
-                                }
-                            })
                         })
                         .collect_trusted()
-                };
+                }
+            } else {
+                let mut cache_map = PlHashMap::new();
+                utf8_ca
+                    .into_iter()
+                    .map(|opt_s| {
+                        opt_s.and_then(|s| {
+                            if cache {
+                                *cache_map.entry(s).or_insert_with(|| transform(s, &fmt))
+                            } else {
+                                transform(s, &fmt)
+                            }
+                        })
+                    })
+                    .collect_trusted()
+            };
             ca.rename(utf8_ca.name());
             match tz {
                 #[cfg(feature = "timezones")]
