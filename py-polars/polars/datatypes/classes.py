@@ -145,27 +145,29 @@ class Decimal(FractionalType):
     NOTE: this is an experimental work-in-progress feature and may not work as expected.
     """
 
-    prec: int | None
+    precision: int | None
     scale: int
 
-    def __init__(self, prec: int | None, scale: int):
-        self.prec = prec
+    def __init__(self, precision: int | None, scale: int):
+        self.precision = precision
         self.scale = scale
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(prec={self.prec}, scale={self.scale})"
+        return (
+            f"{self.__class__.__name__}(precision={self.precision}, scale={self.scale})"
+        )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Decimal):
             return True
         elif isinstance(other, Decimal):
-            return self.prec == other.prec and self.scale == other.scale
+            return self.precision == other.precision and self.scale == other.scale
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((Decimal, self.prec, self.scale))
+        return hash((Decimal, self.precision, self.scale))
 
 
 class Boolean(DataType):

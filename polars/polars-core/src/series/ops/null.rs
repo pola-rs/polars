@@ -26,9 +26,9 @@ impl Series {
                 .into_time()
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(prec, scale) => Int128Chunked::full_null(name, size)
+            DataType::Decimal(precision, scale) => Int128Chunked::full_null(name, size)
                 .into_decimal_unchecked(
-                    *prec,
+                    *precision,
                     scale.unwrap_or_else(|| unreachable!("scale should be set")),
                 )
                 .into_series(),

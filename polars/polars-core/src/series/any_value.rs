@@ -33,7 +33,7 @@ fn any_values_to_utf8(avs: &[AnyValue]) -> Utf8Chunked {
 #[cfg(feature = "dtype-decimal")]
 fn any_values_to_decimal(
     avs: &[AnyValue],
-    prec: Option<usize>,
+    precision: Option<usize>,
     scale: Option<usize>, // if None, we're inferring the scale
 ) -> PolarsResult<DecimalChunked> {
     // two-pass approach, first we scan and record the scales, then convert (or not)
@@ -59,7 +59,7 @@ fn any_values_to_decimal(
         // empty array or all nulls, return a decimal array with given scale (or 0 if inferring)
         return Ok(
             Int128Chunked::full_null("", avs.len())
-                .into_decimal_unchecked(prec, scale.unwrap_or(0))
+                .into_decimal_unchecked(precision, scale.unwrap_or(0))
         );
     };
     let scale = scale.unwrap_or(s_max);
@@ -72,7 +72,7 @@ fn any_values_to_decimal(
         );
     } else if s_min == s_max && s_max == scale {
         // no conversions needed; will potentially check values for precision though
-        any_values_to_primitive::<Int128Type>(avs).into_decimal(prec, scale)
+        any_values_to_primitive::<Int128Type>(avs).into_decimal(precision, scale)
     } else {
         // rescaling is needed
         let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
@@ -95,7 +95,7 @@ fn any_values_to_decimal(
             })?);
         }
         // build the array and do a precision check if needed
-        builder.finish().into_decimal(prec, scale)
+        builder.finish().into_decimal(precision, scale)
     }
 }
 
@@ -196,8 +196,8 @@ impl Series {
                 .into_duration(*tu)
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(prec, scale) => {
-                any_values_to_decimal(av, *prec, *scale)?.into_series()
+            DataType::Decimal(precision, scale) => {
+                any_values_to_decimal(av, *precision, *scale)?.into_series()
             }
             DataType::List(inner) => any_values_to_list(av, inner).into_series(),
             #[cfg(feature = "dtype-struct")]

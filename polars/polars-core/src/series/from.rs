@@ -63,9 +63,9 @@ impl Series {
                 .into_datetime(*tu, tz.clone())
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(prec, scale) => Int128Chunked::from_chunks(name, chunks)
+            Decimal(precision, scale) => Int128Chunked::from_chunks(name, chunks)
                 .into_decimal_unchecked(
-                    *prec,
+                    *precision,
                     scale.unwrap_or_else(|| unreachable!("scale should be set")),
                 )
                 .into_series(),
@@ -342,12 +342,12 @@ impl Series {
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             }
             #[cfg(feature = "dtype-decimal")]
-            ArrowDataType::Decimal(prec, scale) => {
+            ArrowDataType::Decimal(precision, scale) => {
                 #[cfg(feature = "python")]
                 {
                     if std::env::var("POLARS_ACTIVATE_DECIMAL").is_ok() {
                         Ok(Int128Chunked::from_chunks(name, chunks)
-                            .into_decimal_unchecked(Some(*prec), *scale)
+                            .into_decimal_unchecked(Some(*precision), *scale)
                             .into_series())
                     } else {
                         if verbose() {
@@ -365,12 +365,13 @@ impl Series {
 
                 #[cfg(not(feature = "python"))]
                 {
-                    let (prec, scale) = (Some(*prec), *scale);
+                    let (precision, scale) = (Some(*precision), *scale);
                     let chunks =
-                        cast_chunks(&chunks, &DataType::Decimal(prec, Some(scale)), false).unwrap();
+                        cast_chunks(&chunks, &DataType::Decimal(precision, Some(scale)), false)
+                            .unwrap();
                     // or DecimalChunked?
                     Ok(Int128Chunked::from_chunks(name, chunks)
-                        .into_decimal_unchecked(prec, scale)
+                        .into_decimal_unchecked(precision, scale)
                         .into_series())
                 }
             }
