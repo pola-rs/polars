@@ -47,8 +47,8 @@ def test_lazyframe_slice(ldf: pl.LazyFrame) -> None:
                 sliced_py_data == sliced_df_data
             ), f"slice [{start}:{stop}:{step}] failed on lazy df w/len={len(py_data)}"
 
-        except ValueError as err:
+        except ValueError as exc:
             # test params will trigger some known
             # unsupported cases; filter them here.
-            if "not supported" not in str(err):
+            if "not supported" not in str(exc):
                 raise

@@ -234,8 +234,8 @@ def test_window_expression_different_group_length() -> None:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
             [pl.col("groups").apply(lambda _: pl.Series([1, 2])).over("groups")]
         )
-    except pl.ComputeError as e:
-        msg = str(e)
+    except pl.ComputeError as exc:
+        msg = str(exc)
         assert (
             "the length of the window expression did not match that of the group" in msg
         )

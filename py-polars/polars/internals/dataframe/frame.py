@@ -2929,10 +2929,10 @@ class DataFrame:
                 )
             try:
                 from sqlalchemy import create_engine
-            except ImportError as err:
+            except ImportError as exc:
                 raise ImportError(
                     "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'."
-                ) from err
+                ) from exc
 
             engine = create_engine(connection_uri)
 
