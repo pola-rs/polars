@@ -51,12 +51,16 @@ impl StructChunked {
         let mut max_len = first_len;
 
         let mut all_equal_len = true;
+        let mut is_empty = false;
         for s in fields {
             let s_len = s.len();
             max_len = std::cmp::max(max_len, s_len);
 
             if s_len != first_len {
                 all_equal_len = false;
+            }
+            if s_len == 0 {
+                is_empty = true;
             }
             let name = s.name();
             if !names.insert(name) {
@@ -70,7 +74,9 @@ impl StructChunked {
             let mut new_fields = Vec::with_capacity(fields.len());
             for s in fields {
                 let s_len = s.len();
-                if s_len == max_len {
+                if is_empty {
+                    new_fields.push(s.clear())
+                } else if s_len == max_len {
                     new_fields.push(s.clone())
                 } else if s_len == 1 {
                     new_fields.push(s.new_from_index(0, max_len))
