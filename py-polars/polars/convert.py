@@ -324,10 +324,6 @@ def from_arrow(
         Data representing an Arrow Table or Array.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
-    schema : Sequence of str, dict, default None
-        Column labels to use for resulting DataFrame. Must match data dimensions.
-        If not specified, existing Array table columns are used, with missing names
-        named as `column_0`, `column_1`, etc.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
