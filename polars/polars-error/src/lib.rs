@@ -115,7 +115,7 @@ macro_rules! polars_err {
         )
     };
     (expr = $expr:expr, $variant:ident: $fmt:literal, $($arg:tt)+) => {
-        polars_err!(expr = $expr, $variant: format!($fmt, $($arg)+))
+        $crate::polars_err!(expr = $expr, $variant: format!($fmt, $($arg)+))
     };
     (op = $op:expr, got = $arg:expr, expected = $expected:expr) => {
         $crate::polars_err!(
@@ -145,29 +145,29 @@ macro_rules! polars_err {
         $crate::polars_err!(op = stringify!($op), $lhs, $rhs)
     };
     (append) => {
-        polars_err!(SchemaMismatch: "cannot append series, data types don't match")
+        $crate::polars_err!(SchemaMismatch: "cannot append series, data types don't match")
     };
     (extend) => {
-        polars_err!(SchemaMismatch: "cannot extend series, data types don't match")
+        $crate::polars_err!(SchemaMismatch: "cannot extend series, data types don't match")
     };
     (unpack) => {
-        polars_err!(SchemaMismatch: "cannot unpack series, data types don't match")
+        $crate::polars_err!(SchemaMismatch: "cannot unpack series, data types don't match")
     };
     (duplicate = $name:expr) => {
-        polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)
+        $crate::polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)
     };
     (oob = $idx:expr, $len:expr) => {
-        polars_err!(ComputeError: "index {} is out of bounds for sequence of size {}", $idx, $len)
+        $crate::polars_err!(ComputeError: "index {} is out of bounds for sequence of size {}", $idx, $len)
     };
     (agg_len = $agg_len:expr, $groups_len:expr) => {
-        polars_err!(
+        $crate::polars_err!(
             ComputeError:
             "returned aggregation is of different length: {} than the groups length: {}",
             $agg_len, $groups_len
         )
     };
     (parse_fmt_idk = $dtype:expr) => {
-        polars_err!(
+        $crate::polars_err!(
             ComputeError: "could not find an appropriate format to parse {}s, please define a fmt",
             $dtype,
         )
@@ -185,7 +185,7 @@ macro_rules! polars_bail {
 macro_rules! polars_ensure {
     ($cond:expr, $($tt:tt)+) => {
         if !$cond {
-            polars_bail!($($tt)+);
+            $crate::polars_bail!($($tt)+);
         }
     };
 }
