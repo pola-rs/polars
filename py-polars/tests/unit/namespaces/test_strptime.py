@@ -297,6 +297,20 @@ def test_full_month_name() -> None:
     assert s[0] == datetime(2022, 12, 1)
 
 
+@pytest.mark.parametrize(
+    ("datatype", "expected"),
+    [
+        (pl.Datetime, datetime(2022, 1, 1)),
+        (pl.Date, date(2022, 1, 1)),
+    ],
+)
+def test_single_digit_month(
+    datatype: PolarsTemporalType, expected: datetime | date
+) -> None:
+    s = pl.Series(["2022-1-1"]).str.strptime(datatype, "%Y-%m-%d")
+    assert s[0] == expected
+
+
 def test_invalid_date_parsing_4898() -> None:
     assert pl.Series(["2022-09-18", "2022-09-50"]).str.strptime(
         pl.Date, "%Y-%m-%d", strict=False
