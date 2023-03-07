@@ -34,7 +34,7 @@ impl<K: NumericNative + Add<Output = K> + NumCast> SumAgg<K> {
 
 impl<K> AggregateFn for SumAgg<K>
 where
-    K::POLARSTYPE: PolarsNumericType,
+    K::PolarsType: PolarsNumericType,
     K: NumericNative + Add<Output = K>,
     <K as Simd>::Simd: Add<Output = <K as Simd>::Simd> + Sum<K>,
 {
@@ -89,7 +89,7 @@ where
             let arr = values.chunks().get_unchecked(0);
             arr.sliced_unchecked(offset as usize, length as usize)
         };
-        let dtype = K::POLARSTYPE::get_dtype().to_arrow();
+        let dtype = K::PolarsType::get_dtype().to_arrow();
         let arr = polars_arrow::compute::cast::cast(arr.as_ref(), &dtype).unwrap();
         let arr = unsafe {
             arr.as_any()

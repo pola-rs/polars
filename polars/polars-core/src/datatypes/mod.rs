@@ -187,42 +187,42 @@ pub trait NumericNative:
     + IsFloat
     + ArrayArithmetics
 {
-    type POLARSTYPE: PolarsNumericType;
+    type PolarsType: PolarsNumericType;
 }
 
 impl NumericNative for i8 {
-    type POLARSTYPE = Int8Type;
+    type PolarsType = Int8Type;
 }
 impl NumericNative for i16 {
-    type POLARSTYPE = Int16Type;
+    type PolarsType = Int16Type;
 }
 impl NumericNative for i32 {
-    type POLARSTYPE = Int32Type;
+    type PolarsType = Int32Type;
 }
 impl NumericNative for i64 {
-    type POLARSTYPE = Int64Type;
+    type PolarsType = Int64Type;
 }
 impl NumericNative for u8 {
-    type POLARSTYPE = UInt8Type;
+    type PolarsType = UInt8Type;
 }
 impl NumericNative for u16 {
-    type POLARSTYPE = UInt16Type;
+    type PolarsType = UInt16Type;
 }
 impl NumericNative for u32 {
-    type POLARSTYPE = UInt32Type;
+    type PolarsType = UInt32Type;
 }
 impl NumericNative for u64 {
-    type POLARSTYPE = UInt64Type;
+    type PolarsType = UInt64Type;
 }
 #[cfg(feature = "dtype-decimal")]
 impl NumericNative for i128 {
-    type POLARSTYPE = Int128Type;
+    type PolarsType = Int128Type;
 }
 impl NumericNative for f32 {
-    type POLARSTYPE = Float32Type;
+    type PolarsType = Float32Type;
 }
 impl NumericNative for f64 {
-    type POLARSTYPE = Float64Type;
+    type PolarsType = Float64Type;
 }
 
 pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
