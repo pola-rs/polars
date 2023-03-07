@@ -24,7 +24,7 @@ pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
 fn sign_float<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::Float,
+    T::Native: PolarsFloatNative,
     ChunkedArray<T>: IntoSeries,
 {
     ca.apply(signum_improved).into_series().cast(&Int64)

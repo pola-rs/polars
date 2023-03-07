@@ -8,7 +8,7 @@ use std::ops::Add;
 use ahash::AHashSet;
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num_traits::{Float, NumCast, ToPrimitive};
+use num_traits::{NumCast, ToPrimitive};
 #[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
 
@@ -22,7 +22,7 @@ use crate::utils::concat_df;
 pub fn cov_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
-    T::Native: Float,
+    T::Native: PolarsFloatNative,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -80,7 +80,7 @@ where
 pub fn pearson_corr_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<T::Native>
 where
     T: PolarsFloatType,
-    T::Native: Float,
+    T::Native: PolarsFloatNative,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,

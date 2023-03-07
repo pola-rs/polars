@@ -30,7 +30,7 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 pub use dtype::*;
 pub use field::*;
-use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, Pow, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
@@ -273,7 +273,14 @@ impl PolarsIntegerType for Int16Type {}
 impl PolarsIntegerType for Int32Type {}
 impl PolarsIntegerType for Int64Type {}
 
-pub trait PolarsFloatType: PolarsNumericType {}
+pub trait PolarsFloatNative: NumericNative + Float + IsFloat + Pow<Self, Output = Self> {}
+impl<T> PolarsFloatNative for T where T: NumericNative + Float + IsFloat + Pow<Self, Output = Self> {}
+
+pub trait PolarsFloatType: PolarsNumericType
+where
+    Self::Native: PolarsFloatNative,
+{
+}
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 

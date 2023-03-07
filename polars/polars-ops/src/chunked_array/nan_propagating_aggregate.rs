@@ -35,6 +35,7 @@ fn nan_max<T: IsFloat + PartialOrd>(a: T, b: T) -> T {
 fn ca_nan_agg<T, Agg>(ca: &ChunkedArray<T>, min_or_max_fn: Agg) -> Option<T::Native>
 where
     T: PolarsFloatType,
+    T::Native: PolarsFloatNative,
     Agg: Fn(T::Native, T::Native) -> T::Native + Copy,
 {
     let mut cum_agg = None;
@@ -91,6 +92,7 @@ pub fn nan_max_s(s: &Series, name: &str) -> Series {
 unsafe fn group_nan_max<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy) -> Series
 where
     T: PolarsFloatType,
+    T::Native: PolarsFloatNative,
     ChunkedArray<T>: IntoSeries,
 {
     match groups {
@@ -164,6 +166,7 @@ where
 unsafe fn group_nan_min<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy) -> Series
 where
     T: PolarsFloatType,
+    T::Native: PolarsFloatNative,
     ChunkedArray<T>: IntoSeries,
 {
     match groups {

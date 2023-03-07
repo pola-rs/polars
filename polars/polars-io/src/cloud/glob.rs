@@ -1,7 +1,6 @@
 use futures::future::ready;
 use futures::{StreamExt, TryStreamExt};
 use object_store::path::Path;
-use polars_arrow::error::polars_bail;
 use polars_core::cloud::CloudOptions;
 use polars_core::error::*;
 use regex::Regex;

@@ -1,12 +1,8 @@
-use std::ops::SubAssign;
-
-use polars_arrow::data_types::IsFloat;
-
 use super::*;
 
 impl<T: PolarsFloatType> SeriesOpsTime for WrapFloat<ChunkedArray<T>>
 where
-    T::Native: IsFloat + SubAssign,
+    T::Native: PolarsFloatNative,
     Self: RollingAgg,
 {
     fn ops_time_dtype(&self) -> &DataType {

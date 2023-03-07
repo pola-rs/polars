@@ -8,7 +8,7 @@ use super::*;
 fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Option<Series>>
 where
     T: PolarsFloatType,
-    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
+    T::Native: PolarsFloatNative,
     ChunkedArray<T>: IntoSeries,
 {
     let dtype = T::get_dtype();

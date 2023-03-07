@@ -1,14 +1,10 @@
-use num::pow::Pow;
-use num::Float;
-use polars_core::export::num;
-
 use super::*;
 
 #[cfg(not(feature = "rolling_window"))]
 impl<T> RollingAgg for WrapFloat<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    T::Native: Pow<T::Native, Output = T::Native> + Float,
+    T::Native: PolarsFloatNative,
     ChunkedArray<T>: IntoSeries,
 {
 }
@@ -17,7 +13,7 @@ where
 impl<T> RollingAgg for WrapFloat<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    T::Native: Pow<T::Native, Output = T::Native> + Float,
+    T::Native: PolarsFloatNative,
     ChunkedArray<T>: IntoSeries,
 {
     /// Apply a rolling mean (moving mean) over the values in this array.

@@ -7,7 +7,7 @@ use crate::prelude::*;
 impl<T> ChunkedArray<T>
 where
     T: PolarsFloatType,
-    T::Native: Float,
+    T::Native: PolarsFloatNative,
 {
     pub fn is_nan(&self) -> BooleanChunked {
         self.apply_kernel_cast(&is_nan::<T::Native>)
