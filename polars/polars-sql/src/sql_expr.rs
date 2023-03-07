@@ -2,11 +2,9 @@ use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
 use sqlparser::ast::{
-    ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator,
-    BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
-    DataType as SQLDataType, Expr as SqlExpr, Expr as SqlExpr, Function as SQLFunction,
-    Function as SQLFunction, JoinConstraint, JoinConstraint, OrderByExpr, TrimWhereField,
-    TrimWhereField, UnaryOperator, Value as SqlValue, Value as SqlValue,
+    ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
+    Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
+    UnaryOperator, Value as SqlValue,
 };
 
 use crate::context::TABLES;
