@@ -5,6 +5,7 @@ import io
 import sys
 import tempfile
 import textwrap
+import typing
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -1068,6 +1069,7 @@ def test_csv_categorical_categorical_merge() -> None:
     ].to_list() == ["A", "B"]
 
 
+@typing.no_type_check
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     batches = reader.next_batches(5)

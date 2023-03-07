@@ -49,6 +49,8 @@ struct ChunkReader<'a> {
     finished: bool,
     page_size: u64,
     // position in the buffer we read
+    // this must be set by the caller of this chunkreader
+    // after it iterated all offsets.
     buf_end: usize,
     offsets: VecDeque<(usize, usize)>,
     n_chunks: usize,
@@ -171,37 +173,7 @@ impl<'a> ChunkReader<'a> {
         );
         !self.offsets.is_empty()
     }
-
-    // fn read_and_return(&mut self) -> Option<&'a [u8]> {
-    //     if !self.read(self.n_chunks) {
-    //         return None
-    //     }
-    //     match self.offsets.pop_front() {
-    //         Some((start, end)) => self.return_slice(start, end),
-    //         // We depleted the iterator. Ensure we deplete the slice as well
-    //         None => {
-    //             self.file.read_to_end(&mut self.buf).unwrap();
-    //             self.finish()
-    //         }
-    //     }
-    // }
 }
-
-// impl<'a> Iterator for ChunkIter<'a> {
-//     type Item = &'a [u8];
-//
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.finished {
-//             return None;
-//         }
-//         match self.offsets.pop_front() {
-//             Some((start, end)) => self.return_slice(start, end),
-//             // all chunks processed
-//             // new read operation
-//             None => self.read_and_return(),
-//         }
-//     }
-// }
 
 impl<'a> CoreReader<'a> {
     /// Create a batched csv reader that uses read calls to load data.
@@ -318,6 +290,7 @@ impl<'a> BatchedCsvReaderRead<'a> {
                 self.file_chunks
                     .push(self.file_chunks_iter.return_slice(start, end))
             }
+            // ensure that this is set correctly
             self.file_chunks_iter.buf_end = latest_end;
         }
         // ensure we process the final slice as well.
@@ -438,18 +411,21 @@ pub fn to_batched_owned_read(
 
 #[cfg(test)]
 mod test {
+    use polars_core::utils::concat_df;
+
     use super::*;
     use crate::SerReader;
 
     #[test]
-    fn test_read_slice() {
+    fn test_read_io_reader() {
         let path = "../../examples/datasets/foods1.csv";
         let mut file = std::fs::File::open(path).unwrap();
-
-        let mut reader = CsvReader::new(file).with_chunk_size(5);
+        let mut reader = CsvReader::from_path(path).unwrap().with_chunk_size(5);
 
         let mut reader = reader.batched_borrowed_read().unwrap();
-        dbg!(reader.next_batches(5));
-        dbg!(reader.next_batches(5));
+        let batches = reader.next_batches(5).unwrap().unwrap();
+        let df = concat_df(&batches).unwrap();
+        let mut expected = CsvReader::new(file).finish().unwrap();
+        assert!(df.frame_equal(&expected))
     }
 }
