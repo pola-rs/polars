@@ -86,6 +86,10 @@ class FractionalType(NumericType):
     """Base class for fractional data types."""
 
 
+class FloatType(FractionalType):
+    """Base class for float data types."""
+
+
 class TemporalType(DataType):
     """Base class for temporal data types."""
 
@@ -126,15 +130,15 @@ class UInt64(IntegralType):
     """64-bit unsigned integer type."""
 
 
-class Float32(FractionalType):
+class Float32(FloatType):
     """32-bit floating point type."""
 
 
-class Float64(FractionalType):
+class Float64(FloatType):
     """64-bit floating point type."""
 
 
-class Decimal(DataType):
+class Decimal(FractionalType):
     """
     Decimal 128-bit type with an optional precision and non-negative scale.
 

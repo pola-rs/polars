@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from polars.datatypes import (
     Date,
     Datetime,
+    Decimal,
     Duration,
     Float32,
     Float64,
@@ -55,7 +56,9 @@ INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
     ]
 )
 FLOAT_DTYPES: frozenset[PolarsDataType] = frozenset([Float32, Float64])
-NUMERIC_DTYPES: frozenset[PolarsDataType] = FLOAT_DTYPES | INTEGER_DTYPES
+NUMERIC_DTYPES: frozenset[PolarsDataType] = (
+    FLOAT_DTYPES | INTEGER_DTYPES | frozenset([Decimal])
+)
 
 # number of rows to scan by default when inferring datatypes
 N_INFER_DEFAULT = 100
