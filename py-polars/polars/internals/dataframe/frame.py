@@ -70,8 +70,7 @@ from polars.internals.dataframe._html import NotebookFormatter
 from polars.internals.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.internals.io_excel import (
     _unpack_multi_column_dict,
-    _xl_column_multi_range,
-    _xl_column_range,
+    _xl_apply_conditional_formats,
     _xl_inject_sparklines,
     _xl_setup_table_columns,
     _xl_setup_table_options,
@@ -114,6 +113,7 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
     )
+    from polars.internals.io_excel import ColumnTotalsDict, ConditionalFormatDict
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -2404,15 +2404,11 @@ class DataFrame:
         position: tuple[int, int] | str = "A1",
         table_style: str | dict[str, Any] | None = None,
         table_name: str | None = None,
-        column_widths: dict[str | Sequence[str], int] | None = None,
-        column_totals: (
-            dict[str | Sequence[str], str] | Sequence[str] | bool | None
-        ) = None,
-        column_formats: dict[str | Sequence[str], str] | None = None,
+        column_formats: dict[str | tuple[str, ...], str] | None = None,
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
-        conditional_formats: (
-            dict[str | Sequence[str], str | dict[str | Sequence[str], Any]] | None
-        ) = None,
+        conditional_formats: ConditionalFormatDict | None = None,
+        column_totals: ColumnTotalsDict | None = None,
+        column_widths: dict[str | tuple[str, ...], int] | None = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         float_precision: int = 3,
         has_header: bool = True,
@@ -2426,86 +2422,95 @@ class DataFrame:
 
         Parameters
         ----------
-        workbook
+        workbook : Workbook
             String name or path of the workbook to create, BytesIO object to write
             into, or an open ``xlsxwriter.Workbook`` object that has not been closed.
             If None, writes to a ``dataframe.xlsx`` workbook in the working directory.
-        worksheet
+        worksheet : str
             Name of target worksheet; if None, writes to "Sheet1" when creating a new
-            workbook (writing to an existing workbook requires a valid worksheet name).
-        position
+            workbook (note that writing to an existing workbook requires a valid
+            existing -or new- worksheet name).
+        position : {str, tuple}
             Table position in Excel notation (eg: "A1"), or a (row,col) integer tuple.
-        table_style
+        table_style : {str, dict}
             A named Excel table style, such as "Table Style Medium 4", or a dictionary
-            of {"key":value,} containing one or more of the following keys:
+            of ``{"key":value,}`` options containing one or more of the following keys:
             "style", "first_column", "last_column", "banded_columns, "banded_rows".
-        table_name
+        table_name : str
             Name of the output table object in the worksheet; can then be referred to
             in the sheet by formulae/charts, or by subsequent ``xlsxwriter`` operations.
-        column_widths
-            A {colname:int,} dict that sets (or overrides if autofitting) column widths
-            in integer pixel units.
-        column_totals
-            Add a total row. If True, all numeric columns will have an associated total
-            using "sum". If given a list of colnames, only those will have a total.
-            For more control, pass a {colname:funcname,} dict. Valid names are:
-            "average", "count_nums", "count", "max", "min", "std_dev", "sum", "var".
-        column_formats
-            A {colname:str,} dictionary for applying an Excel format string to the given
-            columns. Formats defined here (such as "dd/mm/yyyy", "0.00%", etc) will
-            override those defined in ``dtype_formats`` (below).
-        dtype_formats
-            A {dtype:str,} dictionary that sets the default Excel format for the given
-            dtype. (This is overridden on a per-column basis by ``column_formats``).
-            It is also valid to use dtype groups such as ``pl.FLOAT_DTYPES`` as the
-            dtype/format key, to simplify setting uniform int/float formats.
-        conditional_formats
-            A {colname(s):str,} or {colname(s):dict,} dictionary defining conditional
-            format options for the specified columns. If supplying a string typename,
-            should be one of the valid ``xlsxwriter`` types such as "3_color_scale",
-            "data_bar", etc. If supplying a dictionary you can make use of any/all
-            ``xlsxwriter``-supported options, including icon sets, formulae, etc.
-            Supplying multiple columns as a tuple/key will apply a single format across
-            all columns at once - this is effective in creating a heatmap, as the
-            min/max values are determined across the entire range, not per-column.
-        sparklines
-            A {colname:list,} or {colname:dict,} dictionary that defines one or more
-            sparklines to be written into a new column in the table. If passing a
-            list of colnames (used as the source of the sparkline data) the default
-            sparkline settings are used (eg: will be a line with no markers). For more
-            control an ``xlsxwriter``-compliant parameter dictionary can be supplied; in
-            this case three additional polars-specific keys are available: "columns",
-            "insert_before", and "insert_after". These allow you to define the source
-            columns and position the sparkline(s) with respect to other table columns.
-            If no position directive is given, sparklines are added to the end of the
-            table in the order in which they are defined (eg: to the far right).
-        float_precision
+        column_formats : dict
+            A ``{colname:str,}`` dictionary for applying an Excel format string to the
+            given columns. Formats defined here (such as "dd/mm/yyyy", "0.00%", etc)
+            will override any defined in ``dtype_formats`` (below).
+        dtype_formats : dict
+            A ``{dtype:str,}`` dictionary that sets the default Excel format for the
+            given dtype. (This can be overridden on a per-column basis by the
+            ``column_formats`` param). It is also valid to use dtype groups such as
+            ``pl.FLOAT_DTYPES`` as the dtype/format key, to simplify setting uniform
+            integer and float formats.
+        conditional_formats : dict
+            A ``{colname(s):str,}``, ``{colname(s):dict,}``, or ``{colname(s):list,}``
+            dictionary defining conditional format options for the specified columns.
+
+            * If supplying a string typename, should be one of the valid ``xlsxwriter``
+              types such as "3_color_scale", "data_bar", etc.
+            * If supplying a dictionary you can make use of any/all ``xlsxwriter``
+              supported options, including icon sets, formulae, etc.
+            * Supplying multiple columns as a tuple/key will apply a single format
+              across all columns - this is effective in creating a heatmap, as the
+              min/max values will be determined across the entire range, not per-column.
+            * Finally, you can also supply a list made up from the above options
+              in order to apply *more* than one conditional format to the same range.
+        column_totals : {bool, list, dict}
+            Add a total row to the exported table.
+
+            * If True, all numeric columns will have an associated total using "sum".
+            * If passing a list of colnames, only those given will have a total.
+            * For more control, pass a ``{colname:funcname,}`` dict. Valid names are:
+              "average", "count_nums", "count", "max", "min", "std_dev", "sum", "var".
+        column_widths : dict
+            A ``{colname:int,}`` dict that sets (or overrides if autofitting) column
+            widths in integer pixel units.
+        sparklines : dict
+            A ``{colname:list,}`` or ``{colname:dict,}`` dictionary defining one or more
+            sparklines to be written into a new column in the table.
+
+            * If passing a list of colnames (used as the source of the sparkline data)
+              the default sparkline settings are used (eg: line chart with no markers).
+            * For more control an ``xlsxwriter``-compliant options dict can be supplied,
+              in which case three additional polars-specific keys are available:
+              "columns", "insert_before", and "insert_after". These allow you to define
+              the source columns and position the sparkline(s) with respect to other
+              table columns. If no position directive is given, sparklines are added to
+              the end of the table (eg: to the far right) in the order they are given.
+        float_precision : int
             Default number of decimals displayed for floating point columns (note that
             this is purely a formatting directive; the actual values are not rounded).
-        has_header
+        has_header : bool
             Indicate if the table should be created with a header row.
-        autofilter
+        autofilter : bool
             If the table has headers, provide autofilter capability.
-        autofit
+        autofit : bool
             Calculate individual column widths from the data.
-        hidden_columns
+        hidden_columns : list
              A list of table columns to hide in the worksheet.
-        hide_gridlines
+        hide_gridlines : bool
             Do not display any gridlines on the output worksheet.
 
         Notes
         -----
-        Conditional formatting parameter dicts should provide xlsxwriter-compatible
-        definitions; polars will take care of how/where they are applied on the
-        worksheet with respect to the column position. For supported options, see:
+        Conditional formatting dictionaries should provide xlsxwriter-compatible
+        definitions; polars will take care of how they are applied on the worksheet
+        with respect to the relative sheet/column position. For supported options, see:
         https://xlsxwriter.readthedocs.io/working_with_conditional_formats.html
 
-        Similarly for sparklines, any parameter definition dictionary should contain
-        xlsxwriter-compatible key/values, as well as a mandatory polars "columns" key
-        that defines the sparkline source data; these source cols should be adjacent to
-        each other. Two other polars-specific keys are available to help define where
-        the sparkline appears in the table: "insert_after", and "insert_before". The
-        value associated with these keys should be the name of a column in the table.
+        Similarly, sparkline option dictionaries should contain xlsxwriter-compatible
+        key/values, as well as a mandatory polars "columns" key that defines the
+        sparkline source data; these source columns should be adjacent to each other.
+        Two other polars-specific keys are available to help define where the sparkline
+        appears in the table: "insert_after", and "insert_before". The value associated
+        with these keys should be the name of a column in the exported table.
         https://xlsxwriter.readthedocs.io/working_with_sparklines.html
 
         Examples
@@ -2633,7 +2638,7 @@ class DataFrame:
         ...             "type": "2_color_scale",
         ...             "min_color": "#95b3d7",
         ...             "max_color": "#ffffff",
-        ...         }
+        ...         },
         ...     },
         ...     column_totals=["q1", "q2", "q3", "q4"],
         ...     hide_gridlines=True,
@@ -2678,7 +2683,7 @@ class DataFrame:
             table_start[1] + len(df.columns) - 1,
         )
 
-        # write table into the target sheet
+        # write table/formats into the target sheet
         if not is_empty or has_header:
             frame_data = [[None] * len(df.columns)] if is_empty else df.rows()
             ws.add_table(
@@ -2695,20 +2700,15 @@ class DataFrame:
                     **table_options,
                 },
             )
-            # apply any conditional formats
-            for cols, fmt in (conditional_formats or {}).items():
-                if not isinstance(cols, str) and len(cols) == 1:
-                    cols = cols[0]
-                if not isinstance(fmt, dict):
-                    fmt = {"type": fmt}
-                if not isinstance(cols, str):
-                    fmt["multi_range"] = _xl_column_multi_range(
-                        df, table_start, cols, has_header
-                    )
-                    cols = cols[0]
-
-                col_range = _xl_column_range(df, table_start, cols, has_header)
-                ws.conditional_format(*col_range, fmt)
+            if conditional_formats:
+                _xl_apply_conditional_formats(
+                    df=df,
+                    workbook=wb,
+                    worksheet=ws,
+                    conditional_formats=conditional_formats,
+                    table_start=table_start,
+                    has_header=has_header,
+                )
 
         # worksheet options
         if autofit and not is_empty:

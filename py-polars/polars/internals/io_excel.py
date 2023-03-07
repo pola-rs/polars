@@ -7,6 +7,8 @@ from typing import (
     Any,
     Iterable,
     Sequence,
+    TypeAlias,
+    Union,
 )
 
 import polars.internals as pli
@@ -37,6 +39,18 @@ _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
 for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
 
+ColumnTotalsDict: TypeAlias = Union[
+    # dict of colname(s) to str, a sequence of str, or a boolean
+    dict[Union[str, tuple[str, ...]], str],
+    Sequence[str],
+    bool,
+]
+ConditionalFormatDict: TypeAlias = dict[
+    # dict of colname(s) to str, dict, or sequence of str/dict
+    Union[str, tuple[str, ...]],
+    Union[str, Union[dict[str, Any], Sequence[Union[str, dict[str, Any]]]]],
+]
+
 
 def _unpack_multi_column_dict(
     d: dict[str | Sequence[str], str] | Any
@@ -49,6 +63,39 @@ def _unpack_multi_column_dict(
         for k in (key,) if isinstance(key, str) else key:
             unpacked[k] = value
     return unpacked
+
+
+def _xl_apply_conditional_formats(
+    df: pli.DataFrame,
+    workbook: Workbook,
+    worksheet: Worksheet,
+    conditional_formats: ConditionalFormatDict,
+    table_start: tuple[int, int],
+    has_header: bool,
+) -> None:
+    """Take all conditional formatting options and apply them to the table/range."""
+    for cols, formats in conditional_formats.items():
+        if not isinstance(cols, str) and len(cols) == 1:
+            cols = cols[0]
+        if isinstance(formats, (str, dict)):
+            formats = [formats]
+        for fmt in formats:
+            if not isinstance(fmt, dict):
+                fmt = {"type": fmt}
+            if isinstance(cols, str):
+                col = cols
+            else:
+                col = cols[0]
+                fmt["multi_range"] = _xl_column_multi_range(
+                    df, table_start, cols, has_header
+                )
+            col_range = _xl_column_range(df, table_start, col, has_header)
+            if "format" in fmt:
+                f = fmt["format"]
+                fmt["format"] = workbook.add_format(
+                    {"num_format": f} if isinstance(f, str) else f
+                )
+            worksheet.conditional_format(*col_range, fmt)
 
 
 def _xl_column_range(
@@ -161,8 +208,8 @@ def _xl_inject_sparklines(
 def _xl_setup_table_columns(
     df: pli.DataFrame,
     wb: Workbook,
-    column_totals: dict[str | Sequence[str], str] | Sequence[str] | bool | None = None,
-    column_formats: dict[str | Sequence[str], str] | None = None,
+    column_totals: ColumnTotalsDict | None = None,
+    column_formats: dict[str | tuple[str, ...], str] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
     float_precision: int = 3,
