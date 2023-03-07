@@ -334,7 +334,7 @@ impl<'a> BatchedCsvReaderRead<'a> {
 
         let mut chunks = POOL.install(|| {
             self.file_chunks
-                .iter()
+                .par_iter()
                 .map(|(ptr, len)| {
                     let chunk = unsafe { std::slice::from_raw_parts(*ptr as *const u8, *len) };
                     let stop_at_n_bytes = chunk.len();
