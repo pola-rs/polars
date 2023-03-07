@@ -2,7 +2,7 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use polars_core::POOL;
-use polars_io::csv::read_impl::BatchedCsvReader;
+use polars_io::csv::read_impl::BatchedCsvReaderMmap;
 use polars_io::csv::{CsvEncoding, CsvReader};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::CsvParserOptions;
@@ -15,7 +15,7 @@ pub(crate) struct CsvSource {
     // this exist because we need to keep ownership
     schema: SchemaRef,
     reader: *mut CsvReader<'static, File>,
-    batched_reader: *mut BatchedCsvReader<'static>,
+    batched_reader: *mut BatchedCsvReaderMmap<'static>,
     n_threads: usize,
     chunk_index: IdxSize,
 }
@@ -72,9 +72,9 @@ impl CsvSource {
         let reader = Box::new(reader);
         let reader = Box::leak(reader) as *mut CsvReader<'static, File>;
 
-        let batched_reader = unsafe { Box::new((*reader).batched_borrowed()?) };
+        let batched_reader = unsafe { Box::new((*reader).batched_borrowed_mmap()?) };
 
-        let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReader;
+        let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReaderMmap;
 
         Ok(CsvSource {
             schema,

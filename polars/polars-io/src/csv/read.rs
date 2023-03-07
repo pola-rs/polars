@@ -1,5 +1,8 @@
 use super::*;
-use crate::csv::read_impl::{to_batched_owned_mmap, BatchedCsvReader, OwnedBatchedCsvReaderMmap};
+use crate::csv::read_impl::{
+    to_batched_owned_mmap, to_batched_owned_read, BatchedCsvReaderMmap, BatchedCsvReaderRead,
+    OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap,
+};
 use crate::csv::utils::infer_file_schema;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -401,7 +404,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         (schema, to_cast, _has_categorical)
     }
 
-    pub fn batched_borrowed_mmap(&'a mut self) -> PolarsResult<BatchedCsvReader<'a>> {
+    pub fn batched_borrowed_mmap(&'a mut self) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
         if let Some(schema) = self.schema_overwrite.as_deref() {
             let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
             let schema = Arc::new(schema);
@@ -413,22 +416,25 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             csv_reader.batched_mmap(false)
         }
     }
-    pub fn batched_borrowed_read(&'a mut self) -> PolarsResult<BatchedCsvReader<'a>> {
+    pub fn batched_borrowed_read(&'a mut self) -> PolarsResult<BatchedCsvReaderRead<'a>> {
         if let Some(schema) = self.schema_overwrite.as_deref() {
             let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
             let schema = Arc::new(schema);
 
             let csv_reader = self.core_reader(Some(schema), to_cast)?;
-            csv_reader.batched_mmap(has_cat)
+            csv_reader.batched_read(has_cat)
         } else {
             let csv_reader = self.core_reader(self.schema.clone(), vec![])?;
-            csv_reader.batched_mmap(false)
+            csv_reader.batched_read(false)
         }
     }
 }
 
 impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
-    pub fn batched(mut self, schema: Option<SchemaRef>) -> PolarsResult<OwnedBatchedCsvReaderMmap> {
+    pub fn batched_mmap(
+        mut self,
+        schema: Option<SchemaRef>,
+    ) -> PolarsResult<OwnedBatchedCsvReaderMmap> {
         match schema {
             Some(schema) => Ok(to_batched_owned_mmap(self, schema)),
             None => {
@@ -450,6 +456,34 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
+            }
+        }
+    }
+    pub fn batched_read(
+        mut self,
+        schema: Option<SchemaRef>,
+    ) -> PolarsResult<OwnedBatchedCsvReader> {
+        match schema {
+            Some(schema) => Ok(to_batched_owned_read(self, schema)),
+            None => {
+                let reader_bytes = get_reader_bytes(&mut self.reader)?;
+
+                let (inferred_schema, _, _) = infer_file_schema(
+                    &reader_bytes,
+                    self.delimiter.unwrap_or(b','),
+                    self.max_records,
+                    self.has_header,
+                    None,
+                    &mut self.skip_rows_before_header,
+                    self.skip_rows_after_header,
+                    self.comment_char,
+                    self.quote_char,
+                    self.eol_char,
+                    self.null_values.as_ref(),
+                    self.try_parse_dates,
+                )?;
+                let schema = Arc::new(inferred_schema);
+                Ok(to_batched_owned_read(self, schema))
             }
         }
     }

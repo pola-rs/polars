@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub use batched_mmap::*;
+pub use batched_read::*;
 use polars_arrow::array::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;

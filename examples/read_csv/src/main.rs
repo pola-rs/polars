@@ -9,7 +9,7 @@ fn main() -> PolarsResult<()> {
         .with_delimiter(b'|')
         .has_header(false)
         .with_chunk_size(10)
-        .batched(None)
+        .batched_mmap(None)
         .unwrap();
 
     // write_other_formats(&mut df)?;
