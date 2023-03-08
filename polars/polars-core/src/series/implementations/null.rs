@@ -131,8 +131,8 @@ impl SeriesTrait for NullChunked {
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        let (offset, length) = slice_offsets(offset, length, self.len());
-        NullChunked::new(self.name.clone(), length - offset).into_series()
+        let (_, length) = slice_offsets(offset, length, self.len());
+        NullChunked::new(self.name.clone(), length).into_series()
     }
 
     fn is_null(&self) -> BooleanChunked {
