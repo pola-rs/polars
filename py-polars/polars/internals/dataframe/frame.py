@@ -365,6 +365,9 @@ class DataFrame:
                 nan_to_null=nan_to_null,
             )
 
+        elif isinstance(data, type(self)):
+            self._df = data._df.clone()
+
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
                 data,

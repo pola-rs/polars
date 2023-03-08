@@ -2582,3 +2582,6 @@ def test_subclassing() -> None:
     assert isinstance(a[::-1], MySeries)
     assert isinstance(a[:2], MySeries)
     assert isinstance(a.extend_constant(3, 10), MySeries)
+
+    assert isinstance(pl.Series(a), pl.Series)
+    assert_series_equal(pl.Series(a), a)
