@@ -337,7 +337,7 @@ class DataFrame:
     _accessors: set[str] = set()
 
     @property
-    def _series_cls(self) -> type:
+    def _series_cls(self) -> type[pli.Series]:
         # defining a plain class attribute fails due to circular imports
         return pli.Series
 

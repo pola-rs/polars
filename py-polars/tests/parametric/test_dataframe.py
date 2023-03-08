@@ -105,12 +105,12 @@ def test_subclassing() -> None:
 
     class MyDataFrame(pl.DataFrame):
         @property
-        def _series_cls(self):
+        def _series_cls(self) -> type[MySeries]:
             return MySeries
 
     df = MyDataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
     assert isinstance(df["a"], MySeries)
-    assert isinstance(df[["a", "b"], :2], MyDataFrame)
+    assert isinstance(df[:2, ["a", "b"]], MyDataFrame)
 
     assert isinstance(pl.DataFrame(df), pl.DataFrame)
     assert_frame_equal(pl.DataFrame(df), df)

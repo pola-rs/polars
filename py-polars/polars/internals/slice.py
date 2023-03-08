@@ -30,7 +30,7 @@ class PolarsSlice:
         return (
             frame
             if isinstance(original, pli.DataFrame)
-            else original._from_frame(frame)
+            else original._from_frame(frame)  # type: ignore [union-attr]
         )
 
     @staticmethod

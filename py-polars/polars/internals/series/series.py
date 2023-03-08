@@ -1150,7 +1150,7 @@ class Series:
         return pli.wrap_df(PyDataFrame([self._s]))
 
     @classmethod
-    def _from_frame(cls, df, index: int = 0) -> Self:
+    def _from_frame(cls, df: pli.DataFrame, index: int = 0) -> Series:
         if index < 0:
             index = len(df.columns) + index
         return cls.wrap_s(df._df.select_at_idx(index))
