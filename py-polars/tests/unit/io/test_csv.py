@@ -1092,6 +1092,7 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(5)
+    assert len(batches) == 5
     batches += reader.next_batches(5)
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 

@@ -114,11 +114,13 @@ impl<'a> ChunkReader<'a> {
         self.reslice();
 
         if self.buf.len() <= self.page_size as usize {
-            self.file
+            let read = self
+                .file
                 .take(self.page_size)
                 .read_to_end(&mut self.buf)
                 .unwrap();
-            if self.buf.is_empty() {
+
+            if read == 0 {
                 self.finished = true;
                 return false;
             }
@@ -138,13 +140,14 @@ impl<'a> ChunkReader<'a> {
                 if bytes_first_row.is_some() {
                     break;
                 } else {
-                    let read_before = self.buf.len();
-                    self.file
+                    let read = self
+                        .file
                         .take(self.page_size)
                         .read_to_end(&mut self.buf)
                         .unwrap();
-                    if self.buf.len() == read_before {
-                        break;
+                    if read == 0 {
+                        self.finished = true;
+                        return false;
                     }
                 }
             }
@@ -154,11 +157,20 @@ impl<'a> ChunkReader<'a> {
         };
         let expected_bytes = self.rows_per_batch * bytes_first_row * (n + 1);
         if self.buf.len() < expected_bytes {
-            let read = expected_bytes - self.buf.len();
-            self.file
-                .take(read as u64)
+            let to_read = expected_bytes - self.buf.len();
+            let read = self
+                .file
+                .take(to_read as u64)
                 .read_to_end(&mut self.buf)
                 .unwrap();
+            if read == 0 {
+                self.finished = true;
+                // don't return yet as we initially
+                // read `page_size` len.
+                // This can mean that the whole file
+                // fits into `page_size`, so we continue
+                // to collect offsets
+            }
         }
 
         get_offsets(
@@ -215,7 +227,7 @@ impl<'a> CoreReader<'a> {
         Ok(BatchedCsvReaderRead {
             chunk_size: self.chunk_size,
             finished: false,
-            file_chunks_iter: chunk_iter,
+            file_chunk_reader: chunk_iter,
             file_chunks: vec![],
             str_capacities: self.init_string_size_stats(&str_columns, self.chunk_size),
             str_columns,
@@ -242,7 +254,7 @@ impl<'a> CoreReader<'a> {
 pub struct BatchedCsvReaderRead<'a> {
     chunk_size: usize,
     finished: bool,
-    file_chunks_iter: ChunkReader<'a>,
+    file_chunk_reader: ChunkReader<'a>,
     file_chunks: Vec<(usize, usize)>,
     str_capacities: Vec<RunningSize>,
     str_columns: StringColumns,
@@ -283,20 +295,20 @@ impl<'a> BatchedCsvReaderRead<'a> {
         // This returns pointers into slices into `buf`
         // we must process the slices before the next call
         // as that will overwrite the slices
-        if self.file_chunks_iter.read(n) {
+        if self.file_chunk_reader.read(n) {
             let mut latest_end = 0;
-            while let Some((start, end)) = self.file_chunks_iter.offsets.pop_front() {
+            while let Some((start, end)) = self.file_chunk_reader.offsets.pop_front() {
                 latest_end = end;
                 self.file_chunks
-                    .push(self.file_chunks_iter.return_slice(start, end))
+                    .push(self.file_chunk_reader.return_slice(start, end))
             }
             // ensure that this is set correctly
-            self.file_chunks_iter.buf_end = latest_end;
+            self.file_chunk_reader.buf_end = latest_end;
         }
         // ensure we process the final slice as well.
-        if self.file_chunks.len() < n {
+        if self.file_chunk_reader.finished && self.file_chunks.len() < n {
             // get the final slice
-            self.file_chunks.push(self.file_chunks_iter.get_buf());
+            self.file_chunks.push(self.file_chunk_reader.get_buf());
             self.finished = true
         }
 
@@ -424,6 +436,7 @@ mod test {
 
         let mut reader = reader.batched_borrowed_read().unwrap();
         let batches = reader.next_batches(5).unwrap().unwrap();
+        assert_eq!(batches.len(), 5);
         let df = concat_df(&batches).unwrap();
         let mut expected = CsvReader::new(file).finish().unwrap();
         assert!(df.frame_equal(&expected))
