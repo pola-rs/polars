@@ -10,6 +10,7 @@ from typing import (
     Sequence,
     Tuple,
     Union,
+    overload,
 )
 
 import polars.internals as pli
@@ -23,6 +24,11 @@ from polars.datatypes import (
 )
 from polars.exceptions import DuplicateError
 
+
+def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
+    return zip(*[iter(iterable)] * n)
+
+
 if TYPE_CHECKING:
     import sys
 
@@ -32,9 +38,9 @@ if TYPE_CHECKING:
     from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
 
     if sys.version_info >= (3, 10):
-        from typing import TypeAlias
+        from typing import Literal, TypeAlias
     else:
-        from typing_extensions import TypeAlias
+        from typing_extensions import Literal, TypeAlias
 
 
 _XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.{zeros};[Red]-#,##0.{zeros}"
@@ -61,6 +67,12 @@ ConditionalFormatDict: TypeAlias = Dict[
 ]
 
 
+def _adjacent_cols(df: pli.DataFrame, cols: Iterable[str]) -> bool:
+    """Indicate if the given columns are all adjacent to one another."""
+    idxs = sorted(df.find_idx_by_name(col) for col in cols)
+    return idxs == sorted(range(min(idxs), max(idxs) + 1))
+
+
 def _unpack_multi_column_dict(
     d: dict[str | Sequence[str], str] | Any
 ) -> dict[str, Any] | Any:
@@ -83,40 +95,75 @@ def _xl_apply_conditional_formats(
     has_header: bool,
 ) -> None:
     """Take all conditional formatting options and apply them to the table/range."""
+
     for cols, formats in conditional_formats.items():
         if not isinstance(cols, str) and len(cols) == 1:
             cols = cols[0]
         if isinstance(formats, (str, dict)):
             formats = [formats]
+
         for fmt in formats:
             if not isinstance(fmt, dict):
                 fmt = {"type": fmt}
             if isinstance(cols, str):
-                col = cols
+                col_range = _xl_column_range(df, table_start, cols, has_header)
             else:
-                col = cols[0]
-                fmt["multi_range"] = _xl_column_multi_range(
-                    df, table_start, cols, has_header
-                )
-            col_range = _xl_column_range(df, table_start, col, has_header)
+                col_range = _xl_column_multi_range(df, table_start, cols, has_header)
+                if " " in col_range:
+                    col = cols[0]
+                    fmt["multi_range"] = col_range
+                    col_range = _xl_column_range(df, table_start, col, has_header)
+
             if "format" in fmt:
                 f = fmt["format"]
                 fmt["format"] = workbook.add_format(
                     {"num_format": f} if isinstance(f, str) else f
                 )
-            worksheet.conditional_format(*col_range, fmt)
+            worksheet.conditional_format(col_range, fmt)
+
+
+@overload
+def _xl_column_range(  # type: ignore[misc]
+    df: pli.DataFrame,
+    table_start: tuple[int, int],
+    col: str | tuple[int, int],
+    has_header: bool,
+    as_range: Literal[True] = ...,
+) -> str:
+    ...
+
+
+@overload
+def _xl_column_range(
+    df: pli.DataFrame,
+    table_start: tuple[int, int],
+    col: str | tuple[int, int],
+    has_header: bool,
+    as_range: Literal[False] = ...,
+) -> tuple[int, int, int, int]:
+    ...
 
 
 def _xl_column_range(
-    df: pli.DataFrame, table_start: tuple[int, int], col: str, has_header: bool
-) -> tuple[int, int, int, int]:
+    df: pli.DataFrame,
+    table_start: tuple[int, int],
+    col: str | tuple[int, int],
+    has_header: bool,
+    as_range: bool = True,
+) -> tuple[int, int, int, int] | str:
     """Return the excel sheet range of a named column, accounting for all offsets."""
     col_start = (
         table_start[0] + int(has_header),
-        table_start[1] + df.find_idx_by_name(col),
+        table_start[1] + df.find_idx_by_name(col) if isinstance(col, str) else col[0],
     )
-    col_finish = (col_start[0] + len(df) - 1, col_start[1])
-    return col_start + col_finish
+    col_finish = (
+        col_start[0] + len(df) - 1,
+        col_start[1] + 0 if isinstance(col, str) else (col[1] - col[0]),
+    )
+    if as_range:
+        return "".join(_xl_rowcols_to_range(*col_start, *col_finish))
+    else:
+        return col_start + col_finish
 
 
 def _xl_column_multi_range(
@@ -125,16 +172,14 @@ def _xl_column_multi_range(
     cols: Iterable[str],
     has_header: bool,
 ) -> str:
-    """Return column ranges as an xlsxwriter 'multi_range' compatible string."""
-    from xlsxwriter.utility import xl_rowcol_to_cell
+    """Return column ranges as an xlsxwriter 'multi_range' string, or spanning range."""
 
-    multi_range: list[str] = []
-    for col in cols:
-        col_range = _xl_column_range(df, table_start, col, has_header)
-        col_start = xl_rowcol_to_cell(col_range[0], col_range[1])
-        col_end = xl_rowcol_to_cell(col_range[2], col_range[3])
-        multi_range.append(f"{col_start}:{col_end}")
-    return " ".join(multi_range)
+    if _adjacent_cols(df, cols):
+        col_idxs = sorted(df.find_idx_by_name(c) for c in cols)
+        return _xl_column_range(
+            df, table_start, (col_idxs[0], col_idxs[-1]), has_header
+        )
+    return " ".join(_xl_column_range(df, table_start, col, has_header) for col in cols)
 
 
 def _xl_inject_dummy_table_columns(
@@ -184,13 +229,14 @@ def _xl_inject_sparklines(
 
     data_cols = params.get("columns") if isinstance(params, dict) else params
     if not data_cols:
-        raise ValueError("Supplying 'columns' is mandatory for sparklines")
+        raise ValueError("Supplying 'columns' param value is mandatory for sparklines")
+    if not _adjacent_cols(df, data_cols):
+        raise RuntimeError("sparkline data range/cols must all be adjacent")
 
+    spk_row, spk_col, _, _ = _xl_column_range(
+        df, table_start, col, has_header, as_range=False
+    )
     data_idxs = sorted(df.find_idx_by_name(col) for col in data_cols)
-    if data_idxs != sorted(range(min(data_idxs), max(data_idxs) + 1)):
-        raise RuntimeError("sparkline data range/cols must be contiguous")
-
-    spk_row, spk_col, _, _ = _xl_column_range(df, table_start, col, has_header)
     data_start_col = table_start[1] + data_idxs[0]
     data_end_col = table_start[1] + data_idxs[-1]
 
@@ -212,6 +258,14 @@ def _xl_inject_sparklines(
         options["range"] = f"{data_start}:{data_end}"
         ws.add_sparkline(spk_row, spk_col, options)
         spk_row += 1
+
+
+def _xl_rowcols_to_range(*row_col_pairs: int) -> list[str]:
+    """Return list of "A1:B2" range refs from pairs of row/col indexes."""
+    from xlsxwriter.utility import xl_rowcol_to_cell
+
+    cell_refs = (xl_rowcol_to_cell(row, col) for row, col in _cluster(row_col_pairs))
+    return [f"{cell_start}:{cell_end}" for cell_start, cell_end in _cluster(cell_refs)]
 
 
 def _xl_setup_table_columns(
@@ -242,7 +296,8 @@ def _xl_setup_table_columns(
     if sparklines:
         df = _xl_inject_dummy_table_columns(df, sparklines)
 
-    # default float format
+    # default float/fallback format
+    fmt_default = wb.add_format({"valign": "vcenter"})
     zeros = "0" * float_precision
     fmt_float = (
         _XL_DEFAULT_INTEGER_FORMAT_
@@ -271,19 +326,23 @@ def _xl_setup_table_columns(
     # ensure externally supplied formats are made available
     for col, fmt in column_formats.items():  # type: ignore[assignment]
         if isinstance(fmt, str):
-            column_formats[col] = wb.add_format({"num_format": fmt})
+            column_formats[col] = wb.add_format(
+                {"num_format": fmt, "valign": "vcenter"}
+            )
         elif isinstance(fmt, dict):
             if "num_format" not in fmt:
                 tp = df.schema.get(col)
                 if tp in dtype_formats:
                     fmt["num_format"] = dtype_formats[tp]
+            if "valign" not in fmt:
+                fmt["valign"] = "vcenter"
             column_formats[col] = wb.add_format(fmt)
 
     # assemble table columns
     table_columns = [
         {
             "header": col,
-            "format": column_formats.get(col),
+            "format": column_formats.get(col, fmt_default),
             "total_function": total_funcs.get(col),  # type: ignore[attr-defined]
         }
         for col in df.columns

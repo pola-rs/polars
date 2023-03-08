@@ -2408,7 +2408,8 @@ class DataFrame:
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
         conditional_formats: ConditionalFormatDict | None = None,
         column_totals: ColumnTotalsDefinition | None = None,
-        column_widths: dict[str | tuple[str, ...], int] | None = None,
+        column_widths: dict[str | tuple[str, ...], int] | int | None = None,
+        row_height: int | None = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         float_precision: int = 3,
         has_header: bool = True,
@@ -2416,6 +2417,7 @@ class DataFrame:
         autofit: bool = False,
         hidden_columns: Sequence[str] | None = None,
         hide_gridlines: bool = False,
+        sheet_zoom: int | None = None,
     ) -> Workbook:
         """
         Write frame data to a table in an Excel workbook/worksheet.
@@ -2469,9 +2471,13 @@ class DataFrame:
             * If passing a list of colnames, only those given will have a total.
             * For more control, pass a ``{colname:funcname,}`` dict. Valid names are:
               "average", "count_nums", "count", "max", "min", "std_dev", "sum", "var".
-        column_widths : dict
-            A ``{colname:int,}`` dict that sets (or overrides if autofitting) column
-            widths in integer pixel units.
+        column_widths : {dict, int}
+            A ``{colname:int,}`` dict or single integer that sets (or overrides if
+            autofitting) table column widths in integer pixel units. If given as an
+            integer the same value is used for all table columns.
+        row_height : int
+            Sets the height of all rows that intersect with the table body (and any
+            headers or total row) in integer pixel units.
         sparklines : dict
             A ``{colname:list,}`` or ``{colname:dict,}`` dictionary defining one or more
             sparklines to be written into a new column in the table.
@@ -2497,6 +2503,8 @@ class DataFrame:
              A list of table columns to hide in the worksheet.
         hide_gridlines : bool
             Do not display any gridlines on the output worksheet.
+        sheet_zoom : int
+            Set the default zoom level of the output worksheet.
 
         Notes
         -----
@@ -2710,19 +2718,10 @@ class DataFrame:
                     has_header=has_header,
                 )
 
-        # worksheet options
-        if autofit and not is_empty:
-            xlv = xlsxwriter.__version__
-            if parse_version(xlv) < parse_version("3.0.8"):
-                raise ModuleNotFoundError(
-                    f'"autofit=True" requires xlsxwriter 3.0.8 or higher; found {xlv}.'
-                )
-            ws.autofit()
-        if hide_gridlines:
-            ws.hide_gridlines(2)
-
         # additional column-level properties
         hidden_columns = hidden_columns or ()
+        if isinstance(column_widths, int):
+            column_widths = {col: column_widths for col in df.columns}
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
         for col in df.columns:
@@ -2739,6 +2738,22 @@ class DataFrame:
         # finally, inject any sparklines into the table
         for col, params in (sparklines or {}).items():
             _xl_inject_sparklines(ws, df, table_start, col, has_header, params)
+
+        # worksheet options
+        if autofit and not is_empty:
+            xlv = xlsxwriter.__version__
+            if parse_version(xlv) < parse_version("3.0.8"):
+                raise ModuleNotFoundError(
+                    f'"autofit=True" requires xlsxwriter 3.0.8 or higher; found {xlv}.'
+                )
+            ws.autofit()
+        if hide_gridlines:
+            ws.hide_gridlines(2)
+        if sheet_zoom:
+            ws.set_zoom(sheet_zoom)
+        if row_height:
+            for idx in range(table_start[0], table_finish[0] + 1):
+                ws.set_row_pixels(idx, row_height)
 
         if can_close:
             wb.close()
