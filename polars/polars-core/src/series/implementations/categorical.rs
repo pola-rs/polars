@@ -89,7 +89,11 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             .map(|ca| ca.into_series())
     }
     fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-        (&self.0).into_partial_ord_inner()
+        if self.0.use_lexical_sort() {
+            (&self.0).into_partial_ord_inner()
+        } else {
+            self.0.logical().into_partial_ord_inner()
+        }
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {

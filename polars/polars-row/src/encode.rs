@@ -85,9 +85,12 @@ pub fn encoded_size(data_type: &ArrowDataType) -> usize {
 }
 
 pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
-    let has_variable = columns
-        .iter()
-        .any(|arr| matches!(arr.data_type(), ArrowDataType::LargeBinary));
+    let has_variable = columns.iter().any(|arr| {
+        matches!(
+            arr.data_type(),
+            ArrowDataType::LargeBinary | ArrowDataType::Dictionary(_, _, _)
+        )
+    });
 
     let num_rows = columns[0].len();
     if has_variable {
@@ -96,7 +99,10 @@ pub fn allocate_rows_buf(columns: &[ArrayRef]) -> RowsEncoded {
         let row_size_fixed: usize = columns
             .iter()
             .map(|arr| {
-                if matches!(arr.data_type(), ArrowDataType::LargeBinary) {
+                if matches!(
+                    arr.data_type(),
+                    ArrowDataType::LargeBinary | ArrowDataType::Dictionary(_, _, _)
+                ) {
                     0
                 } else {
                     encoded_size(arr.data_type())
