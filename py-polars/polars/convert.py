@@ -66,14 +66,13 @@ def from_dict(
     └─────┴─────┘
 
     """
-    return DataFrame._from_dict(
-        data=data, schema=schema, schema_overrides=schema_overrides
-    )
+    return DataFrame._from_dict(data, schema=schema, schema_overrides=schema_overrides)
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["dicts"])
+@deprecate_nonkeyword_arguments(allowed_args=["data", "schema"])
+@deprecated_alias(dicts="data")
 def from_dicts(
-    dicts: Sequence[dict[str, Any]],
+    data: Sequence[dict[str, Any]],
     infer_schema_length: int | None = N_INFER_DEFAULT,
     *,
     schema: SchemaDefinition | None = None,
@@ -84,7 +83,7 @@ def from_dicts(
 
     Parameters
     ----------
-    dicts
+    data
         Sequence with dictionaries mapping column name to value
     infer_schema_length
         How many dictionaries/rows to scan to determine the data types
@@ -163,11 +162,11 @@ def from_dicts(
     └─────┴─────┴──────┴──────┘
 
     """
-    if not dicts and not (schema or schema_overrides):
+    if not data and not (schema or schema_overrides):
         raise NoDataError("No rows. Cannot infer schema.")
 
     return DataFrame(
-        data=dicts,
+        data,
         schema=schema,
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
@@ -305,11 +304,11 @@ def from_numpy(
     )
 
 
-@deprecate_nonkeyword_arguments()
+@deprecate_nonkeyword_arguments(allowed_args=["data", "schema"])
 def from_arrow(
-    a: pa.Table | pa.Array | pa.ChunkedArray,
+    data: pa.Table | pa.Array | pa.ChunkedArray,
     rechunk: bool = True,
-    schema: Sequence[str] | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame | Series:
     """
@@ -320,7 +319,7 @@ def from_arrow(
 
     Parameters
     ----------
-    a : :class:`pyarrow.Table` or :class:`pyarrow.Array`
+    data : :class:`pyarrow.Table` or :class:`pyarrow.Array`
         Data representing an Arrow Table or Array.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
@@ -376,44 +375,44 @@ def from_arrow(
     ]
 
     """
-    if isinstance(a, pa.Table):
+    if isinstance(data, pa.Table):
         return DataFrame._from_arrow(
-            a, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
+            data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
         )
-    elif isinstance(a, (pa.Array, pa.ChunkedArray)):
-        return Series._from_arrow("", a, rechunk)
+    elif isinstance(data, (pa.Array, pa.ChunkedArray)):
+        return Series._from_arrow("", data, rechunk)
     else:
-        raise ValueError(f"Expected Arrow Table or Array, got {type(a)}.")
+        raise ValueError(f"expected Arrow Table or Array, got {type(data)}.")
 
 
 @overload
 def from_pandas(
-    df: pd.DataFrame,
-    rechunk: bool = True,
-    nan_to_null: bool = True,
-    schema_overrides: SchemaDict | None = None,
+    data: pd.DataFrame,
+    rechunk: bool = ...,
+    nan_to_null: bool = ...,
+    schema_overrides: SchemaDict | None = ...,
     *,
-    include_index: bool = False,
+    include_index: bool = ...,
 ) -> DataFrame:
     ...
 
 
 @overload
 def from_pandas(
-    df: pd.Series | pd.DatetimeIndex,
-    rechunk: bool = True,
-    nan_to_null: bool = True,
-    schema_overrides: SchemaDict | None = None,
+    data: pd.Series | pd.DatetimeIndex,
+    rechunk: bool = ...,
+    nan_to_null: bool = ...,
+    schema_overrides: SchemaDict | None = ...,
     *,
-    include_index: bool = False,
+    include_index: bool = ...,
 ) -> Series:
     ...
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(nan_to_none="nan_to_null")
+@deprecated_alias(nan_to_none="nan_to_null", df="data")
 def from_pandas(
-    df: pd.DataFrame | pd.Series | pd.DatetimeIndex,
+    data: pd.DataFrame | pd.Series | pd.DatetimeIndex,
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,
@@ -429,7 +428,7 @@ def from_pandas(
 
     Parameters
     ----------
-    df: :class:`pandas.DataFrame`, :class:`pandas.Series`, :class:`pandas.DatetimeIndex`
+    data: :class:`pandas.DataFrame`, :class:`pandas.Series`, :class:`pandas.DatetimeIndex`
         Data represented as a pandas DataFrame, Series, or DatetimeIndex.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
@@ -476,19 +475,19 @@ def from_pandas(
         3
     ]
 
-    """
-    if isinstance(df, (pd.Series, pd.DatetimeIndex)):
-        return Series._from_pandas("", df, nan_to_null=nan_to_null)
-    elif isinstance(df, pd.DataFrame):
+    """  # noqa: W505
+    if isinstance(data, (pd.Series, pd.DatetimeIndex)):
+        return Series._from_pandas("", data, nan_to_null=nan_to_null)
+    elif isinstance(data, pd.DataFrame):
         return DataFrame._from_pandas(
-            df,
+            data,
             rechunk=rechunk,
             nan_to_null=nan_to_null,
             schema_overrides=schema_overrides,
             include_index=include_index,
         )
     else:
-        raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")
+        raise ValueError(f"Expected pandas DataFrame or Series, got {type(data)}.")
 
 
 @deprecate_nonkeyword_arguments()
