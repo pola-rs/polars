@@ -124,6 +124,17 @@ impl FunctionNode {
         }
     }
 
+    /// Whether this function will increase the number of rows
+    pub fn expands_rows(&self) -> bool {
+        use FunctionNode::*;
+        match self {
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => true,
+            Explode { .. } | Melt { .. } => true,
+            _ => false,
+        }
+    }
+
     pub(crate) fn schema<'a>(
         &self,
         input_schema: &'a SchemaRef,
