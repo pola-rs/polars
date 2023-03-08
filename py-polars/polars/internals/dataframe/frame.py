@@ -113,7 +113,7 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
     )
-    from polars.internals.io_excel import ColumnTotalsDict, ConditionalFormatDict
+    from polars.internals.io_excel import ColumnTotalsDefinition, ConditionalFormatDict
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -2407,7 +2407,7 @@ class DataFrame:
         column_formats: dict[str | tuple[str, ...], str] | None = None,
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
         conditional_formats: ConditionalFormatDict | None = None,
-        column_totals: ColumnTotalsDict | None = None,
+        column_totals: ColumnTotalsDefinition | None = None,
         column_widths: dict[str | tuple[str, ...], int] | None = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         float_precision: int = 3,

@@ -5,9 +5,10 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
+    Dict,
     Iterable,
     Sequence,
-    TypeAlias,
+    Tuple,
     Union,
 )
 
@@ -23,10 +24,17 @@ from polars.datatypes import (
 from polars.exceptions import DuplicateError
 
 if TYPE_CHECKING:
+    import sys
+
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
     from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
 
 _XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.{zeros};[Red]-#,##0.{zeros}"
@@ -39,16 +47,17 @@ _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
 for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
 
-ColumnTotalsDict: TypeAlias = Union[
+
+ColumnTotalsDefinition: TypeAlias = Union[
     # dict of colname(s) to str, a sequence of str, or a boolean
-    dict[Union[str, tuple[str, ...]], str],
+    Dict[Union[str, Tuple[str, ...]], str],
     Sequence[str],
     bool,
 ]
-ConditionalFormatDict: TypeAlias = dict[
+ConditionalFormatDict: TypeAlias = Dict[
     # dict of colname(s) to str, dict, or sequence of str/dict
-    Union[str, tuple[str, ...]],
-    Union[str, Union[dict[str, Any], Sequence[Union[str, dict[str, Any]]]]],
+    Union[str, Tuple[str, ...]],
+    Union[str, Union[Dict[str, Any], Sequence[Union[str, Dict[str, Any]]]]],
 ]
 
 
@@ -208,7 +217,7 @@ def _xl_inject_sparklines(
 def _xl_setup_table_columns(
     df: pli.DataFrame,
     wb: Workbook,
-    column_totals: ColumnTotalsDict | None = None,
+    column_totals: ColumnTotalsDefinition | None = None,
     column_formats: dict[str | tuple[str, ...], str] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
