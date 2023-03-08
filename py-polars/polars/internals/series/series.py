@@ -300,6 +300,10 @@ class Series:
             )
 
     @classmethod
+    def wrap_s(cls, s: PySeries) -> Series:
+        return cls._from_pyseries(s)
+
+    @classmethod
     def _from_pyseries(cls, pyseries: PySeries) -> Self:
         series = cls.__new__(cls)
         series._s = pyseries
@@ -422,7 +426,7 @@ class Series:
     def __and__(self, other: Series) -> Series:
         if not isinstance(other, Series):
             other = Series([other])
-        return wrap_s(self._s.bitand(other._s))
+        return self.wrap_s(self._s.bitand(other._s))
 
     def __rand__(self, other: Series) -> Series:
         return self.__and__(other)
@@ -430,7 +434,7 @@ class Series:
     def __or__(self, other: Series) -> Series:
         if not isinstance(other, Series):
             other = Series([other])
-        return wrap_s(self._s.bitor(other._s))
+        return self.wrap_s(self._s.bitor(other._s))
 
     def __ror__(self, other: Series) -> Series:
         return self.__or__(other)
@@ -438,7 +442,7 @@ class Series:
     def __xor__(self, other: Series) -> Series:
         if not isinstance(other, Series):
             other = Series([other])
-        return wrap_s(self._s.bitxor(other._s))
+        return self.wrap_s(self._s.bitxor(other._s))
 
     def __rxor__(self, other: Series) -> Series:
         return self.__xor__(other)
@@ -455,24 +459,24 @@ class Series:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
-            return wrap_s(f(ts))
+            return self.wrap_s(f(ts))
         elif isinstance(other, time) and self.dtype == Time:
             d = _time_to_pl_time(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
-            return wrap_s(f(d))
+            return self.wrap_s(f(d))
         elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
-            return wrap_s(f(d))
+            return self.wrap_s(f(d))
         elif self.dtype == Categorical and not isinstance(other, Series):
             other = Series([other])
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
-            return wrap_s(getattr(self._s, op)(other._s))
+            return self.wrap_s(getattr(self._s, op)(other._s))
 
         if other is not None:
             other = maybe_cast(other, self.dtype, self.time_unit)
@@ -480,7 +484,7 @@ class Series:
         if f is None:
             return NotImplemented
 
-        return wrap_s(f(other))
+        return self.wrap_s(f(other))
 
     def __eq__(self, other: Any) -> Series:  # type: ignore[override]
         return self._comp(other, "eq")
@@ -527,20 +531,20 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
         if isinstance(other, pli.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-            other = self.to_frame().select(other).to_series()
+            other = self._from_frame(self.to_frame().select(other))
         if isinstance(other, Series):
-            return wrap_s(getattr(self._s, op_s)(other._s))
+            return self.wrap_s(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
-            return wrap_s(getattr(self._s, op_s)(Series(other)._s))
+            return self.wrap_s(getattr(self._s, op_s)(Series(other)._s))
         if (
             isinstance(other, (float, date, datetime, timedelta, str))
             and not self.is_float()
         ):
             _s = sequence_to_pyseries("", [other])
             if "rhs" in op_ffi:
-                return wrap_s(getattr(_s, op_s)(self._s))
+                return self.wrap_s(getattr(_s, op_s)(self._s))
             else:
-                return wrap_s(getattr(self._s, op_s)(_s))
+                return self.wrap_s(getattr(self._s, op_s)(_s))
         else:
             other = maybe_cast(other, self.dtype, self.time_unit)
             f = get_ffi_func(op_ffi, self.dtype, self._s)
@@ -549,7 +553,7 @@ class Series:
                 f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
                 f" of type: {type(other)}"
             )
-        return wrap_s(f(other))
+        return self.wrap_s(f(other))
 
     @overload
     def __add__(self, other: pli.DataFrame) -> pli.DataFrame:  # type: ignore[misc]
@@ -586,11 +590,11 @@ class Series:
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if not isinstance(other, pli.Expr):
             other = pli.lit(other)
-        return self.to_frame().select(pli.col(self.name) // other).to_series()
+        return self._from_frame(self.to_frame().select(pli.col(self.name) // other))
 
     def __invert__(self) -> Series:
         if self.dtype == Boolean:
-            return wrap_s(self._s._not())
+            return self.wrap_s(self._s._not())
         return NotImplemented
 
     @overload
@@ -625,7 +629,7 @@ class Series:
 
     def __radd__(self, other: Any) -> Series:
         if isinstance(other, str):
-            return (other + self.to_frame()).to_series()
+            return self._from_frame(other + self.to_frame())
         return self._arithmetic(other, "add", "add_<>_rhs")
 
     def __rsub__(self, other: Any) -> Series:
@@ -658,14 +662,14 @@ class Series:
             )
         if _check_for_numpy(power) and isinstance(power, np.ndarray):
             power = Series(power)
-        return self.to_frame().select(pli.col(self.name).pow(power)).to_series()
+        return self._from_frame(self.to_frame().select(pli.col(self.name).pow(power)))
 
     def __rpow__(self, other: Any) -> Series:
         if self.is_temporal():
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
-        return self.to_frame().select(other ** pli.col(self.name)).to_series()
+        return self._from_frame(self.to_frame().select(other ** pli.col(self.name)))
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
@@ -738,7 +742,7 @@ class Series:
                                 idxs = idxs.cast(Int64)
 
                         # Update negative indexes to absolute indexes.
-                        return (
+                        return self._from_frame(
                             idxs.to_frame()
                             .select(
                                 pli.when(pli.col(idxs.name) < 0)
@@ -746,7 +750,6 @@ class Series:
                                 .otherwise(pli.col(idxs.name))
                                 .cast(idx_type)
                             )
-                            .to_series(0)
                         )
 
                 return idxs.cast(idx_type)
@@ -822,7 +825,7 @@ class Series:
             #   - Signed Series indexes are converted pl.UInt32 (polars) or
             #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
             #     to absolute indexes.
-            return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
+            return self.wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
 
         elif (
             _check_for_numpy(item)
@@ -840,7 +843,7 @@ class Series:
             #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
             #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
             #     to absolute indexes.
-            return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
+            return self.wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
 
         # Integer.
         elif isinstance(item, int):
@@ -854,7 +857,7 @@ class Series:
                 if self.dtype == List:
                     if out is None:
                         return None
-                    return wrap_s(out)
+                    return self.wrap_s(out)
                 return out
 
             return self._s.get_idx(item)
@@ -869,7 +872,7 @@ class Series:
 
         # Sequence of integers (slow to check if sequence contains all integers).
         elif is_int_sequence(item):
-            return wrap_s(self._s.take_with_series(self._pos_idxs(Series("", item))._s))
+            return self.wrap_s(self._s.take_with_series(self._pos_idxs(Series("", item))._s))
 
         raise ValueError(
             f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
@@ -907,10 +910,10 @@ class Series:
                 # boolean numpy mask
                 self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
             else:
-                s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
+                s = self.wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
                 self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):
-            s = wrap_s(sequence_to_pyseries("", key, dtype=UInt32))
+            s = self.wrap_s(sequence_to_pyseries("", key, dtype=UInt32))
             self.__setitem__(s, value)
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
@@ -982,7 +985,7 @@ class Series:
                 )
 
             series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
-            return wrap_s(series)
+            return self.wrap_s(series)
         else:
             raise NotImplementedError(
                 "Only `__call__` is implemented for numpy ufuncs on a Series, got"
@@ -1072,7 +1075,7 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(pli.col(self.name).any()).to_series()[0]
+        return self._from_frame(self.to_frame().select(pli.col(self.name).any()))[0]
 
     def all(self) -> bool:
         """
@@ -1083,7 +1086,7 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(pli.col(self.name).all()).to_series()[0]
+        return self._from_frame(self.to_frame().select(pli.col(self.name).all()))[0]
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
@@ -1144,6 +1147,12 @@ class Series:
         if isinstance(name, str):
             return pli.wrap_df(PyDataFrame([self.rename(name)._s]))
         return pli.wrap_df(PyDataFrame([self._s]))
+
+    @classmethod
+    def _from_frame(cls, df, index: int = 0) -> Self:
+        if index < 0:
+            index = len(df.columns) + index
+        return cls.wrap_s(df._df.select_at_idx(index))
 
     def describe(self) -> pli.DataFrame:
         """
@@ -1263,7 +1272,7 @@ class Series:
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
-        return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
+        return self._from_frame(self.to_frame().select(pli.col(self.name).product()))[0]
 
     def min(self) -> int | float | date | datetime | timedelta | str | None:
         """
@@ -1331,7 +1340,7 @@ class Series:
         """
         if not self.is_numeric():
             return None
-        return self.to_frame().select(pli.col(self.name).std(ddof)).to_series()[0]
+        return self._from_frame(self.to_frame().select(pli.col(self.name).std(ddof)))[0]
 
     def var(self, ddof: int = 1) -> float | None:
         """
@@ -1353,7 +1362,7 @@ class Series:
         """
         if not self.is_numeric():
             return None
-        return self.to_frame().select(pli.col(self.name).var(ddof)).to_series()[0]
+        return self._from_frame(self.to_frame().select(pli.col(self.name).var(ddof)))[0]
 
     def median(self) -> float | None:
         """
@@ -1578,7 +1587,7 @@ class Series:
         0.8568409950394724
 
         """
-        return pli.select(pli.lit(self).entropy(base, normalize)).to_series()[0]
+        return self._from_frame(pli.select(pli.lit(self).entropy(base, normalize)))[0]
 
     def cumulative_eval(
         self, expr: pli.Expr, min_periods: int = 1, parallel: bool = False
@@ -1841,7 +1850,7 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).limit(n)).to_series()
+        return self._from_frame(self.to_frame().select(pli.col(self.name).limit(n)))
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
@@ -1954,7 +1963,7 @@ class Series:
         """
         if isinstance(predicate, list):
             predicate = Series("", predicate)
-        return wrap_s(self._s.filter(predicate._s))
+        return self.wrap_s(self._s.filter(predicate._s))
 
     def head(self, n: int = 10) -> Series:
         """
@@ -1977,7 +1986,7 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).head(n)).to_series()
+        return self._from_frame(self.to_frame().select(pli.col(self.name).head(n)))
 
     def tail(self, n: int = 10) -> Series:
         """
@@ -2000,7 +2009,7 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).tail(n)).to_series()
+        return self._from_frame(self.to_frame().select(pli.col(self.name).tail(n)))
 
     def take_every(self, n: int) -> Series:
         """
@@ -2079,11 +2088,10 @@ class Series:
             Return the smallest elements.
 
         """
-        return (
-            pli.wrap_s(self._s)
+        return self._from_frame(
+            self.wrap_s(self._s)
             .to_frame()
             .select(pli.col(self._s.name()).top_k(k=k, descending=descending))
-            .to_series()
         )
 
     @deprecated_alias(reverse="descending")
@@ -2114,15 +2122,14 @@ class Series:
         ]
 
         """
-        return (
-            pli.wrap_s(self._s)
+        return self._from_frame(
+            self.wrap_s(self._s)
             .to_frame()
             .select(
                 pli.col(self._s.name()).arg_sort(
                     descending=descending, nulls_last=nulls_last
                 )
             )
-            .to_series()
         )
 
     @deprecated_alias(reverse="descending")
@@ -2241,7 +2248,7 @@ class Series:
         if isinstance(element, (int, float)):
             return pli.select(pli.lit(self).search_sorted(element, side)).item()
         element = Series(element)
-        return pli.select(pli.lit(self).search_sorted(element, side)).to_series()
+        return self._from_frame(pli.select(pli.lit(self).search_sorted(element, side)))
 
     def unique(self, maintain_order: bool = False) -> Series:
         """
@@ -2289,7 +2296,7 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).take(indices)).to_series()
+        return self._from_frame(self.to_frame().select(pli.col(self.name).take(indices)))
 
     def null_count(self) -> int:
         """Count the null values in this Series."""
@@ -2699,7 +2706,7 @@ class Series:
         """
         # Do not dispatch cast as it is expensive and used in other functions.
         dtype = py_type_to_dtype(dtype)
-        return wrap_s(self._s.cast(dtype, strict))
+        return self.wrap_s(self._s.cast(dtype, strict))
 
     def to_physical(self) -> Series:
         """
@@ -2765,7 +2772,7 @@ class Series:
 
         """
         opt_s = self._s.rechunk(in_place)
-        return self if in_place else wrap_s(opt_s)
+        return self if in_place else self.wrap_s(opt_s)
 
     def reverse(self) -> Series:
         """
@@ -2850,10 +2857,9 @@ class Series:
         if isinstance(end, str):
             end = pli.lit(end)
 
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(pli.col(self.name).is_between(start, end, closed))
-            .to_series()
         )
 
     def is_numeric(self) -> bool:
@@ -3197,7 +3203,7 @@ class Series:
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
-        return wrap_s(f(filter._s, value))
+        return self.wrap_s(f(filter._s, value))
 
     def set_at_idx(
         self,
@@ -3319,7 +3325,7 @@ class Series:
 
         """
         if n == 0:
-            return wrap_s(self._s.clear())
+            return self.wrap_s(self._s.clear())
         s = (
             self.__class__(name=self.name, values=[], dtype=self.dtype)
             if len(self) > 0
@@ -3349,7 +3355,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.clone())
+        return self.wrap_s(self._s.clone())
 
     def fill_nan(self, fill_value: int | float | pli.Expr | None) -> Series:
         """
@@ -3833,7 +3839,7 @@ class Series:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
-        return wrap_s(self._s.apply_lambda(function, pl_return_dtype, skip_nulls))
+        return self.wrap_s(self._s.apply_lambda(function, pl_return_dtype, skip_nulls))
 
     def shift(self, periods: int = 1) -> Series:
         """
@@ -3924,7 +3930,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.zip_with(mask._s, other._s))
+        return self.wrap_s(self._s.zip_with(mask._s, other._s))
 
     def rolling_min(
         self,
@@ -3968,14 +3974,13 @@ class Series:
         ]
 
         """
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(
                 pli.col(self.name).rolling_min(
                     window_size, weights, min_periods, center
                 )
             )
-            .to_series()
         )
 
     def rolling_max(
@@ -4020,14 +4025,13 @@ class Series:
         ]
 
         """
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(
                 pli.col(self.name).rolling_max(
                     window_size, weights, min_periods, center
                 )
             )
-            .to_series()
         )
 
     def rolling_mean(
@@ -4072,14 +4076,13 @@ class Series:
         ]
 
         """
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(
                 pli.col(self.name).rolling_mean(
                     window_size, weights, min_periods, center
                 )
             )
-            .to_series()
         )
 
     def rolling_sum(
@@ -4124,14 +4127,13 @@ class Series:
         ]
 
         """
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(
                 pli.col(self.name).rolling_sum(
                     window_size, weights, min_periods, center
                 )
             )
-            .to_series()
         )
 
     def rolling_std(
@@ -4177,14 +4179,13 @@ class Series:
         ]
 
         """
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(
                 pli.col(self.name).rolling_std(
                     window_size, weights, min_periods, center
                 )
             )
-            .to_series()
         )
 
     def rolling_var(
@@ -4230,14 +4231,13 @@ class Series:
         ]
 
         """
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(
                 pli.col(self.name).rolling_var(
                     window_size, weights, min_periods, center
                 )
             )
-            .to_series()
         )
 
     def rolling_apply(
@@ -4332,14 +4332,13 @@ class Series:
         if min_periods is None:
             min_periods = window_size
 
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(
                 pli.col(self.name).rolling_median(
                     window_size, weights, min_periods, center
                 )
             )
-            .to_series()
         )
 
     def rolling_quantile(
@@ -4401,14 +4400,13 @@ class Series:
         if min_periods is None:
             min_periods = window_size
 
-        return (
+        return self._from_frame(
             self.to_frame()
             .select(
                 pli.col(self.name).rolling_quantile(
                     quantile, interpolation, window_size, weights, min_periods, center
                 )
             )
-            .to_series()
         )
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> Series:
@@ -4497,7 +4495,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.peak_max())
+        return self.wrap_s(self._s.peak_max())
 
     def peak_min(self) -> Series:
         """
@@ -4518,7 +4516,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.peak_min())
+        return self.wrap_s(self._s.peak_min())
 
     def n_unique(self) -> int:
         """
@@ -4691,11 +4689,10 @@ class Series:
         ]
 
         """
-        return (
-            pli.wrap_s(self._s)
+        return self._from_frame(
+            self.wrap_s(self._s)
             .to_frame()
             .select(pli.col(self._s.name()).rank(method=method, descending=descending))
-            .to_series()
         )
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
@@ -5389,11 +5386,11 @@ class Series:
         3
 
         """
-        return wrap_s(self._s.set_sorted_flag(descending))
+        return self.wrap_s(self._s.set_sorted_flag(descending))
 
     def new_from_index(self, index: int, length: int) -> pli.Series:
         """Create a new Series filled with values from the given index."""
-        return wrap_s(self._s.new_from_index(index, length))
+        return self.wrap_s(self._s.new_from_index(index, length))
 
     def shrink_dtype(self) -> Series:
         """

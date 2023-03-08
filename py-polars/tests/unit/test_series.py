@@ -2569,3 +2569,16 @@ def test_cut() -> None:
         (3.0, inf, "(1.0, inf]"),
         (4.0, inf, "(1.0, inf]"),
     ]
+
+
+def test_subclassing() -> None:
+    class MySeries(pl.Series):
+        pass
+
+    a = MySeries([1, 2, 3])
+    assert isinstance(a[[1, 2]], MySeries)
+    assert isinstance(a[:], MySeries)
+    assert isinstance(a[0:0], MySeries)
+    assert isinstance(a[::-1], MySeries)
+    assert isinstance(a[:2], MySeries)
+    assert isinstance(a.extend_constant(3, 10), MySeries)

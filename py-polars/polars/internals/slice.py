@@ -27,7 +27,7 @@ class PolarsSlice:
     def _as_original(lazy: "pli.LazyFrame", original: FrameOrSeries) -> FrameOrSeries:
         """Return lazy variant back to its original type."""
         frame = lazy.collect()
-        return frame if isinstance(original, pli.DataFrame) else frame.to_series()
+        return frame if isinstance(original, pli.DataFrame) else original._from_frame(frame)
 
     @staticmethod
     def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":

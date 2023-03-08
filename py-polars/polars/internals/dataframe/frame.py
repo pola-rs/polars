@@ -336,6 +336,11 @@ class DataFrame:
 
     _accessors: set[str] = set()
 
+    @property
+    def _series_cls(self) -> type:
+        # defining a plain class attribute fails due to circular imports
+        return pli.Series
+
     @deprecated_alias(columns="schema")
     def __init__(
         self,
@@ -404,6 +409,10 @@ class DataFrame:
             raise ValueError(
                 f"DataFrame constructor called with unsupported type; got {type(data)}"
             )
+
+    @classmethod
+    def wrap_df(cls, df: PyDataFrame) -> DataFrame:
+        return cls._from_pydf(df)
 
     @classmethod
     def _from_pydf(cls, py_df: PyDataFrame) -> Self:
@@ -1275,7 +1284,7 @@ class DataFrame:
 
         elif not isinstance(other, DataFrame):
             s = _prepare_other_arg(other, length=len(self))
-            other = DataFrame([s.rename(f"n{i}") for i in range(len(self.columns))])
+            other = type(self)([s.rename(f"n{i}") for i in range(len(self.columns))])
 
         orig_dtypes = other.dtypes
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
@@ -1336,7 +1345,7 @@ class DataFrame:
         return self.get_columns()
 
     def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
-        self._df = DataFrame(state)._df
+        self._df = type(self)(state)._df
 
     def __mul__(self, other: DataFrame | pli.Series | int | float) -> Self:
         if isinstance(other, DataFrame):
@@ -1605,7 +1614,7 @@ class DataFrame:
         # select single column
         # df["foo"]
         if isinstance(item, str):
-            return pli.wrap_s(self._df.column(item))
+            return self._series_cls.wrap_s(self._df.column(item))
 
         # df[idx]
         if isinstance(item, int):
@@ -1684,7 +1693,7 @@ class DataFrame:
             # todo! we can parallelize this by calling from_numpy
             columns = []
             for i, name in enumerate(key):
-                columns.append(pli.Series(name, value[:, i]))
+                columns.append(self._series_cls(name, value[:, i]))
             self._df = self.with_columns(columns)._df
 
         # df[a, b]
@@ -2100,7 +2109,7 @@ class DataFrame:
         """
         if index < 0:
             index = len(self.columns) + index
-        return pli.wrap_s(self._df.select_at_idx(index))
+        return self._series_cls.wrap_s(self._df.select_at_idx(index))
 
     @overload
     def write_json(
@@ -3268,7 +3277,7 @@ class DataFrame:
 
         """
         if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray):
-            predicate = pli.Series(predicate)
+            predicate = self._series_cls(predicate)
 
         return self._from_pydf(
             self.lazy()
@@ -5021,7 +5030,7 @@ class DataFrame:
         if is_df:
             return self._from_pydf(out)
         else:
-            return self._from_pydf(pli.wrap_s(out).to_frame()._df)
+            return self._from_pydf(self._series_cls.wrap_s(out).to_frame()._df)
 
     @deprecate_nonkeyword_arguments()
     def hstack(
@@ -5264,7 +5273,7 @@ class DataFrame:
         ]
 
         """
-        return pli.wrap_s(self._df.drop_in_place(name))
+        return self._series_cls.wrap_s(self._df.drop_in_place(name))
 
     def clear(self, n: int = 0) -> Self:
         """
@@ -5411,7 +5420,7 @@ class DataFrame:
         ]]
 
         """
-        return [pli.wrap_s(s) for s in self._df.get_columns()]
+        return [self._series_cls.wrap_s(s) for s in self._df.get_columns()]
 
     def get_column(self, name: str) -> pli.Series:
         """
@@ -6227,7 +6236,7 @@ class DataFrame:
         │ 1   ┆ x   │
         └─────┴─────┘
         """
-        return pli.wrap_s(self._df.is_duplicated())
+        return self._series_cls.wrap_s(self._df.is_duplicated())
 
     def is_unique(self) -> pli.Series:
         """
@@ -6264,7 +6273,7 @@ class DataFrame:
         │ 3   ┆ z   │
         └─────┴─────┘
         """
-        return pli.wrap_s(self._df.is_unique())
+        return self._series_cls.wrap_s(self._df.is_unique())
 
     def lazy(self) -> pli.LazyFrame:
         """
@@ -6660,7 +6669,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.max())
         if axis == 1:
-            return pli.wrap_s(self._df.hmax())
+            return self._series_cls.wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6702,7 +6711,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.min())
         if axis == 1:
-            return pli.wrap_s(self._df.hmin())
+            return self._series_cls.wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6779,7 +6788,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.sum())
         if axis == 1:
-            return pli.wrap_s(self._df.hsum(null_strategy))
+            return self._series_cls.wrap_s(self._df.hsum(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6857,7 +6866,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.mean())
         if axis == 1:
-            return pli.wrap_s(self._df.hmean(null_strategy))
+            return self._series_cls.wrap_s(self._df.hmean(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def std(self, ddof: int = 1) -> Self:
@@ -7838,7 +7847,7 @@ class DataFrame:
         k1 = seed_1 if seed_1 is not None else seed
         k2 = seed_2 if seed_2 is not None else seed
         k3 = seed_3 if seed_3 is not None else seed
-        return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
+        return self._series_cls.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
     def interpolate(self) -> Self:
         """
@@ -7913,7 +7922,7 @@ class DataFrame:
         ]
 
         """
-        return pli.wrap_s(self._df.to_struct(name))
+        return self._series_cls.wrap_s(self._df.to_struct(name))
 
     @deprecated_alias(names="columns")
     def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
@@ -8005,7 +8014,7 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            DataFrame(
+            type(self)(
                 np.corrcoef(self, **kwargs),
                 schema=self.columns,
             )._df

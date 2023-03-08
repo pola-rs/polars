@@ -97,3 +97,21 @@ def test_frame_slice(df: pl.DataFrame) -> None:
         assert (
             sliced_py_data == sliced_df_data
         ), f"slice [{start}:{stop}:{step}] failed on df w/len={len(df)}"
+
+
+def test_subclassing() -> None:
+    class MySeries(pl.Series):
+        pass
+
+    class MyDataFrame(pl.DataFrame):
+        @property
+        def _series_cls(self):
+            return MySeries
+
+
+
+    df = MyDataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    assert isinstance(df["a"], MySeries)
+    assert isinstance(df[["a", "b"], :2], MyDataFrame)
+
+

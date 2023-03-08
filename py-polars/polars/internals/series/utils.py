@@ -104,6 +104,25 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     return wrapper
 
 
+def call_expr_series(func: SeriesMethod) -> SeriesMethod:
+    """Dispatch Series method to an expression implementation."""
+
+    @wraps(func)  # type: ignore[arg-type]
+    def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> pli.Series:
+        s = self.wrap_s(self._s)
+        expr = pli.col(s.name)
+        namespace = getattr(self, "_accessor", None)
+        if namespace is not None:
+            expr = getattr(expr, namespace)
+        f = getattr(expr, func.__name__)
+        return self._from_frame(s.to_frame().select(f(*args, **kwargs)))
+
+    # note: applying explicit '__signature__' helps IDEs (especially PyCharm)
+    # with proper autocomplete, in addition to what @functools.wraps does
+    setattr(wrapper, "__signature__", inspect.signature(func))  # noqa: B010
+    return wrapper
+
+
 def expr_dispatch(cls: type[T]) -> type[T]:
     """
     Series/NameSpace class decorator that sets up expression dispatch.
@@ -127,7 +146,10 @@ def expr_dispatch(cls: type[T]) -> type[T]:
                 # if an expression method with compatible method exists, further check
                 # that the series implementation has an empty function body
                 if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
-                    setattr(cls, name, call_expr(attr))
+                    if cls.__name__ == "Series":
+                        setattr(cls, name, call_expr_series(attr))
+                    else:
+                        setattr(cls, name, call_expr(attr))
     return cls
 
 
