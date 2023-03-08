@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import contextlib
 import importlib
 import platform
 import sys
 
-with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import get_idx_type as _get_idx_type
-    from polars.polars import version
+from polars.utils.meta import get_index_type
+from polars.utils.polars_version import get_polars_version
 
 
 def show_versions() -> None:
@@ -32,8 +30,8 @@ def show_versions() -> None:
 
     """
     print("---Version info---")
-    print(f"Polars: {version()}")
-    print(f"Index type: {_get_idx_type().__name__}")
+    print(f"Polars: {get_polars_version()}")
+    print(f"Index type: {get_index_type()}")
     print(f"Platform: {platform.platform()}")
     print(f"Python: {sys.version}")
 
@@ -55,10 +53,10 @@ def _get_dependency_info() -> dict[str, str]:
         "deltalake",
         "matplotlib",
     ]
-    return {name: _get_dep_version(name) for name in opt_deps}
+    return {name: _get_dependency_version(name) for name in opt_deps}
 
 
-def _get_dep_version(dep_name: str) -> str:
+def _get_dependency_version(dep_name: str) -> str:
     try:
         module = importlib.import_module(dep_name)
         module_version = getattr(module, "__version__", "<version not detected>")

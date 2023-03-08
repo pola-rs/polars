@@ -7,15 +7,15 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.utils import (
+from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
-    deprecate_nonkeyword_arguments,
-    parse_version,
 )
+from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.various import parse_version
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit

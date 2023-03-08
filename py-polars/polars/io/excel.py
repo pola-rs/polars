@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, overload
 
 from polars.io.csv import read_csv
-from polars.utils import deprecate_nonkeyword_arguments, normalise_filepath
+from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
     import sys

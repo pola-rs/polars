@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from polars.convert import from_arrow
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
-from polars.utils import deprecate_nonkeyword_arguments
+from polars.utils.decorators import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     from polars.dependencies import pyarrow as pa

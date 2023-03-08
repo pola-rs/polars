@@ -21,13 +21,12 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.utils import (
+from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
-    deprecate_nonkeyword_arguments,
-    deprecated_alias,
 )
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arange as pyarange

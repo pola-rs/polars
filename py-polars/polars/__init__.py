@@ -1,18 +1,6 @@
 import os
-import warnings
-
-try:
-    from polars.polars import version
-except ImportError:
-
-    def version() -> str:
-        return ""
-
-    # this is only useful for documentation
-    warnings.warn("polars binary missing!")
 
 from polars import api
-from polars.build_info import build_info
 from polars.config import Config
 from polars.convert import (
     from_arrow,
@@ -57,7 +45,6 @@ from polars.datatypes import (
     UInt64,
     Unknown,
     Utf8,
-    get_idx_type,
 )
 from polars.exceptions import (
     ArrowError,
@@ -169,9 +156,18 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
-from polars.show_versions import show_versions
 from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
-from polars.utils import threadpool_size
+from polars.utils import (
+    build_info,
+    get_idx_type,
+    get_index_type,
+    show_versions,
+    threadpool_size,
+)
+from polars.utils.polars_version import get_polars_version as _get_polars_version
+
+__version__: str = _get_polars_version()
+del _get_polars_version
 
 __all__ = [
     "api",
@@ -327,14 +323,14 @@ __all__ = [
     "from_numpy",
     "from_pandas",
     "from_records",
-    # testing
-    "threadpool_size",
-    # version
+    # sql
     "SQLContext",
+    # utils
     "build_info",
+    "get_idx_type",
+    "get_index_type",
     "show_versions",
+    "threadpool_size",
 ]
-
-__version__ = version()
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

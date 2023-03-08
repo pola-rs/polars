@@ -18,12 +18,8 @@ from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.internals import DataFrame, LazyFrame
 from polars.internals.batched import BatchedCsvReader
 from polars.internals.io import _prepare_file_arg
-from polars.utils import (
-    deprecate_nonkeyword_arguments,
-    deprecated_alias,
-    handle_projection_columns,
-    normalise_filepath,
-)
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.various import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
     from io import BytesIO

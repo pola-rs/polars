@@ -9,7 +9,7 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     py_type_to_dtype,
 )
-from polars.utils import (
+from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     handle_projection_columns,
