@@ -308,7 +308,7 @@ def from_numpy(
 def from_arrow(
     data: pa.Table | pa.Array | pa.ChunkedArray,
     rechunk: bool = True,
-    schema: Sequence[str] | None = None,
+    schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame | Series:
     """
@@ -382,7 +382,7 @@ def from_arrow(
     elif isinstance(data, (pa.Array, pa.ChunkedArray)):
         return Series._from_arrow("", data, rechunk)
     else:
-        raise ValueError(f"Expected Arrow Table or Array, got {type(data)}.")
+        raise ValueError(f"expected Arrow Table or Array, got {type(data)}.")
 
 
 @overload
