@@ -743,8 +743,7 @@ class Series:
 
                         # Update negative indexes to absolute indexes.
                         return self._from_frame(
-                            idxs.to_frame()
-                            .select(
+                            idxs.to_frame().select(
                                 pli.when(pli.col(idxs.name) < 0)
                                 .then(self.len() + pli.col(idxs.name))
                                 .otherwise(pli.col(idxs.name))
@@ -872,7 +871,9 @@ class Series:
 
         # Sequence of integers (slow to check if sequence contains all integers).
         elif is_int_sequence(item):
-            return self.wrap_s(self._s.take_with_series(self._pos_idxs(Series("", item))._s))
+            return self.wrap_s(
+                self._s.take_with_series(self._pos_idxs(Series("", item))._s)
+            )
 
         raise ValueError(
             f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
@@ -2296,7 +2297,9 @@ class Series:
         ]
 
         """
-        return self._from_frame(self.to_frame().select(pli.col(self.name).take(indices)))
+        return self._from_frame(
+            self.to_frame().select(pli.col(self.name).take(indices))
+        )
 
     def null_count(self) -> int:
         """Count the null values in this Series."""
@@ -2858,8 +2861,7 @@ class Series:
             end = pli.lit(end)
 
         return self._from_frame(
-            self.to_frame()
-            .select(pli.col(self.name).is_between(start, end, closed))
+            self.to_frame().select(pli.col(self.name).is_between(start, end, closed))
         )
 
     def is_numeric(self) -> bool:
@@ -3975,8 +3977,7 @@ class Series:
 
         """
         return self._from_frame(
-            self.to_frame()
-            .select(
+            self.to_frame().select(
                 pli.col(self.name).rolling_min(
                     window_size, weights, min_periods, center
                 )
@@ -4026,8 +4027,7 @@ class Series:
 
         """
         return self._from_frame(
-            self.to_frame()
-            .select(
+            self.to_frame().select(
                 pli.col(self.name).rolling_max(
                     window_size, weights, min_periods, center
                 )
@@ -4077,8 +4077,7 @@ class Series:
 
         """
         return self._from_frame(
-            self.to_frame()
-            .select(
+            self.to_frame().select(
                 pli.col(self.name).rolling_mean(
                     window_size, weights, min_periods, center
                 )
@@ -4128,8 +4127,7 @@ class Series:
 
         """
         return self._from_frame(
-            self.to_frame()
-            .select(
+            self.to_frame().select(
                 pli.col(self.name).rolling_sum(
                     window_size, weights, min_periods, center
                 )
@@ -4180,8 +4178,7 @@ class Series:
 
         """
         return self._from_frame(
-            self.to_frame()
-            .select(
+            self.to_frame().select(
                 pli.col(self.name).rolling_std(
                     window_size, weights, min_periods, center
                 )
@@ -4232,8 +4229,7 @@ class Series:
 
         """
         return self._from_frame(
-            self.to_frame()
-            .select(
+            self.to_frame().select(
                 pli.col(self.name).rolling_var(
                     window_size, weights, min_periods, center
                 )
@@ -4333,8 +4329,7 @@ class Series:
             min_periods = window_size
 
         return self._from_frame(
-            self.to_frame()
-            .select(
+            self.to_frame().select(
                 pli.col(self.name).rolling_median(
                     window_size, weights, min_periods, center
                 )
@@ -4401,8 +4396,7 @@ class Series:
             min_periods = window_size
 
         return self._from_frame(
-            self.to_frame()
-            .select(
+            self.to_frame().select(
                 pli.col(self.name).rolling_quantile(
                     quantile, interpolation, window_size, weights, min_periods, center
                 )

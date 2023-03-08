@@ -108,7 +108,6 @@ def test_subclassing() -> None:
         def _series_cls(self):
             return MySeries
 
-
     df = MyDataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
     assert isinstance(df["a"], MySeries)
     assert isinstance(df[["a", "b"], :2], MyDataFrame)
