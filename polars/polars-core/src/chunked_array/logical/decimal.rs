@@ -16,14 +16,14 @@ impl Int128Chunked {
         precision: Option<usize>,
         scale: usize,
     ) -> PolarsResult<DecimalChunked> {
-        // TODO: if prec is None, do we check that the value fits within precision of 38?...
+        // TODO: if precision is None, do we check that the value fits within precision of 38?...
         if let Some(precision) = precision {
-            let prec_max = 10_i128.pow(precision as u32);
+            let precision_max = 10_i128.pow(precision as u32);
             // note: this is not too efficient as it scans through the data twice...
             if let (Some(min), Some(max)) = (self.min(), self.max()) {
                 let max_abs = max.abs().max(min.abs());
                 polars_ensure!(
-                    max_abs < prec_max,
+                    max_abs < precision_max,
                     ComputeError: "decimal precision {} can't fit values with {} digits",
                     precision,
                     max_abs.to_string().len()
@@ -54,16 +54,16 @@ impl LogicalType for DecimalChunked {
     }
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        let (prec_src, scale_src) = (self.precision(), self.scale());
-        if let &DataType::Decimal(prec_dst, scale_dst) = dtype {
+        let (precision_src, scale_src) = (self.precision(), self.scale());
+        if let &DataType::Decimal(precision_dst, scale_dst) = dtype {
             let scale_dst = scale_dst.ok_or_else(
                 || polars_err!(ComputeError: "cannot cast to Decimal with unknown scale"),
             )?;
             // for now, let's just allow same-scale conversions
             // where precision is either the same or bigger or gets converted to `None`
             // (these are the easy cases requiring no checks and arithmetics which we can add later)
-            let is_widen = match (prec_src, prec_dst) {
-                (Some(prec_src), Some(prec_dst)) => prec_dst >= prec_src,
+            let is_widen = match (precision_src, precision_dst) {
+                (Some(precision_src), Some(precision_dst)) => precision_dst >= precision_src,
                 (_, None) => true,
                 _ => false,
             };

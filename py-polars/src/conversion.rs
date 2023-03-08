@@ -296,10 +296,10 @@ impl ToPyObject for Wrap<DataType> {
             DataType::UInt64 => pl.getattr("UInt64").unwrap().into(),
             DataType::Float32 => pl.getattr("Float32").unwrap().into(),
             DataType::Float64 => pl.getattr("Float64").unwrap().into(),
-            DataType::Decimal(prec, scale) => pl
+            DataType::Decimal(precision, scale) => pl
                 .getattr("Decimal")
                 .unwrap()
-                .call1((*prec, *scale))
+                .call1((*precision, *scale))
                 .unwrap()
                 .into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
@@ -404,9 +404,9 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 DataType::Datetime(tu, tz)
             }
             "Decimal" => {
-                let prec = ob.getattr("prec")?.extract()?;
+                let precision = ob.getattr("precision")?.extract()?;
                 let scale = ob.getattr("scale")?.extract()?;
-                DataType::Decimal(prec, Some(scale))
+                DataType::Decimal(precision, Some(scale))
             }
             "List" => {
                 let inner = ob.getattr("inner").unwrap();
@@ -544,13 +544,18 @@ impl ToPyObject for Wrap<&DecimalChunked> {
         let convert = utils.getattr("_to_python_decimal").unwrap();
         let py_scale = self.0.scale().to_object(py);
         // if we don't know precision, the only safe bet is to set it to 39
-        let py_prec = self.0.precision().unwrap_or(39).to_object(py);
+        let py_precision = self.0.precision().unwrap_or(39).to_object(py);
         let iter = self.0.into_iter().map(|opt_v| {
             opt_v.map(|v| {
                 let mut buf = [0_u8; 48];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
                 convert
-                    .call1((v.is_negative() as u8, &buf[..n_digits], &py_prec, &py_scale))
+                    .call1((
+                        v.is_negative() as u8,
+                        &buf[..n_digits],
+                        &py_precision,
+                        &py_scale,
+                    ))
                     .unwrap()
             })
         });
@@ -581,7 +586,7 @@ fn abs_decimal_from_digits(
     } else {
         (-exp) as usize
     };
-    // TODO: do we care for checking if it fits in MAX_ABS_DEC? (if we set prec to None anyway?)
+    // TODO: do we care for checking if it fits in MAX_ABS_DEC? (if we set precision to None anyway?)
     (v <= MAX_ABS_DEC).then_some((v, scale))
 }
 
