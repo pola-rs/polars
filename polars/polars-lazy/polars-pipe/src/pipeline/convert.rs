@@ -32,6 +32,7 @@ fn get_source<F>(
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
     push_predicate: bool,
+    verbose: bool,
 ) -> PolarsResult<Box<dyn Source>>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -76,7 +77,7 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::CsvSource::new(path, file_info.schema, options)?;
+            let src = sources::CsvSource::new(path, file_info.schema, options, verbose)?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         #[cfg(feature = "parquet")]
@@ -96,7 +97,13 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::ParquetSource::new(path, options, cloud_options, &file_info.schema)?;
+            let src = sources::ParquetSource::new(
+                path,
+                options,
+                cloud_options,
+                &file_info.schema,
+                verbose,
+            )?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         _ => todo!(),
@@ -329,9 +336,7 @@ where
             Box::new(op) as Box<dyn Operator>
         }
         MapFunction { function, .. } => {
-            let op = operators::FunctionOperator {
-                function: function.clone(),
-            };
+            let op = operators::FunctionOperator::new(function.clone());
             Box::new(op) as Box<dyn Operator>
         }
 
@@ -369,6 +374,7 @@ where
                 expr_arena,
                 &to_physical,
                 true,
+                verbose,
             )?,
             #[cfg(feature = "csv-file")]
             lp @ CsvScan { .. } => get_source(
@@ -377,6 +383,7 @@ where
                 expr_arena,
                 &to_physical,
                 true,
+                verbose,
             )?,
             #[cfg(feature = "parquet")]
             lp @ ParquetScan { .. } => get_source(
@@ -385,6 +392,7 @@ where
                 expr_arena,
                 &to_physical,
                 true,
+                verbose,
             )?,
             Union { inputs, .. } => {
                 let sources = inputs
@@ -398,6 +406,7 @@ where
                             &mut operator_objects,
                             expr_arena,
                             &to_physical,
+                            i == 0,
                             i == 0,
                         )
                     })

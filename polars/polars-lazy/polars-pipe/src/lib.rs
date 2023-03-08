@@ -14,6 +14,7 @@ pub use operators::SExecutionContext;
 /// scale the chunk size depending on the number of
 /// columns. With 10 columns we use a chunk size of 40_000
 #[cfg(feature = "compile")]
-pub(crate) fn chunk_size(n_cols: usize) -> usize {
-    std::cmp::max(400_000 / n_cols, 1000)
+pub(crate) fn determine_chunk_size(n_cols: usize, n_threads: usize) -> usize {
+    let thread_factor = std::cmp::max(12 / n_threads, 1);
+    std::cmp::max(400_000 / n_cols * thread_factor, 1000)
 }

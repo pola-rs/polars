@@ -9,7 +9,7 @@ use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::CsvParserOptions;
 
 use super::*;
-use crate::chunk_size;
+use crate::determine_chunk_size;
 
 pub(crate) struct CsvSource {
     #[allow(dead_code)]
@@ -26,6 +26,7 @@ impl CsvSource {
         path: PathBuf,
         schema: SchemaRef,
         options: CsvParserOptions,
+        verbose: bool,
     ) -> PolarsResult<Self> {
         let mut with_columns = options.with_columns;
         let mut projected_len = 0;
@@ -46,8 +47,11 @@ impl CsvSource {
         };
         // inversely scale the chunk size by the number of threads so that we reduce memory pressure
         // in streaming
-        let chunk_size =
-            std::cmp::max(chunk_size(n_cols) * 12 / POOL.current_num_threads(), 10_000);
+        let chunk_size = determine_chunk_size(n_cols, POOL.current_num_threads());
+
+        if verbose {
+            eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
+        }
 
         let reader = CsvReader::from_path(&path)
             .unwrap()

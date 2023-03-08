@@ -11,7 +11,7 @@ use polars_io::{is_cloud_url, SerReader};
 use polars_plan::prelude::ParquetOptions;
 use polars_utils::IdxSize;
 
-use crate::chunk_size;
+use crate::determine_chunk_size;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 
 pub struct ParquetSource {
@@ -27,6 +27,7 @@ impl ParquetSource {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         schema: &Schema,
+        verbose: bool,
     ) -> PolarsResult<Self> {
         let projection: Option<Vec<_>> = options.with_columns.map(|with_columns| {
             with_columns
@@ -36,8 +37,13 @@ impl ParquetSource {
         });
 
         let n_cols = projection.as_ref().map(|v| v.len()).unwrap_or(schema.len());
-        let chunk_size =
-            std::cmp::max(chunk_size(n_cols) * 12 / POOL.current_num_threads(), 10_000);
+        let n_threads = POOL.current_num_threads();
+        let chunk_size = determine_chunk_size(n_cols, n_threads);
+
+        if verbose {
+            eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
+        }
+
         let batched_reader = if is_cloud_url(&path) {
             #[cfg(not(feature = "async"))]
             {
@@ -68,7 +74,7 @@ impl ParquetSource {
 
         Ok(ParquetSource {
             batched_reader,
-            n_threads: POOL.current_num_threads(),
+            n_threads,
             chunk_index: 0,
         })
     }
