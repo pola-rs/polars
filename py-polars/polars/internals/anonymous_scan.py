@@ -31,7 +31,7 @@ def _deser_and_exec(  # noqa: D417
 
 
 def _scan_pyarrow_dataset_impl(
-    ds: pa.dataset.dataset,
+    ds: pa.dataset.Dataset,
     with_columns: list[str] | None,
     predicate: str | None,
     n_rows: int | None,
@@ -58,9 +58,8 @@ def _scan_pyarrow_dataset_impl(
     _filter = None
     if predicate:
         # imports are used by inline python evaluated by `eval`
-
         from polars.datatypes import Date, Datetime, Duration  # noqa: F401
-        from polars.utils import (
+        from polars.utils.convert import (
             _to_python_datetime,  # noqa: F401
             _to_python_time,  # noqa: F401
             _to_python_timedelta,  # noqa: F401
@@ -86,7 +85,7 @@ def _scan_pyarrow_dataset_impl(
 
 
 def _scan_pyarrow_dataset(
-    ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True
+    ds: pa.dataset.Dataset, allow_pyarrow_filter: bool = True
 ) -> pli.LazyFrame:
     """
     Pickle the partially applied function `_scan_pyarrow_dataset_impl`.

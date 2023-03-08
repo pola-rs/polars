@@ -365,7 +365,7 @@ class LazyFrame:
     @classmethod
     def _scan_parquet(
         cls,
-        file: str,
+        source: str,
         n_rows: int | None = None,
         cache: bool = True,
         parallel: ParallelStrategy = "auto",
@@ -387,8 +387,8 @@ class LazyFrame:
 
         """
         # try fsspec scanner
-        if not pli._is_local_file(file):
-            scan = pli._scan_parquet_fsspec(file, storage_options)
+        if not pli._is_local_file(source):
+            scan = pli._scan_parquet_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -397,7 +397,7 @@ class LazyFrame:
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
-            file,
+            source,
             n_rows,
             cache,
             parallel,
