@@ -142,7 +142,7 @@ fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
+fn arange(low: PyExpr, high: PyExpr, step: i64) -> PyExpr {
     polars_rs::lazy::dsl::arange(low.inner, high.inner, step).into()
 }
 

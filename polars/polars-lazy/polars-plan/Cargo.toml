@@ -12,6 +12,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 ahash.workspace = true
 futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
+num = { workspace = true, optional = true }
 polars-arrow = { version = "0.27.2", path = "../../polars-arrow" }
 polars-core = { version = "0.27.2", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.27.2", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
@@ -74,7 +75,7 @@ cross_join = ["polars-core/cross_join"]
 asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
 dot_product = ["polars-core/dot_product"]
 concat_str = ["polars-core/concat_str"]
-arange = []
+arange = ["num"]
 mode = ["polars-core/mode"]
 cum_agg = ["polars-core/cum_agg"]
 interpolate = ["polars-ops/interpolate"]

@@ -4,6 +4,8 @@
 //!
 use std::ops::{BitAnd, BitOr};
 
+#[cfg(feature = "arange")]
+use num::range_step;
 #[cfg(feature = "temporal")]
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "temporal")]
@@ -323,7 +325,7 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<
 /// - if `low` and `high` are a column, every element will expand into an array in a list column.
 /// - if `low` and `high` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
-pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
+pub fn arange(low: Expr, high: Expr, step: i64) -> Expr {
     let has_col_without_agg = |e: &Expr| {
         has_expr(e, |ae| matches!(ae, Expr::Column(_)))
             &&
@@ -371,8 +373,8 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 .get(0)
                 .ok_or_else(|| polars_err!(NoData: "no data in `high` evaluation"))?;
 
-            let mut ca = if step > 1 {
-                Int64Chunked::from_iter_values("arange", (low..high).step_by(step))
+            let mut ca = if step != 1 {
+                Int64Chunked::from_iter_values("arange", range_step(low, high, step))
             } else {
                 Int64Chunked::from_iter_values("arange", low..high)
             };
@@ -424,7 +426,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 .for_each(|(opt_l, opt_h)| match (opt_l, opt_h) {
                     (Some(l), Some(r)) => {
                         if step > 1 {
-                            builder.append_iter_values((l..r).step_by(step));
+                            builder.append_iter_values(range_step(l, r, step));
                         } else {
                             builder.append_iter_values(l..r);
                         }

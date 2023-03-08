@@ -273,6 +273,20 @@ def test_arange() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    ("low", "high"),
+    [
+        (0, 4),
+        (4, 0),
+    ],
+)
+@pytest.mark.parametrize("step", [1, 2, -1, -2])
+def test_arange_with_step(low: int, high: int, step: int) -> None:
+    result = pl.arange(low, high, step, eager=True)
+    expected = pl.Series(np.arange(low, high, step))
+    assert_series_equal(result, expected, check_names=False)
+
+
 def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]

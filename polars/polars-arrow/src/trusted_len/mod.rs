@@ -6,6 +6,7 @@ use std::iter::Scan;
 use std::slice::Iter;
 
 use arrow::bitmap::utils::{BitmapIter, ZipValidity, ZipValidityIter};
+use num::iter::RangeStep;
 pub use push_unchecked::*;
 pub use rev::FromIteratorReversed;
 
@@ -76,6 +77,10 @@ unsafe impl<T, I: TrustedLen + Iterator<Item = T>, V: TrustedLen + Iterator<Item
 }
 unsafe impl TrustedLen for BitmapIter<'_> {}
 unsafe impl<A: TrustedLen> TrustedLen for std::iter::StepBy<A> {}
+unsafe impl<A> TrustedLen for RangeStep<A> where
+    A: std::clone::Clone + std::cmp::PartialOrd + num::CheckedAdd
+{
+}
 
 unsafe impl<I, St, F, B> TrustedLen for Scan<I, St, F>
 where
