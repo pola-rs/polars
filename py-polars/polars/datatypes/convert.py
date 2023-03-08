@@ -261,17 +261,10 @@ class _DataTypeMappings:
 DataTypeMappings = _DataTypeMappings()
 
 
-def _base_type(dtype: PolarsDataType) -> DataTypeClass:
-    """Ensure return of the DataType base dtype/class."""
-    if isinstance(dtype, DataType):
-        return type(dtype)
-    return dtype
-
-
 def dtype_to_ctype(dtype: PolarsDataType) -> Any:
     """Convert a Polars dtype to a ctype."""
     try:
-        dtype = _base_type(dtype)
+        dtype = dtype.base_type()
         return DataTypeMappings.DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
@@ -282,7 +275,7 @@ def dtype_to_ctype(dtype: PolarsDataType) -> Any:
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
     """Return FFI function name associated with the given Polars dtype."""
     try:
-        dtype = _base_type(dtype)
+        dtype = dtype.base_type()
         return DataTypeMappings.DTYPE_TO_FFINAME[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
@@ -293,7 +286,7 @@ def dtype_to_ffiname(dtype: PolarsDataType) -> str:
 def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
     """Convert a Polars dtype to a Python dtype."""
     try:
-        dtype = _base_type(dtype)
+        dtype = dtype.base_type()
         return DataTypeMappings.DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(

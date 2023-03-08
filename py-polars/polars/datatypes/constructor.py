@@ -49,7 +49,7 @@ def polars_type_to_constructor(
 ) -> Callable[[str, Sequence[Any], bool], PySeries]:
     """Get the right PySeries constructor for the given Polars dtype."""
     try:
-        dtype = dt._base_type(dtype)
+        dtype = dtype.base_type()
         return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot construct PySeries for type {dtype}.") from None

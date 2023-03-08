@@ -45,7 +45,6 @@ from polars.datatypes.constructor import (
     py_type_to_constructor,
 )
 from polars.datatypes.convert import (
-    _base_type,
     dtype_to_arrow_type,
     dtype_to_ctype,
     dtype_to_ffiname,
@@ -115,7 +114,6 @@ __all__ = [
     "polars_type_to_constructor",
     "py_type_to_constructor",
     # convert
-    "_base_type",
     "dtype_to_arrow_type",
     "dtype_to_ctype",
     "dtype_to_ffiname",
