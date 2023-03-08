@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import string
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import numpy as np
@@ -505,3 +505,16 @@ def test_streaming_sort_multiple_columns(monkeypatch: Any, capfd: Any) -> None:
     assert "RUN STREAMING PIPELINE" in err
     assert "df -> sort_multiple" in err
     assert out.columns == ["vals", "strs"]
+
+
+def test_sort_by_logical() -> None:
+    test = pl.DataFrame(
+        {
+            "start": [date(2020, 5, 6), date(2020, 5, 13), date(2020, 5, 10)],
+            "end": [date(2020, 12, 31), date(2020, 12, 31), date(2021, 1, 1)],
+            "num": [0, 1, 2],
+        }
+    )
+    assert test.select([pl.col("num").sort_by(["start", "end"]).alias("n1")])[
+        "n1"
+    ].to_list() == [0, 2, 1]

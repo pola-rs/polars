@@ -65,7 +65,13 @@ impl PhysicalExpr for SortByExpr {
                 let s_sort_by = self
                     .by
                     .iter()
-                    .map(|e| e.evaluate(df, state))
+                    .map(|e| {
+                        e.evaluate(df, state).map(|s| match s.dtype() {
+                            #[cfg(feature = "dtype-categorical")]
+                            DataType::Categorical(_) => s,
+                            _ => s.to_physical_repr().into_owned(),
+                        })
+                    })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
                 s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &descending)
