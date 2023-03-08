@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from typing import Any
 
 import pytest
 
@@ -254,6 +255,7 @@ def test_cast_inner_categorical() -> None:
         )
 
 
+@pytest.mark.slow()
 def test_stringcache() -> None:
     N = 1_500
     with pl.StringCache():
@@ -264,3 +266,26 @@ def test_stringcache() -> None:
         assert df.filter(pl.col("cats").is_in(["1", "2"])).to_dict(False) == {
             "cats": ["1", "2"]
         }
+
+
+def test_categorical_sort_order(monkeypatch: Any) -> None:
+    with pl.StringCache():
+        # create the categorical ordering first
+        pl.Series(["foo", "bar", "baz"], dtype=pl.Categorical)
+        df = pl.DataFrame(
+            {
+                "n": [0, 0, 0],
+                # use same categories in different order
+                "x": pl.Series(["baz", "bar", "foo"], dtype=pl.Categorical),
+            }
+        )
+
+    assert df.sort(["n", "x"])["x"].to_list() == ["foo", "bar", "baz"]
+    assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
+        "x"
+    ].to_list() == ["bar", "baz", "foo"]
+    monkeypatch.setenv("POLARS_ROW_FMT_SORT", "1")
+    assert df.sort(["n", "x"])["x"].to_list() == ["foo", "bar", "baz"]
+    assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
+        "x"
+    ].to_list() == ["bar", "baz", "foo"]
