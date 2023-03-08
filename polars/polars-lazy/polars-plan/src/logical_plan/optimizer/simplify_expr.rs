@@ -668,14 +668,34 @@ impl OptimizationRule for SimplifyExprRule {
 fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
     match (input, dtype) {
         #[cfg(feature = "dtype-duration")]
-        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Duration(tu)) => {
-            use polars_core::export::chrono;
-            let dur = match tu {
-                TimeUnit::Nanoseconds => chrono::Duration::nanoseconds(*v),
-                TimeUnit::Microseconds => chrono::Duration::microseconds(*v),
-                TimeUnit::Milliseconds => chrono::Duration::milliseconds(*v),
-            };
-            Some(AExpr::Literal(LiteralValue::Duration(dur, *tu)))
+        (AExpr::Literal(lv), DataType::Duration(tu)) => {
+            let av = lv.to_anyvalue()?;
+            if av.dtype().is_numeric() {
+                let v = av.extract::<i64>()?;
+                Some(AExpr::Literal(LiteralValue::Duration(v, *tu)))
+            } else {
+                None
+            }
+        }
+        #[cfg(feature = "dtype-datetime")]
+        (AExpr::Literal(lv), DataType::Datetime(tu, tz)) => {
+            let av = lv.to_anyvalue()?;
+            if av.dtype().is_numeric() {
+                let v = av.extract::<i64>()?;
+                Some(AExpr::Literal(LiteralValue::DateTime(v, *tu, tz.clone())))
+            } else {
+                None
+            }
+        }
+        #[cfg(feature = "dtype-date")]
+        (AExpr::Literal(lv), DataType::Date) => {
+            let av = lv.to_anyvalue()?;
+            if av.dtype().is_numeric() {
+                let v = av.extract::<i32>()?;
+                Some(AExpr::Literal(LiteralValue::Date(v)))
+            } else {
+                None
+            }
         }
         (AExpr::Literal(lv), dt) if dt.is_numeric() => {
             let av = lv.to_anyvalue()?;
