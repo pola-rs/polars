@@ -52,7 +52,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
             "column_totals": True,
             "float_precision": 0,
         },
-        # advanced formatting #1
+        # slightly customised formatting
         {
             "position": (0, 0),
             "table_style": {
@@ -60,32 +60,60 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
                 "first_column": True,
             },
             "conditional_formats": {
-                "val": {
-                    "type": "data_bar",
-                    "data_bar_2010": True,
-                    "bar_color": "#9bbb59",
-                },
+                # string: will unpack to {"type": "data_bar"}
+                "val": "data_bar"
             },
             "column_formats": {"val": "#,##0.000;[White]-#,##0.000"},
             "column_widths": {"val": 100},
         },
-        # advanced formatting #2
+        # heavily customised formatting/definition
         {
+            "position": "A1",
+            "table_name": "PolarsFrameData",
+            "table_style": "Table Style Light 11",
             "conditional_formats": {
-                "val": {
-                    "type": "3_color_scale",
-                    "min_color": "#76933c",
-                    "mid_color": "#c4d79b",
-                    "max_color": "#ebf1de",
+                # dict format
+                "str": {
+                    "type": "duplicate",
+                    "format": {"bg_color": "#ff0000", "font_color": "#ffffff"},
                 },
+                # multiple dict formats
+                "val": [
+                    {
+                        "type": "3_color_scale",
+                        "min_color": "#4bacc6",
+                        "mid_color": "#ffffff",
+                        "max_color": "#daeef3",
+                    },
+                    {
+                        "type": "cell",
+                        "criteria": "<",
+                        "value": -90,
+                        "format": {"font_color": "white"},
+                    },
+                ],
+                "dtm": [
+                    {
+                        "type": "top",
+                        "value": 1,
+                        "format": {"bold": True, "font_color": "green"},
+                    },
+                    {
+                        "type": "bottom",
+                        "value": 1,
+                        "format": {"bold": True, "font_color": "red"},
+                    },
+                ],
             },
             "dtype_formats": {
-                pl.FLOAT_DTYPES: '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)'
+                pl.FLOAT_DTYPES: '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)',
+                pl.Date: "dd-mm-yyyy",
             },
             "column_formats": {
                 "dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"},
             },
-            "column_totals": {"val": "average"},
+            "column_totals": {"val": "average", "dtm": "min"},
+            "column_widths": {("str", "val"): 60, "dtm": 80},
             "hidden_columns": ["str"],
             "hide_gridlines": True,
             "has_header": False,
@@ -96,7 +124,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
     df = pl.DataFrame(
         {
             "dtm": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
-            "str": ["aaa", "bbb", "ccc"],
+            "str": ["xxx", "yyy", "xxx"],
             "val": [100.5, 55.0, -99.5],
         }
     )
@@ -105,6 +133,9 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         if write_params.get("has_header", True)
         else {"has_header": False, "new_columns": ["dtm", "str", "val"]}
     )
+    fmt_strptime = "%Y-%m-%d"
+    if write_params.get("dtype_formats", {}).get(pl.Date) == "dd-mm-yyyy":
+        fmt_strptime = "%d-%m-%Y"
 
     # write to an xlsx with polars, using various parameters...
     xls = BytesIO()
@@ -115,10 +146,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         file=xls,
         sheet_name="data",
         read_csv_options=header_opts,
-    ).with_columns(pl.col("dtm").str.strptime(pl.Date, "%Y-%m-%d"))
-
-    if "column_totals" in write_params:
-        xldf = xldf[:3]
+    )[:3].with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
 
     assert_frame_equal(df, xldf)
 
