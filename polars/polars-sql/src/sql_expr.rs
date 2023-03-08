@@ -4,7 +4,7 @@ use polars_lazy::prelude::*;
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
     Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
-    Value as SqlValue,
+    UnaryOperator, Value as SqlValue,
 };
 
 use crate::context::TABLES;
@@ -76,6 +76,7 @@ impl SqlExprVisitor {
             SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any()),
             SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all()),
             SqlExpr::Nested(expr) => self.visit_expr(expr),
+            SqlExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             other => polars_bail!(ComputeError: "SQL expression {:?} is not yet supported", other),
         }
     }
@@ -99,6 +100,15 @@ impl SqlExprVisitor {
             idents
         );
         Ok(col(&idents[1].value))
+    }
+    fn visit_unary_op(&self, op: &UnaryOperator, expr: &SqlExpr) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+        Ok(match op {
+            UnaryOperator::Plus => lit(0) + expr,
+            UnaryOperator::Minus => lit(0) - expr,
+            UnaryOperator::Not => expr.not(),
+            other => polars_bail!(ComputeError: "Unary operator {:?} is not supported", other),
+        })
     }
 
     /// Visit a single identifier

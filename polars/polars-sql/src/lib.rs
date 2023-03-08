@@ -7,6 +7,7 @@ pub use context::SQLContext;
 #[cfg(test)]
 mod test {
     use polars_core::prelude::*;
+    use polars_lazy::dsl::lit;
     use polars_lazy::prelude::*;
 
     use super::*;
@@ -479,8 +480,40 @@ mod test {
             .unwrap();
         let expected = df.lazy().select(&[col("a")]).collect().unwrap();
 
-        println!("{df_sql}");
         assert!(df_2.frame_equal(&expected));
+    }
+    #[test]
+    fn test_unary_minus_0() {
+        let df = df! {
+            "value" => [-5, -3, 0, 3, 5],
+        }
+        .unwrap();
+
+        let mut context = SQLContext::try_new().unwrap();
+        context.register("df", df.clone().lazy());
+        let sql = r#"SELECT * FROM df WHERE value < -1"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let df_pl = df
+            .lazy()
+            .filter(col("value").lt(lit(-1)))
+            .collect()
+            .unwrap();
+        assert!(df_sql.frame_equal(&df_pl));
+    }
+    #[test]
+    fn test_unary_minus_1() {
+        let df = df! {
+            "value" => [-5, -3, 0, 3, 5],
+        }
+        .unwrap();
+
+        let mut context = SQLContext::try_new().unwrap();
+        context.register("df", df.clone().lazy());
+        let sql = r#"SELECT * FROM df WHERE -value < 1"#;
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let neg_value = lit(0) - col("value");
+        let df_pl = df.lazy().filter(neg_value.lt(lit(1))).collect().unwrap();
+        assert!(df_sql.frame_equal(&df_pl));
     }
 
     fn assert_sql_to_polars(df: &DataFrame, sql: &str, f: impl FnOnce(LazyFrame) -> LazyFrame) {
