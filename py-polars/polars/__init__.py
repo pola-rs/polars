@@ -90,8 +90,6 @@ from polars.internals.functions import (
     zeros,
 )
 from polars.internals.io import read_ipc_schema, read_parquet_schema
-from polars.internals.lazy_functions import _date as date
-from polars.internals.lazy_functions import _datetime as datetime
 from polars.internals.lazy_functions import (
     all,
     any,
@@ -141,7 +139,9 @@ from polars.internals.lazy_functions import (
     tail,
     var,
 )
-from polars.internals.lazy_functions import to_list as list
+from polars.internals.lazy_functions import date_ as date
+from polars.internals.lazy_functions import datetime_ as datetime
+from polars.internals.lazy_functions import list_ as list
 from polars.internals.lazyframe import LazyFrame
 
 # TODO: remove need for wrap_s
@@ -289,8 +289,8 @@ __all__ = [
     "cumfold",
     "cumreduce",
     "cumsum",
-    "date",  # name _date, see import above
-    "datetime",  # named _datetime, see import above
+    "date",  # named date_, see import above
+    "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
     "first",
@@ -300,7 +300,7 @@ __all__ = [
     "groups",
     "head",
     "last",
-    "list",  # named to_list, see import above
+    "list",  # named list_, see import above
     "lit",
     "map",
     "max",

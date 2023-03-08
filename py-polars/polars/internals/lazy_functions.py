@@ -354,11 +354,14 @@ def count(column: str | pli.Series | None = None) -> pli.Expr | int:
     return col(column).count()
 
 
-def to_list(name: str) -> pli.Expr:
+def list_(name: str) -> pli.Expr:
     """
     Aggregate to list.
 
-    Re-exported as `pl.list()`
+    Parameters
+    ----------
+    name
+        Name of the column that should be aggregated into a list.
 
     """
     return col(name).list()
@@ -2420,7 +2423,7 @@ def duration(
     )
 
 
-def _datetime(
+def datetime_(
     year: pli.Expr | str | int,
     month: pli.Expr | str | int,
     day: pli.Expr | str | int,
@@ -2430,7 +2433,7 @@ def _datetime(
     microsecond: pli.Expr | str | int | None = None,
 ) -> pli.Expr:
     """
-    Create polars `Datetime` from distinct time components.
+    Create a Polars literal expression of type Datetime.
 
     Parameters
     ----------
@@ -2480,13 +2483,13 @@ def _datetime(
     )
 
 
-def _date(
+def date_(
     year: pli.Expr | str | int,
     month: pli.Expr | str | int,
     day: pli.Expr | str | int,
 ) -> pli.Expr:
     """
-    Create polars Date from distinct time components.
+    Create a Polars literal expression of type Date.
 
     Parameters
     ----------
@@ -2502,7 +2505,7 @@ def _date(
     Expr of type pl.Date
 
     """
-    return _datetime(year, month, day).cast(Date).alias("date")
+    return datetime_(year, month, day).cast(Date).alias("date")
 
 
 @deprecated_alias(sep="separator")
