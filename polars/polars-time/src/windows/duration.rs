@@ -346,10 +346,10 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(&self, t: i64) -> i64 {
+    pub fn truncate_ns(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         self.truncate_impl(
             t,
-            &None,
+            tz,
             |nsecs| nsecs,
             timestamp_ns_to_datetime,
             datetime_to_timestamp_ns,
@@ -370,10 +370,10 @@ impl Duration {
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(&self, t: i64) -> i64 {
+    pub fn truncate_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         self.truncate_impl(
             t,
-            &None,
+            tz,
             |nsecs| nsecs / 1_000_000,
             timestamp_ms_to_datetime,
             datetime_to_timestamp_ms,

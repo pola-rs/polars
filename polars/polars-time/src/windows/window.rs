@@ -30,12 +30,12 @@ impl Window {
 
     /// Truncate the given ns timestamp by the window boundary.
     pub fn truncate_ns(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
-        let t = self.every.truncate_ns(t);
+        let t = self.every.truncate_ns(t, tz);
         self.offset.add_ns(t)
     }
 
     pub fn truncate_no_offset_ns(&self, t: i64) -> i64 {
-        self.every.truncate_ns(t)
+        self.every.truncate_ns(t, &None)
     }
 
     /// Truncate the given ns timestamp by the window boundary.
@@ -49,13 +49,13 @@ impl Window {
     }
 
     pub fn truncate_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
-        let t = self.every.truncate_ms(t);
+        let t = self.every.truncate_ms(t, tz);
         self.offset.add_ms(t)
     }
 
     #[inline]
-    pub fn truncate_no_offset_ms(&self, t: i64) -> i64 {
-        self.every.truncate_ms(t)
+    pub fn truncate_no_offset_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
+        self.every.truncate_ms(t, tz)
     }
 
     /// Round the given ns timestamp by the window boundary.
@@ -98,7 +98,7 @@ impl Window {
             self.offset.add_ns(t)
         } else {
             // offset is translated in the truncate
-            self.truncate_ns(t, &None)
+            self.truncate_ns(t, tz)
         };
 
         let stop = self.period.add_ns(start);
@@ -124,7 +124,7 @@ impl Window {
         {
             self.offset.add_ms(t)
         } else {
-            self.truncate_ms(t, &None)
+            self.truncate_ms(t, tz)
         };
 
         let stop = self.period.add_ms(start);
